@@ -1,0 +1,111 @@
+{
+ "replace": [
+  [
+   "\\bF P thirty-two\\b",
+   "FP32"
+  ],
+  [
+   "\\bF P sixteen\\b",
+   "FP16"
+  ],
+  [
+   "\\bInt eight\\b",
+   "INT8"
+  ],
+  [
+   "\\bInt four\\b",
+   "INT4"
+  ],
+  [
+   "\\bG P T Q\\b",
+   "GPTQ"
+  ],
+  [
+   "\\bA W Q\\b",
+   "AWQ"
+  ],
+  [
+   "\\bG G U F\\b",
+   "GGUF"
+  ],
+  [
+   "\\bllama dot c p p\\b",
+   "llama.cpp"
+  ],
+  [
+   "\\bbits and bytes\\b",
+   "bitsandbytes"
+  ],
+  [
+   "\\bA I\\b",
+   "AI"
+  ],
+  [
+   "\\bP T Q\\b",
+   "PTQ"
+  ],
+  [
+   "\\bQ A T\\b",
+   "QAT"
+  ],
+  [
+   "q equals round of x over s, plus z",
+   "q = round(x / s) + z"
+  ],
+  [
+   "q equals round of x over s",
+   "q = round(x / s)"
+  ],
+  [
+   "two to the power b",
+   "2ᵇ"
+  ],
+  [
+   "\\bthree ninety-nine\\b",
+   "$3.99"
+  ],
+  [
+   "\\bfour dollars\\b",
+   "$4"
+  ],
+  [
+   "two minus minus one",
+   "2 − (−1)"
+  ],
+  [
+   "\\ban eighth of a bit\\b",
+   "⅛ of a bit"
+  ]
+ ],
+ "digit_lines": [
+  4,
+  5,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  16,
+  17
+ ],
+ "post": [
+  [
+   "total is one",
+   "total is 1"
+  ],
+  [
+   "total is also one",
+   "total is also 1"
+  ],
+  [
+   "−1 and one",
+   "−1 and 1"
+  ],
+  [
+   "minus 1 and 1",
+   "−1 and 1"
+  ]
+ ]
+}

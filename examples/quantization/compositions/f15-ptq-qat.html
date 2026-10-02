@@ -1,0 +1,119 @@
+<template>
+  <style>
+    @font-face { font-family: "STIX Two Text"; src: url("assets/fonts/stix-two-text.ttf"); font-style: normal; font-weight: 400 700; }
+    @font-face { font-family: "STIX Two Text"; src: url("assets/fonts/stix-two-text-italic.ttf"); font-style: italic; font-weight: 400 700; }
+    #root { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; }
+    #f15-ptq-qat-stage { position: absolute; inset: 0; width: 1920px; height: 1080px; }
+    #f15-ptq-qat-svg { position: absolute; inset: 0; width: 1920px; height: 1080px; display: block; }
+    .f15-ptq-qat-serif { font-family: "STIX Two Text", serif; }
+    .f15-ptq-qat-mono { font-family: "JetBrains Mono", monospace; }
+  </style>
+
+  <div data-hf-id="hf-wfa3" id="root" data-composition-id="f15-ptq-qat" data-width="1920" data-height="1080" data-duration="47.6">
+    <div data-hf-id="hf-4u34" id="f15-ptq-qat-stage" class="clip" data-start="0" data-duration="47.6" data-track-index="1">
+      <svg data-hf-id="hf-h29m" id="f15-ptq-qat-svg" viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+        <g data-hf-id="hf-e7jo" id="f15-ptq-qat-drift">
+          <text data-hf-id="hf-858p" id="f15-ptq-qat-title" x="120" y="110" class="f15-ptq-qat-serif" font-size="44" font-style="italic" fill="#6B7488">When do you quantize?</text>
+
+          <!-- PTQ row -->
+          <text data-hf-id="hf-mmfo" id="f15-ptq-qat-ptq" x="110" y="255" class="f15-ptq-qat-serif" font-size="44" font-weight="700" fill="#F4D35E">PTQ</text>
+          <rect data-hf-id="hf-qrdl" id="f15-ptq-qat-train-box" x="300" y="200" width="240" height="90" rx="14" fill="none" stroke="#ECEEF2" stroke-width="3" />
+          <text data-hf-id="hf-i4zr" id="f15-ptq-qat-train-txt" x="420" y="257" text-anchor="middle" class="f15-ptq-qat-mono" font-size="32" fill="#ECEEF2">train ✓</text>
+          <text data-hf-id="hf-ijt8" id="f15-ptq-qat-arr1" x="575" y="255" text-anchor="middle" class="f15-ptq-qat-serif" font-size="40" fill="#6B7488">→</text>
+          <rect data-hf-id="hf-7mgl" id="f15-ptq-qat-cal-box" x="610" y="200" width="460" height="90" rx="14" fill="none" stroke="#58C4DD" stroke-width="3" />
+          <text data-hf-id="hf-keiz" id="f15-ptq-qat-cal-txt" x="840" y="257" text-anchor="middle" class="f15-ptq-qat-mono" font-size="32" fill="#58C4DD">calibrate (samples)</text>
+          <g data-hf-id="hf-4tsv" id="f15-ptq-qat-stream" />
+          <text data-hf-id="hf-1huw" id="f15-ptq-qat-arr2" x="1115" y="255" text-anchor="middle" class="f15-ptq-qat-serif" font-size="40" fill="#6B7488">→</text>
+          <rect data-hf-id="hf-py7g" id="f15-ptq-qat-q1-box" x="1160" y="200" width="300" height="90" rx="14" fill="none" stroke="#E88CC4" stroke-width="3" />
+          <text data-hf-id="hf-6yep" id="f15-ptq-qat-q1-txt" x="1310" y="257" text-anchor="middle" class="f15-ptq-qat-mono" font-size="32" fill="#E88CC4">quantize</text>
+          <text data-hf-id="hf-mth1" id="f15-ptq-qat-fast" x="1520" y="255" class="f15-ptq-qat-serif" font-size="28" font-style="italic" fill="#6B7488">fast · no retraining</text>
+
+          <!-- QAT row -->
+          <text data-hf-id="hf-hiug" id="f15-ptq-qat-qat" x="110" y="455" class="f15-ptq-qat-serif" font-size="44" font-weight="700" fill="#5CD0B3">QAT</text>
+          <rect data-hf-id="hf-25g5" id="f15-ptq-qat-qt-box" x="300" y="400" width="770" height="90" rx="14" fill="none" stroke="#5CD0B3" stroke-width="3" />
+          <text data-hf-id="hf-zxg8" id="f15-ptq-qat-qt-txt" x="435.4" y="457" class="f15-ptq-qat-mono" font-size="32" fill="#5CD0B3">train with fake rounding</text>
+          <g data-hf-id="hf-8k63" id="f15-ptq-qat-loop" fill="none" stroke="#5CD0B3" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path data-hf-id="hf-dxou" d="M919.5 436.5 A11 11 0 1 0 930.5 436.5" />
+            <polyline data-hf-id="hf-i7xl" points="933.2,443.8 930.5,436.5 938.2,435.2" />
+          </g>
+          <text data-hf-id="hf-0tgu" id="f15-ptq-qat-arr3" x="1110" y="455" text-anchor="middle" class="f15-ptq-qat-serif" font-size="40" fill="#6B7488">→</text>
+          <rect data-hf-id="hf-ltb7" id="f15-ptq-qat-q2-box" x="1160" y="400" width="300" height="90" rx="14" fill="none" stroke="#E88CC4" stroke-width="3" />
+          <text data-hf-id="hf-z5tk" id="f15-ptq-qat-q2-txt" x="1310" y="457" text-anchor="middle" class="f15-ptq-qat-mono" font-size="32" fill="#E88CC4">quantize</text>
+          <text data-hf-id="hf-yw0f" id="f15-ptq-qat-more" x="1520" y="455" class="f15-ptq-qat-serif" font-size="28" font-style="italic" fill="#6B7488">more work · better at low bits</text>
+
+          <!-- what to quantize -->
+          <rect data-hf-id="hf-whze" id="f15-ptq-qat-p1-box" x="260" y="610" width="620" height="110" rx="55" fill="none" stroke="#58C4DD" stroke-width="3" />
+          <text data-hf-id="hf-zdno" id="f15-ptq-qat-p1-txt" x="570" y="677" text-anchor="middle" class="f15-ptq-qat-mono" font-size="32" fill="#58C4DD">weights only → less memory</text>
+          <rect data-hf-id="hf-othx" id="f15-ptq-qat-p2-box" x="1000" y="610" width="680" height="110" rx="55" fill="none" stroke="#F4D35E" stroke-width="3" />
+          <text data-hf-id="hf-kt5n" id="f15-ptq-qat-p2-txt" x="1340" y="677" text-anchor="middle" class="f15-ptq-qat-mono" font-size="32" fill="#F4D35E">+ activations → integer math</text>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  <script>
+    (function () {
+      const NS = "http://www.w3.org/2000/svg";
+      const $ = (id) => document.getElementById("f15-ptq-qat-" + id);
+      const mk = (tag, attrs, parent) => {
+        const el = document.createElementNS(NS, tag);
+        for (const k in attrs) el.setAttribute(k, attrs[k]);
+        parent.appendChild(el);
+        return el;
+      };
+
+      // calibration samples: 2 passes x 3 dots (separate nodes per pass)
+      const streamG = $("stream");
+      const passes = [[], []];
+      for (let p = 0; p < 2; p++) for (let i = 0; i < 3; i++) passes[p].push(mk("circle", { cx: 640, cy: 219, r: 9, fill: "#58C4DD" }, streamG));
+
+      const tl = gsap.timeline({ paused: true });
+      const pop = (sel, t) => tl.fromTo(sel, { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, t);
+      const arrow = (sel, t) => tl.fromTo(sel, { opacity: 0, x: -14 }, { opacity: 1, x: 0, duration: 0.5, ease: "power2.out" }, t);
+      const box = (id, t, dur) => {
+        const el = $(id + "-box");
+        const L = el.getTotalLength();
+        el.style.strokeDasharray = L;
+        tl.fromTo(el, { strokeDashoffset: L }, { strokeDashoffset: 0, duration: dur || 0.8, ease: "power1.inOut" }, t);
+        tl.fromTo($(id + "-txt"), { opacity: 0 }, { opacity: 1, duration: 0.5, ease: "power2.out" }, t + 0.35);
+      };
+
+      pop($("title"), 0.2);
+
+      // PTQ row
+      pop($("ptq"), 3.4);
+      box("train", 4.0);
+      arrow($("arr1"), 8.7);
+      box("cal", 12.1, 0.9);
+      passes.forEach((dots, p) => {
+        dots.forEach((d, i) => {
+          const t0 = 12.9 + p * 1.9 + i * 0.22;
+          tl.fromTo(d, { opacity: 0, x: 0 }, { opacity: 1, x: 410, duration: 1.3, ease: "power1.inOut" }, t0);
+          tl.to(d, { opacity: 0, duration: 0.25, ease: "power1.in" }, t0 + 1.05);
+        });
+      });
+      arrow($("arr2"), 17.1);
+      box("q1", 17.4);
+      pop($("fast"), 21.6);
+
+      // QAT row
+      pop($("qat"), 24.8);
+      box("qt", 25.0, 1.0);
+      tl.fromTo($("loop"), { opacity: 0 }, { opacity: 1, duration: 0.5, ease: "power2.out" }, 25.35);
+      tl.fromTo($("loop"), { rotation: 0, svgOrigin: "925 446" }, { rotation: -360, svgOrigin: "925 446", duration: 1.2, ease: "power1.inOut", immediateRender: false }, 27.0);
+      arrow($("arr3"), 30.3);
+      box("q2", 30.6);
+      pop($("more"), 32.8);
+
+      // what to quantize
+      box("p1", 36.8, 1.0);
+      box("p2", 40.6, 1.0);
+
+      // ambient drift
+      tl.fromTo($("drift"), { y: 0 }, { y: -6, duration: 46.5, ease: "sine.inOut" }, 0);
+
+      window.__timelines["f15-ptq-qat"] = tl;
+    })();
+  </script>
+</template>

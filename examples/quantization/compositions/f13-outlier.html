@@ -1,0 +1,167 @@
+<template>
+  <style>
+    @font-face { font-family: "STIX Two Text"; src: url("assets/fonts/stix-two-text.ttf"); font-style: normal; font-weight: 400 700; }
+    @font-face { font-family: "STIX Two Text"; src: url("assets/fonts/stix-two-text-italic.ttf"); font-style: italic; font-weight: 400 700; }
+    #root { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; }
+    #f13-outlier-stage { position: absolute; inset: 0; width: 1920px; height: 1080px; }
+    #f13-outlier-svg { position: absolute; inset: 0; width: 1920px; height: 1080px; display: block; }
+    .f13-outlier-serif { font-family: "STIX Two Text", serif; }
+    .f13-outlier-mono { font-family: "JetBrains Mono", monospace; }
+  </style>
+
+  <div data-hf-id="hf-yh7y" id="root" data-composition-id="f13-outlier" data-width="1920" data-height="1080" data-duration="39.2">
+    <div data-hf-id="hf-v7o5" id="f13-outlier-stage" class="clip" data-start="0" data-duration="39.2" data-track-index="1">
+      <svg data-hf-id="hf-y43o" id="f13-outlier-svg" viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+        <g data-hf-id="hf-jih6" id="f13-outlier-drift">
+          <text data-hf-id="hf-n822" id="f13-outlier-title" x="120" y="110" class="f13-outlier-serif" font-size="44" font-style="italic" fill="#6B7488">The real enemy: one outlier</text>
+
+          <!-- equation -->
+          <text data-hf-id="hf-28jd" x="960" y="230" text-anchor="middle" class="f13-outlier-serif" font-size="56" fill="#ECEEF2"><tspan data-hf-id="hf-cpdt" id="f13-outlier-eq-s" fill="#F4D35E" font-style="italic">s</tspan><tspan data-hf-id="hf-ywpt" id="f13-outlier-eq-mid"> = (10 − (−1)) ÷ 15 </tspan><tspan data-hf-id="hf-f11s" id="f13-outlier-eq-end">≈ <tspan data-hf-id="hf-b8g6" id="f13-outlier-eq-val" fill="#F4D35E">0.13</tspan></tspan></text>
+
+          <!-- ruler -->
+          <line data-hf-id="hf-v84q" id="f13-outlier-axis" x1="170" y1="420" x2="1730" y2="420" stroke="#6B7488" stroke-width="3" />
+          <g data-hf-id="hf-39lt" id="f13-outlier-ticks" />
+          <g data-hf-id="hf-j1l8" id="f13-outlier-marks" class="f13-outlier-mono" font-size="24" fill="#6B7488" text-anchor="middle" />
+
+          <!-- weights -->
+          <g data-hf-id="hf-06b9" id="f13-outlier-dots" />
+          <g data-hf-id="hf-gfzy" id="f13-outlier-red">
+            <circle data-hf-id="hf-682b" cx="1700" cy="370" r="16" fill="#FC6255" />
+            <text data-hf-id="hf-ziy8" x="1700" y="330" text-anchor="middle" class="f13-outlier-mono" font-size="40" font-weight="700" fill="#FC6255">10</text>
+          </g>
+
+          <rect data-hf-id="hf-7of9" id="f13-outlier-box" x="185" y="300" width="230" height="160" rx="10" fill="none" stroke="#FC6255" stroke-width="2" opacity="0.8" />
+          <text data-hf-id="hf-7c0x" id="f13-outlier-only3" x="300" y="500" text-anchor="middle" class="f13-outlier-mono" font-size="28" fill="#FC6255">only 3 ticks</text>
+
+          <!-- collapse examples -->
+          <g data-hf-id="hf-1ip1" class="f13-outlier-mono" font-size="44" fill="#ECEEF2" text-anchor="middle">
+            <text data-hf-id="hf-8bql" id="f13-outlier-ex0" x="643.2" y="660">0.1 → 0</text>
+            <text data-hf-id="hf-xvfp" id="f13-outlier-ex1" x="960" y="660">0.2 → 0</text>
+            <text data-hf-id="hf-d4bw" id="f13-outlier-ex2" x="1276.8" y="660">0.3 → 0</text>
+          </g>
+          <text data-hf-id="hf-ra6s" id="f13-outlier-gone" x="960" y="740" text-anchor="middle" class="f13-outlier-serif" font-size="34" font-style="italic" fill="#FC6255">same integer — the detail is gone</text>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  <script>
+    (function () {
+      const NS = "http://www.w3.org/2000/svg";
+      const mk = (tag, attrs, parent, txt) => {
+        const el = document.createElementNS(NS, tag);
+        for (const k in attrs) el.setAttribute(k, attrs[k]);
+        if (txt !== undefined) el.textContent = txt;
+        parent.appendChild(el);
+        return el;
+      };
+
+      // Number line: value v ↦ x = 200 + (v + 1) / SPAN · 1500.
+      // Before the outlier SPAN = 2 (−1 … 1); after, SPAN = 11 (−1 … 10).
+      const X = (v, span) => 200 + (v + 1) / span * 1500;
+      const S = 11 / 15;              // scale after the outlier
+      const Z = Math.round(1 / S);    // zero-point = 1
+      const ROWS = [370, 348, 326, 304];
+
+      // ruler: 16 ticks = 15 equal steps, always spanning the whole range
+      const ticksG = document.getElementById("f13-outlier-ticks");
+      const ticks = [];
+      for (let i = 0; i < 16; i++) {
+        const x = 200 + i * 100;
+        ticks.push(mk("line", { x1: x, y1: 398, x2: x, y2: 442, stroke: "#ECEEF2", "stroke-width": 3 }, ticksG));
+      }
+
+      // value landmarks that ride the number line
+      const marksG = document.getElementById("f13-outlier-marks");
+      const marks = [-1, 0, 1].map((v) => ({ v: v, el: mk("text", { x: X(v, 2), y: 482 }, marksG, String(v).replace("-", "−")) }));
+
+      // 22 ordinary weights in −1 … 1
+      const dotsG = document.getElementById("f13-outlier-dots");
+      const dots = [];
+      for (let i = 0; i < 22; i++) {
+        const v = -0.95 + 0.09 * i;
+        const g = mk("g", {}, dotsG);
+        const c = mk("circle", { cx: X(v, 2), cy: ROWS[i % 4], r: 9, fill: "#58C4DD" }, g);
+        const q = Math.round(v / S) + Z; // 0, 1 or 2
+        dots.push({ g: g, c: c, v: v, q: q, y: ROWS[i % 4] });
+      }
+      // stacking slot per tick after snapping
+      const counts = [0, 0, 0];
+      dots.forEach((d) => { d.slot = counts[d.q]++; });
+
+      const box = document.getElementById("f13-outlier-box");
+      const boxLen = 2 * (230 + 160);
+      box.style.strokeDasharray = boxLen;
+
+      const valEl = document.getElementById("f13-outlier-eq-val");
+      const cnt = { v: 0.13 };
+
+      const tl = gsap.timeline({ paused: true });
+
+      // 0.2 title + ruler (−1 … 1)
+      tl.fromTo("#f13-outlier-title", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, 0.2);
+      tl.fromTo("#f13-outlier-axis", { opacity: 0 }, { opacity: 1, duration: 0.5 }, 0.3);
+      ticks.forEach((t, i) => {
+        tl.fromTo(t, { opacity: 0, scaleY: 0, transformOrigin: "50% 50%" }, { opacity: 1, scaleY: 1, duration: 0.35, ease: "back.out(1.6)" }, 0.5 + i * 0.04);
+      });
+
+      // 3.4 weights appear spread across −1 … 1, landmarks label the ruler
+      dots.forEach((d, i) => {
+        tl.fromTo(d.g, { opacity: 0, y: -30 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 3.35 + i * 0.05);
+      });
+      marks.forEach((m, i) => {
+        tl.fromTo(m.el, { opacity: 0 }, { opacity: 1, duration: 0.5, ease: "power2.out" }, 3.6 + i * 0.2);
+      });
+
+      // 6.5 the outlier slides in from the right edge
+      tl.fromTo("#f13-outlier-red", { x: 320, opacity: 0 }, { x: 0, opacity: 1, duration: 1.0, ease: "power2.out" }, 6.45);
+
+      // 9.4 SIGNATURE: the number line re-scales from −1…1 to −1…10.
+      // One shared eased progress drives every dot and landmark: a single uniform
+      // scale of the line about the −1 anchor (x = 200) by 2/11, while the outlier
+      // tugs the right end and a pulse runs out along the ticks as their step grows.
+      const T0 = 9.4, DUR = 2.5, EASE = "power1.inOut";
+      dots.forEach((d) => {
+        tl.fromTo(d.c, { attr: { cx: X(d.v, 2) } }, { attr: { cx: X(d.v, 11) }, duration: DUR, ease: EASE }, T0);
+      });
+      marks.forEach((m) => {
+        tl.fromTo(m.el, { attr: { x: X(m.v, 2) } }, { attr: { x: X(m.v, 11) }, duration: DUR, ease: EASE, immediateRender: false }, T0);
+      });
+      tl.to("#f13-outlier-red", { x: 26, duration: 0.6, ease: "power2.out" }, T0);
+      tl.to("#f13-outlier-red", { x: 0, duration: DUR - 0.6, ease: EASE }, T0 + 0.6);
+      ticks.forEach((t, i) => {
+        tl.to(t, { scaleY: 1.4, duration: 0.25, ease: "power2.out", yoyo: true, repeat: 1 }, T0 + 0.3 + i * 0.12);
+      });
+
+      // 13.6 equation term by term; 0.73 counts up from 0.13
+      tl.fromTo("#f13-outlier-eq-s", { opacity: 0 }, { opacity: 1, duration: 0.4 }, 13.6);
+      tl.fromTo("#f13-outlier-eq-mid", { opacity: 0 }, { opacity: 1, duration: 0.6 }, 14.2);
+      tl.fromTo("#f13-outlier-eq-end", { opacity: 0 }, { opacity: 1, duration: 0.4 }, 15.3);
+      tl.fromTo(cnt, { v: 0.13 }, { v: 0.73, duration: 1.4, ease: "power1.inOut", onUpdate: () => { valEl.textContent = cnt.v.toFixed(2); } }, 15.5);
+
+      // 19.8 every dot snaps to its rounded tick (q = round(x/s) + z ∈ {0,1,2}) and stacks
+      dots.forEach((d, i) => {
+        tl.to(d.c, { attr: { cx: 200 + d.q * 100, cy: 370 - d.slot * 9 }, duration: 0.6, ease: "power2.inOut" }, 19.75 + (i % 8) * 0.03);
+      });
+      tl.to(marks.map((m) => m.el), { opacity: 0, duration: 0.4 }, 19.75);
+      tl.fromTo(box, { strokeDashoffset: boxLen }, { strokeDashoffset: 0, duration: 0.9, ease: "power1.inOut" }, 20.5);
+      tl.fromTo("#f13-outlier-only3", { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, 21.0);
+
+      // 24.6 collapse examples, one per 1.2s; 28.6 the detail is gone
+      ["#f13-outlier-ex0", "#f13-outlier-ex1", "#f13-outlier-ex2"].forEach((sel, i) => {
+        tl.fromTo(sel, { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, 24.55 + i * 1.2);
+      });
+      tl.fromTo("#f13-outlier-gone", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.8, ease: "power2.out" }, 28.6);
+
+      // 30.8 "one outlier": the red dot pulses once
+      const redC = document.querySelector("#f13-outlier-red circle");
+      tl.to(redC, { attr: { r: 22 }, duration: 0.3, ease: "power2.out", yoyo: true, repeat: 1 }, 30.8);
+
+      // ambient drift
+      tl.fromTo("#f13-outlier-drift", { y: 0 }, { y: -6, duration: 38.3, ease: "sine.inOut" }, 0);
+
+      window.__timelines["f13-outlier"] = tl;
+    })();
+  </script>
+</template>

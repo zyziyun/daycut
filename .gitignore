@@ -1,0 +1,11 @@
+.DS_Store
+__pycache__/
+*.pyc
+audio/
+renders/
+.media/
+node_modules/
+*.mp4
+*.wav
+assets/fonts/
+.env

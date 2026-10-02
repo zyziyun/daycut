@@ -1,0 +1,137 @@
+<template>
+  <style>
+    @font-face { font-family: "STIX Two Text"; src: url("assets/fonts/stix-two-text.ttf"); font-style: normal; font-weight: 400 700; }
+    @font-face { font-family: "STIX Two Text"; src: url("assets/fonts/stix-two-text-italic.ttf"); font-style: italic; font-weight: 400 700; }
+    #root { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; }
+    #f17-tradeoffs-stage { position: absolute; inset: 0; width: 1920px; height: 1080px; }
+    #f17-tradeoffs-svg { position: absolute; inset: 0; width: 1920px; height: 1080px; display: block; }
+    .f17-tradeoffs-serif { font-family: "STIX Two Text", serif; }
+    .f17-tradeoffs-mono { font-family: "JetBrains Mono", monospace; }
+  </style>
+
+  <div data-hf-id="hf-l8rq" id="root" data-composition-id="f17-tradeoffs" data-width="1920" data-height="1080" data-duration="27.8">
+    <div data-hf-id="hf-3z3t" id="f17-tradeoffs-stage" class="clip" data-start="0" data-duration="27.8" data-track-index="1">
+      <svg data-hf-id="hf-8odg" id="f17-tradeoffs-svg" viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+        <g data-hf-id="hf-59xa" id="f17-tradeoffs-drift">
+          <text data-hf-id="hf-ju5t" id="f17-tradeoffs-title" x="120" y="110" class="f17-tradeoffs-serif" font-size="44" font-style="italic" fill="#6B7488">What do you gain, and lose?</text>
+
+          <line data-hf-id="hf-qloq" id="f17-tradeoffs-axis" x1="240" y1="720" x2="1500" y2="720" stroke="#6B7488" stroke-width="2" />
+          <g data-hf-id="hf-2gb7" id="f17-tradeoffs-bars" />
+          <g data-hf-id="hf-pu7w" id="f17-tradeoffs-quality" />
+
+          <!-- legend -->
+          <g data-hf-id="hf-6xvu" id="f17-tradeoffs-legend">
+            <text data-hf-id="hf-tjck" x="1560" y="190" class="f17-tradeoffs-serif" font-size="30" font-style="italic" fill="#F4D35E">quality</text>
+            <text data-hf-id="hf-oopp" x="1560" y="240" class="f17-tradeoffs-serif" font-size="30" font-style="italic" fill="#58C4DD">memory</text>
+          </g>
+          <text data-hf-id="hf-jvpc" id="f17-tradeoffs-note" x="1560" y="280" class="f17-tradeoffs-mono" font-size="22" fill="#6B7488">illustrative</text>
+
+          <!-- gains list -->
+          <text data-hf-id="hf-hd8a" id="f17-tradeoffs-g0" x="1600" y="380" class="f17-tradeoffs-serif" font-size="34" fill="#ECEEF2">faster</text>
+          <text data-hf-id="hf-bzq3" id="f17-tradeoffs-g1" x="1600" y="460" class="f17-tradeoffs-serif" font-size="34" fill="#ECEEF2">cheaper</text>
+          <text data-hf-id="hf-mswq" id="f17-tradeoffs-g2" x="1600" y="540" class="f17-tradeoffs-serif" font-size="34" fill="#ECEEF2">less energy</text>
+          <text data-hf-id="hf-sekr" id="f17-tradeoffs-g3" x="1600" y="620" class="f17-tradeoffs-serif" font-size="34" fill="#ECEEF2">on your phone</text>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  <script>
+    (function () {
+      const NS = "http://www.w3.org/2000/svg";
+      const mk = (tag, attrs, parent) => {
+        const el = document.createElementNS(NS, tag);
+        for (const k in attrs) el.setAttribute(k, attrs[k]);
+        parent.appendChild(el);
+        return el;
+      };
+
+      const BASE = 720;
+      // bit-width, bar height, GB, value-label y, label inside bar?
+      const B = [
+        { name: "16-bit", h: 480, gb: "140 GB", inside: true },
+        { name: "8-bit", h: 240, gb: "70 GB", inside: true },
+        { name: "4-bit", h: 120, gb: "35 GB", inside: false },
+        { name: "3-bit", h: 90, gb: "26 GB", inside: false },
+        { name: "2-bit", h: 60, gb: "18 GB", inside: false }
+      ];
+      const QY = [200, 205.2, 220.8, 278, 434];
+
+      const barsG = document.getElementById("f17-tradeoffs-bars");
+      const qG = document.getElementById("f17-tradeoffs-quality");
+      const bars = [], vals = [], names = [], segs = [], qdots = [];
+      B.forEach((b, i) => {
+        const cx = 340 + i * 260;
+        bars.push(mk("rect", { x: cx - 60, y: BASE - b.h, width: 120, height: b.h, fill: "#58C4DD", opacity: 0.75 }, barsG));
+        const n = mk("text", { x: cx, y: 770, "text-anchor": "middle", "font-size": 30, fill: "#ECEEF2", class: "f17-tradeoffs-mono" }, barsG);
+        n.textContent = b.name;
+        names.push(n);
+        const v = mk("text", {
+          x: cx, y: b.inside ? BASE - b.h + 40 : BASE - b.h - 20, "text-anchor": "middle", "font-size": 26, "font-weight": 700,
+          fill: b.inside ? "#0B1020" : "#58C4DD", class: "f17-tradeoffs-mono"
+        }, barsG);
+        v.textContent = b.gb;
+        vals.push(v);
+      });
+      for (let i = 0; i < 4; i++) {
+        const x1 = 340 + i * 260, x2 = x1 + 260;
+        const s = mk("line", { x1: x1, y1: QY[i], x2: x2, y2: QY[i + 1], stroke: "#F4D35E", "stroke-width": 5, "stroke-linecap": "round" }, qG);
+        const len = Math.hypot(260, QY[i + 1] - QY[i]);
+        s.style.strokeDasharray = len;
+        s.style.strokeDashoffset = len;
+        segs.push({ el: s, len: len });
+      }
+      for (let i = 0; i < 5; i++) {
+        qdots.push(mk("circle", { cx: 340 + i * 260, cy: QY[i], r: 9, fill: "#F4D35E" }, qG));
+      }
+
+      const tl = gsap.timeline({ paused: true });
+
+      tl.fromTo("#f17-tradeoffs-title", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, 0.2);
+
+      // baseline draws
+      tl.fromTo("#f17-tradeoffs-axis", { attr: { x2: 240 } }, { attr: { x2: 1500 }, duration: 0.9, ease: "power1.inOut" }, 0.4);
+      names.forEach((n, i) => {
+        tl.fromTo(n, { opacity: 0 }, { opacity: 1, duration: 0.5, ease: "power2.out" }, 0.6 + i * 0.12);
+      });
+
+      // memory bars grow on their cues
+      const barT = [0.5, 2.75, 7.55, 10.95, 11.35];
+      bars.forEach((b, i) => {
+        tl.fromTo(b, { scaleY: 0, transformOrigin: "50% 100%" }, { scaleY: 1, duration: 0.8, ease: "power2.out" }, barT[i]);
+        tl.fromTo(vals[i], { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.45, ease: "power2.out" }, barT[i] + 0.55);
+      });
+
+      // legend + illustrative note
+      tl.fromTo("#f17-tradeoffs-legend", { opacity: 0, x: 12 }, { opacity: 1, x: 0, duration: 0.6, ease: "power2.out" }, 4.0);
+      tl.fromTo("#f17-tradeoffs-note", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: "power2.out" }, 4.2);
+
+      // quality polyline, segment by segment
+      const pop = (d, t) => tl.fromTo(d, { scale: 0, transformOrigin: "50% 50%" }, { scale: 1, duration: 0.35, ease: "back.out(1.6)" }, t);
+      const draw = (k, t, dur, ease) => tl.fromTo(segs[k].el, { strokeDashoffset: segs[k].len }, { strokeDashoffset: 0, duration: dur, ease: ease }, t);
+      pop(qdots[0], 4.4);
+      draw(0, 4.5, 0.8, "power1.inOut");
+      pop(qdots[1], 5.25);
+      draw(1, 9.0, 0.8, "power1.inOut");
+      pop(qdots[2], 9.75);
+      draw(2, 12.5, 0.7, "power1.in");
+      pop(qdots[3], 13.15);
+      draw(3, 13.25, 0.7, "power2.in");
+      pop(qdots[4], 13.9);
+      // small emphasis pulse on the cliff point
+      tl.to(qdots[4], { attr: { r: 13 }, duration: 0.3, ease: "power2.out" }, 14.3);
+      tl.to(qdots[4], { attr: { r: 9 }, duration: 0.3, ease: "power2.out" }, 14.6);
+
+      // gains list
+      [16.6, 22.3, 23.4, 24.4].forEach((t, i) => {
+        tl.fromTo("#f17-tradeoffs-g" + i, { opacity: 0, x: -16 }, { opacity: 1, x: 0, duration: 0.6, ease: "power2.out" }, t);
+      });
+
+      // ambient drift
+      tl.fromTo("#f17-tradeoffs-drift", { y: 0 }, { y: -6, duration: 26.6, ease: "sine.inOut" }, 0);
+
+      window.__timelines["f17-tradeoffs"] = tl;
+    })();
+  </script>
+</template>

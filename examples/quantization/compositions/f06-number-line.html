@@ -1,0 +1,175 @@
+<template>
+  <style>
+    @font-face { font-family: "STIX Two Text"; src: url("assets/fonts/stix-two-text.ttf"); font-style: normal; font-weight: 400 700; }
+    @font-face { font-family: "STIX Two Text"; src: url("assets/fonts/stix-two-text-italic.ttf"); font-style: italic; font-weight: 400 700; }
+    #root { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; }
+    #f06-number-line-stage { position: absolute; inset: 0; width: 1920px; height: 1080px; }
+    #f06-number-line-svg { position: absolute; inset: 0; width: 1920px; height: 1080px; display: block; }
+    .f06-number-line-serif { font-family: "STIX Two Text", serif; }
+    .f06-number-line-mono { font-family: "JetBrains Mono", monospace; }
+    .f06-number-line-pre { white-space: pre; }
+  </style>
+
+  <div data-hf-id="hf-xf0s" id="root" data-composition-id="f06-number-line" data-width="1920" data-height="1080" data-duration="34.2">
+    <div data-hf-id="hf-ukdz" id="f06-number-line-stage" class="clip" data-start="0" data-duration="34.2" data-track-index="1">
+      <svg data-hf-id="hf-yibw" id="f06-number-line-svg" viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+        <g data-hf-id="hf-ldd2" id="f06-number-line-drift">
+          <text data-hf-id="hf-y5ub" id="f06-number-line-title" x="120" y="110" class="f06-number-line-serif" font-size="44" font-style="italic" fill="#6B7488">Snap every dot to its nearest tick</text>
+
+          <!-- ruler -->
+          <line data-hf-id="hf-d1ns" id="f06-number-line-axis" x1="130" y1="480" x2="1790" y2="480" stroke="#6B7488" stroke-width="3" />
+          <g data-hf-id="hf-cy8t" id="f06-number-line-ticks" />
+          <g data-hf-id="hf-7teq" id="f06-number-line-idx" />
+
+          <!-- dots: ghosts, connectors, live dots -->
+          <g data-hf-id="hf-vacp" id="f06-number-line-ghosts" />
+          <g data-hf-id="hf-lnhk" id="f06-number-line-links" />
+          <g data-hf-id="hf-asah" id="f06-number-line-dots" />
+
+          <!-- captions of the idea -->
+          <text data-hf-id="hf-h4ca" id="f06-number-line-store" x="960" y="680" text-anchor="middle" class="f06-number-line-serif" font-size="46" font-style="italic" fill="#ECEEF2">store the tick number, not the exact value</text>
+          <text data-hf-id="hf-aqoc" id="f06-number-line-type" x="960" y="750" text-anchor="middle" class="f06-number-line-mono f06-number-line-pre" font-size="44" fill="#ECEEF2" />
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  <script>
+    (function () {
+      const NS = "http://www.w3.org/2000/svg";
+      const Y = 480, TX0 = 160, STEP = 1600 / 15;
+      const TX = (i) => TX0 + i * STEP;
+      const mk = (tag, attrs, parent) => {
+        const el = document.createElementNS(NS, tag);
+        for (const k in attrs) el.setAttribute(k, attrs[k]);
+        parent.appendChild(el);
+        return el;
+      };
+
+      // [raw x, raw y, nearest tick] — positions from the confirmed sketch
+      const RAW = [[175,250,0],[1145.3,276,9],[545.6,302,4],[1515.9,328,13],[916.3,354,7],[316.6,250,1],[1286.9,276,11],[687.2,302,5],[1657.5,328,14],[1057.8,354,8],[458.1,250,3],[1428.4,276,12],[828.8,302,6],[229.1,328,1],[1199.4,354,10],[599.7,250,4],[1570,276,13],[970.3,302,8],[370.6,328,2],[1341,354,11],[741.3,250,5],[1711.6,276,15],[1111.9,302,9],[512.2,328,3],[1482.5,354,12],[882.8,250,7],[283.1,276,1],[1253.5,302,10],[653.8,328,5],[1624.1,354,14],[1024.4,250,8],[424.7,276,2],[1395,302,12],[795.3,328,6]];
+
+      const ticksG = document.getElementById("f06-number-line-ticks");
+      const idxG = document.getElementById("f06-number-line-idx");
+      const ghostG = document.getElementById("f06-number-line-ghosts");
+      const linkG = document.getElementById("f06-number-line-links");
+      const dotG = document.getElementById("f06-number-line-dots");
+
+      const ticks = [], idx = [];
+      for (let i = 0; i < 16; i++) {
+        ticks.push(mk("line", { x1: TX(i), y1: Y - 22, x2: TX(i), y2: Y + 22, stroke: "#ECEEF2", "stroke-width": 3 }, ticksG));
+        const t = mk("text", { x: TX(i), y: 542, "text-anchor": "middle", "font-size": 26, fill: "#E88CC4", class: "f06-number-line-mono" }, idxG);
+        t.textContent = String(i);
+        idx.push(t);
+      }
+
+      const dots = RAW.map(([x, y, k]) => {
+        const ghost = mk("circle", { cx: x, cy: y, r: 9, fill: "#58C4DD", opacity: 0 }, ghostG);
+        const link = mk("line", { x1: x, y1: y, x2: x, y2: y, stroke: "#58C4DD", "stroke-width": 1.5, "stroke-dasharray": "4 6", opacity: 0 }, linkG);
+        const wrap = mk("g", {}, dotG);
+        const dot = mk("circle", { cx: x, cy: y, r: 10, fill: "#58C4DD" }, wrap);
+        return { x, y, k, ghost, link, wrap, dot };
+      });
+
+      // snap order: a left-to-right wave; stack slots fill bottom-up in arrival order
+      const order = dots.map((d, i) => i).sort((a, b) => dots[a].x - dots[b].x);
+      const filled = new Array(16).fill(0);
+      const SNAP0 = 14.6, SNAP_STAGGER = 0.06, SNAP_DUR = 0.7;
+      order.forEach((di, rank) => {
+        const d = dots[di];
+        d.tx = TX(d.k);
+        d.ty = 446 - 24 * filled[d.k]++;
+        d.snapAt = SNAP0 + rank * SNAP_STAGGER;
+      });
+
+      const axis = document.getElementById("f06-number-line-axis");
+      const axisLen = 1660;
+      axis.style.strokeDasharray = axisLen;
+
+      // typewriter line, one tspan per character
+      const typeEl = document.getElementById("f06-number-line-type");
+      const chars = [];
+      [["0.4817…", "#58C4DD"], ["  →  ", "#ECEEF2"], ["tick 7", "#E88CC4"]].forEach(([str, col]) => {
+        for (const ch of str) {
+          const ts = mk("tspan", { fill: col, opacity: 0 }, typeEl);
+          ts.textContent = ch;
+          chars.push(ts);
+        }
+      });
+
+      const tl = gsap.timeline({ paused: true });
+
+      // 0.2 title
+      tl.fromTo("#f06-number-line-title", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, 0.2);
+
+      // 2.2 axis draws left→right
+      tl.fromTo(axis, { strokeDashoffset: axisLen }, { strokeDashoffset: 0, duration: 1.0, ease: "power1.inOut" }, 2.2);
+
+      // 2.4 dots fade in at raw positions (stagger ≤ 0.5s total), then float gently until their snap
+      dots.forEach((d, i) => {
+        const t0 = 2.4 + i * (0.5 / 33);
+        tl.fromTo(d.dot, { opacity: 0, attr: { r: 4 } }, { opacity: 1, attr: { r: 10 }, duration: 0.5, ease: "power2.out" }, t0);
+
+        const amp = 4 * (i % 2 ? 1 : -1);
+        const half = 0.8 + (i % 5) * 0.14;
+        let t = 3.0 + (i * 0.13) % 0.7;
+        let dir = 1, first = true;
+        while (t + half < d.snapAt - 0.15) {
+          const vars = { y: amp * dir, duration: half, ease: "sine.inOut" };
+          if (first) { tl.fromTo(d.wrap, { y: 0 }, vars, t); first = false; }
+          else tl.to(d.wrap, vars, t);
+          t += half; dir = -dir;
+        }
+        if (first) tl.fromTo(d.wrap, { y: 0 }, { y: 0, duration: 0.01 }, t);
+        else tl.to(d.wrap, { y: 0, duration: Math.max(0.15, d.snapAt - t), ease: "sine.inOut" }, t);
+      });
+
+      // 7.4 ticks drop in from above
+      ticks.forEach((tk, i) => {
+        tl.fromTo(tk, { opacity: 0, y: -40 }, { opacity: 1, y: 0, duration: 0.55, ease: "back.out(1.6)" }, 7.4 + i * 0.04);
+      });
+
+      // 11.1 tick indices pop in pink
+      idx.forEach((t, i) => {
+        tl.fromTo(t, { opacity: 0, scale: 0.4, transformOrigin: "50% 50%" }, { opacity: 1, scale: 1, duration: 0.4, ease: "back.out(1.6)" }, 11.1 + i * 0.03);
+      });
+
+      // 14.6 SIGNATURE: every dot snaps to its nearest tick; ghost + dashed connector stay behind
+      dots.forEach((d) => {
+        const t = d.snapAt;
+        tl.fromTo(d.ghost, { opacity: 0 }, { opacity: 0.28, duration: 0.3, ease: "power2.out" }, t);
+        tl.fromTo(d.link, { opacity: 0 }, { opacity: 0.3, duration: 0.2 }, t);
+        tl.fromTo(d.link, { attr: { x2: d.x, y2: d.y } }, { attr: { x2: d.tx, y2: d.ty }, duration: SNAP_DUR, ease: "power2.inOut", immediateRender: false }, t);
+        tl.to(d.dot, { attr: { cx: d.tx, cy: d.ty }, duration: SNAP_DUR, ease: "power2.inOut" }, t);
+        // tiny landing settle on the tick
+        tl.to(d.dot, { attr: { r: 12 }, duration: 0.12, ease: "power2.out" }, t + SNAP_DUR - 0.05);
+        tl.to(d.dot, { attr: { r: 10 }, duration: 0.25, ease: "power2.out" }, t + SNAP_DUR + 0.07);
+      });
+
+      // 18.3 the idea line
+      tl.fromTo("#f06-number-line-store", { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.8, ease: "power2.out" }, 18.3);
+
+      // 23.1 "0.4817… → tick 7" types in, then tick 7 and its index pulse pink
+      chars.forEach((c, i) => {
+        tl.fromTo(c, { opacity: 0 }, { opacity: 1, duration: 0.02 }, 23.1 + i * 0.05);
+      });
+      const tTick = 23.1 + chars.length * 0.05 + 0.1;
+      tl.to(ticks[7], { stroke: "#E88CC4", duration: 0.25, ease: "power2.out" }, tTick);
+      tl.to(ticks[7], { stroke: "#ECEEF2", duration: 0.6, ease: "power1.inOut" }, tTick + 0.9);
+      tl.to(idx[7], { scale: 1.6, duration: 0.25, ease: "power2.out" }, tTick);
+      tl.to(idx[7], { scale: 1, duration: 0.6, ease: "power1.inOut" }, tTick + 0.9);
+
+      // 29.7 choosing the ruler: ticks brighten ink → yellow, then settle
+      ticks.forEach((tk, i) => {
+        tl.to(tk, { stroke: "#F4D35E", duration: 0.3, ease: "power2.out" }, 29.7 + i * 0.03);
+        tl.to(tk, { stroke: "#ECEEF2", duration: 0.8, ease: "power1.inOut" }, 31.2 + i * 0.03);
+      });
+
+      // ambient drift: whole board rises 6px across the scene
+      tl.fromTo("#f06-number-line-drift", { y: 0 }, { y: -6, duration: 33.2, ease: "sine.inOut" }, 0);
+
+      window.__timelines["f06-number-line"] = tl;
+    })();
+  </script>
+</template>

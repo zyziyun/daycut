@@ -1,0 +1,167 @@
+<template>
+  <style>
+    @font-face { font-family: "STIX Two Text"; src: url("assets/fonts/stix-two-text.ttf"); font-style: normal; font-weight: 400 700; }
+    @font-face { font-family: "STIX Two Text"; src: url("assets/fonts/stix-two-text-italic.ttf"); font-style: italic; font-weight: 400 700; }
+    #root { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; }
+    #f10-dequant-error-stage { position: absolute; inset: 0; width: 1920px; height: 1080px; }
+    #f10-dequant-error-svg { position: absolute; inset: 0; width: 1920px; height: 1080px; display: block; }
+    .f10-dequant-error-serif { font-family: "STIX Two Text", serif; }
+    .f10-dequant-error-mono { font-family: "JetBrains Mono", monospace; }
+  </style>
+
+  <div data-hf-id="hf-11wo" id="root" data-composition-id="f10-dequant-error" data-width="1920" data-height="1080" data-duration="39.75">
+    <div data-hf-id="hf-fn7n" id="f10-dequant-error-stage" class="clip" data-start="0" data-duration="39.75" data-track-index="1">
+      <svg data-hf-id="hf-56fo" id="f10-dequant-error-svg" viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+        <defs data-hf-id="hf-mh0t">
+          <clippath data-hf-id="hf-tguc" id="f10-dequant-error-bound-clip">
+            <rect data-hf-id="hf-gxju" id="f10-dequant-error-bound-wipe" x="300" y="690" width="520" height="90" />
+          </clippath>
+        </defs>
+        <g data-hf-id="hf-savi" id="f10-dequant-error-drift">
+          <text data-hf-id="hf-y7nb" id="f10-dequant-error-title" x="120" y="110" class="f10-dequant-error-serif" font-size="44" font-style="italic" fill="#6B7488">Step 4 · back again, and the error</text>
+
+          <!-- formula: x̂ = s · ( q − z ) -->
+          <text data-hf-id="hf-j34r" x="560" y="230" text-anchor="middle" class="f10-dequant-error-serif" font-size="76" fill="#ECEEF2">
+            <tspan data-hf-id="hf-cssm" id="f10-dequant-error-f-xh" fill="#58C4DD" font-style="italic">x̂</tspan><tspan data-hf-id="hf-lgmq" id="f10-dequant-error-f-eq"> = </tspan><tspan data-hf-id="hf-babl" id="f10-dequant-error-f-s" fill="#F4D35E" font-style="italic">s</tspan><tspan data-hf-id="hf-4g9z" id="f10-dequant-error-f-dot"> · </tspan><tspan data-hf-id="hf-enuy" id="f10-dequant-error-f-po">( </tspan><tspan data-hf-id="hf-8wr3" id="f10-dequant-error-f-q" fill="#E88CC4" font-style="italic">q</tspan><tspan data-hf-id="hf-gq8z" id="f10-dequant-error-f-minus"> − </tspan><tspan data-hf-id="hf-gq6j" id="f10-dequant-error-f-z" fill="#5CD0B3" font-style="italic">z</tspan><tspan data-hf-id="hf-z63d" id="f10-dequant-error-f-pc"> )</tspan>
+          </text>
+
+          <!-- worked example: 0.2 × (8 − 5) = 0.6 -->
+          <text data-hf-id="hf-c3mg" x="560" y="340" text-anchor="middle" class="f10-dequant-error-mono" font-size="44" fill="#ECEEF2">
+            <tspan data-hf-id="hf-zhi8" id="f10-dequant-error-ex-a">0.2 × (8 − 5)</tspan><tspan data-hf-id="hf-0u0r" id="f10-dequant-error-ex-b"> = 0.6</tspan>
+          </text>
+
+          <!-- ±s/2 band around 0.6 -->
+          <rect data-hf-id="hf-osp7" id="f10-dequant-error-band" x="360" y="470" width="400" height="120" fill="#FC6255" opacity="0.12" />
+          <line data-hf-id="hf-9e59" id="f10-dequant-error-edge-l" x1="360" y1="470" x2="360" y2="590" stroke="#FC6255" stroke-width="3" />
+          <line data-hf-id="hf-3vzb" id="f10-dequant-error-edge-r" x1="760" y1="470" x2="760" y2="590" stroke="#FC6255" stroke-width="3" />
+
+          <!-- zoomed ruler 0.4 – 0.8 -->
+          <line data-hf-id="hf-cemv" id="f10-dequant-error-axis" x1="130" y1="560" x2="990" y2="560" stroke="#6B7488" stroke-width="3" />
+          <g data-hf-id="hf-vd5h" id="f10-dequant-error-ticks" />
+
+          <!-- 0.51 dot, snap ghost, error bar -->
+          <circle data-hf-id="hf-9laj" id="f10-dequant-error-ghost" cx="380" cy="520" r="12" fill="none" stroke="#58C4DD" stroke-width="3" />
+          <g data-hf-id="hf-hhl2" id="f10-dequant-error-dot">
+            <circle data-hf-id="hf-noe8" cx="380" cy="520" r="12" fill="#58C4DD" />
+            <text data-hf-id="hf-kdqj" x="380" y="495" text-anchor="middle" class="f10-dequant-error-mono" font-size="28" fill="#58C4DD">0.51</text>
+          </g>
+          <line data-hf-id="hf-eq22" id="f10-dequant-error-bar" x1="380" y1="600" x2="560" y2="600" stroke="#FC6255" stroke-width="6" />
+          <text data-hf-id="hf-6zhv" id="f10-dequant-error-errlabel" x="470" y="650" text-anchor="middle" class="f10-dequant-error-mono" font-size="28" fill="#FC6255">error 0.09</text>
+
+          <text data-hf-id="hf-1u9v" id="f10-dequant-error-bound" x="560" y="750" text-anchor="middle" clip-path="url(#f10-dequant-error-bound-clip)" class="f10-dequant-error-serif" font-size="46" font-style="italic" fill="#FC6255">error ≤ s/2 = 0.1</text>
+
+          <!-- table -->
+          <text data-hf-id="hf-yr6n" id="f10-dequant-error-lab-q" x="1180" y="300" text-anchor="end" class="f10-dequant-error-serif" font-size="34" font-style="italic" fill="#E88CC4">q</text>
+          <text data-hf-id="hf-p7ju" id="f10-dequant-error-lab-xh" x="1180" y="380" text-anchor="end" class="f10-dequant-error-serif" font-size="34" font-style="italic" fill="#58C4DD">x̂</text>
+          <text data-hf-id="hf-51gq" id="f10-dequant-error-lab-x" x="1180" y="460" text-anchor="end" class="f10-dequant-error-serif" font-size="34" font-style="italic" fill="#6B7488">x</text>
+          <line data-hf-id="hf-vlno" id="f10-dequant-error-rule" x1="1140" y1="330" x2="1820" y2="330" stroke="#2A3247" stroke-width="2" />
+          <g data-hf-id="hf-yfnf" id="f10-dequant-error-table" />
+          <g data-hf-id="hf-v8ls" id="f10-dequant-error-unders" />
+
+          <text data-hf-id="hf-yjge" id="f10-dequant-error-within" x="1510" y="560" text-anchor="middle" class="f10-dequant-error-serif" font-size="34" font-style="italic" fill="#FC6255">every weight within 0.1</text>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  <script>
+    (function () {
+      const NS = "http://www.w3.org/2000/svg";
+      const mk = (tag, attrs, parent, txt) => {
+        const el = document.createElementNS(NS, tag);
+        for (const k in attrs) el.setAttribute(k, attrs[k]);
+        if (txt !== undefined) el.textContent = txt;
+        parent.appendChild(el);
+        return el;
+      };
+      const RX = (v) => 160 + (v - 0.4) * 2000; // zoomed ruler: 0.4 → 160, 0.8 → 960
+
+      // ruler ticks
+      const ticksG = document.getElementById("f10-dequant-error-ticks");
+      const ticks = [], tickLabels = [];
+      [0.4, 0.6, 0.8].forEach((v) => {
+        ticks.push(mk("line", { x1: RX(v), y1: 538, x2: RX(v), y2: 582, stroke: "#ECEEF2", "stroke-width": 3 }, ticksG));
+        tickLabels.push(mk("text", { x: RX(v), y: 622, "text-anchor": "middle", "font-size": 26, fill: "#6B7488", class: "f10-dequant-error-mono" }, ticksG, v.toFixed(1)));
+      });
+
+      // table
+      const tableG = document.getElementById("f10-dequant-error-table");
+      const undersG = document.getElementById("f10-dequant-error-unders");
+      const Q = ["0", "3", "5", "8", "12", "15"];
+      const XH = ["−1", "−0.4", "0", "0.6", "1.4", "2"];
+      const XV = ["−1", "−0.43", "0", "0.51", "1.37", "2"];
+      const qC = [], xhC = [], xC = [], unders = [];
+      for (let i = 0; i < 6; i++) {
+        const cx = 1250 + 105 * i;
+        qC.push(mk("text", { x: cx, y: 300, "text-anchor": "middle", "font-size": 34, "font-weight": 700, fill: "#E88CC4", class: "f10-dequant-error-mono" }, tableG, Q[i]));
+        xhC.push(mk("text", { x: cx, y: 380, "text-anchor": "middle", "font-size": 32, fill: "#58C4DD", class: "f10-dequant-error-mono" }, tableG, XH[i]));
+        xC.push(mk("text", { x: cx, y: 460, "text-anchor": "middle", "font-size": 26, fill: "#6B7488", class: "f10-dequant-error-mono" }, tableG, XV[i]));
+        unders.push(mk("line", { x1: cx - 42, y1: 480, x2: cx + 42, y2: 480, stroke: "#FC6255", "stroke-width": 3 }, undersG));
+      }
+
+      const tl = gsap.timeline({ paused: true });
+      const fadeIn = (t, at, d) => tl.fromTo(t, { fillOpacity: 0 }, { fillOpacity: 1, duration: d || 0.5, ease: "power2.out" }, at);
+
+      tl.fromTo("#f10-dequant-error-title", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, 0.2);
+
+      // formula by parts
+      fadeIn(["#f10-dequant-error-f-po", "#f10-dequant-error-f-q", "#f10-dequant-error-f-minus", "#f10-dequant-error-f-z", "#f10-dequant-error-f-pc"], 2.6);
+      fadeIn(["#f10-dequant-error-f-s", "#f10-dequant-error-f-dot"], 4.4);
+      fadeIn(["#f10-dequant-error-f-xh", "#f10-dequant-error-f-eq"], 5.6);
+
+      // worked example in two steps
+      fadeIn("#f10-dequant-error-ex-a", 6.9);
+      fadeIn("#f10-dequant-error-ex-b", 9.6);
+
+      // 11.7s zoomed ruler draws
+      tl.fromTo("#f10-dequant-error-axis", { scaleX: 0, transformOrigin: "0% 50%" }, { scaleX: 1, duration: 0.7, ease: "power2.out" }, 11.7);
+      ticks.forEach((t, i) => {
+        tl.fromTo(t, { opacity: 0, scaleY: 0, transformOrigin: "50% 50%" }, { opacity: 1, scaleY: 1, duration: 0.35, ease: "back.out(1.6)" }, 11.9 + i * 0.12);
+      });
+      tl.fromTo(tickLabels, { opacity: 0 }, { opacity: 1, duration: 0.4, stagger: 0.12 }, 12.0);
+
+      // 12.4s 0.51 dot appears
+      tl.fromTo("#f10-dequant-error-dot", { opacity: 0, y: -30 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, 12.4);
+
+      // 13.6s snap toward 0.6; error bar draws between
+      tl.fromTo("#f10-dequant-error-ghost", { opacity: 0, x: 0 }, { opacity: 1, x: RX(0.6) - RX(0.51), duration: 0.6, ease: "power2.inOut" }, 13.6);
+      tl.fromTo("#f10-dequant-error-bar", { scaleX: 0, transformOrigin: "0% 50%" }, { scaleX: 1, duration: 0.6, ease: "power2.inOut" }, 13.6);
+      tl.fromTo("#f10-dequant-error-errlabel", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 14.4);
+
+      // 17.0s table: q row first
+      tl.fromTo(["#f10-dequant-error-lab-q", "#f10-dequant-error-lab-xh"], { opacity: 0 }, { opacity: 1, duration: 0.5 }, 17.0);
+      tl.fromTo("#f10-dequant-error-rule", { scaleX: 0, transformOrigin: "0% 50%" }, { scaleX: 1, duration: 0.6, ease: "power2.out" }, 17.0);
+      qC.forEach((c, i) => {
+        tl.fromTo(c, { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" }, 17.2 + i * 0.12);
+      });
+      // x̂ row cascades with the spoken list 19.9 → 24.5
+      const XH_T = [19.9, 20.8, 21.7, 22.6, 23.6, 24.5];
+      xhC.forEach((c, i) => {
+        tl.fromTo(c, { opacity: 0, y: -14 }, { opacity: 1, y: 0, duration: 0.45, ease: "power2.out" }, XH_T[i]);
+      });
+      // 24.8s dim x row underneath
+      tl.fromTo(["#f10-dequant-error-lab-x"].concat(xC), { opacity: 0 }, { opacity: 1, duration: 0.6, ease: "power2.out" }, 24.8);
+
+      // 27.7s ±s/2 band
+      tl.fromTo("#f10-dequant-error-band", { opacity: 0 }, { opacity: 0.12, duration: 0.7, ease: "power2.out" }, 27.7);
+
+      // 29.7s bound writes in, band edges flash
+      tl.fromTo("#f10-dequant-error-bound-wipe", { attr: { width: 0 } }, { attr: { width: 520 }, duration: 1.0, ease: "power1.inOut" }, 29.7);
+      tl.fromTo(["#f10-dequant-error-edge-l", "#f10-dequant-error-edge-r"], { opacity: 0 }, { opacity: 1, duration: 0.25, ease: "power2.out" }, 29.9);
+      tl.to(["#f10-dequant-error-edge-l", "#f10-dequant-error-edge-r"], { opacity: 0.45, duration: 0.6, ease: "power1.inOut" }, 30.2);
+
+      // 35.1s every weight within 0.1; column underlines in sequence
+      tl.fromTo("#f10-dequant-error-within", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, 35.1);
+      unders.forEach((u, i) => {
+        tl.fromTo(u, { opacity: 0, scaleX: 0, transformOrigin: "50% 50%" }, { opacity: 1, scaleX: 1, duration: 0.3, ease: "power2.out" }, 35.4 + i * 0.1);
+        tl.to(u, { opacity: 0, duration: 0.5, ease: "power1.inOut" }, 36.4 + i * 0.1);
+      });
+
+      // ambient drift
+      tl.fromTo("#f10-dequant-error-drift", { y: 0 }, { y: -6, duration: 38.7, ease: "sine.inOut" }, 0);
+
+      window.__timelines["f10-dequant-error"] = tl;
+    })();
+  </script>
+</template>

@@ -1,0 +1,122 @@
+<template>
+  <style>
+    @font-face { font-family: "STIX Two Text"; src: url("assets/fonts/stix-two-text.ttf"); font-style: normal; font-weight: 400 700; }
+    @font-face { font-family: "STIX Two Text"; src: url("assets/fonts/stix-two-text-italic.ttf"); font-style: italic; font-weight: 400 700; }
+    #root { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; }
+    #f02-rounding-stage { position: absolute; inset: 0; width: 1920px; height: 1080px; }
+    #f02-rounding-svg { position: absolute; inset: 0; width: 1920px; height: 1080px; display: block; }
+    .f02-rounding-serif { font-family: "STIX Two Text", serif; }
+    .f02-rounding-mono { font-family: "JetBrains Mono", monospace; }
+    #f02-rounding-km { white-space: pre; }
+  </style>
+
+  <div data-hf-id="hf-nz3v" id="root" data-composition-id="f02-rounding" data-width="1920" data-height="1080" data-duration="33.95">
+    <div data-hf-id="hf-uf3m" id="f02-rounding-stage" class="clip" data-start="0" data-duration="33.95" data-track-index="1">
+      <svg data-hf-id="hf-858g" id="f02-rounding-svg" viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+        <defs data-hf-id="hf-mh0t">
+          <lineargradient data-hf-id="hf-o0z6" id="f02-rounding-grad" x1="0" y1="0" x2="1" y2="0">
+            <stop data-hf-id="hf-ht2r" offset="0" stop-color="rgb(40,60,110)" />
+            <stop data-hf-id="hf-mwvb" offset="1" stop-color="rgb(88,196,221)" />
+          </lineargradient>
+          <clippath data-hf-id="hf-mczl" id="f02-rounding-smoothclip">
+            <rect data-hf-id="hf-756i" id="f02-rounding-smoothclip-rect" x="720" y="200" width="0" height="150" />
+          </clippath>
+        </defs>
+        <g data-hf-id="hf-7e5c" id="f02-rounding-drift">
+          <text data-hf-id="hf-6eh0" id="f02-rounding-title" x="120" y="110" class="f02-rounding-serif" font-size="44" font-style="italic" fill="#6B7488">You already round things all the time</text>
+
+          <!-- everyday rounding column -->
+          <g data-hf-id="hf-a0rj" id="f02-rounding-col">
+            <text data-hf-id="hf-frjh" id="f02-rounding-price" x="330" y="260" text-anchor="middle" class="f02-rounding-mono" font-size="72" fill="#58C4DD">$3.99</text>
+            <path data-hf-id="hf-ody7" id="f02-rounding-arrow" d="M330 288 L330 326 M318 313 L330 327 L342 313" fill="none" stroke="#6B7488" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+            <text data-hf-id="hf-b6d8" id="f02-rounding-four" x="330" y="420" text-anchor="middle" class="f02-rounding-mono" font-size="72" fill="#F4D35E">≈ $4</text>
+            <text data-hf-id="hf-h2pj" id="f02-rounding-km" x="330" y="530" text-anchor="middle" class="f02-rounding-mono" font-size="34" fill="#ECEEF2" />
+          </g>
+
+          <!-- gradient bars -->
+          <g data-hf-id="hf-l5bh" id="f02-rounding-bars">
+            <text data-hf-id="hf-e4sp" id="f02-rounding-smooth-label" x="720" y="180" class="f02-rounding-mono" font-size="30" fill="#ECEEF2">millions of shades</text>
+            <rect data-hf-id="hf-p14r" id="f02-rounding-smooth" x="720" y="200" width="1080" height="150" fill="url(#f02-rounding-grad)" clip-path="url(#f02-rounding-smoothclip)" />
+            <text data-hf-id="hf-xnsi" id="f02-rounding-bands-label" x="720" y="400" class="f02-rounding-mono" font-size="30" fill="#F4D35E">just 16 shades</text>
+            <g data-hf-id="hf-jvsx" id="f02-rounding-bands" />
+          </g>
+
+          <text data-hf-id="hf-h81c" id="f02-rounding-line" x="1260" y="680" text-anchor="middle" class="f02-rounding-serif" font-size="40" font-style="italic" fill="#ECEEF2">rougher · same picture · much smaller</text>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  <script>
+    (function () {
+      const NS = "http://www.w3.org/2000/svg";
+      const mk = (tag, attrs, parent) => {
+        const el = document.createElementNS(NS, tag);
+        for (const k in attrs) el.setAttribute(k, attrs[k]);
+        parent.appendChild(el);
+        return el;
+      };
+
+      // 16 posterized bands, colours sampled from the smooth ramp
+      const bandsG = document.getElementById("f02-rounding-bands");
+      const bands = [];
+      for (let i = 0; i < 16; i++) {
+        const t = i / 15;
+        const r = Math.round(40 + (88 - 40) * t);
+        const g = Math.round(60 + (196 - 60) * t);
+        const b = Math.round(110 + (221 - 110) * t);
+        bands.push(mk("rect", { x: 720 + i * 67.5, y: 420, width: 67.6, height: 150, fill: "rgb(" + r + "," + g + "," + b + ")" }, bandsG));
+      }
+
+      // km line as per-character tspans (typed in)
+      const km = document.getElementById("f02-rounding-km");
+      const kmChars = "52.7 km  →  ≈ 50 km".split("").map((ch) => {
+        const s = mk("tspan", {}, km);
+        s.textContent = ch;
+        return s;
+      });
+
+      const arrow = document.getElementById("f02-rounding-arrow");
+      const arrowLen = arrow.getTotalLength();
+      arrow.style.strokeDasharray = arrowLen;
+
+      const tl = gsap.timeline({ paused: true });
+
+      // 0.2s title
+      tl.fromTo("#f02-rounding-title", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, 0.2);
+
+      // 4.2s "$3.99" fades up; 5.8s arrow draws, "≈ $4" pops
+      tl.fromTo("#f02-rounding-price", { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.7, ease: "power2.out" }, 4.1);
+      tl.fromTo(arrow, { strokeDashoffset: arrowLen }, { strokeDashoffset: 0, duration: 0.45, ease: "power1.inOut" }, 5.8);
+      tl.fromTo("#f02-rounding-four", { opacity: 0, scale: 0.6, transformOrigin: "50% 60%" }, { opacity: 1, scale: 1, duration: 0.5, ease: "back.out(1.6)" }, 6.15);
+
+      // 8.0s km line types in
+      kmChars.forEach((c, i) => {
+        tl.fromTo(c, { opacity: 0 }, { opacity: 1, duration: 0.03, ease: "none" }, 7.95 + i * 0.06);
+      });
+
+      // 15.0s smooth gradient wipes in left->right + label
+      tl.fromTo("#f02-rounding-smoothclip-rect", { attr: { width: 0 } }, { attr: { width: 1080 }, duration: 1.4, ease: "power1.inOut" }, 15.0);
+      tl.fromTo("#f02-rounding-smooth-label", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, 15.3);
+
+      // 20.0s 16 bands wipe in band by band + label
+      bands.forEach((b, i) => {
+        tl.fromTo(b, { opacity: 0, scaleX: 0, transformOrigin: "0% 50%" }, { opacity: 1, scaleX: 1, duration: 0.3, ease: "power2.out" }, 19.95 + i * 0.05);
+      });
+      tl.fromTo("#f02-rounding-bands-label", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, 20.1);
+
+      // 24.5s italic line fades up
+      tl.fromTo("#f02-rounding-line", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.8, ease: "power2.out" }, 24.4);
+
+      // 28.1s bars + column dim, leaving the line as focus
+      tl.to("#f02-rounding-bars", { opacity: 0.75, duration: 0.7, ease: "power1.inOut" }, 28.1);
+      tl.to("#f02-rounding-col", { opacity: 0.55, duration: 0.7, ease: "power1.inOut" }, 28.1);
+
+      // ambient drift: whole board rises 6px across the scene
+      tl.fromTo("#f02-rounding-drift", { y: 0 }, { y: -6, duration: 33.1, ease: "sine.inOut" }, 0);
+
+      window.__timelines["f02-rounding"] = tl;
+    })();
+  </script>
+</template>

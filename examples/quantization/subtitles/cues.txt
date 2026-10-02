@@ -1,0 +1,179 @@
+# Bilingual cue pairs. Per narration line: "EN || ZH". EN chunks concatenated must equal the spoken text.
+## 1
+Here's a strange fact. || 一个奇怪的事实：
+A language model with seventy billion parameters || 一个有 700 亿参数的语言模型，
+needs about a hundred and forty gigabytes of memory, just to sit there. || 光是放着就需要大约 140GB 内存。
+A good graphics card has twenty-four. || 而一块好显卡只有 24GB。
+And yet, people run models like this on laptops. || 可人们却能在笔记本上运行这样的模型。
+The trick is called quantization. || 这个技巧叫做"量化"。
+And at its heart, it's something you learned in primary school. Rounding. || 它的核心，是你小学就学过的东西——四舍五入。
+## 2
+Before any math, notice that you round things all the time. || 先不谈数学。你其实一直在四舍五入：
+A price of three ninety-nine is basically four dollars. || 3.99 元基本就是 4 元；
+A drive of fifty-two point seven kilometres is about fifty. || 52.7 公里大约就是 50 公里。
+You lose a little detail, and you keep the meaning. || 丢掉一点细节，意思却保留了。
+Computers do this too. A smooth colour gradient can use millions of shades. || 计算机也这样做：一段平滑的渐变可以有几百万种颜色，
+Squeeze it down to just sixteen, and you see a few steps, || 压缩到只剩 16 种，你会看到几道台阶，
+but it's clearly the same picture. Rougher, yes, and much, much smaller. || 但显然还是同一张图。更粗糙，但小得多。
+Quantization does exactly this, to the numbers inside an A I model. || 量化做的就是这件事——对象是 AI 模型里的数字。
+## 3
+So, what numbers are we talking about? || 那么，是哪些数字？
+Underneath, a neural network is a giant pile of numbers called weights. || 神经网络的底层，是一大堆叫做"权重"的数字。
+Each one is a decimal, like zero point three one, or minus one point two. || 每个都是小数，比如 0.31 或 −1.2。
+When the model thinks, it mostly multiplies its inputs by these weights and adds them up. || 模型"思考"时，主要就是把输入乘以权重再加起来，
+Billions of times. || 重复几十亿次。
+So the size of a model is simply the number of weights, times the space each one takes. || 所以模型大小 = 权重个数 × 每个权重占的空间。
+## 4
+And space is measured in bits. Think of a bit as a light switch. || 空间用"比特"衡量。把一个比特想象成电灯开关：
+One switch has two positions, off or on, so it can name two different values. || 一个开关有开、关两种状态，能表示 2 个不同的值。
+Add a second switch, and you get four combinations. Three switches, eight. || 再加一个开关，有 4 种组合；三个开关，8 种。
+Every new switch doubles the count. || 每多一个开关，数量翻倍。
+So with b bits, you can name two to the power b different values. || 所以 b 个比特能表示 2ᵇ 个不同的值。
+Four bits gives sixteen. Eight bits, two hundred and fifty-six. || 4 位是 16，8 位是 256，
+Sixteen bits, about sixty-five thousand. || 16 位大约 65000。
+Keep this doubling in mind. Every bit you remove halves your choices. || 记住这个翻倍规律：每去掉一位，可选的值少一半。
+## 5
+The standard way to store a weight, called F P thirty-two, uses thirty-two bits: || 存储权重的标准格式叫 FP32，用 32 位：
+one for the sign, eight for the size, and twenty-three for the fine detail. || 1 位符号、8 位表示大小、23 位表示精细部分。
+That's far more precision than a model really needs. || 这比模型真正需要的精度多得多。
+F P sixteen uses half as many bits, and it's what most models ship in today. || FP16 只用一半位数，也是如今大多数模型发布时的格式。
+But what if we went further, and stored each weight as a small whole number? || 但如果更进一步，把每个权重存成一个小整数呢？
+Int eight uses eight bits, so two hundred and fifty-six possible values. || INT8 用 8 位，有 256 种取值；
+Int four uses four bits, just sixteen. || INT4 用 4 位，只有 16 种。
+Seventy billion weights at four bits each is about thirty-five gigabytes. Suddenly, it fits. || 700 亿个权重 × 4 位 ≈ 35GB。一下子就装得下了。
+## 6
+So here's the core idea. || 核心思想是这样的：
+Picture all your weights as dots on a number line. They can sit anywhere. || 把所有权重想象成数轴上的点，它们可以落在任何位置。
+Now lay down a ruler with only a few tick marks, || 现在放一把只有少数刻度的尺子，
+say sixteen, evenly spaced across the range. || 比如 16 个刻度，均匀分布在整个范围上。
+Quantization means snapping every dot to its nearest tick. || 量化就是：把每个点"吸"到离它最近的刻度上。
+Instead of storing the exact value, you store which tick it landed on, || 我们不再存精确值，只存它落在第几个刻度——
+a small integer from zero to fifteen. || 一个 0 到 15 的小整数。
+That's it. That's the whole principle. || 就这么简单，这就是全部原理。
+Everything else is about choosing the ruler well. || 剩下的一切，都是在研究怎么把尺子选好。
+## 7
+Let's do one by hand. Here are six weights. || 我们手算一遍。这里有 6 个权重，
+The smallest is minus one, the largest is two. || 最小是 −1，最大是 2。
+We have four bits, so sixteen ticks, numbered zero to fifteen. || 我们有 4 位，所以 16 个刻度，编号 0 到 15。
+Between the first tick and the last, there are fifteen gaps. || 第一个刻度和最后一个之间有 15 个间隔。
+The full range is two minus minus one, which is three. || 整个范围是 2 −（−1）= 3。
+Three, shared across fifteen gaps, gives a step of zero point two. || 3 分成 15 份，每一步是 0.2。
+That step is called the scale, written s. || 这一步的大小叫做"缩放因子" s。
+It answers one question: how much real value does one integer step stand for? || 它回答的是：整数每走一步，代表多少真实数值？
+## 8
+Next, where does zero go? || 接下来，零放在哪里？
+Our ruler starts at minus one, so real zero sits five steps up. || 尺子从 −1 开始，所以真实的 0 在往上 5 步的位置。
+Minus one, divided by zero point two, is minus five. Flip the sign, and you get five. || −1 ÷ 0.2 = −5，取反得 5。
+That number is the zero-point, z. || 这个数叫"零点" z，
+It's the integer that stands for the real value zero. || 它是代表真实数值 0 的那个整数。
+Keeping zero exact matters, because networks are full of zeros, || 让 0 保持精确很重要，因为网络里到处都是 0，
+and we never want nothing to quietly turn into something. || 我们不希望"没有"悄悄变成"有"。
+## 9
+Now the recipe. To quantize a weight x, divide by the scale, || 现在是公式。量化一个权重 x：除以缩放因子，
+round to the nearest whole number, then add the zero-point. || 四舍五入到整数，再加上零点。
+q equals round of x over s, plus z. || q = round(x / s) + z
+Take zero point five one. Divided by zero point two, that's two point five five. || 以 0.51 为例：0.51 ÷ 0.2 = 2.55，
+Round it, three. Add five, eight. || 四舍五入得 3，加 5 得 8。
+So zero point five one is stored as the integer eight. || 所以 0.51 被存成整数 8。
+Let's check two more. || 再验算两个：
+Minus zero point four three, divided by zero point two, is minus two point one five. || −0.43 ÷ 0.2 = −2.15，
+Round it, minus two. Add five, three. || 取整得 −2，加 5 得 3。
+And one point three seven, divided by zero point two, is six point eight five. || 1.37 ÷ 0.2 = 6.85，
+Round it, seven. Add five, twelve. || 取整得 7，加 5 得 12。
+Do this for every weight, and our six decimals become || 每个权重都这样算，6 个小数就变成了
+zero, three, five, eight, twelve, and fifteen. Each fits in just four bits. || 0、3、5、8、12、15，每个只占 4 位。
+## 10
+When the model runs, we go backwards. || 模型运行时，我们反过来算：
+Subtract the zero-point, and multiply by the scale. || 减去零点，再乘以缩放因子。
+Eight minus five is three. Three times zero point two is zero point six. || 8 − 5 = 3，3 × 0.2 = 0.6。
+We stored zero point five one, and we got back zero point six. A small error. || 存进去的是 0.51，取回来的是 0.6，有一点误差。
+Do it for the whole list, and we get back || 整个列表都这样算，得到
+minus one, minus zero point four, zero, zero point six, one point four, and two. || −1、−0.4、0、0.6、1.4、2。
+And here's the guarantee. || 这里有个保证：
+Because we always round to the nearest tick, || 因为总是取最近的刻度，
+the error can never be more than half a step. Here, that's zero point one. || 误差永远不会超过半步——这里就是 0.1。
+Every single weight lands within zero point one of where it started. || 每一个权重，都落在原值 0.1 的范围之内。
+## 11
+But a model has billions of weights. || 但模型有几十亿个权重，
+Why don't all these little errors pile up into a big one? || 这些小误差为什么不会累积成大误差？
+Remember what the model does: it multiplies each input by a weight, and adds everything up. || 还记得吗：每个输入乘以一个权重，再全部加起来。
+Let's try it with our six weights and six inputs. || 我们用这 6 个权重和 6 个输入试试：
+With the exact weights, the total is one. || 用精确权重，总和是 1；
+With the rounded weights, the total is also one. || 用取整后的权重，总和也是 1。
+Look at the errors. || 看看误差：
+Two of the products came out a little too high, one came out a little too low, || 有两个乘积偏大了一点，一个偏小了一点，
+and they cancelled out. Here they cancel perfectly. || 它们互相抵消了。这里恰好完全抵消；
+In a real model they cancel most of the time, not always. || 在真实模型里，大多数时候会抵消，但不是每次。
+But the model doesn't need every weight to be perfect. || 模型不需要每个权重都完美，
+It needs the sums to be about right. That's why it barely notices. || 只需要"和"大致正确。所以它几乎察觉不到。
+## 12
+What we just did is called asymmetric quantization. || 刚才这种叫"非对称量化"：
+The range can be lopsided, minus one to two, and the zero-point shifts to match. || 范围可以不对称（−1 到 2），零点随之移动。
+Its simpler cousin is symmetric quantization. || 它更简单的兄弟是"对称量化"：
+Balance the range around zero, from minus the biggest value to plus the biggest value, || 让范围以 0 为中心，从 −最大值 到 +最大值，
+and pin the zero-point at zero. || 零点固定为 0。
+With four bits, we'd use the integers minus seven to seven. || 用 4 位的话，整数取 −7 到 7。
+Our biggest value is two, so the scale is two divided by seven, about zero point two nine. || 最大值是 2，所以缩放因子是 2 ÷ 7 ≈ 0.29。
+Now the formula is just q equals round of x over s. || 公式就变成 q = round(x / s)。
+Less bookkeeping, faster math, || 记账更少、计算更快，
+but the ticks below minus one are wasted, because no weight lives there. || 但 −1 以下的刻度被浪费了，因为没有权重落在那里。
+Weights are usually balanced, so they tend to go symmetric. || 权重通常比较对称，所以常用对称量化；
+Activations, the values flowing through the network, are often lopsided, so they often go asymmetric. || 激活值（网络中流动的数值）往往偏向一边，所以常用非对称量化。
+## 13
+Now, the real enemy: outliers. || 现在说说真正的敌人：离群值。
+Imagine most weights live between minus one and one, but one strange weight is ten. || 假设大部分权重在 −1 到 1 之间，但有一个奇怪的权重是 10。
+Our ruler now has to stretch from minus one all the way to ten. || 尺子现在必须从 −1 一直拉到 10。
+That's a range of eleven, split into fifteen steps, so each step is about zero point seven three. || 范围是 11，分成 15 步，每一步大约 0.73。
+Every ordinary weight between minus one and one now lands on one of just three ticks. || −1 到 1 之间的普通权重，现在只能落在 3 个刻度上。
+Zero point one, zero point two, and zero point three all become exactly the same number. || 0.1、0.2、0.3 全都变成了同一个数。
+One outlier, and almost all the precision is gone. || 一个离群值，几乎所有精度都没了。
+And large language models really do have outliers like this. || 而大语言模型里，真的有这样的离群值。
+## 14
+The fix is to use more rulers. || 解决办法是：多用几把尺子。
+Per-tensor quantization uses one scale for an entire layer, so one outlier hurts everybody. || 逐张量量化整层共用一个缩放因子，一个离群值伤到所有人；
+Per-channel gives every row of the weight matrix its own scale, || 逐通道让权重矩阵的每一行有自己的缩放因子，
+so the outlier only hurts its own row. || 离群值只伤到自己那一行；
+Per-group goes further, with a fresh scale for every small block, often a hundred and twenty-eight weights. || 分组量化更进一步：每一小块（常见 128 个权重）一个新的缩放因子。
+Now an outlier only ruins its own little neighbourhood, and everyone else keeps a fine ruler. || 这样离群值只毁掉自己那一小片，其他人都保留精细的尺子。
+The price is storing those extra scales. || 代价是要多存这些缩放因子：
+For groups of a hundred and twenty-eight, that's only about an eighth of a bit more per weight. || 每 128 个一组，每个权重只多大约 1/8 位。
+A tiny cost, and a big part of what makes four-bit models actually work. || 代价很小，却是 4 位模型真正可用的关键之一。
+## 15
+There's also the question of when to quantize. || 还有一个问题：什么时候量化？
+Post-training quantization, or P T Q, takes a finished model and converts it. || 训练后量化（PTQ）拿一个训练好的模型直接转换。
+For the weights that's easy, because we can just look at them. || 权重很简单，直接看就行；
+Activations change with every input, so we run a few hundred sample sentences through the model || 激活值随每个输入而变，所以让几百个样本句子跑过模型，
+and record their typical ranges. That's called calibration. || 记录它们的典型范围——这叫"校准"。
+P T Q is quick, and needs no retraining. || PTQ 速度快，不需要重新训练。
+Quantization-aware training, or Q A T, fakes the rounding during training itself, || 量化感知训练（QAT）在训练过程中就模拟四舍五入，
+so the model learns to live with it. || 让模型学会适应它。
+More work, but better accuracy at very low bits. || 工作量更大，但在极低位数下精度更好。
+You also choose what to quantize. Just the weights, which saves memory. || 你还要选择量化什么：只量化权重，省内存；
+Or weights and activations together, which also lets the hardware use fast integer math. || 或者权重和激活值一起量化，还能让硬件用更快的整数运算。
+## 16
+You'll find these ideas inside popular tools. || 这些思想就藏在常用工具里。
+G P T Q quantizes one column at a time, || GPTQ 一次量化一列，
+and nudges the remaining weights to cancel out the error it just made. || 并微调剩下的权重来抵消刚产生的误差。
+A W Q notices that a few weights matter far more, because they meet large activations, || AWQ 发现少数权重格外重要（因为它们会遇到很大的激活值），
+and protects them before rounding. || 在取整前先保护它们。
+G G U F, the format used by llama dot c p p, stores per-group, four and five bit weights, || GGUF 是 llama.cpp 使用的格式，按组存储 4 位和 5 位权重，
+so models run on ordinary laptops. || 让模型能在普通笔记本上运行。
+And bits and bytes lets you load a model in eight or four bits with a single line of code. || bitsandbytes 则让你一行代码就能以 8 位或 4 位加载模型。
+## 17
+So what do you actually gain? || 那到底能得到什么？
+Going from sixteen bits to eight halves the memory, with almost no loss in quality. || 从 16 位降到 8 位，内存减半，质量几乎不变。
+Four bits cuts it to a quarter, usually with a small drop. || 4 位只要四分之一，通常只有一点下降。
+Below that, at three or two bits, quality falls off fast, unless you use special tricks. || 再往下到 3 位、2 位，质量会迅速下滑，除非用特殊技巧。
+Smaller weights also mean faster answers, || 权重更小，回答也更快，
+because the bottleneck is often just moving numbers out of memory. || 因为瓶颈往往只是把数字从内存里搬出来。
+And that means lower cost, less energy, || 这意味着更低的成本、更少的能耗，
+and models that run on your own phone, offline and private. || 以及能在你自己手机上离线、私密运行的模型。
+## 18
+Let's put it all together. || 我们把它串起来：
+Pick a range, and split it into steps. That's your scale. || 选一个范围，分成若干步——这是缩放因子。
+Mark where zero lives. That's your zero-point. || 标出 0 在哪里——这是零点。
+Divide, round, shift, and store small integers. Multiply back when you need them. || 除、取整、平移，存成小整数；需要时再乘回来。
+The error is at most half a step, the errors mostly cancel, || 误差最多半步，而且大多会互相抵消；
+and with smart choices about ranges, groups, and outliers, the model hardly feels it. || 只要在范围、分组和离群值上选得聪明，模型几乎感觉不到。
+Quantization is rounding, done cleverly. || 量化，就是聪明的四舍五入。
+A little precision, traded for a model you can actually run. || 用一点点精度，换来一个你真正跑得动的模型。

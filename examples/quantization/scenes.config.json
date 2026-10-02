@@ -1,0 +1,145 @@
+{
+ "scenes": [
+  {
+   "id": "f01-hook",
+   "transition": null,
+   "shots": "Scene title \"Why can't a laptop run a 70B model?\" fades in at 0.2s.\n- 2.7s (\"70 billion parameters\"): the tall blue bar grows from the baseline (scaleY 0→1, transform-origin bottom, 1.6s power2.out); its \"140 GB\" label counts up 0→140 in sync (mono, tabular-nums) and \"70B model · FP16\" appears under it.\n- 9.0s (\"graphics card has 24\"): the teal GPU outline box draws on (stroke-dashoffset) with \"24 GB\" counting up and \"your GPU\" under it.\n- 10.5s: the red dashed line at the GPU top draws left→right and \"won't fit\" fades in; the blue bar gets a 2-frame red tint pulse (fill to #FC6255 at 25% blend then back) — subtle.\n- 14.5s (\"quantization\"): \"3.14159\" types in digit by digit at right (blue mono).\n- 18.6s (\"Rounding.\"): the ↓ arrow draws, then the big yellow serif \"3\" pops (back.out) — this is the button of the scene.\nAmbient: whole group drifts up 6px over the scene."
+  },
+  {
+   "id": "f02-rounding",
+   "transition": [
+    "blur",
+    0.8
+   ],
+   "shots": "Scene title fades in at 0.2s.\n- 4.2s (\"$3.99\"): \"$3.99\" (blue) fades up; at 5.8s the ↓ draws and \"≈ $4\" (yellow) pops.\n- 8.0s (\"52.7 kilometres\"): the \"52.7 km → ≈ 50 km\" line types in (mono).\n- 15.0s (\"smooth colour gradient\"): the smooth gradient bar wipes in left→right (clip-path inset or scaleX from left, 1.4s) with its label \"millions of shades\".\n- 20.0s (\"Squeeze it down to just 16\"): the 16-band posterized bar wipes in left→right beneath it, band by band (stagger ≤ 0.05s), label \"just 16 shades\" in yellow.\n- 24.5s (\"clearly the same picture\"): the italic line \"rougher · same picture · much smaller\" fades up.\n- 28.1s (\"Quantization does exactly this\"): both gradient bars dim slightly (opacity .75) and the price/km column dims, leaving the line as the focus."
+  },
+  {
+   "id": "f03-weights",
+   "transition": [
+    "push",
+    0.7
+   ],
+   "shots": "Scene title fades in at 0.2s.\n- 2.7s (\"giant pile of numbers called weights\"): the 3 input circles and Σ circle pop in (stagger 0.12s), then the three connections draw on from the inputs to Σ (stroke-dashoffset, 0.8s).\n- 6.6s (\"0.31, or −1.2\"): the weight labels 0.31, −1.2, 0.87 fade in on the connections, one per ~0.5s (0.31 at 6.8, −1.2 at 8.2, 0.87 at 9.0).\n- 10.8s (\"multiplies its inputs ... adds them up\"): small blue pulses travel along each connection into Σ (a dot moving along the line, 0.8s each, staggered 0.2s), Σ flashes ink→yellow→ink.\n- 16.7s (\"Billions of times\"): the 8×7 decimal grid at right fills in a fast waterfall (row by row, total ≤ 1.2s), then the whole grid subtly scales 1.0→0.96 to suggest \"many more\".\n- 18.2s (\"size of a model is simply...\"): the equation \"model size = # weights × bits per weight\" writes in term by term: \"model size =\" at 18.4, \"# weights\" (blue) at 20.3, \"×\" at 21.5, \"bits per weight\" (yellow) at 22.0."
+  },
+  {
+   "id": "f04-switches",
+   "transition": [
+    "vpush",
+    0.7
+   ],
+   "shots": "Scene title \"A bit is a light switch\" fades in at 0.2s.\n- 0.6s: row \"1 bit\" appears with its single switch (off). At 4.6s the switch flips on (knob slides from bottom to top, fill dim→yellow, 0.3s) and back off at 5.6s, then on again at 6.6s; \"→ 2 values\" pops at 7.5s.\n- 9.7s (\"second switch ... 4 combinations\"): row \"2 bits\" appears; its switches flip through 00,01,10,11 (0.35s each) then \"→ 4 values\" pops at 11.4s.\n- 12.6s (\"Three switches, eight\"): row \"3 bits\" appears with \"→ 8 values\".\n- 14.7s (\"doubles the count\"): the counts column 2, 4, 8 each pulse yellow briefly in sequence.\n- 17.5s (\"2ᵇ\"): the big \"2ᵇ\" writes in at right with \"values\" beneath and \"each switch doubles it\" (dim) at 20.0s.\n- 21.1s (\"4 bits gives 16\"): row \"4 bits\" appears with \"→ 16 values\".\n- 22.9s (\"8 bits, 256\"): row \"8 bits\" appears with \"→ 256 values\".\n- 25.2s (\"16 bits, about 65,000\"): a small dim line \"16 bits → 65,536\" appears beneath the stack (y≈740, mono 30px).\n- 28.2s (\"Every bit you remove halves\"): the 8-bit row's last switch fades to 30% and its count briefly shows \"128\" in red then returns to 256 (demonstrating halving), 1.6s total."
+  },
+  {
+   "id": "f05-formats",
+   "transition": [
+    "blur",
+    0.8
+   ],
+   "shots": "Scene title \"How many bits per number?\" fades in at 0.2s.\n- 0.4s (\"FP32, uses 32 bits\"): the FP32 strip builds cell by cell left→right (stagger 0.04s), \"FP32\" label first; \"280 GB\" counts up at right at 3.5s.\n- 5.0s (\"one for the sign, 8 for the size, 23\"): the three groups tint in order: sign cell red at 5.1, exponent cells yellow at 6.3, mantissa cells blue at 8.0, each with its small label beneath.\n- 12.8s (\"FP16\"): FP16 row builds (it reads as the strip collapsing to half), \"140 GB\" at right.\n- 23.5s (\"INT8 ... 256\"): INT8 row builds in pink, \"256 values\" then \"70 GB\".\n- 28.3s (\"INT4 ... just 16\"): INT4 row builds, \"16 values\", \"35 GB ✓\" in teal.\n- 31.2s (\"70 billion weights at 4 bits\"): the italic line \"70 billion × 4 bits ≈ 35 GB\" writes in; at 34.5s (\"Suddenly, it fits\") the INT4 row and \"35 GB ✓\" pulse teal once."
+  },
+  {
+   "id": "f06-number-line",
+   "transition": [
+    "iris",
+    1.1
+   ],
+   "shots": "Scene title \"Snap every dot to its nearest tick\" fades in at 0.2s.\n- 2.2s (\"dots on a number line\"): the axis line draws left→right (1.0s); the 34 blue dots fade in at their raw scattered positions (faint, as in the sketch's ghost dots but at full opacity first), stagger ≤ 0.5s total, with a gentle independent float (±4px sine, finite) on each.\n- 7.4s (\"lay down a ruler\"): the 16 ticks drop in from above (y −40 → 0, back.out, stagger 0.04s).\n- 11.1s (\"say 16, evenly spaced\"): tick indices 0–15 pop in pink beneath (stagger 0.03s).\n- 14.6s (\"snapping every dot to its nearest tick\"): THE signature move — each dot slides along a short straight path from its raw position down to its nearest tick, stacking (as in the sketch), stagger 0.06s, power2.inOut 0.7s each; the raw position stays behind as a 25% ghost with a dashed connector (draw the connectors as the dots move).\n- 18.3s (\"store which tick it landed on\"): \"store the tick number, not the exact value\" (italic) fades up.\n- 23.1s (\"a small integer from 0 to 15\"): \"0.4817… → tick 7\" types in; tick 7 and its index pulse pink.\n- 29.7s (\"choosing the ruler well\"): the ticks brighten (ink → yellow) briefly and settle."
+  },
+  {
+   "id": "f07-scale",
+   "transition": [
+    "zoom",
+    0.8
+   ],
+   "shots": "Scene title \"Step 1 · the scale s\" fades in at 0.2s. Ruler at y=470, x 260→1660 (same as sketch).\n- 0.4s (\"Here are 6 weights\"): the six blue dots drop in onto their values with labels −1, −0.43, 0, 0.51, 1.37, 2 (stagger 0.25s).\n- 4.0s (\"smallest is −1, largest is 2\"): the −1 dot and the 2 dot pulse (scale 1→1.4→1) one after another.\n- 6.9s (\"16 ticks, numbered 0 to 15\"): the 16 ticks pop up from the axis (stagger 0.04s).\n- 11.2s (\"15 gaps\"): the 15 gaps highlight one after another as yellow segments flickering along the axis (stagger 0.08s), then fade to nothing except the first gap.\n- 15.1s (\"full range is 2 − (−1) = 3\"): the range brace draws over the dots (stroke-dashoffset 1.0s) and \"range = 2 − (−1) = 3\" writes in above it.\n- 18.4s (\"shared across 15 gaps, gives a step of 0.2\"): the first gap's yellow bar + \"one step\" label appear; the equation \"s = 3 ÷ 15 gaps = 0.2\" builds term by term (s at 18.6, \"= 3 ÷ 15 gaps\" at 19.6, \"= 0.2\" at 21.3, yellow).\n- 22.7s (\"called the scale, written s\"): the yellow \"s\" in the equation scales 1→1.25→1."
+  },
+  {
+   "id": "f08-zero-point",
+   "transition": [
+    "fade",
+    0.45
+   ],
+   "shots": "Scene title \"Step 2 · the zero-point z\" fades in at 0.2s. Same ruler as frame 07 at y=470 (no dots this time), indices 0–15 shown from t=0 (it continues the previous board).\n- 2.4s (\"real 0 sits 5 steps up\"): five teal hop arcs draw one by one from tick 0 to tick 5 (0.45s each), each with its count number 1…5 popping above.\n- 6.5s: the teal vertical marker at tick 5 rises up with label \"real 0\" (italic).\n- 7.1s (\"−1 divided by 0.2 is −5. Flip the sign, 5\"): the equation \"z = −(−1.0 ÷ 0.2) = 5\" builds: \"z =\" at 7.3, \"−(−1.0 ÷ 0.2)\" at 8.4, \"= 5\" (teal) at 11.4.\n- 13.1s (\"zero-point, z\"): the \"z\" pulses.\n- 19.5s (\"Keeping 0 exact matters\"): the teal pill \"0 stays exactly 0\" draws on (stroke) and its text fades in."
+  },
+  {
+   "id": "f09-quantize",
+   "transition": [
+    "push",
+    0.7
+   ],
+   "shots": "Scene title \"Step 3 · quantize\" fades in at 0.2s.\n- 0.4s → 8.0s: the formula \"q = round( x / s ) + z\" writes in by parts as it is spoken: \"x / s\" at 1.6 (\"divide by the scale\"), \"round( … )\" at 4.6, \"+ z\" at 6.0, \"q =\" at 8.0. Colours per role.\n- 11.3s (\"Take 0.51\"): the chain row at y≈440 builds token by token on the voice: \"0.51\" at 11.4, \"÷ 0.2\" at 13.0, \"2.55\" at 14.6, \"round → 3\" at 16.5, \"+ 5\" at 17.6, \"8\" at 18.3 (pink, bold, pops).\n- 19.5s: in the table below, the x row shows all six values dimmed, and column \"0.51\" lights up with q=8 popping under it.\n- 22.7s (\"Let's check two more\"): the chain row cross-fades its numbers (old values fade out up 10px, new ones in) to: \"−0.43 → ÷ 0.2 → −2.15 → round → −2 → + 5 → 3\" with tokens on 23.9 / 25.4 / 27.0 / 29.1 / 30.4 / 31.0; then column −0.43 lights with q=3.\n- 32.2s: chain swaps again to \"1.37 → ÷ 0.2 → 6.85 → round → 7 → + 5 → 12\" (tokens on 32.2 / 34.0 / 35.4 / 36.9 / 38.0 / 38.6); column 1.37 lights with q=12.\n- 39.4s (\"Do this for every weight\"): remaining q values (0, 5, 15) waterfall in; at 43.0s the whole q row pulses pink once, and \"each q fits in 4 bits\" (dim) fades in at 46.0."
+  },
+  {
+   "id": "f10-dequant-error",
+   "transition": [
+    "push",
+    0.7
+   ],
+   "shots": "Scene title \"Step 4 · back again, and the error\" fades in at 0.2s.\n- 0.4s → 6.0s: formula \"x̂ = s · ( q − z )\" writes in by parts on the voice (\"( q − z )\" at 2.6, \"s ·\" at 4.4, \"x̂ =\" at 5.6).\n- 6.8s (\"8 minus 5 is 3. 3 times 0.2 is 0.6\"): \"0.2 × (8 − 5) = 0.6\" builds in two steps (to \"(8 − 5)\" at 6.9, \"= 0.6\" at 9.6).\n- 11.7s (\"We stored 0.51, got back 0.6\"): the zoomed ruler 0.4–0.8 draws; the blue 0.51 dot appears at 12.4, then a short animated snap toward the 0.6 tick leaves the red error bar drawing between them (13.6), \"error 0.09\" fades in at 14.4.\n- 17.0s (\"whole list\"): the table on the right fills: q row first, then x̂ row values cascade in left→right during 19.9–24.5 matching the spoken list, then the dim x row underneath fades in at 24.8.\n- 27.7s (\"round to the nearest tick\"): the light-red ±s/2 band fades in around the 0.6 tick.\n- 29.7s (\"never more than half a step... 0.1\"): \"error ≤ s/2 = 0.1\" writes in (red italic), the band edges flash.\n- 35.1s (\"Every single weight within 0.1\"): \"every weight within 0.1\" fades in under the table; each x̂/x column pair briefly underlines in red in sequence (stagger 0.1s)."
+  },
+  {
+   "id": "f11-errors-cancel",
+   "transition": [
+    "focus",
+    0.9
+   ],
+   "shots": "Scene title \"Why small errors don't pile up\" fades in at 0.2s.\n- 5.5s (\"multiplies each input by a weight, and adds\"): column headers \"input · exact w · rounded ŵ · error in product\" fade in.\n- 10.8s (\"our 6 weights and 6 inputs\"): the six rows' input and exact-w cells waterfall in (stagger 0.15s).\n- 13.7s (\"With the exact weights, the total is 1\"): the blue \"Σ = 1.00\" counts up from 0.00 to 1.00 (1.2s).\n- 16.2s (\"rounded weights, the total is also 1\"): the rounded ŵ column waterfalls in (stagger 0.12s), then the pink \"Σ = 1.00\" counts up to 1.00.\n- 19.1s (\"Look at the errors\"): the error column fills: zeros dim, +0.06 at 20.6, +0.03 at 22.0 (both \"too high\", red), −0.09 at 23.1 (\"too low\").\n- 24.5s (\"they cancelled out\"): the three red errors fly down into the sum line \"+0.06 − 0.09 + 0.03 = 0\" which writes in at y=770; the \"= 0\" pops.\n- 28.0s: \"errors mostly cancel\" (dim mono) fades in at right.\n- 34.7s (\"the sums to be about right\"): \"the sum / is what matters\" (italic, right) fades up; at 37.0 the two Σ values pulse together."
+  },
+  {
+   "id": "f12-sym-asym",
+   "transition": [
+    "blocks",
+    1.1
+   ],
+   "shots": "No top-left title; two headers \"Asymmetric\" (left) and \"Symmetric\" (right) fade in at 0.4s and 8.8s respectively; the faint centre divider draws top→bottom at 8.6s.\n- 0.4s: left ruler (−1 … 2, 16 ticks) slides in from the left (it is the same ruler as frames 07–08, now smaller); \"−1\" and \"2\" labels.\n- 3.2s (\"lopsided, −1 to 2, zero-point shifts\"): teal z marker rises at tick 5 with \"z = 5\"; left formula \"q = round(x/s) + z\" writes in at 6.0.\n- 12.1s (\"Balance the range around 0, from minus... to plus\"): right ruler draws outward from its centre (both halves grow from x=1440), labels \"−2\" and \"2\" appear at the ends at 14.0 and 15.4.\n- 17.1s (\"pin the zero-point at 0\"): teal \"z = 0\" marker rises at the centre.\n- 19.0s (\"integers −7 to 7\"): small pink indices −7 … 7 flash under the right ruler then fade to 40%.\n- 22.7s (\"scale is 2 ÷ 7 ≈ 0.29\"): \"INT4: −7…7 · s = 2/7 ≈ 0.29\" (yellow mono) writes in under the right formula.\n- 28.4s (\"formula is just q = round(x / s)\"): right formula writes in.\n- 34.4s (\"ticks below −1 are wasted\"): the left quarter of the right ruler's ticks dim to 35% and \"wasted\" (red) fades in beneath.\n- 38.5s (\"Weights ... symmetric\"): \"weights → usually\" fades in under the right side; 42.0s (\"Activations ... asymmetric\"): \"activations → often\" under the left."
+  },
+  {
+   "id": "f13-outlier",
+   "transition": [
+    "chroma",
+    0.8
+   ],
+   "shots": "Scene title \"The real enemy: one outlier\" fades in at 0.2s.\n- 3.4s (\"most weights live between −1 and 1\"): 22 blue dots appear clustered over the left of the ruler. Start state: the ruler spans only −1 … 1 (16 ticks evenly across x 200→1700, dots spread across it — precision looks fine).\n- 6.5s (\"one strange weight is 10\"): the red dot slides in from the right edge to x≈1700 with label \"10\".\n- 9.4s (\"stretch from −1 all the way to 10\"): THE signature move — the ruler re-scales: ticks spread out to the sketch spacing (100px apart, x 200→1700), while the blue dots compress toward the left end (x mapped by (v+1)/11·1500+200), over 2.5s power1.inOut. Everything moves together as one transform of the number line.\n- 13.6s (\"range of 11, 15 steps, each about 0.73\"): the equation \"s = (10 − (−1)) ÷ 15 ≈ 0.73\" writes in; the 0.73 counts up from 0.13 to 0.73.\n- 19.8s (\"lands on one of just 3 ticks\"): the dots snap to the 3 leftmost ticks (stack), the red rounded box draws around them and \"only 3 ticks\" fades in.\n- 24.6s (\"0.1, 0.2, and 0.3 all become the same\"): \"0.1 → 0\", \"0.2 → 0\", \"0.3 → 0\" appear one per 1.2s; at 28.6 \"same integer — the detail is gone\" (red italic) fades up."
+  },
+  {
+   "id": "f14-granularity",
+   "transition": [
+    "push",
+    0.7
+   ],
+   "shots": "Scene title \"The fix: more rulers\" fades in at 0.2s.\n- 0.6s: the three 6×8 weight matrices fade/scale in together (0.95→1), each with the red outlier cell at row 2, col 5.\n- 2.5s (\"Per-tensor ... one scale for an entire layer\"): left matrix: yellow outer border draws on, then the red damage tint floods the whole matrix (opacity 0→0.10); label \"per-tensor\" + \"1 scale · outlier hurts all\".\n- 8.0s (\"Per-channel ... every row its own scale\"): middle matrix: six yellow row borders draw top→bottom (stagger 0.1s); label at 8.6.\n- 11.8s (\"outlier only hurts its own row\"): red tint appears only on row 2 of the middle matrix.\n- 14.6s (\"Per-group ... every small block, 128 weights\"): right matrix: 3×4 yellow block borders draw (stagger 0.05s); label at 15.2; at 19.0 the red tint fills only the outlier's block.\n- 20.7s (\"only ruins its own little neighbourhood\"): the three red tints pulse once in sequence left→right, making the shrinking damage obvious.\n- 28.5s (\"about ⅛ of a bit more per weight\"): \"cost: ≈ 1/8 bit per weight\" fades in."
+  },
+  {
+   "id": "f15-ptq-qat",
+   "transition": [
+    "vpush",
+    0.7
+   ],
+   "shots": "Scene title \"When do you quantize?\" fades in at 0.2s.\n- 3.4s (\"Post-training quantization, or PTQ\"): \"PTQ\" label (yellow) appears; box \"train ✓\" draws at 4.0.\n- 8.7s (\"weights ... easy\"): arrow → draws.\n- 12.1s (\"Activations change ... sample sentences\"): \"calibrate (samples)\" box draws (blue); inside it, three small blue dots stream left→right twice (finite).\n- 17.1s (\"typical ranges. That's called calibration.\"): arrow → and \"quantize\" box (pink) draw.\n- 21.6s (\"quick, needs no retraining\"): \"fast · no retraining\" fades in.\n- 24.8s (\"Quantization-aware training, or QAT\"): \"QAT\" label (teal) and the long box \"train with fake rounding ↺\" draw; the ↺ rotates one full turn at 27.0 (finite, 1.2s).\n- 30.3s: arrow and \"quantize\" box draw on the QAT row.\n- 32.8s (\"better accuracy at very low bits\"): \"more work · better at low bits\" fades in.\n- 36.8s (\"Just the weights, saves memory\"): blue pill \"weights only → less memory\" draws on.\n- 40.6s (\"weights and activations together ... integer math\"): yellow pill \"+ activations → integer math\" draws on."
+  },
+  {
+   "id": "f16-methods",
+   "transition": [
+    "flip",
+    0.9
+   ],
+   "shots": "Scene title \"The same ideas, inside real tools\" fades in at 0.2s.\n- Cards rise one per name as it is spoken (y +40 → 0, opacity 0→1, 0.6s power2.out), each card's three mono lines typing in after the title:\n  - GPTQ (yellow) at 2.6s; lines at 3.4 / 6.7 / 8.0.\n  - AWQ (teal) at 10.7s; lines at 11.5 / 13.4 / 16.2.\n  - GGUF (blue) at 17.4s; lines at 18.4 / 21.0 / 24.9.\n  - bitsandbytes (pink) at 27.4s; lines at 28.0 / 29.3 / 30.5.\n- When a new card arrives, the previous card dims to 55% opacity (the active card stays lit). At 31.8s all four return to 100%."
+  },
+  {
+   "id": "f17-tradeoffs",
+   "transition": [
+    "blur",
+    0.8
+   ],
+   "shots": "Scene title \"What do you gain, and lose?\" fades in at 0.2s.\n- 0.4s: the baseline axis draws; the 16-bit bar (140 GB) grows.\n- 2.7s (\"16 bits to 8 halves the memory\"): the 8-bit bar grows (70 GB).\n- 7.5s (\"4 bits cuts it to a quarter\"): the 4-bit bar grows (35 GB).\n- 10.9s (\"Below that, at 3 or 2 bits\"): the 3-bit and 2-bit bars grow (26 GB, 18 GB).\n- Quality line: the yellow polyline draws left→right in segments as each bit-width is discussed: 16→8 segment at 4.5, 8→4 at 9.0, then 4→3→2 at 12.5 — visibly falling off the cliff (\"falls off fast\"). Legend \"quality\" / \"memory\" fades in at 4.0.\n- Add a small dim mono note \"illustrative\" under the legend (y≈280) at 4.0 — the curve is illustrative, not measured.\n- 16.5s (\"faster answers\"), 22.2s (\"lower cost, less energy\"), 24.3s (\"your own phone\"): the right-side list items appear in order: \"faster\" at 16.6, \"cheaper\" at 22.3, \"less energy\" at 23.4, \"on your phone\" at 24.4."
+  },
+  {
+   "id": "f18-recap",
+   "transition": [
+    "zoomout",
+    1.0
+   ],
+   "shots": "No title. FINAL SCENE: a settle/fade at the very end is allowed.\n- 0.4s: the ruler from frame 06 returns (axis draws, ticks pop, stagger 0.03s) with the six blue dots snapping onto their ticks (callback).\n- Recipe lines stack one per sentence (symbol pops first in its colour, then the text writes in):\n  - \"s · pick a range, split it into steps\" at 2.0s\n  - \"z · mark where zero lives\" at 7.4s\n  - \"q · divide · round · shift → store\" at 11.4s\n  - \"x̂ · multiply back when needed\" at 15.5s\n- 28.6s (\"Quantization is rounding, done cleverly.\"): the closing yellow italic line writes in (characters fade in left→right over 1.4s). This is the film's held frame: from 30.5s nothing moves except a 4px drift.\n- 34.7s → end: everything fades to 0 over 2.0s (final scene only)."
+  }
+ ]
+}

@@ -1,0 +1,91 @@
+<template>
+  <style>
+    @font-face { font-family: "STIX Two Text"; src: url("assets/fonts/stix-two-text.ttf"); font-style: normal; font-weight: 400 700; }
+    @font-face { font-family: "STIX Two Text"; src: url("assets/fonts/stix-two-text-italic.ttf"); font-style: italic; font-weight: 400 700; }
+    #root { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; }
+    #f16-methods-stage { position: absolute; inset: 0; width: 1920px; height: 1080px; }
+    #f16-methods-svg { position: absolute; inset: 0; width: 1920px; height: 1080px; display: block; }
+    .f16-methods-serif { font-family: "STIX Two Text", serif; }
+    .f16-methods-mono { font-family: "JetBrains Mono", monospace; }
+  </style>
+
+  <div data-hf-id="hf-z6qn" id="root" data-composition-id="f16-methods" data-width="1920" data-height="1080" data-duration="33.7">
+    <div data-hf-id="hf-17a4" id="f16-methods-stage" class="clip" data-start="0" data-duration="33.7" data-track-index="1">
+      <svg data-hf-id="hf-smul" id="f16-methods-svg" viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+        <g data-hf-id="hf-4k71" id="f16-methods-drift">
+          <text data-hf-id="hf-iyoz" id="f16-methods-title" x="120" y="110" class="f16-methods-serif" font-size="44" font-style="italic" fill="#6B7488">The same ideas, inside real tools</text>
+          <g data-hf-id="hf-lvih" id="f16-methods-cards" />
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  <script>
+    (function () {
+      const NS = "http://www.w3.org/2000/svg";
+      const mk = (tag, attrs, parent) => {
+        const el = document.createElementNS(NS, tag);
+        for (const k in attrs) el.setAttribute(k, attrs[k]);
+        parent.appendChild(el);
+        return el;
+      };
+
+      const CARDS = [
+        { name: "GPTQ", color: "#F4D35E", x: 110, t: 2.6, lineT: [3.4, 6.7, 8.0],
+          lines: ["one column at a time", "push the error onto", "the remaining weights"] },
+        { name: "AWQ", color: "#5CD0B3", x: 545, t: 10.7, lineT: [11.5, 13.4, 16.2],
+          lines: ["protect the few weights", "that meet big", "activations"] },
+        { name: "GGUF", color: "#58C4DD", x: 980, t: 17.4, lineT: [18.4, 21.0, 24.9],
+          lines: ["llama.cpp format", "per-group 4/5-bit", "runs on a laptop"] },
+        { name: "bitsandbytes", color: "#E88CC4", x: 1415, t: 27.4, lineT: [28.0, 29.3, 30.5],
+          lines: ["load_in_4bit=True", "one line of code", "8-bit or 4-bit"] }
+      ];
+
+      const parent = document.getElementById("f16-methods-cards");
+      const tl = gsap.timeline({ paused: true });
+
+      tl.fromTo("#f16-methods-title", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, 0.2);
+
+      const groups = [];
+      CARDS.forEach((c, k) => {
+        const g = mk("g", { id: "f16-methods-card" + k }, parent);
+        groups.push(g);
+        const cx = c.x + 197.5;
+        mk("rect", { x: c.x, y: 170, width: 395, height: 560, rx: 20, fill: "#121A30", stroke: c.color, "stroke-width": 3 }, g);
+        const head = mk("text", { x: cx, y: 260, "text-anchor": "middle", "font-size": 52, "font-weight": 700, fill: c.color, class: "f16-methods-serif" }, g);
+        head.textContent = c.name;
+        mk("line", { x1: c.x + 40, y1: 300, x2: c.x + 355, y2: 300, stroke: "#2A3247", "stroke-width": 2 }, g);
+
+        // card rises as its name is spoken
+        tl.fromTo(g, { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, c.t);
+
+        // three mono lines type in, char by char
+        c.lines.forEach((s, j) => {
+          const txt = mk("text", { x: cx, y: 380 + j * 60, "text-anchor": "middle", "font-size": 27, fill: "#ECEEF2", class: "f16-methods-mono" }, g);
+          const chars = [];
+          for (const ch of s) {
+            const sp = mk("tspan", { "fill-opacity": 0 }, txt);
+            sp.textContent = ch;
+            chars.push(sp);
+          }
+          const per = Math.min(0.035, 0.7 / chars.length);
+          chars.forEach((sp, n) => {
+            tl.fromTo(sp, { attr: { "fill-opacity": 0 } }, { attr: { "fill-opacity": 1 }, duration: 0.06, ease: "none" }, c.lineT[j] + n * per);
+          });
+        });
+
+        // previous card dims when this one arrives
+        if (k > 0) tl.to(groups[k - 1], { opacity: 0.55, duration: 0.5, ease: "power1.inOut" }, c.t);
+      });
+
+      // 31.8s all four return to full
+      groups.forEach((g) => tl.to(g, { opacity: 1, duration: 0.6, ease: "power1.inOut" }, 31.8));
+
+      // ambient drift
+      tl.fromTo("#f16-methods-drift", { y: 0 }, { y: -6, duration: 32.7, ease: "sine.inOut" }, 0);
+
+      window.__timelines["f16-methods"] = tl;
+    })();
+  </script>
+</template>

@@ -1,0 +1,145 @@
+<template>
+  <style>
+    @font-face { font-family: "STIX Two Text"; src: url("assets/fonts/stix-two-text.ttf"); font-style: normal; font-weight: 400 700; }
+    @font-face { font-family: "STIX Two Text"; src: url("assets/fonts/stix-two-text-italic.ttf"); font-style: italic; font-weight: 400 700; }
+    #root { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; }
+    #f05-formats-stage { position: absolute; inset: 0; width: 1920px; height: 1080px; }
+    #f05-formats-svg { position: absolute; inset: 0; width: 1920px; height: 1080px; display: block; }
+    .f05-formats-serif { font-family: "STIX Two Text", serif; }
+    .f05-formats-mono { font-family: "JetBrains Mono", monospace; }
+  </style>
+
+  <div data-hf-id="hf-p7h5" id="root" data-composition-id="f05-formats" data-width="1920" data-height="1080" data-duration="37.55">
+    <div data-hf-id="hf-0mwk" id="f05-formats-stage" class="clip" data-start="0" data-duration="37.55" data-track-index="1">
+      <svg data-hf-id="hf-8x8b" id="f05-formats-svg" viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+        <defs data-hf-id="hf-mh0t">
+          <clippath data-hf-id="hf-ehu0" id="f05-formats-eqclip"><rect data-hf-id="hf-5qn3" id="f05-formats-eqclip-rect" x="600" y="680" width="0" height="90" /></clippath>
+        </defs>
+        <g data-hf-id="hf-pa63" id="f05-formats-drift">
+          <text data-hf-id="hf-e2yv" id="f05-formats-title" x="120" y="110" class="f05-formats-serif" font-size="44" font-style="italic" fill="#6B7488">How many bits per number?</text>
+
+          <!-- format labels -->
+          <text data-hf-id="hf-xeep" id="f05-formats-l32" x="150" y="204" text-anchor="end" class="f05-formats-mono" font-size="32" fill="#ECEEF2">FP32</text>
+          <text data-hf-id="hf-z4n0" id="f05-formats-l16" x="150" y="344" text-anchor="end" class="f05-formats-mono" font-size="32" fill="#ECEEF2">FP16</text>
+          <text data-hf-id="hf-yusc" id="f05-formats-l8" x="150" y="464" text-anchor="end" class="f05-formats-mono" font-size="32" fill="#ECEEF2">INT8</text>
+          <text data-hf-id="hf-vr1z" id="f05-formats-l4" x="150" y="584" text-anchor="end" class="f05-formats-mono" font-size="32" fill="#ECEEF2">INT4</text>
+
+          <g data-hf-id="hf-3trt" id="f05-formats-cells" />
+
+          <!-- FP32 group labels -->
+          <text data-hf-id="hf-waix" id="f05-formats-gsign" x="180" y="250" class="f05-formats-mono" font-size="22" fill="#FC6255">sign</text>
+          <text data-hf-id="hf-ttqe" id="f05-formats-gexp" x="250" y="250" class="f05-formats-mono" font-size="22" fill="#F4D35E">exponent (8)</text>
+          <text data-hf-id="hf-rmp3" id="f05-formats-gman" x="600" y="250" class="f05-formats-mono" font-size="22" fill="#58C4DD">mantissa / fine detail (23)</text>
+
+          <!-- sizes -->
+          <text data-hf-id="hf-bhui" id="f05-formats-gb32" x="1660" y="204" class="f05-formats-mono" font-size="34" font-weight="700" fill="#ECEEF2">280 GB</text>
+          <text data-hf-id="hf-yupy" id="f05-formats-gb16" x="1660" y="344" class="f05-formats-mono" font-size="34" font-weight="700" fill="#ECEEF2">140 GB</text>
+          <text data-hf-id="hf-4onk" id="f05-formats-gb8" x="1660" y="464" class="f05-formats-mono" font-size="34" font-weight="700" fill="#ECEEF2">70 GB</text>
+          <text data-hf-id="hf-joqq" id="f05-formats-gb4" x="1660" y="584" class="f05-formats-mono" font-size="34" font-weight="700" fill="#5CD0B3">35 GB ✓</text>
+
+          <!-- value counts -->
+          <text data-hf-id="hf-1vam" id="f05-formats-v8" x="600" y="464" class="f05-formats-mono" font-size="30" fill="#E88CC4">256 values</text>
+          <text data-hf-id="hf-8xaf" id="f05-formats-v4" x="420" y="584" class="f05-formats-mono" font-size="30" fill="#E88CC4">16 values</text>
+
+          <!-- the payoff line -->
+          <g data-hf-id="hf-r4ga" clip-path="url(#f05-formats-eqclip)">
+            <text data-hf-id="hf-ljco" id="f05-formats-eq" x="960" y="740" text-anchor="middle" class="f05-formats-serif" font-size="48" font-style="italic" fill="#ECEEF2">70 billion × 4 bits ≈ 35 GB</text>
+          </g>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  <script>
+    (function () {
+      const NS = "http://www.w3.org/2000/svg";
+      const RED = "#FC6255", YEL = "#F4D35E", BLUE = "#58C4DD", PINK = "#E88CC4", TEAL = "#5CD0B3", FAINT = "#2A3247";
+      const CX = (i) => 180 + i * 46;
+      const mk = (tag, attrs, parent) => {
+        const el = document.createElementNS(NS, tag);
+        for (const k in attrs) el.setAttribute(k, attrs[k]);
+        parent.appendChild(el);
+        return el;
+      };
+      const cellsG = document.getElementById("f05-formats-cells");
+      const row = (n, y, colorOf) => {
+        const out = [];
+        for (let i = 0; i < n; i++) out.push(mk("rect", { x: CX(i), y, width: 40, height: 46, rx: 4, fill: colorOf(i) }, cellsG));
+        return out;
+      };
+      const fpColor = (expBits) => (i) => (i === 0 ? RED : i <= expBits ? YEL : BLUE);
+
+      const fp32 = row(32, 170, () => FAINT);           // built neutral, tinted by group later
+      const fp16 = row(16, 310, fpColor(5));
+      const int8 = row(8, 430, () => PINK);
+      const int4 = row(4, 550, () => PINK);
+
+      const tl = gsap.timeline({ paused: true });
+      const pop = (sel, t) => tl.fromTo(sel, { opacity: 0, x: -16 }, { opacity: 1, x: 0, duration: 0.5, ease: "power2.out" }, t);
+
+      tl.fromTo("#f05-formats-title", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, 0.2);
+
+      // 0.4 FP32 strip builds cell by cell, label first
+      pop("#f05-formats-l32", 0.4);
+      fp32.forEach((c, i) => {
+        tl.fromTo(c, { opacity: 0, scaleY: 0.2, transformOrigin: "50% 100%" }, { opacity: 1, scaleY: 1, duration: 0.3, ease: "back.out(1.6)" }, 0.55 + i * 0.04);
+      });
+
+      // 3.5 280 GB counts up
+      const gb32 = document.getElementById("f05-formats-gb32");
+      const counter = { v: 0 };
+      tl.fromTo("#f05-formats-gb32", { opacity: 0 }, { opacity: 1, duration: 0.3 }, 3.5);
+      tl.fromTo(counter, { v: 0 }, { v: 280, duration: 1.2, ease: "power2.out", onUpdate: () => { gb32.textContent = Math.round(counter.v) + " GB"; } }, 3.5);
+
+      // 5.1 / 6.3 / 8.0 groups tint: sign red, exponent yellow, mantissa blue — each with its label
+      tl.to(fp32[0], { fill: RED, duration: 0.4, ease: "power2.out" }, 5.1);
+      tl.fromTo("#f05-formats-gsign", { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" }, 5.2);
+      for (let i = 1; i <= 8; i++) tl.to(fp32[i], { fill: YEL, duration: 0.35, ease: "power2.out" }, 6.3 + (i - 1) * 0.04);
+      tl.fromTo("#f05-formats-gexp", { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" }, 6.5);
+      for (let i = 9; i < 32; i++) tl.to(fp32[i], { fill: BLUE, duration: 0.35, ease: "power2.out" }, 8.0 + (i - 9) * 0.03);
+      tl.fromTo("#f05-formats-gman", { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" }, 8.3);
+
+      // 12.8 FP16: a copy of the strip collapses down to half its length
+      pop("#f05-formats-l16", 12.8);
+      fp16.forEach((c, i) => {
+        tl.fromTo(c,
+          { opacity: 0, x: CX(2 * i) - CX(i), y: -140 },
+          { opacity: 1, x: 0, y: 0, duration: 0.8, ease: "power2.inOut" }, 12.9 + i * 0.03);
+      });
+      pop("#f05-formats-gb16", 14.2);
+
+      // 23.5 INT8 in pink, "256 values", "70 GB"
+      pop("#f05-formats-l8", 23.5);
+      int8.forEach((c, i) => {
+        tl.fromTo(c, { opacity: 0, scaleY: 0.2, transformOrigin: "50% 100%" }, { opacity: 1, scaleY: 1, duration: 0.35, ease: "back.out(1.6)" }, 23.6 + i * 0.06);
+      });
+      pop("#f05-formats-v8", 25.4);
+      pop("#f05-formats-gb8", 26.6);
+
+      // 28.3 INT4, "16 values", "35 GB ✓"
+      pop("#f05-formats-l4", 28.3);
+      int4.forEach((c, i) => {
+        tl.fromTo(c, { opacity: 0, scaleY: 0.2, transformOrigin: "50% 100%" }, { opacity: 1, scaleY: 1, duration: 0.35, ease: "back.out(1.6)" }, 28.4 + i * 0.06);
+      });
+      pop("#f05-formats-v4", 29.3);
+      tl.fromTo("#f05-formats-gb4", { opacity: 0, scale: 0.6, transformOrigin: "0% 50%" }, { opacity: 1, scale: 1, duration: 0.5, ease: "back.out(1.6)" }, 30.0);
+
+      // 31.2 the payoff line writes in left→right
+      tl.fromTo("#f05-formats-eqclip-rect", { attr: { width: 0 } }, { attr: { width: 720 }, duration: 1.4, ease: "power1.inOut" }, 31.2);
+
+      // 34.5 "it fits": INT4 row and 35 GB pulse teal once
+      int4.forEach((c, i) => {
+        tl.to(c, { fill: TEAL, duration: 0.3, ease: "power2.out" }, 34.5 + i * 0.04);
+        tl.to(c, { fill: PINK, duration: 0.6, ease: "power1.inOut" }, 35.2 + i * 0.04);
+      });
+      tl.to("#f05-formats-gb4", { scale: 1.15, duration: 0.3, ease: "power2.out" }, 34.5);
+      tl.to("#f05-formats-gb4", { scale: 1, duration: 0.6, ease: "power1.inOut" }, 35.2);
+
+      // ambient drift
+      tl.fromTo("#f05-formats-drift", { y: 0 }, { y: -6, duration: 36.25, ease: "sine.inOut" }, 0);
+
+      window.__timelines["f05-formats"] = tl;
+    })();
+  </script>
+</template>

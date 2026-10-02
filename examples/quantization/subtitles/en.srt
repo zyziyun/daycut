@@ -1,0 +1,640 @@
+1
+00:00:00,400 --> 00:00:02,660
+Here's a strange fact.
+
+2
+00:00:02,700 --> 00:00:04,950
+A language model with 70 billion parameters
+
+3
+00:00:04,990 --> 00:00:08,960
+needs about 140 gigabytes of memory, just to sit there.
+
+4
+00:00:09,000 --> 00:00:11,420
+A good graphics card has 24.
+
+5
+00:00:11,460 --> 00:00:14,480
+And yet, people run models like this on laptops.
+
+6
+00:00:14,520 --> 00:00:16,980
+The trick is called quantization.
+
+7
+00:00:17,020 --> 00:00:21,460
+And at its heart, it's something you learned in primary school. Rounding.
+
+8
+00:00:21,500 --> 00:00:25,320
+Before any math, notice that you round things all the time.
+
+9
+00:00:25,360 --> 00:00:29,070
+A price of $3.99 is basically $4.
+
+10
+00:00:29,110 --> 00:00:32,270
+A drive of 52.7 kilometres is about 50.
+
+11
+00:00:32,310 --> 00:00:36,060
+You lose a little detail, and you keep the meaning.
+
+12
+00:00:36,100 --> 00:00:41,130
+Computers do this too. A smooth colour gradient can use millions of shades.
+
+13
+00:00:41,170 --> 00:00:44,340
+Squeeze it down to just 16, and you see a few steps,
+
+14
+00:00:44,380 --> 00:00:49,220
+but it's clearly the same picture. Rougher, yes, and much, much smaller.
+
+15
+00:00:49,260 --> 00:00:54,710
+Quantization does exactly this, to the numbers inside an AI model.
+
+16
+00:00:54,750 --> 00:00:57,110
+So, what numbers are we talking about?
+
+17
+00:00:57,150 --> 00:01:00,920
+Underneath, a neural network is a giant pile of numbers called weights.
+
+18
+00:01:00,960 --> 00:01:05,120
+Each one is a decimal, like 0.31, or −1.2.
+
+19
+00:01:05,160 --> 00:01:11,070
+When the model thinks, it mostly multiplies its inputs by these weights and adds them up.
+
+20
+00:01:11,110 --> 00:01:12,570
+Billions of times.
+
+21
+00:01:12,610 --> 00:01:18,610
+So the size of a model is simply the number of weights, times the space each one takes.
+
+22
+00:01:18,650 --> 00:01:22,800
+And space is measured in bits. Think of a bit as a light switch.
+
+23
+00:01:22,840 --> 00:01:27,920
+One switch has 2 positions, off or on, so it can name 2 different values.
+
+24
+00:01:27,960 --> 00:01:32,940
+Add a second switch, and you get 4 combinations. 3 switches, 8.
+
+25
+00:01:32,980 --> 00:01:35,770
+Every new switch doubles the count.
+
+26
+00:01:35,810 --> 00:01:39,360
+So with b bits, you can name 2ᵇ different values.
+
+27
+00:01:39,400 --> 00:01:43,500
+4 bits gives 16. 8 bits, 256.
+
+28
+00:01:43,540 --> 00:01:46,440
+16 bits, about 65,000.
+
+29
+00:01:46,480 --> 00:01:51,910
+Keep this doubling in mind. Every bit you remove halves your choices.
+
+30
+00:01:51,950 --> 00:01:56,560
+The standard way to store a weight, called FP32, uses 32 bits:
+
+31
+00:01:56,600 --> 00:02:01,980
+one for the sign, 8 for the size, and 23 for the fine detail.
+
+32
+00:02:02,020 --> 00:02:04,360
+That's far more precision than a model really needs.
+
+33
+00:02:04,400 --> 00:02:10,200
+FP16 uses half as many bits, and it's what most models ship in today.
+
+34
+00:02:10,240 --> 00:02:15,060
+But what if we went further, and stored each weight as a small whole number?
+
+35
+00:02:15,100 --> 00:02:19,860
+INT8 uses 8 bits, so 256 possible values.
+
+36
+00:02:19,900 --> 00:02:22,760
+INT4 uses 4 bits, just 16.
+
+37
+00:02:22,800 --> 00:02:28,360
+70 billion weights at 4 bits each is about 35 gigabytes. Suddenly, it fits.
+
+38
+00:02:28,400 --> 00:02:30,240
+So here's the core idea.
+
+39
+00:02:30,280 --> 00:02:35,430
+Picture all your weights as dots on a number line. They can sit anywhere.
+
+40
+00:02:35,470 --> 00:02:39,100
+Now lay down a ruler with only a few tick marks,
+
+41
+00:02:39,140 --> 00:02:42,560
+say 16, evenly spaced across the range.
+
+42
+00:02:42,600 --> 00:02:46,320
+Quantization means snapping every dot to its nearest tick.
+
+43
+00:02:46,360 --> 00:02:51,070
+Instead of storing the exact value, you store which tick it landed on,
+
+44
+00:02:51,110 --> 00:02:53,680
+a small integer from zero to 15.
+
+45
+00:02:53,720 --> 00:02:57,740
+That's it. That's the whole principle.
+
+46
+00:02:57,780 --> 00:03:01,760
+Everything else is about choosing the ruler well.
+
+47
+00:03:01,800 --> 00:03:05,390
+Let's do one by hand. Here are 6 weights.
+
+48
+00:03:05,430 --> 00:03:08,320
+The smallest is −1, the largest is 2.
+
+49
+00:03:08,360 --> 00:03:12,590
+We have 4 bits, so 16 ticks, numbered 0 to 15.
+
+50
+00:03:12,630 --> 00:03:16,540
+Between the first tick and the last, there are 15 gaps.
+
+51
+00:03:16,580 --> 00:03:19,840
+The full range is 2 − (−1), which is 3.
+
+52
+00:03:19,880 --> 00:03:24,060
+3, shared across 15 gaps, gives a step of 0.2.
+
+53
+00:03:24,100 --> 00:03:27,600
+That step is called the scale, written s.
+
+54
+00:03:27,640 --> 00:03:33,260
+It answers one question: how much real value does one integer step stand for?
+
+55
+00:03:33,300 --> 00:03:35,340
+Next, where does 0 go?
+
+56
+00:03:35,380 --> 00:03:40,000
+Our ruler starts at −1, so real 0 sits 5 steps up.
+
+57
+00:03:40,040 --> 00:03:46,040
+−1, divided by 0.2, is −5. Flip the sign, and you get 5.
+
+58
+00:03:46,080 --> 00:03:48,680
+That number is the zero-point, z.
+
+59
+00:03:48,720 --> 00:03:52,390
+It's the integer that stands for the real value 0.
+
+60
+00:03:52,430 --> 00:03:56,310
+Keeping 0 exact matters, because networks are full of zeros,
+
+61
+00:03:56,350 --> 00:04:00,410
+and we never want nothing to quietly turn into something.
+
+62
+00:04:00,450 --> 00:04:04,600
+Now the recipe. To quantize a weight x, divide by the scale,
+
+63
+00:04:04,640 --> 00:04:08,100
+round to the nearest whole number, then add the zero-point.
+
+64
+00:04:08,140 --> 00:04:11,390
+q = round(x / s) + z.
+
+65
+00:04:11,430 --> 00:04:16,520
+Take 0.51. Divided by 0.2, that's 2.55.
+
+66
+00:04:16,560 --> 00:04:19,520
+Round it, 3. Add 5, 8.
+
+67
+00:04:19,560 --> 00:04:22,720
+So 0.51 is stored as the integer 8.
+
+68
+00:04:22,760 --> 00:04:23,990
+Let's check two more.
+
+69
+00:04:24,030 --> 00:04:29,160
+−0.43, divided by 0.2, is −2.15.
+
+70
+00:04:29,200 --> 00:04:32,230
+Round it, −2. Add 5, 3.
+
+71
+00:04:32,270 --> 00:04:36,990
+And 1.37, divided by 0.2, is 6.85.
+
+72
+00:04:37,030 --> 00:04:39,460
+Round it, 7. Add 5, 12.
+
+73
+00:04:39,500 --> 00:04:43,080
+Do this for every weight, and our 6 decimals become
+
+74
+00:04:43,120 --> 00:04:48,910
+0, 3, 5, 8, 12, and 15. Each fits in just 4 bits.
+
+75
+00:04:48,950 --> 00:04:51,160
+When the model runs, we go backwards.
+
+76
+00:04:51,200 --> 00:04:55,370
+Subtract the zero-point, and multiply by the scale.
+
+77
+00:04:55,410 --> 00:05:00,220
+8 minus 5 is 3. 3 times 0.2 is 0.6.
+
+78
+00:05:00,260 --> 00:05:05,520
+We stored 0.51, and we got back 0.6. A small error.
+
+79
+00:05:05,560 --> 00:05:08,460
+Do it for the whole list, and we get back
+
+80
+00:05:08,500 --> 00:05:14,420
+−1, −0.4, 0, 0.6, 1.4, and 2.
+
+81
+00:05:14,460 --> 00:05:16,220
+And here's the guarantee.
+
+82
+00:05:16,260 --> 00:05:18,280
+Because we always round to the nearest tick,
+
+83
+00:05:18,320 --> 00:05:23,620
+the error can never be more than half a step. Here, that's 0.1.
+
+84
+00:05:23,660 --> 00:05:27,760
+Every single weight lands within 0.1 of where it started.
+
+85
+00:05:27,800 --> 00:05:29,760
+But a model has billions of weights.
+
+86
+00:05:29,800 --> 00:05:32,870
+Why don't all these little errors pile up into a big one?
+
+87
+00:05:32,910 --> 00:05:38,180
+Remember what the model does: it multiplies each input by a weight, and adds everything up.
+
+88
+00:05:38,220 --> 00:05:41,100
+Let's try it with our 6 weights and 6 inputs.
+
+89
+00:05:41,140 --> 00:05:43,560
+With the exact weights, the total is 1.
+
+90
+00:05:43,600 --> 00:05:46,520
+With the rounded weights, the total is also 1.
+
+91
+00:05:46,560 --> 00:05:47,890
+Look at the errors.
+
+92
+00:05:47,930 --> 00:05:51,900
+Two of the products came out a little too high, one came out a little too low,
+
+93
+00:05:51,940 --> 00:05:55,420
+and they cancelled out. Here they cancel perfectly.
+
+94
+00:05:55,460 --> 00:05:58,840
+In a real model they cancel most of the time, not always.
+
+95
+00:05:58,880 --> 00:06:02,110
+But the model doesn't need every weight to be perfect.
+
+96
+00:06:02,150 --> 00:06:05,560
+It needs the sums to be about right. That's why it barely notices.
+
+97
+00:06:05,600 --> 00:06:08,440
+What we just did is called asymmetric quantization.
+
+98
+00:06:08,480 --> 00:06:13,920
+The range can be lopsided, −1 to 2, and the zero-point shifts to match.
+
+99
+00:06:13,960 --> 00:06:17,280
+Its simpler cousin is symmetric quantization.
+
+100
+00:06:17,320 --> 00:06:22,270
+Balance the range around 0, from minus the biggest value to plus the biggest value,
+
+101
+00:06:22,310 --> 00:06:24,210
+and pin the zero-point at 0.
+
+102
+00:06:24,250 --> 00:06:27,870
+With 4 bits, we'd use the integers −7 to 7.
+
+103
+00:06:27,910 --> 00:06:33,640
+Our biggest value is 2, so the scale is 2 divided by 7, about 0.29.
+
+104
+00:06:33,680 --> 00:06:36,880
+Now the formula is just q = round(x / s).
+
+105
+00:06:36,920 --> 00:06:39,560
+Less bookkeeping, faster math,
+
+106
+00:06:39,600 --> 00:06:43,740
+but the ticks below −1 are wasted, because no weight lives there.
+
+107
+00:06:43,780 --> 00:06:47,220
+Weights are usually balanced, so they tend to go symmetric.
+
+108
+00:06:47,260 --> 00:06:54,110
+Activations, the values flowing through the network, are often lopsided, so they often go asymmetric.
+
+109
+00:06:54,150 --> 00:06:57,160
+Now, the real enemy: outliers.
+
+110
+00:06:57,200 --> 00:07:03,120
+Imagine most weights live between −1 and 1, but one strange weight is 10.
+
+111
+00:07:03,160 --> 00:07:07,390
+Our ruler now has to stretch from −1 all the way to 10.
+
+112
+00:07:07,430 --> 00:07:13,510
+That's a range of 11, split into 15 steps, so each step is about 0.73.
+
+113
+00:07:13,550 --> 00:07:18,340
+Every ordinary weight between −1 and 1 now lands on one of just 3 ticks.
+
+114
+00:07:18,380 --> 00:07:24,550
+0.1, 0.2, and 0.3 all become exactly the same number.
+
+115
+00:07:24,590 --> 00:07:27,810
+One outlier, and almost all the precision is gone.
+
+116
+00:07:27,850 --> 00:07:32,610
+And large language models really do have outliers like this.
+
+117
+00:07:32,650 --> 00:07:34,780
+The fix is to use more rulers.
+
+118
+00:07:34,820 --> 00:07:40,220
+Per-tensor quantization uses one scale for an entire layer, so one outlier hurts everybody.
+
+119
+00:07:40,260 --> 00:07:44,040
+Per-channel gives every row of the weight matrix its own scale,
+
+120
+00:07:44,080 --> 00:07:46,820
+so the outlier only hurts its own row.
+
+121
+00:07:46,860 --> 00:07:52,920
+Per-group goes further, with a fresh scale for every small block, often 128 weights.
+
+122
+00:07:52,960 --> 00:07:57,830
+Now an outlier only ruins its own little neighbourhood, and everyone else keeps a fine ruler.
+
+123
+00:07:57,870 --> 00:08:00,780
+The price is storing those extra scales.
+
+124
+00:08:00,820 --> 00:08:05,250
+For groups of 128, that's only about ⅛ of a bit more per weight.
+
+125
+00:08:05,290 --> 00:08:09,630
+A tiny cost, and a big part of what makes four-bit models actually work.
+
+126
+00:08:10,400 --> 00:08:13,440
+There's also the question of when to quantize.
+
+127
+00:08:13,480 --> 00:08:18,680
+Post-training quantization, or PTQ, takes a finished model and converts it.
+
+128
+00:08:18,720 --> 00:08:22,080
+For the weights that's easy, because we can just look at them.
+
+129
+00:08:22,120 --> 00:08:27,140
+Activations change with every input, so we run a few hundred sample sentences through the model
+
+130
+00:08:27,180 --> 00:08:31,590
+and record their typical ranges. That's called calibration.
+
+131
+00:08:31,630 --> 00:08:34,840
+PTQ is quick, and needs no retraining.
+
+132
+00:08:34,880 --> 00:08:40,280
+Quantization-aware training, or QAT, fakes the rounding during training itself,
+
+133
+00:08:40,320 --> 00:08:42,790
+so the model learns to live with it.
+
+134
+00:08:42,830 --> 00:08:46,800
+More work, but better accuracy at very low bits.
+
+135
+00:08:46,840 --> 00:08:50,600
+You also choose what to quantize. Just the weights, which saves memory.
+
+136
+00:08:50,640 --> 00:08:57,060
+Or weights and activations together, which also lets the hardware use fast integer math.
+
+137
+00:08:57,100 --> 00:08:59,370
+You'll find these ideas inside popular tools.
+
+138
+00:08:59,410 --> 00:09:03,360
+GPTQ quantizes one column at a time,
+
+139
+00:09:03,400 --> 00:09:07,440
+and nudges the remaining weights to cancel out the error it just made.
+
+140
+00:09:07,480 --> 00:09:12,900
+AWQ notices that a few weights matter far more, because they meet large activations,
+
+141
+00:09:12,940 --> 00:09:14,100
+and protects them before rounding.
+
+142
+00:09:14,140 --> 00:09:21,600
+GGUF, the format used by llama.cpp, stores per-group, 4 and 5 bit weights,
+
+143
+00:09:21,640 --> 00:09:24,080
+so models run on ordinary laptops.
+
+144
+00:09:24,120 --> 00:09:29,960
+And bitsandbytes lets you load a model in 8 or 4 bits with a single line of code.
+
+145
+00:09:30,000 --> 00:09:32,290
+So what do you actually gain?
+
+146
+00:09:32,330 --> 00:09:37,150
+Going from 16 bits to 8 halves the memory, with almost no loss in quality.
+
+147
+00:09:37,190 --> 00:09:40,520
+4 bits cuts it to a quarter, usually with a small drop.
+
+148
+00:09:40,560 --> 00:09:46,090
+Below that, at 3 or 2 bits, quality falls off fast, unless you use special tricks.
+
+149
+00:09:46,130 --> 00:09:48,520
+Smaller weights also mean faster answers,
+
+150
+00:09:48,560 --> 00:09:51,820
+because the bottleneck is often just moving numbers out of memory.
+
+151
+00:09:51,860 --> 00:09:53,920
+And that means lower cost, less energy,
+
+152
+00:09:53,960 --> 00:09:56,760
+and models that run on your own phone, offline and private.
+
+153
+00:09:56,800 --> 00:09:58,440
+Let's put it all together.
+
+154
+00:09:58,480 --> 00:10:03,800
+Pick a range, and split it into steps. That's your scale.
+
+155
+00:10:03,840 --> 00:10:07,820
+Mark where zero lives. That's your zero-point.
+
+156
+00:10:07,860 --> 00:10:14,640
+Divide, round, shift, and store small integers. Multiply back when you need them.
+
+157
+00:10:14,680 --> 00:10:18,680
+The error is at most half a step, the errors mostly cancel,
+
+158
+00:10:18,720 --> 00:10:25,050
+and with smart choices about ranges, groups, and outliers, the model hardly feels it.
+
+159
+00:10:25,090 --> 00:10:27,390
+Quantization is rounding, done cleverly.
+
+160
+00:10:27,430 --> 00:10:33,430
+A little precision, traded for a model you can actually run.
+

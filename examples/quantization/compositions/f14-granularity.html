@@ -1,0 +1,126 @@
+<template>
+  <style>
+    @font-face { font-family: "STIX Two Text"; src: url("assets/fonts/stix-two-text.ttf"); font-style: normal; font-weight: 400 700; }
+    @font-face { font-family: "STIX Two Text"; src: url("assets/fonts/stix-two-text-italic.ttf"); font-style: italic; font-weight: 400 700; }
+    #root { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; }
+    #f14-granularity-stage { position: absolute; inset: 0; width: 1920px; height: 1080px; }
+    #f14-granularity-svg { position: absolute; inset: 0; width: 1920px; height: 1080px; display: block; }
+    .f14-granularity-serif { font-family: "STIX Two Text", serif; }
+    .f14-granularity-mono { font-family: "JetBrains Mono", monospace; }
+  </style>
+
+  <div data-hf-id="hf-ftvl" id="root" data-composition-id="f14-granularity" data-width="1920" data-height="1080" data-duration="38.45">
+    <div data-hf-id="hf-uja0" id="f14-granularity-stage" class="clip" data-start="0" data-duration="38.45" data-track-index="1">
+      <svg data-hf-id="hf-upkp" id="f14-granularity-svg" viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+        <g data-hf-id="hf-d9jh" id="f14-granularity-drift">
+          <text data-hf-id="hf-umcb" id="f14-granularity-title" x="120" y="110" class="f14-granularity-serif" font-size="44" font-style="italic" fill="#6B7488">The fix: more rulers</text>
+
+          <g data-hf-id="hf-qccj" id="f14-granularity-m0" />
+          <g data-hf-id="hf-me8i" id="f14-granularity-m1" />
+          <g data-hf-id="hf-ig4h" id="f14-granularity-m2" />
+
+          <g data-hf-id="hf-849f" id="f14-granularity-lab0">
+            <text data-hf-id="hf-4tlg" x="390" y="600" text-anchor="middle" class="f14-granularity-serif" font-size="40" font-style="italic" fill="#ECEEF2">per-tensor</text>
+            <text data-hf-id="hf-i7oy" x="390" y="645" text-anchor="middle" class="f14-granularity-mono" font-size="26" fill="#F4D35E">1 scale · outlier hurts all</text>
+          </g>
+          <g data-hf-id="hf-465e" id="f14-granularity-lab1">
+            <text data-hf-id="hf-ormp" x="960" y="600" text-anchor="middle" class="f14-granularity-serif" font-size="40" font-style="italic" fill="#ECEEF2">per-channel</text>
+            <text data-hf-id="hf-zx0e" x="960" y="645" text-anchor="middle" class="f14-granularity-mono" font-size="26" fill="#F4D35E">1 scale / row</text>
+          </g>
+          <g data-hf-id="hf-081d" id="f14-granularity-lab2">
+            <text data-hf-id="hf-uurj" x="1530" y="600" text-anchor="middle" class="f14-granularity-serif" font-size="40" font-style="italic" fill="#ECEEF2">per-group</text>
+            <text data-hf-id="hf-yscu" x="1530" y="645" text-anchor="middle" class="f14-granularity-mono" font-size="26" fill="#F4D35E">1 scale / 128 weights</text>
+          </g>
+
+          <text data-hf-id="hf-itbv" id="f14-granularity-cost" x="960" y="770" text-anchor="middle" class="f14-granularity-mono" font-size="34" fill="#6B7488">cost: ≈ 1/8 bit per weight</text>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  <script>
+    (function () {
+      const NS = "http://www.w3.org/2000/svg";
+      const MX = [150, 720, 1290], MY = 180;
+      const mk = (tag, attrs, parent) => {
+        const el = document.createElementNS(NS, tag);
+        for (const k in attrs) el.setAttribute(k, attrs[k]);
+        parent.appendChild(el);
+        return el;
+      };
+      const drawable = (el) => { const L = el.getTotalLength(); el.style.strokeDasharray = L; return L; };
+
+      const mats = [], tints = [], outer = [], rows = [], blocks = [];
+      MX.forEach((x0, m) => {
+        const g = document.getElementById("f14-granularity-m" + m);
+        mats.push(g);
+        mk("rect", { x: x0, y: MY, width: 480, height: 360, fill: "none", stroke: "#6B7488", "stroke-width": 2 }, g);
+        for (let r = 0; r < 6; r++) {
+          for (let c = 0; c < 8; c++) {
+            const out = r === 2 && c === 5;
+            mk("rect", { x: x0 + 14 + c * 57, y: MY + 14 + r * 56, width: 48, height: 46, fill: out ? "#FC6255" : "#58C4DD", opacity: out ? 0.9 : 0.18 }, g);
+          }
+        }
+      });
+
+      // damage tints
+      tints.push(mk("rect", { x: 150, y: 180, width: 480, height: 360, fill: "#FC6255", opacity: 0 }, mats[0]));
+      tints.push(mk("rect", { x: 726, y: 298, width: 468, height: 56, fill: "#FC6255", opacity: 0 }, mats[1]));
+      tints.push(mk("rect", { x: 1530, y: 302, width: 115, height: 114, fill: "#FC6255", opacity: 0 }, mats[2]));
+
+      // rulers (scales)
+      const outerRect = mk("rect", { x: 150, y: 180, width: 480, height: 360, fill: "none", stroke: "#F4D35E", "stroke-width": 4 }, mats[0]);
+      for (let r = 0; r < 6; r++) rows.push(mk("rect", { x: 726, y: 186 + r * 56, width: 468, height: 56, fill: "none", stroke: "#F4D35E", "stroke-width": 2 }, mats[1]));
+      for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) blocks.push(mk("rect", { x: 1296 + c * 117, y: 186 + r * 116, width: 115, height: 114, fill: "none", stroke: "#F4D35E", "stroke-width": 2 }, mats[2]));
+
+      const tl = gsap.timeline({ paused: true });
+
+      tl.fromTo("#f14-granularity-title", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, 0.2);
+
+      // 0.6s three matrices fade/scale in together
+      mats.forEach((g) => {
+        tl.fromTo(g, { opacity: 0, scale: 0.95, transformOrigin: "50% 50%" }, { opacity: 1, scale: 1, duration: 0.8, ease: "power2.out" }, 0.6);
+      });
+
+      // 2.5s per-tensor: outer border draws, then red floods whole matrix
+      const oL = drawable(outerRect);
+      tl.fromTo(outerRect, { strokeDashoffset: oL }, { strokeDashoffset: 0, duration: 1.0, ease: "power1.inOut" }, 2.5);
+      tl.fromTo("#f14-granularity-lab0", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, 3.0);
+      tl.fromTo(tints[0], { opacity: 0 }, { opacity: 0.10, duration: 0.8, ease: "power2.out" }, 5.4);
+
+      // 8.0s per-channel: six row borders top -> bottom
+      rows.forEach((r, i) => {
+        const L = drawable(r);
+        tl.fromTo(r, { strokeDashoffset: L }, { strokeDashoffset: 0, duration: 0.6, ease: "power1.inOut" }, 8.0 + i * 0.1);
+      });
+      tl.fromTo("#f14-granularity-lab1", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, 8.6);
+
+      // 11.8s outlier hurts only its own row
+      tl.fromTo(tints[1], { opacity: 0 }, { opacity: 0.15, duration: 0.7, ease: "power2.out" }, 11.8);
+
+      // 14.6s per-group: 3x4 block borders
+      blocks.forEach((b, i) => {
+        const L = drawable(b);
+        tl.fromTo(b, { strokeDashoffset: L }, { strokeDashoffset: 0, duration: 0.5, ease: "power1.inOut" }, 14.6 + i * 0.05);
+      });
+      tl.fromTo("#f14-granularity-lab2", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, 15.2);
+      tl.fromTo(tints[2], { opacity: 0 }, { opacity: 0.15, duration: 0.7, ease: "power2.out" }, 19.0);
+
+      // 20.7s pulse the three tints left -> right
+      [0.10, 0.15, 0.15].forEach((base, i) => {
+        const t0 = 20.7 + i * 0.6;
+        tl.to(tints[i], { opacity: 0.38, duration: 0.3, ease: "power2.out" }, t0);
+        tl.to(tints[i], { opacity: base, duration: 0.5, ease: "power1.inOut" }, t0 + 0.3);
+      });
+
+      // 28.5s cost line
+      tl.fromTo("#f14-granularity-cost", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.7, ease: "power2.out" }, 28.5);
+
+      // ambient drift
+      tl.fromTo("#f14-granularity-drift", { y: 0 }, { y: -6, duration: 37.5, ease: "sine.inOut" }, 0);
+
+      window.__timelines["f14-granularity"] = tl;
+    })();
+  </script>
+</template>

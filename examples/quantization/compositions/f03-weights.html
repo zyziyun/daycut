@@ -1,0 +1,149 @@
+<template>
+  <style>
+    @font-face { font-family: "STIX Two Text"; src: url("assets/fonts/stix-two-text.ttf"); font-style: normal; font-weight: 400 700; }
+    @font-face { font-family: "STIX Two Text"; src: url("assets/fonts/stix-two-text-italic.ttf"); font-style: italic; font-weight: 400 700; }
+    #root { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; }
+    #f03-weights-stage { position: absolute; inset: 0; width: 1920px; height: 1080px; }
+    #f03-weights-svg { position: absolute; inset: 0; width: 1920px; height: 1080px; display: block; }
+    .f03-weights-serif { font-family: "STIX Two Text", serif; }
+    .f03-weights-mono { font-family: "JetBrains Mono", monospace; }
+    .f03-weights-pulse { opacity: 0; }
+  </style>
+
+  <div data-hf-id="hf-rco6" id="root" data-composition-id="f03-weights" data-width="1920" data-height="1080" data-duration="24.6">
+    <div data-hf-id="hf-1er5" id="f03-weights-stage" class="clip" data-start="0" data-duration="24.6" data-track-index="1">
+      <svg data-hf-id="hf-2nx8" id="f03-weights-svg" viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+        <g data-hf-id="hf-typ2" id="f03-weights-drift">
+          <text data-hf-id="hf-vcij" id="f03-weights-title" x="120" y="110" class="f03-weights-serif" font-size="44" font-style="italic" fill="#6B7488">A neural network is a pile of numbers</text>
+
+          <!-- neuron: connections (under), pulses, nodes (over), weight labels -->
+          <g data-hf-id="hf-u8tk" id="f03-weights-links" />
+          <g data-hf-id="hf-wb8r" id="f03-weights-pulses" />
+          <g data-hf-id="hf-rf86" id="f03-weights-inputs" />
+          <g data-hf-id="hf-hl3q" id="f03-weights-sum">
+            <circle data-hf-id="hf-kr01" id="f03-weights-sum-circle" cx="790" cy="420" r="44" fill="#0B1020" stroke="#ECEEF2" stroke-width="3" />
+            <text data-hf-id="hf-ivh6" id="f03-weights-sum-glyph" x="790" y="432" text-anchor="middle" class="f03-weights-serif" font-size="40" fill="#ECEEF2">Σ</text>
+          </g>
+          <g data-hf-id="hf-cdnx" id="f03-weights-wlabels" />
+
+          <!-- decimal grid -->
+          <g data-hf-id="hf-dmk9" id="f03-weights-grid" />
+
+          <!-- equation -->
+          <text data-hf-id="hf-iba4" x="960" y="770" text-anchor="middle" class="f03-weights-serif" font-size="52" fill="#ECEEF2"><tspan data-hf-id="hf-t0fb" id="f03-weights-eq-a">model size&#160;=</tspan><tspan data-hf-id="hf-1dxq" id="f03-weights-eq-b" fill="#58C4DD">&#160;# weights</tspan><tspan data-hf-id="hf-1d61" id="f03-weights-eq-c">&#160;×&#160;</tspan><tspan data-hf-id="hf-7i2u" id="f03-weights-eq-d" fill="#F4D35E">bits per weight</tspan></text>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  <script>
+    (function () {
+      const NS = "http://www.w3.org/2000/svg";
+      const mk = (tag, attrs, parent) => {
+        const el = document.createElementNS(NS, tag);
+        for (const k in attrs) el.setAttribute(k, attrs[k]);
+        parent.appendChild(el);
+        return el;
+      };
+      const minus = (s) => s.replace("-", "−");
+
+      const SX = 760, SY = 420;
+      const INPUT_Y = [250, 420, 590];
+      const WEIGHTS = [
+        { text: "0.31", x: 530, y: 321 },
+        { text: "−1.2", x: 530, y: 406 },
+        { text: "0.87", x: 530, y: 491 }
+      ];
+
+      const linksG = document.getElementById("f03-weights-links");
+      const pulsesG = document.getElementById("f03-weights-pulses");
+      const inputsG = document.getElementById("f03-weights-inputs");
+      const wlabelsG = document.getElementById("f03-weights-wlabels");
+      const links = [], pulses = [], inputs = [], wlabels = [];
+      INPUT_Y.forEach((y, i) => {
+        links.push(mk("line", { x1: 300, y1: y, x2: SX, y2: SY, stroke: "#58C4DD", "stroke-width": 3 }, linksG));
+        pulses.push(mk("circle", { cx: 300, cy: y, r: 9, fill: "#58C4DD", class: "f03-weights-pulse" }, pulsesG));
+        inputs.push(mk("circle", { cx: 300, cy: y, r: 34, fill: "#0B1020", stroke: "#ECEEF2", "stroke-width": 3 }, inputsG));
+        const t = mk("text", { x: WEIGHTS[i].x, y: WEIGHTS[i].y, "text-anchor": "middle", "font-size": 30, fill: "#58C4DD", class: "f03-weights-mono" }, wlabelsG);
+        t.textContent = WEIGHTS[i].text;
+        wlabels.push(t);
+      });
+      const linkLens = links.map((l) => {
+        const len = Math.hypot(SX - 300, SY - Number(l.getAttribute("y1")));
+        l.style.strokeDasharray = len;
+        return len;
+      });
+
+      // 8x7 decimal grid (values from the confirmed sketch; blue = highlighted)
+      const GRID = [
+        ["-1.20", "-0.57", "+0.07", "+0.71", "-1.06", "-0.42", "+0.22", "+0.86"],
+        ["-0.76", "-0.12", "+0.52", "+1.16", "-0.61", "+0.02", "+0.66", "-1.11"],
+        ["-0.31", "+0.33", "+0.96", "-0.81", "-0.17", "+0.47", "+1.11", "-0.66"],
+        ["+0.13", "+0.77", "-1.00", "-0.36", "+0.28", "+0.92", "-0.86", "-0.22"],
+        ["+0.58", "-1.19", "-0.55", "+0.08", "+0.72", "-1.05", "-0.41", "+0.23"],
+        ["+1.02", "-0.75", "-0.11", "+0.53", "+1.17", "-0.60", "+0.04", "+0.67"],
+        ["-0.94", "-0.30", "+0.34", "+0.98", "-0.80", "-0.16", "+0.48", "+1.12"]
+      ];
+      const BLUE = { "0,0": 1, "2,7": 1, "3,6": 1, "4,5": 1, "5,4": 1, "6,3": 1 };
+      const gridG = document.getElementById("f03-weights-grid");
+      const rows = GRID.map((row, r) => row.map((v, c) => {
+        const t = mk("text", {
+          x: 1060 + c * 100, y: 180 + r * 70, "text-anchor": "middle", "font-size": 26,
+          fill: BLUE[r + "," + c] ? "#58C4DD" : "#6B7488", class: "f03-weights-mono"
+        }, gridG);
+        t.textContent = minus(v);
+        return t;
+      }));
+
+      const tl = gsap.timeline({ paused: true });
+
+      // 0.2s title
+      tl.fromTo("#f03-weights-title", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, 0.2);
+
+      // 2.7s inputs + Σ pop in (stagger 0.12), then connections draw on
+      inputs.concat([document.getElementById("f03-weights-sum")]).forEach((n, i) => {
+        tl.fromTo(n, { opacity: 0, scale: 0, transformOrigin: "50% 50%" }, { opacity: 1, scale: 1, duration: 0.45, ease: "back.out(1.6)" }, 2.65 + i * 0.12);
+      });
+      links.forEach((l, i) => {
+        tl.fromTo(l, { strokeDashoffset: linkLens[i] }, { strokeDashoffset: 0, duration: 0.8, ease: "power1.inOut" }, 3.3 + i * 0.1);
+      });
+
+      // 6.8 / 8.2 / 9.0 weight labels
+      [6.8, 8.2, 9.0].forEach((t0, i) => {
+        tl.fromTo(wlabels[i], { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, t0);
+      });
+
+      // 10.8s pulses travel along each connection into Σ; Σ flashes
+      pulses.forEach((p, i) => {
+        const t0 = 10.8 + i * 0.2;
+        tl.fromTo(p, { attr: { cx: 300, cy: INPUT_Y[i] } }, { attr: { cx: SX, cy: SY }, duration: 0.8, ease: "power1.inOut" }, t0);
+        tl.to(p, { opacity: 1, duration: 0.12, ease: "none" }, t0);
+        tl.to(p, { opacity: 0, duration: 0.15, ease: "none" }, t0 + 0.7);
+      });
+      tl.to(["#f03-weights-sum-glyph"], { fill: "#FFFFFF", duration: 0.2, ease: "power1.inOut" }, 12.0);
+      tl.to(["#f03-weights-sum-circle"], { stroke: "#FFFFFF", duration: 0.2, ease: "power1.inOut" }, 12.0);
+      tl.to(["#f03-weights-sum-glyph"], { fill: "#ECEEF2", duration: 0.5, ease: "power1.inOut" }, 12.35);
+      tl.to(["#f03-weights-sum-circle"], { stroke: "#ECEEF2", duration: 0.5, ease: "power1.inOut" }, 12.35);
+
+      // 16.7s "Billions of times" — grid waterfall, row by row, then settle 1.0 -> 0.96
+      rows.forEach((row, r) => {
+        row.forEach((cell, c) => {
+          tl.fromTo(cell, { opacity: 0, y: -12 }, { opacity: 1, y: 0, duration: 0.3, ease: "power2.out" }, 16.65 + r * 0.12 + c * 0.012);
+        });
+      });
+      tl.fromTo(gridG, { scale: 1, transformOrigin: "50% 50%" }, { scale: 0.96, duration: 1.4, ease: "power1.inOut" }, 17.8);
+
+      // 18.4+ equation term by term
+      tl.fromTo("#f03-weights-eq-a", { opacity: 0 }, { opacity: 1, duration: 0.5, ease: "power2.out" }, 18.3);
+      tl.fromTo("#f03-weights-eq-b", { opacity: 0 }, { opacity: 1, duration: 0.5, ease: "power2.out" }, 20.2);
+      tl.fromTo("#f03-weights-eq-c", { opacity: 0 }, { opacity: 1, duration: 0.4, ease: "power2.out" }, 21.4);
+      tl.fromTo("#f03-weights-eq-d", { opacity: 0 }, { opacity: 1, duration: 0.5, ease: "power2.out" }, 21.9);
+
+      // ambient drift: whole board rises 6px across the scene
+      tl.fromTo("#f03-weights-drift", { y: 0 }, { y: -6, duration: 23.75, ease: "sine.inOut" }, 0);
+
+      window.__timelines["f03-weights"] = tl;
+    })();
+  </script>
+</template>

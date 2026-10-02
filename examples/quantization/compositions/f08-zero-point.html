@@ -1,0 +1,118 @@
+<template>
+  <style>
+    @font-face { font-family: "STIX Two Text"; src: url("assets/fonts/stix-two-text.ttf"); font-style: normal; font-weight: 400 700; }
+    @font-face { font-family: "STIX Two Text"; src: url("assets/fonts/stix-two-text-italic.ttf"); font-style: italic; font-weight: 400 700; }
+    #root { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; }
+    #f08-zero-point-stage { position: absolute; inset: 0; width: 1920px; height: 1080px; }
+    #f08-zero-point-svg { position: absolute; inset: 0; width: 1920px; height: 1080px; display: block; }
+    .f08-zero-point-serif { font-family: "STIX Two Text", serif; }
+    .f08-zero-point-mono { font-family: "JetBrains Mono", monospace; }
+  </style>
+
+  <div data-hf-id="hf-qa1o" id="root" data-composition-id="f08-zero-point" data-width="1920" data-height="1080" data-duration="27.85">
+    <div data-hf-id="hf-j4wn" id="f08-zero-point-stage" class="clip" data-start="0" data-duration="27.85" data-track-index="1">
+      <svg data-hf-id="hf-4r9f" id="f08-zero-point-svg" viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+        <g data-hf-id="hf-rhe9" id="f08-zero-point-drift">
+          <text data-hf-id="hf-65oc" id="f08-zero-point-title" x="120" y="110" class="f08-zero-point-serif" font-size="44" font-style="italic" fill="#6B7488">Step 2 · the zero-point z</text>
+
+          <!-- ruler (continues frame 07: y=470, x 260→1660) -->
+          <line data-hf-id="hf-yjx9" id="f08-zero-point-axis" x1="230" y1="470" x2="1690" y2="470" stroke="#6B7488" stroke-width="3" />
+          <g data-hf-id="hf-0vam" id="f08-zero-point-ticks" />
+          <g data-hf-id="hf-j2f3" id="f08-zero-point-indices" />
+
+          <!-- hops 0 → 5 -->
+          <g data-hf-id="hf-a9l8" id="f08-zero-point-hops" />
+          <g data-hf-id="hf-vxqc" id="f08-zero-point-counts" />
+
+          <!-- real 0 marker at tick 5 -->
+          <line data-hf-id="hf-3g6c" id="f08-zero-point-marker" x1="726.67" y1="300" x2="726.67" y2="445" stroke="#5CD0B3" stroke-width="4" />
+          <text data-hf-id="hf-3vmf" id="f08-zero-point-marker-label" x="726.67" y="280" text-anchor="middle" class="f08-zero-point-serif" font-size="34" font-style="italic" fill="#5CD0B3">real 0</text>
+
+          <!-- equation: z = −(−1.0 ÷ 0.2) = 5 -->
+          <text data-hf-id="hf-f8bf" x="960" y="700" text-anchor="middle" class="f08-zero-point-serif" font-size="64" fill="#ECEEF2">
+            <tspan data-hf-id="hf-07pm" id="f08-zero-point-eq-z" fill="#5CD0B3" font-style="italic">z</tspan><tspan data-hf-id="hf-qjl9" id="f08-zero-point-eq-eq"> = </tspan><tspan data-hf-id="hf-vadt" id="f08-zero-point-eq-mid">−(−1.0 ÷ 0.2)</tspan><tspan data-hf-id="hf-z8eq" id="f08-zero-point-eq-end"> = <tspan data-hf-id="hf-mrbh" fill="#5CD0B3">5</tspan></tspan>
+          </text>
+
+          <!-- pill -->
+          <rect data-hf-id="hf-5c2m" id="f08-zero-point-pill" x="1440" y="620" width="340" height="70" rx="35" fill="none" stroke="#5CD0B3" stroke-width="3" />
+          <text data-hf-id="hf-v167" id="f08-zero-point-pill-text" x="1610" y="667" text-anchor="middle" class="f08-zero-point-mono" font-size="28" fill="#5CD0B3">0 stays exactly 0</text>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  <script>
+    (function () {
+      const NS = "http://www.w3.org/2000/svg";
+      const X0 = 260, X1 = 1660, Y = 470;
+      const step = (X1 - X0) / 15;
+      const mk = (tag, attrs, parent) => {
+        const el = document.createElementNS(NS, tag);
+        for (const k in attrs) el.setAttribute(k, attrs[k]);
+        parent.appendChild(el);
+        return el;
+      };
+
+      const ticksG = document.getElementById("f08-zero-point-ticks");
+      const idxG = document.getElementById("f08-zero-point-indices");
+      const hopsG = document.getElementById("f08-zero-point-hops");
+      const countsG = document.getElementById("f08-zero-point-counts");
+      for (let i = 0; i < 16; i++) {
+        const x = X0 + i * step;
+        mk("line", { x1: x, y1: Y - 22, x2: x, y2: Y + 22, stroke: "#ECEEF2", "stroke-width": 3 }, ticksG);
+        const t = mk("text", { x: x, y: 532, "text-anchor": "middle", "font-size": 26, fill: "#E88CC4", class: "f08-zero-point-mono" }, idxG);
+        t.textContent = String(i);
+      }
+      const hops = [], counts = [];
+      for (let i = 0; i < 5; i++) {
+        const a = X0 + i * step, b = a + step, m = a + step / 2;
+        hops.push(mk("path", { d: "M" + a + " 440 Q" + m + " 360 " + b + " 440", fill: "none", stroke: "#5CD0B3", "stroke-width": 4 }, hopsG));
+        const c = mk("text", { x: m, y: 370, "text-anchor": "middle", "font-size": 26, fill: "#5CD0B3", class: "f08-zero-point-mono" }, countsG);
+        c.textContent = String(i + 1);
+        counts.push(c);
+      }
+
+      const pill = document.getElementById("f08-zero-point-pill");
+      const pillLen = pill.getTotalLength();
+      pill.style.strokeDasharray = pillLen;
+
+      const tl = gsap.timeline({ paused: true });
+
+      // 0.2s title; ruler + indices are already on the board (continuation of frame 07)
+      tl.fromTo("#f08-zero-point-title", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, 0.2);
+
+      // 2.4s five teal hops, 0.45s each, counts pop
+      hops.forEach((h, i) => {
+        const len = h.getTotalLength();
+        h.style.strokeDasharray = len;
+        tl.fromTo(h, { strokeDashoffset: len }, { strokeDashoffset: 0, duration: 0.4, ease: "power1.inOut" }, 2.4 + i * 0.45);
+        tl.fromTo(counts[i], { opacity: 0, scale: 0, transformOrigin: "50% 50%" }, { opacity: 1, scale: 1, duration: 0.35, ease: "back.out(1.6)" }, 2.6 + i * 0.45);
+      });
+
+      // 6.5s real-0 marker rises
+      tl.fromTo("#f08-zero-point-marker", { scaleY: 0, transformOrigin: "50% 100%" }, { scaleY: 1, duration: 0.6, ease: "power2.out" }, 6.5);
+      tl.fromTo("#f08-zero-point-marker-label", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 6.8);
+
+      // 7.3s equation term by term
+      tl.fromTo(["#f08-zero-point-eq-z", "#f08-zero-point-eq-eq"], { fillOpacity: 0 }, { fillOpacity: 1, duration: 0.4 }, 7.3);
+      tl.fromTo("#f08-zero-point-eq-mid", { fillOpacity: 0 }, { fillOpacity: 1, duration: 0.5 }, 8.4);
+      tl.fromTo("#f08-zero-point-eq-end", { fillOpacity: 0 }, { fillOpacity: 1, duration: 0.5 }, 11.4);
+
+      // 13.1s "zero-point, z" — z pulses
+      tl.to("#f08-zero-point-eq-z", { fill: "#BFF5E6", duration: 0.3, ease: "power2.out" }, 13.1);
+      tl.to("#f08-zero-point-eq-z", { fill: "#5CD0B3", duration: 0.4, ease: "power1.inOut" }, 13.4);
+      tl.to("#f08-zero-point-marker", { strokeWidth: 7, duration: 0.3, ease: "power2.out" }, 13.1);
+      tl.to("#f08-zero-point-marker", { strokeWidth: 4, duration: 0.4, ease: "power1.inOut" }, 13.4);
+
+      // 19.5s pill draws on, text fades in
+      tl.fromTo(pill, { strokeDashoffset: pillLen }, { strokeDashoffset: 0, duration: 0.9, ease: "power1.inOut" }, 19.5);
+      tl.fromTo("#f08-zero-point-pill-text", { opacity: 0 }, { opacity: 1, duration: 0.5, ease: "power2.out" }, 20.0);
+
+      // ambient drift
+      tl.fromTo("#f08-zero-point-drift", { y: 0 }, { y: -6, duration: 27.0, ease: "sine.inOut" }, 0);
+
+      window.__timelines["f08-zero-point"] = tl;
+    })();
+  </script>
+</template>

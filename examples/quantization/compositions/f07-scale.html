@@ -1,0 +1,125 @@
+<template>
+  <style>
+    @font-face { font-family: "STIX Two Text"; src: url("assets/fonts/stix-two-text.ttf"); font-style: normal; font-weight: 400 700; }
+    @font-face { font-family: "STIX Two Text"; src: url("assets/fonts/stix-two-text-italic.ttf"); font-style: italic; font-weight: 400 700; }
+    #root { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; }
+    #f07-scale-stage { position: absolute; inset: 0; width: 1920px; height: 1080px; }
+    #f07-scale-svg { position: absolute; inset: 0; width: 1920px; height: 1080px; display: block; }
+    .f07-scale-serif { font-family: "STIX Two Text", serif; }
+    .f07-scale-mono { font-family: "JetBrains Mono", monospace; }
+  </style>
+
+  <div data-hf-id="hf-qa7s" id="root" data-composition-id="f07-scale" data-width="1920" data-height="1080" data-duration="31.95">
+    <div data-hf-id="hf-pzxz" id="f07-scale-stage" class="clip" data-start="0" data-duration="31.95" data-track-index="1">
+      <svg data-hf-id="hf-am0z" id="f07-scale-svg" viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+        <g data-hf-id="hf-lnkb" id="f07-scale-drift">
+          <text data-hf-id="hf-eowj" id="f07-scale-title" x="120" y="110" class="f07-scale-serif" font-size="44" font-style="italic" fill="#6B7488">Step 1 · the scale s</text>
+
+          <!-- range brace + label -->
+          <path data-hf-id="hf-qg4t" id="f07-scale-brace" d="M260 300 Q260 270 300 270 L920 270 Q960 270 960 240 Q960 270 1000 270 L1620 270 Q1660 270 1660 300" fill="none" stroke="#ECEEF2" stroke-width="3" />
+          <text data-hf-id="hf-kh2o" id="f07-scale-range" x="960" y="215" text-anchor="middle" class="f07-scale-serif" font-size="40" font-style="italic" fill="#ECEEF2">range = 2 − (−1) = 3</text>
+
+          <!-- ruler -->
+          <line data-hf-id="hf-w59l" id="f07-scale-axis" x1="230" y1="470" x2="1690" y2="470" stroke="#6B7488" stroke-width="3" />
+          <g data-hf-id="hf-us8c" id="f07-scale-ticks" />
+          <g data-hf-id="hf-7n2d" id="f07-scale-gaps" />
+          <rect data-hf-id="hf-zese" id="f07-scale-step" x="260" y="500" width="93.33" height="24" fill="#F4D35E" opacity="0.8" />
+          <text data-hf-id="hf-v8tw" id="f07-scale-steplabel" x="306.7" y="560" text-anchor="middle" class="f07-scale-mono" font-size="24" fill="#F4D35E">one step</text>
+
+          <!-- weights -->
+          <g data-hf-id="hf-9sa2" id="f07-scale-dots" />
+
+          <!-- equation: s = 3 ÷ 15 gaps = 0.2 -->
+          <text data-hf-id="hf-q481" x="960" y="720" text-anchor="middle" class="f07-scale-serif" font-size="64" fill="#ECEEF2">
+            <tspan data-hf-id="hf-agq0" id="f07-scale-eq-s" fill="#F4D35E" font-style="italic">s</tspan><tspan data-hf-id="hf-r18e" id="f07-scale-eq-mid"> = 3 ÷ 15 gaps </tspan><tspan data-hf-id="hf-dvm6" id="f07-scale-eq-end">= <tspan data-hf-id="hf-8peg" fill="#F4D35E">0.2</tspan></tspan>
+          </text>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  <script>
+    (function () {
+      const NS = "http://www.w3.org/2000/svg";
+      const X0 = 260, X1 = 1660, Y = 470;
+      const X = (v) => X0 + (v + 1) / 3 * (X1 - X0);
+      const step = (X1 - X0) / 15;
+      const mk = (tag, attrs, parent) => {
+        const el = document.createElementNS(NS, tag);
+        for (const k in attrs) el.setAttribute(k, attrs[k]);
+        parent.appendChild(el);
+        return el;
+      };
+
+      const ticksG = document.getElementById("f07-scale-ticks");
+      const gapsG = document.getElementById("f07-scale-gaps");
+      const dotsG = document.getElementById("f07-scale-dots");
+      const ticks = [], gaps = [], dots = [];
+      for (let i = 0; i < 16; i++) {
+        ticks.push(mk("line", { x1: X0 + i * step, y1: Y - 22, x2: X0 + i * step, y2: Y + 22, stroke: "#ECEEF2", "stroke-width": 3 }, ticksG));
+      }
+      for (let i = 0; i < 15; i++) {
+        gaps.push(mk("rect", { x: X0 + i * step + 2, y: Y - 6, width: step - 4, height: 12, fill: "#F4D35E", opacity: 0 }, gapsG));
+      }
+      const W = [-1.0, -0.43, 0.0, 0.51, 1.37, 2.0];
+      W.forEach((v) => {
+        const g = mk("g", {}, dotsG);
+        mk("circle", { cx: X(v), cy: 420, r: 13, fill: "#58C4DD" }, g);
+        const t = mk("text", { x: X(v), y: 385, "text-anchor": "middle", "font-size": 28, fill: "#58C4DD", class: "f07-scale-mono" }, g);
+        t.textContent = String(v).replace("-", "−");
+        dots.push(g);
+      });
+
+      const brace = document.getElementById("f07-scale-brace");
+      const braceLen = brace.getTotalLength();
+      brace.style.strokeDasharray = braceLen;
+
+      const tl = gsap.timeline({ paused: true });
+
+      tl.fromTo("#f07-scale-title", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, 0.2);
+      tl.fromTo("#f07-scale-axis", { opacity: 0 }, { opacity: 1, duration: 0.5 }, 0.2);
+
+      // 0.4s six weights drop onto their values
+      dots.forEach((d, i) => {
+        tl.fromTo(d, { opacity: 0, y: -40 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, 0.4 + i * 0.25);
+      });
+
+      // 4.0s min and max pulse
+      [0, 5].forEach((k, j) => {
+        const c = dots[k].querySelector("circle");
+        tl.fromTo(c, { attr: { r: 13 } }, { attr: { r: 19 }, duration: 0.3, ease: "power2.out", yoyo: true, repeat: 1 }, 4.0 + j * 0.9);
+      });
+
+      // 6.9s sixteen ticks pop
+      ticks.forEach((t, i) => {
+        tl.fromTo(t, { opacity: 0, scaleY: 0, transformOrigin: "50% 50%" }, { opacity: 1, scaleY: 1, duration: 0.35, ease: "back.out(1.6)" }, 6.9 + i * 0.04);
+      });
+
+      // 11.2s fifteen gaps flicker along the axis
+      gaps.forEach((g, i) => {
+        tl.fromTo(g, { opacity: 0 }, { opacity: 0.9, duration: 0.15 }, 11.2 + i * 0.08);
+        tl.to(g, { opacity: 0, duration: 0.35 }, 11.2 + i * 0.08 + 0.3);
+      });
+
+      // 15.1s range brace draws + label
+      tl.fromTo(brace, { strokeDashoffset: braceLen }, { strokeDashoffset: 0, duration: 1.0, ease: "power1.inOut" }, 15.1);
+      tl.fromTo("#f07-scale-range", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, 15.6);
+
+      // 18.4s one step + equation term by term
+      tl.fromTo("#f07-scale-step", { scaleX: 0, transformOrigin: "0% 50%" }, { scaleX: 1, duration: 0.5, ease: "power2.out" }, 18.4);
+      tl.fromTo("#f07-scale-steplabel", { opacity: 0 }, { opacity: 1, duration: 0.4 }, 18.7);
+      tl.fromTo("#f07-scale-eq-s", { opacity: 0 }, { opacity: 1, duration: 0.4 }, 18.6);
+      tl.fromTo("#f07-scale-eq-mid", { opacity: 0 }, { opacity: 1, duration: 0.5 }, 19.6);
+      tl.fromTo("#f07-scale-eq-end", { opacity: 0 }, { opacity: 1, duration: 0.5 }, 21.3);
+
+      // 22.7s "written s" — s pulses
+      tl.to("#f07-scale-eq-s", { fill: "#FFF4B8", duration: 0.3, yoyo: true, repeat: 1 }, 22.7);
+
+      // ambient drift: whole board rises 6px across the scene
+      tl.fromTo("#f07-scale-drift", { y: 0 }, { y: -6, duration: 31.3, ease: "sine.inOut" }, 0);
+
+      window.__timelines["f07-scale"] = tl;
+    })();
+  </script>
+</template>

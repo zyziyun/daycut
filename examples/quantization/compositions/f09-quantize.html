@@ -1,0 +1,175 @@
+<template>
+  <style>
+    @font-face { font-family: "STIX Two Text"; src: url("assets/fonts/stix-two-text.ttf"); font-style: normal; font-weight: 400 700; }
+    @font-face { font-family: "STIX Two Text"; src: url("assets/fonts/stix-two-text-italic.ttf"); font-style: italic; font-weight: 400 700; }
+    #root { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; }
+    #f09-quantize-stage { position: absolute; inset: 0; width: 1920px; height: 1080px; }
+    #f09-quantize-svg { position: absolute; inset: 0; width: 1920px; height: 1080px; display: block; }
+    .f09-quantize-serif { font-family: "STIX Two Text", serif; }
+    .f09-quantize-mono { font-family: "JetBrains Mono", monospace; }
+  </style>
+
+  <div data-hf-id="hf-av2n" id="root" data-composition-id="f09-quantize" data-width="1920" data-height="1080" data-duration="49.2">
+    <div data-hf-id="hf-d8zq" id="f09-quantize-stage" class="clip" data-start="0" data-duration="49.2" data-track-index="1">
+      <svg data-hf-id="hf-mp5o" id="f09-quantize-svg" viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+        <g data-hf-id="hf-sk98" id="f09-quantize-drift">
+          <text data-hf-id="hf-mof0" id="f09-quantize-title" x="120" y="110" class="f09-quantize-serif" font-size="44" font-style="italic" fill="#6B7488">Step 3 · quantize</text>
+
+          <!-- formula: q = round( x / s ) + z -->
+          <text data-hf-id="hf-lyiv" x="960" y="250" text-anchor="middle" class="f09-quantize-serif" font-size="92" fill="#ECEEF2">
+            <tspan data-hf-id="hf-pa8f" id="f09-quantize-f-q" fill="#E88CC4" font-style="italic">q</tspan><tspan data-hf-id="hf-qgne" id="f09-quantize-f-eq"> = </tspan><tspan data-hf-id="hf-fxkh" id="f09-quantize-f-open">round( </tspan><tspan data-hf-id="hf-8wiu" id="f09-quantize-f-x" fill="#58C4DD" font-style="italic">x</tspan><tspan data-hf-id="hf-knvr" id="f09-quantize-f-div"> / </tspan><tspan data-hf-id="hf-rntl" id="f09-quantize-f-s" fill="#F4D35E" font-style="italic">s</tspan><tspan data-hf-id="hf-3mti" id="f09-quantize-f-close"> )</tspan><tspan data-hf-id="hf-98yq" id="f09-quantize-f-plus"> + </tspan><tspan data-hf-id="hf-jj2b" id="f09-quantize-f-z" fill="#5CD0B3" font-style="italic">z</tspan>
+          </text>
+
+          <!-- chain row (y=440) -->
+          <g data-hf-id="hf-3v36" id="f09-quantize-chain" />
+
+          <!-- table -->
+          <text data-hf-id="hf-mpok" id="f09-quantize-lab-x" x="160" y="610" text-anchor="end" class="f09-quantize-serif" font-size="40" font-style="italic" fill="#58C4DD">x</text>
+          <text data-hf-id="hf-uqit" id="f09-quantize-lab-q" x="160" y="700" text-anchor="end" class="f09-quantize-serif" font-size="40" font-style="italic" fill="#E88CC4">q</text>
+          <line data-hf-id="hf-5a47" id="f09-quantize-rule" x1="200" y1="640" x2="1700" y2="640" stroke="#2A3247" stroke-width="2" />
+          <g data-hf-id="hf-yiu5" id="f09-quantize-table" />
+
+          <text data-hf-id="hf-si7z" id="f09-quantize-bits" x="1700" y="760" text-anchor="end" class="f09-quantize-mono" font-size="26" fill="#6B7488">each q fits in 4 bits</text>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  <script>
+    (function () {
+      const NS = "http://www.w3.org/2000/svg";
+      const mk = (tag, attrs, parent, txt) => {
+        const el = document.createElementNS(NS, tag);
+        for (const k in attrs) el.setAttribute(k, attrs[k]);
+        if (txt !== undefined) el.textContent = txt;
+        parent.appendChild(el);
+        return el;
+      };
+      const BLUE = "#58C4DD", YEL = "#F4D35E", TEAL = "#5CD0B3", PINK = "#E88CC4", INK = "#ECEEF2", DIM = "#6B7488";
+
+      // ---- chain row: 7 slots at x = 250 + 236*k, arrows between ----
+      const chainG = document.getElementById("f09-quantize-chain");
+      const CY = 440;
+      const slotX = (k) => 250 + 236 * k;
+      const mono = (x, fill, txt, bold) => mk("text", { x: x, y: CY, "text-anchor": "middle", "font-size": 50, fill: fill, "font-weight": bold ? 700 : 400, class: "f09-quantize-mono" }, chainG, txt);
+      const arrows = [];
+      for (let k = 0; k < 6; k++) {
+        arrows.push(mk("text", { x: slotX(k) + 118, y: CY, "text-anchor": "middle", "font-size": 40, fill: DIM, class: "f09-quantize-serif" }, chainG, "→"));
+      }
+      // constant tokens: slot 1 "÷ 0.2", slot 3 "round", slot 5 "+ 5"
+      const cDiv = mono(slotX(1), YEL, "÷ 0.2");
+      const cRound = mono(slotX(3), DIM, "round");
+      const cPlus = mono(slotX(5), TEAL, "+ 5");
+      // variable tokens per example: slot 0 value, slot 2 quotient, slot 4 rounded, slot 6 q
+      const EX = [
+        ["0.51", "2.55", "3", "8"],
+        ["−0.43", "−2.15", "−2", "3"],
+        ["1.37", "6.85", "7", "12"]
+      ];
+      const vars = EX.map((row) => [
+        mono(slotX(0), BLUE, row[0]),
+        mono(slotX(2), INK, row[1]),
+        mono(slotX(4), INK, row[2]),
+        mono(slotX(6), PINK, row[3], true)
+      ]);
+
+      // ---- table: x row y=610, q row y=700, columns 300 + 260*i ----
+      const tableG = document.getElementById("f09-quantize-table");
+      const XS = ["−1", "−0.43", "0", "0.51", "1.37", "2"];
+      const QS = ["0", "3", "5", "8", "12", "15"];
+      const xCells = [], qCells = [];
+      for (let i = 0; i < 6; i++) {
+        const cx = 300 + 260 * i;
+        xCells.push(mk("text", { x: cx, y: 610, "text-anchor": "middle", "font-size": 40, fill: BLUE, class: "f09-quantize-mono" }, tableG, XS[i]));
+        qCells.push(mk("text", { x: cx, y: 700, "text-anchor": "middle", "font-size": 44, fill: PINK, "font-weight": 700, class: "f09-quantize-mono" }, tableG, QS[i]));
+      }
+
+      const tl = gsap.timeline({ paused: true });
+      const fadeIn = (t, at, d) => tl.fromTo(t, { fillOpacity: 0 }, { fillOpacity: 1, duration: d || 0.5, ease: "power2.out" }, at);
+      const tokIn = (t, at) => tl.fromTo(t, { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.45, ease: "power2.out" }, at);
+      const pop = (t, at) => tl.fromTo(t, { opacity: 0, scale: 0.4, transformOrigin: "50% 50%" }, { opacity: 1, scale: 1, duration: 0.45, ease: "back.out(1.6)" }, at);
+      const tokOut = (t, at) => tl.to(t, { opacity: 0, y: -10, duration: 0.35, ease: "power1.inOut" }, at);
+
+      tl.fromTo("#f09-quantize-title", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, 0.2);
+
+      // formula writes in by parts
+      fadeIn(["#f09-quantize-f-x", "#f09-quantize-f-div", "#f09-quantize-f-s"], 1.6);
+      fadeIn(["#f09-quantize-f-open", "#f09-quantize-f-close"], 4.6);
+      fadeIn(["#f09-quantize-f-plus", "#f09-quantize-f-z"], 6.0);
+      fadeIn(["#f09-quantize-f-q", "#f09-quantize-f-eq"], 8.0);
+
+      // ---- example A: 0.51 ----
+      const A = vars[0];
+      tokIn(A[0], 11.4);
+      tokIn([arrows[0], cDiv], 13.0);
+      tokIn([arrows[1], A[1]], 14.6);
+      tokIn([arrows[2], cRound], 16.5);
+      tokIn([arrows[3], A[2]], 16.8);
+      tokIn([arrows[4], cPlus], 17.6);
+      tokIn(arrows[5], 18.3);
+      pop(A[3], 18.3);
+
+      // 19.5s table: labels, rule, x row dimmed; column 0.51 lights, q=8 pops
+      tl.fromTo(["#f09-quantize-lab-x", "#f09-quantize-lab-q"], { opacity: 0 }, { opacity: 1, duration: 0.5 }, 19.5);
+      tl.fromTo("#f09-quantize-rule", { scaleX: 0, transformOrigin: "0% 50%" }, { scaleX: 1, duration: 0.6, ease: "power2.out" }, 19.5);
+      xCells.forEach((c, i) => {
+        tl.fromTo(c, { opacity: 0 }, { opacity: 0.3, duration: 0.4 }, 19.6 + i * 0.06);
+      });
+      const lightCol = (i, at) => {
+        tl.to(xCells[i], { opacity: 1, duration: 0.4, ease: "power2.out" }, at);
+        pop(qCells[i], at + 0.2);
+      };
+      lightCol(3, 20.2);
+
+      // ---- example B: −0.43 (cross-fade at 22.7) ----
+      const B = vars[1];
+      A.forEach((t) => tokOut(t, 22.7));
+      tl.to([cDiv, cRound, cPlus].concat(arrows), { opacity: 0.25, duration: 0.35, ease: "power1.inOut" }, 22.7);
+      tokIn(B[0], 23.9);
+      tl.to([arrows[0], cDiv], { opacity: 1, duration: 0.4 }, 25.4);
+      tokIn(B[1], 27.0);
+      tl.to(arrows[1], { opacity: 1, duration: 0.4 }, 27.0);
+      tl.to([arrows[2], cRound], { opacity: 1, duration: 0.4 }, 29.1);
+      tl.to(arrows[3], { opacity: 1, duration: 0.4 }, 29.3);
+      tokIn(B[2], 29.3);
+      tl.to([arrows[4], cPlus], { opacity: 1, duration: 0.4 }, 30.4);
+      tl.to(arrows[5], { opacity: 1, duration: 0.4 }, 31.0);
+      pop(B[3], 31.0);
+      lightCol(1, 31.4);
+
+      // ---- example C: 1.37 (swap at 32.0) ----
+      const C = vars[2];
+      B.forEach((t) => tokOut(t, 31.9));
+      tl.to([cDiv, cRound, cPlus].concat(arrows), { opacity: 0.25, duration: 0.3, ease: "power1.inOut" }, 31.9);
+      tokIn(C[0], 32.2);
+      tl.to([arrows[0], cDiv], { opacity: 1, duration: 0.4 }, 34.0);
+      tokIn(C[1], 35.4);
+      tl.to(arrows[1], { opacity: 1, duration: 0.4 }, 35.4);
+      tl.to([arrows[2], cRound], { opacity: 1, duration: 0.4 }, 36.9);
+      tl.to(arrows[3], { opacity: 1, duration: 0.4 }, 37.1);
+      tokIn(C[2], 37.1);
+      tl.to([arrows[4], cPlus], { opacity: 1, duration: 0.4 }, 38.0);
+      tl.to(arrows[5], { opacity: 1, duration: 0.4 }, 38.6);
+      pop(C[3], 38.6);
+      lightCol(4, 38.9);
+
+      // 39.4s remaining columns waterfall in (0, 5, 15)
+      [0, 2, 5].forEach((i, j) => lightCol(i, 39.5 + j * 0.3));
+
+      // 43.0s q row pulses pink once (follows the spoken list)
+      qCells.forEach((c, i) => {
+        tl.to(c, { scale: 1.18, fill: "#F7C6E3", duration: 0.25, ease: "power2.out" }, 43.0 + i * 0.12);
+        tl.to(c, { scale: 1, fill: PINK, duration: 0.35, ease: "power1.inOut" }, 43.25 + i * 0.12);
+      });
+
+      // 46.0s footnote
+      tl.fromTo("#f09-quantize-bits", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: "power2.out" }, 46.0);
+
+      // ambient drift
+      tl.fromTo("#f09-quantize-drift", { y: 0 }, { y: -6, duration: 48.3, ease: "sine.inOut" }, 0);
+
+      window.__timelines["f09-quantize"] = tl;
+    })();
+  </script>
+</template>
