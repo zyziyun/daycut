@@ -8,7 +8,8 @@ You talk to Claude ("cut the 气口 and speed it up 1.3×", "add a split screen 
 prompt", "make it 10 minutes, bilingual subtitles, 3b1b style"); the skill tells Claude which workflow to run and
 gives it tested scripts and a shared library to do it.
 
-![explainer storyboard](workflows/explainer/example/storyboard/f07.svg)
+![口播 · 切片 · 文艺片 · 卡点 vlog · 播客遮脸 · 讲解短片](docs/demos/strip.jpg)
+<sub>Frames from six demo edits made end to end with this skill; contact sheets below.</sub>
 
 ## What it covers
 
