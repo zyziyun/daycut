@@ -75,9 +75,13 @@ Full notes in `references/vertical_pipeline.md`.
    elsewhere; whisper is cached next to the wav).
 2. **Keep list**, one entry per sentence (sid = list index): write `edit_list.py` from `examples/v_edit_list_example.py`.
 3. **Snap to voice, squeeze pauses, frame-exact cut.** `python3 $V/cut_pass1.py edit_list.py` → `body_v.mp4 body_a.wav segs.json`.
-4. **Per-frame retouch** (slim, eyes, de-shine, skin; EMA-smoothed landmarks; ~1 s/frame/worker).
+4. **Per-frame retouch** (slim, eyes, de-shine, three-band skin smoothing, subtle "natural" makeup;
+   One Euro-smoothed landmarks from a VIDEO-mode face-crop tracker, landmark-anchored masks, 15-frame
+   chunk warm-up so seams don't jump; ~0.8 s/frame/worker).
    `python3 $V/retouch_video.py body_v.mp4 x --test 300,2500` to check, then
    `python3 $V/retouch_video.py body_v.mp4 body_rt.mp4 --workers 5`.
+   Knobs: `--makeup 0` (off) / `--preset daily`, `--smooth`, `--pores`, `--glasses thick`; persona
+   `retouch.video.<knob>` sets your defaults. All knobs, presets and checks: `references/RETOUCH.md`.
 5. **Strict filler pass on the retouched body.** `python3 $V/strict_pass.py transcribe body_a.wav "$PROMPT"`
    (prints the indexed words plus `DEL candidates` from `vstudio.cut.suggest_fillers`: fillers, repeats, merged
    restarts; check each by ear), write `strict.py` (`examples/v_strict_example.py`), then

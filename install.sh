@@ -22,6 +22,7 @@ fetch https://github.com/JetBrains/JetBrainsMono/raw/master/fonts/ttf/JetBrainsM
 echo "models (Apache-2.0, MediaPipe) -> $CACHE/models"
 fetch https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task "$CACHE/models/face_landmarker.task"
 fetch https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite "$CACHE/models/selfie_segmenter.tflite"
+fetch https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite "$CACHE/models/selfie_multiclass_256x256.tflite"
 
 if [ "${SKIP_PIP:-0}" != "1" ]; then
   echo "python deps"

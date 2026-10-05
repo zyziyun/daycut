@@ -42,6 +42,7 @@ Run from the project folder; `$VSTUDIO` = repo root. Working files go in `work/`
 2. Crop the face region, stopping **above any burned-in caption band**:
    `python3 $VSTUDIO/workflows/cover/scripts/extract_frames.py face my-talk.mp4 work/cover_src/face_src.png --t 70 --box 0,0.5,1,0.948`
 3. Optional retouch: `python3 -m vstudio.retouch work/cover_src/face_src.png work/cover_src/face_src.png --slim .05 --eye .04`
+   (`--preset none|natural|daily|glam` for makeup, `--faces all` for group shots; see `references/RETOUCH.md`)
    (`PYTHONPATH=$VSTUDIO/lib` if vstudio isn't pip-installed).
 4. Matte: `python3 $VSTUDIO/workflows/cover/scripts/matte.py work/cover_src/face_src.png work/cover_face.png --trim --preview`
    - default engine: MediaPipe selfie segmenter + guided-filter edge refinement (Apache-2.0, fast, CPU).
@@ -58,7 +59,7 @@ Run from the project folder; `$VSTUDIO` = repo root. Working files go in `work/`
 
 ## Pattern C — premium split cover (retouched face left, dark panel right)
 1. Grab the best face frame at full resolution (any aspect; it is scaled to the cover height) and retouch it:
-   `python3 -m vstudio.retouch work/cover_src/face.png work/cover_src/face_retouched.png --slim .05 --eye .04 --makeup .5`
+   `python3 -m vstudio.retouch work/cover_src/face.png work/cover_src/face_retouched.png --slim .05 --eye .04 --makeup .5 --preset natural`
    (or put `"retouch": {...}` in the config and split_cover.py does it, cached as `*.retouched.png`).
 2. Optional hero thumbnail: a frame of the thing the video shows (an explainer frame, a product shot).
 3. Write `work/split_cover.json` from `$VSTUDIO/workflows/cover/examples/split_cover.example.json`:

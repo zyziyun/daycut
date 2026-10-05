@@ -1,6 +1,6 @@
 ---
 name: video-studio
-description: One video-editing skill for every kind of edit. Talking-head 口播 recuts (气口/filler/repeat removal, speed, captions, punch-ins, notes panels, progress bar, hooks, retouch); long recordings cut into courses or short episodes; call/interview clips with privacy masking; premium promo recuts with split screen, screenshot cards, highlight freeze-frames and inserted highlight reels; photo stories with effects; B-roll vlogs; 3Blue1Brown-style explainers; plus covers, music beds, loudness/export polish, pre-production scripts, and publish copy for 小红书/YouTube/B站. Use whenever the user hands over footage, screenshots or a topic and wants it edited, cut shorter, sped up, captioned, de-filler'd, given effects, music, a cover or post copy — or wants to tweak one stage of a video made this way.
+description: One video-editing skill for every kind of edit, for 小红书 / 抖音 / TikTok / YouTube / Shorts / B站. Talking-head 口播 (去气口, 去 filler/重复/口误, 加速, 字幕, 记笔记面板, 气泡, 进度条, 高光预告/快剪 hooks, 精剪风, 修图/美颜, 封面, 发布文案); long recordings → 切片/分集/剪成课程 (去浏览器头/书签栏, 学员变声, 竖屏切片); calls/interviews → 截取一段 + 遮脸/打码/放个小猫; promo recuts with 左右分栏/split screen, 截图卡片高亮, 定格放大, 精选插片; 文艺片/photo stories with effects; travel vlogs (calm or 卡点快节奏, 调色, 转场, 配乐); 3Blue1Brown-style explainers; covers/thumbnails, slides, scripts, pronunciation drills; one master → many platforms. Use whenever the user hands over footage, photos, screenshots or a topic and wants it edited, cut shorter, captioned, given effects, music, a cover or post copy, or wants to tweak one stage of such a video.
 ---
 
 # video-studio
@@ -33,6 +33,22 @@ Identify the **main material** and the **deliverable**, then open that workflow'
 | Just a cover / thumbnail | `workflows/cover` |
 | Square slides for a vertical video | `workflows/slides` |
 | Writing the script before recording, pronunciation drills | `workflows/preproduction` |
+
+### What the creator typically says → workflow
+| Phrases (中文 / English) | Workflow |
+|---|---|
+| 口播, 复盘, 合并剪辑, 二次剪辑, 去气口, 去 filler word, 去重复, 去口误, 精剪, 加速, 加 hooks, 高光预告, 快剪, 加进度条, 加气泡, 加面板, 记笔记, 修图, 美颜, 瘦脸, 换剪辑风格, 发小红书 | `talkinghead` |
+| 宣传一下, 讲我做的东西, 左右分栏, 分屏, 截图放进去, 高亮这句, 把 prompt 放大, 定格, 插一段精选, 精选 | `promo-recut` |
+| 剪成课程, 上课实录, 教学长视频, 切片, 分几集, 去掉浏览器头/书签栏, 加章节/字幕/zoom/笔记面板, 学员变声, 变声, 去头像, 竖屏切片 | `longform-to-short` |
+| 截取一段对话, 发一段出来, 播客剪辑, 把朋友的脸遮一下, 打码, 放个小猫, 三人同框 | `call-clips` |
+| 文艺片, 看展, 照片做成视频, 配旁白, 胶片感, 双语字幕故事 | `photo-story` |
+| 剪成一个 vlog, 旅游 vlog, 卡点, 快节奏, 去掉不好的部分, 加效果转场, 调色, 配乐, 无人机/DJI 素材 | `vlog` (`style: calm` or `fun`) |
+| 讲解视频, 3b1b, 解释一个概念, 原理讲解 | `explainer` (16:9 long or vertical short) |
+| Descript/CapCut/剪映 导出后收尾, 第一帧黑, 响度, 加速 1.2× | `polish` |
+| 做封面, 缩略图, thumbnail | `cover` |
+| 幻灯片, slides | `slides` |
+| 写稿, 口播稿, script, 发音练习, 跟读, shadowing | `preproduction` |
+| 一个视频发多个平台, 抖音/Shorts/B站版本 | any workflow → `python -m vstudio.export` |
 
 Mixed jobs chain workflows (e.g. `preproduction` → record → `talkinghead` → `cover` → `polish`).
 When the request is ambiguous, ask one question: what is the material, and where will it be posted.

@@ -29,6 +29,7 @@ FONTS = {
 MODELS = {
     "face_landmarker": "face_landmarker.task",       # MediaPipe, Apache-2.0
     "selfie_segmenter": "selfie_segmenter.tflite",   # MediaPipe, Apache-2.0
+    "selfie_multiclass": "selfie_multiclass_256x256.tflite",  # MediaPipe, Apache-2.0 (model card 2023-05-10)
 }
 
 

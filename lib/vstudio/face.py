@@ -23,6 +23,15 @@ ANCHORS_FACE = [10, 9, 151, 8, 168, 6, 1, 2, 0, 17, 152, 200, 199, 61, 291, 78, 
 BROW_ANCHORS = [70, 63, 105, 66, 107, 300, 293, 334, 296, 336]
 CHEEK_APPLE_L = [50, 101, 118, 117, 123]
 CHEEK_APPLE_R = [280, 330, 347, 346, 352]
+# eyelids, ordered outer corner -> inner corner (image-left eye = LEFT_EYE_RING, image-right = RIGHT_EYE_RING)
+UPPER_LID_L = [33, 246, 161, 160, 159, 158, 157, 173, 133]
+LOWER_LID_L = [33, 7, 163, 144, 145, 153, 154, 155, 133]
+UPPER_LID_R = [263, 466, 388, 387, 386, 385, 384, 398, 362]
+LOWER_LID_R = [263, 249, 390, 373, 374, 380, 381, 382, 362]
+BROW_LOW_L = [46, 53, 52, 65, 55]          # lower brow edge, outer -> inner
+BROW_LOW_R = [276, 283, 282, 295, 285]
+NOSE_BRIDGE = [168, 6, 197, 195, 5]
+FAST_IDX = sorted(set(LEFT_EYE_RING + RIGHT_EYE_RING + LIPS_OUT + LIPS_IN + BROW_L + BROW_R))
 
 
 def landmarker(num_faces: int = 1, video: bool = False):
@@ -233,3 +242,124 @@ def talk_activity(video, tiles, every=3, win=0.8, margin=0.18):
     step = every / fps
     res = talk_labels(series, step, win, margin)
     return dict(fps=fps, step=step, times=times, **res)
+
+
+# ---------------------------------------------------------------- per-frame landmarks for video retouch
+class LandmarkSmoother:
+    """One Euro smoothing of a (478, 2) mesh for per-frame retouch, in face-width units (resolution
+    independent). The head's centroid is filtered on its own, then each landmark's offset from it, with
+    eyes / lips / brows (FAST_IDX) on a higher cutoff so blinks and speech are not lagged while the
+    cheek / jaw outline (which carries the slim warp) stays rock still. Resets on a cut (jump > reset).
+    Chunked renders: feed ~15 warm-up frames before the first written frame and the state converges
+    to what a continuous run would have (see retouch_video.py)."""
+
+    def __init__(self, min_cutoff=0.8, beta=1.5, fast_cutoff=2.5, fast_beta=4.0, centre_cutoff=1.5,
+                 centre_beta=2.0, d_cutoff=1.0, reset=0.25):
+        from .filters import OneEuro
+        mc = np.full((478, 1), float(min_cutoff)); bt = np.full((478, 1), float(beta))
+        mc[FAST_IDX] = fast_cutoff; bt[FAST_IDX] = fast_beta
+        self._mk = lambda: (OneEuro(centre_cutoff, centre_beta, d_cutoff), OneEuro(mc, bt, d_cutoff))
+        self.reset_frac = reset
+        self.resets = -1
+        self.reset()
+
+    def reset(self):
+        self.resets += 1
+        self.fc, self.fo = self._mk()
+        self.scale = None
+        self.last = None
+
+    def __call__(self, pts, t):
+        pts = np.asarray(pts, np.float64)
+        fw = float(np.ptp(pts[FACE_OVAL, 0])) or 1.0
+        if self.last is not None and np.abs(pts - self.last).mean() > self.reset_frac * self.scale:
+            self.reset()
+        if self.scale is None:
+            self.scale = fw
+        s = self.scale
+        c = pts.mean(0)
+        cs = self.fc(c / s, t) * s
+        off = self.fo((pts - c) / s, t) * s
+        self.last = (cs + off).astype(np.float32)
+        return self.last
+
+
+def face_box(pts, scale=2.2, shape=None):
+    """Square (x, y, side) around a face, `scale` x its larger extent, shifted (not shrunk) into the frame."""
+    x0, y0 = pts.min(0); x1, y1 = pts.max(0)
+    side = int(round(max(x1 - x0, y1 - y0) * scale))
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    x, y = int(round(cx - side / 2)), int(round(cy - side / 2))
+    if shape is not None:
+        h, w = shape[:2]; side = min(side, h, w)
+        x = min(max(0, x), w - side); y = min(max(0, y), h - side)
+    return x, y, side
+
+
+def detect_in_box(lm, bgr, box, ts_ms=None, max_side=640):
+    """Landmarks of the face inside square `box` (x, y, side), the crop resized to <= max_side (a face
+    filling ~half of the crop is what the short-range detector and the mesh model like). Returns faces
+    in FRAME pixel coordinates (same dicts as detect())."""
+    import cv2
+    x, y, side = box
+    crop = bgr[y:y + side, x:x + side]
+    s = min(1.0, max_side / max(1, side))
+    if s < 1.0:
+        crop = cv2.resize(crop, None, fx=s, fy=s, interpolation=cv2.INTER_AREA)
+    faces = detect(lm, np.ascontiguousarray(crop), ts_ms)
+    for f in faces:
+        f["pts"] = f["pts"] / s + np.array([x, y], np.float32)
+    return faces
+
+
+class VideoFaceTracker:
+    """Main face per frame for video retouch: VIDEO-mode landmarker on a face crop at adequate
+    resolution (crop re-centred with hysteresis so it does not chase jitter), IMAGE-mode full-frame
+    detection to (re)acquire, and LandmarkSmoother on top. Call with strictly increasing frame indices.
+    Returns {"pts": smoothed, "raw": raw, "blend": ...} or None (smoother reset)."""
+
+    def __init__(self, fps, max_side=640, box_scale=2.2, smoother=None, acquire_scale=0.5):
+        self.fps = float(fps); self.max_side = max_side; self.box_scale = box_scale
+        self.acquire_scale = acquire_scale
+        self.lm = landmarker(1, video=True); self._lm_img = None
+        self.sm = smoother or LandmarkSmoother()
+        self.box = None
+
+    def close(self):
+        self.lm.close()
+        if self._lm_img is not None:
+            self._lm_img.close()
+
+    def _acquire(self, bgr):
+        import cv2
+        if self._lm_img is None:
+            self._lm_img = landmarker(1)
+        a = self.acquire_scale
+        small = cv2.resize(bgr, None, fx=a, fy=a, interpolation=cv2.INTER_AREA) if a != 1 else bgr
+        f = main_face(detect(self._lm_img, small))
+        if f is not None:
+            f["pts"] = f["pts"] / a
+        return f
+
+    def __call__(self, bgr, idx):
+        ts = int(round(idx * 1000.0 / self.fps))
+        f = None
+        if self.box is not None:
+            f = main_face(detect_in_box(self.lm, bgr, self.box, ts, self.max_side))
+        if f is None:
+            f = self._acquire(bgr)
+            if f is None:
+                self.box = None; self.sm.reset()
+                return None
+            self.box = face_box(f["pts"], self.box_scale, bgr.shape)
+            g = main_face(detect_in_box(self.lm, bgr, self.box, ts, self.max_side))
+            f = g or f
+        raw = f["pts"]
+        x, y, side = self.box
+        nx, ny, nside = face_box(raw, self.box_scale, bgr.shape)
+        cx, cy = nx + nside / 2, ny + nside / 2
+        if abs(cx - (x + side / 2)) > 0.12 * side or abs(cy - (y + side / 2)) > 0.12 * side \
+                or abs(nside - side) > 0.15 * side:
+            self.box = (nx, ny, nside)
+        pts = self.sm(raw, idx / self.fps)
+        return {"pts": pts, "raw": raw, "blend": f["blend"]}
