@@ -78,7 +78,7 @@ When the request is ambiguous, ask one question: what is the material, and where
 | Post copy, title length, chapter timeline | `publish.check_title`, `publish.chapter_lines`, `publish.post_body` |
 | Hide a face (privacy) | `workflows/call-clips` (`face.track_faces` + sticker) |
 
-The full effect catalogue (≈155 effects, 9 recipes): `references/EFFECTS.md`.
+The effect catalogue (87 effects, 190 counting named variants, generated from `lib/vstudio/effects.py`; 9 recipes): `references/EFFECTS.md`. Add an effect: `references/ADDING_EFFECTS.md`. Transitions shared across engines: `vstudio.xfade` (24 names in HyperFrames, ffmpeg and per-frame PIL).
 
 ## 4. Shared library (`lib/vstudio`)
 | Module | What |

@@ -7,9 +7,14 @@ Paths are relative to the repo root (`$VSTUDIO`). The **Engine** column says how
 - **HF**: HyperFrames HTML + GSAP, rendered by `npx hyperframes render`.
 - **audio**: numpy audio or an ffmpeg audio filter.
 
-An effect can only be reused inside the same engine family, so pick the engine first. A HyperFrames project
+Most effects can only be reused inside the same engine family, so pick the engine first. A HyperFrames project
 uses `vstudio.hf`. A per-frame Python compositor uses `vstudio.overlays` / `vstudio.draw` images or photo-story's
-frame functions. An ffmpeg graph uses the filter strings.
+frame functions. An ffmpeg graph uses the filter strings. **Transitions are the exception**: `vstudio.xfade` gives
+every transition name (the 11 HF types, the photo-story kinds, common ffmpeg xfade names) an implementation in all
+three engines (`xfade.blend`, `xfade.ffmpeg_transition`, `xfade.hf_transitions`); see the coverage matrix in section 7.
+
+Find effects from code: `effects.find(engine="ffmpeg", energy="low", text="zoom")`, `effects.get("light-leak")`,
+or `python -m vstudio.effects --list --engine hyperframes` / `--show <id>`.
 
 **HyperFrames rules** (`vstudio.hf` already follows them):
 
@@ -34,149 +39,188 @@ Worked users: `workflows/promo-recut/scripts/build_promo.py` (almost every gener
 
 ---
 
+The tables below are **generated** from the registry in `lib/vstudio/effects.py`. Do not edit them by hand:
+change the registry, then run `PYTHONPATH=lib python3 -m vstudio.effects --write-md`. `tests/test_effects.py` fails
+if the block is stale. To add an effect or port one to another engine, see [ADDING_EFFECTS.md](ADDING_EFFECTS.md).
+
+<!-- BEGIN GENERATED: effects registry (python -m vstudio.effects --write-md) -->
+
 ## 1. Camera / zoom
 
-| Effect | What | Engine | Where | Params | Reuse from another workflow |
-|---|---|---|---|---|---|
-| Punch-in (eased) | Talking head scales up for a window, then back | HF | `lib/vstudio/hf.py:punch_in` | `windows [[s,e]]`, `target="#face-zoom"`, `scale=1.14`, `in_dur=.45`, `out_dur=.5` | `hf.punch_in([[12.0, 15.5]])` on an inner wrapper around your video. Keep the outer wrapper free for split / zoom-through. |
-| Punch-and-stay | One punch that holds (e.g. on the punchline) | HF | `hf.py:punch_at` | `target`, `at`, `scale=1.16`, `dur=.5`, `origin="50% 38%"` | `hf.punch_at("#ow", 41.2)`, then `hf.stamp(..., at=42.1)` |
-| Wrapper zoom entrance | Settles from 1.15× and transparent | HF | `hf.py:enter_zoom` | `target`, `at`, `from_scale=1.15`, `dur=.6` | Use it to bring in any section wrapper (promo's outro) |
-| Per-sentence punch-in (hard cut) | Face-centred zoom per sentence: `EMPH` sids get `emph_zoom`, odd sids get `alt_zoom` | PIL | `workflows/talkinghead/scripts/vertical/compose.py:zoom` | `STYLE.zoom`, `emph_zoom=1.32`, `alt_zoom=1.16`; config `EMPH`, `FACE` (face_track.npy) | compose.py is not importable (it reads argv at module level). Copy `zoom()`: it is `cv2.warpAffine` about the tracked face. In HF use `hf.punch_in`. |
-| Ken Burns (8 motions) | `in`, `out`, `panL`, `panR`, `up`, `down`, `still`, `flip` (a 3D turn) on one photo | PIL | `workflows/photo-story/scripts/photostory/shots.py:ImageShot` | shot motion (3rd tuple item); opts `c=(cx,cy)`, `z`, `fx=("sketch",)` | `ImageShot(C, sh, name).frame(lt)` needs a `Ctx` (`ctx.Ctx(ctx.load_spec(spec))`) and a shot dict (`src, start, end, tail, motion`). In HF, use the hyperframes-keyframes skill. |
-| Code-zoom cut-in | Tighter crop on the code block, centred on the code-colour centroid, with a seamless join | ffmpeg | `workflows/longform-to-short/scripts/zoom_targets.py`, `build_timeline.py:zoom_crop` | `zoom.windows`, `zoom.code_rgb [247,246,243]`, `zoom.tol`, `zoom.min_px`, `zoom.centers`, `zoom.box [736,336]` | For any screen recording, `crop=w:h:x:y,scale=W:H` on the window. zoom_targets finds the centre of any flat-coloured panel (set `code_rgb`). |
-| Zoom-through into a framed screen | The shot scales 1.35× and blurs out while the framed screen lands 1.25→`scale_in`, then drifts | HF | `hf.py:zoom_through` (+ `framed_screen`) | `at`, `until`, `scale_in=.84`, `y=-44`, `drift=.85`, `source="#face"`, `screen="#screen"` | Use it to go from a talk into a highlights reel or demo. Keep the source video playing about 0.5 s past `at`. |
-| Stabilize | `deshake` + crop | ffmpeg | `workflows/vlog/scripts/build_vlog.py:stab_prefix` | `stabilize`, `stab_rx/ry=32`, `stab_zoom=.93` | Prepend `deshake=rx:ry:edge=clamp,crop=iw*k:ih*k` to any chain |
-| Loupe | A magnifier travels a path over the photo | PIL | `photostory/overlays.py:overlays` (`loupe=`) | `loupe=[(x,y),...]`, `loupe_mag=2.3` | photo-story shot opt. Elsewhere, copy the block (needs `C.b`). |
+| Effect | What | Engine | Where | Params | When to use | Energy | Hold / duration | Max uses | Reuse | Tested |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Punch-in (eased) <sub>`punch-in`</sub> | Talking head scales up for a window, then back | HF | `lib/vstudio/hf.py:punch_in` | `scale=1.14`, `in_dur=0.45`, `out_dur=0.5` | Stress a sentence in a talking head without cutting | med | 0.45 s in, window 2-5 s, 0.5 s out | ~1 per 20 s of talk; vary windows | `hf.punch_in([[12.0, 15.5]])` on an inner wrapper around your video | `test_hf.py` |
+| Punch-and-stay <sub>`punch-and-stay`</sub> | One punch that holds (e.g. on the punchline) | HF | `hf.py:punch_at` | `scale=1.16`, `dur=0.5`, `origin=50% 38%` | Land a punchline or a reveal and stay there | high | 0.5 s move, holds to the next cut | 1-2 per video (A7) | `hf.punch_at("#ow", 41.2)`, then `hf.stamp(..., at=42.1)` | `test_hf.py` |
+| Wrapper zoom entrance <sub>`wrapper-zoom-entrance`</sub> | Settles from 1.15x and transparent | HF | `hf.py:enter_zoom` | `from_scale=1.15`, `dur=0.6` | Bring in any section wrapper (outro, new section) | med | 0.6 s | 1 per section | Use it to bring in any section wrapper (promo's outro) | `test_hf.py` |
+| Per-sentence punch-in (hard cut) <sub>`per-sentence-punch`</sub> | Face-centred zoom per sentence: EMPH sids get emph_zoom, odd sids get alt_zoom | PIL | `workflows/talkinghead/scripts/vertical/compose.py:zoom` | `emph_zoom=1.32`, `alt_zoom=1.16` | Vertical talking head with jump cuts between sentences | med | one sentence (2-6 s) | every other sentence; EMPH <= 1 in 4 | Copy `zoom()`; in HF use `hf.punch_in` | - |
+| Ken Burns (8 motions) <sub>`ken-burns`</sub> | Slow pan / zoom / 3D turn on one photo (`in`, `out`, `panL`, `panR`, `up`, `down`, `still`, `flip`) | PIL | `workflows/photo-story/scripts/photostory/shots.py:ImageShot` | `motion=in`, `z=1.12`, `c=(0.5, 0.5)` | Any still photo held >= 2 s | low | 3-6 s per photo | unlimited, but alternate directions | `ImageShot(C, sh, name).frame(lt)` with a `Ctx`; in HF use the hyperframes-keyframes skill | - |
+| Code-zoom cut-in <sub>`code-zoom`</sub> | Tighter crop on the code block, centred on the code-colour centroid, with a seamless join | ffmpeg | `workflows/longform-to-short/scripts/zoom_targets.py`, `build_timeline.py:zoom_crop` | `zoom.box=[736, 336]`, `zoom.tol=colour tolerance` | Screen recordings where the code / panel is unreadable at full frame | low | the whole window being read | as needed (it is legibility, not a flourish) | `crop=w:h:x:y,scale=W:H` on the window; zoom_targets finds any flat-coloured panel | - |
+| Zoom-through into a framed screen <sub>`zoom-through`</sub> | The shot scales 1.35x and blurs out while the framed screen lands, then drifts | HF | `hf.py:zoom_through` (+ `framed_screen`) | `scale_in=0.84`, `drift=0.85` | Go from a talk into a highlights reel or demo | high | ~1 s move, then the reel | 1 per video (A7) | `hf.zoom_through(at, until)` + `hf.framed_screen(...)` | `test_hf.py` |
+| Stabilize <sub>`stabilize`</sub> | deshake + crop | ffmpeg | `workflows/vlog/scripts/build_vlog.py:stab_prefix` | `stab_rx/ry=32`, `stab_zoom=0.93` | Handheld phone / walking clips | n/a | whole clip | unlimited | Prepend `deshake=rx:ry:edge=clamp,crop=iw*k:ih*k` to any chain | - |
+| Loupe <sub>`loupe`</sub> | A magnifier travels a path over the photo | PIL | `photostory/overlays.py:overlays` (`loupe=`) | `loupe=[(x, y), ...]`, `loupe_mag=2.3` | Show a detail inside a photo (inscription, brushwork) | low | 3-5 s | 1-2 per video | photo-story shot opt; elsewhere copy the block (needs `C.b`) | - |
 
 ## 2. Layout / split
 
-| Effect | What | Engine | Where | Params | Reuse |
-|---|---|---|---|---|---|
-| Split screen | Full-frame face is clipped to an `inset()` and slid aside for each window; windows < 0.2 s apart are bridged | HF | `hf.py:split_screen`; geometry in `build_promo.py:GEO` (`split_inset`, `split_x/y`) | `windows`, `inset`, `x`, `y`, `target="#face"`, `dur=.7`, `lead=.15`, `tail=.3`, `bridge=.2` | Use it on any HF project with a talking-head wrapper. Fill the freed side with `screenshot_cards` or a screen-recording `<video>`. |
-| Vertical face band + card | 9:16 promo: the face band on top, the card below | HF | `build_promo.py:GEO["vertical"]` | `split_inset "inset(200px 40px 1000px 40px round 28px)"`, `face_pos` | `--orientation vertical`, or pass the GEO values to `hf.split_screen` / `screenshot_cards` |
-| Call layouts | 2 tiles stacked (vertical), trio (2 masked guests + host), landscape pair, landscape trio (6 s-smoothed reframe) | PIL | `workflows/call-clips/scripts/render_vertical.py`, `render_trio.py`, `render_landscape.py`, `render_landscape_trio.py` | `TILE_H=608`, `TOP_Y=330`; trio `G_H=500`, `HOST_H=540`; landscape `TILE 960×675`; `REFRAME_S=6` | `build_clips.py --renderer <file>`. For other gallery recordings, pass `--guest-region` / `--host-region` as `x,y,w,h`. |
-| Fit: crop / pad / blur-pad / stretch | Fit any aspect into the canvas; `blur` = blurred cover background behind a fitted foreground | ffmpeg | `vlog/scripts/build_vlog.py:fit_chain` | `fit` = `crop`, `pad`, `blur` (gblur σ40, −0.08 brightness) or `stretch` | Copy the `fit_chain` string into any ffmpeg graph |
-| Browser-chrome crop | Detects doc / browser headers per span and crops them plus the bookmark bar, then fits and pads | ffmpeg | `longform-to-short/scripts/geometry.py` → `crop_spans.json`; `render.py` | `geometry.*` (`browser_header_px=115`, `doc_header_px=45`, `bottom_trim=14`), `render.fit`, `render.pad_color` | Run geometry.py on any screen-share recording and use the crop spans |
-| Photo layouts | `collage`, `film`, `split` (before/after wipe), `grid`, `rows`, `tilt`, `deck`, `quote`, `route`, `medal` | PIL | `photostory/shots.py` (`CollageShot` … `MedalShot`; factory `build(C, sh, k)`, `KINDS`) | `src="collage:a,b,c"`, `"split:a|b"` + `labels`, `"tilt:a"` + `yaw`, `"quote:a"` + `q=(en,zh,who)`, `"route:A>B"` + spec `ROUTE`, `"medal:a"` + `ring` | Through a photo-story spec. In code, `shots.build(C, sh, k).frame(lt)` returns a `(BOX_H, BOX_W, 3)` float32 frame. |
-| Video in a photo story | Pre-cut, graded clip read frame by frame | PIL + ffmpeg | `photostory/shots.py:VideoShot`, `prep_video` | `src="v1234"`; opts `off`, `speed`, `c`, `z`, `grade`; spec `VCROP`, `VEQ`, `VEQ_FILTER` | photo-story spec |
+| Effect | What | Engine | Where | Params | When to use | Energy | Hold / duration | Max uses | Reuse | Tested |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Split screen <sub>`split-screen`</sub> | Full-frame face clipped to an inset() and slid aside per window; windows < 0.2 s apart are bridged | HF | `hf.py:split_screen`; geometry in `build_promo.py:GEO` | `dur=0.7`, `bridge=0.2` | Talking head + something to show (screenshot, recording) | med | 0.7 s in, window >= 3 s | the main device of a promo; 1 star use + repeats | Any HF project with a talking-head wrapper; fill the freed side with `screenshot_cards` or a `<video>` | `test_hf.py` |
+| Vertical face band + card <sub>`vertical-face-band`</sub> | 9:16 promo: face band on top, card below | HF | `build_promo.py:GEO["vertical"]` | `split_inset=inset(200px 40px 1000px 40px round 28px)` | Vertical promo with screenshots | med | same as split windows | as split screen | `--orientation vertical`, or pass GEO values to `hf.split_screen` | - |
+| Call layouts <sub>`call-layouts`</sub> | 2 tiles stacked, trio (2 masked guests + host), landscape pair, landscape trio (6 s-smoothed reframe) (`vertical`, `trio`, `landscape`, `landscape-trio`) | PIL | `workflows/call-clips/scripts/render_vertical.py`, `render_trio.py`, `render_landscape.py`, `render_landscape_trio.py` | `TILE_H=608`, `REFRAME_S=6` | Zoom / Meet / Teams recordings | low | whole clip | one layout per clip | `build_clips.py --renderer <file>`; `--guest-region` / `--host-region` | - |
+| Fit: crop / pad / blur-pad / stretch <sub>`fit-modes`</sub> | Fit any aspect into the canvas (`crop`, `pad`, `blur`, `stretch`) | ffmpeg | `lib/vstudio/cut.py:fit_chain`; `vlog/scripts/build_vlog.py:fit_chain` | `fit=crop` | Mixed-aspect sources in one timeline | n/a | whole clip | unlimited | `cut.fit_chain(size, mode)` or `xfade_assemble(fit=...)` | `test_core.py` |
+| Browser-chrome crop <sub>`browser-chrome-crop`</sub> | Detects doc / browser headers per span and crops them plus the bookmark bar, then fits and pads | ffmpeg | `longform-to-short/scripts/geometry.py`; `render.py` | `browser_header_px=115` | Screen-share recordings | n/a | per span | unlimited | Run geometry.py on any screen recording and use the crop spans | - |
+| Photo layouts <sub>`photo-layouts`</sub> | Multi-photo compositions in the picture box (`collage`, `film`, `split`, `grid`, `rows`, `tilt`, `deck`, `quote`, `route`, `medal`) | PIL | `photostory/shots.py` (`CollageShot` ... `MedalShot`; factory `build(C, sh, k)`) | `src="collage:a,b,c"`, `yaw=tilt angle` | Comparisons, sets, routes, quotes inside a photo story | med | 3-6 s | vary kinds; each kind 1-2 per video | `shots.build(C, sh, k).frame(lt)` | - |
+| Video in a photo story <sub>`video-in-photo-story`</sub> | Pre-cut, graded clip read frame by frame | PIL + ffmpeg | `photostory/shots.py:VideoShot`, `prep_video` | `speed=1.0`, `grade=VEQ` | Short live moments between photos | med | 2-5 s | unlimited | photo-story spec `src="v1234"` | - |
 
 ## 3. Cards & overlays
 
-| Effect | What | Engine | Where | Params | Reuse |
-|---|---|---|---|---|---|
-| 3D screenshot card | A card slides in with rotationY −28°→−6°, drifts, then leaves | HF | `hf.py:screenshot_cards` | `cards=[{id,img,w,h,s,e,scroll,hl,box}]`, `card_w=760`, `card_h=740`, `left`, `top`, `accent` | `hf.screenshot_cards([dict(id="c1", img="assets/img/x.png", w=1200, h=2400, s=3, e=9, scroll=[[3,0]])])` |
-| Card scroll keyframes | The image scrolls to bring row y to the top at time t | HF | same, `scroll=[[t, y_img_px], ...]` | eased 0.6–1.2 s | Find rows with `workflows/promo-recut/scripts/find_rows.py` |
-| Chips row | Pills pop in one by one; a star chip is gold; all fade at `end` | HF | `hf.py:chips` | `items [[t,text,star]]`, `end`, `left/top/width`, `ink`, `gold` | `hf.chips([[3,"Writing",0],[4,"Video ★",1]], end=9)` |
-| Chip / badge / tag / stamp images | Themed RGBA images | PIL | `lib/vstudio/overlays.py:chip(style=outline\|filled\|star\|tag\|ghost)`, `badge`, `tag`, `stamp` | `theme`, `scale`, `size`, `color`, `angle` | They return PIL RGBA, so any PIL compositor can paste them with `vstudio.draw.alpha_paste`. ffmpeg can overlay them as `-loop 1` PNGs. |
-| Badge (精选 / 高光预告) | Solid label that slides in | HF / PIL | `hf.py:badge`; `overlays.badge` | `text`, `start`, `duration`, `at`, `left/top`, `accent` | HF: `hf.badge("精选", s, d, at)`. PIL: `overlays.badge("精彩预告")`. |
-| Outlined tag | Fading pill (e.g. "完整版 · 节选 · 1.1×") | HF | `hf.py:tag` | `text`, `start`, `duration`, `at`, `pos_css` | `hf.tag(...)` |
-| Framed screen | Rounded, shadowed screen playing a video, on a grid backdrop; shrinks away at exit | HF | `hf.py:framed_screen`, `grid_backdrop_css` | `src`, `start`, `duration`, `exit_at`, `rate`, `left/top/width/height`, `grid` | Use it for any "video inside a monitor" beat. Enter with `zoom_through`. |
-| Notes panel 记笔记 | Card with a header, bullets and a rotated tag. Themes: notes-red, notes-yellow, teal, navy | PIL | `overlays.py:notes_panel`; per-row reveal version in `talkinghead/.../compose.py` (`PANELS`) | `title`, `bullets`, `theme`, `width=620`, `scale`, `tag`, `keywords` | PIL image. Burn it with ffmpeg `overlay=...:enable='between(t,a,b)'` (`longform-to-short/scripts/burn_final.py`). For HF, save it as a PNG and use an `<img class="clip">` that starts at opacity 0. |
-| Callout bubble | Speech bubble that slides up 24 px | PIL | `overlays.py:callout`; `compose.py` (`CALLOUTS`) | `text`, `theme`, `max_w=560`, `scale`, `keywords` | Same as the notes panel |
-| Node card | "接下来 / NEXT" seam card | PIL | `overlays.py:node_card`; `call-clips/.../render_vertical.py:render_node_card` | `title`, `eyebrow`, `theme`, `min_w/max_w` | Paste it at a cut and fade it over 0.35 s |
-| Quote card | Balanced quote lines with the speaker in teal | PIL | `call-clips/scripts/render_trio.py:render_quote` | `who`, `text`, `width=980` | Copy the function |
-| Circle-face list scene | Blurred background, ringed circle crop of the face, title, popping tokens (1 or 2 columns) | PIL | `compose.py` (`blurbg`, `circle_inset`, `token_img`) | config `CIRCLES=[(t0,t1,title,[(t,token)],grid)]`, `R=290` | talkinghead only (not importable). Copy the 3 helpers. |
-| Shrink-to-card scene | The frame shrinks to a 0.55× rounded card over a blurred copy, with a title and lines | PIL | `compose.py:card` | config `CARDS=[(t0,t1,title,[(t,line)])]`, `s=.55`, `r=36`, `y0=600` | talkinghead. Copy `card()` + `blurbg()`. |
-| Privacy sticker | Face-tracked sticker covering a participant, with a coverage proof | PIL | `call-clips/scripts/track_face.py` → `apply_sticker.py`; `verify_coverage.py`; art via `render_sticker.py` | `--region`, `--scale 2.40`, `--y-offset -0.031`, `--bob`, `--smooth .25` | Works on any video. Run `track_face.py VIDEO --region ...`, then `apply_sticker.py VIDEO --track --sticker cat.png`. |
-| Camera-off avatar | Full-tile cat avatar | PIL / HTML | `call-clips/assets/cat_avatar.html`, `verify_avatar.py` | `--tile` | Render with `render_sticker.py --size 960x540` |
-| Photo overlays | `develop`, `shimmer`, `dust`, `prick` (pounce holes), `hl` (red-pen ellipse + dim), `tri` (composition triangle + tag), `loupe`, `tl` (timeline sweep), `count` (gold count-up), `label` (pill) | PIL | `photostory/overlays.py:overlays(C, sh, f, lt)`; `label` in `render.py` + `subtitles.make_label` | shot opts: `fx=(...)`, `hl=(cx,cy,rx,ry)`, `hl_t`, `tri`, `tri_label`, `loupe`, `loupe_mag`, `tl`, `count=(n,en,zh)`, `label`, `prick_n` | Use them in a photo-story spec. Every coordinate is a 0–1 fraction of the box. |
-| Polaroid / taped card | Taped polaroid with a shadow and caption | PIL | `lib/vstudio/cover.py:polaroid`; `photostory/shots.py:make_card` | `size`, `rot`, `cap`, `seed` | `cover.polaroid(img, 600, rot=-4, cap="…")` |
+| Effect | What | Engine | Where | Params | When to use | Energy | Hold / duration | Max uses | Reuse | Tested |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 3D screenshot card <sub>`screenshot-card-3d`</sub> | A card slides in with rotationY -28 to -6 deg, drifts, then leaves | HF | `hf.py:screenshot_cards` | `card_w=760`, `accent=#FF2442` | Show a screenshot while the speaker talks about it | med | card on screen >= 3 s | 1 card per claim; the 3D entry stars once, later cards can enter flatter | `hf.screenshot_cards([dict(id="c1", img=..., w, h, s, e, scroll=[[3, 0]])])` | `test_hf.py` |
+| Card scroll keyframes <sub>`card-scroll`</sub> | The image scrolls to bring row y to the top at time t | HF | `hf.py:screenshot_cards` (`scroll=[[t, y], ...]`) | `scroll=[[t, y_img_px]]` | Long screenshots where the line being discussed is below the fold | low | 0.6-1.2 s per move | as needed | Find rows with `promo-recut/scripts/find_rows.py` | `test_hf.py` |
+| Chips row <sub>`chips-row`</sub> | Pills pop in one by one; a star chip is gold; all fade at end | HF | `hf.py:chips` | `items=[[t, text, star]]`, `gold=#F4D35E` | List of features / tags | med | pop 0.3 s each, hold >= 1 s full | 1 row per section | `hf.chips([[3, "Writing", 0], [4, "Video", 1]], end=9)` | `test_hf.py` |
+| Chip / badge / tag / stamp images <sub>`overlay-images`</sub> | Themed RGBA images for PIL / ffmpeg compositors (`outline`, `filled`, `star`, `tag`, `ghost`) | PIL + ffmpeg | `lib/vstudio/overlays.py:chip`, `badge`, `tag`, `stamp` | `style=outline`, `scale=1.0` | Any per-frame or ffmpeg compositor | low | hold >= 1 s | unlimited (each style stars once) | Paste with `draw.alpha_paste`; ffmpeg can overlay as `-loop 1` PNGs | `test_visual.py` |
+| Badge (jingxuan / preview) <sub>`badge`</sub> | Solid label that slides in | HF + PIL | `hf.py:badge`; `overlays.badge` | `accent=#FF2442` | Mark a section as highlights / preview | low | whole section | 1 per section | HF: `hf.badge("...", s, d, at)`; PIL: `overlays.badge("...")` | `test_hf.py` |
+| Outlined tag <sub>`outlined-tag`</sub> | Fading pill (e.g. 'full version / excerpt / 1.1x') | HF | `hf.py:tag` | `pos_css=right:160px; top:956px;` | Context labels | low | section | 1-2 per video | `hf.tag(...)` | `test_hf.py` |
+| Framed screen <sub>`framed-screen`</sub> | Rounded, shadowed screen playing a video on a grid backdrop; shrinks away at exit | HF | `hf.py:framed_screen`, `grid_backdrop_css` | `rate=1.0` | Any 'video inside a monitor' beat | med | length of the reel | 1 per video | `hf.framed_screen(src, start, dur, exit_at)` | `test_hf.py` |
+| Notes panel <sub>`notes-panel`</sub> | Card with header, bullets and a rotated tag (`notes-red`, `notes-yellow`, `teal`, `navy`) | PIL + ffmpeg | `overlays.py:notes_panel`; per-row reveal in talkinghead `compose.py` (`PANELS`) | `width=620`, `theme=notes-red` | Summarise 2-4 points the speaker is listing | low | reveal 0.3 s per row; hold >= 2 s after the last row | 1 per topic | PIL image; burn with ffmpeg `overlay=...:enable='between(t,a,b)'`; for HF save a PNG | `test_visual.py` |
+| Callout bubble <sub>`callout-bubble`</sub> | Speech bubble that slides up 24 px | PIL | `overlays.py:callout`; `compose.py` (`CALLOUTS`) | `max_w=560` | Side comments, asides | low | 2-4 s | ~1 per 30 s | Same as the notes panel | `test_visual.py` |
+| Node card <sub>`node-card`</sub> | 'NEXT' seam card | PIL | `overlays.py:node_card`; `call-clips/.../render_vertical.py:render_node_card` | `eyebrow` | Topic change inside a clip | low | fade 0.35 s, hold ~1.5 s | 1 per topic change | Paste at a cut and fade over 0.35 s | `test_visual.py` |
+| Quote card <sub>`quote-card`</sub> | Balanced quote lines with the speaker in teal | PIL | `call-clips/scripts/render_trio.py:render_quote` | `width=980` | Pull a strong line from a call | low | hold >= 2 s | 1-2 per clip | Copy the function | - |
+| Circle-face list scene <sub>`circle-face-list`</sub> | Blurred bg, ringed circle crop of the face, title, popping tokens | PIL | `compose.py` (`blurbg`, `circle_inset`, `token_img`) | `R=290` | Listing items while still seeing the speaker | med | the list span (4-10 s) | 1-2 per video | Copy the 3 helpers | - |
+| Shrink-to-card scene <sub>`shrink-to-card`</sub> | Frame shrinks to a 0.55x rounded card over a blurred copy, with title and lines | PIL | `compose.py:card` | `s=0.55`, `r=36` | A section summary over the speaker | med | 4-8 s | 1-2 per video | Copy `card()` + `blurbg()` | - |
+| Privacy sticker <sub>`privacy-sticker`</sub> | Face-tracked sticker covering a participant, with a coverage proof | PIL | `call-clips/scripts/track_face.py` -> `apply_sticker.py`; `verify_coverage.py` | `scale=2.4`, `smooth=0.25` | Hide a participant's face | n/a | whole clip | unlimited | `track_face.py VIDEO --region ...`, then `apply_sticker.py VIDEO --track --sticker cat.png` | - |
+| Camera-off avatar <sub>`camera-off-avatar`</sub> | Full-tile cat avatar | PIL + HTML | `call-clips/assets/cat_avatar.html`, `verify_avatar.py` | `--tile=960x540` | A participant with camera off | n/a | whole clip | unlimited | Render with `render_sticker.py --size 960x540` | - |
+| Photo overlays <sub>`photo-overlays`</sub> | Develop, shimmer, dust, pounce holes, red pen, triangle, loupe, timeline, count-up, label (`develop`, `shimmer`, `dust`, `prick`, `hl`, `tri`, `loupe`, `tl`, `count`, `label`) | PIL | `photostory/overlays.py:overlays(C, sh, f, lt)`; `label` in `render.py` + `subtitles.make_label` | `fx=()`, `hl_t=0.3` | Point at something inside a photo story shot | med | per shot | each overlay stars once (A7) | Use them in a photo-story spec | - |
+| Polaroid / taped card <sub>`polaroid`</sub> | Taped polaroid with a shadow and caption | PIL | `lib/vstudio/cover.py:polaroid`; `photostory/shots.py:make_card` | `rot=0` | Scrapbook / travel looks, covers | low | hold >= 1 s | unlimited in a scrapbook section | `cover.polaroid(img, 600, rot=-4, cap="...")` | `test_visual.py` |
 
 ## 4. Text & captions
 
-| Effect | What | Engine | Where | Params | Reuse |
-|---|---|---|---|---|---|
-| Keyword subtitles (HF) | Cue pops up 14 px and fades; 【term】 is shown in the highlight colour | HF | `hf.py:subtitles` + `overlays.cue_html` + `overlays.hf_cue_css` | `cues [{s,e,t}]`, `container="#subs"`; cue CSS `geo` | `t = overlays.cue_html("用【关键词】")`, then `hf.subtitles(cues)`, and put `overlays.hf_cue_css("horizontal")` in the style |
-| Burned subtitles (PIL) | Bold line with a stroke, `【】` / `KEYWORDS` in yellow, balanced CJK wrap | PIL | `lib/vstudio/draw.py:text_layer`; talkinghead `compose.py` (`split_sub`, `chunk_times`); call-clips `render_sub` | `stroke=6`, `max_w`, `keywords`, `line_gap`; talkinghead `sub_size=54`, `sub_y=1525` | `draw.text_layer("…【词】…", draw.load_font("cjk-bold", 54))` returns RGBA |
-| ASS subtitles | libass burn-in with highlight and bilingual alt line, plus an errata style | ffmpeg | `lib/vstudio/subs.py:ass_write`; `longform-to-short/scripts/burn_final.py` | `size`, `highlight`, `alt_scale=.72`, `outline=2.4`, `margin_v` | `subs.ass_write(cues, "s.ass")`, then `-vf ass=s.ass:fontsdir=…` |
-| Bilingual EN/中文 subtitles | EN above 中文; `**word**` in gold | PIL | `photostory/subtitles.py:make_sub` | `C`, `en`, `zh` | photo-story. Elsewhere use `draw.text_layer` twice. |
-| Pop words | Big stroked word with a -4° bounce (Y = highlight colour, O = orange) | PIL | `compose.py:pop_img` + `ease_pop` | config `POPS=[(t,text,'Y'\|'O',x,y,size,hold)]` | talkinghead. In HF use `hf.stamp` with `angle=-4` and no border via CSS override, or a `title_card`. |
-| Title card | Centred boxed title + gold sub line; back.out pop, lifts away | HF | `hf.py:title_card` | `title`, `start`, `at`, `sub`, `top=400`, `size=96`, `hold=1.9` | `hf.title_card("成片精选", s, at, sub="节选")` |
-| Hook title (talkinghead) | 2-line hook title (line 2 has keywords) + badge | PIL | `compose.py` (`HOOK_TITLE`, `HOOK_BADGE_TEXT`) | `STYLE.hook_badge` | talkinghead config |
-| Step labels | Numbered `01 …` labels swap in place over a reel | HF | `hf.py:step_labels` | `labels [{s,e,n,t}]`, `start`, `duration`, `left/top` | Use it on any reel or tutorial steps. `build_promo.py` shows how labels come from montage clips. |
-| End card | Serif kicker, big line, dim CTA; staggered fade-ups | HF | `hf.py:end_card` | `start`, `duration`, `kicker`, `main`, `sub`, `size=80` | `hf.end_card(E, 3.2, "kicker", "main", "评论区告诉我 ↓")` |
-| Chapter card | Full-frame "02 / 05 + title" card | PIL | `overlays.py:chapter_card`; `longform-to-short/scripts/make_assets.py`; photo-story `subtitles.make_chapter` | `index`, `total`, `title` (`"Main：sub"` → kicker + title), `size`, `theme`, `ground` | Render it as a PNG and insert it as a `-loop 1` still with the stinger (longform `cards.dur=1.6`) |
-| Running header | Section names, per-section progress, titles | PIL | `photostory/subtitles.py:Header` | spec `TITLE_ZH/EN`, `SECTIONS` | photo-story |
-| 3b1b scene techniques | Line draw-on (stroke-dashoffset), count-up (proxy `onUpdate`), per-char `<tspan>` type-in, clip-path wipe, `attr:` axis grow, stagger, `svgOrigin` rotation, ≤6 px ambient drift, colour-coded STIX math built term by term | HF | `workflows/explainer/references/design-truth.md`, `assets/reference-scene.html`, `example/compositions/f01…f18.html` | eases: `power2.out` entrances, `back.out(1.6)` pops, `sine.inOut` drift | Copy from the reference scene. Each scene is a sub-composition with its own paused timeline. |
-| Slides | Square / vertical slide presets (`s-title`, `s-contrast`, `s-three`, `s-punch`, `s-bars`, `s-recap`, …) as PNG or animated clip | HTML → PNG / Playwright | `workflows/slides/templates/slides_vertical.template.html`, `scripts/render_slides.py`, `record_slides.py` | `--size`, `--accent`, `KEY:SECONDS` | Drop the PNGs or clips into any edit as B-roll |
+| Effect | What | Engine | Where | Params | When to use | Energy | Hold / duration | Max uses | Reuse | Tested |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Keyword subtitles (HF) <sub>`keyword-subtitles-hf`</sub> | Cue pops up 14 px and fades; highlighted term in the highlight colour | HF | `hf.py:subtitles` + `overlays.cue_html` + `overlays.hf_cue_css` | `geo=horizontal` | Every narrated HF video | low | per cue | always on | `overlays.cue_html(...)`, then `hf.subtitles(cues)` | `test_hf.py` |
+| Burned subtitles (PIL) <sub>`burned-subtitles-pil`</sub> | Bold line with stroke, keywords in yellow, balanced CJK wrap | PIL | `lib/vstudio/draw.py:text_layer`; talkinghead `compose.py` | `stroke=6`, `sub_size=54` | Per-frame compositors | low | per cue | always on | `draw.text_layer("...", draw.load_font("cjk-bold", 54))` | `test_visual.py` |
+| ASS subtitles <sub>`ass-subtitles`</sub> | libass burn-in with highlight and bilingual alt line | ffmpeg | `lib/vstudio/subs.py:ass_write`; `longform-to-short/scripts/burn_final.py` | `alt_scale=0.72`, `outline=2.4` | Pure ffmpeg pipelines | low | per cue | always on | `subs.ass_write(cues, "s.ass")`, then `-vf ass=s.ass` | `test_core.py` |
+| Bilingual EN/ZH subtitles <sub>`bilingual-subtitles`</sub> | EN above ZH; **word** in gold | PIL | `photostory/subtitles.py:make_sub` | `f2 size=0.72x` | Bilingual stories | low | per cue | always on | photo-story; elsewhere `draw.bilingual_layer` | `test_lib_requests.py` |
+| Pop words <sub>`pop-words`</sub> | Big stroked word with a -4 deg bounce | PIL | `compose.py:pop_img` + `ease_pop` | `size=per pop`, `hold=per pop` | Punctuate a key word | high | pop 0.25 s, hold >= 1 s | <= 1 per 15 s | talkinghead; in HF use `hf.stamp` with `angle=-4` | - |
+| Title card <sub>`title-card`</sub> | Centred boxed title + gold sub line; back.out pop, lifts away | HF | `hf.py:title_card` | `hold=1.9`, `size=96` | Section openers | med | pop 0.4 s + hold 1.9 s | 1 per section | `hf.title_card("...", s, at, sub="...")` | `test_hf.py` |
+| Hook title (talkinghead) <sub>`hook-title`</sub> | 2-line hook title (line 2 has keywords) + badge | PIL | `compose.py` (`HOOK_TITLE`, `HOOK_BADGE_TEXT`) | `hook_badge=STYLE` | Opening seconds of a short | high | first 2-4 s | 1 per video | talkinghead config | - |
+| Step labels <sub>`step-labels`</sub> | Numbered '01 ...' labels swap in place over a reel | HF | `hf.py:step_labels` | `labels=[{s, e, n, t}]` | Tutorial steps, reels | low | >= 1.5 s per label | 1 set per reel | `hf.step_labels(labels, start, dur)` | `test_hf.py` |
+| End card <sub>`end-card`</sub> | Serif kicker, big line, dim CTA; staggered fade-ups | HF | `hf.py:end_card` | `size=80` | Outro / CTA | low | 3-4 s | 1 per video | `hf.end_card(E, 3.2, "kicker", "main", "CTA")` | `test_hf.py` |
+| Chapter card <sub>`chapter-card`</sub> | Full-frame '02 / 05 + title' card | PIL | `overlays.py:chapter_card`; `longform-to-short/scripts/make_assets.py`; photo-story `subtitles.make_chapter` | `cards.dur=1.6` | Chapter boundaries in long videos | med | 1.6 s | 1 per chapter | Render as a PNG and insert as a `-loop 1` still | `test_visual.py` |
+| Running header <sub>`running-header`</sub> | Section names, per-section progress, titles | PIL | `photostory/subtitles.py:Header` | `SECTIONS=spec` | Photo stories with sections | low | whole video | always on | photo-story | - |
+| 3b1b scene techniques <sub>`3b1b-techniques`</sub> | Draw-on lines, count-ups, type-in, clip wipes, axis grow, math built term by term (`draw-on`, `count-up`, `type-in`, `clip-wipe`, `axis-grow`, `stagger`, `svgOrigin`, `drift`, `math-terms`) | HF | `workflows/explainer/references/design-truth.md`, `assets/reference-scene.html` | `ease=power2.out`, `drift=<= 6 px` | Explainer scenes | med | per scene | each technique stars once per scene | Copy from the reference scene | - |
+| Slides <sub>`slides`</sub> | Square / vertical slide presets as PNG or animated clip (`s-title`, `s-contrast`, `s-three`, `s-punch`, `s-bars`, `s-recap`) | HTML | `workflows/slides/templates/slides_vertical.template.html`, `scripts/render_slides.py`, `record_slides.py` | `--accent=persona` | B-roll for vertical videos | low | 3-6 s per slide | unlimited | Drop PNGs or clips into any edit | - |
 
 ## 5. Highlight / emphasis
 
-| Effect | What | Engine | Where | Params | Reuse |
-|---|---|---|---|---|---|
-| Highlighter rows | A yellow multiply bar sweeps across a screenshot row | HF | `hf.py:screenshot_cards` (`hl=[[t,y0,y1,frac]]`) | y in image px, `frac` = width fraction | Rows from `find_rows.py` |
-| Red box | Accent rounded box pops (back.out) around a region | HF | `hf.py:screenshot_cards` (`box=[t,y0,y1]`) | `accent` | Same |
-| Stamp | Bordered word slams in from 2.2× | HF | `hf.py:stamp` | `text`, `start`, `duration`, `at`, `left/top`, `size=96`, `angle=-12` | `hf.stamp("好用", s, d, at)` |
-| Stacking stamps | White plate + accent stamp slam-ins; same end time = stack | PIL | `overlays.py:stamp`; `compose.py` (`STAMPS`) | `angle=8`, `size=56`; config `STAMPS=[(t0,t1,text,x,y,ang)]` | `overlays.stamp("亲测", 8)` returns RGBA. Animate the scale with `ease_pop`. |
-| Red-pen ellipse + dim | Double ellipse drawn on, outside dimmed 50% | PIL | `photostory/overlays.py` (`hl=`) | `hl=(cx,cy,rx,ry)`, `hl_t=.3` | photo-story. For covers use `photostory/cover.py:circled`. |
-| Gold count-up | Big number counting up, with a caption | PIL | `photostory/overlays.py` (`count=`) | `count=(n,"EN","中")` | photo-story. For HF use the explainer count-up proxy pattern. |
-| Shimmer / develop / sketch reveal | Gold light sweep; develop from a warm wash; pencil-to-colour | PIL | `photostory/overlays.py`, `shots.py:pencil` | `fx=("shimmer",)`, `("develop",)`, `("sketch",)` | photo-story spec |
+| Effect | What | Engine | Where | Params | When to use | Energy | Hold / duration | Max uses | Reuse | Tested |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Highlighter rows <sub>`highlighter-rows`</sub> | A yellow multiply bar sweeps across a screenshot row | HF | `hf.py:screenshot_cards` (`hl=[[t, y0, y1, frac]]`) | `frac=0.6` | Point at one line in a screenshot | low | sweep 0.5 s, hold >= 1 s | 1-2 per card | Rows from `find_rows.py` | `test_hf.py` |
+| Red box <sub>`red-box`</sub> | Accent rounded box pops (back.out) around a region | HF | `hf.py:screenshot_cards` (`box=[t, y0, y1]`) | `accent=#FF2442` | Frame a block in a screenshot | med | pop 0.4 s, hold >= 1 s | 1 per card | Same as highlighter rows | `test_hf.py` |
+| Stamp <sub>`stamp-hf`</sub> | Bordered word slams in from 2.2x | HF | `hf.py:stamp` | `angle=-12`, `size=96` | Verdict words ('works', 'tested') | high | slam 0.3 s, hold >= 1 s | 1-2 per video (A7) | `hf.stamp("...", s, d, at)` | `test_hf.py` |
+| Stacking stamps <sub>`stacking-stamps`</sub> | White plate + accent stamp slam-ins; same end time = stack | PIL | `overlays.py:stamp`; `compose.py` (`STAMPS`) | `angle=8`, `size=56` | Per-frame verdicts | high | slam 0.25 s each | 1 stack per video | `overlays.stamp("...", 8)` | `test_visual.py` |
+| Red-pen ellipse + dim <sub>`red-pen-ellipse`</sub> | Double ellipse drawn on, outside dimmed 50 % | PIL | `photostory/overlays.py` (`hl=`) | `hl_t=0.3` | Point at a region of a photo | med | draw 0.3 s, hold >= 1.5 s | 1-2 per video | photo-story; for covers `cover.redpen_ellipse` | `test_lib_requests.py` |
+| Gold count-up <sub>`gold-count-up`</sub> | Big number counting up, with a caption | PIL | `photostory/overlays.py` (`count=`) | `count=(n, "EN", "ZH")` | Numbers worth remembering | med | count 1 s, hold >= 1 s | 1-2 per video | photo-story; in HF use the explainer count-up proxy pattern | - |
+| Shimmer / develop / sketch reveal <sub>`reveal-fx`</sub> | Gold light sweep; develop from a warm wash; pencil-to-colour (`shimmer`, `develop`, `sketch`) | PIL | `photostory/overlays.py`, `shots.py:pencil` | `fx=("shimmer",)` | A hero photo's first appearance | med | 1-2 s | light effects <= 2 per video | photo-story spec | - |
 
 ## 6. Freeze / hold
 
-| Effect | What | Engine | Where | Params | Reuse |
-|---|---|---|---|---|---|
-| Freeze-frame split | Video split into clip + still + clip; resumes with `data-media-start` | HF | `hf.py:freeze_clips` | `src`, `freeze_src`, `start`, `cut_at`, `hold`, `media_dur`, `rate` | Extract the still with `ffmpeg -ss cut_at -i src -frames:v 1 freeze.jpg`. Every later time shifts by `hold`. |
-| Freeze hold + flying zoomed card | Dims the freeze; a zoomed card (e.g. the prompt) flies out of the screenshot, holds, flies back | HF | `hf.py:freeze_hold` | `at`, `hold=2.6`, `fly_from=(380,-150)`, `label`, `image`, `left/top/width`, `clip` | `hf.freeze_hold(T, 2.6, (380,-150), "我给 agent 的 prompt", "assets/img/prompt.png")` |
-| Transient freeze | Holds the frame from 0.4 s before an accidental screen flash; live audio continues | ffmpeg | `longform-to-short/scripts/transient_scan.py` → `freezes [[a,b]]`, `build_timeline.py`, `render.py` | `transients.white_thresh=.55`, `luma=200` | `transient_scan.py` works on any screen recording. Render the freeze as a `-loop 1` still plus source audio. |
+| Effect | What | Engine | Where | Params | When to use | Energy | Hold / duration | Max uses | Reuse | Tested |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Freeze-frame split <sub>`freeze-split`</sub> | Video split into clip + still + clip; resumes with data-media-start | HF | `hf.py:freeze_clips` | `hold=2.6` | Pause on a moment to explain it | med | hold 2-3 s | 1-2 per video | `hf.freeze_clips(src, freeze, start, cut_at, hold, media_dur, rate)` | `test_hf.py` |
+| Freeze hold + flying zoomed card <sub>`freeze-hold-card`</sub> | Dims the freeze; a zoomed card flies out, holds, flies back | HF | `hf.py:freeze_hold` | `hold=2.6`, `fly_from=(380, -150)` | Enlarge a prompt / a line from a screen | high | fly 0.6 s, hold 2-3 s | 1 per video (A7) | `hf.freeze_hold(T, 2.6, (380, -150), "label", "assets/img/prompt.png")` | `test_hf.py` |
+| Transient freeze <sub>`transient-freeze`</sub> | Holds the frame from 0.4 s before an accidental screen flash; live audio continues | ffmpeg | `longform-to-short/scripts/transient_scan.py` -> `freezes`, `build_timeline.py`, `render.py` | `white_thresh=0.55` | Screen recordings with flashes | n/a | length of the flash | as needed | transient_scan works on any screen recording | - |
 
 ## 7. Transitions
 
-| Effect | What | Engine | Where | Params | Reuse |
+| Effect | What | Engine | Where | Params | When to use | Energy | Hold / duration | Max uses | Reuse | Tested |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 11 scene transitions <sub>`hf-scene-transitions`</sub> | GSAP scene-to-scene transitions on wrapper divs (`blur`, `fade`, `push`, `vpush`, `iris`, `zoom`, `focus`, `blocks`, `chroma`, `flip`, `zoomout`) | HF | `hf.py:scene_transitions`, `hf.transition`, `hf.TRANSITIONS`; menu in `workflows/explainer/references/transitions.md` | `d=per type (0.45-1.1 s)`, `blocks=8` | Scene changes in HF projects; one calm family + iris for the core reveal + blocks for chapters | med | blur .8, fade .45, push .7, vpush .7, iris 1.1, zoom .8, focus .9, blocks 1.1, chroma .8, flip .9, zoomout 1.0 | hard cut is the default; styled ones only where place / day / mood changes (A5) | `hf.scene_transitions([...])`, or `xfade.hf_transitions` for any bridge name | `test_hf.py` |
+| 12 photo transitions <sub>`photo-transitions`</sub> | Per-frame transitions inside the photo-story picture box (`fade`, `push`, `whip`, `flash`, `zoom`, `iris`, `leak`, `ink`, `blinds`, `tear`, `slideup`, `cut`) | PIL | `photostory/transitions.py:transition(C, P, N, p, kind)`; durations `TRD` | `trd=TRD[kind] (0.32-0.7 s)` | Photo stories | med | 0.32-0.7 s | vary; <= 2 styled per minute | `xfade.blend(name, P, N, p)` (no Ctx) or the photo-story function | - |
+| Cross-engine transitions (bridge) <sub>`xfade-bridge`</sub> | One transition name in all three engines: HF GSAP, ffmpeg xfade (built-in or custom expr), PIL per-frame (`blur`, `fade`, `push`, `vpush`, `iris`, `zoom`, `focus`, `blocks`, `chroma`, `flip`, `zoomout`, `whip`, `flash`, `fadeblack`, `light-leak`, `ink`, `blinds`, `tear`, `slideup`, `cut`, `wipe`, `dissolve`, `pixelize`, `radial`) | HF + ffmpeg + PIL | `lib/vstudio/xfade.py` (`blend`, `ffmpeg_transition`, `ffmpeg_expr`, `hf_transitions`, `coverage`) | `name=fade`, `duration=xfade.default_duration(name)` | Any time the same look must exist in two engines (a HF explainer and its ffmpeg cut-down) | med | per name (0-1.1 s) | same as the source effect | `cut.xfade_assemble(pieces, transition=xfade.ffmpeg_transition("iris"))` | `test_effects.py` |
+| Light-leak transition <sub>`light-leak`</sub> | Cross-dissolve under a warm film light leak | HF + ffmpeg + PIL | `xfade.blend("light-leak", ...)`, `xfade.ffmpeg_transition("light-leak")`, `xfade.hf_transitions([("light-leak", ...)])` | `strength=0.9`, `duration=0.7` | Travel / memory pieces, a change of day or place | med | 0.7 s | <= 2 per video (light effects cheapen fast) | `xfade.blend("light-leak", A, B, p)` per frame of the overlap | `test_effects.py` |
+| Dissolve joins (xfade) <sub>`xfade-joins`</sub> | Any ffmpeg xfade between pieces, with acrossfade and mute pads | ffmpeg | `lib/vstudio/cut.py:xfade_assemble`; vlog `build_vlog.py` (`transition`, `xfade=.8`) | `xfade=0.3`, `transition=fade` | Joining pieces in any ffmpeg workflow | low | 0.15-0.8 s | unlimited for plain fades | `cut.xfade_assemble(pieces, xfade=0.3, transition="fadeblack")` | `test_core.py` |
+| Hook montage <sub>`hook-montage`</sub> | Sped-up hooks with crossfades into the body | ffmpeg | `workflows/talkinghead/scripts/montage.py:Montage` | `hook_speed=1.3`, `body_speed=1.1` | Cold open of a short | high | 3-8 s | 1 per video | `Montage(...)` is importable; use `.graph` | - |
+| Speed ramps <sub>`speed-ramps`</sub> | Per-segment setpts (+ atempo) | ffmpeg | `vlog/build_vlog.py:seg_speed`; `media.atempo_chain` | `speed=1.2` | Tightening or energy ramps | med | per segment | ramps as an effect: 1 star use | `setpts=PTS/s` + `media.atempo_chain(s)` | `test_core.py` |
+| End fade (no fade-in) <sub>`end-fade`</sub> | fade=t=out + afade; never a black first frame | ffmpeg | `vlog/build_vlog.py` | `fade_out=1.5` | Last pass of any video | low | 1.5 s | 1 per video | Use in any final pass | - |
+
+### Transition coverage across engines (`vstudio.xfade`)
+
+exact = same look; near = same idea, small visual difference; approx = closest stand-in.
+
+| Transition | Default s | HyperFrames | ffmpeg xfade | PIL `blend` | Gaps |
 |---|---|---|---|---|---|
-| 11 scene transitions | `blur` .8, `fade` .45, `push` .7, `vpush` .7, `iris` 1.1, `zoom` .8, `focus` .9, `blocks` 1.1 (8 panels), `chroma` .8, `flip` .9, `zoomout` 1.0 (s = suggested length) | HF | `hf.py:scene_transitions`, `hf.transition`, `hf.TRANSITIONS`; menu in `workflows/explainer/references/transitions.md` | `trans=[transition(type,out_id,in_id,at,d)]`, `W/H`, `wrap=".scene-wrap"`, `blocks=8`, `block_color` | Use them in any HF project with one wrapper div per scene: `tx = hf.scene_transitions([...])`. Put `tx["html"]` above the scenes and below the captions. Stretch each outgoing scene by `d`. |
-| 12 photo transitions | `fade`, `push`, `whip`, `flash`, `zoom`, `iris`, `leak`, `ink`, `blinds`, `tear`, `slideup`, `cut` | PIL | `photostory/transitions.py:transition(C, P, N, p, kind)`; durations `TRD` | `p` in 0..1; shot opts `tr=`, `trd=` | Works on any two same-size float32 frames: build a `Ctx` with the right `W/H` (it supplies the `DIST`/`LEAK`/`INK`/`JAG` fields) and call `transition(C, P, N, p, "ink")` per frame of the overlap. |
-| Dissolve joins (xfade) | Any ffmpeg xfade between pieces, with acrossfade and mute pads | ffmpeg | `lib/vstudio/cut.py:xfade_assemble`; vlog `build_vlog.py` (`transition`, `xfade=.8`); call-clips `XFADE=.5`, `TRIM_FADE=.16`, `AUTO_FADE=.06` | `pieces`, `xfade`, `speeds`, `transition="fade"` (`dissolve`, `smoothleft`, `fadeblack`…), `fit` | `cut.xfade_assemble(pieces, xfade=0.3, transition="fadeblack")` from any workflow |
-| Hook montage | Sped-up hooks with crossfades into the body | ffmpeg | `workflows/talkinghead/scripts/montage.py:Montage` | `hooks`, `body`, `hook_speed=1.3`, `body_speed=1.1`, `xf`, `hook_gain_db` | `Montage(...)` is importable; use `.graph`, `.b2f`, `.join_starts`. The hook menu (12 tagged candidates) is a process step in talkinghead WORKFLOW.md. |
-| Speed ramps | Per-segment `setpts` (+ atempo) | ffmpeg | `vlog/build_vlog.py:seg_speed`; `media.atempo_chain` | `speed`, `empty_speed=1.3`, `default_speed=1.2` | `setpts=PTS/s` + `media.atempo_chain(s)` |
-| End fade (no fade-in) | `fade=t=out` + `afade`; never a black first frame | ffmpeg | `vlog/build_vlog.py` | `fade_out=1.5` | Use in any final pass |
+| `blur` | 0.8 | `blur` (exact) | `hblur` (approx) | exact | ffmpeg: xfade hblur smears horizontally only; no 2-D defocus |
+| `fade` (crossfade, xfade) | 0.45 | `fade` (exact) | `fade` (exact) | exact | - |
+| `push` (slideleft) | 0.7 | `push` (exact) | `slideleft` (near) | exact | ffmpeg: no 4 px motion blur |
+| `vpush` | 0.7 | `vpush` (exact) | `slideup` (near) | exact | ffmpeg: outgoing is not dimmed to 40 % |
+| `iris` (circleopen) | 1.1 | `iris` (exact) | `circleopen` (near) | exact | ffmpeg: centre is 50 %/50 % (HF 50 %/45 %); outgoing does not shrink to 0.94 |
+| `zoom` (zoomin) | 0.8 | `zoom` (exact) | `zoomin` (approx) | near | ffmpeg: only the outgoing zooms; no blur, incoming static; pil-frame: incoming settles from 1.18x (photo-story) instead of 0.7x |
+| `focus` | 0.9 | `focus` (exact) | `fade` (approx) | exact | ffmpeg: xfade cannot defocus; pre-blur the tail/head with gblur or render in HF |
+| `blocks` (panels) | 1.1 | `blocks` (exact) | custom expr (near) | exact | ffmpeg: no 1 px panel edge line |
+| `chroma` | 0.8 | `chroma` (exact) | `pixelize` (approx) | near | ffmpeg: no RGB split; for the real look pre-render with rgbashift; pil-frame: split is a channel roll, not a drop-shadow |
+| `flip` | 0.9 | `flip` (exact) | `squeezeh` (approx) | near | ffmpeg: squeeze, no perspective or dimming; pil-frame: horizontal squeeze, no perspective foreshortening |
+| `zoomout` | 1 | `zoomout` (exact) | custom expr (near) | exact | ffmpeg: no blur on the outgoing |
+| `whip` (whip-pan, whippan) | 0.32 | bridge GSAP (near) | custom expr (near) | exact | hyperframes: CSS blur is 2-D, not directional; ffmpeg: 5-tap blur, slight ghosting at 1080p; slow (per-pixel expr) |
+| `flash` (fadewhite, white-flash) | 0.5 | bridge GSAP (exact) | `fadewhite` (near) | exact | ffmpeg: pure white, not warm white |
+| `fadeblack` (dip, dip-to-black) | 0.6 | bridge GSAP (exact) | `fadeblack` (exact) | exact | - |
+| `light-leak` (leak, lightleak) | 0.7 | bridge GSAP (near) | custom expr (near) | exact | hyperframes: CSS radial gradients with screen blend; ffmpeg: leak added in YUV (luma + warm chroma shift) |
+| `ink` | 0.6 | `blur` (approx) | custom expr (near) | exact | hyperframes: no organic mask; needs an SVG feTurbulence mask; ffmpeg: sine-field blotches instead of noise |
+| `blinds` | 0.55 | `blocks` (approx) | custom expr (exact) | exact | hyperframes: blocks covers with colour instead of revealing B |
+| `tear` | 0.55 | `push` (approx) | `wipeleft` (approx) | exact | hyperframes: no torn edge; ffmpeg: straight edge, no paper band or shadow |
+| `slideup` (coverup) | 0.45 | bridge GSAP (exact) | `coverup` (near) | exact | ffmpeg: outgoing is not dimmed |
+| `cut` (hard, none) | 0 | bridge GSAP (exact) | `fade` (near) | exact | ffmpeg: use xfade=0 in xfade_assemble for a true cut (concat) |
+| `wipe` (wipeleft) | 0.5 | bridge GSAP (exact) | `wipeleft` (exact) | exact | - |
+| `dissolve` | 0.6 | `fade` (approx) | `dissolve` (exact) | exact | hyperframes: no per-pixel noise |
+| `pixelize` | 0.6 | `chroma` (approx) | `pixelize` (exact) | exact | hyperframes: stepped glitch instead of pixel blocks |
+| `radial` (clock, clock-wipe) | 0.8 | `iris` (approx) | `radial` (exact) | exact | hyperframes: circle grows; no conic sweep |
 
 ## 8. Looks / grade
 
-| Effect | What | Engine | Where | Params | Reuse |
-|---|---|---|---|---|---|
-| Vlog grade | `eq` + warm colorbalance + unsharp | ffmpeg | `vlog/build_vlog.py:grade_chain` | `DEFAULT_GRADE` (bright .05, contrast 1.12, sat 1.18, gamma 1.04), `warm`, `sharpen`, per-segment `bright`; persona `vlog.grade` | Paste the chain into any `-vf` |
-| Talking-head grade | Denoise + eq + colorbalance + CAS sharpen | ffmpeg | talkinghead config `GRADE` (vertical default); horizontal `eq=brightness=-0.06:…` | filter string | Paste it. promo-recut `grade:` uses the same convention. |
-| HDR → SDR | zscale/tonemap for iPhone HLG | ffmpeg | `lib/vstudio/media.py:hdr_to_sdr_args` | `transfer`, `force` | `media.hdr_to_sdr_args(src)` |
-| Film look | Grain always; strong = warm desat, flicker, vignette, scratches, dust | PIL | `photostory/looks.py:film_look(C, box, gt, strong)` | spec `FILM_SECTIONS`, or any `film:` shot | Call it on any `(BOX_H, BOX_W, 3)` float32 frame with a `Ctx` |
-| Texture generators | grain, light leak, ink field, torn edge, dark radial bg, paper | PIL | `photostory/looks.py:make_grain/make_leak/make_ink/make_jag/make_bg/paper_bg` | `C`, `seed` | Need a `Ctx` |
-| Portrait retouch | Face slim, eyes, de-shine, skin/makeup, body slim | PIL (cv2 + MLS) | `lib/vstudio/retouch.py:retouch` | `slim .05`, `eye .04`, `shine .8`, `smooth .6`, `makeup .5`, `body 0` | `retouch.retouch(img)`; per frame in `talkinghead/scripts/vertical/retouch_video.py` |
+| Effect | What | Engine | Where | Params | When to use | Energy | Hold / duration | Max uses | Reuse | Tested |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Vlog grade <sub>`vlog-grade`</sub> | eq + warm colorbalance + unsharp | ffmpeg | `vlog/build_vlog.py:grade_chain` | `sat=1.18`, `contrast=1.12`, `warm=on` | Travel / lifestyle footage | n/a | whole video | one grade per video | Paste the chain into any `-vf` | - |
+| Talking-head grade <sub>`talkinghead-grade`</sub> | Denoise + eq + colorbalance + CAS sharpen | ffmpeg | talkinghead config `GRADE` | `eq brightness=-0.06` | Talking heads | n/a | whole video | one grade | Paste it | - |
+| HDR to SDR <sub>`hdr-to-sdr`</sub> | zscale/tonemap for iPhone HLG | ffmpeg | `lib/vstudio/media.py:hdr_to_sdr_args` | `force=False` | iPhone HDR sources | n/a | whole clip | always for HDR sources | `media.hdr_to_sdr_args(src)` | `test_core.py` |
+| Film look <sub>`film-look`</sub> | Grain always; strong = warm desat, flicker, vignette, scratches, dust | PIL | `photostory/looks.py:film_look(C, box, gt, strong)` | `strong=False` | Archive / memory sections | low | section | strong look 1 section | Call it on any `(BOX_H, BOX_W, 3)` float32 frame with a Ctx | - |
+| Texture generators <sub>`texture-generators`</sub> | grain, light leak, ink field, torn edge, dark radial bg, paper (`grain`, `leak`, `ink`, `jag`, `bg`, `paper`) | PIL | `photostory/looks.py:make_grain/make_leak/make_ink/make_jag/make_bg/paper_bg` | `seed=fixed` | Building blocks for other effects | n/a | - | - | Need a Ctx | - |
+| Portrait retouch <sub>`portrait-retouch`</sub> | Face slim, eyes, de-shine, skin/makeup, body slim | PIL | `lib/vstudio/retouch.py:retouch` | `slim=0.05`, `smooth=0.6`, `makeup=0.5` | Covers and talking heads (creator decides) | n/a | whole clip | always subtle | `retouch.retouch(img)` | `test_retouch.py` |
 
 ## 9. Audio / SFX
 
-| Effect | What | Engine | Where | Params | Reuse |
-|---|---|---|---|---|---|
-| SFX bank | Synthesised `pop`, `whoosh`, `stamp`/`thud`, `ding` | audio | `lib/vstudio/audio.py:sfx_bank`, `SFX_GAINS`, `write_sfx` | `sr`; gains pop .32, whoosh .4, thud .45, ding .35 | Use `audio.write_sfx("assets/sfx")` to get WAVs for HF `<audio>` clips. For numpy, see the next row. |
-| SFX placement | Mix events into a voice track | audio | `audio.py:place_sfx`; talkinghead `compose.py:mix_audio` (pop at pops/tokens, thud at stamps, whoosh at scene changes and hook joins) | `events=[(t,name)]`, `gains`, `bank` | `audio.place_sfx(x, [(3.2,"pop"),(5.0,"whoosh")], sr)`, then `loudnorm_2pass` |
-| Card stinger | 1.6 s noise whoosh + 110 Hz thump at −19 dBFS | audio | `longform-to-short/scripts/make_audio_assets.py` → `card_sting.wav` | | Copy the WAV under any chapter card |
-| Music bed + ducking | Loops music, ducks it under the voice, optional carve EQ, fades | audio | `audio.py:mix_bed`; `vlog/scripts/add_music.py`; explainer `make_bgm_bed.py` + `carve.mjs` | `duck_db=-10`, `music_lufs=-30`, `carve`, `fade_in/out`, `ambient_db` | `audio.mix_bed(voice, music, out)` |
-| Loudness | Two-pass loudnorm to −14 LUFS | audio | `audio.py:loudnorm_2pass`, `normalize_stem` | `lufs`, `tp=-1.5`, `lra=11` | Last step of every workflow |
-| Voice anonymize | Pitch shift, duration preserved | audio | `audio.py:pitch_shift_filter`; longform `pitches.windows`, `pitches.semitones=-3` | `semitones`, `tempo` | `-af` with `audio.pitch_shift_filter(-3)` on the window |
+| Effect | What | Engine | Where | Params | When to use | Energy | Hold / duration | Max uses | Reuse | Tested |
+|---|---|---|---|---|---|---|---|---|---|---|
+| SFX bank <sub>`sfx-bank`</sub> | Synthesised pop, whoosh, stamp/thud, ding, ... | audio | `lib/vstudio/audio.py:sfx_bank`, `SFX_GAINS`, `write_sfx` | `gains=pop .32, whoosh .4, thud .45, ding .35` | Any on-screen action that needs a sound (A11) | n/a | 0.1-1.6 s | repeats must alternate and step down (A12) | `audio.write_sfx("assets/sfx")` | `test_beats.py` |
+| SFX placement <sub>`sfx-placement`</sub> | Mix events into a voice track | audio | `audio.py:place_sfx`; talkinghead `compose.py:mix_audio` | `events=[(t, name)]` | After picture lock (A12) | n/a | - | <= 2 per 2 s | `audio.place_sfx(x, [(3.2, "pop")], sr)` | `test_beats.py` |
+| Card stinger <sub>`card-stinger`</sub> | 1.6 s noise whoosh + 110 Hz thump at -19 dBFS | audio | `longform-to-short/scripts/make_audio_assets.py` -> `card_sting.wav` | `level=-19 dBFS` | Under a chapter card | med | 1.6 s | 1 per chapter | Copy the WAV under any chapter card | - |
+| Music bed + ducking <sub>`music-bed`</sub> | Loops music, ducks it under the voice, optional carve EQ, fades | audio | `audio.py:mix_bed`; `vlog/scripts/add_music.py`; explainer `make_bgm_bed.py` + `carve.mjs` | `duck_db=-10`, `music_lufs=-30` | Every narrated video | n/a | whole video | 1 bed (+ a no-music version, A13) | `audio.mix_bed(voice, music, out)` | `test_core.py` |
+| Loudness <sub>`loudness`</sub> | Two-pass loudnorm to -14 LUFS | audio | `audio.py:loudnorm_2pass`, `normalize_stem` | `lufs=-14`, `tp=-1.5` | Last step of every workflow | n/a | - | always | `audio.loudnorm_2pass(src, dst)` | `test_core.py` |
+| Voice anonymize <sub>`voice-anonymize`</sub> | Pitch shift, duration preserved | audio + ffmpeg | `audio.py:pitch_shift_filter`; longform `pitches.windows` | `semitones=-3` | Privacy for a voice | n/a | window | as needed | `-af` with `audio.pitch_shift_filter(-3)` on the window | `test_core.py` |
 
 ## 10. Progress / chapter bars
 
-| Effect | What | Engine | Where | Params | Reuse |
-|---|---|---|---|---|---|
-| HF chapter progress bar | Bar + ticks + chapter labels on a scrim; the active label lights up | HF | `lib/vstudio/overlays.py:hf_progress` | `chapters [(s,e,label)]`, `start`, `total`, `geo`, `track_index=8` | `p = overlays.hf_progress(chs, 0, total)`, then paste `p["css"]`, `p["html"]` and `p["js"]` |
-| Refined / classic bar (per frame) | Refined: segmented gradient bar with knob and a "01 / 03 label" pill. Classic: notes-board bar. | PIL | `overlays.py:progress_bar(style="refined"\|"classic")`; talkinghead `PB_Y=250` | `chapters`, `t`, `total`, `width`, `x0/x1`, `theme` | Paste `progress_bar(...)` each frame |
-| Static bar + ffmpeg fill | Dim bar PNG + active labels + drawbox fill / playhead expression | ffmpeg | `overlays.py:progress_static`, `progress_fill`; talkinghead `build_filter.py` | `y=1000`, `x0=80`, `bar_w`, `fps`, `head` | Use it for a pure-ffmpeg pass on landscape video |
+| Effect | What | Engine | Where | Params | When to use | Energy | Hold / duration | Max uses | Reuse | Tested |
+|---|---|---|---|---|---|---|---|---|---|---|
+| HF chapter progress bar <sub>`hf-progress`</sub> | Bar + ticks + chapter labels on a scrim; the active label lights up | HF | `lib/vstudio/overlays.py:hf_progress` | `geo=horizontal` | Long videos with chapters | low | whole video | always on | `p = overlays.hf_progress(chs, 0, total)`; paste css/html/js | `test_visual.py` |
+| Refined / classic bar (per frame) <sub>`progress-bar-pil`</sub> | Segmented gradient bar with knob and pill, or notes-board bar (`refined`, `classic`) | PIL | `overlays.py:progress_bar(style="refined"\|"classic")` | `style=classic` | Per-frame compositors | low | whole video | always on | Paste `progress_bar(...)` each frame | `test_visual.py` |
+| Static bar + ffmpeg fill <sub>`progress-ffmpeg`</sub> | Dim bar PNG + labels + drawbox fill / playhead expression | ffmpeg | `overlays.py:progress_static`, `progress_fill`; talkinghead `build_filter.py` | `y=1000` | Pure-ffmpeg landscape passes | low | whole video | always on | Use it for a pure-ffmpeg pass | `test_visual.py` |
 
 ## 11. Covers
 
-| Effect | What | Engine | Where | Params | Reuse |
-|---|---|---|---|---|---|
-| Split cover | Retouched photo + quote + title with highlight + thumbnail + chips + stamp, at several sizes | PIL | `lib/vstudio/cover.py:split_cover`; `workflows/cover/scripts/split_cover.py`; promo `make_cover.py` | `quote`, `title`, `title_highlight`, `thumb`, `chips`, `tag`, `sizes` | `split_cover(cfg)` |
-| Notes cover | Frame + sticky-note panels + kicker | PIL | `cover.py:notes_cover`, `sticky_note` | `panels`, `fun`, `kicker`, `mute_bottom` | talkinghead H cover |
-| Framed cover | Tilted framed screenshot + eyebrow/big/sub + chips (16:9 and 3:4) | PIL | `cover.py:framed_cover`, `framed` | `copy={eyebrow,big1,big2,sub_lines,chips}`, `size`, `accent` | longform cover |
-| Collage cover (pattern A) | 4-frame diagonal collage, teal X-slash, play diamond | HTML → PNG | `workflows/cover/templates/cover_collage.template.html`, `scripts/extract_frames.py collage` | `--cell-w/h`, boxes | `python -m vstudio.render` |
-| Face on quadrants (pattern B) | Matted face over 4 slide quadrants | HTML → PNG | `cover/templates/cover_face_quadrants.template.html`, `scripts/matte.py` | `--engine mediapipe\|rvm` | Same |
-| Torn-paper scrapbook | Torn-edge photo pieces (SVG turbulence displacement) with a taped title | HTML → PNG | `vlog/scripts/make_cover.py:build_html` | `--hero`, `--frames`, `--config` pieces `{img,left,top,w,h,rot,seed}`, `roughness=13` | Use it with any stills |
-| Photo-story cover | Title zone + hero A/B split polaroid + taped polaroid row with red circles | PIL | `photostory/cover.py` | spec `COVER=dict(...)` | `polaroid()`, `circled()` |
-| Frame scoring | Picks smiling, eyes-open, centred frames | PIL | `cover.py:score_frames`, `contact_sheet` | `top_n`, `step`, `min_gap` | Run on any talking video |
+| Effect | What | Engine | Where | Params | When to use | Energy | Hold / duration | Max uses | Reuse | Tested |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Split cover <sub>`split-cover`</sub> | Retouched photo + quote + title + thumbnail + chips + stamp, several sizes | PIL | `lib/vstudio/cover.py:split_cover` | `title_highlight` | Talking-head covers | n/a | still | 1 per video | `split_cover(cfg)` | `test_visual.py` |
+| Notes cover <sub>`notes-cover`</sub> | Frame + sticky-note panels + kicker | PIL | `cover.py:notes_cover`, `sticky_note` | `mute_bottom=150` | Talkinghead horizontal cover | n/a | still | 1 | talkinghead H cover | `test_visual.py` |
+| Framed cover <sub>`framed-cover`</sub> | Tilted framed screenshot + eyebrow/big/sub + chips | PIL | `cover.py:framed_cover`, `framed` | `tilt=-3` | Longform / course covers | n/a | still | 1 | longform cover | `test_visual.py` |
+| Collage cover (pattern A) <sub>`collage-cover`</sub> | 4-frame diagonal collage, X-slash, play diamond | HTML | `workflows/cover/templates/cover_collage.template.html` | `--cell-w/h=boxes` | Short-video covers | n/a | still | 1 | `python -m vstudio.render` | - |
+| Face on quadrants (pattern B) <sub>`face-quadrants-cover`</sub> | Matted face over 4 slide quadrants | HTML | `cover/templates/cover_face_quadrants.template.html`, `scripts/matte.py` | `--engine=mediapipe` | Talk with slides | n/a | still | 1 | Same | - |
+| Torn-paper scrapbook <sub>`torn-paper-cover`</sub> | Torn-edge photo pieces with a taped title | HTML | `vlog/scripts/make_cover.py:build_html` | `roughness=13` | Vlog covers | n/a | still | 1 | Use it with any stills | - |
+| Photo-story cover <sub>`photo-story-cover`</sub> | Title zone + hero split polaroid + taped polaroid row with red circles | PIL | `photostory/cover.py` | `COVER=spec` | Photo stories | n/a | still | 1 | `polaroid()`, `circled()` | - |
+| Frame scoring <sub>`frame-scoring`</sub> | Picks smiling, eyes-open, centred frames | PIL | `cover.py:score_frames`, `contact_sheet` | `top_n=6`, `min_gap=2.0` | Choosing a cover frame | n/a | - | - | Run on any talking video | `test_visual.py` |
 
-**Count**: 85 catalogue rows in 11 sections. Several rows bundle named variants: 8 Ken Burns motions, 10 photo
-layouts, 10 photo overlays, 11 HF + 12 photo transitions, 9 3b1b techniques, 4 SFX, 4 fit modes and so on.
-Counting every named variant gives about 155 effects.
+**Count**: 87 registry entries in 11 sections (190 counting named variants). By engine: PIL 40, ffmpeg 20, HF 26, HTML 5, audio 6. Parameter feel, pitfalls and entry points: `python -m vstudio.effects --show <id>`.
+
+<!-- END GENERATED: effects registry -->
 
 ---
 
@@ -227,7 +271,9 @@ Counting every named variant gives about 155 effects.
    - `hf.scene_transitions([hf.transition("blur", "w-a", "w-b", T, 0.8), …])`. Use one calm family (blur/push), with
      `iris` for the core reveal and `blocks` for a new chapter.
    - Stretch each outgoing scene's `data-duration` by `d` (`make_index.py --patch-scenes`).
-   - Photo / image sequences: `photostory.transitions.transition(C, P, N, p, "ink")`.
+   - Photo / image sequences: `photostory.transitions.transition(C, P, N, p, "ink")`, or Ctx-free
+     `xfade.blend("ink", P, N, p)`.
+   - The same transition in an ffmpeg cut-down: `cut.xfade_assemble(pieces, transition=xfade.ffmpeg_transition("iris"))`.
 
 9. **"Hide a guest's face"**
    - Run `track_face.py` → `apply_sticker.py` → `verify_coverage.py --min-coverage 1.0`.

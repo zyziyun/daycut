@@ -21,4 +21,10 @@ Face and look
 
 Visual (overlays, covers, HTML render, publish copy) - see each module's docstring:
   draw, overlays, cover, render, publish
+
+Effects
+  effects  declarative registry of every effect (engines, entry points, params + feel, energy,
+           duration, max uses, pitfalls); generates references/EFFECTS.md (``--write-md``)
+  xfade    cross-engine transition bridge: one name -> HyperFrames GSAP (``hf_transitions``),
+           ffmpeg xfade (``ffmpeg_transition`` / ``ffmpeg_expr``), numpy per-frame (``blend``)
 """
