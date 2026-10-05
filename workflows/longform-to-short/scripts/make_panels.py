@@ -27,6 +27,6 @@ for i, p in enumerate(cfg.get("panels", [])):
     im = overlays.notes_panel(p["title"], rows, theme=T, width=PW, tag=TAG)
     png = f"panels/panel_{i:02d}.png"
     im.save(png)
-    meta.append({"png": png, "t0": p["src"][0], "t1": p["src"][1], "h": im.height})
+    meta.append({"png": png, "t0": p["src"][0], "t1": p["src"][1], "h": im.height, "w": im.width})
 _lfc.dump_json(meta, "panels.json")
 print(f"{len(meta)} panels written")

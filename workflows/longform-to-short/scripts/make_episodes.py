@@ -15,25 +15,31 @@ Tags = publish.tags + persona publish.tags (vstudio.publish.hashtags, de-duplica
 vstudio.publish.chapter_lines; 小红书 labels are capped at publish.label_max (14) chars and titles are checked
 with vstudio.publish.check_title against persona platforms.xiaohongshu.title_max.
 
-Usage: python3 make_episodes.py work/config.py [--no-video]
+Platform checks: every episode against the episode targets (episodes.targets, else the short-form targets of
+config targets / platform: 小红书, 抖音, TikTok, Shorts) and the full cut against the long-form ones (YouTube,
+B站): vstudio.platform.check_length (sweet spot / max) + check_text (title) -> WARN lines and
+<out>/platform_checks.json. With explicit targets each episode also gets ep{N}_cover_<aspect>.png for every
+other cover aspect those targets need. Vertical slices of the episodes: make_vertical.py.
+
+Usage: python3 make_episodes.py work/config.py [--no-video] [--targets xiaohongshu:vertical,youtube]
 """
 import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
 import os
 
-from PIL import Image, ImageDraw
-
 import _lfc
 import make_cover as MC
-from vstudio import cover, media, publish
+from vstudio import media, publish
+from vstudio import platform as PF
 from vstudio.config import persona
 
 
 def extra(ap):
     ap.add_argument("--no-video", action="store_true", help="covers + 发布包 only, skip slicing")
+    ap.add_argument("--targets", "--platform", dest="targets", default=None,
+                    help="comma list of platform targets (overrides config targets/platform), e.g. xiaohongshu:vertical,youtube")
 
 
 cfg, args = _lfc.load(description=__doc__, extra=extra)
-P = _lfc.palette(cfg)
 timeline = _lfc.load_json("timeline.json")
 total = _lfc.total_duration(timeline)
 cards = _lfc.chapters_from_timeline(timeline)  # [(final_t, title)]
@@ -46,43 +52,14 @@ LABEL_MAX = cfg.get("publish.label_max", 14)
 short = cfg.get("publish.short_labels", {}) or {}
 
 # ---- episode ranges (final seconds)
-items = cfg.get("episodes.items") or []
-count = cfg.get("episodes.count")
-if not items and count and len(cards) >= count:
-    target = total / count
-    starts = [1]
-    for k in range(1, count):
-        goal = target * k
-        best = min(range(2, len(cards) + 1), key=lambda c: abs(cards[c - 1][0] - goal))
-        starts.append(max(best, starts[-1] + 1))
-    items = [{"chapters": [s, (starts[i + 1] - 1) if i + 1 < len(starts) else len(cards)]}
-             for i, s in enumerate(starts)]
-if count and not items:
-    print(f"episodes.count={count} but only {len(cards)} chapter cards; no episodes split")
-eps = []
-for i, it in enumerate(items):
-    first, last = it["chapters"]
-    a = 0.0 if i == 0 else cards[first - 1][0]
-    b = cards[last][0] if last < len(cards) else None
-    eps.append({**it, "n": i + 1, "a": a, "b": b})
+eps = _lfc.episode_ranges(cfg, timeline)
+profs, explicit = _lfc.targets(cfg, args.targets)
+ep_profs = _lfc.episode_targets(cfg, profs)
+checks = {"targets": [p.key for p in profs], "explicit": explicit, "full": {}, "episodes": []}
 
 
-def ep_cover(ep, shot, N):
-    W, H = 1080, 1440
-    im = Image.new("RGB", (W, H), P["bg"])
-    d = ImageDraw.Draw(im)
-    series = cfg.get("episodes.series", "")
-    d.text((84, 130), f"{series} · {ep['n']}/{N}" if series else f"{ep['n']}/{N}",
-           font=_lfc.font(40, True), fill=P["accent"])
-    if ep.get("big1"):
-        d.text((80, 300), ep["big1"], font=_lfc.font(108, True), fill=P["ink"])
-    if ep.get("big2"):
-        d.text((80, 440), ep["big2"], font=_lfc.font(132, True), fill=P["accent"])
-    if ep.get("sub"):
-        d.text((84, 660), ep["sub"], font=_lfc.font(46, True), fill=(225, 225, 228))
-    fr = cover.framed(shot, 900, -3, P["accent"])
-    im.paste(fr, (W - fr.width + 120, H - fr.height + 60), fr)
-    return im
+def ep_cover(ep, shot, N, size=(1080, 1440)):
+    return MC.episode_cover(cfg, ep, shot, N, size)
 
 
 def chapter_lines(a, b, cap=None):
@@ -99,6 +76,14 @@ for ep in eps:
     dur = (ep["b"] or total) - ep["a"]
     if dur > cfg.get("episodes.max_minutes", 15) * 60:
         print(f"WARN ep{n} is {dur/60:.1f} min (> episodes.max_minutes)")
+    ew = {}
+    for p in ep_profs:
+        w = PF.check_length(p, dur) + (PF.check_text(p, title=ep["title"]) if ep.get("title") else [])
+        for m in w:
+            print(f"WARN ep{n} {p.key}: {m}")
+        ew[p.key] = w
+    checks["episodes"].append({"n": n, "a": round(ep["a"], 3), "b": round(ep["b"] or total, 3),
+                               "duration": round(dur, 3), "warnings": ew})
     if not args.no_video:
         cmd = ["ffmpeg", "-y", "-ss", f"{ep['a']:.3f}"] + (["-to", f"{ep['b']:.3f}"] if ep["b"] else [])
         media.run(cmd + ["-i", src, *_lfc.video_encoder(cfg), "-c:a", "aac", "-b:a", "160k",
@@ -107,6 +92,10 @@ for ep in eps:
         ep["a"] + min(60.0, dur / 2)
     shot = MC.shot_at(cfg, t_shot, "ep_shot.png")
     ep_cover(ep, shot, len(eps)).save(os.path.join(xdir, f"ep{n}_cover.png"))
+    if explicit:  # extra cover aspects the episode targets need (3:4 above is always written)
+        for name, size in MC.extra_cover_sizes(ep_profs, base=("3x4",)).items():
+            img = ep_cover(ep, shot, len(eps), size) if size[1] > size[0] else MC.wide_episode_cover(cfg, ep, shot, len(eps), size)
+            img.save(os.path.join(xdir, f"ep{n}_cover_{name}.png"))
     print(f"ep{n}: {_lfc.mmss(ep['a'])}-{_lfc.mmss(ep['b'] or total)}  {ep.get('title', '')}")
 
 # ---- 发布包.md
@@ -128,6 +117,12 @@ for ep in eps:
     if errata and (ep.get("errata", False)):
         L += [errata, ""]
     L += [tagline, "", f"文件: episodes/ep{ep['n']}.mp4 · 封面: episodes/ep{ep['n']}_cover.png", ""]
+for p in _lfc.full_targets(profs):
+    w = PF.check_length(p, total) + (PF.check_text(p, title=cfg.get("publish.title")) if cfg.get("publish.title") else [])
+    for m in w:
+        print(f"WARN full {p.key}: {m}")
+    checks["full"][p.key] = w
+_lfc.dump_json(checks, os.path.join(cfg.out, "platform_checks.json"))
 p = os.path.join(cfg.out, "发布包.md")
 open(p, "w", encoding="utf-8").write("\n".join(L))
 print(p)

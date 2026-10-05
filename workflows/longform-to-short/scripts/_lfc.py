@@ -171,3 +171,96 @@ def chapters_from_timeline(timeline):
 
 def total_duration(timeline):
     return timemap(timeline).duration
+
+
+# --------------------------------------------------------------------------- platform targets
+LONGFORM_SWEET_MIN = 300   # a target whose length sweet spot ends above this (s) takes the full cut
+
+
+def targets(cfg, cli=None):
+    """vstudio.platform Profiles for this video and whether they were asked for explicitly.
+
+    Order of precedence: ``--targets`` / ``--platform`` CLI value > config ``targets`` (list) or
+    ``platform`` (one value or comma list) > default ``["youtube", "<persona platforms.default>:horizontal"]``
+    (the workflow's natural orientation: full course on YouTube, horizontal episodes on the persona's
+    default platform). Values look like ``xiaohongshu:vertical``, ``xiaohongshu:full``, ``douyin``, ``youtube``.
+    Returns (profiles, explicit)."""
+    from vstudio import platform as P
+    spec = cli or cfg.get("targets") or cfg.get("platform")
+    explicit = bool(spec)
+    if not spec:
+        d = (persona().get("platforms") or {}).get("default") or "xiaohongshu"
+        spec = ["youtube", f"{d}:horizontal"]
+    items = spec if isinstance(spec, (list, tuple)) else str(spec).split(",")
+    out, seen = [], set()
+    for item in items:
+        try:
+            p = P.parse_targets([item])[0]
+        except (KeyError, IndexError) as e:
+            if explicit:
+                sys.exit(f"targets: {e}")
+            continue
+        if p.key not in seen:
+            seen.add(p.key)
+            out.append(p)
+    return out, explicit
+
+
+def horizontal(profiles):
+    return [p for p in profiles if p.w > p.h]
+
+
+def vertical(profiles):
+    return [p for p in profiles if p.h > p.w]
+
+
+def primary_horizontal(cfg, cli=None):
+    """First horizontal target when targets were set explicitly, else None (= the pre-platform defaults)."""
+    profs, explicit = targets(cfg, cli)
+    h = horizontal(profs)
+    return h[0] if explicit and h else None
+
+
+def full_targets(profiles):
+    """Targets the full course is checked against: long-form ones (sweet spot > 5 min), else all."""
+    lf = [p for p in profiles if (p.length.get("sweet") or [0, 1e9])[1] > LONGFORM_SWEET_MIN]
+    return lf or list(profiles)
+
+
+def episode_targets(cfg, profiles):
+    """Targets episodes are checked / exported for: config ``episodes.targets``, else the short-form
+    targets (sweet spot <= 5 min), else all."""
+    from vstudio import platform as P
+    if cfg.get("episodes.targets"):
+        return P.parse_targets(cfg.get("episodes.targets"))
+    sf = [p for p in profiles if (p.length.get("sweet") or [0, 1e9])[1] <= LONGFORM_SWEET_MIN]
+    return sf or list(profiles)
+
+
+# --------------------------------------------------------------------------- episodes
+def episode_ranges(cfg, timeline):
+    """[{n, a, b (None = end), chapters, title, ...}] in FINAL seconds from config.episodes
+    (items = explicit chapter ranges; count = auto split at chapter cards of similar length).
+    Episode 1 always starts at 0 (keeps the hook)."""
+    total = total_duration(timeline)
+    cards = chapters_from_timeline(timeline)
+    items = cfg.get("episodes.items") or []
+    count = cfg.get("episodes.count")
+    if not items and count and len(cards) >= count:
+        target = total / count
+        starts = [1]
+        for k in range(1, count):
+            goal = target * k
+            best = min(range(2, len(cards) + 1), key=lambda c: abs(cards[c - 1][0] - goal))
+            starts.append(max(best, starts[-1] + 1))
+        items = [{"chapters": [s, (starts[i + 1] - 1) if i + 1 < len(starts) else len(cards)]}
+                 for i, s in enumerate(starts)]
+    if count and not items:
+        print(f"episodes.count={count} but only {len(cards)} chapter cards; no episodes split")
+    eps = []
+    for i, it in enumerate(items):
+        first, last = it["chapters"]
+        a = 0.0 if i == 0 else cards[first - 1][0]
+        b = cards[last][0] if last < len(cards) else None
+        eps.append({**it, "n": i + 1, "a": a, "b": b})
+    return eps

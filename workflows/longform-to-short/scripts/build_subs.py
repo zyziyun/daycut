@@ -13,7 +13,13 @@ Term fixes (vstudio.asr.apply_term_fixes), in order:
 Writes subs.srt (soft subs for platform CC upload, also copied to <out>/subs.srt) and subs.ass
 (burn-in, vstudio.subs.ass_write, CJK-aware wrap at subtitles.max_line) including 勘误 notes:
 config.subtitles.errata [{"src": [t0,t1], "text": "勘误：..."}] shown as a top-of-frame note while
-that source window plays.
+that source window plays. Also writes cues.json (vstudio.subs.Cue dicts, final seconds) next to subs.srt:
+the caption track for re-burning per platform (`python -m vstudio.export ... --cues work/cues.json`) and for
+the vertical slices (make_vertical.py re-lays it into each profile's caption box). Per horizontal target also
+cues.<platform>-<orientation>.json, already split to fit that profile's caption box (use these with export).
+
+With explicit platform targets the first horizontal target's caption profile sets the burn-in: bottom margin
+from vstudio.platform.caption_box, chars per line from its max_chars_zh (unless subtitles.max_line is set).
 
 Usage: python3 build_subs.py work/config.py
 """
@@ -28,8 +34,13 @@ from vstudio import asr, subs
 FILLER_ONLY = re.compile(r"[嗯啊哦呃哈OK好的。，\s]*")
 
 cfg, _ = _lfc.load(description=__doc__)
-MAX_LINE = cfg.get("subtitles.max_line", 22)  # CJK chars per line on a 16:9 frame
-W, H = cfg.get("render.size", [1920, 1080])
+PROF = _lfc.primary_horizontal(cfg)       # None unless targets were set explicitly
+MAX_LINE = cfg.get("subtitles.max_line", PROF.caption["max_chars_zh"] if PROF else 22)  # CJK chars per line
+W, H = cfg.get("render.size", list(PROF.size) if PROF else [1920, 1080])
+MARGIN_V = None
+if PROF:
+    from vstudio import platform as PF
+    MARGIN_V = int(round((PROF.h - PF.caption_box(PROF)[3]) * H / PROF.h))
 FIXES = [list(f) for f in (cfg.get("subtitles.term_fixes") or [])]
 w = _lfc.load_json("audio16k.json")
 timeline = _lfc.load_json("timeline.json")
@@ -67,6 +78,12 @@ for i in range(1, len(events)):
 cues = [subs.Cue(a, b, t) for a, b, t in events]
 
 subs.srt_write(cues, "subs.srt")
+_lfc.dump_json([c.to_dict() for c in cues], "cues.json")
+for prof in _lfc.horizontal(_lfc.targets(cfg)[0]):
+    # per-target caption track for `python -m vstudio.export --cues`: long cues split so each fits the profile
+    import _vertical
+    rc = _vertical.relayout_cues(cues, _vertical.caption_fit_profile(prof))
+    _lfc.dump_json([c.to_dict() for c in rc], f"cues.{prof.name}-{prof.orientation}.json")
 shutil.copy("subs.srt", os.path.join(cfg.out, "subs.srt"))
 
 notes = []
@@ -78,7 +95,7 @@ for e in cfg.get("subtitles.errata", []):
     notes.append((span[0], span[1], e["text"]))
 
 font_name = cfg.get("subtitles.font_name") or subs.font_family("cjk-bold")
-subs.ass_write(cues, "subs.ass", w=W, h=H, font_name=font_name, wrap=MAX_LINE)
+subs.ass_write(cues, "subs.ass", w=W, h=H, font_name=font_name, wrap=MAX_LINE, margin_v=MARGIN_V)
 if notes:
     # 勘误 notes: a boxed top-centre "Note" style (vstudio.subs.ass_write only defines "Sub")
     k = H / 1080.0

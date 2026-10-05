@@ -135,3 +135,53 @@ Lib requests:
 - `media.delivery_args`: optional `encoder="videotoolbox"` (q:v quality mode) so `_lfc.video_encoder` can go.
 - `overlays.chapter_card` / `get_theme`: an `accent=` override (today `_lfc.theme` copies the teal theme dict
   and rewrites five keys to honour a per-video accent).
+
+## Wave B
+
+Platform wiring (references/PLATFORM_WIRING.md) + vertical slices. Changes:
+- `_lfc.targets / horizontal / vertical / primary_horizontal / full_targets / episode_targets`: config `targets` (list)
+  or `platform`, `--targets/--platform` on make_cover, make_episodes, make_vertical. Default
+  `["youtube", "<persona platforms.default>:horizontal"]`. Episode ranges moved to `_lfc.episode_ranges`.
+- Explicit targets only (default output unchanged): render.py canvas + loudness/TP from the first horizontal
+  profile; build_subs.py ASS bottom margin from `caption_box`, chars/line from `max_chars_zh`; burn_final.py
+  clamps the panel into `safe_box`; make_cover.py adds `cover_9x16.png` etc. per target aspect; episode covers
+  per aspect (`make_cover.episode_cover / wide_episode_cover / extra_cover_sizes`).
+- Always: `out/platform_checks.json` (check_length + check_text: episodes vs short-form targets, full cut vs
+  long-form ones); `work/cues.json` + `work/cues.<platform>-<orientation>.json` (re-laid per horizontal target);
+  `burn_final.py --clean-master` -> `out/master_clean.mp4` for `python -m vstudio.export`.
+- New `make_vertical.py` + `_vertical.py`: vertical master per canvas re-composed from the SOURCE (layouts split /
+  screen / speaker / pad-blur; title band when no speaker cam; content-following screen crop via main text block +
+  frame-diff activity + zoom_windows, `reframe.follow`/OneEuro camera; speaker = `reframe.plan` face mode on the cam
+  region), cards/hook/panels re-drawn, captions re-laid per profile, then `export.export_one` per episode x target.
+  Privacy: crops bounded by geometry crop span / speaker region, `vertical.exclude` painted out, per-frame overlap
+  count in plan.json. qa.py summarises `out/vertical/manifest.json`.
+- New config keys: `targets`, `platform`, `vertical.{mode, speaker.{region,min_hit,zoom,detector,color}, exclude,
+  screen.*, split.*, segments, series, crf, export_preset}`, `episodes.targets`, `episodes.items[].vertical`.
+  No new persona keys.
+
+Tests:
+- Synthetic 60 s end-to-end, default config (no targets) vs HEAD scripts, same lib: timeline.json, subs.ass,
+  subs.srt, 发布包.md byte-identical; covers + ep covers pixel-identical; final / final_subbed / ep1 / ep2 decoded
+  frames identical (mean abs diff 0.0); qa −14.2 LUFS / −1.4 dBTP, pitch −2.2 st. New files only: platform_checks.json,
+  cues*.json, panels.json gains "w".
+- Vertical synthetic: xiaohongshu:vertical (1080x1440) + :full (1080x1920), split (title band) -> canvases correct,
+  ep1/ep2 −14.0/−14.1 LUFS, sweet-spot warnings for 17–19 s episodes, caption ink bbox inside caption_box at every
+  sampled time (pixel diff vs master; one false positive from the moving test pattern, checked by eye), panel below
+  the band and above the caption box. Speaker split with a colour-marker "face" (`detector: color`), douyin + 3:4,
+  per-segment `screen` and per-episode `pad-blur`: hit rate 1.0, band=speaker, privacy_overlap_frames 0.
+- Real (outputs only in /tmp, nothing committed): 3-min window of a screen-share lecture with a participant avatar
+  tile, 1080x1440 + 1080x1920 split: no camera -> title band; tile, avatar name and bookmark bar never in frame;
+  code / doc text readable at ~2.1x (main code column, line numbers kept); −14.06 LUFS / −1.41 dBTP; label-length
+  warnings. Found and fixed: 72 px x 2 lines overflows the 190 px 3:4 caption band -> capped to 60 px.
+- `python3 -m pytest tests -q`: 318 passed. All scripts py_compile + `--help`.
+
+Lib requests:
+- `platform.fit_text_size`: wrap by min(pixel width, max_chars) — today a 27-char CJK line at 44 px is one pixel-fit
+  line that fails the char check and returns fits=False (callers must pre-split; `_vertical.relayout_cues` does).
+- `platform.fit_text_size` / `export.caption_overlay`: respect the caption box HEIGHT (2 lines at 72 px overflow the
+  小红书 3:4 band by ~30 px); workaround `_vertical.caption_fit_profile`.
+- `reframe`: a public `plan_region(src, region, ...)` (face plan constrained to a sub-rectangle, no temp clip) and a
+  public `interp_targets`; `_vertical.plan_speaker` encodes a temp region clip to stay inside the tile.
+- `face.detect_small(bgr, upscale_to=640)` for small cam tiles (`_vertical.make_detector`).
+- Unverified: MediaPipe speaker framing on a real camera tile (the real recording has only an avatar); the
+  first ~50 s of that window transcribed as English noise (ASR language issue, not wave B).

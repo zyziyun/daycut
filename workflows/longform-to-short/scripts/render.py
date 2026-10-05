@@ -9,6 +9,8 @@ Per item:
   pitch  -> asetrate down by pitches.semitones, atempo compensates (duration preserved)
 afade only at NON-continuous joins, so zoom / pitch splits stay seamless.
 Segments are concatenated by stream copy, then vstudio.audio.loudnorm_2pass to persona audio.loudness_lufs.
+With explicit platform targets (config targets / platform) the first horizontal target's profile sets the
+canvas (when render.size is not given) and the loudness / true-peak target (vstudio.platform).
 
 Usage: python3 render.py work/config.py [--from N]   (--from: reuse already-rendered segments < N)
 """
@@ -27,7 +29,8 @@ def extra(ap):
 cfg, args = _lfc.load(description=__doc__, extra=extra)
 SRC = cfg.src
 REC = cfg.path_of(cfg.get("demo.rec")) if cfg.get("demo.enabled") else None
-W, H = cfg.get("render.size", [1920, 1080])
+PROF = _lfc.primary_horizontal(cfg)       # None unless targets were set explicitly
+W, H = cfg.get("render.size", list(PROF.size) if PROF else [1920, 1080])
 FIT_W, FIT_H = cfg.get("render.fit", [W - 64, H - 64])
 BG = cfg.get("render.pad_color", "0x141414")
 FPS = cfg.get("render.fps", 24)
@@ -106,7 +109,8 @@ with open("concat.txt", "w") as f:
     f.writelines(f"file '{p}'\n" for p in files)
 media.run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", "concat.txt", "-c", "copy", "joined.mp4"])
 final = os.path.join(cfg.out, "final.mp4")
-# two-pass linear loudnorm to persona audio.loudness_lufs (-14), 48 kHz stereo, video stream-copied
-m = audio.loudnorm_2pass("joined.mp4", final)
+# two-pass linear loudnorm to persona audio.loudness_lufs (-14) or the target profile, 48 kHz stereo, video copied
+loud = dict(lufs=PROF.loudness["lufs"], tp=PROF.loudness["tp"]) if PROF else {}
+m = audio.loudnorm_2pass("joined.mp4", final, **loud)
 print(f"loudnorm: measured {m['input_i']:.1f} LUFS -> target")
 print("done:", final)

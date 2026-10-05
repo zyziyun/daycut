@@ -11,10 +11,13 @@ those on an already-cut video (every decision is a config value, so it is a chea
 labels), optionally a live web demo to re-record. **Outputs** (in `out/`): `final_subbed.mp4`
 (1080p, hook cold-open, chapter cards, body sped up, code zoom cut-ins, note panels, burned subs
 with 勘误 notes, ~−14 LUFS), `subs.srt` (soft CC), `cover_16x9.png`, `cover_3x4.png`,
-`episodes/ep{N}.mp4` + `ep{N}_cover.png`, `发布包.md`.
+`episodes/ep{N}.mp4` + `ep{N}_cover.png`, `发布包.md`, `platform_checks.json`; with vertical targets also
+`vertical/ep{N}/<platform>-<orientation>.mp4` (3:4 / 9:16 slices: speaker or title band on top, the
+shared screen following the content below, captions in the platform's caption box) + covers, post stubs and
+`vertical/manifest.json`.
 
-Not in scope: writing a script (the recording exists), vertical 9:16 reframing (use a vertical
-workflow on the episodes), music beds (tested and rejected for lectures — only a card stinger).
+Not in scope: writing a script (the recording exists), music beds (tested and rejected for lectures — only a
+card stinger).
 
 ## Setup
 
@@ -98,6 +101,13 @@ python3 $S/make_episodes.py work/config.py    # out/episodes/* + out/发布包.m
 `episodes.count: N` auto-splits at chapter-card boundaries; `episodes.items` gives explicit chapter
 ranges + per-episode cover copy. With neither, only the full-video 发布包 is written. For a
 "short episodes only" job, still build the full cut and just publish the episodes.
+Every episode is checked against the episode targets (length sweet spot / max, title) and the full cut
+against the long-form targets → `out/platform_checks.json` + `WARN` lines (see Platforms).
+
+**8c. (optional) Vertical slices** — see "Vertical slices" below
+```bash
+python3 $S/make_vertical.py work/config.py    # out/vertical/ep{N}/<platform>-<orientation>.mp4 + manifest
+```
 
 **9. Verify before handing off**
 ```bash
@@ -107,6 +117,81 @@ python3 $S/qa.py work/config.py               # decode, loudness, mosaics, pitch
 - Open every `work/qa/mosaic_NN.jpg`: **zero participant avatars, name tags, bookmark bars, emails**.
 - Pitch windows dropped ~3 semitones; the host's voice unchanged.
 - Spot-check each cut join (re-transcribe ~6 s of final audio around it or just listen).
+
+## Platforms
+
+`targets` (list) or `platform` (one value / comma list) in the config, or `--targets` / `--platform` on
+`make_cover.py`, `make_episodes.py`, `make_vertical.py`: values like `youtube`, `bilibili`,
+`xiaohongshu:horizontal`, `xiaohongshu:vertical` (3:4), `xiaohongshu:full` (9:16), `douyin`, `tiktok`,
+`youtube-shorts` (`python -m vstudio.platform` lists them all with their boxes). Profiles come from
+`lib/vstudio/platform.py` + persona `platforms.<name>` overrides (`references/PLATFORMS.md` in the repo root).
+
+| What | Unset (default) | With explicit targets |
+|---|---|---|
+| target list | `youtube` + `<persona platforms.default>:horizontal` | as given |
+| 16:9 canvas (`render.py`) | `render.size` or 1920x1080 | first horizontal target's canvas unless `render.size` is set |
+| loudness (`render.py`) | persona `audio.loudness_lufs`, −1.5 dBTP | that profile's `loudness` (lufs / tp) |
+| burned captions (`build_subs.py`) | 22 CJK chars/line, ASS default margin | `max_chars_zh` per line, bottom margin from `caption_box` (`subtitles.max_line` still wins) |
+| 记笔记 panel (`burn_final.py`) | `panel_pos` | `panel_pos` clamped into `safe_box` |
+| covers (`make_cover.py`) | 16:9 + 3:4 | + every other aspect a target needs (`cover_9x16.png` for 抖音 / TikTok / Shorts) |
+| episode covers | `ep{N}_cover.png` (3:4) | + `ep{N}_cover_<aspect>.png` per episode-target aspect |
+| length / title checks | full cut vs long-form targets (sweet spot > 5 min: YouTube, B站), episodes vs short-form ones (小红书, 抖音, TikTok, Shorts); `episodes.targets` overrides → `out/platform_checks.json` | same |
+| vertical slices | `make_vertical.py` uses `<persona platforms.default>:vertical` | every vertical target |
+
+The 16:9 outputs are byte-for-byte the pre-platform ones when `targets` / `platform` is unset (checked on the
+synthetic run). `episodes.max_minutes` (15) still warns too.
+
+**Clean master + multi-platform export.** `build_subs.py` writes `work/cues.json` (final-time cues) and,
+per horizontal target, `work/cues.<platform>-<orientation>.json` re-laid to fit that profile's caption box;
+`burn_final.py --clean-master` writes `out/master_clean.mp4` (cards, hook, panels, NO captions). Then one
+command makes a per-platform file with captions placed and sized for each UI, loudness to each target,
+length / title warnings, covers re-fitted to each platform's size and a post stub:
+```bash
+python3 $S/burn_final.py work/config.py --clean-master
+python3 -m vstudio.export out/master_clean.mp4 --platforms youtube --cues work/cues.youtube-horizontal.json \
+    --cover out/cover_16x9.png --post work/post.json --out out/exports      # one call per caption track
+```
+For 3:4 / 9:16 don't export the 16:9 master (a face reframe or pad-blur of a screen share is unreadable and
+can reveal tiles): use `make_vertical.py`, which renders a vertical master from the source and then calls the
+same `vstudio.export` per episode and target. `python -m vstudio.export` on
+`work/vertical/<W>x<H>/master.mp4` with `--cues work/vertical/cues.<platform>-<orientation>.json --start/--dur` re-exports
+one slice by hand.
+
+## Vertical slices
+
+`make_vertical.py` turns the cut into 3:4 / 9:16 slices for every vertical target (one master per canvas,
+then per episode and target `vstudio.export`). The source is the original recording, so the layout can use
+regions the 16:9 render cropped away. Layout per item: `--mode` > `vertical.segments [{src: [t0, t1], mode}]`
+(source s) > `episodes.items[i].vertical` > `vertical.mode` (default `split`):
+
+- **split** (default; the classic lecture slice): speaker band on top (40 %), screen below. The speaker band is
+  a `vstudio.reframe` face-mode crop of `vertical.speaker.region` (the host's cam tile, small tiles upscaled
+  for detection). If there is no region, or faces are found in < `speaker.min_hit` (0.3) of the frames, the
+  band becomes a **title band** (24 %): series + current chapter title, the hook lines during the hook.
+  A camera-less screen share therefore never shows participant tiles or avatar name tags.
+- **screen**: the whole content area is the screen. The crop is the main text block (column of ink;
+  panel borders ignored), scale kept within `screen.min_scale`..`max_scale` (1.6–2.4x of the source),
+  centred when the block fits, else line starts kept visible. y follows on-screen activity inside the block
+  (frame differences at 4 Hz: typing, highlights, new blocks; cursor-sized changes ignored), code-zoom windows
+  use their `zoom_windows.json` centre, a page switch cuts to the first text block. The path goes through
+  `vstudio.reframe.follow` (vstudio.filters.OneEuro + dead zone + eased, speed-limited pan).
+- **speaker**: speaker crop only. **pad-blur**: the whole screen region fitted to the width over a blurred fill.
+
+Layout boxes come from the profiles on that canvas (most conservative of them): content = safe-box top to
+caption-box top, captions are re-laid per profile (`work/vertical/cues.<platform>-<orientation>.json`: long cues split so each fits
+`max_lines` at a size inside the profile's range, ≤ `max_chars_zh` per line; size capped when two lines would
+not fit the caption box height, e.g. 60 px on 小红书 3:4). Chapter cards are re-drawn at the vertical canvas;
+记笔记 panels are re-drawn ≤ 62 % of the safe width, right-aligned at the top of the screen area.
+
+**Privacy.** The screen crop never leaves the item's crop (geometry span = shared page minus browser chrome /
+bookmark bar, or the zoom box); the speaker crop never leaves `speaker.region`; `vertical.exclude` rects
+(participant tiles, name tags) are painted out of every source frame first; `work/vertical/<W>x<H>/plan.json`
+reports `privacy_overlap_frames` (must be 0). Only set `speaker.region` to the HOST's own camera.
+
+Outputs: `out/vertical/ep{N}/<platform>-<orientation>.mp4` (+ `.cover.jpg` from `cover_3x4.png` /
+`cover_9x16.png`, `.post.md`, `.crop.json`, `manifest.json`), `out/vertical/manifest.json` (canvas, measured
+loudness, length / title / label warnings). `qa.py` summarises them and writes contact sheets.
+Speed: ~2x real time per canvas on a laptop (decode, compose in numpy, x264), plus one export per target.
 
 ## Hard-won defaults
 - **Platform auto-captions are unusable** for non-English speech (Meet/Zoom map Chinese onto random
@@ -139,7 +224,7 @@ python3 $S/qa.py work/config.py               # decode, loudness, mosaics, pitch
 - **YouTube:** full upload; timestamps in the description auto-create chapters (first must be 00:00);
   upload `subs.srt` as CC; 16:9 cover.
 - **小红书:** regular-video cap is ~15 min (verify in the live uploader) → split into episodes at card
-  boundaries. Chapter labels ≤ 14 chars (`publish.short_labels`); titles checked with `xhs_len`
+  boundaries; post them as 3:4 vertical slices (`targets: [..., "xiaohongshu:vertical"]`) or 16:9. Chapter labels ≤ 14 chars (`publish.short_labels`); titles checked with `xhs_len`
   against persona `platforms.xiaohongshu.title_max`. Portrait 3:4 cover (feeds show a 4:3 crop).
 - **B站:** optional archive.
 - If the lecture contains a now-outdated claim, keep the burned 勘误 note (`subtitles.errata`) and pin
@@ -152,6 +237,8 @@ Change one knob, re-run from that step down:
 - panel text only → `make_panels` → `burn_final` (no body re-render).
 - term fixes / errata → `build_subs` → `burn_final`.
 - cover copy → `make_cover`; episode copy → `make_episodes --no-video`.
+- vertical layout / targets → `make_vertical` (`--master-only` to look at the masters first, `--episodes 2`
+  to re-export one); anything upstream (cuts, subs, panels) → re-run `make_vertical` after it.
 
 Coaching-call variant (diarization, visual privacy leaks, word-level filler tightening):
 `references/coaching-variant.md`.

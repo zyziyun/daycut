@@ -14,6 +14,12 @@ CONFIG = {
     "asr_prompt": None,                   # whisper initial prompt with domain terms, e.g. "LangChain, RAG"
     "source_size": [1280, 720],           # recording frame size (meeting recorders often 720p)
 
+    # ── platforms (vstudio.platform profiles; see WORKFLOW.md "Platforms") ──
+    # Horizontal targets drive the 16:9 course (canvas, caption margin / chars, panel safe box, loudness);
+    # vertical targets get vertical slices from make_vertical.py. Unset = ["youtube", "<persona
+    # platforms.default>:horizontal"] with the pre-platform look. Also: "platform": "xiaohongshu:vertical".
+    "targets": ["youtube", "xiaohongshu:vertical", "xiaohongshu:full"],
+
     # ── analysis ─────────────────────────────────────────────────────────
     "silence": {"noise_db": -35, "min_dur": 1.2, "pad": 0.30, "min_sound": 0.40},
     "geometry": {                         # screen-share detection (light page on dark meeting canvas)
@@ -87,6 +93,21 @@ CONFIG = {
     ],
     "style": {"accent": "#2DD4BF", "bg": "#0A0A0C"},    # default: persona longform.accent / ground
 
+    # ── vertical slices (make_vertical.py; see WORKFLOW.md "Vertical slices") ──
+    "vertical": {
+        "mode": "split",                  # split | screen | speaker | pad-blur (per item; default split)
+        "speaker": {                      # the HOST's camera tile; omit for a camera-less share (title band)
+            "region": [990, 200, 1250, 350],  # x0,y0,x1,y1 in source px; the crop never leaves it
+            "min_hit": 0.3,               # face hit rate below this -> title band instead of the tile
+            "zoom": 1.0, "detector": "mediapipe",
+        },
+        "exclude": [[960, 0, 1280, 720]], # privacy: painted out before any crop (participant tiles, name tags)
+        "screen": {"min_scale": 1.6, "max_scale": 2.4, "follow": "content"},   # zoom range; content | center
+        "split": {"speaker_frac": 0.40, "band_frac": 0.24},
+        "segments": [{"src": [1020, 1062], "mode": "screen"}],   # per source window override
+        "series": None,                   # title-band eyebrow (default episodes.series / publish.title)
+    },
+
     # ── render / subtitles ───────────────────────────────────────────────
     "render": {"size": [1920, 1080], "fit": [1856, 1016], "pad_color": "0x141414", "fps": 24, "crf": 19},
     "burn": {"encoder": "auto"},                        # auto | videotoolbox | x264
@@ -108,10 +129,11 @@ CONFIG = {
     "episodes": {
         "series": "系列名",
         "max_minutes": 15,
+        "targets": None,                                # default: the short-form targets (sweet spot <= 5 min)
         "count": 3,                                     # auto split, or give explicit items:
         "items": [
             {"chapters": [1, 2], "title": "重点词｜入门1/3", "big1": "一句大字", "big2": "重点词",
-             "sub": "Demo · 概念1", "shot_src": 700},
+             "sub": "Demo · 概念1", "shot_src": 700, "vertical": "screen"},   # vertical: per-episode layout
             {"chapters": [3, 3], "title": "循环｜入门2/3", "big1": "本质是", "big2": "一个循环",
              "sub": "概念2", "shot_src": 1100},
             {"chapters": [4, 4], "title": "什么时候不需要｜入门3/3", "big1": "什么时候", "big2": "不需要",

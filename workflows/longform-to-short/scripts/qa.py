@@ -9,7 +9,11 @@
   pitch    median f0 of each pitches window in source vs final (anonymised voice should drop
            by ~|semitones|; the host's voice elsewhere unchanged)
 
-Usage: python3 qa.py work/config.py [--video PATH] [--every 15] [--skip decode,loud,mosaic,pitch]
+  vertical if <out>/vertical/manifest.json exists (make_vertical.py): per export canvas vs profile, measured
+           loudness vs target, warnings (length / title / labels), the privacy check of each vertical master
+           (privacy_overlap_frames must be 0) and one contact sheet per export -> qa/vertical_<ep>_<target>.jpg
+
+Usage: python3 qa.py work/config.py [--video PATH] [--every 15] [--skip decode,loud,mosaic,pitch,vertical]
 """
 import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
 import math
@@ -88,3 +92,28 @@ if "pitch" not in skip and cfg.get("pitches.windows"):
         s0, s1 = f0_median(cfg.src, a, b - a), f0_median(final, fa, (b - a) / sp)
         st = 12 * math.log2(s1 / s0) if s0 and s1 and s0 == s0 and s1 == s1 else float("nan")
         print(f"pitch {a}-{b}: src f0 {s0:.0f} Hz -> final {s1:.0f} Hz ({st:+.1f} st)")
+
+
+vman = os.path.join(cfg.out, "vertical", "manifest.json")
+if "vertical" not in skip and os.path.exists(vman):
+    from vstudio import platform as PF
+    man = _lfc.load_json(vman)
+    for key in man.get("masters", {}):
+        pj = os.path.join("vertical", key, "plan.json")
+        if os.path.exists(pj):
+            pl = _lfc.load_json(pj)
+            print(f"vertical master {key}: band={pl.get('band')} privacy_overlap_frames={pl.get('privacy_overlap_frames')}")
+    os.makedirs("qa", exist_ok=True)
+    for ep in man["episodes"]:
+        for x in ep["exports"]:
+            prof = PF.profile(x["platform"], x["orientation"])
+            ok = (x["w"], x["h"]) == prof.size
+            lo = x.get("loudness") or {}
+            print(f"vertical ep{ep['n']} {x['file']}: {x['w']}x{x['h']} {'ok' if ok else 'WRONG CANVAS'} "
+                  f"{x['duration']:.1f}s {lo.get('i', '-')} LUFS / {lo.get('tp', '-')} dBTP "
+                  f"(target {x['target_loudness']['lufs']} / {x['target_loudness']['tp']})")
+            for w in x.get("warnings", []):
+                print("   WARN", w)
+            media.contact_sheet(os.path.join(cfg.out, ep["dir"], x["file"]),
+                                f"qa/vertical_ep{ep['n']}_{x['platform']}-{x['orientation']}.jpg",
+                                every=max(2.0, x["duration"] / 12), cols=6, thumb_w=240, max_frames=12)
