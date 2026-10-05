@@ -55,13 +55,21 @@ def process_frame(lm, sm, img):
     return retouch(img, f={"pts": pts, "blend": f["blend"]}, lm=None, **P)
 
 
+def _rate(src):
+    """Exact source frame rate (e.g. 30000/1001) so the re-encode never drifts against the audio."""
+    r = subprocess.run(['ffprobe', '-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=r_frame_rate',
+                        '-of', 'csv=p=0', src], capture_output=True, text=True).stdout.strip()
+    return r or '30'
+
+
 def run_chunk(args):
     src, a, b, out, opts = args
     P.update(opts)
     lm = VF.landmarker(1); sm = Smoother()
     cap = cv2.VideoCapture(src); cap.set(cv2.CAP_PROP_POS_FRAMES, a)
     W, H = int(cap.get(3)), int(cap.get(4))
-    ff = subprocess.Popen(['ffmpeg', '-v', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'bgr24', '-s', f'{W}x{H}', '-r', '30',
+    fps = _rate(src)
+    ff = subprocess.Popen(['ffmpeg', '-v', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'bgr24', '-s', f'{W}x{H}', '-r', fps,
                            '-i', '-', '-c:v', 'libx264', '-crf', '12', '-preset', 'medium', '-pix_fmt', 'yuv420p',
                            '-video_track_timescale', '30000', out], stdin=subprocess.PIPE)
     for _ in range(a, b):
@@ -89,7 +97,10 @@ def main():
             if not ok:
                 print('cannot read frame', fi); continue
             r = process_frame(lm, Smoother(), img)
-            cv2.imwrite(f'test_{fi}.jpg', np.hstack([img, r])[200:1500], [cv2.IMWRITE_JPEG_QUALITY, 88])
+            pair = np.hstack([img, r])
+            if img.shape[0] > img.shape[1]:          # vertical: drop top/bottom margins; landscape: keep whole
+                pair = pair[int(img.shape[0] * .1):int(img.shape[0] * .78)]
+            cv2.imwrite(f'test_{fi}.jpg', pair, [cv2.IMWRITE_JPEG_QUALITY, 88])
             print('wrote', f'test_{fi}.jpg')
         return
     n = int(cv2.VideoCapture(o.src).get(cv2.CAP_PROP_FRAME_COUNT))

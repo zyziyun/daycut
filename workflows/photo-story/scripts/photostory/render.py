@@ -69,6 +69,9 @@ def main():
     end_fade = T.pace["end_fade"]
 
     stills = [float(x) for x in a.stills.split(",")] if a.stills else None
+    if stills and any(t >= total for t in stills):   # past the end = a black (faded) frame, not a layout check
+        print(f"! stills past the end ({total:.1f}s) skipped: {[t for t in stills if t >= total]}")
+        stills = [t for t in stills if t < total] or [max(0.0, total - 1.0)]
     enc = None
     vid_tmp = os.path.join(C.cache_dir, "video_fx.mp4")
     if stills:

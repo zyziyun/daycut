@@ -56,6 +56,10 @@ def _mux():
         mux(C.BODY, C.AUDIO, BASE_SRC)
     return BASE_SRC
 _mux()
+_bi = media.probe(C.BODY)
+if (_bi['w'], _bi['h']) != (W, H):
+    sys.exit(f"compose.py: BODY {C.BODY} is {_bi['w']}x{_bi['h']}, the V track composes {W}x{H}. Re-run "
+             "prep_sources.sh (it crops landscape clips to 9:16 around the face) or scale/crop the body first.")
 M = Montage(BASE_SRC, HOOKS, (0.0, BODY_T), HS, BS, XF, hook_gain_db=G('HOOK_VOL_DB', 2), fps=FPS)
 TOTAL = M.total; MAIN0 = M.body_dst0
 b2f = M.b2f

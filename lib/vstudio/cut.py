@@ -232,8 +232,31 @@ def _load_env(audio, hop=0.01, win=0.03, db=True):
 
 
 # =================================================================== tighten
+def voiced_gaps(words, audio, min_gap=0.35, min_voiced=0.35, below_median_db=15.0, hop=0.01):
+    """Gaps between transcribed words that still hold speech energy: whisper skipped a phrase.
+    A tight cut squeezes every word gap as a pause, so an ASR deletion silently removes real speech.
+    Speech level = median dB over word frames - ``below_median_db``. Returns [(gap_start, gap_end,
+    voiced_seconds)] for gaps > min_gap with >= min_voiced s above it (0.1 s at each edge ignored)."""
+    env, hop = _load_env(audio, hop=hop)
+    if env is None:
+        return []
+    ws = sorted((_w(w)[1], _w(w)[2]) for w in words)
+    frames = [env[int(s / hop):max(int(s / hop) + 1, int(e / hop))] for s, e in ws]
+    if not frames:
+        return []
+    thr = float(np.median(np.concatenate(frames))) - below_median_db
+    out = []
+    for (_, e0), (s1, _) in zip(ws, ws[1:]):
+        if s1 - e0 > min_gap:
+            seg = env[int((e0 + 0.1) / hop):max(0, int((s1 - 0.1) / hop))]
+            v = float((seg > thr).sum() * hop)
+            if v >= min_voiced:
+                out.append((round(e0, 3), round(s1, 3), round(v, 2)))
+    return out
+
+
 def tighten(words, keep, drop=(), patch=(), pause_threshold=None, squeeze=None, pad_in=0.06, pad_out=0.08,
-            audio=None, threshold_db=-45.0):
+            audio=None, threshold_db=-45.0, guard=None):
     """Turn kept spans + word timestamps into tight cut segments (pause squeeze).
 
     Args:
@@ -249,6 +272,8 @@ def tighten(words, keep, drop=(), patch=(), pause_threshold=None, squeeze=None, 
         RMS > threshold_db, 10 ms frames) so soft onsets survive; without audio it is measured from
         whisper's word edges but never less than pad_in (before a word) / pad_out (after one).
       audio: media path or (x, sr) for RMS snapping (optional).
+      guard: media path or (x, sr): never squeeze a word gap that still holds speech (``voiced_gaps``,
+        an ASR deletion); it is kept whole and reported. Defaults to ``audio`` when that is given.
     Returns sorted, merged [(start, end)] with starts clamped >= 0.
     From promo-recut ``tight_cut.tighten`` + talkinghead ``cut_pass1`` RMS snap.
     """
@@ -269,6 +294,11 @@ def tighten(words, keep, drop=(), patch=(), pause_threshold=None, squeeze=None, 
                 s = b
         ws.append(dict(w=txt, s=s, e=max(e, s)))
     ws.sort(key=lambda w: w["s"])
+    guard = audio if guard is None else guard
+    held = voiced_gaps([(w["w"], w["s"], w["e"]) for w in ws], guard) if guard is not None else []
+    for g0, g1, v in held:
+        if any(a <= g0 and g1 <= b for a, b in keep):
+            print(f"tighten: {g0:.2f}-{g1:.2f} has {v:.2f}s of speech but no words (ASR skipped it?) - kept whole")
     drops = list(drop or ())
     dropped = lambda w: any(a - 0.01 <= w["s"] < b - 0.01 for a, b in drops)
 
@@ -305,7 +335,7 @@ def tighten(words, keep, drop=(), patch=(), pause_threshold=None, squeeze=None, 
         span = [w for w in ws if a - 0.05 <= w["s"] < b and not dropped(w)]
         if not span:
             continue
-        brk = lambda p, w: (w["s"] - p["e"] > thr
+        brk = lambda p, w: ((w["s"] - p["e"] > thr and not any(abs(g0 - p["e"]) < 1e-3 for g0, _, _ in held))
                             or any(p["e"] - 0.02 <= x[0] < w["s"] + 0.02 for x in drops))
         cur = [max(a, start_edge(span[0], None)), None]
         pw = span[0]
@@ -339,10 +369,12 @@ FILLERS_ZH = ["嗯", "啊", "呃", "额", "哎", "诶", "哦", "然后呢", "然
 FILLERS_EN = ["um", "uh", "erm", "uhm", "hmm", "like", "you know", "i mean", "sort of", "kind of"]
 
 
-def hidden_onset(env, hop, t0, t1, valley=0.35, min_gap=0.05):
+def hidden_onset(env, hop, t0, t1, valley=0.35, min_gap=0.05, min_tail=0.0):
     """Energy valley inside a word (< valley*peak for >= min_gap s) followed by a rise: usually a
     filler or restart merged into the word. env must be LINEAR rms. Returns (dip_start, dip_end,
-    new_start) or None. From promo-recut ``tight_cut.hidden_onset``."""
+    new_start) for the LATEST valley that still leaves ``min_tail`` s of word after the new start
+    (a 3-syllable word cannot fit in the last 0.09 s: that rise is the next word), or None.
+    From promo-recut ``tight_cut.hidden_onset``."""
     i0, i1 = int(t0 / hop), int(t1 / hop)
     seg = env[i0:i1]
     if len(seg) < 8:
@@ -358,11 +390,29 @@ def hidden_onset(env, hop, t0, t1, valley=0.35, min_gap=0.05):
             if (j - i) * hop >= min_gap and i > 2 and j < len(seg) - 3:
                 after = seg[j:] > 0.5 * peak
                 rise = j + int(np.argmax(after)) if after.any() else j
-                best = (i0 + i) * hop, (i0 + j) * hop, (i0 + rise) * hop - 0.03
+                cand = (i0 + i) * hop, (i0 + j) * hop, (i0 + rise) * hop - 0.03
+                if t1 - cand[2] >= min_tail:
+                    best = cand
             i = j
         else:
             i += 1
     return best
+
+
+_LATIN_SYL = re.compile(r"[aeiouy]+")
+
+
+def syllables(text):
+    """Rough spoken-syllable count: CJK chars + digits + latin vowel groups (>= 1)."""
+    t = _norm(text)
+    n = len(re.findall(r"[\u3400-\u9fff0-9]", t))
+    n += sum(max(1, len(_LATIN_SYL.findall(w))) for w in re.findall(r"[a-z]+", t))
+    return max(1, n)
+
+
+# Single characters whisper often splits out of a reduplicated word (刚刚, 慢慢, 谢谢): "A A" is the
+# word, not a stutter.
+REDUP_ZH = set("刚慢常天谢好看试想说等稍渐偷悄往人年个宝爸妈哥姐弟妹星明久早轻静默处时样点些每各渐纷频")
 
 
 def suggest_fillers(words, audio=None, fillers=None, drops=(), per_char=0.22):
@@ -403,17 +453,29 @@ def suggest_fillers(words, audio=None, fillers=None, drops=(), per_char=0.22):
                         f"starts with '{f}': drop it + PATCH the word start")
                     break
     for i in range(len(ws) - 1):
-        if toks[i] and toks[i] == toks[i + 1] and toks[i] not in fl:
+        if toks[i] and toks[i] == toks[i + 1] and toks[i] not in fl and toks[i] not in REDUP_ZH:
             add("repeat", ws[i][1], ws[i + 1][1], toks[i] * 2)
         if i + 3 < len(ws) and toks[i] and toks[i + 1] and toks[i] + toks[i + 1] == toks[i + 2] + toks[i + 3]:
             add("repeat2", ws[i][1], ws[i + 2][1], toks[i] + toks[i + 1])
     if audio is not None:
         env, hop = _load_env(audio, db=False)
         for txt, s, e in ws:
-            d, n = e - s, max(1, len(_norm(txt)))
-            if d > max(0.45, per_char * n + 0.15):
-                h = hidden_onset(env, hop, s, e)
+            d, syl = e - s, syllables(txt)       # syllables, not letters: "ization" is 3, not 7
+            if d > max(0.45, per_char * syl + 0.15):
+                # latin words: plosive closures (cre-ate, con-cept) make 0.1-0.18 s valleys of their own
+                gap = 0.2 if re.search(r"[a-z]", _norm(txt)) else 0.05
+                h = hidden_onset(env, hop, s, e, min_gap=gap, min_tail=max(0.06, 0.1 * syl - 0.03))
                 if h:
+                    # Loud speech before the valley long enough to hold the whole word = the word was
+                    # said first and whisper stretched it over the following pause (its "rise" is the
+                    # next word). PATCHing that would cut the word itself: squeeze the pause instead.
+                    i0, i1 = int(s / hop), int(h[0] / hop)
+                    pk = env[int(s / hop):int(e / hop)].max()
+                    strong = float((env[i0:i1] > 0.5 * pk).sum() * hop)
+                    if strong >= 0.08 * syl:
+                        add("long-word", s, e, txt.strip(), f"{d:.2f}s, {strong:.2f}s of speech before the dip "
+                            f"{h[0]:.2f}-{h[1]:.2f}: likely the word + a pause, not a hidden filler - listen")
+                        continue
                     add("long-word", s, e, txt.strip(), f"{d:.2f}s, dip {h[0]:.2f}-{h[1]:.2f}: PATCH start -> "
                         f"{h[2]:.2f}, maybe DROP [{s:.2f}, {h[2]:.2f}]", patch=(round(s, 3), round(h[2], 3)))
                 else:

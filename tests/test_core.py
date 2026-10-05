@@ -263,3 +263,28 @@ def test_tts_cache_key_offline():
     k1 = tts.cache_key("hi", "openai", "cedar", 1.0, None, "gpt-4o-mini-tts")
     assert k1 == tts.cache_key("hi", "openai", "cedar", 1.0, "", "gpt-4o-mini-tts")
     assert k1 != tts.cache_key("hi", "openai", "marin", 1.0, None, "gpt-4o-mini-tts")
+
+
+def test_voiced_gaps_and_tighten_guard():
+    """A word gap that still holds speech (ASR skipped a phrase) is reported and never squeezed."""
+    sr = 16000
+    t = np.arange(int(4 * sr)) / sr
+    x = (0.3 * np.sin(2 * np.pi * 220 * t)).astype(np.float32)
+    x[int(2.6 * sr):int(3.0 * sr)] = 0                       # one real pause
+    words = [("a", 0.1, 0.5), ("b", 0.5, 0.9), ("c", 1.9, 2.3), ("d", 2.3, 2.6), ("e", 3.0, 3.4)]
+    gaps = cut.voiced_gaps(words, (x, sr))
+    assert [g[:2] for g in gaps] == [(0.9, 1.9)]               # 0.9-1.9 is speech with no words
+    segs = cut.tighten(words, [(0.0, 4.0)], guard=(x, sr), pause_threshold=0.35)
+    assert any(s <= 1.0 and e >= 1.8 for s, e in segs)        # kept whole
+    assert not any(s < 2.75 < e for s, e in segs)             # the silent pause is still squeezed
+
+
+def test_syllables_and_loop_score():
+    assert cut.syllables("ization") == 3 and cut.syllables("我觉得") == 3 and cut.syllables("3") == 1
+    assert asr.loop_score([{"text": "除了这个" + "区区" * 10}]) >= 20
+    assert asr.loop_score([{"text": "我觉得效果真的很不错"}]) == 0
+
+
+def test_contact_sheet_labels_are_exact(tmp, av):
+    _, ts = media.contact_sheet(str(av), str(tmp / "cs_exact.jpg"), every=2.0, start=0)
+    assert ts[:3] == [0, 2.0, 4.0]

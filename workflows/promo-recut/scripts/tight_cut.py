@@ -85,6 +85,9 @@ def suggest(prj, words):
     new = [[round(r["start"], 2), round(r["end"], 2)] for r in out
            if r["kind"] in ("filler", "repeat", "repeat2") and not r["dropped"]]
     patches = [[round(r["patch"][0], 2), round(r["patch"][1], 2)] for r in out if r["patch"] and not r["dropped"]]
+    for g0, g1, v in cut.voiced_gaps(words, (x, sr)):
+        print(f"{'no-words':<13}{g0:8.2f}{g1:8.2f}  {v:.2f}s of speech with no transcript: ASR skipped it -"
+              " listen; the cut keeps it whole")
     print("\nDROP candidates (review by ear before pasting into cut.drop):")
     print(json.dumps(new))
     if patches:
@@ -178,7 +181,7 @@ def do_cut(prj, words, args):
         if not spans:
             continue
         segs = cut.tighten(words, spans, drop=drops, pause_threshold=thr, pad_in=pad_in, pad_out=pad_out,
-                           audio=audio_wav(prj) if prj.get("cut.rms_snap") else None)
+                           audio=audio_wav(prj) if prj.get("cut.rms_snap") else None, guard=audio_wav(prj))
         if not segs:
             print(f"  warning: no words in {name} spans")
             continue

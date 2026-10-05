@@ -44,12 +44,39 @@ When the request is ambiguous, ask one question: what is the material, and where
 - **Delivery defaults**: H.264 High, bt709 tags, AAC 192k/48k, `+faststart`, two-pass loudnorm to `persona.audio.loudness_lufs` (−14).
 - **Public-safe**: fonts and models only through `vstudio.config.font()/model()`; no absolute personal paths in configs you commit.
 
-## 3. Shared library (`lib/vstudio`)
+## 3. Find a capability fast
+
+| You want… | Go to |
+|---|---|
+| Cut 气口 / fillers / repeats / misspeaks | `cut.find_cuts` (auto), `cut.tighten` + `cut.suggest_fillers` (word-level), talkinghead `strict_pass.py`, promo-recut `tight_cut.py --suggest/--verify` |
+| Long → short, multi-episode split | `workflows/longform-to-short` |
+| Speed up (pitch-preserved), speed ramps per shot | persona `speed.*`; `media.atempo_chain`; vlog per-segment speed; HyperFrames `data-playback-rate` |
+| Volume / loudness / music bed / ducking / SFX | `audio.loudnorm_2pass`, `audio.mix_bed`, `audio.loop_bed`, `audio.sfx_bank`; HyperFrames `carve.mjs` |
+| Captions (bilingual, keyword highlight, SRT/ASS) | `asr.transcribe` → `subs` (wrap, retime, srt/ass); explainer `display_en` for spoken numbers → digits |
+| Notes panels 记笔记, callouts, chips, badges, stamps, progress bar | `overlays.*` (PIL) or `overlays.hf_progress` / `hf.*` (HyperFrames) |
+| Highlight frame / freeze + enlarge / zoom-in / punch-in | `hf.freeze_hold`, `hf.punch_in`, talkinghead compose zoom, photo-story loupe + red-pen circle |
+| Split screen, screenshot cards with highlighter | `hf.split_screen`, `hf.screenshot_cards` (promo-recut) |
+| Transitions | `hf.scene_transitions` (11 HyperFrames types), photo-story (12 per-frame types), `cut.xfade_assemble(transition=…)` |
+| Retouch (slim, makeup), cover frame picking | `python -m vstudio.retouch`, `cover.score_frames`, `cover.prepare_photo` |
+| Cover / thumbnail | `workflows/cover`, `cover.split_cover`, `cover.notes_cover`, `cover.framed_cover` |
+| Post copy, title length, chapter timeline | `publish.check_title`, `publish.chapter_lines`, `publish.post_body` |
+| Hide a face (privacy) | `workflows/call-clips` (`face.track_faces` + sticker) |
+
+The full effect catalogue (≈155 effects, 9 recipes): `references/EFFECTS.md`.
+
+## 4. Shared library (`lib/vstudio`)
 | Module | What |
 |---|---|
 | `config` | `font(role)`, `model(name)`, `persona()`, `xhs_len(title)` |
-| `face` | MediaPipe landmarker, landmark index sets, `main_face` |
-| `mls` | rigid Moving-Least-Squares warp (own implementation) |
-| `retouch` | face slim / eye open / de-shine / skin / light makeup / body slim, seam-free (`python -m vstudio.retouch`) |
+| `media` | ffmpeg/ffprobe discovery, probe, frame grab, contact sheet, HDR→SDR, delivery encode + bt709 retag |
+| `audio` | two-pass loudnorm, stems, RMS envelopes, silence spans, music beds (mix/loop/duck), pitch shift, SFX |
+| `asr` | whisper (mlx → faster-whisper → OpenAI) with word timestamps, cache, term fixes, script alignment |
+| `cut` | `TimeMap`, word-level tightening, automatic disfluency finder, frame-exact cuts, crossfade assembly |
+| `subs` | cues, CJK-aware balanced wrap, highlight markup, SRT/ASS, retime, bilingual pairing |
+| `tts` | OpenAI / Kokoro / Edge TTS with a content cache |
+| `face`, `mls`, `retouch` | landmarks, face tracking, talk activity; own MLS warp; seam-free portrait retouch + makeup |
+| `draw`, `overlays`, `cover` | PIL text/shape primitives, themed overlays and progress bars, cover compositors |
+| `render`, `hf` | headless-Chrome HTML→PNG, font staging/subsetting; HyperFrames effect generators |
+| `publish` | title checks, chapter lines, post bodies for 小红书 / YouTube / B站 |
 
-More modules (transcription, cutting/dedup, captions, audio, overlays, effects) are added as workflows are unified — see `references/PORTING.md` and each workflow's `PORT_NOTES.md`.
+Tests: `python3 -m pytest tests -q` (synthetic media, no network).

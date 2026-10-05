@@ -132,7 +132,8 @@ class Ctx:
         media = dict(g("MEDIA", {}) or {})
         self.img_dirs = [self.path(p) for p in _aslist(media.get("images", "my_photos"))]
         self.vid_dirs = [self.path(p) for p in _aslist(media.get("videos", media.get("images", "my_clips")))]
-        self.img_ext = _aslist(media.get("image_ext", [".jpg", ".jpeg", ".png", ".webp", ".JPG", ".PNG"]))
+        self.img_ext = _aslist(media.get("image_ext", [".jpg", ".jpeg", ".png", ".webp", ".heic", ".JPG", ".JPEG",
+                                                       ".PNG", ".HEIC"]))
         self.vid_ext = _aslist(media.get("video_ext", [".mov", ".mp4", ".m4v", ".MOV", ".MP4"]))
         self.cache_dir = self.path(g("CACHE", "cache"))
         os.makedirs(self.cache_dir, exist_ok=True)
@@ -160,7 +161,31 @@ class Ctx:
                 q = os.path.join(d, name + ext)
                 if os.path.exists(q):
                     return q
+            hits = [h for h in sorted(glob.glob(os.path.join(d, f"*_{name}.*")))     # IMG_1234.HEIC given "1234"
+                    if os.path.splitext(h)[1] in self.img_ext]
+            if hits:
+                return hits[0]
         raise FileNotFoundError(f"image '{name}' not found in {self.img_dirs}")
+
+    def _readable(self, p):
+        """iPhone HEIC -> a cached JPEG (pillow-heif when installed, else macOS ``sips``); others as is."""
+        if os.path.splitext(p)[1].lower() not in (".heic", ".heif"):
+            return p
+        try:
+            import pillow_heif
+            pillow_heif.register_heif_opener()
+            return p
+        except ImportError:
+            pass
+        import hashlib, shutil, subprocess
+        out = os.path.join(self.cache_dir, "heic", hashlib.sha1(os.path.abspath(p).encode()).hexdigest()[:12] + ".jpg")
+        if not os.path.exists(out) or os.path.getmtime(out) < os.path.getmtime(p):
+            if not shutil.which("sips"):
+                raise RuntimeError(f"{p}: HEIC needs `pip install pillow-heif` (or macOS sips)")
+            os.makedirs(os.path.dirname(out), exist_ok=True)
+            subprocess.run(["sips", "-s", "format", "jpeg", "-s", "formatOptions", "95", p, "--out", out],
+                           check=True, capture_output=True)
+        return out
 
     def find_video(self, name):
         p = self.path(name)
@@ -182,7 +207,7 @@ class Ctx:
         if name in self._imgs:
             self._imgs.move_to_end(name)
             return self._imgs[name]
-        im = ImageOps.exif_transpose(Image.open(self.find_image(name))).convert("RGB")
+        im = ImageOps.exif_transpose(Image.open(self._readable(self.find_image(name)))).convert("RGB")
         self._imgs[name] = im
         if len(self._imgs) > 8:
             self._imgs.popitem(last=False)

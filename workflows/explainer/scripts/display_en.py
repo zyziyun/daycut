@@ -40,6 +40,24 @@ def _cardinal(ws):
     return total + cur
 
 
+def _valid(ws):
+    """True when ``ws`` reads as ONE cardinal. "three ninety-nine" (a price), "nineteen eighty-four" (a year)
+    or "two three" are several numbers said back to back; summing them gave "102" on a real script."""
+    rank = {"unit": 1, "teen": 1, "tens": 2}
+    prev = None
+    for w in ws:
+        kind = "scale" if w in SCALE and w != "hundred" else "hundred" if w == "hundred" else \
+            "tens" if w in TENS else "teen" if U.get(w, 0) >= 10 else "unit"
+        if prev in ("unit", "teen") and kind in ("unit", "teen", "tens"):
+            return False
+        if prev == "tens" and kind in ("teen", "tens"):
+            return False
+        if prev == "hundred" and kind == "hundred":
+            return False
+        prev = kind
+    return True
+
+
 def _convert(text, aggressive):
     toks = re.findall(r"[A-Za-z]+(?:-[A-Za-z]+)*|[^A-Za-z]+", text)
     is_num = lambda t: all(p.lower() in NUMW for p in t.split("-"))
@@ -70,6 +88,8 @@ def _convert(text, aggressive):
                 if dec:
                     while toks[m - 1] == " ": m -= 1
                     k = m
+            if not _valid(words):                      # several numbers in a row: leave them spoken
+                out.append("".join(toks[i:k])); i = k; continue
             val = _cardinal(words)
             special = neg or dec or any(w in SCALE for w in words) or val >= 10
             nxt = "".join(toks[k:k + 2]).lower().strip()

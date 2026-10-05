@@ -1,9 +1,6 @@
----
-name: vlog
-description: Edit a pile of silent or ambient B-roll clips (drone/DJI aerials, phone travel or walking clips, nature, city, action cam) into one short polished vlog - inspect the footage, cut the good windows out of long takes, colour grade (HDR phone clips tone-mapped), speed-adjust per shot, crossfade with a clean non-black opening and a fade-out ending, build a scrapbook torn-paper cover, and add CC-BY or catalog music. Use when someone hands over several clips and wants them "剪成一个vlog / 合并 / 去掉不好的部分 / 加转场 / 调色 / 配乐 / 做封面", even if they mention only one piece, or to tweak one stage of an already-built vlog (re-cut, re-grade, speed, music swap, cover, smaller upload file).
----
-
 # vlog: B-roll clips -> short vlog
+
+**Use when:** Edit a pile of silent or ambient B-roll clips (drone/DJI aerials, phone travel or walking clips, nature, city, action cam) into one short polished vlog - inspect the footage, cut the good windows out of long takes, colour grade (HDR phone clips tone-mapped), speed-adjust per shot, crossfade with a clean non-black opening and a fade-out ending, build a scrapbook torn-paper cover, and add CC-BY or catalog music. Use when someone hands over several clips and wants them "剪成一个vlog / 合并 / 去掉不好的部分 / 加转场 / 调色 / 配乐 / 做封面", even if they mention only one piece, or to tweak one stage of an already-built vlog (re-cut, re-grade, speed, music swap, cover, smaller upload file).
 
 **Use when** the footage carries the story without narration: drone flights, walks, trips, nature,
 city wandering, a day of phone clips. The raw material is long takes, slow moves, dim or HDR light,

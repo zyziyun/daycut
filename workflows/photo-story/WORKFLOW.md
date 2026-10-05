@@ -1,9 +1,6 @@
----
-name: photo-story
-description: Turn your photos / short clips plus a narration script into a narrated, effect-rich story video (museum visit, travel, art history, product story) with bilingual EN/中文 subtitles, a running header with section progress, chapter cards, a cover and post copy, at any canvas size (3:4, 9:16, 16:9). Pure Python (PIL + OpenCV + ffmpeg), driven by one spec.py.
----
-
 # photo-story
+
+**Use when:** Turn your photos / short clips plus a narration script into a narrated, effect-rich story video (museum visit, travel, art history, product story) with bilingual EN/中文 subtitles, a running header with section progress, chapter cards, a cover and post copy, at any canvas size (3:4, 9:16, 16:9). Pure Python (PIL + OpenCV + ffmpeg), driven by one spec.py.
 
 **Use when** someone has a folder of photos (and maybe a few phone clips) and a story to tell over
 them: "make a narrated video of my museum visit / trip / this artist / this product", with Ken-Burns

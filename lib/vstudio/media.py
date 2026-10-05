@@ -260,8 +260,11 @@ def contact_sheet(src, out, every=5.0, cols=6, thumb_w=320, max_frames=48, label
     dur = duration(src)
     t0 = start if start is not None else every / 2
     with tempfile.TemporaryDirectory() as tmp:
-        run(["ffmpeg", "-y", "-ss", f"{t0:.3f}", "-i", src, "-vf", f"fps=1/{every},scale={thumb_w}:-2",
-             "-frames:v", str(max_frames), os.path.join(tmp, "f%04d.png")])
+        # select (not fps=1/N): fps emits the frame nearest the MIDDLE of each N-second bucket, so every
+        # label was ~N/2 s early (a QA sheet must say exactly when an avatar / name tag shows).
+        sel = f"select='isnan(prev_selected_t)+gte(t-prev_selected_t\\,{every - 0.5 / 30:.4f})'"
+        run(["ffmpeg", "-y", "-ss", f"{t0:.3f}", "-i", src, "-vf", f"{sel},scale={thumb_w}:-2",
+             "-fps_mode", "vfr", "-frames:v", str(max_frames), os.path.join(tmp, "f%04d.png")])
         files = sorted(f for f in os.listdir(tmp) if f.endswith(".png"))
         if not files:
             raise FFmpegError(f"no frames from {src}")

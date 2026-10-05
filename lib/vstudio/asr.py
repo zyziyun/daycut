@@ -8,8 +8,9 @@
 
 Backends, first available wins (or pass backend=): mlx_whisper (Apple Silicon) -> faster_whisper ->
 OpenAI ``whisper-1`` (only if OPENAI_API_KEY is set in the environment; the key is never read
-from files). Settings that matter on long/noisy speech: no conditioning on previous text and a
-hallucination-silence threshold, else whisper loops ("嗯嗯嗯") over silence.
+from files). Settings that matter on long/noisy speech: no conditioning on previous text and (for
+recordings > 10 min only, see ``skip_silence``) a hallucination-silence threshold, else whisper loops
+("嗯嗯嗯") over silence.
 
 Results are cached in a sidecar ``<input>.asr.json`` keyed by the file's content hash + settings,
 so re-running a pipeline never re-transcribes unchanged audio.
@@ -120,29 +121,31 @@ def _backend(name="auto"):
                        "or set OPENAI_API_KEY for whisper-1")
 
 
-def _run_mlx(wav, language, prompt, word_timestamps, model):
+def _run_mlx(wav, language, prompt, word_timestamps, model, hst=None, greedy=False):
     import mlx_whisper
-    r = mlx_whisper.transcribe(wav, path_or_hf_repo=model or MLX_REPO, language=language,
+    kw = {"temperature": 0.0} if greedy else {}
+    r = mlx_whisper.transcribe(wav, path_or_hf_repo=model or MLX_REPO, language=language, **kw,
                                word_timestamps=word_timestamps, initial_prompt=prompt or None,
                                condition_on_previous_text=False,
-                               hallucination_silence_threshold=2 if word_timestamps else None, verbose=None)
+                               hallucination_silence_threshold=hst if word_timestamps else None, verbose=None)
     return [dict(start=s["start"], end=s["end"], text=s["text"],
                  words=[dict(word=w["word"], start=w["start"], end=w["end"], p=w.get("probability"))
                         for w in s.get("words", []) or []]) for s in r["segments"]]
 
 
-def _run_faster(wav, language, prompt, word_timestamps, model):
+def _run_faster(wav, language, prompt, word_timestamps, model, hst=None, greedy=False):
     from faster_whisper import WhisperModel
     m = WhisperModel(model or FW_MODEL, device="auto", compute_type="auto")
-    segs, _ = m.transcribe(wav, language=language, word_timestamps=word_timestamps, initial_prompt=prompt or None,
+    kw = {"temperature": 0.0} if greedy else {}
+    segs, _ = m.transcribe(wav, language=language, word_timestamps=word_timestamps, initial_prompt=prompt or None, **kw,
                            condition_on_previous_text=False,
-                           hallucination_silence_threshold=2 if word_timestamps else None, vad_filter=False)
+                           hallucination_silence_threshold=hst if word_timestamps else None, vad_filter=False)
     return [dict(start=s.start, end=s.end, text=s.text,
                  words=[dict(word=w.word, start=w.start, end=w.end, p=w.probability) for w in (s.words or [])])
             for s in segs]
 
 
-def _run_openai(wav, language, prompt, word_timestamps, model):
+def _run_openai(wav, language, prompt, word_timestamps, model, hst=None, greedy=False):
     key = os.environ.get("OPENAI_API_KEY")
     if not key:
         raise RuntimeError("OPENAI_API_KEY is not set in the environment")
@@ -168,6 +171,13 @@ def _run_openai(wav, language, prompt, word_timestamps, model):
 _RUN = {"mlx": _run_mlx, "faster": _run_faster, "openai": _run_openai}
 
 
+def loop_score(segs):
+    """How much of a transcript is a whisper repetition loop ("区区区区", "uffle uffle ..."): the number
+    of characters inside runs of one 1-6 char unit repeated >= 5 times."""
+    txt = re.sub(r"\s+", "", "".join(s.get("text", "") for s in segs))
+    return sum(len(m.group(0)) for m in re.finditer(r"(.{1,6}?)\1{4,}", txt))
+
+
 # ------------------------------------------------------------------ cache
 def file_hash(path, chunk=1 << 20):
     """sha1 of a file's bytes (streamed)."""
@@ -179,12 +189,26 @@ def file_hash(path, chunk=1 << 20):
 
 
 def _cache_path(path):
-    return path + ".asr.json"
+    """Sidecar ``<path>.asr.json``; when the media's folder is not writable (read-only source drive,
+    another user's Downloads) fall back to ``$VSTUDIO_CACHE`` or ``~/.cache/vstudio/asr/``."""
+    side = path + ".asr.json"
+    if os.access(os.path.dirname(os.path.abspath(side)) or ".", os.W_OK) or os.path.exists(side):
+        return side
+    root = os.environ.get("VSTUDIO_CACHE") or os.path.join(os.path.expanduser("~"), ".cache", "vstudio")
+    os.makedirs(os.path.join(root, "asr"), exist_ok=True)
+    return os.path.join(root, "asr", hashlib.sha1(os.path.abspath(path).encode()).hexdigest()[:16] + ".asr.json")
 
 
 # ------------------------------------------------------------------ public
+# hallucination_silence_threshold skips "silent" stretches where whisper might loop; on real short
+# talking-head speech it also silently DROPS spoken phrases (a 1-2 s clause after a pause, measured on
+# an 87 s recording: 6 words lost in 2 places, which the tight cut then removed as "pauses"). So
+# "auto" only enables it for long recordings (meetings / lectures), where the loops actually happen.
+HALLUCINATION_SILENCE_AUTO_MIN_S = 600.0
+
+
 def transcribe(path, language=None, prompt=None, word_timestamps=True, model=None, backend="auto",
-               cache=True, term_fixes=None, fix_terms=True):
+               cache=True, term_fixes=None, fix_terms=True, skip_silence="auto"):
     """Transcribe audio/video ``path`` with word timestamps.
 
     Args:
@@ -195,6 +219,8 @@ def transcribe(path, language=None, prompt=None, word_timestamps=True, model=Non
       cache: reuse/write the sidecar ``<path>.asr.json`` keyed by content hash + settings.
       term_fixes: call-site fixes passed to ``apply_term_fixes`` (dict literal or [[regex, repl]]).
       fix_terms: apply term fixes to segment and word text (word count/indices unchanged).
+      skip_silence: whisper hallucination_silence_threshold in s; "auto" = 2 for recordings longer
+        than 10 min, else off (it drops real phrases on short clips); None/0 = off.
     Returns dict: language, backend, text, segments (whisper shape: start, end, text, words[{word,
     start, end}]), words (flat [{"w", "t", "te"}], stripped). Zero-length repeated words (whisper's
     tail hallucination, talkinghead ``strict_pass``) are dropped before indexing.
@@ -206,10 +232,17 @@ def transcribe(path, language=None, prompt=None, word_timestamps=True, model=Non
         except Exception:
             language = "zh"
     be = _backend(backend)
+    if skip_silence == "auto":
+        try:
+            skip_silence = 2.0 if media.duration(path) > HALLUCINATION_SILENCE_AUTO_MIN_S else None
+        except Exception:  # noqa: BLE001
+            skip_silence = None
+    hst = float(skip_silence) if skip_silence else None
     key = None
     if cache:
         key = hashlib.sha1(json.dumps([CACHE_VERSION, file_hash(path), language, prompt, word_timestamps,
-                                       model, be], ensure_ascii=False).encode()).hexdigest()
+                                       model, be] + ([hst] if hst != 2.0 else []),
+                                      ensure_ascii=False).encode()).hexdigest()
         cp = _cache_path(path)
         if os.path.exists(cp):
             try:
@@ -222,7 +255,13 @@ def transcribe(path, language=None, prompt=None, word_timestamps=True, model=Non
     with tempfile.TemporaryDirectory() as tmp:
         wav = os.path.join(tmp, "a16.wav")
         media.extract_wav(path, wav, sr=16000, channels=1)
-        segs = _RUN[be](wav, language, prompt, word_timestamps, model)
+        segs = _RUN[be](wav, language, prompt, word_timestamps, model, hst)
+        if be != "openai" and loop_score(segs):
+            # Temperature fallback (up to 1.0) on hard audio - short cut files, mumbles - can end in a
+            # repetition loop over the whole clip; plain greedy decoding is usually clean there.
+            alt = _RUN[be](wav, language, prompt, word_timestamps, model, hst, greedy=True)
+            if loop_score(alt) < loop_score(segs):
+                segs = alt
     raw = dict(language=language, backend=be, segments=segs)
     if cache:
         cp = _cache_path(path)
@@ -234,8 +273,11 @@ def transcribe(path, language=None, prompt=None, word_timestamps=True, model=Non
             except (OSError, ValueError):
                 store = {}
         store[key] = raw
-        with open(cp, "w", encoding="utf-8") as f:
-            json.dump(store, f, ensure_ascii=False)
+        try:
+            with open(cp, "w", encoding="utf-8") as f:
+                json.dump(store, f, ensure_ascii=False)
+        except OSError as e:   # never lose a finished transcription to a cache write
+            print(f"asr: cache not written ({e})")
     return _finish(raw, term_fixes, fix_terms)
 
 

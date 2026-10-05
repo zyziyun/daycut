@@ -34,6 +34,8 @@ def main():
                     help="also dump every Nth composited frame here for review")
     ap.add_argument("--frames-every", type=int, default=100)
     args = ap.parse_args()
+    if args.frames_dir:
+        os.makedirs(args.frames_dir, exist_ok=True)   # cv2.imwrite fails silently into a missing dir
 
     tr = json.load(open(args.track))
     cxs, cys, ws = tr["cx"], tr["cy"], tr["w"]

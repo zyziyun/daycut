@@ -113,18 +113,24 @@ def skin_and_makeup(img, f, p):
         out = out * (1 - a) + sm * a
         out = out + (skin * p.light)[..., None] * (255 - out)
     if p.makeup > 0:
+        # Blush and lip tint shift chroma only (Lab a/b) and keep the skin's own luminance, so lip
+        # texture and cheek shading survive; a flat RGB fill read as solid lipstick on real faces.
         k = p.makeup
-        for c in (pts[F.CHEEK_APPLE_L].mean(0), pts[F.CHEEK_APPLE_R].mean(0)):        # blush
+        lab = cv2.cvtColor(np.clip(out, 0, 255).astype(np.uint8), cv2.COLOR_BGR2LAB).astype(np.float32)
+        blush = np.zeros((h, w), np.float32)
+        for c in (pts[F.CHEEK_APPLE_L].mean(0), pts[F.CHEEK_APPLE_R].mean(0)):
             m = np.zeros((h, w), np.float32); cv2.circle(m, (int(c[0]), int(c[1])), int(fw * .11), 1, -1)
-            m = (cv2.GaussianBlur(m, (0, 0), fw * .07) * .55 * k)[..., None]
-            out = out * (1 - m) + np.array([150, 120, 235], np.float32) * m
-        lip = _poly(img.shape, pts[F.LIPS_OUT], 2.0) * (1 - _poly(img.shape, pts[F.LIPS_IN], 1.5))   # lips
-        lum = cv2.cvtColor(np.clip(out, 0, 255).astype(np.uint8), cv2.COLOR_BGR2GRAY).astype(np.float32)[..., None] / 255
-        a = (lip * 1.05 * k)[..., None]
-        out = out * (1 - a) + np.array([95, 85, 205], np.float32) * (0.55 + lum * .6) * a
+            blush = np.maximum(blush, cv2.GaussianBlur(m, (0, 0), fw * .07))
+        blush *= .45 * k
+        lip = _poly(img.shape, pts[F.LIPS_OUT], 2.0) * (1 - _poly(img.shape, pts[F.LIPS_IN], 1.5)) * .9 * k
+        for m, (ta, tb), dl in ((blush, (152, 138), 0.0), (lip, (165, 140), -6.0)):
+            lab[..., 1] += (np.maximum(lab[..., 1], ta) - lab[..., 1]) * m
+            lab[..., 2] += (tb - lab[..., 2]) * m * .5
+            lab[..., 0] += dl * m
+        out = cv2.cvtColor(np.clip(lab, 0, 255).astype(np.uint8), cv2.COLOR_LAB2BGR).astype(np.float32)
         for b in (F.BROW_L, F.BROW_R):                                                       # brows
-            m = (_poly(img.shape, pts[b], 2.5) * .45 * k)[..., None]
-            out = out * (1 - m) + np.array([45, 40, 42], np.float32) * m
+            m = (_poly(img.shape, pts[b], 2.5) * .35 * k)[..., None]
+            out = out * (1 - m) + np.minimum(out, np.array([45, 40, 42], np.float32)) * m
     return np.clip(out, 0, 255).astype(np.uint8)
 
 

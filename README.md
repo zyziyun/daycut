@@ -1,52 +1,67 @@
-# 3b1b-math-explainer
+# video-studio
 
-A Claude Code skill for making **3Blue1Brown-style math explainer videos** with [HyperFrames](https://hyperframes.heygen.com):
-dark chalkboard look, colour-coded step-by-step equations, worked examples by hand, AI narration,
-burned-in **bilingual EN / 中文 subtitles**, varied scene transitions and a light music bed — rendered to MP4.
+One **Claude Code skill** for every kind of video edit: talking-head shorts, long recordings cut into episodes,
+call/interview clips with privacy masking, premium promo recuts, photo stories with effects, B-roll vlogs and
+3Blue1Brown-style explainers, plus covers, music, loudness, captions and publish copy for 小红书 / YouTube / B站.
 
-![storyboard](examples/quantization/storyboard/f07.svg)
+You talk to Claude ("cut the 气口 and speed it up 1.3×", "add a split screen with this screenshot and highlight the
+prompt", "make it 10 minutes, bilingual subtitles, 3b1b style"); the skill tells Claude which workflow to run and
+gives it tested scripts and a shared library to do it.
 
-## What it does
+![explainer storyboard](workflows/explainer/example/storyboard/f07.svg)
 
-`SKILL.md` walks an agent through the whole pipeline, with a user checkpoint at each stage:
+## What it covers
 
-1. **Brief**: length, format and voice.
-2. **Script**: `SCRIPT.md` with one line per scene, English narration and 中文 subtitle text.
-3. **Sketches**: a static storyboard sheet (`storyboard.html`) for approval.
-4. **Voice**: OpenAI TTS, then Whisper word timings and a transcript-vs-script check.
-5. **Subtitles**: hand-paired EN/中文 cues, auto-timed, numbers shown as digits, exported as `.srt`.
-6. **Scenes**: one HyperFrames sub-composition per line, built in parallel from time-coded packets.
-7. **Music**: a looped bed carved under the voice.
-8. **Preview → render**.
+| Workflow | Turns… into… |
+|---|---|
+| `talkinghead` | 口播 recordings → tight short: 气口/filler/repeat removal, speed, captions, punch-ins, pop words, stamps, 记笔记 panels, progress bar, hooks, retouch, cover, post copy |
+| `promo-recut` | talking head + screenshots/links/another video → premium promo: split screen, 3D screenshot cards with highlighter, freeze-and-enlarge, inserted highlight reel |
+| `longform-to-short` | lectures, webinars, livestreams, screen-shares → cut course video and/or N short episodes with chapters, code zooms, covers, 发布包 |
+| `call-clips` | Zoom / Meet / Teams / interviews → clips in vertical, trio or landscape layouts, optional face masking |
+| `photo-story` | photos + narration script → effect-rich story (17 shot types, 11 overlays, 12 transitions, film looks) |
+| `vlog` | silent B-roll (drone, travel, phone) → graded, speed-ramped, crossfaded vlog with music |
+| `explainer` | a topic → 3Blue1Brown-style animated explainer with AI narration and bilingual subtitles |
+| `polish` | any exported edit → cover on first frame, −14 LUFS, speed-up, delivery tags |
+| `cover`, `slides`, `preproduction` | covers/thumbnails, square slides, script writing + pronunciation drills |
+
+About 155 reusable effects are catalogued in [`references/EFFECTS.md`](references/EFFECTS.md).
 
 ## Install
 
 ```bash
-git clone https://github.com/zyziyun/3b1b-math-explainer ~/.claude/skills/3b1b-math-explainer
-pip install fonttools brotli
+git clone https://github.com/zyziyun/video-studio ~/.claude/skills/video-studio
+~/.claude/skills/video-studio/install.sh
+cp ~/.claude/skills/video-studio/persona.example.yaml ~/.claude/skills/video-studio/persona.local.yaml
 ```
 
-It also needs the HyperFrames skills and CLI, `ffmpeg`, an `OPENAI_API_KEY`, and optionally the HeyGen CLI for music.
-Fonts aren't bundled. Download **STIX Two Text** and **Noto Sans SC** (both OFL) from Google Fonts and subset the CJK
-font with `scripts/subset_cjk_font.py`.
+`install.sh` installs the Python dependencies and downloads open-licensed fonts (Noto Sans SC, STIX Two Text,
+JetBrains Mono — OFL) and MediaPipe face/segmentation models (Apache-2.0) into `~/.cache/video-studio`.
 
-## Example: model quantization (10:33, 18 scenes)
+Requirements: Python 3.10+, `ffmpeg`. Optional: Node 18+ with `npx hyperframes` (explainer, promo-recut),
+Chrome/Chromium or Playwright (HTML covers/slides), an `OPENAI_API_KEY` (AI narration), the HeyGen CLI (music catalog).
+Transcription uses `mlx-whisper` on Apple Silicon and `faster-whisper` elsewhere.
 
-`examples/quantization/` contains the script, storyboard, all 18 scene compositions, the scene config with transitions and
-shot sequences, and the bilingual `.srt` files. Audio, fonts and the rendered MP4 aren't included: the voice is regenerated
-from `SCRIPT.md`, and the music is HeyGen-catalog licensed.
+## Make it yours: `persona.local.yaml`
+
+Everything that is taste rather than technique lives in one file: default speeds, loudness targets, brand colours and
+panel theme, platform title rules, default hashtags, script/caption voice rules, ASR term fixes, your own fonts.
+`persona.local.yaml` is git-ignored, so your settings never end up in the repo.
 
 ## Layout
 
 ```
-SKILL.md                    the playbook the agent follows
-scripts/                    tts, concat_vo, align_cues, display_en, scene_windows, make_packets,
-                            make_captions, make_index (transitions), make_bgm_bed, subset_cjk_font
-references/                 design-truth (frame.md template), frame-worker-dispatch, transitions, pitfalls
-assets/reference-scene.html a known-good scene to copy
-examples/quantization/      full worked example
+SKILL.md                  router: which workflow for which request + capability index
+workflows/<name>/         WORKFLOW.md playbook, scripts/, references/, examples/ (synthetic)
+lib/vstudio/              shared library (media, audio, asr, cut, subs, tts, face, retouch, draw,
+                          overlays, cover, render, hf, publish)
+references/EFFECTS.md     effect catalogue + recipes
+tests/                    pytest on synthetic media (python3 -m pytest tests -q)
 ```
 
-## License
+## Credits and licences
 
-MIT. See `LICENSE`.
+- Code: MIT (see `LICENSE`).
+- Fonts and models are downloaded at install time from their upstream projects under their own licences
+  (SIL OFL 1.1; Apache-2.0) and are not redistributed here.
+- The optional RVM matting engine in `workflows/cover` is GPL-3.0 and is fetched at runtime only if you choose it.
+- Built with [HyperFrames](https://hyperframes.heygen.com) for the HTML-to-video workflows.
