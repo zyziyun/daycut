@@ -63,10 +63,13 @@ quote before someone else chimes in.
 
 ## Auto-trim and the editor pass
 
-- `vstudio.cut.find_cuts` (CLI report: `find_disfluencies.py`; rules in `lib/vstudio/cut.py`) removes ~3%: pauses > 0.6s
-  (keeps ~0.36s), restarts, back-to-back repeats, filler-only segments. Silence comes from audio
-  energy because whisper's word timestamps abut; every edge snaps to the quietest frame between
-  word midpoints. One-word repeats across a sentence break are never cut; emphasis doublings are
+- `cut_profiles.find_cuts` (CLI report: `find_disfluencies.py`) removes ~3%: restarts, back-to-back
+  repeats, filler-only segments and pauses. Default profile `classic` (the original editor
+  defaults): pauses > 0.75 s keep 0.30 s, and once an editor pass is applied pauses > 0.50 s keep
+  0.25 s; cut edges snap BACKWARD to the quietest frame just before the edge, so a cut never eats
+  the onset of the kept word. Profile `word` (`vstudio.cut.find_cuts`): pauses > 0.6 s keep 0.36 s,
+  edges at the quietest frame between word midpoints. Silence comes from audio energy because
+  whisper's word timestamps abut. One-word repeats across a sentence break are never cut; emphasis doublings are
   whitelisted.
 - A demanding listener still hears restarts and broken-off phrases. What met that bar: dump each
   keep-window as `speaker: [t]word [t]word ...` (`transcript_tools.py editor`, ~7 min chunks),
@@ -109,7 +112,11 @@ against the sticker's alpha>200 footprint on every frame.
 
 Call apps stamp the real name at each tile's bottom-left, and it survives the crop. The label
 chip is square-ish (small radius, not a pill) and **flush** to `x = ox` and the tile bottom, so it
-fully covers the badge; an inset or pill chip leaves the badge's edge visible.
+covers the badge in the legacy layouts; an inset or pill chip leaves the badge's edge visible.
+Real-media QA still found the name readable (chips inset to the safe box, crops that move the
+badge, long names wider than the chip), so `name_mask` now blurs every tile's label region in
+source pixels by default; on a Zoom 640×360 tile the label is ~16 px tall at the very bottom-left,
+well inside the default box (bottom 10 %, left 40 % of the tile).
 
 ## Platform safe zone (vertical)
 
@@ -118,9 +125,9 @@ nav, the bottom ~270px under title/caption/buttons, plus a right-side button col
 `render_trio.py` keeps everything in y 240..1660: title at 240, guest row 440..940, host
 952..1492 (tile cropped 640×320), subtitles from 1500, hook badge on the guest row. Covers put
 the headline at y≈300 and the still inside the 3:4 feed crop (`cover_title_y`,
-`cover_strip_y`, `cover_band`). `render_vertical.py` still uses the older full-bleed layout
-(title at 150, tiles 330..1560, subs at 1654) — move it to the trio geometry before relying on it
-for those platforms.
+`cover_strip_y`, `cover_band`). With `--platform` every renderer derives this from the profile's
+safe and caption boxes instead (WORKFLOW.md → Platforms); `render_vertical.py` does so by default
+(its old full-bleed layout, title at 150 and subs at 1654, is `--platform legacy`).
 
 Final files are Apple-friendly: high@4.2 (trio renderers), bt709 written into the h264 VUI via
 `h264_metadata` (container flags alone leave iOS guessing), `avc1` tag, 48k AAC, faststart.

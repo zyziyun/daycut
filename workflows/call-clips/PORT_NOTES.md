@@ -14,7 +14,7 @@ podcast recording → short clips with optional masking of chosen participants.
   source for every renderer, cover and thumb (`font("cjk-bold" | "cjk")` via vstudio).
 - **Personal content removed**: the real meeting path, conversation text, panels and labels in
   both example configs → synthetic `examples/clips*.example.json` with placeholder dialogue;
-  "Wendy" defaults in the trio renderers → `host_label` from config (top-level or per clip),
+  the real host-name defaults in the trio renderers → `host_label` from config (top-level or per clip),
   else persona `call_clips.labels.host`, else "Host". SKILL.md anecdotes (names, employers,
   the conversation's topics) dropped from the docs; the lessons kept in generic form.
 - **TERM_FIX**: creator/recording-specific entries (a product name, an employer's name and its
@@ -171,3 +171,79 @@ filler, hand-made whisper JSON, clips.json with auto_trim, 1 hook, 3 windows, no
   (`speaker_timeline.mouth_gap`) have no lib counterpart; kept.
 - `overlays.chip(style="tag")`: radius/min-width params; a bilingual stacked `text_layer` helper
   (render_landscape.render_sub stacks two locally).
+
+## Wave B
+
+### Changes
+- **Platform wiring** (`scripts/layout.py`, new): `--platform` on all four renderers, `build_clips.py`
+  (also clips.json `"platform"`), `make_cover.py`, `make_thumb.py`, `make_thumb_trio.py`. Canvas from
+  `profile.w×h`; headline / badge / chips / panels / node cards inside `platform.safe_box`; tile rows fill
+  the space between the headline and `platform.caption_box` (rows cropped in height around the face);
+  captions burned in the caption box (fit_text_size, shrunk to the box height; bilingual alt on landscape);
+  loudnorm to `profile.loudness`; `check_length` warning per clip; subtitle merge length =
+  `caption.max_chars_zh` (14) in platform mode. `--show-safe` draws the boxes on previews.
+- **Known issue fixed**: `render_vertical.py` now defaults to persona `platforms.default` at its 9:16 canvas
+  (小红书 → 1080×1920 "full", safe 240..1660, captions 1420..1640). The old full-bleed layout (title at 150,
+  subs at 1654, under the app chrome) is `--platform legacy`. trio / landscape renderers keep their fixed
+  layouts unless a platform is given (deliberate: their outputs are unchanged by default).
+- **Covers sized per profile**: `make_cover.py --platform` builds at `cover_size` (小红书 3:4 1080×1440),
+  headline in `cover_title_safe`, tile band auto-detected from the clip; thumbnails are cover-cropped to the
+  profile's cover size (B站 1146×717, YouTube ≤ 2 MB kept).
+- **Clean master**: `build_clips.py --clean-master` → `out/<id>.clean.mp4` (renderer `--no-subs`) and
+  `work/<id>.cues.json` (always written; subs.Cue dicts, `alt` = English) for `python -m vstudio.export`.
+- **Name-label masking** (real-media QA: the Zoom name chip was still readable): `name_mask` blur (default) |
+  cover | off | {mode, box (tile fractions, default 0,0.90,0.40,0.10), tiles all|guests, extra px rects},
+  applied in source pixels before any crop, in every renderer and `make_thumb.py`.
+- **Editor-cut defaults restored** (`scripts/cut_profiles.py`, new): profile `classic` is the default again —
+  pauses > 0.75 s keep 0.30 s; with an editor pass (`extra_cuts`) pauses > 0.50 s keep 0.25 s; restart /
+  repeat / filler / editor edges snap BACKWARD to the quietest 20 ms frame (≤ 0.15 s). The phase-2 behaviour
+  (pauses > 0.6 s keep 0.36 s, word-boundary snapping) is profile `word` (= `vstudio.cut.find_cuts`,
+  byte-identical). Selectable via clips.json `cut_profile`, `--cut-profile`, `find_disfluencies.py --profile`,
+  persona `call_clips.cut_profile`.
+
+### New persona keys
+`call_clips.cut_profile` ("classic"), `call_clips.name_mask` ("blur"). Read: `platforms.default`,
+`platforms.<name>.*` (via vstudio.platform).
+
+### Note for workflows/cover (not owned here)
+Accent parity: the cover-collage design used teal `#2dd4bf`, but `vstudio.render` injects persona
+`brand.accent` (often red). The cover workflow should read a per-workflow key `cover.accent` (default
+`"#2dd4bf"`) the same way slides now reads `slides.accent`. call-clips' own furniture already uses
+`call_clips.frame_accent` (teal) and is unaffected.
+
+### Tests
+- Synthetic fixture (1280×720 testsrc2, tone speech with pauses/repeats, hand-made whisper JSON, clip with
+  hook, node card, panel, chapters), HEAD scripts run from `git archive` against the current lib:
+  - `--platform legacy --cut-profile word` + `name_mask: off` end to end (`render_vertical`, `--no-mask`):
+    subs.json byte-identical, every sampled frame diff 0.0, −14.0 LUFS both.
+  - Previews at 3 times for all four renderers with `--platform legacy --name-mask off`: pixel-identical to
+    HEAD (mean abs diff 0.0); `make_cover` (no platform) and `make_thumb --name-mask off` identical.
+  - `find_disfluencies --profile word` JSON identical to HEAD; `classic` cuts fewer short pauses (5.1 s vs
+    5.7 s on the window) and more with the example editor cuts (7.8 s).
+  - Default build (persona 小红书): 1080×1920, safe-zone layout, −14.0 LUFS, length warning printed.
+  - Non-default: `--platform douyin` 1080×1920, overlays inside (60,160,930,1480), captions inside the
+    caption box (checked on `--show-safe` previews); with a temp persona (`VSTUDIO_PERSONA`) setting
+    `platforms.douyin.loudness: {lufs: -12}` the output measured −12.0 LUFS. `render_trio --platform douyin`,
+    `render_landscape --platform youtube`, `render_landscape_trio --platform bilibili` previews checked by eye;
+    `make_thumb --platform bilibili` → 1146×717; `make_cover --platform xiaohongshu` → 1080×1440.
+- **Real media** (3-person Zoom podcast, 60 s window, outputs only in /tmp, nothing committed):
+  `render_trio`, platform xiaohongshu (1080×1920), two non-creator tiles masked with the cat, all name labels
+  blurred, auto-trim classic (1 cut), 1.2× body → 49.1 s, track hit rate 100 % on both guests,
+  verify_coverage PASS 100.000 % on both, −14.1 LUFS / −1.4 dBTP. Four frames read: stickers cover both
+  faces, Zoom names unreadable (before/after crop compared), captions in the caption box (a first run showed
+  2-line captions climbing onto the host tile → caption block now shrinks to the box height), panel and chips
+  inside the safe box. Cover 1080×1440 checked.
+- py_compile + `--help` for every CLI; `python3 -m pytest tests -q` 318 passed.
+
+### Lib requests
+- `platform.fit_text_size` should also respect the caption band HEIGHT (a 2-line caption at the max size is
+  taller than 小红书's 220 px band); `export.caption_overlay` centres an over-tall block above `y0`.
+  call-clips works around it in `layout.caption_overlay`.
+- `subs.balanced_wrap` breaks CJK mid-word ("前端组 / 件库"); a word-aware break (jieba-style or punctuation
+  + latin preference) would help every caption burner.
+- `cut.find_cuts(..., pause_min=, pause_keep=, snap="word"|"back", editor_pause_min=, editor_pause_keep=)`
+  so `cut_profiles.classic` can drop its copy of the rule loop.
+- A shared `face.name_label_mask` / `overlays.redact(frame, rects, mode)` (call-clips `layout.mask_names`):
+  longform-to-short and promo-recut screen recordings have the same problem.
+- `export.export(..., layout_fn)` hook so a composed multi-tile layout can be re-laid per platform instead of
+  reframing a finished canvas.

@@ -13,6 +13,11 @@ median tracked face, so the face stays in frame without the crop wandering.
 Reuses the furniture (title, chips, badge, node cards, panels, subtitles) from
 render_vertical.py so both layouts stay one design.
 
+``--platform`` (e.g. xiaohongshu, douyin, youtube-shorts) derives the canvas, the headline position
+(top of the safe box), the two rows (between the headline and the caption box, 500:540 as before)
+and the caption box from the platform profile. Without it the fixed layout below is used unchanged
+(it was hand-fitted to the 小红书 9:16 safe zone).
+
 Usage:
   render_trio.py CLIP.mp4 --guests-json g.json --subs subs.json \
       --title-json title.json --host-region 640,0,640,360 --out out.mp4
@@ -25,6 +30,7 @@ from PIL import Image, ImageDraw
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from style import TEAL, GUEST_DEFAULT, HOST_DEFAULT, font, alpha_paste
+import layout
 from render_vertical import (W, H, render_chip, render_hook_badge, render_node_card,
                              render_panel, render_sub, NODE_FADE, PANEL_FADE)
 from vstudio.draw import text_width, wrap
@@ -81,31 +87,71 @@ def render_quote(who, text, width=980):
     return im
 
 
-def build_frame(title_lines, accent):
-    """Headline and accent line, both inside the top safe edge."""
-    img = Image.new("RGB", (W, H), (0, 0, 0))
+def build_frame(title_lines, accent, size=(W, H), title_y=TITLE_Y, x_l=64, x_r=None):
+    """Headline and accent line, both inside the top safe edge. Returns (image, y below the text)."""
+    img = Image.new("RGB", size, (0, 0, 0))
     d = ImageDraw.Draw(img)
-    f_t = font(58)
-    y = TITLE_Y
+    fs = 58
+    if x_r:
+        def lw(line, f):
+            return sum(text_width(t, f) for t, _ in (line if isinstance(line, list) else [[line, False]]))
+        while fs > 36 and max([lw(ln, font(fs)) for ln in title_lines] or [0]) > x_r - x_l:
+            fs -= 2
+    f_t = font(fs)
+    lh = 74 if fs == 58 else int(fs * 1.28)
+    y = title_y
     for line in title_lines:
-        x = 64
+        x = x_l
         runs = line if isinstance(line, list) else [[line, False]]
         for txt, is_acc in runs:
             d.text((x, y), txt, font=f_t, fill=TEAL if is_acc else (255, 255, 255))
             x += text_width(txt, f_t)
-        y += 74
+        y += lh
     if accent:
-        d.rectangle([64, y + 22, 64 + 72, y + 26], fill=TEAL)
-        d.text((64 + 92, y + 8), accent, font=font(26), fill=(156, 163, 175))
-    return img
+        d.rectangle([x_l, y + 22, x_l + 72, y + 26], fill=TEAL)
+        d.text((x_l + 92, y + 8), accent, font=font(26), fill=(156, 163, 175))
+        y += 40
+    return img, y
 
 
-def guest_crop(region, track):
+def geometry(prof, title_lines, accent):
+    """Rows and positions: the fixed layout for prof None, else derived from the profile."""
+    if prof is None:
+        img, _ = build_frame(title_lines, accent)
+        return dict(W=W, H=H, top_y=TOP_Y, g_w=G_W, g_h=G_H, host_y=HOST_Y, host_h=HOST_H,
+                    tiles_bottom=TILES_BOTTOM, sub_y=SUB_Y, cx=W / 2, chip_x0=0, badge_x=W - 24,
+                    pw=None, quote_w=980, node_max_w=960, base=img, legacy=True)
+    b = layout.boxes(prof)
+    cw, chh = b["W"], b["H"]
+    sx0, sy0, sx1, sy1 = b["safe"]
+    img, y = build_frame(title_lines, accent, (cw, chh), sy0, sx0 + 4, sx1 - 12)
+    tiles_top = y + 12
+    tiles_bottom = b["caption"][1] - 12
+    avail = tiles_bottom - tiles_top - GAP
+    total = min(avail, G_H + HOST_H)
+    g_h = int(round(total * G_H / (G_H + HOST_H)))
+    host_h = total - g_h
+    if g_h < 300:
+        print(f"WARN only {avail}px for the tiles: guest row {g_h}px, host row {host_h}px")
+    top_y = tiles_top + (avail - total) // 2
+    host_y = top_y + g_h + GAP
+    return dict(W=cw, H=chh, top_y=top_y, g_w=(cw - GAP) // 2, g_h=g_h, host_y=host_y, host_h=host_h,
+                tiles_bottom=host_y + host_h, sub_y=None, cx=(sx0 + sx1) / 2, chip_x0=sx0, badge_x=sx1 - 12,
+                pw=min(940, sx1 - sx0 - 24), quote_w=min(980, sx1 - sx0 - 24),
+                node_max_w=min(960, (sx1 - sx0) * 0.75), base=img, legacy=False)
+
+
+def guest_crop(region, track, g_w=G_W, g_h=G_H):
     """Fixed crop inside the guest's tile with the output tile's aspect,
     centred on the median face so a lean does not push the head out."""
     x, y, w, h = region
     ch = h
-    cw = int(round(ch * G_W / G_H))
+    cw = int(round(ch * g_w / g_h))
+    if cw > w:                           # a short, wide row: keep the full width, trim the height
+        cw, ch = w, int(round(w * g_h / g_w))
+        cy = float(np.median(track["cy"])) - y
+        y0 = int(round(min(max(cy - ch * 0.46, 0), h - ch)))
+        return 0, y0, cw, ch
     cx = float(np.median(track["cx"])) - x
     x0 = int(round(min(max(cx - cw / 2, 0), w - cw)))
     return x0, 0, cw, ch
@@ -127,41 +173,54 @@ def main():
     ap.add_argument("--y-offset", type=float, default=-0.031)
     ap.add_argument("--crf", type=int, default=18)
     ap.add_argument("--preview", default=None, help="dump one JPG at this second and exit")
+    layout.add_args(ap)
     args = ap.parse_args()
+    prof = layout.resolve(args.platform, "vertical")
+    nmask = layout.name_mask_from_args(args)
 
     meta = json.load(open(args.title_json))
     subs = json.load(open(args.subs))
     guests = json.load(open(args.guests_json))
     hx, hy, hw, hh = (int(v) for v in args.host_region.split(","))
 
+    G = geometry(prof, meta["title"], meta.get("accent", ""))
+    CW, CH = G["W"], G["H"]
+    TOP_Y_, G_W_, G_H_, HOST_Y_, HOST_H_ = G["top_y"], G["g_w"], G["g_h"], G["host_y"], G["host_h"]
+    TILES_BOTTOM_ = G["tiles_bottom"]
     for g in guests:
         g["reg"] = [int(v) for v in g["region"].split(",")]
         g["tr"] = json.load(open(g["track"]))
-        g["crop"] = guest_crop(g["reg"], g["tr"])
+        g["crop"] = guest_crop(g["reg"], g["tr"], G_W_, G_H_)
         g["st"] = np.array(Image.open(g["sticker"]).convert("RGBA"))
         g["cache"] = {}
+    name_rects = layout.name_rects(nmask, [tuple(g["reg"]) for g in guests], [(hx, hy, hw, hh)])
+    cap_ov = layout.caption_overlay(prof, subs) if (prof is not None and not args.no_subs) else None
 
-    base_bgr = np.array(build_frame(meta["title"], meta.get("accent", "")))[:, :, ::-1].copy()
+    base_bgr = np.array(G["base"])[:, :, ::-1].copy()
 
     chips = []
     for k, g in enumerate(guests):
         chips.append((np.array(render_chip(g.get("label") or GUEST_DEFAULT)),
-                      k * (G_W + GAP), TOP_Y + G_H - 44))
+                      max(k * (G_W_ + GAP), G["chip_x0"]), TOP_Y_ + G_H_ - 44))
     chips.append((np.array(render_chip(meta.get("host_label") or HOST_DEFAULT)),
-                  0, HOST_Y + HOST_H - 44))
+                  G["chip_x0"], HOST_Y_ + HOST_H_ - 44))
 
     panels = []
     for anchor, dur, title, bullets in meta.get("panels", []):
-        im = np.array(render_quote(title, bullets[0]) if meta.get("quote_cards")
-                      else render_panel(title, bullets))
-        if im.shape[0] > G_H - 24:
+        if meta.get("quote_cards"):
+            im = np.array(render_quote(title, bullets[0], G["quote_w"]))
+        elif G["legacy"]:
+            im = np.array(render_panel(title, bullets))
+        else:
+            im = np.array(render_panel(title, bullets, G["pw"], G_H_ - 24))
+        if im.shape[0] > G_H_ - 24:
             print(f"WARN panel taller than the guest row ({im.shape[0]}px): {title}")
         panels.append({"im": im, "s": float(anchor), "e": float(anchor) + float(dur),
-                       "y": TOP_Y + (G_H - im.shape[0]) / 2})
+                       "y": TOP_Y_ + (G_H_ - im.shape[0]) / 2})
 
     hook_end = float(meta.get("hook_end", 0.0))
     badge = np.array(render_hook_badge()) if hook_end > 0 else None
-    nodes = [{"im": np.array(render_node_card(t)), "s": float(at) - 0.95, "e": float(at) + 0.95}
+    nodes = [{"im": np.array(render_node_card(t, G["node_max_w"])), "s": float(at) - 0.95, "e": float(at) + 0.95}
              for at, t in meta.get("node_cards", [])]
 
     cap = cv2.VideoCapture(args.video)
@@ -170,7 +229,7 @@ def main():
     if not args.preview:
         proc = subprocess.Popen([
             "ffmpeg", "-v", "error", "-y",
-            "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{W}x{H}", "-r", str(fps), "-i", "-",
+            "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{CW}x{CH}", "-r", str(fps), "-i", "-",
             "-i", args.video, "-map", "0:v", "-map", "1:a?",
             "-c:v", "libx264", "-preset", "medium", "-crf", str(args.crf),
             "-profile:v", "high", "-level", "4.2", "-pix_fmt", "yuv420p",
@@ -190,6 +249,7 @@ def main():
             i += 1
             continue
         canvas = base_bgr.copy()
+        layout.mask_names(src, name_rects, nmask["mode"])
 
         for k, g in enumerate(guests):
             x, y, w, h = g["reg"]
@@ -203,14 +263,17 @@ def main():
             st = g["cache"][tw]
             alpha_paste(tile, st, tr["cx"][j] - x, tr["cy"][j] - y + args.y_offset * st.shape[0])
             cx0, cy0, cw, ch = g["crop"]
-            out = cv2.resize(tile[cy0:cy0 + ch, cx0:cx0 + cw], (G_W, G_H), interpolation=cv2.INTER_CUBIC)
-            ox = k * (G_W + GAP)
-            canvas[TOP_Y:TOP_Y + G_H, ox:ox + G_W] = out
+            out = cv2.resize(tile[cy0:cy0 + ch, cx0:cx0 + cw], (G_W_, G_H_), interpolation=cv2.INTER_CUBIC)
+            ox = k * (G_W_ + GAP)
+            canvas[TOP_Y_:TOP_Y_ + G_H_, ox:ox + G_W_] = out
 
-        ch = int(round(hw * HOST_H / W))           # keep aspect: 640 wide -> 320 tall
-        y0 = hy + min(HOST_CROP, hh - ch)
-        host = cv2.resize(src[y0:y0 + ch, hx:hx + hw], (W, HOST_H), interpolation=cv2.INTER_CUBIC)
-        canvas[HOST_Y:HOST_Y + HOST_H] = host
+        if G["legacy"]:
+            ch = int(round(hw * HOST_H / W))           # keep aspect: 640 wide -> 320 tall
+            y0 = hy + min(HOST_CROP, hh - ch)
+        else:
+            _, y0, _, ch = layout.vcrop((hx, hy, hw, hh), CW, HOST_H_)
+        host = cv2.resize(src[y0:y0 + ch, hx:hx + hw], (CW, HOST_H_), interpolation=cv2.INTER_CUBIC)
+        canvas[HOST_Y_:HOST_Y_ + HOST_H_] = host
 
         cur_node = next((n for n in nodes if n["s"] - NODE_FADE <= t <= n["e"] + NODE_FADE), None)
         if cur_node is not None:
@@ -220,16 +283,16 @@ def main():
                 kk = 1 - (t - cur_node["e"]) / NODE_FADE
             else:
                 kk = 1.0
-            band = canvas[TOP_Y:TILES_BOTTOM]
-            canvas[TOP_Y:TILES_BOTTOM] = (band * (1 - 0.68 * kk)).astype(np.uint8)
-            alpha_paste(canvas, cur_node["im"], W / 2, TOP_Y + (TILES_BOTTOM - TOP_Y) / 2, opacity=kk)
+            band = canvas[TOP_Y_:TILES_BOTTOM_]
+            canvas[TOP_Y_:TILES_BOTTOM_] = (band * (1 - 0.68 * kk)).astype(np.uint8)
+            alpha_paste(canvas, cur_node["im"], G["cx"], TOP_Y_ + (TILES_BOTTOM_ - TOP_Y_) / 2, opacity=kk)
 
         if badge is not None and t < hook_end:
             op = min(1.0, (hook_end - t) / 0.4)
             # on the guest row's top-right, not the screen's top edge, which
             # the platform's nav bar covers
-            alpha_paste(canvas, badge, W - 24 - badge.shape[1] / 2,
-                        TOP_Y + 20 + badge.shape[0] / 2, opacity=op)
+            alpha_paste(canvas, badge, G["badge_x"] - badge.shape[1] / 2,
+                        TOP_Y_ + 20 + badge.shape[0] / 2, opacity=op)
 
         for p in panels:
             if not (p["s"] - PANEL_FADE <= t <= p["e"] + PANEL_FADE):
@@ -241,13 +304,15 @@ def main():
                 op, dy = 1 - (t - p["e"]) / PANEL_FADE, 0.0
             else:
                 op, dy = 1.0, 0.0
-            alpha_paste(canvas, p["im"], W / 2, p["y"] + p["im"].shape[0] / 2 + dy, opacity=op)
+            alpha_paste(canvas, p["im"], G["cx"], p["y"] + p["im"].shape[0] / 2 + dy, opacity=op)
 
         # chips flush to each tile's bottom-left, over the call app's name badges
         for img, ox, oy in chips:
             alpha_paste(canvas, img, ox + img.shape[1] / 2, oy + img.shape[0] / 2)
 
-        cur = next((s for s in subs if s["start"] <= t < s["end"]), None)
+        cur = None if (args.no_subs or cap_ov) else next((s for s in subs if s["start"] <= t < s["end"]), None)
+        if cap_ov:
+            cap_ov(t, canvas)
         if cur:
             key = cur["text"]
             if key not in sub_cache:
@@ -255,6 +320,8 @@ def main():
             sub = sub_cache[key]
             alpha_paste(canvas, sub, W // 2, SUB_Y + sub.shape[0] / 2)
 
+        if args.show_safe:
+            layout.draw_safe(canvas, prof)
         if args.preview:
             cv2.imwrite(args.out, canvas)
             print(f"preview t={t:.2f} -> {args.out}")

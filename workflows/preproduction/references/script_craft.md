@@ -2,15 +2,19 @@
 
 Craft rules for scripts that will be *spoken* on camera or by TTS: short-form (60–180 s) and mid-length (3–10 min)
 explainers. Creator-specific taste (stance, signature phrases, banned phrases, topic domain) lives in the persona
-`voice.*` keys, not here. All examples are synthetic.
+`voice.en.*` / `voice.zh.*` keys, not here. All examples are synthetic.
 
 ## 1. Format and length
 
-| Format | Length | Where | Words (at `voice.wpm`, default 165) | Shape |
+| Format | Length | Where | Words (at `voice.en.wpm`, default 165) | Shape |
 |---|---|---|---|---|
 | Short | 60–90 s | TikTok / Shorts / Reels / 小红书 | ~165–250 | ONE idea, 3 beats: setup → reveal → so-what |
 | Long short | 90–180 s | same (Shorts allows 3 min) | ~250–510 | one idea + 2–3 sub-points, one pivot |
 | Mid-length | 3–10 min | B站, YouTube | ~500–1650 | 3–5 named sections of 45–90 s, each closes on a takeaway |
+
+中文口播: count characters instead of words, at `voice.zh.cpm` (default 270 字/min ≈ 4.5 字/s): short ≈ 270–405 字,
+long short ≈ 405–810 字, mid ≈ 810–2700 字. `lint_script.py --platform <name>` replaces these with the platform's
+sweet spot × pace.
 
 Seconds ≈ words ÷ wpm × 60. Speeding the final edit up (see `workflows/polish`) shortens this; write for the
 natural pace, not the sped-up one.
@@ -83,7 +87,46 @@ if needed, is informational ("The full walkthrough is on the channel.").
 | Bare list openers ("Three reasons.") and auto-balanced categories | sound templated | fold the count into a sentence; leave uneven sets uneven |
 | Emojis in the spoken script | unreadable aloud | outline notes only |
 
-## 7. Process
+## 7. Worked revisions (synthetic)
+
+Fresh examples on neutral topics, written in the learner-educator voice (`voice.en`). Each one is
+Before → why it fails → After.
+
+**Hook** (topic: why phone batteries degrade)
+
+- Before: "OK so quick thing. Today we're talking about batteries — and honestly, most people don't realize how they work."
+- Why it fails: throat-clearing opener, an agenda instead of a claim, an em-dash, and authority framing that tells
+  the viewer they're behind. Nothing concrete in the first five seconds; no number to anchor it.
+- After: "You charge your phone to a hundred percent every night. That habit wears the battery out faster than
+  heavy use does. After about five hundred full cycles, most phones hold noticeably less."
+
+**One paragraph** (topic: why a spreadsheet slows down as it grows)
+
+- Before: "Spreadsheets get slow. Formulas. Lots of them. When you have a comprehensive workbook with many sheets
+  that reference each other and also volatile functions that recalculate every time anything changes anywhere in
+  the file, performance can degrade significantly (especially on older laptops)."
+- Why it fails: three fragments read like slide bullets, then one 40-word sentence nobody can say in a breath;
+  "comprehensive" is an AI-tell word, the parentheses can't be spoken, and "performance can degrade" is abstract.
+- After: "What I find interesting is that the size of the file isn't really the problem. Some functions recalculate
+  every time you touch any cell, even one on another sheet. So a workbook with a few hundred of them redoes all that
+  work on every keystroke. That's the lag you feel when you type."
+
+**Closing** (topic: why bus timetables pad their schedules)
+
+- Before: "So yeah, that's basically why buses are late sometimes. Hope that helps! Let me know in the comments and
+  follow for more."
+- Why it fails: a summary that adds nothing, then three generic CTAs. The last line can't stand alone as a screenshot.
+- After (pattern B, lens): "That's the lens I keep coming back to when a schedule looks generous. I ask who it's
+  protecting. Most of the time, slack in a timetable is a promise someone decided to keep."
+
+**中文口播（自信从业者口吻，`voice.zh`）** (题目：为什么冰箱不要塞太满)
+
+- Before: "家人们，今天给大家分享一个冰箱小技巧——很多人不知道，冰箱其实不能塞太满哦，记得点赞关注！"
+- 为什么不行：套路开头、破折号、"很多人不知道"的居高临下、结尾求关注；没有具体数字，也没讲清原因。
+- After: "冰箱塞满七成以上，制冷反而会变差。冷气要靠流动才能带走热量，塞得太满，风道一堵，靠里的东西就冷不透。
+  我的做法是留出出风口前面那一拳的空间。说白了，冰箱冷不冷，看的不是功率，是空气能不能走得动。"
+
+## 8. Process
 
 1. **Premise** (no script yet): the one takeaway in ≤15 words; what the viewer wrongly believes; the mental tool
    they keep; why you find it interesting. If the takeaway won't fit in 15 words, the topic isn't ready.
@@ -95,7 +138,7 @@ if needed, is informational ("The full walkthrough is on the channel.").
    sentence?" — often yes.
 6. **Lint + self-check** (`scripts/lint_script.py`), then lock. After lock: pronunciation drill.
 
-## 8. Templates
+## 9. Templates
 
 Short / long short:
 ```

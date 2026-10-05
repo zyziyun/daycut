@@ -9,7 +9,8 @@ under the tiles; 记笔记 panels sit over the two guests, whose faces are
 stickers already.
 
 Furniture (panel, subtitle strip, chips, cards, badge) is shared with
-render_landscape.py so the two long-form layouts stay one design.
+render_landscape.py so the two long-form layouts stay one design; so is ``--platform``
+(safe-box headline/badge/chips, tiles above the caption box, captions in the caption box).
 
 Usage:
   render_landscape_trio.py RAW.mp4 --guests-json g.json --host-track h.json \
@@ -23,8 +24,9 @@ from PIL import Image
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from render_landscape import (W, H, render_chip, render_node_card, render_hook_badge,
-                              build_frame_png, render_panel, render_sub, NODE_FADE, PANEL_FADE)
+                              build_frame_png, render_panel, render_sub, NODE_FADE, PANEL_FADE, geometry)
 from style import GUEST_DEFAULT, HOST_DEFAULT, alpha_paste
+import layout
 
 TILE_W, TILE_H = 640, 720
 TILE_Y = 96
@@ -62,7 +64,10 @@ def main():
     ap.add_argument("--y-offset", type=float, default=-0.031)
     ap.add_argument("--crf", type=int, default=18)
     ap.add_argument("--preview", default=None, help="comma list of seconds to dump as JPGs")
+    layout.add_args(ap)
     args = ap.parse_args()
+    prof = layout.resolve(args.platform, "horizontal")
+    nmask = layout.name_mask_from_args(args)
 
     meta = json.load(open(args.title_json))
     subs = json.load(open(args.subs))
@@ -83,8 +88,15 @@ def main():
     tiles.append({"reg": (hx, hy, hw, hh), "tr": None, "label": meta.get("host_label") or HOST_DEFAULT,
                   "x0": smooth_centres(htr["cx"], fps, hx, hw)})
 
-    base_bgr = np.array(build_frame_png(meta.get("yt_title", ""), meta.get("accent", "")))[:, :, ::-1].copy()
-    chips = [(np.array(render_chip(t["label"])), k * TILE_W) for k, t in enumerate(tiles)]
+    G = geometry(prof, meta.get("yt_title", ""), meta.get("accent", ""), TILE_H, TILE_Y)
+    CW, CH, TY, TH = G["W"], G["H"], G["tile_y"], G["tile_h"]
+    TB = TY + TH
+    crop_h = CROP_H if TH == TILE_H else int(round(CROP_W * TH / TILE_W))
+    sx0 = G["safe"][0]
+    base_bgr = np.array(G["base"])[:, :, ::-1].copy()
+    chips = [(np.array(render_chip(t["label"])), max(k * TILE_W, sx0)) for k, t in enumerate(tiles)]
+    name_rects = layout.name_rects(nmask, [t["reg"] for t in tiles[:-1]], [tiles[-1]["reg"]])
+    cap_ov = layout.caption_overlay(prof, subs, bilingual=True) if (prof is not None and not args.no_subs) else None
 
     hook_end = float(meta.get("hook_end", 0.0))
     badge = np.array(render_hook_badge()) if hook_end > 0 else None
@@ -93,17 +105,17 @@ def main():
     panels = []
     for anchor, dur, title, bullets in meta.get("panels", []):
         im = np.array(render_panel(title, bullets))
-        if im.shape[0] > TILE_H - 24:
+        if im.shape[0] > TH - 24:
             print(f"WARN panel taller than the tile ({im.shape[0]}px): {title}")
         panels.append({"im": im, "s": float(anchor), "e": float(anchor) + float(dur),
-                       "y": TILE_Y + (TILE_H - im.shape[0]) / 2})
+                       "y": TY + (TH - im.shape[0]) / 2})
 
     previews = sorted(float(v) for v in args.preview.split(",")) if args.preview else None
     proc = None
     if not previews:
         proc = subprocess.Popen([
             "ffmpeg", "-v", "error", "-y",
-            "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{W}x{H}", "-r", str(fps), "-i", "-",
+            "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{CW}x{CH}", "-r", str(fps), "-i", "-",
             "-i", args.video, "-map", "0:v", "-map", "1:a?",
             "-c:v", "libx264", "-preset", "medium", "-crf", str(args.crf),
             "-profile:v", "high", "-level", "4.2", "-pix_fmt", "yuv420p",
@@ -125,6 +137,7 @@ def main():
                 i += 1
                 continue
         canvas = base_bgr.copy()
+        layout.mask_names(src, name_rects, nmask["mode"])
 
         for k, tl in enumerate(tiles):
             x, y, w, h = tl["reg"]
@@ -141,8 +154,9 @@ def main():
                 # bleed into a neighbour and never misses the reframed window
                 alpha_paste(tile, st, tr["cx"][j] - x, tr["cy"][j] - y + args.y_offset * st.shape[0])
             x0 = tl["x0"][j]
-            canvas[TILE_Y:TILES_BOTTOM, k * TILE_W:(k + 1) * TILE_W] = cv2.resize(
-                tile[0:CROP_H, x0:x0 + CROP_W], (TILE_W, TILE_H), interpolation=cv2.INTER_CUBIC)
+            cy0 = 0 if crop_h == CROP_H else int(round((min(h, CROP_H) - crop_h) * 0.46))
+            canvas[TY:TB, k * TILE_W:(k + 1) * TILE_W] = cv2.resize(
+                tile[cy0:cy0 + crop_h, x0:x0 + CROP_W], (TILE_W, TH), interpolation=cv2.INTER_CUBIC)
 
         cur_node = next((n for n in nodes if n["s"] - NODE_FADE <= t <= n["e"] + NODE_FADE), None)
         if cur_node is not None:
@@ -152,13 +166,15 @@ def main():
                 kk = 1 - (t - cur_node["e"]) / NODE_FADE
             else:
                 kk = 1.0
-            band = canvas[TILE_Y:TILES_BOTTOM]
-            canvas[TILE_Y:TILES_BOTTOM] = (band * (1 - 0.68 * kk)).astype(np.uint8)
-            alpha_paste(canvas, cur_node["im"], W / 2, TILE_Y + TILE_H / 2, opacity=kk)
+            band = canvas[TY:TB]
+            canvas[TY:TB] = (band * (1 - 0.68 * kk)).astype(np.uint8)
+            alpha_paste(canvas, cur_node["im"], CW / 2, TY + TH / 2, opacity=kk)
 
         if badge is not None and t < hook_end:
             op = min(1.0, (hook_end - t) / 0.5)
-            alpha_paste(canvas, badge, W - 64 - badge.shape[1] / 2, 62, opacity=op)
+            bx, by = G["badge"]
+            alpha_paste(canvas, badge, bx - badge.shape[1] / 2,
+                        by if G["legacy"] else by + badge.shape[0] / 2 - 20, opacity=op)
 
         for p in panels:
             if not (p["s"] - PANEL_FADE <= t <= p["e"] + PANEL_FADE):
@@ -175,9 +191,11 @@ def main():
 
         # flush to each tile's bottom-left, where the call app stamps the real name
         for img, ox in chips:
-            alpha_paste(canvas, img, ox + img.shape[1] / 2, TILES_BOTTOM - img.shape[0] / 2)
+            alpha_paste(canvas, img, ox + img.shape[1] / 2, TB - img.shape[0] / 2)
 
-        cur = next((s for s in subs if s["start"] <= t < s["end"]), None)
+        cur = None if (args.no_subs or cap_ov) else next((s for s in subs if s["start"] <= t < s["end"]), None)
+        if cap_ov:
+            cap_ov(t, canvas)
         if cur:
             key = (cur.get("zh") or cur.get("text", ""), cur.get("en", ""))
             if key not in sub_cache:
@@ -185,6 +203,8 @@ def main():
             sub = sub_cache[key]
             alpha_paste(canvas, sub, W // 2, SUB_TOP + sub.shape[0] / 2)
 
+        if args.show_safe:
+            layout.draw_safe(canvas, prof)
         if previews is not None:
             stem = args.out[:-4] if args.out.endswith(".jpg") else args.out
             cv2.imwrite(f"{stem}_{previews[0]:.0f}.jpg", canvas)

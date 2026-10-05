@@ -18,6 +18,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import layout
 from style import TEAL, YEL, WHITE, frame_at
 from vstudio.draw import fit_font, load_font, text_width
 
@@ -43,7 +44,16 @@ def main():
     ap.add_argument("--title-json", required=True)
     ap.add_argument("--at", type=float, default=900)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--platform", default=None,
+                    help="size the thumbnail for this profile's cover (youtube 1280x720, bilibili 1146x717 ...) "
+                         "and read the tiles where render_landscape_trio --platform put them")
     args = ap.parse_args()
+    prof = layout.cover_profile(args.platform, "horizontal")
+    tile_y, tile_h = TILE_Y, TILE_H
+    if prof is not None:
+        from render_landscape import geometry
+        g = geometry(prof, "", "", TILE_H, TILE_Y)
+        tile_y, tile_h = g["tile_y"], g["tile_h"]
     meta = json.load(open(args.title_json))
     tb = meta["thumb"]
     accent = ACCENTS[tb.get("accent_color", "yellow")]
@@ -52,7 +62,7 @@ def main():
     fr = frame_at(args.video, t)
 
     # the three tiles, minus their bottom strip where the name chips sit
-    band = fr[TILE_Y:TILE_Y + TILE_H - 60]
+    band = fr[tile_y:tile_y + tile_h - 60]
     band_h = int(H * 0.60)
     band = cv2.resize(band, (W, int(band.shape[0] * W / band.shape[1])), interpolation=cv2.INTER_AREA)
     top = max(0, int(band.shape[0] * 0.10))
@@ -91,6 +101,7 @@ def main():
                             fill=(0, 0, 0), outline=accent, width=3)
         d.text((cx - (wl - 40) / 2, H - 56), lab, font=fl, fill=WHITE)
     img.save(args.out, quality=95)
+    layout.fit_saved_cover(args.out, prof)
     print(f"-> {args.out}  (still at {t:.0f}s)")
 
 

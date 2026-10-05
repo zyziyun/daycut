@@ -7,8 +7,9 @@ optional `pronunciation_drill.{m4a,wav,md}` shadowing pack. Downstream: `workflo
 `workflows/cover` (the hook doubles as cover text), `workflows/polish` (final export).
 
 Generic craft lives in [`references/script_craft.md`](references/script_craft.md). The creator's own voice
-(stance, preferred and banned phrases, insight signposts, pace, TTS voice) lives in persona `voice.*` / `tts.*`;
-see [`examples/persona.voice.example.yaml`](examples/persona.voice.example.yaml). Read both before writing.
+(stance, preferred and banned phrases, insight signposts, pace, TTS voice) lives in persona `voice.en.*` (English
+scripts) / `voice.zh.*` (中文口播) and `tts.*`; see the [Voice schema](#voice-schema) below and
+[`examples/persona.voice.example.yaml`](examples/persona.voice.example.yaml). Read both before writing.
 
 Run from the project folder; `$VSTUDIO` = repo root.
 
@@ -19,18 +20,26 @@ Run from the project folder; `$VSTUDIO` = repo root.
    doesn't fit in 15 words, stop and narrow the topic.
 2. **Format + structure.** Pick short / long-short / mid (craft §1). List sections with a one-line takeaway each;
    check that the takeaways tell a story in order.
-3. **Draft** in continuous spoken prose, in the persona voice (`voice.persona`, `voice.phrases_prefer`,
-   `voice.rules`). Overshoot length. Mark the one insight paragraph and signpost it (`voice.signposts`).
+3. **Draft** in continuous spoken prose, in the persona voice for the script's language (`voice.<lang>.persona`,
+   `.phrases_prefer`, `.rules`; see Voice schema). Overshoot length. Mark the one insight paragraph and signpost it (`voice.<lang>.signposts`).
    Write the hook **last** with the formula: you-statement → surprising claim → anchoring number.
 4. **Read-aloud pass** (non-negotiable). Break tongue-trippers, connect disguised bullet lists, cut padding,
    doubled definitions, forward references.
 5. **Lint:**
    ```bash
    python3 $VSTUDIO/workflows/preproduction/scripts/lint_script.py SCRIPT.md --format short
+   python3 $VSTUDIO/workflows/preproduction/scripts/lint_script.py SCRIPT.md --platform douyin   # see Platforms
    ```
-   Errors: em-dashes, parentheses (if the persona bans them), trope openers, generic CTAs, authority framing,
-   AI-tell words, meta/navigation lines, emoji, `voice.phrases_avoid`. Warnings: sentences > 25 words, possible
-   fragments, digits under 10, missing insight signpost, word count vs. format at `voice.wpm`.
+   The language is auto-detected (`--lang auto|en|zh`; zh when CJK is ≥30% of the letters) and picks the
+   `voice.<lang>` profile and rule set.
+   English errors: em-dashes, parentheses (if the persona bans them), trope openers, generic CTAs, authority
+   framing, AI-tell words, meta/navigation lines, emoji, `voice.en.phrases_avoid`. Warnings: sentences > 25 words,
+   possible fragments, digits under 10, missing insight signpost, word count vs. target at `voice.en.wpm`.
+   中文 errors: 破折号, 括号 (if banned), 口播套路开头 (家人们, 今天给大家分享, 话不多说…), 求赞求关注 CTA in the closing
+   (点赞关注, 一键三连, 下期见…), authority framing (很多人不知道…), AI-tell words (赋能, 闭环, 值得注意的是…), meta
+   lines (这期视频, 后面会讲…), emoji, `voice.zh.phrases_avoid`. Warnings: sentence > 40 字, missing signpost,
+   字数 vs. target at `voice.zh.cpm`. The English-only heuristics (fragments, digits under 10, average words per
+   sentence) are skipped for zh.
    Lint is a floor, not the judge: still run the self-check below.
 6. **Lock.** Hand the hook sentence to the cover headline and the first slide.
 
@@ -41,10 +50,55 @@ optional `**Delivery:**` notes and `ZH:` translation lines (ignored by the linte
 ### Self-check before lock
 - [ ] Zero em-dashes; every sentence has a subject and a verb
 - [ ] Hook ≤3 sentences (≤6 mid-length) with "you" and a concrete number or year; no throat-clearing
-- [ ] Voice matches `voice.persona`; no banned openers, closers or `voice.phrases_avoid`
+- [ ] Voice matches `voice.<lang>.persona`; no banned openers, closers or `voice.<lang>.phrases_avoid`
 - [ ] Exactly one signposted insight paragraph that reframes the topic at a deeper layer
 - [ ] Closing uses pattern A/B/C/D; last line is screenshot-worthy alone
 - [ ] Word count fits the format; read aloud once with no stumbles
+
+## Voice schema
+
+One `voice:` block in `persona.local.yaml`, with a sub-profile per script language. `lint_script.py` resolves each
+key as `voice.<lang>.<key>` → flat legacy `voice.<key>` → default, so a persona with only the flat keys lints exactly
+as before (exception: the flat `wpm` is English words/min and is not inherited by zh). Full example:
+[`examples/persona.voice.example.yaml`](examples/persona.voice.example.yaml).
+
+| Key (under `voice.en` / `voice.zh`; flat `voice.*` = legacy fallback) | Default | Read by |
+|---|---|---|
+| `persona` | (none) | you / the LLM when drafting (stance: en = curious learner-educator, zh = confident practitioner) |
+| `domain` | (none) | LLM-facing only |
+| `language` (flat legacy only) | `en` | doc only; the sub-block name now carries the language |
+| `en.wpm` (flat `wpm`) | 165 words/min | lint_script.py: seconds estimate, length target |
+| `zh.cpm` (or `zh.wpm`, read as 字/min) | 270 字/min (4.5 字/s) | lint_script.py: seconds estimate, length target |
+| `rules` | [] | lint_script.py: "parenthes" / "括号" in a rule turns the parentheses check on; rest LLM-facing |
+| `phrases_prefer` | [] | LLM-facing only |
+| `phrases_avoid` | [] | lint_script.py: ERROR on each hit (on top of the built-in generic en / zh trope lists) |
+| `signposts` | [] | lint_script.py: counts as the insight signpost (plus built-in generic ones) |
+| `en.tts.<engine>_voice` | → `tts.<engine>_voice` | make_drill.py (drills are English) |
+| `zh.tts.<engine>_voice` | (none) | documented for zh TTS previews; no preproduction tool reads it yet |
+| top-level `tts.<engine>_voice` (`kokoro`, `edge`, `openai`) | af_heart / en-US-AriaNeural / cedar | `vstudio.tts` (make_drill.py, previews) |
+
+Tests or one-off overrides: point `VSTUDIO_PERSONA=/path/override.yaml` at a YAML file; it is merged over the persona.
+
+## Platforms
+
+`lint_script.py --platform <name>[:orientation]` (`xiaohongshu`, `douyin`, `tiktok`, `youtube`, `youtube-shorts`,
+`bilibili`; aliases like `xhs`, `抖音`, `shorts` work) turns the length check into a platform check:
+
+- target range = `vstudio.platform.profile(name).length.sweet` (seconds) × pace: `voice.en.wpm` words/min for English,
+  `voice.zh.cpm` 字/min for Chinese. E.g. 抖音 sweet 15–60 s × 270 字/min → 68–270 字; YouTube 420–1200 s × 165 wpm →
+  1155–3300 words.
+- the estimated seconds go through `platform.check_length`: over the hard max → **ERROR**; outside the sweet spot or
+  under the minimum → warning. Override sweet/max per platform in persona `platforms.<name>.length`.
+- precedence: `--platform` wins; `--format` is only used for length when no `--platform` is given (a note is
+  printed if you pass both). Without either, the classic `short` target applies, so existing runs are unchanged.
+
+```bash
+python3 $VSTUDIO/workflows/preproduction/scripts/lint_script.py SCRIPT.md --platform youtube-shorts
+python3 $VSTUDIO/workflows/preproduction/scripts/lint_script.py 口播.md --platform douyin        # zh auto-detected
+python3 $VSTUDIO/workflows/preproduction/scripts/lint_script.py SCRIPT.md --platform xhs --lang en
+```
+Nothing else in preproduction depends on the platform (no canvas, captions or audio here); the rendered video's
+per-platform export happens downstream (`python -m vstudio.export`).
 
 ## B. Pronunciation drill (after the script is locked)
 
@@ -70,12 +124,14 @@ optional `**Delivery:**` notes and `ZH:` translation lines (ignored by the linte
      default voice `cedar`.
    All engines go through `vstudio.tts.synth`: clips are cached in `$VSTUDIO_CACHE/tts/`, so re-running a drill
    after editing one sentence only synthesises that sentence.
-   Voice per engine from `persona.tts.<engine>_voice`, or `--voice`. Use the same voice as any TTS preview so the
+   Voice per engine: `--voice`, else persona `voice.en.tts.<engine>_voice` (drills are English), else
+   `tts.<engine>_voice`, else the engine default. Use the same voice as any TTS preview so the
    reference stays consistent.
 
 ## Notes
 - mlx-audio Kokoro can crash on one specific sentence at one speed (`broadcast_shapes ... cannot be broadcast`,
   surfaced as "mlx_audio produced no wav"). Reword the sentence slightly or nudge `--normal` (0.85 → 0.86).
 - The craft is written for English scripts. For 中文口播 keep the structural rules (hook formula, one insight,
-  closing patterns, no em-dashes); sentence-length and wpm targets don't transfer (count characters, ~4–5 字/s).
+  closing patterns, no em-dashes); the linter switches to character counts (`voice.zh.cpm`, default 270 字/min ≈
+  4.5 字/s) and a 40 字 sentence limit.
 - Don't run the drill on a draft: words change, and the narrator ends up drilling sentences they won't say.

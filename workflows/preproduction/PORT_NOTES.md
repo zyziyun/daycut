@@ -60,3 +60,38 @@ Found: Kokoro (mlx-audio) crashes on some sentence+speed combos ("broadcast_shap
 "Inference is the part you pay for." at 0.85) — upstream bug, documented in WORKFLOW.md Notes.
 Lib requests: `tts._kokoro` should include the mlx_audio stdout/stderr tail in "mlx_audio produced no wav" (the real
 error is printed to stdout with exit 0); a public `tts.default_voice(engine)` for logging the resolved voice.
+
+## Wave B
+Changes:
+- `lint_script.py`: per-language voice profiles. `--lang auto|en|zh` (auto = zh when CJK ≥30% of letters) picks
+  `voice.<lang>.*` key by key → flat legacy `voice.*` → built-in default (flat `wpm` is not inherited by zh). English
+  path is the old code unchanged. New zh rule set: 破折号 (a `——` run counts once), 括号 (if `rules` mention
+  parenthes/括号), generic 口播 trope openers / CTAs / authority / AI-tell / meta lists (家人们, 今天给大家分享, 点赞关注,
+  一键三连, 很多人不知道, 赋能, 这期视频…), emoji, `phrases_avoid`, signposts, sentence > 40 字 warn, length in 字
+  (CJK chars + 1 per latin word) at `voice.zh.cpm`. English-only heuristics (fragments, digits < 10, avg words) skipped.
+- `--platform NAME[:orientation]`: target = `profile.length.sweet` × pace (en words at `voice.en.wpm`, zh 字 at
+  `voice.zh.cpm`); `platform.check_length` → ERROR over the hard max, warn outside the sweet spot / under min.
+  `--platform` wins over `--format` (note printed); `--format` default is still `short` when no platform.
+- `make_drill.py`: voice = `--voice` > `voice.en.tts.<engine>_voice` > `tts.<engine>_voice` (lib) > engine default.
+- `examples/persona.voice.example.yaml` rewritten as `voice: {en: {...}, zh: {...}}` + top-level `tts:`; WORKFLOW.md
+  gained "Voice schema" (key table) and "Platforms"; `script_craft.md` gained §7 worked revisions (hook / paragraph /
+  closing + one zh 口播, all fresh synthetic topics) and zh length targets in §1.
+Tests (temp files in /tmp/preprod-waveb, not committed):
+- Default output identical to `git show HEAD:…/lint_script.py` (diff empty) on `examples/script.example.md` with no
+  flags, `--format mid`, `--format long-short --strict`, on a synthetic bad English script, and with a flat-only
+  persona override (`VSTUDIO_PERSONA`, `voice.en/zh: null`, flat `wpm`/`rules`/`phrases_avoid`/`signposts`).
+- Language selection: override with `voice.en.phrases_avoid: ["a cache"]`, `voice.zh.phrases_avoid: ["缓存"]`; an EN
+  script containing both hits only 'a cache', a synthetic zh script containing both hits only '缓存'.
+- Platforms: zh `--platform douyin` → "151 字 ≈ 34s … target 68-270 字 … sweet spot 15-60s" clean; en
+  `--platform youtube` → target 1155-3300 words + sweet-spot warning; 4× example on `youtube-shorts` → ERROR over 180 s.
+- zh trope script → dash/opener/CTA/AI-tell/emoji/40 字 hits; the example persona YAML lints the example script clean.
+- py_compile, `--help` (both scripts), `make_drill --dry-run`, `pytest tests -q` 104 passed.
+New persona keys: `voice.en.{persona,domain,wpm,rules,phrases_prefer,phrases_avoid,signposts}`,
+`voice.en.tts.<engine>_voice`, `voice.zh.{persona,domain,cpm,wpm (alias of cpm, 字/min),rules,phrases_prefer,
+phrases_avoid,signposts}`, `voice.zh.tts.<engine>_voice` (documented only; nothing reads it yet).
+Lib requests:
+- `vstudio.tts.synth(..., lang=)` / `default_voice(engine, lang)` resolving `voice.<lang>.tts.<engine>_voice` before
+  `tts.<engine>_voice`, so zh previews pick a zh voice without each workflow re-implementing the lookup.
+- A shared `vstudio.text` helper for CJK detection / spoken-length units (`detect_lang`, `zh_units` in
+  `lint_script.py`; `platform._has_cjk` and `config.xhs_len` are close cousins).
+- `persona.example.yaml` `voice:` could adopt the `en:`/`zh:` sub-blocks (flat keys keep working).

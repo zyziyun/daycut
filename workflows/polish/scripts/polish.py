@@ -10,12 +10,20 @@ Steps (each its own ffmpeg call, intermediates kept with --keep so you can inspe
 Resolution and frame rate always follow the source. Re-encodes target the source bitrate
 (platforms re-encode anyway; you only lose quality by going lower).
 
+Platforms (vstudio.platform profiles; omit --platform for the platform-neutral behaviour):
+  --platform youtube                  one target: loudness / encode cap / length check / cover size from the
+                                      profile, plus <out stem>.cover.jpg at the platform cover size
+  --platform douyin,xiaohongshu:vertical
+                                      several targets: polish the master once (-o), then vstudio.export
+                                      writes one file + cover per platform and manifest.json into --out-dir
+
 Usage:
-  python3 polish.py export.mp4 -o final.mp4 [--cover cover.png] [--speed 1.2|body|hook]
+  python3 polish.py export.mp4 -o final.mp4 [--cover cover.png] [--speed 1.2|body|hook] [--platform youtube]
 """
 import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
 
 import argparse
+import math
 import shutil
 import tempfile
 
@@ -41,13 +49,32 @@ def probe(path):
     return info
 
 
-def venc_args(info, args):
+def _bps(v):
+    """"16M" / "800k" / 16000000 -> bps (int)."""
+    v = str(v).strip()
+    mul = {"k": 1e3, "m": 1e6, "g": 1e9}.get(v[-1:].lower(), 1)
+    return int(float(v.rstrip("kKmMgG")) * mul)
+
+
+def venc_args(info, args, prof=None):
+    """Video encoder args. Without a platform profile: unchanged platform-neutral behaviour (source-bitrate
+    matching, or CRF). With one (single --platform target): the same modes, capped by profile.encode -
+    bitrate mode targets min(source, profile maxrate) with maxrate <= the cap; CRF mode uses --crf, else the
+    profile crf, plus the profile maxrate/bufsize as a VBV cap."""
+    enc = dict(prof.encode) if prof else {}
     if args.crf is not None or not info["vbr"]:
-        crf = args.crf if args.crf is not None else persona().get("export", {}).get("crf", 18)
+        crf = args.crf if args.crf is not None else enc.get("crf", persona().get("export", {}).get("crf", 18))
         q = ["-crf", str(crf)]
+        if enc.get("maxrate"):
+            q += ["-maxrate", str(_bps(enc["maxrate"])), "-bufsize", str(_bps(enc.get("bufsize") or enc["maxrate"]))]
     else:
-        br = info["vbr"] if args.bitrate == "match" else int(float(args.bitrate.rstrip("Mm")) * 1e6)
-        q = ["-b:v", str(br), "-maxrate", str(int(br * 1.15)), "-bufsize", str(br * 2)]
+        br = info["vbr"] if args.bitrate == "match" else (int(float(args.bitrate) * 1e6) if
+                                                          args.bitrate.replace(".", "").isdigit() else _bps(args.bitrate))
+        mr = int(br * 1.15)
+        if enc.get("maxrate"):
+            cap = _bps(enc["maxrate"])
+            br, mr = min(br, cap), min(mr, cap)
+        q = ["-b:v", str(br), "-maxrate", str(mr), "-bufsize", str(br * 2)]
     return ["-c:v", "libx264", "-preset", args.preset, *q, "-pix_fmt", "yuv420p", *media.BT709]
 
 
@@ -73,7 +100,7 @@ def step_cover(src, cover, out, info, args):
     cmd = ["ffmpeg", "-y", "-loop", "1", "-t", t, "-i", cover, "-i", src,
            "-filter_complex", fc, "-map", "[v]"]
     cmd += (["-map", "1:a", "-c:a", "copy"] if info["has_audio"] else [])
-    run(cmd + venc_args(info, args) + [out])
+    run(cmd + venc_args(info, args, args.prof) + [out])
 
 
 def step_speed(src, out, s, info, args):
@@ -81,21 +108,21 @@ def step_speed(src, out, s, info, args):
     cmd = ["ffmpeg", "-y", "-i", src, "-filter_complex", fc, "-map", "[v]"]
     # keep audio lossless-ish until loudnorm; PCM in MOV avoids a lossy generation
     cmd += (["-map", "[a]", "-c:a", "pcm_s24le"] if info["has_audio"] else [])
-    run(cmd + venc_args(info, args) + [out])
+    run(cmd + venc_args(info, args, args.prof) + [out])
 
 
 def step_loudness(src, out, args, lufs):
     """Two-pass linear loudnorm (vstudio.audio.loudnorm_2pass): 48 kHz stereo AAC, video stream-copied."""
     if args.skip_if_close:
-        m = audio.measure_loudness(str(src), lufs, args.tp, args.lra)
-        if abs(m["input_i"] - lufs) <= 1.0 and m["input_tp"] <= args.tp + 0.5:
+        m = audio.measure_loudness(str(src), lufs, args.tp_eff, args.lra)
+        if abs(m["input_i"] - lufs) <= 1.0 and m["input_tp"] <= args.tp_eff + 0.5:
             print(f"  measured: I={m['input_i']} LUFS  TP={m['input_tp']} dBTP - within 1 LU of target; "
                   "encoding audio as AAC without gain change")
             ab = persona().get("export", {}).get("audio_bitrate", "192k")
             run(["ffmpeg", "-y", "-i", src, "-map", "0:v", "-map", "0:a", "-c:v", "copy",
                  "-af", "aresample=48000", "-c:a", "aac", "-b:a", ab, out])
             return
-    m = audio.loudnorm_2pass(str(src), str(out), lufs=lufs, tp=args.tp, lra=args.lra)
+    m = audio.loudnorm_2pass(str(src), str(out), lufs=lufs, tp=args.tp_eff, lra=args.lra)
     print(f"  measured: I={m['input_i']} LUFS  TP={m['input_tp']} dBTP  LRA={m['input_lra']}")
 
 
@@ -107,8 +134,9 @@ def main():
     p.add_argument("--cover-sec", default="1.0", help="seconds of picture the cover replaces (default 1.0)")
     p.add_argument("--cover-fit", choices=["fill", "fit"], default="fill", help="crop-to-fill or letterbox")
     p.add_argument("--speed", help="number (1.2) or a persona speed key (body, hook, fast_body...). Default 1.0")
-    p.add_argument("--lufs", type=float, help="target integrated loudness (default persona audio.loudness_lufs)")
-    p.add_argument("--tp", type=float, default=-1.5, help="true-peak ceiling dBTP (default -1.5)")
+    p.add_argument("--lufs", type=float, help="target integrated loudness (default persona audio.loudness_lufs, "
+                                              "or the single --platform profile's)")
+    p.add_argument("--tp", type=float, help="true-peak ceiling dBTP (default -1.5, or the --platform profile's)")
     p.add_argument("--lra", type=float, default=11, help="loudness range target (default 11, spoken word)")
     p.add_argument("--no-loudnorm", action="store_true")
     p.add_argument("--skip-if-close", action="store_true", help="leave gain alone if already within 1 LU")
@@ -117,13 +145,42 @@ def main():
     p.add_argument("--preset", default="slow")
     p.add_argument("--keep", metavar="DIR", help="keep intermediates (01_cover.mp4, 02_speed.mov, 03_loud.mp4) here")
     p.add_argument("--check", action="store_true", help="after writing, dump first frame next to the output")
+    g = p.add_argument_group("platforms (vstudio.platform)")
+    g.add_argument("--platform", metavar="SPEC",
+                   help="target name[:orientation] (xiaohongshu:vertical, douyin, youtube, youtube-shorts, "
+                        "bilibili:horizontal...) or a comma list for multi-platform export. Default: none "
+                        "(platform-neutral polish)")
+    g.add_argument("--out-dir", default="exports", help="multi-target: per-platform files + manifest.json (default exports/)")
+    g.add_argument("--cues", help="multi-target: cues.json or .srt burned per platform by vstudio.export "
+                                  "(the master must be caption-free)")
+    g.add_argument("--reframe-mode", default="face", choices=["face", "center", "pad-blur", "letterbox"],
+                   help="multi-target: vstudio.export reframe mode when the aspect changes (default face)")
     args = p.parse_args()
+
+    targets = []
+    if args.platform:
+        from vstudio import platform as P
+        try:
+            targets = P.parse_targets(args.platform)
+        except KeyError as e:
+            raise SystemExit(f"--platform {args.platform!r}: {e}. Known: {', '.join(P.list_profiles())}")
+    multi = len(targets) > 1
+    args.prof = targets[0] if len(targets) == 1 else None
+    if (args.cues or args.out_dir != "exports") and not multi:
+        print("  note: --out-dir/--cues only apply to a multi-target --platform list; ignored")
 
     try:
         media.ffmpeg_bin(); media.ffprobe_bin()
     except media.FFmpegError as e:
         raise SystemExit(str(e))
-    lufs = args.lufs if args.lufs is not None else float(persona().get("audio", {}).get("loudness_lufs", -14))
+    prof = args.prof
+    if args.lufs is not None:
+        lufs = args.lufs
+    elif prof:
+        lufs = float(prof.loudness["lufs"])
+    else:
+        lufs = float(persona().get("audio", {}).get("loudness_lufs", -14))
+    args.tp_eff = args.tp if args.tp is not None else (float(prof.loudness["tp"]) if prof else -1.5)
     speed = resolve_speed(args.speed)
     cap = float(persona().get("speed", {}).get("cjk_max_intelligible", 1.4))
     if speed > cap:
@@ -132,6 +189,22 @@ def main():
     info = probe(args.src)
     print(f"source: {info['w']}x{info['h']} @ {float(info['fps']):.3f} fps, {info['vbr'] / 1e6:.1f} Mbps, "
           f"{info['duration']:.2f}s, audio={'yes' if info['has_audio'] else 'no'}")
+
+    if prof:
+        print(f"platform: {prof.key} ({prof.label}) {prof.w}x{prof.h}, {lufs} LUFS / {args.tp_eff} dBTP, "
+              f"encode {prof.encode}")
+        if abs(math.log((info["w"] / info["h"]) / (prof.w / prof.h))) > 0.01:
+            print(f"  warning: source {info['w']}x{info['h']} is not the {prof.key} canvas {prof.w}x{prof.h} "
+                  f"({prof.aspect}); this single-target path does NOT reframe. For a reframed per-platform file use "
+                  f"the multi-target path (--platform {prof.key},<another>) or "
+                  f"`python -m vstudio.export {args.out} --platforms {prof.key}`")
+        fmax = prof.fps.get("max")
+        if fmax and float(info["fps"]) > fmax + 0.5:
+            print(f"  warning: source {float(info['fps']):.2f} fps > {prof.key} max {fmax} fps; the platform will "
+                  "resample (vstudio.export converts to the profile default)")
+    if multi:
+        print(f"multi-platform: {', '.join(t.key for t in targets)} -> {args.out_dir}/ "
+              f"(master polished at {lufs} LUFS first)")
 
     work = pathlib.Path(args.keep) if args.keep else pathlib.Path(tempfile.mkdtemp(prefix="polish_"))
     work.mkdir(parents=True, exist_ok=True)
@@ -156,12 +229,44 @@ def main():
     print(f"\ndone: {args.out}\n  {fin['w']}x{fin['h']} @ {float(fin['fps']):.3f} fps, {fin['vbr'] / 1e6:.1f} Mbps, "
           f"{fin['duration']:.2f}s (expected ~{info['duration'] / speed:.2f}s)")
     if fin["has_audio"]:
-        m = audio.measure_loudness(str(args.out), lufs, args.tp, args.lra)
+        m = audio.measure_loudness(str(args.out), lufs, args.tp_eff, args.lra)
         print(f"  loudness: I={m['input_i']} LUFS  TP={m['input_tp']} dBTP")
     if args.check:
         png = pathlib.Path(args.out).with_suffix(".first.png")
         media.grab_frame(str(args.out), 0.3, str(png))
         print(f"  first frame: {png}")
+    if prof:
+        platform_single(prof, args, fin)
+    elif multi:
+        platform_multi(targets, args)
+
+
+def platform_single(prof, args, fin):
+    """Length check + platform-sized cover (<out stem>.cover.jpg) for one --platform target."""
+    from vstudio import export as X
+    from vstudio import platform as P
+    for w in P.check_length(prof, fin["duration"]):
+        print(f"  warning: {w}")
+    cover = str(pathlib.Path(args.out).with_suffix("")) + ".cover.jpg"
+    path, notes = X.make_cover(prof, [args.cover] if args.cover else None, str(args.out), cover)
+    cw, ch = P.cover_size(prof)
+    print(f"  cover: {path} ({cw}x{ch}, {prof.key})")
+    for n in notes:
+        print(f"    note: {n}")
+
+
+def platform_multi(targets, args):
+    """Hand the polished master to vstudio.export: one file + cover per platform and manifest.json."""
+    from vstudio import export as X
+    print(f"\n>>> export {len(targets)} targets -> {args.out_dir}/")
+    man = X.export(str(args.out), targets, args.out_dir, cues=args.cues,
+                   covers=[args.cover] if args.cover else None, mode=args.reframe_mode, preset=args.preset)
+    for e in man["exports"]:
+        print(f"  {e['file']:32s} {e['w']}x{e['h']} {e['duration']:.1f}s "
+              f"{(e['loudness'] or {}).get('i', '-')} LUFS  cover={e['cover']}  reframe={e['reframe']['mode_used']}")
+    for w in man["warnings"]:
+        print(f"  warning: {w}")
+    print(f"  manifest: {pathlib.Path(args.out_dir) / 'manifest.json'}")
 
 
 if __name__ == "__main__":

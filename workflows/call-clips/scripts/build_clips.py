@@ -15,6 +15,13 @@ used for subtitles, panels, node cards and chapters.
 Everything in clips.json is authored in SOURCE seconds; this script is the only
 place that converts to final time.
 
+Platform (wave B): ``--platform`` / clips.json ``"platform"`` (xiaohongshu, douyin, youtube-shorts,
+youtube, bilibili ...) is passed to the renderer (canvas, safe box, caption box) and the clip length is
+checked against that platform. ``name_mask`` (blur | cover | off | {mode, box, tiles, extra}) hides the
+call app's name labels. ``cut_profile`` (classic | word) picks the auto-trim defaults (cut_profiles.py).
+``--clean-master`` renders a caption-free out/<id>.clean.mp4 + work/<id>.cues.json for
+``python -m vstudio.export``.
+
 Run from the project (video) directory; it writes work/ and out/ there:
   python3 $VSTUDIO/workflows/call-clips/scripts/build_clips.py --config clips.json [--only <id>]
 """
@@ -25,9 +32,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 WORKFLOW = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 from build_subs import fix
+import cut_profiles
+import layout
 from vstudio import audio, media
+from vstudio import platform as P
 from vstudio.config import persona
-from vstudio.cut import Audio, find_cuts, split_window, xfade_assemble
+from vstudio.cut import Audio, split_window, xfade_assemble
 
 PY = sys.executable
 _CC = persona().get("call_clips") or {}
@@ -199,21 +209,43 @@ def main():
     ap.add_argument("--no-mask", action="store_true",
                     help="nobody is hidden (two-person renderers only): skip tracking and "
                          "verification and render both faces as recorded")
-    ap.add_argument("--sub-max-chars", type=int, default=18)
+    ap.add_argument("--sub-max-chars", type=int, default=None,
+                    help="merge subtitle segments up to this many chars (default 18; with a platform, "
+                         "the profile's caption max_chars_zh, e.g. 14)")
     ap.add_argument("--reuse", action="store_true",
                     help="skip cutting/dissolving/tracking when work files exist; "
                          "for restyling the frame without re-encoding the timeline")
     ap.add_argument("--subs-only", action="store_true",
                     help="stop after subs/title json, e.g. to add an English track before rendering")
+    ap.add_argument("--platform", default=None,
+                    help="platform profile for the renderer (canvas, safe/caption boxes) and the length "
+                         "check, e.g. xiaohongshu, douyin, youtube-shorts, youtube; overrides clips.json "
+                         "'platform'. 'legacy' = the fixed pre-platform layouts")
+    ap.add_argument("--cut-profile", default=None, choices=list(cut_profiles.PROFILES),
+                    help="auto-trim defaults: classic (pause>0.75s keep 0.30s; editor pass >0.50s keep "
+                         "0.25s; edges snap back to the quietest frame) or word (vstudio.cut). Default: "
+                         "clips.json cut_profile, persona call_clips.cut_profile, else classic")
+    ap.add_argument("--clean-master", action="store_true",
+                    help="render caption-free out/<id>.clean.mp4 (+ work/<id>.cues.json) for vstudio.export")
     args = ap.parse_args()
     if args.no_mask:
         args.no_track = True
 
     global MAX_CHARS, TERM_FIX
-    MAX_CHARS = args.sub_max_chars
 
     C = json.load(open(args.config, encoding="utf-8"))
     TERM_FIX = C.get("term_fix")
+    cut_profile = args.cut_profile or C.get("cut_profile") or cut_profiles.default_profile()
+    platform = args.platform or C.get("platform")
+    family = "horizontal" if "landscape" in os.path.basename(args.renderer) else "vertical"
+    if platform is None and os.path.basename(args.renderer) == "render_vertical.py":
+        platform = "default"            # render_vertical's own default: the persona platform, safe zone on
+    prof = layout.resolve(platform, family) if platform else None
+    if prof is not None:
+        print(f"platform {prof.key} {prof.w}x{prof.h}  safe={P.safe_box(prof)}  caption={P.caption_box(prof)}")
+    MAX_CHARS = args.sub_max_chars or (int(prof.caption.get("max_chars_zh", 18)) if prof is not None else 18)
+    nm = C.get("name_mask")
+    nm = layout.parse_name_mask(nm) if nm is not None else None
     args.renderer = resolve(args.renderer)
     args.sticker = resolve(args.sticker)
     for g in C.get("guests") or []:
@@ -253,7 +285,7 @@ def main():
                 kinds.append("fade" if t == "~" else "card" if t else "trim")
             parts = [[lo, hi]]
             if C.get("auto_trim"):
-                cuts = find_cuts(AUDIO, SEGS, lo, hi, C.get("extra_cuts"))
+                cuts = cut_profiles.find_cuts(AUDIO, SEGS, lo, hi, C.get("extra_cuts"), cut_profile)
                 parts = split_window(lo, hi, cuts) or [[lo, hi]]
                 trimmed = sum(b - a for a, b, _ in cuts)
                 if cuts:
@@ -292,6 +324,9 @@ def main():
         total = tm.duration
         print(f"  {n_hooks} hooks -> body at {hook_end:.2f}s, "
               f"{len(windows)} windows, total {total:.1f}s")
+        if prof is not None:
+            for w in P.check_length(prof, total):
+                print(f"  WARN {w}")
 
         def src_to_final(t):
             """Source seconds -> (final seconds, piece index) through the body
@@ -354,6 +389,10 @@ def main():
             if miss:
                 print(f"  WARN {miss} lines have no English")
         json.dump(subs, open(f"work/{cid}.subs.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+        # the same lines as vstudio.subs.Cue dicts, for re-burning per platform with vstudio.export
+        json.dump([dict(start=round(s["start"], 3), end=round(s["end"], 3), text=s.get("zh") or s["text"],
+                        **({"alt": s["en"]} if s.get("en") else {})) for s in subs],
+                  open(f"work/{cid}.cues.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
         print(f"  {len(subs)} subtitle lines")
 
         tj = dict(c)
@@ -441,6 +480,15 @@ def main():
                       "--title-json", f"work/{cid}.title.json",
                       "--guest-region", guest, "--host-region", host,
                       "--out", f"work/{cid}.novol.mp4"]
+        if platform:
+            render_cmd += ["--platform", platform]
+        if nm is not None:
+            render_cmd += ["--name-mask", nm["mode"], "--name-box", ",".join(str(v) for v in nm["box"]),
+                           "--name-tiles", nm["tiles"]]
+            if nm.get("extra"):
+                render_cmd += ["--name-extra", ";".join(",".join(str(int(v)) for v in r) for r in nm["extra"])]
+        if args.clean_master:
+            render_cmd += ["--no-subs"]
         if guests:
             render_cmd += ["--guests-json", f"work/{cid}.guests.json"]
         if C.get("track_host"):
@@ -455,9 +503,16 @@ def main():
         # two-pass loudness to the persona's delivery target (-14 LUFS default),
         # then bt709 written into the h264 VUI itself (container flags alone leave
         # iOS guessing and shifting the colours) + faststart, all stream copy
-        audio.loudnorm_2pass(f"work/{cid}.novol.mp4", f"work/{cid}.ln.mp4")
-        media.retag_bt709(f"work/{cid}.ln.mp4", f"out/{cid}.mp4")
-        print(f"  --> out/{cid}.mp4")
+        lufs = tp = None
+        if prof is not None:
+            lufs, tp = prof.loudness["lufs"], prof.loudness["tp"]
+        audio.loudnorm_2pass(f"work/{cid}.novol.mp4", f"work/{cid}.ln.mp4", lufs=lufs, tp=tp if tp is not None else -1.5)
+        final = f"out/{cid}.clean.mp4" if args.clean_master else f"out/{cid}.mp4"
+        media.retag_bt709(f"work/{cid}.ln.mp4", final)
+        print(f"  --> {final}")
+        if args.clean_master:
+            print(f"  multi-platform: python3 -m vstudio.export {final} --platforms xiaohongshu,douyin,youtube-shorts "
+                  f"--cues work/{cid}.cues.json --out exports/{cid}")
 
 
 if __name__ == "__main__":

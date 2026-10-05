@@ -6,6 +6,9 @@ fade-in, idle face) and should become the cover, the audio is too quiet (exports
 pacing wants a small pitch-preserved speed bump, and the file should carry correct colour tags and `faststart`.
 **Inputs:** `export.mp4` (+ optional `cover.png` from `workflows/cover`). **Outputs:** `final.mp4` at the source
 resolution and frame rate, source-matched bitrate, `persona.audio.loudness_lufs` integrated loudness, bt709 tags.
+With `--platform <name>`: the same, tuned to that platform's profile + `final.cover.jpg` at the platform cover size;
+with `--platform a,b,...`: the polished master plus one file + cover per platform and `exports/manifest.json`
+(see [Platforms](#platforms)).
 
 Run from the project (video) folder. `$VSTUDIO` = repo root.
 
@@ -16,21 +19,65 @@ Run from the project (video) folder. `$VSTUDIO` = repo root.
    ffprobe -v error -show_entries stream=codec_name,width,height,bit_rate,r_frame_rate -show_entries format=duration -of default=nw=1 export.mp4
    ffmpeg -y -ss 1 -i export.mp4 -frames:v 1 /tmp/check.png   # ground-truth frame size (ffprobe metadata has lied before)
    ```
-2. **One command does the rest:**
+2. **Decide the speed WITH the user (short-form parity).** Default speed is 1.0, but for **shorts** (vertical
+   9:16 / 3:4 and under ~3 min, or any `--platform` of douyin / tiktok / youtube-shorts / xiaohongshu) **propose
+   1.2×** - or persona `speed.body` if the creator has set one - and **ask before applying**, e.g. "This is a
+   2:10 vertical talking-head; speed it up to 1.2× (pitch kept, ~1:48)? 1.0 / 1.1 / 1.2?". The original
+   short-form recipe ran everything at 1.2×; we keep that as the suggestion, not a silent default. Long
+   horizontal videos stay at 1.0 unless asked. Anything above persona `speed.cjk_max_intelligible` (1.4)
+   prints a warning: dense Chinese speech gets hard to follow - say so if the user asks for more.
+3. **One command does the rest:**
    ```bash
    python3 $VSTUDIO/workflows/polish/scripts/polish.py export.mp4 -o final.mp4 \
-       --cover cover.png --speed body --keep work/polish --check
+       --cover cover.png --speed 1.2 --keep work/polish --check            # add --platform douyin etc.
    ```
    - `--cover` replaces the first `--cover-sec` (1.0) seconds of *picture*; audio runs uninterrupted, total length
      unchanged. Cover is fitted to the source frame (`--cover-fit fill|fit`).
-   - `--speed` takes a number (`1.2`) or a persona key (`hook`, `body`, `fast_body`...). Omit for 1.0.
-   - Loudness target defaults to `persona.audio.loudness_lufs` (-14); override with `--lufs`. TP -1.5 dBTP, LRA 11.
+   - `--speed` takes a number (`1.2`) or a persona key (`hook`, `body`, `fast_body`...). Omit for 1.0 (see step 2).
+   - Loudness target defaults to `persona.audio.loudness_lufs` (-14), or the `--platform` profile's; override
+     with `--lufs` / `--tp`. TP -1.5 dBTP, LRA 11.
    - `--keep DIR` keeps `01_cover.mp4`, `02_speed.mov`, `03_loud.mp4` for stage-by-stage debugging.
    - `--check` writes `final.first.png` so you can eyeball that frame 0 is the cover.
-3. **Verify** (the script prints these; re-run any time):
+4. **Verify** (the script prints these; re-run any time):
    ```bash
    ffmpeg -i final.mp4 -af loudnorm=I=-14:print_format=summary -f null - 2>&1 | grep -E "Input Integrated|Input True Peak"
    ```
+
+## Platforms
+
+Profiles live in `lib/vstudio/platform.py` (numbers and sources: `references/PLATFORMS.md`; persona overrides under
+`platforms.<name>`). `--platform` takes `name[:orientation]` - `xiaohongshu:vertical` (1080x1440), `xiaohongshu:full`,
+`douyin`, `tiktok`, `youtube`, `youtube-shorts`, `bilibili[:horizontal|vertical]` - or a comma list.
+**No `--platform` = the platform-neutral polish above, byte-for-byte the same commands as before.**
+
+| | no `--platform` | one target (`--platform youtube`) | several (`--platform douyin,xiaohongshu:vertical`) |
+|---|---|---|---|
+| loudness | persona `audio.loudness_lufs`, -1.5 dBTP | profile `loudness` (LUFS/TP); `--lufs`/`--tp` still win | master at the default; each export re-normalised to its profile |
+| video encode | match source bitrate (or `--crf`) | same, **capped** at profile `encode.maxrate` (bitrate mode: `-b:v min(src, cap)`, maxrate <= cap; CRF mode: `--crf` else profile `crf`, + profile maxrate/bufsize) | master as before; exports use profile CRF + maxrate (`vstudio.export`) |
+| canvas | source | source - **not reframed**; a warning if the aspect differs | reframed per profile (`--reframe-mode face`, pad-blur fallback) |
+| length | - | `platform.check_length` warnings (max / min / sweet spot) | per export, in `manifest.json` |
+| cover | first-second replacement only | + `<out stem>.cover.jpg` at `platform.cover_size` (from `--cover`, else a frame), `.feed.jpg` preview where the feed crops | + `<platform>-<orientation>.cover.jpg` per target |
+| fps | source | source; warning above the profile max | converted to the profile default above max |
+
+```bash
+# one platform: polish + platform-sized cover + length check
+python3 $VSTUDIO/workflows/polish/scripts/polish.py export.mp4 -o final.mp4 --cover cover.png --platform youtube-shorts
+
+# several platforms: polish the master once, then one file + cover per platform + exports/manifest.json
+python3 $VSTUDIO/workflows/polish/scripts/polish.py export.mp4 -o master.mp4 --cover cover.png \
+    --platform douyin,xiaohongshu:vertical,youtube --out-dir exports [--cues cues.json]
+
+# same export step on an already-polished master
+PYTHONPATH=$VSTUDIO/lib python3 -m vstudio.export master.mp4 --platforms douyin,xiaohongshu:vertical \
+    --out exports --cover cover.png [--cover cover-16x9.png] [--cues cues.json] [--title "..."]
+```
+- Captions: an export from an NLE usually has captions burned in; those get cropped/covered on other canvases. For
+  several platforms, export a **caption-free** master from the editor and pass `--cues` (cues.json / SRT) so each
+  platform gets captions sized for its own caption box.
+- Single target with a different aspect (e.g. a vertical export with `--platform youtube`): polish does NOT
+  reframe silently. Use the multi-target form or `python -m vstudio.export` to get a reframed file.
+- Pass several `--cover` images to `vstudio.export` (e.g. 3:4 and 16:9); each platform takes the closest aspect.
+- Check `manifest.json` `warnings` (loudness, length, reframe fallback, captions that do not fit) before upload.
 
 ## Rules & gotchas (from real runs)
 
@@ -60,3 +107,5 @@ Run from the project (video) folder. `$VSTUDIO` = repo root.
 - [ ] Integrated loudness within ±1 LU of target, true peak ≤ -1.0 dBTP
 - [ ] Frame 0 is the cover, not black
 - [ ] Duration ≈ source ÷ speed (±0.5 s)
+- [ ] Shorts: 1.2× (or persona `speed.body`) was proposed and the user's answer applied
+- [ ] With `--platform`: no length warnings you didn't mention; cover jpg at the platform size; manifest warnings read

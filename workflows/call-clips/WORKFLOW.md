@@ -17,10 +17,13 @@ Layouts (`--renderer`):
 
 | renderer | canvas | people | notes |
 |---|---|---|---|
-| `render_vertical.py` (default) | 1080×1920 | 2 tiles stacked | 1 masked guest, or `--no-mask` |
-| `render_trio.py` | 1080×1920 | 3 tiles | 2 masked guests on top row, host below; platform safe zone; quote cards |
-| `render_landscape.py` | 1920×1080 | 2 side by side | bilingual subs, `--crop-w`, `--no-mask` |
-| `render_landscape_trio.py` | 1920×1080 | 3 side by side | 2 masked guests, all tiles follow a 6s-smoothed face track |
+| `render_vertical.py` (default) | platform 9:16 (default persona platform, 1080×1920) | 2 tiles stacked | 1 masked guest, or `--no-mask`; safe zone on by default |
+| `render_trio.py` | 1080×1920 or `--platform` | 3 tiles | 2 masked guests on top row, host below; quote cards |
+| `render_landscape.py` | 1920×1080 or `--platform` | 2 side by side | bilingual subs, `--crop-w`, `--no-mask` |
+| `render_landscape_trio.py` | 1920×1080 or `--platform` | 3 side by side | 2 masked guests, all tiles follow a 6s-smoothed face track |
+
+Every renderer blurs the call app's **name labels** (bottom-left of each tile) by default; see
+"Name labels" below.
 
 Scripts live in `$VSTUDIO/workflows/call-clips/scripts/` (`$VSTUDIO` = repo root). Run every
 command from the **project dir** (your video folder); outputs go to `work/` and `out/` there.
@@ -102,13 +105,21 @@ Copy `examples/clips.example.json` (2-person), `clips_trio.example.json` (3-pers
 
 ### 7. Read the auto-trim before building (optional, recommended)
 ```bash
-python3 $S/find_disfluencies.py work/audio16k.wav work/audio16k.json --windows 12-96.5,104.9-180.2
+python3 $S/find_disfluencies.py work/audio16k.wav work/audio16k.json --windows 12-96.5,104.9-180.2 [--profile word]
 ```
-With `"auto_trim": true` every window is split at pauses > 0.6s, restarts, back-to-back
-repeats and filler-only segments (~3% of body time). For a higher bar, run the **editor pass**
-(`references/craft-notes.md` → Editor pass): `transcript_tools.py editor` dumps word-onset
-chunks, reviewers mark `[from, to, why]`, merge into `work/editor_cuts.json`, point
-`"extra_cuts"` at it (~10% total). Review the longest editor cuts before applying.
+With `"auto_trim": true` every window is split at pauses, restarts, back-to-back repeats and
+filler-only segments (~3% of body time). Two **cut profiles** (`scripts/cut_profiles.py`;
+clips.json `"cut_profile"`, `--cut-profile`, persona `call_clips.cut_profile`):
+
+| profile | pauses | with an editor pass | cut edges |
+|---|---|---|---|
+| `classic` (**default**, the original editor defaults) | > 0.75 s → keep 0.30 s | > 0.50 s → keep 0.25 s | snap **backward** to the quietest 20 ms frame (≤ 0.15 s before the edge) |
+| `word` (phase-2 `vstudio.cut.find_cuts`) | > 0.60 s → keep 0.36 s | same | quietest frame between the neighbouring words' midpoints |
+
+For a higher bar, run the **editor pass** (`references/craft-notes.md` → Editor pass):
+`transcript_tools.py editor` dumps word-onset chunks, reviewers mark `[from, to, why]`, merge
+into `work/editor_cuts.json`, point `"extra_cuts"` at it (~10% total). Review the longest
+editor cuts before applying.
 
 ### 8. Build
 ```bash
@@ -139,9 +150,9 @@ node cards, panels mapped source→final → render → two-pass loudnorm to
 
 ### 10. Covers, thumbnails, captions
 ```bash
-python3 $S/make_cover.py out/<id>.mp4 --title-json work/<id>.title.json --at <first_panel+4> --out out/<id>.cover.jpg
-python3 $S/make_thumb.py recordings/my-call.mp4 --title-json work/<id>.title.json --track work/<id>.track.json --sticker $S/../assets/cat.png --at 300 --out out/thumb.jpg
-python3 $S/make_thumb_trio.py out/YT.mp4 --title-json work/YT.title.json --at 900 --out out/thumb.jpg
+python3 $S/make_cover.py out/<id>.mp4 --title-json work/<id>.title.json --at <first_panel+4> --out out/<id>.cover.jpg [--platform xiaohongshu]
+python3 $S/make_thumb.py recordings/my-call.mp4 --title-json work/<id>.title.json --track work/<id>.track.json --sticker $S/../assets/cat.png --at 300 --out out/thumb.jpg [--platform bilibili]
+python3 $S/make_thumb_trio.py out/YT.mp4 --title-json work/YT.title.json --at 900 --out out/thumb.jpg [--platform youtube]
 python3 $S/export_srt.py work/YT.subs.json --prefix out/YT        # .zh / .en / .bilingual .srt
 ```
 Each clip is published on its own: no "01 / 04" index, no caption referring to another clip.
@@ -157,6 +168,52 @@ python3 $S/build_clips.py --config clips_yt.json --renderer render_landscape_tri
 ```
 English is keyed by the final Chinese text, so re-cuts never misalign it.
 
+## Platforms
+
+`--platform` on `build_clips.py` (or `"platform"` in clips.json) and on every renderer:
+`xiaohongshu`, `douyin`, `tiktok`, `youtube-shorts`, `bilibili:vertical` for the vertical renderers
+(a bare name picks the platform's 9:16 canvas; `xiaohongshu:vertical` = the 3:4 1080×1440 feed
+canvas), `youtube`, `bilibili`, `xiaohongshu:horizontal`, `douyin:horizontal` for the landscape ones.
+Profiles live in `lib/vstudio/platform.py` (`references/PLATFORMS.md`; override in the persona).
+
+| what | from the profile |
+|---|---|
+| canvas | `profile.w × h` |
+| headline, hook badge, label chips, 记笔记 panels, node cards | inside `platform.safe_box` (top bar, bottom description, side buttons); panels/cards narrowed to the safe width |
+| tiles | between the headline and the caption box; rows cut in height around the face when space is short |
+| captions | `platform.caption_box`, size fitted with `fit_text_size` (shrunk to the box height), lines merged up to `caption.max_chars_zh` (14) unless `--sub-max-chars` |
+| loudness | `profile.loudness` (LUFS / true peak) in the final two-pass loudnorm |
+| length | `platform.check_length` warning on each clip's total |
+| cover / thumbnail | `make_cover.py --platform` → `cover_size` (小红书 3:4 1080×1440, headline in `cover_title_safe`); `make_thumb*.py --platform` → cover-cropped to e.g. B站 1146×717 |
+
+Defaults: `render_vertical.py` uses persona `platforms.default` (the old full-bleed layout ignored
+the phone UI: title at 150, subtitles at 1654, both under the app chrome; `--platform legacy`
+restores it). `render_trio.py` and the landscape renderers keep their fixed layouts unless given a
+platform (`render_trio`'s was already hand-fitted to 小红书 9:16). Preview any layout with
+`--preview <sec> --show-safe` (green = safe box, yellow = caption box, red = button column).
+
+Several platforms: either re-render per platform (`build_clips.py ... --reuse --platform douyin`,
+~30 s each, no re-tracking), or render a caption-free master and let `vstudio.export` re-burn the
+captions per target:
+```bash
+python3 $S/build_clips.py --config clips.json --clean-master          # out/<id>.clean.mp4 + work/<id>.cues.json
+python3 -m vstudio.export out/<id>.clean.mp4 --platforms xiaohongshu,douyin,youtube-shorts \
+    --cues work/<id>.cues.json --cover out/<id>.cover.jpg --out exports/<id>
+```
+The clean master still carries the composed layout of its own canvas, so prefer per-platform
+re-renders when the targets' caption bands differ a lot.
+
+## Name labels
+
+Call apps stamp each participant's real name at a tile's bottom-left; it survives the crop and
+the label chip does not always cover it (real-media QA). `name_mask` in clips.json (or
+`--name-mask/--name-box/--name-tiles/--name-extra` on any renderer and `make_thumb.py`):
+`"blur"` (default: 1/16 downscale + blur, no glyph survives), `"cover"` (flat median colour),
+`"off"`, or `{"mode": "blur", "box": [0, 0.90, 0.40, 0.10], "tiles": "all" | "guests",
+"extra": [[x, y, w, h]]}`: `box` is the label rect as fractions of each tile, `extra` adds
+source-pixel rects (a label in another corner, a speaker-view name). It runs on source pixels
+before any crop. Check one preview frame zoomed on each tile's corner.
+
 ## Stickers
 `assets/cat.png` and `assets/dog.png` are rendered from `assets/*_sticker.html` (in-house SVG,
 same head ellipse, so `--scale 2.40 --y-offset -0.031` fit both). `cat_avatar.html/png` is a
@@ -165,10 +222,12 @@ full-tile "camera off" avatar, checked by `verify_avatar.py`. New art: edit/writ
 scale/offset with a `verify_coverage.py` sweep (craft notes → Sticker sizing).
 
 ## Persona keys read
+`platforms.default` / `platforms.<name>.*` (canvas, safe/caption boxes, loudness, length, cover),
 `audio.loudness_lufs`, `brand.accent` / `brand.highlight` (note-panel header, badge, 记笔记 tag),
 `brand.panel_theme` (记笔记 panel theme, default notes-red), `subtitles.term_fixes` (literal
 heard → meant), `creator.language` (transcribe), `export.audio_bitrate`, and new
-`call_clips.*`: `body_speed`, `hook_speed`, `hook_gain_db`, `sticker`, `frame_accent`
+`call_clips.*`: `body_speed`, `hook_speed`, `hook_gain_db`, `sticker`, `cut_profile` (classic),
+`name_mask` (blur), `frame_accent`
 (default `#2DD4BF`), `labels.{hook_badge, hook_badge_landscape, node_eyebrow, note_tag, guest, host}`.
 
 ## Consent

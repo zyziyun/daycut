@@ -20,6 +20,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import layout
 from style import TEAL, YEL, WHITE, DIM, font, alpha_paste, frame_at
 from vstudio.draw import fit_font, text_width
 
@@ -65,7 +66,15 @@ def main():
     ap.add_argument("--host-region", default="640,180,640,360")
     ap.add_argument("--scale", type=float, default=2.40, help="same sticker geometry as the render")
     ap.add_argument("--y-offset", type=float, default=-0.031)
+    ap.add_argument("--platform", default=None,
+                    help="size the thumbnail for this profile's cover (youtube 1280x720, bilibili 1146x717 ...)")
+    ap.add_argument("--name-mask", default=None, choices=["blur", "cover", "off"],
+                    help="hide the call app's name labels in both tiles (default persona call_clips.name_mask, else blur)")
+    ap.add_argument("--name-box", default=None, help="label rect as tile fractions fx,fy,fw,fh")
     args = ap.parse_args()
+    prof = layout.cover_profile(args.platform, "horizontal")
+    nmask = layout.parse_name_mask({"mode": args.name_mask, "box": args.name_box}
+                                   if (args.name_mask or args.name_box) else None)
 
     meta = json.load(open(args.title_json))
     tb = meta["thumb"]
@@ -77,6 +86,8 @@ def main():
     fps = tr.get("fps") or cv2.VideoCapture(args.video).get(cv2.CAP_PROP_FPS) or 25.0
     j = min(int(args.at * fps), len(tr["cx"]) - 1)
     fr = frame_at(args.video, j / fps)
+    layout.mask_names(fr, layout.name_rects(nmask, [[int(v) for v in args.guest_region.split(",")]],
+                                            [[int(v) for v in args.host_region.split(",")]]), nmask["mode"])
     gcx, gcy, gw = tr["cx"][j], tr["cy"][j], tr["w"][j]
     st = Image.open(args.sticker).convert("RGBA")
     sw = max(24, int(round(gw * args.scale)))
@@ -144,6 +155,7 @@ def main():
         d.text((cx - text_width(label, fl) / 2, H - 50), label, font=fl, fill=WHITE)
 
     img.save(args.out, quality=95)
+    layout.fit_saved_cover(args.out, prof)
     print(f"-> {args.out}")
 
 

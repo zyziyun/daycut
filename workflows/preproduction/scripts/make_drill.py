@@ -26,6 +26,7 @@ import tempfile
 import numpy as np
 
 from vstudio import audio, tts
+from vstudio.config import persona
 
 SR = audio.SR                    # vstudio.tts writes 48 kHz mono; the drill is assembled at that rate
 
@@ -81,7 +82,7 @@ def main():
     ap.add_argument("-o", "--out", default="pronunciation_drill", help="output stem (writes .wav .m4a .md)")
     ap.add_argument("--script", help="locked script; warns about words/sentences not in it")
     ap.add_argument("--engine", choices=["auto", "kokoro", "edge", "openai"], default="auto")
-    ap.add_argument("--voice", help="voice id (default: persona tts.<engine>_voice or engine default)")
+    ap.add_argument("--voice", help="voice id (default: persona voice.en.tts.<engine>_voice, then tts.<engine>_voice, then engine default)")
     ap.add_argument("--model", help="kokoro HF repo or openai TTS model (default: vstudio.tts.DEFAULT_MODEL)")
     ap.add_argument("--slow", type=float, default=0.65, help="word speed (0.65 = every phoneme audible)")
     ap.add_argument("--normal", type=float, default=0.85, help="sentence speed (near-normal with breathing room)")
@@ -115,7 +116,8 @@ def main():
         engine = tts.pick_engine(a.engine)
     except RuntimeError as e:
         raise SystemExit(str(e))
-    voice = a.voice                              # None -> persona tts.<engine>_voice, else vstudio.tts default
+    # drills are English: --voice > persona voice.en.tts.<engine>_voice > tts.<engine>_voice > vstudio.tts default
+    voice = a.voice or (((persona().get("voice") or {}).get("en") or {}).get("tts") or {}).get(f"{engine}_voice")
     print(f"engine={engine} voice={voice or 'persona/engine default'}")
     intro = a.intro or f"Pronunciation drill. {len(items)} words. Repeat after each one."
     seq = [say(engine, intro, a.normal, voice, a.model), gap(a.gap_long)]

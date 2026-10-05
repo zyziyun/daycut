@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
-"""1080x1920 cover for one clip: black + accent, oversized headline, and a
-still from the clip itself so the thumbnail is not a dead black frame.
+"""Cover for one clip: black + accent, oversized headline, and a still from the
+clip itself so the thumbnail is not a dead black frame.
+
+Default: the original 1080x1920 design. ``--platform`` sizes it for that profile's cover
+(小红书 3:4 1080x1440, 抖音 / Shorts 1080x1920 ...): headline inside the cover's title-safe rect
+(and the feed crop), the clip's tile band (auto-detected) under it at its own aspect.
 
 Usage:
-  make_cover.py out/<id>.mp4 --title-json work/<id>.title.json --at 12 --out out/<id>.cover.jpg
+  make_cover.py out/<id>.mp4 --title-json work/<id>.title.json --at 12 --out out/<id>.cover.jpg [--platform xiaohongshu]
 """
 import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
 import argparse, json, os
@@ -13,6 +17,8 @@ from PIL import Image, ImageDraw
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from style import TEAL, DIM, WHITE, font, frame_at
+import layout
+from vstudio import platform as P
 from vstudio.draw import text_width
 
 W, H = 1080, 1920
@@ -24,11 +30,15 @@ def main():
     ap.add_argument("--title-json", required=True)
     ap.add_argument("--at", type=float, default=6.0)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--platform", default=None, help="cover profile, e.g. xiaohongshu, douyin, youtube-shorts")
     args = ap.parse_args()
 
     meta = json.load(open(args.title_json))
 
     fr = frame_at(args.clip, args.at)
+    prof = layout.cover_profile(args.platform, "vertical")
+    if prof is not None:
+        return platform_cover(fr, meta, prof, args.out)
 
     img = Image.new("RGB", (W, H), (0, 0, 0))
 
@@ -71,6 +81,60 @@ def main():
 
     img.save(args.out, quality=95)
     print(f"-> {args.out}")
+
+
+def tile_band(fr, max_gap=24):
+    """Rows of the clip frame that carry the tiles: the longest run where most of the row is
+    picture (headline and caption rows are mostly black); thin gaps between tile rows are bridged."""
+    lit = np.flatnonzero((fr.max(axis=2) > 24).mean(axis=1) > 0.3)
+    if not len(lit):
+        return 0, fr.shape[0]
+    runs, start = [], lit[0]
+    for p, q in zip(lit, lit[1:]):
+        if q - p > max_gap:
+            runs.append((start, p + 1)); start = q
+    runs.append((start, lit[-1] + 1))
+    return max(runs, key=lambda r: r[1] - r[0])
+
+
+def platform_cover(fr, meta, prof, out):
+    W, H = P.cover_size(prof)
+    x0, y0, x1, y1 = P.cover_title_safe(prof)
+    img = Image.new("RGB", (W, H), (0, 0, 0))
+    d = ImageDraw.Draw(img)
+    lines = meta["title"]
+    xl = max(72, x0 + 12)
+    size = 96 if max(sum(len(r[0]) for r in ln) for ln in lines) <= 9 else 82
+    while size > 48 and max(sum(text_width(r[0], font(size)) for r in ln) for ln in lines) > x1 - 12 - xl:
+        size -= 2
+    f_t = font(size)
+    y = meta.get("cover_title_y") or y0 + 40
+    for ln in lines:
+        x = xl
+        for txt, acc in ln:
+            d.text((x, y), txt, font=f_t, fill=TEAL if acc else WHITE)
+            x += text_width(txt, f_t)
+        y += int(f_t.size * 1.28)
+    if meta.get("accent"):
+        d.rectangle([xl, y + 34, xl + 110, y + 40], fill=TEAL)
+        d.text((xl, y + 70), meta["accent"], font=font(38), fill=DIM)
+        y += 130
+    b0, b1 = meta.get("cover_band") or tile_band(fr)
+    strip = Image.fromarray(cv2.cvtColor(fr[b0:b1], cv2.COLOR_BGR2RGB))
+    strip = strip.resize((W, max(1, int(strip.height * W / strip.width))), Image.LANCZOS)
+    sy = int(meta.get("cover_strip_y") or y + 40)
+    room = H - sy
+    if strip.height > room:                      # keep the top of the band (the masked guests' row)
+        strip = strip.crop((0, 0, W, room))
+    img.paste(strip, (0, sy))
+    px = np.array(img).astype(np.float32)
+    for k in range(min(160, strip.height)):
+        px[sy + k] *= k / 160.0
+    img = Image.fromarray(px.astype(np.uint8))
+    if meta.get("cover_footer"):
+        ImageDraw.Draw(img).text((xl, min(H - 130, y1 - 50)), meta["cover_footer"], font=font(34), fill=DIM)
+    img.save(out, quality=95)
+    print(f"-> {out} ({prof.key} cover {W}x{H})")
 
 
 if __name__ == "__main__":

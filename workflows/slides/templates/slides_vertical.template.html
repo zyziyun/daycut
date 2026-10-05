@@ -10,13 +10,15 @@
   /* fonts: vstudio.render copies the repo fonts (Noto Sans SC, OFL) into ./assets/fonts/ */
   @font-face{font-family:"VS Sans";src:url("assets/fonts/NotoSansSC-Regular.otf");font-weight:100 600;}
   @font-face{font-family:"VS Sans";src:url("assets/fonts/NotoSansSC-Bold.otf");font-weight:700 900;}
-  /* --accent is injected from persona.brand.accent by vstudio.render; teal is the template fallback */
+  /* --slides-accent is injected by render_slides.py / record_slides.py from persona slides.accent (or --accent);
+     teal is the fallback. Not brand.accent: slides keep their own accent.
+     --safe-* / --footnote-bottom are injected only for --layout full (platform safe zones). */
   :root{
     --bg:#000;
     --fg:#fff;
     --dim:#6b7280;
     --dim2:#9ca3af;
-    --teal:var(--accent,#2dd4bf);
+    --teal:var(--slides-accent,#2dd4bf);
     --teal-soft:color-mix(in srgb,var(--teal) 16%,transparent);
     --teal-25:color-mix(in srgb,var(--teal) 25%,transparent);
     --teal-40:color-mix(in srgb,var(--teal) 40%,transparent);
@@ -25,14 +27,14 @@
   html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);
     font-family:"VS Sans",system-ui,sans-serif;
     -webkit-font-smoothing:antialiased;overflow:hidden;}
-  body{width:1080px;height:1080px;display:flex;align-items:center;justify-content:center;}
+  body{width:100vw;height:100vh;display:flex;align-items:center;justify-content:center;}
 
   /* ---------- shared ---------- */
   .slide{
     position:absolute;inset:0;
     display:none;
     flex-direction:column;align-items:center;justify-content:center;
-    padding:60px;
+    padding:var(--safe-top,60px) var(--safe-right,60px) var(--safe-bottom,60px) var(--safe-left,60px);
     text-align:center;
   }
   .slide.on{ display:flex; }
@@ -46,7 +48,7 @@
     background:var(--teal);margin:0 14px;vertical-align:4px;
   }
   .footnote{
-    position:absolute;left:0;right:0;bottom:54px;
+    position:absolute;left:var(--safe-left,0);right:var(--safe-right,0);bottom:var(--footnote-bottom,54px);
     color:var(--dim);font-size:24px;letter-spacing:.04em;text-align:center;
   }
 
@@ -78,7 +80,7 @@
   .s-three .card .w{font-size:38px;font-weight:700;letter-spacing:-.01em;}
 
   /* ---------- section header (4, 8, 11) ---------- */
-  .s-sec{padding-top:120px;}
+  .s-sec{padding-top:calc(var(--safe-top,60px) + 60px);}
   .s-sec .num{
     font-size:340px;font-weight:800;line-height:.85;color:var(--teal);
     letter-spacing:-.06em;margin-bottom:8px;
@@ -124,7 +126,8 @@
     font-family:inherit;font-size:.95em;
   }
   .att-wrap{position:relative;width:100%;padding-top:130px;}
-  .sentence{font-size:42px;letter-spacing:-.015em;line-height:1.2;font-weight:600;
+  /* nowrap line: 42px, shrinks only when the safe width is narrower than the square layout's 960px */
+  .sentence{font-size:min(42px,calc((100vw - var(--safe-left,60px) - var(--safe-right,60px)) / 21));letter-spacing:-.015em;line-height:1.2;font-weight:600;
     white-space:nowrap;}
   .sentence .w{display:inline-block;padding:2px 5px;}
   .sentence .cat{position:relative;color:var(--teal);font-weight:800;}
@@ -432,7 +435,9 @@
     document.body.classList.add('export');
     slides.forEach(s => s.classList.toggle('on', s.dataset.key === key));
     if (key.endsWith('_attn')) {
-      requestAnimationFrame(() => requestAnimationFrame(() => drawAttention(animate)));
+      // wait for web fonts: arrows are placed from word boxes, which move when the fonts swap in
+      document.fonts.ready.then(() =>
+        requestAnimationFrame(() => requestAnimationFrame(() => drawAttention(animate))));
     }
     if (animate) {
       // Delay adding the animate class so the first frame is the "start" state,

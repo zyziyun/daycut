@@ -1,33 +1,62 @@
-# Example voice block for persona.local.yaml (merge into your own; these keys are read by
-# workflows/preproduction). This one encodes a "learner-educator" tech-explainer voice.
+# Example voice block for persona.local.yaml (merge into your own). Read by workflows/preproduction:
+# lint_script.py picks voice.<lang> by the script's language (en / zh), key by key, falling back to the
+# flat legacy voice.* keys (voice.persona, voice.rules, voice.wpm, ...) and then to built-in defaults.
+# A persona that only has the flat keys keeps working exactly as before.
+# Full key table: workflows/preproduction/WORKFLOW.md "Voice schema".
 
 voice:
-  persona: "AI/tech educator who is also actively learning; curious and observational, never a consulted authority"
-  domain: "AI / software education"     # topics the voice is calibrated for
-  language: en                          # script language (subtitles may differ: creator.language)
-  wpm: 165                              # speaking pace used for length targets
-  rules:
-    - no em-dashes
-    - no parentheses in spoken lines
-    - no phrase fragments; every sentence has a subject and a verb
-    - one 干货 reframe per piece
-    - no generic CTA
-    - no false modesty ("I'm just learning this", "I might be wrong but")
-    - '"we" only when it includes the viewer, never a royal we'
-  phrases_prefer:                       # observational framings
-    - "What I find interesting"
-    - "the lens I keep coming back to"
-    - "the detail I don't see explained enough"
-  phrases_avoid:                        # linted as errors, on top of the generic trope lists
-    - "every time someone asks me"
-    - "as an expert"
-    - "I'm just learning this"
-    - "I might be wrong but"
-  signposts:                            # how this voice flags the insight paragraph
-    - "here's the detail I don't see explained enough"
-    - "one thing in this that most explanations skip"
+  en:                                   # English explainers / scripts
+    persona: "curious learner-educator who shares what they figured out; observational, never a consulted authority"
+    domain: "tech / software education" # topics the voice is calibrated for (LLM-facing)
+    wpm: 165                            # words per minute -> length targets
+    rules:
+      - no em-dashes
+      - no parentheses in spoken lines
+      - no phrase fragments; every sentence has a subject and a verb
+      - one 干货 reframe per piece
+      - no generic CTA
+      - no false modesty ("I'm just learning this", "I might be wrong but")
+      - '"we" only when it includes the viewer, never a royal we'
+    phrases_prefer:                     # observational framings (LLM-facing)
+      - "What I find interesting"
+      - "the lens I keep coming back to"
+      - "the detail I don't see explained enough"
+    phrases_avoid:                      # linted as errors, on top of the generic trope lists
+      - "every time someone asks me"
+      - "as an expert"
+      - "I'm just learning this"
+      - "I might be wrong but"
+    signposts:                          # how this voice flags the insight paragraph
+      - "here's the detail I don't see explained enough"
+      - "one thing in this that most explanations skip"
+    tts:                                # optional; make_drill.py prefers these over top-level tts.*
+      kokoro_voice: af_heart
+      edge_voice: en-US-AriaNeural
 
-tts:                                    # pronunciation drill / TTS previews
+  zh:                                   # 中文口播
+    persona: "有实操经验的从业者，直接讲结论和做法，自信但不端着"
+    domain: "科技 / 工具 / 工作方法"
+    cpm: 270                            # 字 per minute (~4.5 字/s); `wpm` here is read as 字/min too
+    rules:
+      - 不用破折号
+      - 口播里不用括号
+      - 每期一个干货反转
+      - 不要泛泛的求赞求关注
+      - 先给结论，再给理由
+    phrases_prefer:
+      - "我的做法是"
+      - "说白了"
+      - "真正决定结果的是"
+    phrases_avoid:                      # linted as errors, on top of the generic 口播 trope lists
+      - "我也不太懂"
+      - "可能说得不对"
+    signposts:
+      - "很少有人讲的一点是"
+      - "真正的问题是"
+    tts:                                # documented for zh previews; no preproduction tool reads it yet
+      edge_voice: zh-CN-YunxiNeural
+
+tts:                                    # engine defaults (vstudio.tts; make_drill.py, TTS previews)
   kokoro_voice: af_heart
   edge_voice: en-US-AriaNeural
-  openai_voice: alloy
+  openai_voice: cedar
