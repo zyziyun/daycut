@@ -1,0 +1,418 @@
+"""PIL drawing primitives shared by overlays, covers and subtitle strips.
+
+    from vstudio.draw import load_font, wrap, wrap_draw, text_layer, rounded_rect, shadow, alpha_paste
+    f = load_font("cjk-bold", 48)
+    lines = wrap("用 Claude Code 做一个讲解视频", f, 600)      # latin runs kept whole, no 1-char orphan
+    strip = text_layer("这是【重点】", f)                      # RGBA, stroke + soft shadow, 【】 in brand.highlight
+
+Colours default to persona.brand; markup defaults to persona.subtitles.highlight_markup (【】).
+"""
+import os
+import re
+from functools import lru_cache
+
+import numpy as np
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
+
+from .config import MissingAsset, font, persona
+
+WHITE = (255, 255, 255, 255)
+BRAND_DEFAULTS = dict(accent="#FF2442", highlight="#FFD60A", ink="#ECEEF2", ground="#0B1020",
+                      dim="#969EB2", highlight_alt="#F4D35E", accent_soft="#FF5A72", teal="#2DD4BF")
+
+
+# ---------------------------------------------------------------- colours
+def rgb(c):
+    """'#RRGGBB' | 'RRGGBB' | (r,g,b[,a]) -> (r,g,b)."""
+    if isinstance(c, (list, tuple)):
+        return tuple(int(v) for v in c[:3])
+    c = str(c).lstrip("#")
+    if len(c) == 3:
+        c = "".join(ch * 2 for ch in c)
+    return tuple(int(c[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def rgba(c, a=255):
+    if isinstance(c, (list, tuple)) and len(c) == 4:
+        return tuple(int(v) for v in c)
+    return rgb(c) + (int(a),)
+
+
+def brand(**override) -> dict:
+    """persona.brand merged over defaults, as RGB tuples (keys: accent, highlight, ink, ground, dim, ...)."""
+    b = dict(BRAND_DEFAULTS)
+    b.update({k: v for k, v in ((persona().get("brand") or {}).items()) if isinstance(v, (str, list, tuple))})
+    b.update({k: v for k, v in override.items() if v is not None})
+    out = {}
+    for k, v in b.items():
+        try:
+            out[k] = rgb(v)
+        except (ValueError, TypeError):
+            pass                                       # e.g. panel_theme: "notes-red"
+    return out
+
+
+def markup() -> str:
+    m = (persona().get("subtitles") or {}).get("highlight_markup") or "【】"
+    return m if len(m) == 2 else "【】"
+
+
+# ---------------------------------------------------------------- fonts / measuring
+@lru_cache(maxsize=256)
+def load_font(role: str = "cjk-bold", size: int = 40):
+    """Truetype font for a vstudio role (cjk, cjk-bold, serif, serif-italic, mono, mono-bold) or a file path.
+    Falls back to Pillow's default font (with a warning) if the role is not installed."""
+    size = max(1, int(round(size)))
+    try:
+        path = role if os.path.exists(str(role)) else font(role)
+        return ImageFont.truetype(path, size)
+    except (MissingAsset, OSError):
+        if role.endswith("-bold") or role.endswith("-italic") or role == "cjk":
+            try:
+                return ImageFont.truetype(font("cjk-bold" if "bold" in role else "cjk"), size)
+            except (MissingAsset, OSError):
+                pass
+        print(f"vstudio.draw: font role '{role}' missing (run ./install.sh); using Pillow default")
+        return ImageFont.load_default(size=size)
+
+
+_D0 = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+
+
+def plain(text: str) -> str:
+    """Text with highlight markup removed (what is actually drawn)."""
+    m = markup()
+    return text.replace(m[0], "").replace(m[1], "")
+
+
+def text_width(text: str, f) -> float:
+    return _D0.textlength(plain(text), font=f)
+
+
+def text_size(text: str, f):
+    """(width, line height) of a single line; height = ascent + descent so mixed lines align."""
+    asc, desc = f.getmetrics()
+    return int(round(text_width(text, f))), asc + desc
+
+
+def is_cjk(ch: str) -> bool:
+    return ord(ch) >= 0x2E80
+
+
+def has_cjk(text: str) -> bool:
+    return any(is_cjk(c) for c in text)
+
+
+# ---------------------------------------------------------------- wrapping
+_LATIN = re.compile(r"[A-Za-z0-9][A-Za-z0-9%/+.\-'_&#@:]*")
+NO_LINE_START = set("，。、？！：；）」』】》〉”’,.!?:;)]}%…～·")
+NO_LINE_END = set("（「『【《〈“‘([{")
+
+
+def tokens(text: str, keep_phrases: bool = None):
+    """Wrap units. Latin/number runs stay whole ("3b1b", "v2.1"); in CJK text a run of latin words joined by
+    single spaces ("Claude Code") is one unit. Closing punctuation sticks to the token before it, opening
+    punctuation / markup to the token after it."""
+    if keep_phrases is None:
+        keep_phrases = has_cjk(text)
+    raw, i = [], 0
+    while i < len(text):
+        m = _LATIN.match(text, i)
+        if m:
+            raw.append(m.group()); i = m.end()
+        elif text[i].isspace():
+            j = i
+            while j < len(text) and text[j].isspace():
+                j += 1
+            raw.append(" "); i = j
+        else:
+            raw.append(text[i]); i += 1
+    if keep_phrases:                                       # "Claude" " " "Code" -> "Claude Code"
+        merged = []
+        for t in raw:
+            if (len(merged) >= 2 and _LATIN.fullmatch(t) and merged[-1] == " " and _LATIN.match(merged[-2])):
+                merged.pop(); merged[-1] += " " + t
+            else:
+                merged.append(t)
+        raw = merged
+    out = []
+    for t in raw:
+        if out and t[0] in NO_LINE_START and out[-1] != " ":
+            out[-1] += t
+        elif out and out[-1][-1] in NO_LINE_END:
+            out[-1] += t
+        else:
+            out.append(t)
+    return out
+
+
+def _greedy(toks, f, max_w):
+    lines, cur = [], []
+    for t in toks:
+        w = text_width("".join(cur + [t]).strip(), f)
+        if cur and w > max_w and "".join(cur).strip():
+            lines.append(cur); cur = [] if t == " " else [t]
+        else:
+            cur.append(t)
+    if "".join(cur).strip():
+        lines.append(cur)
+    return lines
+
+
+def _split_wide(toks, f, max_w):
+    """Phrases wider than the line are split back into words; words wider than the line into chars."""
+    out = []
+    for t in toks:
+        core = t.rstrip("".join(NO_LINE_START))            # closing punctuation may hang past the edge
+        if text_width(core or t, f) <= max_w:
+            out.append(t)
+        elif " " in t.strip():
+            parts = t.split(" ")
+            for k, p in enumerate(parts):
+                out += ([" "] if k else []) + _split_wide([p], f, max_w)
+        else:
+            out += list(t)
+    return out
+
+
+def _is_orphan(line_toks) -> bool:
+    s = plain("".join(line_toks)).strip()
+    core = "".join(c for c in s if c not in NO_LINE_START and c not in NO_LINE_END)
+    return len(core) == 1 and is_cjk(core)
+
+
+def _balance_markup(lines):
+    a, b = markup()
+    out, open_ = [], False
+    for ln in lines:
+        if open_:
+            ln = a + ln
+        depth = 0
+        for c in ln:
+            depth += (c == a) - (c == b)
+        open_ = depth > 0
+        out.append(ln + b if open_ else ln)
+    return out
+
+
+def wrap(text: str, f, max_w: float, balance: bool = False, max_lines: int = None):
+    """CJK-aware wrap -> list of lines (markup kept and balanced per line).
+
+    balance=True keeps the greedy line count but evens line lengths (subtitles, titles).
+    Never ends with a lone CJK character: one more token is pulled down from the line above."""
+    toks = _split_wide(tokens(text), f, max_w)
+    lines = _greedy(toks, f, max_w)
+    if balance and len(lines) > 1:
+        total = text_width(text.strip(), f)
+        target = total / len(lines)
+        step = max(4, int(getattr(f, "size", 40) * 0.25))
+        for extra in range(0, int(max_w - target) + step, step):
+            cand = _greedy(toks, f, min(max_w, target + extra))
+            if len(cand) == len(lines):
+                lines = cand
+                break
+    if len(lines) >= 2 and _is_orphan(lines[-1]):
+        prev = [t for t in lines[-2]]
+        while prev and prev[-1] == " ":
+            prev.pop()
+        if len(prev) > 1:
+            moved = prev.pop()
+            cand = [moved] + lines[-1]
+            if text_width("".join(cand).strip(), f) <= max_w:
+                lines[-2], lines[-1] = prev, cand
+    out = ["".join(ln).strip() for ln in lines]
+    out = _balance_markup(out)
+    if max_lines and len(out) > max_lines:
+        out = out[:max_lines]
+        out[-1] = out[-1].rstrip("，。、,. ") + "…"
+    return out
+
+
+def runs(text: str, keywords=None, mk: str = None):
+    """'普通【重点】文本' -> [('普通', False), ('重点', True), ('文本', False)]. keywords also highlight."""
+    a, b = mk or markup()
+    out, cur, hi = [], "", False
+    for c in text:
+        if c == a and not hi:
+            if cur: out.append((cur, False))
+            cur, hi = "", True
+        elif c == b and hi:
+            if cur: out.append((cur, True))
+            cur, hi = "", False
+        else:
+            cur += c
+    if cur:
+        out.append((cur, hi))
+    if keywords:
+        kw = [k for k in keywords if k]
+        if kw:
+            rx = re.compile("(" + "|".join(re.escape(k) for k in sorted(kw, key=len, reverse=True)) + ")")
+            split = []
+            for t, h in out:
+                if h:
+                    split.append((t, h)); continue
+                i = 0
+                for m in rx.finditer(t):
+                    if m.start() > i: split.append((t[i:m.start()], False))
+                    split.append((m.group(), True)); i = m.end()
+                if i < len(t): split.append((t[i:], False))
+            out = split
+    return out
+
+
+def draw_runs(d, xy, line, f, fill=WHITE, hl_fill=None, keywords=None, **kw):
+    """Draw one line with highlight runs; returns the x after the last run."""
+    x, y = xy
+    hl = hl_fill or rgba(brand()["highlight"])
+    for t, h in runs(line, keywords):
+        d.text((x, y), t, font=f, fill=hl if h else fill, **kw)
+        x += d.textlength(t, font=f)
+    return x
+
+
+def wrap_draw(d, xy, text, f, max_w, fill=WHITE, hl_fill=None, line_gap=1.25, align="left",
+              balance=False, max_lines=None, keywords=None, **kw):
+    """Wrap + draw (highlight-aware). align: left | center (x is the centre) | right (x is the right edge).
+    Returns the y below the last line."""
+    x, y = xy
+    lh = int(round(sum(f.getmetrics()) * line_gap))
+    for ln in wrap(text, f, max_w, balance=balance, max_lines=max_lines):
+        w = text_width(ln, f)
+        lx = x - w / 2 if align == "center" else (x - w if align == "right" else x)
+        draw_runs(d, (lx, y), ln, f, fill, hl_fill, keywords, **kw)
+        y += lh
+    return y
+
+
+def fit_font(text, role, size, max_w, min_size=18, step=2):
+    """Largest font of `role` <= size whose single-line width fits max_w."""
+    f = load_font(role, size)
+    while size > min_size and text_width(text, f) > max_w:
+        size -= step; f = load_font(role, size)
+    return f
+
+
+# ---------------------------------------------------------------- shapes / compositing
+def rounded_rect(size, radius, fill, outline=None, width=0):
+    w, h = int(size[0]), int(size[1])
+    im = Image.new("RGBA", (max(1, w), max(1, h)), (0, 0, 0, 0))
+    ImageDraw.Draw(im).rounded_rectangle([0, 0, w - 1, h - 1], int(radius), fill=rgba(fill) if fill is not None else None,
+                                         outline=rgba(outline) if outline is not None else None, width=int(width))
+    return im
+
+
+def shadow(im, blur=14, offset=(0, 8), alpha=90, color=(0, 0, 0)):
+    """Drop shadow under an RGBA image -> (bigger RGBA image, pad). Paste at (x - pad, y - pad)."""
+    if isinstance(offset, (int, float)):
+        offset = (0, offset)
+    pad = int(blur * 3 + max(abs(offset[0]), abs(offset[1])))
+    big = Image.new("RGBA", (im.width + 2 * pad, im.height + 2 * pad), (0, 0, 0, 0))
+    sh = Image.new("RGBA", im.size, tuple(color) + (0,))
+    sh.putalpha(im.split()[3].point(lambda v: v * alpha // 255))
+    big.paste(sh, (pad + int(offset[0]), pad + int(offset[1])), sh)
+    big = big.filter(ImageFilter.GaussianBlur(blur))
+    big.alpha_composite(im, (pad, pad))
+    return big, pad
+
+
+def to_rgba_array(im):
+    return np.asarray(im.convert("RGBA")) if isinstance(im, Image.Image) else np.asarray(im)
+
+
+def alpha_paste(dst, src, xy, opacity=1.0, center=False, scale=1.0, bgr=False):
+    """Composite an RGBA overlay onto dst, clipped to its bounds.
+
+    dst: PIL image (modified in place, RGBA or RGB) or numpy HxWx3/4 (uint8 or float, modified in place;
+    bgr=True when it is an OpenCV frame). src: PIL RGBA or numpy RGBA. xy is the top-left (or centre)."""
+    if opacity <= 0:
+        return dst
+    a = to_rgba_array(src)
+    if scale != 1.0:
+        a = np.asarray(Image.fromarray(a.astype(np.uint8)).resize(
+            (max(1, int(a.shape[1] * scale)), max(1, int(a.shape[0] * scale))), Image.BILINEAR))
+    h, w = a.shape[:2]
+    x, y = xy
+    if center:
+        x, y = x - w / 2, y - h / 2
+    x, y = int(round(x)), int(round(y))
+    if isinstance(dst, Image.Image):
+        if opacity < 1:
+            a = a.copy(); a[..., 3] = (a[..., 3].astype(np.float32) * opacity).astype(np.uint8)
+        layer = Image.fromarray(a.astype(np.uint8), "RGBA")
+        if dst.mode == "RGBA":
+            dst.paste(Image.alpha_composite(dst.crop((x, y, x + w, y + h)), layer), (x, y))
+        else:
+            dst.paste(layer, (x, y), layer)
+        return dst
+    H, W = dst.shape[:2]
+    x0, y0, x1, y1 = max(0, x), max(0, y), min(W, x + w), min(H, y + h)
+    if x1 <= x0 or y1 <= y0:
+        return dst
+    patch = a[y0 - y:y1 - y, x0 - x:x1 - x].astype(np.float32)
+    al = patch[..., 3:4] / 255.0 * opacity
+    col = patch[..., :3][..., ::-1] if bgr else patch[..., :3]
+    roi = dst[y0:y1, x0:x1, :3].astype(np.float32)
+    out = col * al + roi * (1 - al)
+    dst[y0:y1, x0:x1, :3] = out if dst.dtype != np.uint8 else np.clip(out + 0.5, 0, 255).astype(np.uint8)
+    return dst
+
+
+def text_layer(text, f, fill=WHITE, hl_fill=None, stroke=6, stroke_fill=(20, 20, 20, 255), shadow_alpha=150,
+               pad=16, keywords=None, max_w=None, line_gap=1.15, align="center"):
+    """Stroked text strip (RGBA PIL) with soft drop shadow. `text` may hold 【】 markup or be a list of
+    (text, colour) runs. With max_w the text is wrapped (balanced) and lines centred."""
+    if isinstance(text, (list, tuple)):
+        lines_runs = [[(t, rgba(c)) for t, c in text]]
+    else:
+        hl = rgba(hl_fill) if hl_fill is not None else rgba(brand()["highlight"])
+        lines = wrap(text, f, max_w, balance=True) if max_w else [text]
+        lines_runs = [[(t, hl if h else rgba(fill)) for t, h in runs(ln, keywords)] for ln in lines]
+    asc, desc = f.getmetrics()
+    lh = int((asc + desc) * line_gap)
+    widths = [sum(_D0.textlength(t, font=f) for t, _ in lr) for lr in lines_runs]
+    W = int(max(widths or [1])) + 2 * (pad + stroke)
+    H = lh * (len(lines_runs) - 1) + asc + desc + 2 * (pad + stroke)
+    im = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    sh = Image.new("RGBA", im.size, (0, 0, 0, 0))
+    dr, ds = ImageDraw.Draw(im), ImageDraw.Draw(sh)
+    for k, (lr, lw) in enumerate(zip(lines_runs, widths)):
+        x = pad + stroke + ((W - 2 * (pad + stroke) - lw) / 2 if align == "center" else 0)
+        y = pad + stroke + k * lh
+        for t, col in lr:
+            if shadow_alpha:
+                ds.text((x + 3, y + 4), t, font=f, fill=(0, 0, 0, shadow_alpha), stroke_width=stroke,
+                        stroke_fill=(0, 0, 0, shadow_alpha))
+            dr.text((x, y), t, font=f, fill=col, stroke_width=stroke, stroke_fill=rgba(stroke_fill))
+            x += dr.textlength(t, font=f)
+    if shadow_alpha:
+        return Image.alpha_composite(sh.filter(ImageFilter.GaussianBlur(4)), im)
+    return im
+
+
+def vgradient_mask(w, h, power=1.6, reverse=False):
+    """L mask ramping 0->255 down the height (alpha fades)."""
+    col = (np.linspace(0, 1, max(1, h)) ** power * 255).astype(np.uint8)
+    if reverse:
+        col = col[::-1]
+    return Image.fromarray(np.repeat(col[:, None], max(1, w), 1), "L")
+
+
+def hgradient_mask(w, h, power=1.6, reverse=False):
+    row = (np.linspace(0, 1, max(1, w)) ** power * 255).astype(np.uint8)
+    if reverse:
+        row = row[::-1]
+    return Image.fromarray(np.repeat(row[None, :], max(1, h), 0), "L")
+
+
+def to_pil(img, bgr=None):
+    """PIL / numpy (RGB, or BGR when bgr=True or it came from cv2) / path -> PIL RGB."""
+    if isinstance(img, Image.Image):
+        return img
+    if isinstance(img, (str, os.PathLike)):
+        return Image.open(img).convert("RGB")
+    a = np.asarray(img)
+    if a.ndim == 2:
+        return Image.fromarray(a.astype(np.uint8), "L").convert("RGB")
+    if bgr:
+        a = a[..., [2, 1, 0] + ([3] if a.shape[2] == 4 else [])]
+    return Image.fromarray(np.clip(a, 0, 255).astype(np.uint8))
