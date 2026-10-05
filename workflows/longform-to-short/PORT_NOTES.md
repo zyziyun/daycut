@@ -20,7 +20,7 @@ What changed:
   with linear mode (single-pass came out at −16.3 instead of −14) and the output is resampled to 48 kHz (loudnorm
   defaults to 96 kHz). The qa f0 estimator is unbiased, picks the first strong peak and uses parabolic refinement.
 - **Dropped:** the v1 keep-list-only subtitle mapping (v2 superseded it). The hard-coded vLLM 勘误 text and all
-  course-specific chapter, panel, cover and cut data. The `knflow.com` demo URL and its prompt (now `demo.*`). Speaker
+  course-specific chapter, panel, cover and cut data. The product demo URL and its prompt (now `demo.*`). Speaker
   names (now `speakers.aliases`; unknown labels are auto-anonymised to "Speaker A/B"). The "<host>的屏幕共享" label
   comment (now `geometry.bottom_trim`). "2026 北美 SDE 求职" and other cover copy (now `cover.*`). The accent-specific
   TERM_FIXES list: about 10 generic tech-term fixes remain in `subs_lib.GENERIC_TERM_FIXES`; everything else goes to

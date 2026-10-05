@@ -32,7 +32,7 @@ steps with exact commands run from the PROJECT dir (the user's video folder), e.
    tags, voice/copy rules, term fixes, creator name. Read with `from vstudio.config import persona`
    (see `persona.example.yaml` for existing keys). If you need a NEW key, use it with a safe default
    (`persona().get("x", {}).get("y", default)`) and list it in PORT_NOTES.md — do not edit persona.example.yaml.
-5. **No personal content** in code, docs or examples: real names (Wendy, Ziyun, Momo, guests), real
+5. **No personal content** in code, docs or examples: real names (the creator, guests, participants), real
    conversation/script text, real company/product demo URLs, meeting names, face embeddings (`*.npy`),
    personal photos/videos. Replace with neutral placeholders ("Speaker A", "my-talk.mp4").
    Keep generic craft knowledge (gotchas, measured numbers, style menus) — that is the value.
