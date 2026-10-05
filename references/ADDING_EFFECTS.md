@@ -242,5 +242,5 @@ should switch to them:
 | `workflows/promo-recut/scripts/build_promo.py` | Uses `hf.scene_transitions` where it has scene cuts | Same as explainer |
 | `workflows/talkinghead/scripts/vertical/compose.py` | Hard cuts + `xfade_assemble` fades; scene-change whoosh | Per-frame scene changes can use `xfade.blend`, and ffmpeg joins `xfade.ffmpeg_transition`. Keep the whoosh SFX (`audio.cue_sheet_for`). |
 | `workflows/call-clips/scripts/build_clips.py` (`XFADE`) | `fade` dissolves | Unchanged by default. Any styled join should go through `xfade.ffmpeg_transition`. |
-| `SKILL.md` section 3 and the "≈155 effects" line | Hand count, transitions row | Point to `vstudio.effects` (`find` / `--list`) and `vstudio.xfade`. The registry count comes from the EFFECTS.md footer. |
+| `SKILL.md` section 3, README | Done: both say 87 effects (190 with named variants) | Keep the number in sync with the EFFECTS.md footer when entries are added; point to `vstudio.effects` (`find` / `--list`) and `vstudio.xfade`. |
 | Any new workflow effect | Documented only in prose | Add a registry entry (section 3) and regenerate EFFECTS.md. |

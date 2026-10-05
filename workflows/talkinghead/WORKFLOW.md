@@ -49,6 +49,8 @@ On the V track the style is just the `STYLE` dict in the config, so switching la
   - Re-check the cut with ASR at normal speed (`atempo=1/HOOK_SPEED`).
 - **Disfluency.** Fillers, repeated words, restarts and breaths go; 气口 squeezed to persona
   `audio.pause_squeeze` (0.06s). One heuristic pass is not enough: do the strict word-level pass every time.
+  Suggestions are conservative: only high-confidence fillers/repeats are pre-selected, everything else (semantic
+  fillers, hidden onsets) needs the creator's yes, and the cut is re-transcribed to catch lost content words.
 - **Cutting padding sentences (废话).** When asked, propose the exact sentence list first: background asides,
   sentences repeating the previous one, hedges (「也可能这是我的感觉」), a second example of the same point.
   Then drop the agreed sentences by sid.
@@ -80,15 +82,29 @@ Full notes in `references/vertical_pipeline.md`.
 3. **Snap to voice, squeeze pauses, frame-exact cut.** `python3 $V/cut_pass1.py edit_list.py` → `body_v.mp4 body_a.wav segs.json`.
 4. **Per-frame retouch** (slim, eyes, de-shine, three-band skin smoothing, subtle "natural" makeup;
    One Euro-smoothed landmarks from a VIDEO-mode face-crop tracker, landmark-anchored masks, 15-frame
-   chunk warm-up so seams don't jump; ~0.8 s/frame/worker).
+   chunk warm-up so seams don't jump; ~0.64 s/frame/worker). Makeup is on by default (natural, 0.3, flicker-tested).
+   **Long video:** `--preset fast` (warp at full res, skin + makeup at half res as an upsampled delta, coarser landmark
+   crop and warp-grid reuse, no blemish pass): ~0.21 s/frame/worker, about 3x faster; a 10-min body ≈ 15-20 min on
+   5 workers instead of 45-60. Check `--test` frames with the preset you render.
    `python3 $V/retouch_video.py body_v.mp4 x --test 300,2500` to check, then
    `python3 $V/retouch_video.py body_v.mp4 body_rt.mp4 --workers 5`.
-   Knobs: `--makeup 0` (off) / `--preset daily`, `--smooth`, `--pores`, `--glasses thick`; persona
+   Knobs: `--preset fast|quality` (speed), `--makeup 0` (off) / `--preset daily` (rosy pink lip), `--smooth`, `--pores`, `--glasses thick`; persona
    `retouch.video.<knob>` sets your defaults. All knobs, presets and checks: `references/RETOUCH.md`.
-5. **Strict filler pass on the retouched body.** `python3 $V/strict_pass.py transcribe body_a.wav "$PROMPT"`
-   (prints the indexed words plus `DEL candidates` from `vstudio.cut.suggest_fillers`: fillers, repeats, merged
-   restarts; check each by ear), write `strict.py` (`examples/v_strict_example.py`), then
+5. **Strict filler pass on the retouched body. The creator confirms the DEL list.**
+   `python3 $V/strict_pass.py transcribe body_a.wav "$PROMPT"` prints the indexed words and scored candidates
+   (`vstudio.cut.suggest_fillers` → `scripts/filler_policy.py`) in three tiers, and writes `strict_draft.py`:
+   - **AUTO** (confidence ≥ 0.8, pre-filled in `DEL`): standalone hesitation sounds (嗯 呃 um uh, < 0.6 s) and
+     immediate stutter repeats (我我, the the).
+   - **CONFIRM** (never pre-filled): semantic fillers (就是 那个 然后 对吧 like), interjections (啊 哦), two-word
+     repeats (could be 一点一点), fillers glued to a word, merged-filler / "hidden onset" PATCHes. These are often
+     real words; in a real test, applying every candidate deleted content and the subtitles stopped matching the audio.
+   - **INFO**: long words to listen to; no cut.
+   Show the creator AUTO + CONFIRM (text, time, why), get a yes on the final list, then copy `strict_draft.py` to
+   `strict.py` (`examples/v_strict_example.py`) and run
    `python3 $V/strict_pass.py apply strict.py body_rt.mp4 body_a.wav body2_rt.mp4 body2_a.wav`.
+   **Verify:** `python3 $V/strict_pass.py verify strict.py body2_a.wav "$PROMPT"` re-transcribes the cut and compares
+   it with the original words minus the confirmed DEL; every missing content word is printed with its time and the
+   nearby DEL indices (exit 1). Listen there, take the index out of DEL, re-apply. Never hand over with open flags.
 6. **Optional: drop 废话 sentences by sid.** `python3 $V/drop_pass.py "1,7,11" body2_rt.mp4 body2_a.wav body3_rt.mp4 body3_a.wav`.
 7. **Face track on the final body.** `python3 $V/face_track.py body3_rt.mp4 face3.npy` (centre + face box per sample;
    compose uses the boxes to cap the punch-in and keep titles, callouts, PiP cards and pop words off the face).
@@ -183,7 +199,9 @@ continues; the inserted clip's own audio is not used. Modes:
 - **cut**: full cut-away (video fills the canvas; a screenshot becomes a card on its own blurred fill).
 - **pip**: rounded card with a white rim, placed on the corner / side that covers least of the face box; pops in.
 - **split**: top/bottom on vertical canvases (`side="top"|"bottom"`), left/right on 16:9; the speaker half is cropped
-  around the face.
+  around the face. Captions follow the face box: if the platform caption spot would cover the speaker's face (e.g.
+  B-roll on top, face in the bottom pane), they move into the B-roll pane just above the seam, else onto the seam;
+  on 16:9 they move under the B-roll half (`compose.split_caption_xy`). Check a `preview` still inside the split.
 Tall images (pages, chats, docs) become **screenshot cards**: they scroll top → bottom over the window, or follow the
 `highlight=[(t, y0, y1)]` rows, each marker wiping in left → right at its time. `label="演示"` adds a small badge. With
 `sfx` on, whooshes mark cut-away / split in and out. Zoom, stamps and pop words pause during cut / split; subtitles

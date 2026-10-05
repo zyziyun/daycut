@@ -132,8 +132,10 @@ gap > 0.12 s, so it is not equivalent), retouch_video's chunked pipeline, detect
 - Speech run: prep_sources.sh (SDR path, mlx whisper) → cut_pass1 → strict transcribe (suggestions printed) → apply →
   compose all/preview → cover.py → caption.py (title hints) → pick_cover_frame (no-face path). Output 14.33 s, −14.0 LUFS.
 - H: make_assets → build_filter → run.sh → make_cover → caption; frame stills + bar crops at 11/16/25/36 s.
-- `python3 -m pytest tests -q` 34 passed; py_compile on every .py; `--help` on all 14 CLIs; `bash -n prep_sources.sh`.
-- Not run: retouch on a real face, face_track/pick_cover_frame on a real face, the avconvert/zscale HDR paths.
+- `python3 -m pytest tests -q` green at the time (current count: run it; see tests/); py_compile on every .py; `--help` on all 14 CLIs; `bash -n prep_sources.sh`.
+- Not run (at Phase 2b): retouch on a real face, face_track/pick_cover_frame on a real face, the avconvert/zscale HDR
+  paths. Superseded: Wave B ran retouch, face_track and the avconvert HDR path on real footage (below); the ffmpeg
+  zscale path is still unverified on real HLG.
 
 ### Lib requests
 1. `cut.xfade_assemble`: a pad mode for pieces that start at source 0 / end at source end (clone frame + silence),
@@ -211,12 +213,14 @@ scenes win. Drawing uses `draw.rounded_rect/alpha_paste/text_width` + local card
   douyin at −14.0 LUFS; H track on bilibili (bar y 980, −14.0 LUFS / −1.5 dBTP); covers 3:4 / 9:16 / 1280x720 / 1146x717.
 - Real (outputs in /tmp only): creator's vertical HLG 口播, first 65 s: prep (avconvert HDR→SDR) → auto keep list
   (18 whisper segments) → cut_pass1 (51.5 s) → retouch_video `--preset daily` (6 workers) → strict_pass suggest + apply
-  (51.5 → 40.9 s; auto-DEL took every candidate, test only) → face_track (100 %) → compose previews on 3:4 and 抖音 9:16
+  (51.5 → 40.9 s; auto-DEL took every candidate, test only: it deleted real words and the subtitles no longer
+  matched the audio → fixed after Wave B: `scripts/filler_policy.py` scores candidates, only high-confidence ones are
+  pre-filled, the creator confirms DEL, and `strict_pass.py verify` re-transcribes the cut to flag lost content words) → face_track (100 %) → compose previews on 3:4 and 抖音 9:16
   with hook, callout, 记笔记 panel, refined progress bar, pop word. Horizontal webcam (60 s): prep → reframe face mode
   (hit 1.0, p95 pan 0.05 crop-widths/s, x1.78 upscale) → cut → face_track → 抖音 9:16 previews (punch-in capped to
   none: face already 0.75 of the width; title shrunk above the glasses; PiP shrunk off the eyes; split; circle scene);
   and ORIENT=horizontal → 16:9 YouTube previews (landscape layout).
-- `python3 -m pytest tests -q`: 318 passed. py_compile + `--help` on all CLIs, `bash -n prep_sources.sh`.
+- `python3 -m pytest tests -q` green at the time (current count: run it; see tests/). py_compile + `--help` on all CLIs, `bash -n prep_sources.sh`.
 
 ### Persona / config keys
 Config: `PLATFORM`, `SRC_UPSCALE`, `REFRAME_MODE`, `BROLL`, `STYLE max_upscale / max_face_frac`. Persona: none new
@@ -230,3 +234,18 @@ Config: `PLATFORM`, `SRC_UPSCALE`, `REFRAME_MODE`, `BROLL`, `STYLE max_upscale /
 4. `platform`: a per-profile "ui_top" (bottom of the progress-bar / top-bar zone) and a face-safe helper
    (`avoid_face(rect_candidates, face_boxes)`) — layout.py has local versions.
 5. `export.caption_overlay`: optional keyword colouring (cues.json from compose carry the raw chunk text).
+
+## After Wave B (review fixes)
+- Filler policy: `scripts/filler_policy.py` (shared with promo-recut `tight_cut.py`) scores `cut.suggest_fillers`
+  rows; AUTO (≥ 0.8: standalone 嗯/呃/um/uh < 0.6 s, stutter repeats) is pre-filled into `strict_draft.py`, CONFIRM
+  (semantic fillers, interjections, 2-word repeats, glued fillers, hidden-onset PATCHes) never is. New
+  `strict_pass.py verify strict.py OUT_A`: fresh ASR of the cut vs bw.json minus DEL (difflib on CJK chars / latin
+  words, 1-char noise ignored) → missing / changed spans with nearby DEL indices, exit 1. Unit-checked on synthetic
+  word lists; not yet re-run on the real clip.
+- Split-screen B-roll captions: `compose.split_caption_xy` moves captions off the speaker's face core (B-roll pane
+  next to the seam, else the seam; 16:9: under the B-roll half). Checked on the real webcam 抖音 preview (captions
+  had sat on the chin/mouth; now in the chart pane above the seam) and the synthetic split (no-face estimate).
+- `retouch_video.py --preset fast|quality` (also accepts makeup presets; repeatable). fast = full-res warp + half-res
+  skin/makeup delta, 384 px landmark crop, warp_tol 1.0, grid 240, blemish 0, x264 faster. Real vertical frame:
+  0.21 vs 0.64 s/frame (1 worker), mean abs diff fast vs quality 1.9 levels. Uses `vstudio.retouch._warp/_opts`
+  (private): lib request — a public `retouch(..., work_scale=0.5)`.

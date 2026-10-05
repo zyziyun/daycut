@@ -157,7 +157,7 @@ filler, hand-made whisper JSON, clips.json with auto_trim, 1 hook, 3 windows, no
   run on the OLD run's work files: mean abs pixel diff 0.2–3.4 vs old; side-by-side checked by eye
   (same layout; differences are bold panel titles and ±few px in chips/cards). render_sticker:
   alpha identical to assets/cat.png. transcribe.py: mlx smoke test on a 4 s clip.
-- `pytest tests` 34 passed; py_compile all; `--help` OK for every CLI.
+- `pytest tests` green at the time (current count: run it; see tests/); py_compile all; `--help` OK for every CLI.
 - Still unverified: a real recording with faces (tracked + masked build), faster_whisper branch.
 
 ### Lib requests (kept local)
@@ -233,7 +233,7 @@ Accent parity: the cover-collage design used teal `#2dd4bf`, but `vstudio.render
   faces, Zoom names unreadable (before/after crop compared), captions in the caption box (a first run showed
   2-line captions climbing onto the host tile → caption block now shrinks to the box height), panel and chips
   inside the safe box. Cover 1080×1440 checked.
-- py_compile + `--help` for every CLI; `python3 -m pytest tests -q` 318 passed.
+- py_compile + `--help` for every CLI; `python3 -m pytest tests -q` green at the time (current count: run it; see tests/).
 
 ### Lib requests
 - `platform.fit_text_size` should also respect the caption band HEIGHT (a 2-line caption at the max size is

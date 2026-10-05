@@ -104,7 +104,7 @@ Behaviour changes (deliberate):
   fragments. Breaks are DP-balanced.
 
 Test evidence (synthetic demo in /tmp, before = `git HEAD` copy of scripts):
-- py_compile all files, `--help` for render/tts/cover/export/make_demo_assets, `ruff --select F` clean, `pytest tests` 34 passed.
+- py_compile all files, `--help` for render/tts/cover/export/make_demo_assets, `ruff --select F` clean, `pytest tests` green at the time (current count: run it; see tests/).
 - `--stills` at 24 times, 3:4 and 16:9: **all 48 stills are bit-identical** before/after. `cover.png` is bit-identical. transcript.md
   and post.md are identical. The SRT differs only by 1 ms rounding.
 - Wrap check, old vs new `bwrap` at real subtitle sizes: all 22 demo cues are identical on both canvases. 3 of 6 long synthetic
@@ -197,7 +197,7 @@ Tests:
     the section change.
   - 10 s preview with a kept clip: -14.3 LUFS, -1.45 dBTP.
   - "Lightless Dawn" (ambient) has no steady grid (p90 270 ms), so cuts follow the raw beats; this is documented.
-- `python3 -m pytest tests -q`: 309 passed + test_retouch 9 passed. `ruff --select F` is clean. `--help` works for all CLIs.
+- `python3 -m pytest tests -q` green at the time (current count: run it; see tests/). `ruff --select F` is clean. `--help` works for all CLIs.
 
 Lib requests:
 - `beats.analyze` (librosa backend), synthetic 90 BPM kick track with off-beat hats added after 32 s:

@@ -55,7 +55,7 @@ python3 $VSTUDIO/workflows/talkinghead/scripts/vertical/retouch_video.py body_v.
 | `makeup` | .5 | .3 | overall makeup intensity, 0.5 = preset as designed, 1.0 = double (each component capped at 1) |
 | `preset` | natural | natural | `none`, `natural`, `daily`, `glam` |
 | `lip` `blush` `brow` `liner` `shadow` `contour` `highlight` `gloss` | preset | preset | per-component strength override (then x `makeup`/0.5) |
-| `lip_shade` `blush_shade` `shadow_shade` `liner_shade` | preset | preset | shade name (`rose coral red berry nude pink peach brown black taupe bronze plum`) or `#rrggbb` |
+| `lip_shade` `blush_shade` `shadow_shade` `liner_shade` | preset | preset | shade name (`rose coral red berry nude pink peach brown black taupe bronze plum mlbb`) or `#rrggbb` |
 | `glasses` | auto | auto | `auto` detects frames; `thick` forces liner/shadow off; `none` disables frame handling |
 | `skin_seg` | True | True | False = landmark-only skin mask |
 | `faces` | main | main | `all` = every face wider than `min_face` (fraction of image width, .06) |
@@ -64,14 +64,16 @@ python3 $VSTUDIO/workflows/talkinghead/scripts/vertical/retouch_video.py body_v.
 | `body` | 0 | 0 | whole-body horizontal slim (selfie segmenter); disables the face-only composite |
 
 Video defaults live in `retouch_video.py: VIDEO_DEFAULTS`; persona `retouch.video.<knob>` overrides them
-(e.g. `retouch: {video: {makeup: 0}}` to turn makeup off), CLI flags override both.
+(e.g. `retouch: {video: {makeup: 0}}` to turn makeup off), CLI flags override both. **Video makeup is on by
+default**: `natural` preset at `makeup .3` (lips / blush / brows only, landmark-anchored masks; flicker-tested, see
+Video: temporal stability). `--makeup 0` turns it off.
 
 ## Presets
 | preset | lip | blush | brow | liner | shadow | contour | highlight | shades |
 |---|---|---|---|---|---|---|---|---|
 | none | 0 | 0 | 0 | 0 | 0 | 0 | 0 | - |
 | natural | .45 | .35 | .3 | 0 | 0 | .15 | .2 | rose lip, pink blush |
-| daily | .65 | .45 | .45 | .35 | .3 | .25 | .25 | coral lip, peach blush, bronze lid, brown liner |
+| daily | .65 | .45 | .45 | .35 | .3 | .25 | .25 | rosy pink lip (`mlbb`), peach blush, bronze lid, brown liner |
 | glam | .9 | .55 | .6 | .7 | .6 | .4 | .4 | red lip, rose blush, plum lid, black liner |
 
 - Lipstick: lip ring minus the inner mouth (teeth / tongue untouched); chroma moves toward the shade
@@ -100,6 +102,21 @@ Video defaults live in `retouch_video.py: VIDEO_DEFAULTS`; persona `retouch.vide
   frame-to-frame mean abs diff inside lips / cheeks vs the source: luma ratio 1.01 / 0.94, Lab-a ratio
   1.00 / 1.00; chunked vs single-worker output at the seams differs no more than elsewhere (encode noise).
   ~0.8 s/frame/worker.
+
+## Video speed presets (long videos)
+`retouch_video.py --preset fast|quality` (the flag also takes a makeup preset; pass it twice for both, e.g.
+`--preset fast --preset daily`).
+
+| preset | what it does | measured (1080x1920 talking head, Apple Silicon, 1 worker) |
+|---|---|---|
+| `quality` (default) | everything at full resolution; landmarks on a 640 px face crop; 160 px MLS grid re-solved when controls move > 0.35 px; x264 medium | ~0.64 s/frame |
+| `fast` | MLS reshape at full resolution; de-shine, skin and makeup on a **half-resolution** copy, added back as an upsampled delta (full-res pore texture untouched); landmarks on a 384 px crop; 240 px grid reused until controls move > 1 px; blemish pass off; x264 faster | ~0.21 s/frame (~3x) |
+
+Expected throughput with 5 workers (workers share cores, so scaling is below linear): a 1-minute 30 fps body
+(1,800 frames) takes roughly 4-6 min on `quality` and 1.5-2 min on `fast`; a 10-minute body roughly 45-60 min vs
+15-20 min. Difference on a real frame: mean abs 1.9 levels (quality vs source: 3.7); `fast` smooths slightly less
+fine detail. Use `fast` for long courses / drafts, `quality` for short hero clips and anything with close-ups.
+Always look at `--test` frames of the preset you render with.
 
 ## Before / after guidance
 - Always check `--test` frames (video) or the cover crop at 100 % before committing to a render: look at

@@ -47,7 +47,7 @@ Behaviour changes: recorded MP4s now also get H.264 High profile, `color_range t
 (h264_metadata bsf) — previously container tags only. Font staging/persona CSS as in cover's notes.
 Tests: `render_slides.py` on the template (01_title, 06_bars, 09_attn) — pixel-identical to the phase-1 render
 (mean abs diff 0.0 on 09_attn incl. the JS arrows); py_compile + `--help` for both CLIs; record path still
-unverified (Playwright Chromium not installed); `pytest tests` 34 passed.
+unverified (Playwright Chromium not installed); `pytest tests` green at the time (current count: run it; see tests/).
 Lib requests: none.
 
 ## Wave B

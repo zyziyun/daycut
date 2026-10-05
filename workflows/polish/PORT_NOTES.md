@@ -42,7 +42,7 @@ Behaviour changes: loudnormed audio is now 48 kHz **stereo** (mono up-mixed befo
 LRA target is raised to the measured LRA so loudnorm stays in linear mode; the final retag also writes `color_range tv`.
 Tests: synthetic 4 s 1080×1920 clip, `--cover --speed 1.2 --check` → before −14.05 LUFS / after −14.05 LUFS,
 3.40 s both, h264 bt709 primaries/trc/space, AAC 48 kHz stereo; `--skip-if-close` on the output (no gain change);
-`--speed 3 --no-loudnorm` (atempo chain, PCM→AAC in retag, bt709); `--help`; `pytest tests` 34 passed.
+`--speed 3 --no-loudnorm` (atempo chain, PCM→AAC in retag, bt709); `--help`; `pytest tests` green at the time (current count: run it; see tests/).
 Lib requests: `media.delivery_args(vbitrate=..., maxrate_factor=1.15)` bitrate-target mode and `audio=None` (= leave
 audio args out / copy) so `venc_args` can go.
 

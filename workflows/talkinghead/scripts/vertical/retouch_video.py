@@ -15,6 +15,14 @@ usage:
   python3 retouch_video.py body_v.mp4 x --test 300,2500,4800     # side-by-side stills test_<f>.jpg, check first
   python3 retouch_video.py body_v.mp4 body_rt.mp4 --workers 5
   python3 retouch_video.py body_v.mp4 body_rt.mp4 --makeup 0      # skin + reshape only
+  python3 retouch_video.py body_v.mp4 body_rt.mp4 --preset fast   # long videos: ~2-3x faster, see SPEED_PRESETS
+Speed presets (--preset fast|quality; any other --preset value is a makeup preset: natural, daily, glam, none):
+  quality (default): landmarks on a 640 px face crop, 160 px MLS grid re-solved when controls move > 0.35 px,
+                     segmentation-refined skin mask, x264 medium.
+  fast:              reshape (MLS warp) at full resolution, but de-shine / skin / makeup computed at HALF
+                     resolution and added back as an upsampled delta (full-res pore texture kept as is);
+                     landmarks on a 384 px crop, 240 px grid reused until controls move > 1.0 px, blemish pass
+                     skipped, x264 faster. Measured ~2x faster per frame (see references/RETOUCH.md).
 Defaults: persona retouch.video.<knob> overrides the built-ins (e.g. retouch.video.makeup), CLI flags override both.
 """
 import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[4] / "lib"))
@@ -40,15 +48,26 @@ STR_KNOBS = dict(preset="natural", glasses="auto")
 WARMUP = 15                 # frames each chunk processes (and discards) before its first written frame
 MIN_FACE_PX = 150           # face narrower than this: left untouched
 P = dict(VIDEO_DEFAULTS, **STR_KNOBS)
+# Speed presets: "track" = VideoFaceTracker / RetouchState settings + encoder; "knobs" = retouch() overrides
+# (applied before persona / CLI knobs, so an explicit --grid 160 still wins).
+SPEED_PRESETS = {
+    "quality": dict(track=dict(max_side=640, warp_tol=0.35, x264="medium", work_scale=1.0), knobs=dict()),
+    "fast": dict(track=dict(max_side=384, warp_tol=1.0, x264="faster", work_scale=0.5),
+                 knobs=dict(grid=240, blemish=0.0)),
+}
+SPEED = dict(SPEED_PRESETS["quality"]["track"])
 
 
 class Retoucher:
     """Tracker + temporal retouch state for one continuous run of frames."""
 
-    def __init__(self, fps, opts):
+    def __init__(self, fps, opts, speed=None):
+        sp = speed or SPEED
         self.opts = dict(opts)
-        self.tr = VF.VideoFaceTracker(fps)
-        self.st = RetouchState(video=True)
+        self.tr = VF.VideoFaceTracker(fps, max_side=sp["max_side"])
+        self.st = RetouchState(video=True, warp_tol=sp["warp_tol"])
+        self.scale = float(sp.get("work_scale", 1.0))
+        self.st_small = RetouchState(video=True, warp_tol=sp["warp_tol"])
         self.resets = 0
 
     def __call__(self, img, idx):
@@ -58,8 +77,28 @@ class Retoucher:
         if np.ptp(f["pts"][:, 0]) < MIN_FACE_PX:            # face too small to retouch safely
             return img
         if self.tr.sm.resets != self.resets:                 # cut / re-acquired face: drop mask + warp state
-            self.resets = self.tr.sm.resets; self.st.reset()
-        return retouch(img, f={"pts": f["pts"], "blend": f["blend"]}, lm=None, state=self.st, **self.opts)
+            self.resets = self.tr.sm.resets; self.st.reset(); self.st_small.reset()
+        if self.scale >= 1.0:
+            return retouch(img, f={"pts": f["pts"], "blend": f["blend"]}, lm=None, state=self.st, **self.opts)
+        return self._fast(img, f)
+
+    def _fast(self, img, f):
+        """Warp at full res; everything else on a half-res copy, added back as an upsampled delta."""
+        from vstudio import retouch as VR
+        q = VR._opts(**self.opts)
+        warped, moved = VR._warp(img, {"pts": f["pts"], "blend": f["blend"]}, q, self.st)
+        s = self.scale; h, w = img.shape[:2]
+        small = cv2.resize(warped, (int(w * s), int(h * s)), interpolation=cv2.INTER_AREA)
+        o = dict(self.opts, slim=0.0, eye=0.0, eye_extra=0.0)
+        res = retouch(small, f={"pts": moved * s, "blend": f["blend"]}, lm=None, state=self.st_small, **o)
+        delta = cv2.resize(res.astype(np.float32) - small.astype(np.float32), (w, h), interpolation=cv2.INTER_LINEAR)
+        out = warped.astype(np.float32) + delta
+        # same face-only composite as vstudio.retouch (region=True): no warp seams outside the face
+        fw = np.ptp(moved[:, 0]); c = moved.mean(0); e = np.zeros((h, w), np.float32)
+        cv2.ellipse(e, (int(c[0]), int(c[1] + .1 * fw)), (int(fw * .8), int(np.ptp(moved[:, 1]) * .8)), 0, 0, 360, 1, -1)
+        k = cv2.GaussianBlur(cv2.resize(e, (int(w * s), int(h * s))), (0, 0), fw * .08 * s)
+        k = cv2.resize(k, (w, h), interpolation=cv2.INTER_LINEAR)[..., None]
+        return np.clip(out * k + img.astype(np.float32) * (1 - k) + .5, 0, 255).astype(np.uint8)
 
     def close(self):
         self.tr.close()
@@ -78,14 +117,14 @@ def _fps(rate):
 
 
 def run_chunk(args):
-    src, a, b, out, opts = args
+    src, a, b, out, opts, speed = args
     rate = _rate(src)
-    rt = Retoucher(_fps(rate), opts)
+    rt = Retoucher(_fps(rate), opts, speed)
     s = max(0, a - WARMUP)
     cap = cv2.VideoCapture(src); cap.set(cv2.CAP_PROP_POS_FRAMES, s)
     W, H = int(cap.get(3)), int(cap.get(4))
     ff = subprocess.Popen(['ffmpeg', '-v', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'bgr24', '-s', f'{W}x{H}', '-r', rate,
-                           '-i', '-', '-c:v', 'libx264', '-crf', '12', '-preset', 'medium', '-pix_fmt', 'yuv420p',
+                           '-i', '-', '-c:v', 'libx264', '-crf', '12', '-preset', speed["x264"], '-pix_fmt', 'yuv420p',
                            '-video_track_timescale', '30000', out], stdin=subprocess.PIPE)
     try:
         for i in range(s, b):
@@ -110,16 +149,24 @@ def main():
     ap.add_argument('--frames', type=int, default=0, help="number of frames (default: to the end)")
     for k in VIDEO_DEFAULTS:
         ap.add_argument(f"--{k.replace('_', '-')}", dest=k, type=float, default=None)
-    ap.add_argument('--preset', choices=sorted(PRESETS), default=None, help="makeup preset (default natural)")
+    ap.add_argument('--preset', action='append', choices=sorted(PRESETS) + sorted(SPEED_PRESETS), default=None,
+                    help="fast | quality (speed, default quality) and/or a makeup preset (default natural); repeatable")
     ap.add_argument('--glasses', choices=('auto', 'none', 'thin', 'thick'), default=None)
     o = ap.parse_args()
+    presets = o.preset or []
+    speed = next((v for v in presets if v in SPEED_PRESETS), "quality")
+    makeup = [v for v in presets if v not in SPEED_PRESETS]
+    o.preset = makeup[-1] if makeup else None
+    SPEED.update(SPEED_PRESETS[speed]["track"])
+    P.update(SPEED_PRESETS[speed]["knobs"])
     P.update((persona().get("retouch") or {}).get("video") or {})
     P.update({k: getattr(o, k) for k in list(VIDEO_DEFAULTS) + list(STR_KNOBS) if getattr(o, k) is not None})
+    print(f"speed preset {speed}: {SPEED}, makeup preset {P['preset']}")
     rate = _rate(o.src); fps = _fps(rate)
     if o.test:
         cap = cv2.VideoCapture(o.src)
         for fi in map(int, o.test.split(',')):
-            rt = Retoucher(fps, P)                       # warm up like a chunk would
+            rt = Retoucher(fps, P, SPEED)                # warm up like a chunk would
             cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, fi - WARMUP))
             img = r = None
             for i in range(max(0, fi - WARMUP), fi + 1):
@@ -140,7 +187,7 @@ def main():
     a0 = max(0, o.start); n = min(n, a0 + o.frames) if o.frames else n
     k = max(1, o.workers); step = (n - a0 + k - 1) // k
     tmp = os.path.join(os.path.dirname(os.path.abspath(o.out)), 'rt'); os.makedirs(tmp, exist_ok=True)
-    jobs = [(o.src, a0 + i * step, min(n, a0 + (i + 1) * step), os.path.join(tmp, f'c{i}.mp4'), dict(P))
+    jobs = [(o.src, a0 + i * step, min(n, a0 + (i + 1) * step), os.path.join(tmp, f'c{i}.mp4'), dict(P), dict(SPEED))
             for i in range(k) if a0 + i * step < n]
     with Pool(len(jobs)) as pool:
         outs = pool.map(run_chunk, jobs)

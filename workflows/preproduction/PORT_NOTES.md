@@ -55,7 +55,7 @@ openai default is now `gpt-4o-mini-tts` / voice `cedar` via plain HTTPS (was `tt
 package; `--model tts-1 --voice alloy` restores it).
 Tests: 3-word Kokoro drill (example words; mlx-audio present) → 45.2 s, wav −14.1 LUFS / −1.5 dBTP, m4a −14.2 LUFS /
 −1.1 dBTP (phase 1: 46 s, −14.8 LUFS); `--dry-run` on the 5-word example; lint on the example script (clean);
-py_compile + `--help`; `pytest tests` 34 passed. edge/openai not executed (network / key).
+py_compile + `--help`; `pytest tests` green at the time (current count: run it; see tests/). edge/openai not executed (network / key).
 Found: Kokoro (mlx-audio) crashes on some sentence+speed combos ("broadcast_shapes ... cannot be broadcast", e.g.
 "Inference is the part you pay for." at 0.85) — upstream bug, documented in WORKFLOW.md Notes.
 Lib requests: `tts._kokoro` should include the mlx_audio stdout/stderr tail in "mlx_audio produced no wav" (the real
@@ -85,7 +85,7 @@ Tests (temp files in /tmp/preprod-waveb, not committed):
 - Platforms: zh `--platform douyin` → "151 字 ≈ 34s … target 68-270 字 … sweet spot 15-60s" clean; en
   `--platform youtube` → target 1155-3300 words + sweet-spot warning; 4× example on `youtube-shorts` → ERROR over 180 s.
 - zh trope script → dash/opener/CTA/AI-tell/emoji/40 字 hits; the example persona YAML lints the example script clean.
-- py_compile, `--help` (both scripts), `make_drill --dry-run`, `pytest tests -q` 104 passed.
+- py_compile, `--help` (both scripts), `make_drill --dry-run`, `pytest tests -q` green at the time (current count: run it; see tests/).
 New persona keys: `voice.en.{persona,domain,wpm,rules,phrases_prefer,phrases_avoid,signposts}`,
 `voice.en.tts.<engine>_voice`, `voice.zh.{persona,domain,cpm,wpm (alias of cpm, 字/min),rules,phrases_prefer,
 phrases_avoid,signposts}`, `voice.zh.tts.<engine>_voice` (documented only; nothing reads it yet).

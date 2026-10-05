@@ -7,7 +7,13 @@
   --draft-subs  print subtitle lines (raw seconds) from the kept words, ready to paste into the config
   (default)     grade the raw, cut body/outro/extra spans (DROP + PATCH + pause squeeze), build the
                 highlights montage with internal crossfades, write work/layout.json (raw->cut maps)
-  --verify      ASR the cut files again and flag leftover fillers / repeats
+  --verify      ASR the cut files again, flag leftover fillers / repeats AND content words that the
+                cut lost (kept transcript vs raw words in the spans minus cut.drop)
+
+Filler policy (shared with talkinghead, scripts/filler_policy.py): --suggest scores every candidate;
+only high-confidence ones (standalone 嗯/呃/um/uh, stutter repeats) are printed as the AUTO drop list.
+Semantic fillers (就是 那个 然后), 2-word repeats and hidden-onset PATCHes are CONFIRM: the creator
+says yes to each before it goes into cut.drop / cut.patch.
 
 Run from anywhere:  python3 $VSTUDIO/workflows/promo-recut/scripts/tight_cut.py promo.config.json [--suggest]
 """
@@ -18,7 +24,9 @@ import os
 import re
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "talkinghead" / "scripts"))
 from common import Project, P  # noqa: E402
+import filler_policy as fp  # noqa: E402
 from vstudio import asr, audio, cut, media  # noqa: E402
 
 PUNCT = re.compile(r"[\s，。,.!?！？、：:；;“”\"'…-]+")
@@ -72,26 +80,30 @@ def suggest(prj, words):
     drops = prj.get("cut.drop", []) or []
     wav = audio_wav(prj)
     x, sr = audio.read_wav(wav, mono=True)
-    out = cut.suggest_fillers(words, audio=(x, sr), fillers=fillers_of(prj), drops=drops,
-                              per_char=prj.get("cut.long_word_per_char", 0.22))
-    print(f"{'kind':<13}{'start':>8}{'end':>8}  note")
+    out = fp.score(cut.suggest_fillers(words, audio=(x, sr), fillers=fillers_of(prj), drops=drops,
+                                       per_char=prj.get("cut.long_word_per_char", 0.22)))
+    print(f"conf {'kind':<13}{'start':>8}{'end':>8}  note")
     for r in out:
         note = r["note"] or r["text"]
         if r["kind"] == "filler-glued":
             note = f"'{r['text']}' {r['note']}"
         elif r["kind"] == "long-word":
             note = f"'{r['text']}' {r['note']}"
-        print(f"{r['kind']:<13}{r['start']:8.2f}{r['end']:8.2f}  {note}{'  (already dropped)' if r['dropped'] else ''}")
-    new = [[round(r["start"], 2), round(r["end"], 2)] for r in out
-           if r["kind"] in ("filler", "repeat", "repeat2") and not r["dropped"]]
+        print(f"{r['conf']:.2f} {r['kind']:<13}{r['start']:8.2f}{r['end']:8.2f}  {note}  [{r['tier']}: {r['why']}]")
+    auto, confirm, _ = fp.split_tiers(out)
+    new = [[round(r["start"], 2), round(r["end"], 2)] for r in auto if r["kind"] in ("filler", "repeat")]
+    ask = [[round(r["start"], 2), round(r["end"], 2)] for r in confirm if r["kind"] in ("filler", "repeat", "repeat2")]
     patches = [[round(r["patch"][0], 2), round(r["patch"][1], 2)] for r in out if r["patch"] and not r["dropped"]]
     for g0, g1, v in cut.voiced_gaps(words, (x, sr)):
         print(f"{'no-words':<13}{g0:8.2f}{g1:8.2f}  {v:.2f}s of speech with no transcript: ASR skipped it -"
               " listen; the cut keeps it whole")
-    print("\nDROP candidates (review by ear before pasting into cut.drop):")
+    print("\nAUTO drops (high confidence; still listen, the creator confirms the final cut.drop):")
     print(json.dumps(new))
+    if ask:
+        print("CONFIRM drops (often real words - add to cut.drop only after the creator says yes):")
+        print(json.dumps(ask))
     if patches:
-        print("PATCH candidates (cut.patch, [whisper_start, real_start]):")
+        print("CONFIRM PATCH candidates (cut.patch, [whisper_start, real_start]; hidden onsets, listen first):")
         print(json.dumps(patches))
     print("\nTip: inspect a region with  ffplay -ss <start-0.5> -t 2 work/audio.wav ;"
           " a PATCH moves a word start to where the RMS rises after the dip.")
@@ -208,6 +220,11 @@ def do_cut(prj, words, args):
 
 def verify(prj):
     fillers = [norm(f) for f in fillers_of(prj)]
+    raw = load_words(prj) if os.path.exists(prj.w("audio.json")) else []
+    drops = prj.get("cut.drop", []) or []
+    parts = {"body": prj.get("cut.body", []), "outro": prj.get("cut.outro", []) or []}
+    parts.update(prj.get("cut.extra", {}) or {})
+    missing = 0
     for name in ["body", "outro"] + list((prj.get("cut.extra") or {}).keys()):
         f = prj.w(f"{name}.mp4")
         if not os.path.exists(f):
@@ -224,6 +241,14 @@ def verify(prj):
                 print(f"  ! filler '{w['word'].strip()}' at cut {w['start']:.2f}s")
             if i + 1 < len(ws) and toks[i] and toks[i] == toks[i + 1]:
                 print(f"  ! repeat '{w['word'].strip()}' at cut {w['start']:.2f}s")
+        if raw and parts.get(name):   # content check: raw words in the spans minus confirmed drops
+            exp = [w for w in raw if any(a - 0.05 <= w["start"] < b for a, b in parts[name])
+                   and not any(a - 0.01 <= w["start"] < b - 0.01 for a, b in drops)]
+            flags = fp.content_check(exp, ws, fillers=fillers_of(prj))
+            fp.print_flags(flags, f" ({name}, raw seconds)")
+            missing += len(flags)
+    if missing:
+        print(f"\n{missing} span(s) may have lost speech: remove the matching cut.drop / cut.patch entry and re-cut.")
     print("\nCut-file seconds -> raw: see work/layout.json maps (vstudio.cut.TimeMap items)."
           " Fix with cut.drop / cut.patch and re-run.")
 

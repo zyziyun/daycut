@@ -459,6 +459,29 @@ def broll_frame(fr, it, b, t):
     BR.paste_card(fr, v, x0, y0, r=22, shadow=0.55, border=(255, 255, 255), alpha=a)
     if it.label is not None: blit(fr, it.label, x0 + 14, y0 + 14, a)
     return fr
+def split_geom(it, b):
+    """(side, face box on the split output) for a split item at body time b (zoom is off under a split)."""
+    side = it.d.get('side', 'top' if L.portrait else 'left')
+    fx, fy, fw = face(sid_at(b)); x0, y0, x1, y1 = fbox(sid_at(b))
+    if L.portrait:
+        hh = H // 2; y = int(np.clip(fy + 0.15 * hh - hh / 2, 0, H - hh)); off = hh if side == 'top' else 0
+        return side, (x0, y0 - y + off, x1, y1 - y + off)
+    hw = W // 2; x = int(np.clip(fx - hw / 2, 0, W - hw)); off = hw if side == 'left' else 0
+    return side, (x0 - x + off, y0, x1 - x + off, y1)
+def split_caption_xy(it, b, im):
+    """Captions under a split screen go where the face is not: the platform caption spot if it is clear of the
+    speaker's face core, else inside the B-roll pane right next to the seam, else centred on the seam
+    (vertical); on 16:9 the caption moves under the B-roll half. Falls back to the spot covering least."""
+    side, fb = split_geom(it, b); core = face_core(fb); ch, cw = im.shape[0], im.shape[1]
+    rect = lambda cx, cy: (cx - cw / 2, cy - ch / 2, cx + cw / 2, cy + ch / 2)
+    if L.portrait:
+        hh = H // 2; pane = (hh - 24 - ch / 2) if side == 'top' else (hh + 24 + ch / 2)
+        cands = [(CXM, ST['sub_y']), (CXM, pane), (CXM, hh)]
+        cands = [(x, y) for x, y in cands if L.safe[1] + ch / 2 <= y <= L.safe[3] - ch / 2] or cands
+    else:
+        hw = W // 2; bx = hw / 2 if side == 'left' else hw + hw / 2
+        cands = [(CXM, ST['sub_y']), (bx, ST['sub_y'])]
+    return next((c for c in cands if overlap(rect(*c), core) <= 0), None) or min(cands, key=lambda c: overlap(rect(*c), core))
 def _screen_box(it, dt, b, w, h):
     out = BR.blur_fill(it.src.frame(dt), w, h, 0.5) + 18
     cw, ch = int(w * 0.88), int(h * 0.86); v = it.view(dt, cw, ch, b)
@@ -551,7 +574,9 @@ def compose(fr, t, captions=True):
         elif CH and ST['progress'] == 'classic': progress_classic(fr, b, pa)
     if captions:
         for a0, a1, im in SUBIMG:
-            if a0 <= b < a1: blitc(fr, im, CXM, ST['sub_y']); break
+            if a0 <= b < a1:
+                cx, cy = split_caption_xy(br, b, im) if br is not None and br.mode == 'split' else (CXM, ST['sub_y'])
+                blitc(fr, im, cx, cy); break
     return fr
 
 def render(out, captions=True, audio_path='mix.wav'):

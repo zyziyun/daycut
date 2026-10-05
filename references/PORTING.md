@@ -1,6 +1,6 @@
 # Porting rules (phase 1: bring each old skill / project into `workflows/<name>/`)
 
-Repo: `/Users/ziyun/Desktop/design-ml/video-studio` (public, MIT). You own exactly ONE folder:
+Repo: this repository (public, MIT). You own exactly ONE folder:
 `workflows/<name>/`. Never edit anything else (not `lib/`, not other workflows, not
 `persona.example.yaml`, not the source skill you are porting — sources are READ-ONLY).
 

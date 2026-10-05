@@ -126,7 +126,7 @@ panel, 勘误, 2 auto episodes):
 - timeline.json, sounded.json, whisper segments identical; subs.ass timings identical; subs.srt differs only
   by the rounding fix above; 发布包.md byte-identical; episodes + covers produced. Visual side-by-side of
   card / panel / covers / burned frame checked.
-- ASR cache: second transcribe.py run 1.4 s. `python3 -m pytest tests -q` 34 passed; every script
+- ASR cache: second transcribe.py run 1.4 s. `python3 -m pytest tests -q` green at the time (current count: run it; see tests/); every script
   py_compiles and `--help` runs.
 
 Lib requests:
@@ -173,7 +173,7 @@ Tests:
   tile, 1080x1440 + 1080x1920 split: no camera -> title band; tile, avatar name and bookmark bar never in frame;
   code / doc text readable at ~2.1x (main code column, line numbers kept); −14.06 LUFS / −1.41 dBTP; label-length
   warnings. Found and fixed: 72 px x 2 lines overflows the 190 px 3:4 caption band -> capped to 60 px.
-- `python3 -m pytest tests -q`: 318 passed. All scripts py_compile + `--help`.
+- `python3 -m pytest tests -q` green at the time (current count: run it; see tests/). All scripts py_compile + `--help`.
 
 Lib requests:
 - `platform.fit_text_size`: wrap by min(pixel width, max_chars) — today a 27-char CJK line at 44 px is one pixel-fit

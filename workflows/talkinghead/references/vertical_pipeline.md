@@ -46,14 +46,17 @@ python3 $V/cut_pass1.py edit_list.py      # TH -45 dB, MAXGAP 0.20, KEEPGAP 0.10
 
 Per-segment `ffmpeg -ss -t` drifted 0.57s over 163 cuts, so don't go back to it.
 
-## 4. Retouch, the slow step: about 40 min for 6.4k frames with 5 workers
+## 4. Retouch, the slow step: about 40 min for 6.4k frames with 5 workers (`--preset fast`: ~3x less)
 ```bash
 python3 $V/retouch_video.py body_v.mp4 x --test 300,2500,4800    # side-by-side stills, check first
 python3 $V/retouch_video.py body_v.mp4 body_rt.mp4 --workers 5
 ```
 - `vstudio.retouch.retouch()` per frame on EMA-smoothed landmarks, so the face doesn't jitter between frames.
 - Video defaults: `slim 0.042`, `eye 0.04` (minimal: glasses lenses warp), `shine 0.7`, `smooth 0.55`
-  (bilateral, 45% fine texture added back), `light 0.04`, `makeup 0` (flickers on video).
+  (bilateral, 45% fine texture added back), `light 0.04`, `makeup 0.3` `natural` (on by default; landmark-anchored
+  masks keep it flicker-free; `--makeup 0` turns it off).
+- **Long videos:** `--preset fast` (half-res skin/makeup delta, full-res warp, ~0.21 vs ~0.64 s/frame/worker); see
+  `references/RETOUCH.md` → Video speed presets.
 - Override per creator in persona `retouch.video.<knob>`, or per run with `--slim 0.05` etc.
 - The warp is blended back through a feathered face-region mask; without it the ROI edge streaks.
 
@@ -61,14 +64,19 @@ python3 $V/retouch_video.py body_v.mp4 body_rt.mp4 --workers 5
 
 ## 5. Strict filler pass
 ```bash
-python3 $V/strict_pass.py transcribe body_a.wav "$PROMPT"     # prints idx:word[t] for the whole body
-# write strict.py: DEL = {13, 18, 25, ...}; TEXT = {sid: "fixed|subtitle"} for every changed sentence
+python3 $V/strict_pass.py transcribe body_a.wav "$PROMPT"     # idx:word[t] + AUTO / CONFIRM / INFO tiers, strict_draft.py
+# creator confirms; cp strict_draft.py strict.py; add confirmed CONFIRM indices; TEXT = {sid: "fixed|subtitle"}
 python3 $V/strict_pass.py apply strict.py body_rt.mp4 body_a.wav body2_rt.mp4 body2_a.wav
+python3 $V/strict_pass.py verify strict.py body2_a.wav "$PROMPT"  # flags content words the cut lost (exit 1)
 ```
-- **What goes in DEL**:
-  - fillers: 就是, 这个, 然后, 像, 其实, 反正, 嘛, 的话
-  - stray leftover syllables from pass 1
-  - first halves of self-repeats: in 「你要作为X你要干Y」 drop the first 你要; in 「大家都众所周知」 drop 大家都
+- **What goes in DEL** (the creator confirms the final list; only AUTO rows are pre-filled):
+  - AUTO (≥ 0.8): standalone 嗯 / 呃 / um / uh under 0.6 s, immediate stutter repeats (drop the first copy)
+  - CONFIRM, by ear: semantic fillers 就是, 这个, 然后, 像, 其实, 反正, 嘛, 的话 (often real words in context)
+  - CONFIRM: stray leftover syllables from pass 1; merged-filler / hidden-onset words (cut only the filler part)
+  - CONFIRM: first halves of self-repeats: in 「你要作为X你要干Y」 drop the first 你要; in 「大家都众所周知」 drop 大家都
+- **Never apply every suggestion.** A real test that did deleted real words and the subtitles drifted from the audio.
+- **Verify**: `verify` compares a fresh ASR of the cut with bw.json minus DEL (`filler_policy.content_check`,
+  single-character ASR noise ignored) and lists missing spans with nearby DEL indices.
 - **Pauses**: squeezed to persona `audio.pause_squeeze` (0.06s) with MAXGAP 0.12.
 - **Effect**: about 10% shorter (212s → 191s in the reference video).
 - The apply step prints `kept words || subtitle` per sid. Read every line and fix the TEXT entries.

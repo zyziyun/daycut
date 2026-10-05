@@ -94,7 +94,7 @@ Tests (synthetic lavfi media in /tmp, old run from HEAD before editing, then new
   within ~1.5 dB of old; integrated loudness closer to target (above).
 - make_cover 16:9 auto layout and 9:16 with CJK+Latin title: PSNR inf vs old.
 - probe.py table + `--init --max-res 960`, contact_sheets.sh landscape + portrait: OK.
-- `pytest tests -q` 34 passed; py_compile all; `--help` for all 4 Python CLIs and both shell scripts.
+- `pytest tests -q` green at the time (current count: run it; see tests/); py_compile all; `--help` for all 4 Python CLIs and both shell scripts.
 
 Lib requests:
 - `cut.xfade_assemble`: (1) per-piece `vf` (dict key) so grade/bright/HDR/stabilize can vary per clip, and
@@ -136,7 +136,7 @@ captions (master minus clean master) inside the caption box; overlay boxes insid
 measurably ducked (-11.9 dB for duck_db -12); 120 fps slow-mo shot has no repeated frames; HEIC photo;
 dry run + douyin. Calm: HEAD `build_vlog.py` vs new on two configs (16:9 crop + slow-mo, 9:16 blur + ambient
 atempo) -> identical frames and durations; calm with `platform: youtube-shorts` -> 1080x1920, add_music
-`--platform` uses the profile target. `pytest tests -q`: 318 passed.
+`--platform` uses the profile target. `pytest tests -q` green at the time (current count: run it; see tests/).
 
 Unverified / limits:
 - Synthetic media only: no real faces (face-mode reframe exercised only through its pad-blur fallback; face

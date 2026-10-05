@@ -74,7 +74,7 @@ persona `audio.*` / `tts.*` are not consulted.
   `transcribe.py` (mlx whisper-small.en) → transcript; old vs new `align_cues` + `scene_windows` byte-identical.
 - `tts.py` with `tts._openai` stubbed: 3 calls with the right text/voice/direction/model; re-run of line 2
   served from cache (0 calls).
-- `py_compile` + `--help` for all 11 scripts; `python3 -m pytest tests -q` → 34 passed.
+- `py_compile` + `--help` for all 11 scripts; `python3 -m pytest tests -q` green at the time (current count: run it; see tests/).
 
 ### Lib requests
 - `audio.loop_bed(src, total, xfade, fade_in, fade_out, lufs)` — crossfaded looping (mix_bed only hard-tiles);
@@ -134,7 +134,7 @@ title strip, above the caption band), caption sizes from the band height (EN 38 
 - Reference portrait scene alone (31.95 s): lint 0/0; snapshots at 12 s and 27 s read: everything inside the
   portable 9:16 area, nothing in the button column or caption band.
 - storyboard_from_script + pair_cues on `example/SCRIPT.md` (estimated and real timing): sensible drafts (above).
-- py_compile + `--help` for all scripts; `python3 -m pytest tests -q`: 108 passed.
+- py_compile + `--help` for all scripts; `python3 -m pytest tests -q` green at the time (current count: run it; see tests/).
 
 **Not done / unverified**: no full render; sketches (`make_storyboard.py`) are still example-specific 16:9 — draw
 vertical sketches at canvas size by hand; 3:4 built only via the canvas numbers (not snapshotted for the explainer).

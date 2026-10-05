@@ -1,8 +1,10 @@
 """V track step 5: strict filler pass, read by `strict_pass.py apply strict.py ...`.
 SYNTHETIC example. Indices come from the `strict_pass.py transcribe` printout (idx:word[t]).
 
-DEL candidates: fillers (就是 这个 然后 像 其实 反正 嘛 的话), stray leftover syllables,
-and the FIRST half of a self-repeat (keep the cleaner second take).
+Start from the `strict_draft.py` that `transcribe` writes: DEL is pre-filled only with AUTO (high-confidence)
+rows: standalone 嗯/呃/um/uh and stutter repeats. CONFIRM rows (semantic fillers 就是 这个 然后 像 其实 反正 嘛 的话,
+stray syllables, hidden-onset words, the FIRST half of a self-repeat) go in only after the creator says yes.
+After `apply`, run `strict_pass.py verify strict.py body2_a.wav` and fix every missing-word flag.
 """
 DEL = {4, 17, 18, 31, 52}                 # word indices to remove
 TEXT = {                                   # subtitle rewrites per sid after the cut (read the printed "kept || subtitle" lines)

@@ -69,7 +69,7 @@ Behaviour changes:
 Tests: collage + face-quadrant templates rendered via `vstudio.render` (collage pixel-identical to the old render_html,
 mean abs diff 0.0); split_cover 4:3 + 16:9 (synthetic photo/thumbnail) and a 3:4 aspect output; extract_frames
 sheet (+`--save-frames`), collage, face on a lavfi clip; `pick` exits cleanly with no face; py_compile + `--help`
-for all 3 CLIs (+ matte.py); `pytest tests` 34 passed.
+for all 3 CLIs (+ matte.py); `pytest tests` green at the time (current count: run it; see tests/).
 Lib requests: `cover.split_cover` could accept `fade`/`overlap` (photo fade width, panel overlap) to keep per-output
 tuning.
 

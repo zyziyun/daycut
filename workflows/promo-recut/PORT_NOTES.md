@@ -53,13 +53,16 @@ Existing keys used: `speed.body`, `speed.b_roll`, `audio.voice_lufs`, `audio.lou
   - tight_cut `--suggest`, `--draft-subs` and the cut run
   - build_promo for both orientations; `hyperframes lint` gives 0 errors (6 advisory structure warnings, the
     same kinds as the original), and snapshots look right at the split, the montage and the end card
-  - make_cover with a real retouch pass and face-centred crop
+  - make_cover: the retouch code path (`vstudio.retouch`) and the face-centred crop RUN, but on synthetic media with no
+    real face, so no retouch result was judged here. Real-face retouch was validated in talkinghead (see
+    `references/VALIDATION.md`); a promo cover from real footage is still unverified.
   - post_copy
   - `export.sh --skip-render`: -13.9 LUFS and bt709 tags
   - every `.py` passes py_compile and `--help`
 - Not run:
   - a full HyperFrames render
-  - `--verify` and real whisper transcription (the mlx_whisper import works; faster_whisper fallback untested)
+  - `--verify` and real whisper transcription (the `--verify` content-word check added later is shared with
+    talkinghead `strict_pass verify`; still not run on real promo footage) (the mlx_whisper import works; faster_whisper fallback untested)
 - The vertical layout (`GEO["vertical"]`) is a first pass: subtitles over the face band, the card under it,
   the montage frame centred. It renders, but no real 9:16 post has been made with it yet, so tune it against
   the 小红书 safe zone.
@@ -116,7 +119,7 @@ Existing keys used: `speed.body`, `speed.b_roll`, `audio.voice_lufs`, `audio.lou
   progress bar + active chapter, end card).
 - `make_cover`: 4:3 / 16:9 / 3:4 visually match the old covers (synthetic footage has no face → centred crop).
 - `post_copy`: OK (format changes above). `export.sh --skip-render`: -14.0 LUFS, bt709 primaries/transfer/space.
-- `python3 -m pytest tests -q`: 34 passed; py_compile + `--help` for every script; `export.sh --help`.
+- `python3 -m pytest tests -q` green at the time (current count: run it; see tests/); py_compile + `--help` for every script; `export.sh --help`.
 - Not run: `--verify`/real whisper, a full HyperFrames render.
 
 **Lib requests**
@@ -169,7 +172,7 @@ the same advisory warnings as before. Unused local `HL` dropped from render_html
   on real footage). The synthetic chapters 起因 / 讲解视频 are only ~5 s apart and their labels touch on the
   1080 bar → the new warning fires (content issue: merge/shorten).
 - `export.py --skip-render --platform douyin`: -14.0 LUFS, bt709, length warning. `vstudio.export.load_cues` reads
-  `cues.json`. `--clean-master` build: empty cue list. py_compile + `--help`; `python3 -m pytest tests -q`: 108 passed.
+  `cues.json`. `--clean-master` build: empty cue list. py_compile + `--help`; `python3 -m pytest tests -q` green at the time (current count: run it; see tests/).
 
 **Lib requests**
 - `overlays.hf_progress`: a `position="top"` option (top scrim gradient, labels under the bar) — we override

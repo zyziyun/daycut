@@ -1,0 +1,109 @@
+# Real-media validation record
+
+What each workflow has been run on with **real footage** (not synthetic test patterns), what passed, and the
+known limits. Sources are anonymised. All outputs stayed in a temp folder and none were committed: no real
+media, transcripts, names or paths are in this repo. Synthetic regression tests live in `tests/` and
+`workflows/*/tests/` (run `python3 -m pytest tests -q` for the current count). Per-workflow details:
+`workflows/<name>/PORT_NOTES.md`.
+
+Legend: **Passed** = checked by looking at stills and/or measuring; **Limit** = known gap or failure.
+
+## talkinghead
+**Tested on**
+- The creator's vertical HLG 口播 (iPhone, 1080x1920), first 65 s.
+- The creator's horizontal webcam recording (1080p, glasses), 60 s.
+
+**Passed**
+- HDR→SDR via avconvert; whisper word timestamps; cut_pass1 (65 → 51.5 s).
+- `retouch_video.py` (`daily` preset, 6 workers) on a real face with thin metal glasses. Makeup flicker
+  measured on a 180-frame 1080p clip: frame-to-frame lip / cheek luma change 1.01x / 0.94x the source's, colour 1.00x, and no
+  extra jump at chunk seams. Video makeup is on by default (`natural`, 0.3).
+- Retouch speed presets on a real vertical frame: `quality` ~0.64 s/frame, `fast` ~0.21 s/frame (1 worker).
+  Mean difference between them is 1.9 levels.
+- face_track hit 100 %. compose previews on 小红书 3:4 and 抖音 9:16, with hook, callout, 记笔记 panel,
+  refined progress bar and pop word.
+- Webcam reframe to 9:16, face mode: hit rate 1.0, p95 pan 0.05 crop-widths/s, 1.78x upscale recorded.
+  Checks on the frame:
+  - punch-in correctly capped to none (the face already filled 0.75 of the width);
+  - hook title shrunk above the glasses;
+  - PiP shrunk off the eyes;
+  - split and circle scenes OK.
+- Webcam kept at 16:9 (`ORIENT=horizontal`): YouTube landscape layout previews OK.
+- Split-screen B-roll on the webcam 抖音 preview. Captions had landed on the speaker's mouth / chin; they
+  now move to the B-roll pane above the seam (fixed after review).
+
+**Limit / found**
+- Applying **every** strict_pass suggestion deleted real words, and the subtitles no longer matched the
+  audio. Fixed by policy:
+  - only high-confidence fillers and repeats are pre-filled;
+  - the creator confirms the rest;
+  - `strict_pass.py verify` re-transcribes the cut and flags lost content words.
+
+  The verify step itself has not yet been re-run on the real clip.
+- The ffmpeg zscale HDR path has not been verified on real HLG (only avconvert has).
+- No full-length final render of real footage (previews and bodies only).
+
+## call-clips
+**Tested on**
+- A 3-person Zoom podcast, 60 s window.
+
+**Passed**
+- `render_trio` on 小红书 9:16. Two non-creator tiles masked with a sticker, tracked at 100 % on both
+  guests, and `verify_coverage` PASS 100 %.
+- All Zoom name labels blurred; checked unreadable before and after the crop.
+- Auto-trim (classic profile) plus a 1.2x body gives 49.1 s, at −14.1 LUFS / −1.4 dBTP.
+- Captions inside the caption box; panel and chips inside the safe box; 1080x1440 cover.
+
+**Limit / found**
+- Name chips were readable until `name_mask` was added.
+- 2-line captions climbed onto the host tile until the caption block was capped to the box height.
+- faster-whisper backend not run on real media.
+
+## longform-to-short
+**Tested on**
+- A screen-share lecture with a participant avatar tile (no camera), 3-minute window.
+- Rendered as vertical slices at 1080x1440 and 1080x1920.
+
+**Passed**
+- Title band used (no camera found). The avatar tile, the participant name and the browser bookmark bar
+  never appear in frame.
+- Code and doc text readable at ~2.1x, with the main code column and line numbers kept.
+- −14.06 LUFS / −1.41 dBTP; label-length warnings fire.
+
+**Limit / found**
+- 72 px 2-line captions overflowed the 3:4 caption band; now capped to 60 px.
+- Speaker framing on a real camera tile has not been verified (this recording had only an avatar).
+- The first ~50 s transcribed as English noise: an ASR language-detection issue. Set `language`.
+
+## photo-story
+**Tested on**
+- Museum / travel set: 10 iPhone HEIC photos and 2 HLG clips.
+- Music-only mode with a CC-BY track, at 小红书 3:4.
+
+**Passed**
+- 128 BPM detected; 11 cuts on bars; section boundaries moved onto music sections. `beats.verify` max
+  0.49 frames.
+- HEIC rotation correct; HDR clip tone-mapped; title inside the caption box; chapter card on the section
+  change.
+- A kept clip measured −14.3 LUFS / −1.45 dBTP.
+- On the synthetic demo (not real media): the default 3:4 and 9:16 stills are identical to the previous output.
+  Platform stills for 3:4, 9:16, 16:9 and 小红书 horizontal checked with the safe and caption boxes drawn.
+
+**Limit / found**
+- An ambient track with no steady pulse (p90 270 ms) has no usable grid, so cuts follow the raw beats.
+- Voice clone was run for real only with a synthetic reference voice, not the creator's.
+- No full-length render; 16:9 covers are still portrait-tuned.
+
+## Workflows validated on synthetic media only (no real-footage run yet)
+- **vlog** (calm + fun): synthetic drone-like clips and a drum track.
+  - Not run on real faces, real speech, HDR in the fun path, or mastered music.
+  - Fun compositing runs at ~10 output fps at 1080x1920.
+- **promo-recut**: synthetic talk.
+  - Not run: a full HyperFrames render, `--verify` with real whisper, the face path of the vertical layout, or a
+    retouched cover from real footage. The cover's retouch code path runs, but on a face-less test image.
+- **explainer**: 16:9 regression, byte-identical. A synthetic 3-line vertical short passes lint, and its
+  caption boxes were pixel-checked. No full render; 3:4 is not snapshotted.
+- **cover, slides, polish, preproduction**: synthetic inputs, pixel / command identical to the previous
+  version.
+  - Slides recording (Playwright) is unverified.
+  - The RVM matting engine was not verified on a real face.

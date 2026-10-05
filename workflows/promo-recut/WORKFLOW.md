@@ -34,9 +34,11 @@ my-promo/
    Apple Silicon, else `faster_whisper`, else OpenAI whisper-1 if `OPENAI_API_KEY` is set). `--suggest` (`vstudio.cut.suggest_fillers`) prints three kinds of candidates: fillers
    (`cut.fillers`, else the library's zh + en list: 然后/就是/那个/嗯/um/uh..., including fillers split across tokens or glued to the next word), immediate
    repeats (A A, A B A B), and **long words with an energy dip inside**, where whisper merged a filler into
-   the word. For the last kind it proposes a PATCH start read off the RMS envelope, and prints ready-to-paste DROP
-   and PATCH lists. Listen to each one
-   (`ffplay -ss <t-0.5> -t 2 work/audio.wav`) and copy what's right into `cut.drop` / `cut.patch`. Set
+   the word. For the last kind it proposes a PATCH start read off the RMS envelope. Every row is confidence-scored
+   (same policy as talkinghead, `workflows/talkinghead/scripts/filler_policy.py`): the **AUTO** DROP list holds only
+   standalone 嗯/呃/um/uh and stutter repeats; semantic fillers (然后/就是/那个), two-word repeats and every PATCH are
+   **CONFIRM** lists. Listen to each one (`ffplay -ss <t-0.5> -t 2 work/audio.wav`); **the creator confirms what goes
+   into `cut.drop` / `cut.patch`** (never paste every candidate: on real footage that deletes real words). Set
    `cut.body` / `cut.outro` KEEP spans by sentence.
 2. **Tight cut + montage + layout**
    ```bash
@@ -49,7 +51,9 @@ my-promo/
    frame-exact (`cut.cut_segments`, 12 ms fades at every join) and the voice gets a two-pass loudnorm to
    persona `audio.voice_lufs`. The step builds the highlights
    montage with baked 0.3 s internal crossfades (`cut.xfade_assemble`, plain acrossfade) and writes
-   `work/layout.json`: durations, raw→cut maps as `vstudio.cut.TimeMap` items, and word times. **`--verify` runs ASR on the cut files** and flags leftover fillers and repeats. Also listen to
+   `work/layout.json`: durations, raw→cut maps as `vstudio.cut.TimeMap` items, and word times. **`--verify` runs ASR on the cut files**, flags leftover fillers and repeats, and compares the cut transcript with
+   the raw words in the spans minus `cut.drop`: content words that went missing are printed with their raw time
+   (a DROP or PATCH ate speech; remove it and re-cut). Also listen to
    every join before going on.
 3. **Subtitles + cards**
    ```bash

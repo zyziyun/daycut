@@ -1,16 +1,37 @@
 #!/usr/bin/env python3
 """Strict disfluency pass on an existing body (keeps the retouch, no re-render of it).
 1) python strict_pass.py transcribe body_a.wav "术语 prompt"   -> bw.json + indexed word list printed
-2) mark leftover fillers / repeats / stray syllables in strict.py:
-       DEL = {13, 18, 25, ...}            # word indices from step 1
+   Also writes strict_suggest.json + strict_draft.py: DEL pre-filled ONLY with high-confidence
+   candidates (standalone 嗯/呃/um/uh, stutter repeats); semantic fillers (就是 那个 然后), merged-filler /
+   "hidden onset" PATCHes and 2-word repeats are listed under CONFIRM and need the creator's yes.
+2) the creator confirms the DEL list; copy strict_draft.py to strict.py and edit:
+       DEL = {13, 18, 25, ...}            # word indices from step 1 (confirmed)
        TEXT = {3: "职业发展的初期|对于大家的习惯", ...}   # optional subtitle rewrites per sid
 3) python strict_pass.py apply strict.py IN_V IN_A OUT_V OUT_A
-   -> pauses squeezed to KEEPGAP, segs.json rewritten (subs keep their sid, words carry new times)."""
+   -> pauses squeezed to KEEPGAP, segs.json rewritten (subs keep their sid, words carry new times).
+4) python strict_pass.py verify strict.py OUT_A ["术语 prompt"]
+   -> re-ASR the cut and compare with the original words minus DEL; flags missing content words
+      (exit 1 when something is missing: listen, then remove that index from DEL and re-apply)."""
 import sys, pathlib; sys.path[:0] = [str(pathlib.Path(__file__).resolve().parents[4] / "lib"), str(pathlib.Path(__file__).resolve().parents[1])]
 if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help"): print(__doc__); sys.exit(0)
 import json, shutil, importlib.util
 from bodycut import cut_body, dbenv, remap, q
 from vstudio import asr, audio, cut
+import filler_policy as fp
+if sys.argv[1] == 'verify':
+    import os, importlib.util as ilu
+    sp = ilu.spec_from_file_location('st', sys.argv[2]); st = ilu.module_from_spec(sp); sp.loader.exec_module(st)
+    ws = json.load(open('bw.json'))
+    if os.path.exists('segs_prev.json'):
+        t0 = json.load(open('segs_prev.json'))['total']; ws = [w for w in ws if w['b0'] < t0 - 0.05]
+    expected = [w for i, w in enumerate(ws) if i not in st.DEL]
+    got = asr.transcribe(sys.argv[3], prompt=sys.argv[4] if len(sys.argv) > 4 else None)['words']
+    flags = fp.content_check(expected, got, fillers=cut.FILLERS_ZH + cut.FILLERS_EN)
+    fp.print_flags(flags, f' ({sys.argv[3]})')
+    for f in flags:   # map back to bw.json indices near the flag so the DEL entry is easy to find
+        near = [i for i, w in enumerate(ws) if abs(w['b0'] - f['t']) < 1.0]
+        print(f"     bw idx near: {near}  DEL there: {sorted(set(near) & set(st.DEL))}")
+    sys.exit(1 if flags else 0)
 if sys.argv[1] == 'transcribe':
     # vstudio.asr: mlx_whisper -> faster_whisper -> OpenAI, cached in body_a.wav.asr.json, term-fixed, with
     # whisper's zero-length repeated tail words dropped BEFORE indexing so DEL indices stay valid
@@ -21,13 +42,27 @@ if sys.argv[1] == 'transcribe':
         line += f"{i}:{w['w']}[{w['b0']:.1f}] "
         if len(line) > 150: print(line); line = ''
     print(line)
-    # review aid only (never applied): fillers / repeats / merged restarts from vstudio.cut.suggest_fillers
-    sug = cut.suggest_fillers(tr['words'], audio=sys.argv[2])
-    if sug:
-        print('\nDEL candidates (check by ear):')
-        for r in sug:
-            idx = [i for i, w in enumerate(tr['words']) if r['start'] - 0.005 <= w['t'] < max(r['end'], r['start'] + 0.01) - 0.005]
-            print(f"  {r['kind']:<12} {r['text']:<8} idx {idx}  {r['note']}")
+    # review aid (vstudio.cut.suggest_fillers), scored by filler_policy: only "auto" rows are pre-filled
+    sug = fp.score(cut.suggest_fillers(tr['words'], audio=sys.argv[2]))
+    for r in sug:
+        r['idx'] = [i for i, w in enumerate(tr['words']) if r['start'] - 0.005 <= w['t'] < max(r['end'], r['start'] + 0.01) - 0.005]
+    auto, confirm, info = fp.split_tiers(sug)
+    json.dump(sug, open('strict_suggest.json', 'w'), ensure_ascii=False, indent=1)
+    for title, rows in (('AUTO (high confidence, pre-filled - still listen)', auto),
+                        ('CONFIRM (creator must say yes; often real words)', confirm), ('INFO (listen, no cut)', info)):
+        if rows: print(f'\n{title}:')
+        for r in rows:
+            print(f"  {r['conf']:.2f} {r['kind']:<12} {r['text']:<8} idx {r['idx']}  {r['why']}. {r['note']}")
+    auto_idx = sorted({i for r in auto for i in r['idx']})
+    with open('strict_draft.py', 'w') as f:
+        f.write('"""strict_pass DEL draft. The creator confirms this list before apply. AUTO = high-confidence only;\n'
+                'move CONFIRM indices into DEL only after listening (they are often real words)."""\n')
+        f.write(f'DEL = {set(auto_idx) or "set()"}\n')
+        f.write('# CONFIRM (not applied):\n')
+        for r in confirm: f.write(f"#   {r['idx']}  {r['kind']} '{r['text']}'  {r['why']}\n")
+        f.write('TEXT = {}\n')
+    print(f"\nstrict_draft.py: DEL = {auto_idx} ({len(auto)} auto, {len(confirm)} to confirm). "
+          'Show the creator AUTO + CONFIRM, then copy to strict.py; after apply run `verify`.')
     sys.exit()
 import os; sys.path.insert(0, os.path.dirname(os.path.abspath(sys.argv[2]))); sys.path.insert(0, os.getcwd())
 spec = importlib.util.spec_from_file_location('st', sys.argv[2]); st = importlib.util.module_from_spec(spec); spec.loader.exec_module(st)
