@@ -9,11 +9,12 @@ The reasons behind the pipeline, measured numbers, and the gotchas found the har
 - **Assemble before tracking, never after.** The face track, subtitles and panels then share
   one frame space and cannot drift.
 - Offset of piece k in the dissolved output = `sum(durations[:k]) - sum(xfades[1..k])`, which is
-  exactly the `offset` xfade wants for that join. One formula, both uses.
+  exactly the `offset` xfade wants for that join. One formula, both uses. Durations and fades are
+  whole frames (`vstudio.cut.xfade_assemble`), so the maths matches the encoded file exactly.
 - Fades: node-card seam / hook join / `"~"` = 0.5s (`XFADE`); silent trim (`null`) = 0.16s
   (`TRIM_FADE`, a redaction lands as a breath; three chained 0.5s dissolves through one paragraph
   sound broken); auto-trim join = 0.06s (`AUTO_FADE`, just hides the click).
-- `dissolve()` chunks timelines over 30 pieces (a long-form with auto-trim has 130+); the maths
+- `render_timeline()` chunks timelines over 30 pieces (a long-form with auto-trim has 130+); the maths
   is linear, so the result is identical to one pass.
 - Subtitles are suppressed ±1s around each node card; a silent trim only clears its dissolve.
   A segment straddling a cut keeps only the words whose midpoint is inside the piece, so a
@@ -62,7 +63,7 @@ quote before someone else chimes in.
 
 ## Auto-trim and the editor pass
 
-- `find_disfluencies.py` (see its docstring for the full rule set) removes ~3%: pauses > 0.6s
+- `vstudio.cut.find_cuts` (CLI report: `find_disfluencies.py`; rules in `lib/vstudio/cut.py`) removes ~3%: pauses > 0.6s
   (keeps ~0.36s), restarts, back-to-back repeats, filler-only segments. Silence comes from audio
   energy because whisper's word timestamps abut; every edge snaps to the quietest frame between
   word midpoints. One-word repeats across a sentence break are never cut; emphasis doublings are

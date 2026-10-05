@@ -11,36 +11,24 @@ from the majority of clips.
     python3 probe.py footage/*.MP4 --init work/edit.json
 """
 import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
-import argparse, json, os, re, subprocess
+import argparse, json, os, re
 from collections import Counter
 
-HDR_TRANSFERS = {"arib-std-b67": "HLG", "smpte2084": "PQ"}
+from vstudio import media
+
+HDR_NAMES = {"arib-std-b67": "HLG", "smpte2084": "PQ"}
 
 
 def probe(path):
-    out = subprocess.run(
-        ["ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", path],
-        capture_output=True, text=True, check=True).stdout
-    d = json.loads(out)
-    v = next((s for s in d["streams"] if s.get("codec_type") == "video"), None)
-    a = any(s.get("codec_type") == "audio" for s in d["streams"])
-    if v is None:
+    """media.probe + display orientation (w/h swapped for 90/270 rotation) + HLG/PQ label."""
+    i = media.probe(path)
+    if not i["has_video"]:
         raise SystemExit(f"{path}: no video stream")
-    w, h = int(v["width"]), int(v["height"])
-    rot = 0
-    for sd in v.get("side_data_list", []) or []:
-        if "rotation" in sd:
-            rot = int(sd["rotation"])
-    rot = int((v.get("tags") or {}).get("rotate", rot))
-    if abs(rot) % 180 == 90:
+    w, h = i["w"], i["h"]
+    if abs(i["rotation"]) % 180 == 90:
         w, h = h, w
-    num, den = (v.get("avg_frame_rate") or v.get("r_frame_rate") or "30/1").split("/")
-    fps = float(num) / float(den or 1) if float(den or 1) else 30.0
-    return {
-        "path": path, "w": w, "h": h, "fps": round(fps, 3),
-        "dur": float(d["format"].get("duration", 0)), "audio": a,
-        "hdr": HDR_TRANSFERS.get(v.get("color_transfer", ""), ""),
-    }
+    return {"path": path, "w": w, "h": h, "fps": round(i["fps"] or 30.0, 3), "dur": i["duration"],
+            "audio": i["has_audio"], "hdr": HDR_NAMES.get(i["transfer"], "")}
 
 
 def short_id(name, used):

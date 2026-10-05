@@ -2,8 +2,9 @@
 """Step 9: verify before handing off.
 
   decode   ffmpeg -v error full decode of <out>/final_subbed.mp4 (no moov / EOF errors)
-  loud     integrated loudness (should be ~ persona audio.loudness_lufs)
-  mosaic   contact sheets (one frame every --every s, 6x5 per sheet) -> qa/mosaic_NN.jpg
+  loud     integrated loudness (vstudio.audio.measure_loudness; should be ~ persona audio.loudness_lufs)
+  mosaic   time-labelled contact sheets (vstudio.media.contact_sheet: one frame every --every s,
+           6x5 per sheet) -> qa/mosaic_NN.jpg
            LOOK at every sheet: zero participant avatars, name tags, bookmark bars, emails
   pitch    median f0 of each pitches window in source vs final (anonymised voice should drop
            by ~|semitones|; the host's voice elsewhere unchanged)
@@ -13,12 +14,12 @@ Usage: python3 qa.py work/config.py [--video PATH] [--every 15] [--skip decode,l
 import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
 import math
 import os
-import re
 import subprocess
 
 import numpy as np
 
 import _lfc
+from vstudio import audio, media
 
 
 def extra(ap):
@@ -29,7 +30,7 @@ def extra(ap):
 
 cfg, args = _lfc.load(description=__doc__, extra=extra)
 skip = set(filter(None, args.skip.split(",")))
-ff = _lfc.ffmpeg_bin()
+ff = media.ffmpeg_bin()
 video = args.video or os.path.join(cfg.out, "final_subbed.mp4")
 if not os.path.exists(video):
     video = os.path.join(cfg.out, "final.mp4")
@@ -40,15 +41,16 @@ if "decode" not in skip:
     print("decode:", "clean" if not r.stderr.strip() else "ERRORS\n" + r.stderr[:2000])
 
 if "loud" not in skip:
-    r = subprocess.run([ff, "-hide_banner", "-i", video, "-af", "loudnorm=print_format=summary",
-                        "-f", "null", "-"], capture_output=True, text=True)
-    m = re.search(r"Input Integrated:\s*(-?[\d.]+)", r.stderr)
-    print("loudness integrated:", m.group(1) if m else "?", "LUFS")
+    m = audio.measure_loudness(video)
+    print(f"loudness integrated: {m['input_i']:.1f} LUFS  true peak: {m['input_tp']:.1f} dBTP")
 
 if "mosaic" not in skip:
     os.makedirs("qa", exist_ok=True)
-    _lfc.run([ff, "-y", "-v", "error", "-i", video, "-vf",
-              f"fps=1/{args.every},scale=320:-2,tile=6x5", "qa/mosaic_%02d.jpg"])
+    per, total, k = 30, media.duration(video), 0
+    while k * per * args.every < total:
+        media.contact_sheet(video, f"qa/mosaic_{k + 1:02d}.jpg", every=args.every, cols=6, max_frames=per,
+                            start=k * per * args.every)
+        k += 1
     print("mosaics:", sorted(os.listdir("qa")), "-> inspect every sheet")
 
 
@@ -75,10 +77,10 @@ def f0_median(path, t0, dur):
 
 
 if "pitch" not in skip and cfg.get("pitches.windows"):
-    timeline = _lfc.load_json("timeline.json")
+    tm = _lfc.timemap(_lfc.load_json("timeline.json"))
     final = os.path.join(cfg.out, "final.mp4")
     for a, b in [w[:2] for w in cfg.get("pitches.windows")]:
-        fa = _lfc.map_src(timeline, a, "fwd")
+        fa = tm.to_final(a, "fwd", tag="body")
         sp = _lfc.speed(cfg, "lecture", 1.2)
         if fa is None:
             print(f"pitch {a}-{b}: not in cut")

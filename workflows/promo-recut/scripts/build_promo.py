@@ -18,8 +18,9 @@ import json
 import os
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from common import Project, P, run, raw2cut, link_or_copy  # noqa: E402
-from vstudio.config import font  # noqa: E402
+from common import Project, P, link_or_copy  # noqa: E402
+from vstudio import media, overlays, render  # noqa: E402
+from vstudio.cut import TimeMap  # noqa: E402
 
 # ---------------------------------------------------------------- geometry per orientation
 GEO = {
@@ -52,25 +53,20 @@ def r(x):
     return round(x, 3)
 
 
-def subset_fonts(out_dir, text):
-    """Copy Noto Sans SC + STIX Two Text from vstudio FONT_DIR and subset them to the used characters."""
-    from fontTools import subset
-    os.makedirs(out_dir, exist_ok=True)
-    try:
-        import brotli  # noqa: F401
-        flavor, ext, fmt = "woff2", "woff2", "woff2"
-    except ImportError:
-        flavor, ext, fmt = None, "otf", "opentype"
-        print("  brotli not installed -> shipping subset .otf instead of .woff2 (pip install brotli)")
-    faces = {}
-    for role, name in (("cjk", "cjk-400"), ("cjk-bold", "cjk-700"), ("serif", "serif"), ("serif-italic", "serif-italic")):
-        o = subset.Options(); o.flavor = flavor; o.layout_features = ["*"]; o.name_IDs = ["*"]
-        ft = subset.load_font(font(role), o)
-        ss = subset.Subsetter(o); ss.populate(text=text); ss.subset(ft)
-        dst = os.path.join(out_dir, f"{name}.{ext}")
-        subset.save_font(ft, dst, o)
-        faces[name] = (f"assets/fonts/{name}.{ext}", fmt)
-    return faces
+FONT_NAMES = ("cjk-400", "cjk-700", "serif", "serif-italic")
+FONT_FMT = {".woff2": "woff2", ".woff": "woff", ".otf": "opentype", ".ttf": "truetype"}
+
+
+def font_faces(fdir, text=None):
+    """Subset Noto Sans SC + STIX Two Text to `text` (vstudio.render.subset_project_fonts), or with
+    text=None reuse what is already in fdir. -> {name: (url, css format)}."""
+    if text is not None:
+        paths = render.subset_project_fonts(fdir, text)
+    else:
+        have = {os.path.splitext(f)[0]: os.path.join(fdir, f) for f in sorted(os.listdir(fdir))}
+        paths = {n: have[n] for n in FONT_NAMES if n in have}
+    return {n: (f"assets/fonts/{os.path.basename(p)}", FONT_FMT.get(os.path.splitext(p)[1].lower(), "opentype"))
+            for n, p in paths.items()}
 
 
 def all_strings(x):
@@ -120,7 +116,7 @@ def main():
 
     brand = P("brand", {}) or {}
     ACC, HL, INK, GROUND = brand.get("accent", "#FF2442"), brand.get("highlight", "#FFD60A"), brand.get("ink", "#ECEEF2"), brand.get("ground", "#0B1020")
-    GOLD, ACC2 = brand.get("highlight_alt", "#F4D35E"), brand.get("accent_soft", "#FF5A72")
+    GOLD = brand.get("highlight_alt", "#F4D35E")
 
     # ---------------- timeline
     BR = prj.get("rates.body", P("speed.body", 1.1))
@@ -143,16 +139,20 @@ def main():
     END = endc.get("duration", 3.2) if endc else 0.0
     TOTAL = round(E + END, 3)
 
-    bmap = L["maps"]["body"]
-    omap = L["maps"].get("outro")
+    bmap = TimeMap.from_list(L["maps"]["body"])
+    omap = TimeMap.from_list(L["maps"]["outro"]) if L["maps"].get("outro") else None
+
+    def cut_t(tm, raw):  # raw second -> cut-file second; inside a cut -> start of the next kept span
+        t = tm.to_final(raw, snap="fwd")
+        return tm.to_final(raw, snap="back") if t is None else t
 
     def BT(raw):  # raw recording second (body) -> final second
-        return H + raw2cut(raw, bmap) / BR + (HOLD if HOLD_AT is not None and raw >= HOLD_AT else 0)
+        return H + cut_t(bmap, raw) / BR + (HOLD if HOLD_AT is not None and raw >= HOLD_AT else 0)
 
     def OT(raw):  # raw recording second (outro) -> final second
-        return O + raw2cut(raw, omap) / BR
+        return O + cut_t(omap, raw) / BR
 
-    TC = raw2cut(HOLD_AT, bmap) if HOLD_AT is not None else D["body"]
+    TC = cut_t(bmap, HOLD_AT) if HOLD_AT is not None else D["body"]
     T_HOLD = H + TC / BR
 
     def when(x):  # chapter / named anchor -> final second
@@ -162,9 +162,9 @@ def main():
 
     # ---------------- subtitles
     subs = c.get("subtitles") or {}
-    cues = [{"s": r(BT(s)), "e": r(BT(e) + 0.15), "t": t} for s, e, t in subs.get("body", [])]
+    cues = [{"s": r(BT(s)), "e": r(BT(e) + 0.15), "t": overlays.cue_html(t)} for s, e, t in subs.get("body", [])]
     if has_o:
-        cues += [{"s": r(OT(s)), "e": r(OT(e) + 0.15), "t": t} for s, e, t in subs.get("outro", [])]
+        cues += [{"s": r(OT(s)), "e": r(OT(e) + 0.15), "t": overlays.cue_html(t)} for s, e, t in subs.get("outro", [])]
     for x, y in zip(cues, cues[1:]):
         if 0 < y["s"] - x["e"] < 0.25:
             x["e"] = r(y["s"] - 0.02)
@@ -223,7 +223,7 @@ def main():
         link_or_copy(prj.w(f"{name}.mp4"), os.path.join(vdir, f"{name}.mp4"))
     if HOLD_AT is not None:
         os.makedirs(img_dir, exist_ok=True)
-        run(["ffmpeg", "-y", "-v", "error", "-ss", f"{TC:.3f}", "-i", prj.w("body.mp4"), "-frames:v", "1", "-q:v", "2",
+        media.run(["ffmpeg", "-y", "-ss", f"{TC:.3f}", "-i", prj.w("body.mp4"), "-frames:v", "1", "-q:v", "2",
              os.path.join(img_dir, "freeze.jpg")])
         if hold.get("image"):
             link_or_copy(prj.p(hold["image"]), os.path.join(img_dir, "hold-" + os.path.basename(hold["image"])))
@@ -231,23 +231,21 @@ def main():
     # ---------------- fonts (Noto Sans SC + STIX Two Text, subset to what this video uses)
     text = all_strings(c) + "".join(chr(i) for i in range(32, 127)) + "「」，。：？！—·×★→↓“”"
     fdir = os.path.join(promo, "assets", "fonts")
-    if a.no_fonts and os.path.isdir(fdir):
-        ext = "woff2" if any(f.endswith(".woff2") for f in os.listdir(fdir)) else "otf"
-        faces = {n: (f"assets/fonts/{n}.{ext}", "woff2" if ext == "woff2" else "opentype")
-                 for n in ("cjk-400", "cjk-700", "serif", "serif-italic")}
-    else:
-        faces = subset_fonts(fdir, text)
+    faces = font_faces(fdir, None if (a.no_fonts and os.path.isdir(fdir)) else text)
 
     DATA = dict(T_HOLD=T_HOLD, HOLD=HOLD, H=H, M=M, TZ=TZ, O=O, E=E, TOTAL=TOTAL, cues=cues, mlab=mlab,
-                CARDS=CARDS, CHIPS=CHIPS, CHIP_END=CHIP_END, SPLITS=SPLITS, PUNCH=PUNCH, CHAP=CHAP,
-                OUTRO_PUNCH=OUTRO_PUNCH, CW=g["CW"], BAR_L=g["bar_l"], BAR_W=g["bar_w"],
+                CARDS=CARDS, CHIPS=CHIPS, CHIP_END=CHIP_END, SPLITS=SPLITS, PUNCH=PUNCH,
+                OUTRO_PUNCH=OUTRO_PUNCH, CW=g["CW"],
                 SPLIT=g["split_inset"], SPLIT_X=g["split_x"], SPLIT_Y=g["split_y"],
                 SCR_IN=g["scr_in"], SCR_Y=g["scr_y"], SCR_DRIFT=g["scr_drift"],
                 FLY=hold.get("fly_from", [380, -150]), HAS_M=has_m, HAS_O=has_o, HAS_END=bool(endc),
-                HAS_HOLD=HOLD_AT is not None, ACC2=ACC2, INK=INK)
+                HAS_HOLD=HOLD_AT is not None, INK=INK)
+    # progress bar + chapter labels on a scrim, and the cue style: shared HyperFrames snippets
+    prog = overlays.hf_progress(CHAP, H, TOTAL, geo=g, font_family="CJK", track_index=8)
+    cue_css = overlays.hf_cue_css(g, font_family="CJK", highlight=HL)
 
     html = render_html(g, DATA, faces, c, D, BR, MR, Mdur, Odur, END, hold, mcfg, oc, endc,
-                       dict(ACC=ACC, HL=HL, INK=INK, GROUND=GROUND, GOLD=GOLD))
+                       dict(ACC=ACC, HL=HL, INK=INK, GROUND=GROUND, GOLD=GOLD), prog, cue_css)
     open(os.path.join(promo, "index.html"), "w", encoding="utf-8").write(html)
     json.dump({"orientation": ori, "total": TOTAL, "body_end": M + TZ, "montage": [M, O] if has_m else None,
                "outro": [O, E] if has_o else None, "chapters": [[r(s), r(e), lab] for s, e, lab in CHAP]},
@@ -256,7 +254,7 @@ def main():
     print("Next: cd into it, `npx hyperframes check`, snapshot mid-transition frames, then scripts/export.sh")
 
 
-def render_html(g, DATA, faces, c, D, BR, MR, Mdur, Odur, END, hold, mcfg, oc, endc, col):
+def render_html(g, DATA, faces, c, D, BR, MR, Mdur, Odur, END, hold, mcfg, oc, endc, col, prog, cue_css):
     W, Hc = g["W"], g["H"]
     H, M, TZ, O, E, TOTAL = DATA["H"], DATA["M"], DATA["TZ"], DATA["O"], DATA["E"], DATA["TOTAL"]
     T_HOLD, HOLD = DATA["T_HOLD"], DATA["HOLD"]
@@ -345,16 +343,7 @@ video.full, img.full {{ object-fit: cover; object-position: {g["face_pos"]}; }}
   border: 2px solid rgba(255,255,255,.22); opacity: 0; white-space: nowrap; }}
 .chip.star {{ color: #111; background: {GOLD}; border-color: {GOLD}; }}
 #subs {{ position: absolute; left: 0; right: 0; top: 0; height: {Hc}px; pointer-events: none; }}
-.cue {{ position: absolute; left: {g["cue_lr"]}px; right: {g["cue_lr"]}px; top: {g["cue_t"]}px; text-align: center; font: 700 {g["cue_fs"]}px/1.2 "CJK";
-  color: #fff; opacity: 0; text-shadow: 0 3px 0 rgba(0,0,0,.85), 0 0 18px rgba(0,0,0,.55), 2px 0 0 #000, -2px 0 0 #000, 0 -2px 0 #000; }}
-.cue em {{ font-style: normal; color: {HL}; }}
-#bar-scrim {{ position: absolute; left: 0; right: 0; top: {g["scrim_t"]}px; height: {g["scrim_h"]}px; background: linear-gradient(to bottom, rgba(5,8,16,0), rgba(5,8,16,.72) 55%, rgba(5,8,16,.85)); }}
-#bar {{ position: absolute; left: {g["bar_l"]}px; top: {g["bar_t"]}px; width: {g["bar_w"]}px; height: 4px; background: rgba(255,255,255,.22); border-radius: 2px; }}
-#bar-fill {{ position: absolute; left: 0; top: 0; width: {g["bar_w"]}px; height: 4px; background: {ACC}; border-radius: 2px; transform-origin: 0 50%; }}
-.tick {{ position: absolute; top: -5px; width: 2px; height: 14px; background: rgba(255,255,255,.75); }}
-.chap {{ position: absolute; top: {g["chap_t"]}px; font: 400 22px "CJK"; color: rgba(255,255,255,.9); transform: translateX(-50%);
-  text-shadow: 0 1px 4px rgba(0,0,0,.9); white-space: nowrap; }}
-#mlabel {{ position: absolute; left: {g["mlabel_l"]}px; top: {g["mlabel_t"]}px; font: 700 30px "CJK"; color: {INK}; }}
+{cue_css}{prog["css"]}#mlabel {{ position: absolute; left: {g["mlabel_l"]}px; top: {g["mlabel_t"]}px; font: 700 30px "CJK"; color: {INK}; }}
 .ml {{ position: absolute; left: 0; top: 0; white-space: nowrap; opacity: 0; }}
 .ml b {{ font: italic 34px "Serif"; color: {GOLD}; margin-right: 14px; }}
 #pz-dim {{ background: rgba(5,8,16,.72); opacity: 0; }}
@@ -398,9 +387,7 @@ video.full, img.full {{ object-fit: cover; object-position: {g["face_pos"]}; }}
   {end_html}
 
   <div id="subs" class="clip" data-start="0" data-duration="{r(E)}" data-track-index="7"></div>
-  <div id="barwrap" class="clip full" data-start="{r(H)}" data-duration="{r(TOTAL - H)}" data-track-index="8" style="pointer-events:none">
-    <div id="bar-scrim"></div><div id="bar"><div id="bar-fill"></div></div><div id="chaps"></div>
-  </div>
+  {prog["html"]}
 </div>
 <script>
 (function () {{
@@ -412,7 +399,7 @@ const $ = (s) => document.querySelector(s);
 const subs = $("#subs");
 D.cues.forEach((c, i) => {{
   const el = document.createElement("div"); el.className = "cue"; el.id = "cue" + i;
-  el.innerHTML = c.t.replace(/【/g, "<em>").replace(/】/g, "</em>"); subs.appendChild(el);
+  el.innerHTML = c.t; subs.appendChild(el);   // escaped, 【term】 -> <em> (vstudio.overlays.cue_html)
   tl.fromTo(el, {{ opacity: 0, y: 14 }}, {{ opacity: 1, y: 0, duration: 0.18, ease: "power2.out" }}, c.s);
   tl.to(el, {{ opacity: 0, duration: 0.12, ease: "none" }}, Math.max(c.s + 0.25, c.e - 0.12));
 }});
@@ -500,17 +487,8 @@ if (D.HAS_END) {{
   tl.fromTo("#end-s", {{ opacity: 0 }}, {{ opacity: 1, duration: 0.5 }}, D.E + 1.0);
 }}
 
-// progress bar + chapters on a scrim (labels are unreadable over bright footage without it)
-const chaps = $("#chaps"), bar = $("#bar"), span = D.TOTAL - D.H, X = (t) => D.BAR_L + (t - D.H) / span * D.BAR_W;
-D.CHAP.forEach(([s, e, label], i) => {{
-  if (i) {{ const tk = document.createElement("div"); tk.className = "tick"; tk.style.left = (X(s) - D.BAR_L) + "px"; bar.appendChild(tk); }}
-  const c = document.createElement("div"); c.className = "chap"; c.id = "chap" + i; c.textContent = label;
-  c.style.left = ((X(s) + X(e)) / 2) + "px"; chaps.appendChild(c);
-  tl.to(c, {{ color: D.ACC2, fontWeight: 700, scale: 1.12, duration: 0.2 }}, s);
-  tl.to(c, {{ color: "rgba(255,255,255,0.9)", fontWeight: 400, scale: 1, duration: 0.2 }}, e);
-}});
-tl.fromTo("#bar-fill", {{ scaleX: 0 }}, {{ scaleX: 1, duration: span, ease: "none" }}, D.H);
-
+// progress bar + chapters on a scrim (vstudio.overlays.hf_progress)
+{prog["js"]}
 window.__timelines = window.__timelines || {{}};
 window.__timelines["main"] = tl;
 }})();

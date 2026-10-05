@@ -40,7 +40,8 @@ Run from the project (video) folder. `$VSTUDIO` = repo root.
   Plain `-crf 18` on a ~28 Mbps phone/Descript export lands at 4–6 Mbps: fine for upload, not for an archive master.
   `--crf N` is available when you do want size over fidelity.
 - **Two-pass loudnorm** (measure → `linear=true` apply with the measured values). Single-pass loudnorm runs in dynamic
-  mode and audibly pumps speech. Normalize once, at the end of the chain; don't normalize again afterwards (platforms
+  mode and audibly pumps speech. The loudness step (`vstudio.audio.loudnorm_2pass`) outputs 48 kHz **stereo**
+  AAC (mono exports are up-mixed before measuring) and raises the LRA target to the measured LRA so loudnorm stays linear. Normalize once, at the end of the chain; don't normalize again afterwards (platforms
   do their own pass and a second one only costs headroom). `--skip-if-close` leaves gain alone within 1 LU.
 - **Speed uses `atempo`, never `asetrate`** (pitch stays put). Factors outside 0.5–2.0 are chained automatically.
   Above ~1.3× speech starts to sound artificial; persona `speed.cjk_max_intelligible` (1.4) triggers a warning.

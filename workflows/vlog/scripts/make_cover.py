@@ -18,25 +18,14 @@ scrapbook label using the vstudio font roles.
             "bgsize":130,"bgpos":"center 55%","seed":11}, ...]}
 bgsize = zoom % (>=100) applied after cover-fit; bgpos = focus point (CSS position).
 
-Renderer: Chrome/Chromium headless (found via $CHROME, PATH, common macOS/Linux
-paths), else Playwright (pip install playwright && playwright install chromium).
+Renderer: vstudio.render.html_to_png - the first working Chrome/Chromium/Edge ($CHROME,
+PATH, common macOS/Linux/Windows paths), else Playwright.
 """
 import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
-import argparse, base64, html, json, math, mimetypes, os, shutil, subprocess
+import argparse, base64, html, json, math, mimetypes, os
 
-from vstudio.config import font, persona, MissingAsset
-
-CHROME_NAMES = ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome",
-                "microsoft-edge", "brave-browser"]
-CHROME_PATHS = [
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-    "/Applications/Chromium.app/Contents/MacOS/Chromium",
-    "/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary",
-    "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-    "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
-    "/usr/bin/google-chrome", "/usr/bin/chromium", "/usr/bin/chromium-browser",
-    "/snap/bin/chromium", "/opt/google/chrome/chrome",
-]
+from vstudio import render
+from vstudio.config import persona
 
 # Hand-tuned full-bleed layouts on a 1920x1080 canvas (rescaled for other sizes).
 # (left, top, w, h, rot, zoom%, focus, seed). LAST entry = hero. Each photo is
@@ -94,24 +83,6 @@ def auto_pieces(frames, hero, W, H):
             for img, (l, t, w, h, rot, bgs, bgp, seed) in zip(imgs, slots)]
 
 
-def stage_fonts(asset_dir, roles):
-    """Copy font files for the given roles into <asset_dir>/fonts; return {role: relpath}."""
-    out = {}
-    fdir = os.path.join(asset_dir, "fonts")
-    os.makedirs(fdir, exist_ok=True)
-    for role in roles:
-        try:
-            src = font(role)
-        except MissingAsset as e:
-            print(f"[warn] {e}; title falls back to a generic font", file=sys.stderr)
-            continue
-        dst = os.path.join(fdir, os.path.basename(src))
-        if not os.path.exists(dst):
-            shutil.copy2(src, dst)
-        out[role] = os.path.relpath(dst, os.path.dirname(asset_dir))
-    return out
-
-
 def title_html(cfg, fonts, W, H):
     t = cfg.get("title")
     if not t:
@@ -120,7 +91,7 @@ def title_html(cfg, fonts, W, H):
     role = "cjk-bold" if is_cjk else "serif-italic"
     face = ""
     if role in fonts:
-        face = f"@font-face{{font-family:CoverTitle;src:url('{fonts[role]}')}}"
+        face = render.font_face_css({"CoverTitle": fonts[role]})
     tape = (persona().get("vlog") or {}).get("cover_tape", "#c9b98f")
     size = int(min(W, H) * 0.075)
     css = (face + f".title{{position:absolute;left:50%;bottom:{int(H * 0.07)}px;transform:translateX(-50%) rotate(-2deg);"
@@ -172,41 +143,6 @@ def build_html(cfg, fonts):
     </body></html>'''
 
 
-def chrome_candidates():
-    """$CHROME first, then PATH names, then common macOS/Linux install paths (deduped)."""
-    seen, out = set(), []
-    for c in [os.environ.get("CHROME")] + [shutil.which(n) for n in CHROME_NAMES] + CHROME_PATHS:
-        if c and os.path.exists(c) and os.path.realpath(c) not in seen:
-            seen.add(os.path.realpath(c))
-            out.append(c)
-    return out
-
-
-def render(html_path, out, W, H, scale):
-    for chrome in chrome_candidates():
-        r = subprocess.run([chrome, "--headless=new", "--disable-gpu", "--hide-scrollbars",
-                            "--allow-file-access-from-files", f"--force-device-scale-factor={scale}",
-                            f"--window-size={W},{H}", f"--screenshot={os.path.abspath(out)}",
-                            "file://" + os.path.abspath(html_path)],
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        if r.returncode == 0 and os.path.exists(out):
-            return chrome
-        print(f"[warn] {chrome} failed (exit {r.returncode}); trying next renderer", file=sys.stderr)
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError:
-        sys.exit("No working Chrome/Chromium and Playwright not installed. Install Chrome, set $CHROME, "
-                 "or `pip install playwright && playwright install chromium`.")
-    with sync_playwright() as p:
-        b = p.chromium.launch()
-        pg = b.new_page(viewport={"width": W, "height": H}, device_scale_factor=scale)
-        pg.goto("file://" + os.path.abspath(html_path))
-        pg.wait_for_timeout(300)
-        pg.screenshot(path=out)
-        b.close()
-    return "playwright"
-
-
 def main():
     ap = argparse.ArgumentParser(description="Scrapbook torn-paper full-bleed cover.")
     ap.add_argument("--out", required=True, help="output PNG")
@@ -242,14 +178,16 @@ def main():
     os.makedirs(out_dir, exist_ok=True)
     stem = os.path.splitext(os.path.basename(a.out))[0]
     fonts = {}
-    if cfg.get("title"):
-        fonts = stage_fonts(os.path.join(out_dir, "assets"), ["cjk-bold", "serif-italic"])
+    if cfg.get("title"):   # {role: filename} in <out>/assets/fonts/ (missing roles warn, title falls back to serif)
+        fonts = render.stage_fonts(os.path.join(out_dir, "assets", "fonts"), ["cjk-bold", "serif-italic"])
     html_path = os.path.join(out_dir, stem + ".html")
     with open(html_path, "w", encoding="utf-8") as f:
         f.write(build_html(cfg, fonts))
     W, H = cfg.get("size", [1920, 1080])
-    how = render(html_path, a.out, W, H, a.scale)
-    print(f"cover -> {a.out}  ({W}x{H} @{a.scale}x via {os.path.basename(how)}; html: {html_path})")
+    chrome = render.find_chrome()
+    render.html_to_png(html_path, a.out, size=(W, H), scale=a.scale, use_persona=False, fonts=False)
+    how = os.path.basename(chrome) if chrome else "playwright"
+    print(f"cover -> {a.out}  ({W}x{H} @{a.scale}x via {how}; html: {html_path})")
 
 
 if __name__ == "__main__":

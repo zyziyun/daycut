@@ -10,14 +10,16 @@ Usage:
       --subs subs.json --title-json title.json --out out.mp4
 """
 import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
-import argparse, json, os, re, subprocess
+import argparse, json, os, subprocess
 import cv2
 import numpy as np
 from PIL import Image, ImageDraw
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from style import (TEAL, DIM, WHITE, RED, YEL, font, HOOK_BADGE, NODE_EYEBROW, NOTE_TAG,
-                   GUEST_DEFAULT, HOST_DEFAULT)
+from style import (TEAL, DIM, WHITE, RED, font, alpha_paste, FRAME_THEME, HOOK_BADGE, NODE_EYEBROW,
+                   NOTE_TAG, GUEST_DEFAULT, HOST_DEFAULT)
+from vstudio import overlays
+from vstudio.draw import text_layer, text_width
 
 W, H = 1080, 1920
 
@@ -27,37 +29,16 @@ GAP = 14
 BOT_Y = TOP_Y + TILE_H + GAP          # 952
 TILES_BOTTOM = BOT_Y + TILE_H         # 1560
 
-def text_w(draw, s, f):
-    return draw.textbbox((0, 0), s, font=f)[2]
-
-
-def render_chip(label, fnt):
+def render_chip(label):
     """Name tag that sits flush to the left edge so the call app's name badge
     underneath is fully hidden -- hence the small corner radius, not a pill."""
-    tmp = ImageDraw.Draw(Image.new("RGB", (1, 1)))
-    pad_x, pad_y = 24, 12
-    w = max(text_w(tmp, label, fnt) + pad_x * 2, 230)
-    h = fnt.size + pad_y * 2
-    im = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    d = ImageDraw.Draw(im)
-    d.rounded_rectangle([0, 0, w - 1, h - 1], radius=10,
-                        fill=(0, 0, 0, 255), outline=TEAL + (220,), width=2)
-    d.text(((w - text_w(tmp, label, fnt)) // 2, pad_y - 3), label, font=fnt, fill=WHITE)
-    return im
+    return overlays.chip(label, style="tag", color=TEAL, size=30)
 
 
 def render_hook_badge():
     """Marks the montage up front as a preview, so the jump cuts read as
     intentional rather than as a broken edit."""
-    f = font(32)
-    txt = HOOK_BADGE
-    tmp = ImageDraw.Draw(Image.new("RGB", (1, 1)))
-    w, h = text_w(tmp, txt, f) + 56, f.size + 28
-    im = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    d = ImageDraw.Draw(im)
-    d.rounded_rectangle([0, 0, w - 1, h - 1], radius=h // 2, fill=RED + (242,))
-    d.text((28, 12), txt, font=f, fill=WHITE)
-    return im
+    return overlays.badge(HOOK_BADGE, color=RED, size=32)
 
 
 NODE_FADE = 0.35
@@ -66,20 +47,7 @@ NODE_FADE = 0.35
 def render_node_card(title):
     """Shown over each internal edit. The viewer needs to know the jump was
     deliberate, so the card names the section we are jumping into."""
-    f_eye, f_t = font(30), font(56)
-    tmp = ImageDraw.Draw(Image.new("RGB", (1, 1)))
-    eyebrow = NODE_EYEBROW
-    w = max(text_w(tmp, title, f_t), text_w(tmp, eyebrow, f_eye)) + 120
-    w = min(max(w, 620), 960)
-    h = 216
-    im = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    d = ImageDraw.Draw(im)
-    d.rounded_rectangle([0, 0, w - 1, h - 1], radius=24, fill=(10, 12, 16, 247),
-                        outline=TEAL + (235,), width=3)
-    d.rectangle([48, 60, 48 + 72, 65], fill=TEAL)
-    d.text((48, 86), eyebrow, font=f_eye, fill=TEAL)
-    d.text((48, 128), title, font=f_t, fill=WHITE)
-    return im
+    return overlays.node_card(title, eyebrow=NODE_EYEBROW, theme=FRAME_THEME)
 
 
 def build_frame_png(title_lines, accent):
@@ -98,7 +66,7 @@ def build_frame_png(title_lines, accent):
         runs = line if isinstance(line, list) else [[line, False]]
         for txt, is_acc in runs:
             d.text((x, y), txt, font=f_t, fill=TEAL if is_acc else WHITE)
-            x += text_w(d, txt, f_t)
+            x += text_width(txt, f_t)
         y += lh
 
     d.rectangle([72, TILES_BOTTOM + 36, 72 + 96, TILES_BOTTOM + 41], fill=TEAL)
@@ -110,133 +78,22 @@ def build_frame_png(title_lines, accent):
 SUB_MAX_W = 980
 
 
-def _nudge_off_word(line, cut):
-    """Never split inside a run of latin/digits."""
-    if 0 < cut < len(line) and line[cut - 1].isascii() and line[cut].isascii():
-        back = cut
-        while back > 1 and line[back - 1].isascii():
-            back -= 1
-        if back > 4:
-            return back
-    return cut
-
-
-def wrap_sub(line, f, tmp):
-    """Split a long subtitle. Two lines get balanced around the middle rather
-    than a full first line and an orphan second one."""
-    if text_w(tmp, line, f) <= SUB_MAX_W:
-        return [line]
-    hard = len(line)
-    while hard > 1 and text_w(tmp, line[:hard], f) > SUB_MAX_W:
-        hard -= 1
-    if text_w(tmp, line[hard:], f) <= SUB_MAX_W:
-        cut = _nudge_off_word(line, len(line) // 2)
-        if text_w(tmp, line[:cut], f) <= SUB_MAX_W and text_w(tmp, line[cut:], f) <= SUB_MAX_W:
-            return [line[:cut], line[cut:]]
-    cut = _nudge_off_word(line, hard)
-    return [line[:cut]] + wrap_sub(line[cut:], f, tmp)
-
-
 def render_sub(line):
-    """Subtitle as its own RGBA strip so it can be cached and alpha-pasted."""
-    f = font(48)
-    tmp = ImageDraw.Draw(Image.new("RGB", (1, 1)))
-    rows = wrap_sub(line, f, tmp)
-    pad, lh = 20, 64
-    w = max(text_w(tmp, r, f) for r in rows) + pad * 2
-    im = Image.new("RGBA", (w, lh * len(rows) + pad * 2), (0, 0, 0, 0))
-    d = ImageDraw.Draw(im)
-    for i, r in enumerate(rows):
-        d.text(((w - text_w(tmp, r, f)) // 2, pad + i * lh), r, font=f, fill=WHITE,
-               stroke_width=6, stroke_fill=(0, 0, 0, 235))
-    return im
+    """Subtitle as its own RGBA strip (balanced CJK-aware wrap at SUB_MAX_W, latin
+    runs never split) so it can be cached and alpha-pasted."""
+    return text_layer(line, font(48), max_w=SUB_MAX_W, stroke=6, stroke_fill=(0, 0, 0, 235),
+                      shadow_alpha=0, pad=14, line_gap=1.0)
 
 
 PW = 940
 PANEL_FADE = 0.30
 
 
-def _toks(s):
-    """Split for wrapping, keeping latin/number runs whole."""
-    out, i = [], 0
-    while i < len(s):
-        m = re.match(r"[A-Za-z0-9%/+.\-']+", s[i:])
-        if m:
-            out.append(m.group()); i += m.end()
-        else:
-            out.append(s[i]); i += 1
-    return out
-
-
-def _wrap(text, f, maxw, dr):
-    lines, cur = [], ""
-    for t in _toks(text):
-        if dr.textbbox((0, 0), cur + t, font=f)[2] > maxw and cur:
-            lines.append(cur.rstrip()); cur = t if t.strip() else ""
-        else:
-            cur += t
-    if cur.strip():
-        lines.append(cur.rstrip())
-    return lines
-
-
 def render_panel(title, bullets):
-    """记笔记 card, same design language as the talking-head workflow's notes
-    panels (dark card, brand-accent header, highlight 记笔记 tag, accent-dot
-    bullets), scaled up for a 1080-wide vertical frame."""
-    ft, fbu, ftag = font(46, False), font(40, False), font(32, False)
-    PX, PY, HEAD, BG, DOT = 30, 26, 88, 20, 11
-    tmp = ImageDraw.Draw(Image.new("RGB", (1, 1)))
-
-    wr = [_wrap(b, fbu, PW - PX * 2 - 26, tmp) for b in bullets]
-    a, dsc = fbu.getmetrics()
-    blh = a + dsc
-    n = sum(len(w) for w in wr)
-    Hh = HEAD + PY * 2 + n * blh + (len(bullets) - 1) * BG
-
-    im = Image.new("RGBA", (PW, Hh), (0, 0, 0, 0))
-    d = ImageDraw.Draw(im)
-    d.rounded_rectangle([0, 0, PW - 1, Hh - 1], radius=22, fill=(16, 18, 24, 242))
-    d.rounded_rectangle([0, 0, PW - 1, HEAD + 22], radius=22, fill=RED + (255,))
-    d.rectangle([0, HEAD - 2, PW - 1, HEAD + 22], fill=(16, 18, 24, 242))
-
-    tb = d.textbbox((0, 0), title, font=ft)
-    d.text((28, (HEAD - (tb[3] - tb[1])) // 2 - tb[1]), title, font=ft, fill=WHITE)
-
-    tag = NOTE_TAG
-    tt = text_w(d, tag, ftag)
-    px = PW - tt - 28 - 26
-    if 28 + text_w(d, title, ft) > px - 12:
-        print(f"WARN panel title runs under the 记笔记 tag -> {title}")
-    d.rounded_rectangle([px, 20, px + tt + 26, 20 + 46], radius=13, fill=YEL + (255,))
-    d.text((px + 13, 20 + 6), tag, font=ftag, fill=(20, 20, 20, 255))
-
-    y = HEAD + PY
-    for w in wr:
-        cy = y + blh // 2
-        d.ellipse([28, cy - DOT // 2, 28 + DOT, cy + DOT // 2], fill=RED + (255,))
-        for ln in w:
-            d.text((28 + DOT + 16, y), ln, font=fbu, fill=(245, 246, 250, 255))
-            y += blh
-        y += BG
-    return im
-
-
-def alpha_paste(dst_bgr, rgba, cx, cy, opacity=1.0):
-    sh, sw = rgba.shape[:2]
-    x0, y0 = int(round(cx - sw / 2)), int(round(cy - sh / 2))
-    Hh, Ww = dst_bgr.shape[:2]
-    sx0, sy0 = max(0, -x0), max(0, -y0)
-    sx1, sy1 = sw - max(0, x0 + sw - Ww), sh - max(0, y0 + sh - Hh)
-    if sx1 <= sx0 or sy1 <= sy0:
-        return
-    patch = rgba[sy0:sy1, sx0:sx1]
-    dx0, dy0 = max(0, x0), max(0, y0)
-    a = patch[:, :, 3:4].astype(np.float32) / 255.0 * opacity
-    rgb = patch[:, :, :3][:, :, ::-1].astype(np.float32)
-    roi = dst_bgr[dy0:dy0 + patch.shape[0], dx0:dx0 + patch.shape[1]].astype(np.float32)
-    dst_bgr[dy0:dy0 + patch.shape[0], dx0:dx0 + patch.shape[1]] = \
-        (rgb * a + roi * (1 - a)).astype(np.uint8)
+    """记笔记 card (vstudio.overlays.notes_panel, persona panel theme: dark card,
+    brand-accent header, highlight 记笔记 tag, accent-dot bullets), PW wide with
+    40px bullets for a 1080-wide vertical frame."""
+    return overlays.notes_panel(title, bullets, width=PW * 3 / 4, scale=4 / 3, tag=NOTE_TAG)
 
 
 def main():
@@ -270,10 +127,9 @@ def main():
 
     base = build_frame_png(meta["title"], meta.get("accent", ""))
     base_bgr = np.array(base)[:, :, ::-1].copy()
-    f_chip = font(30)
     chips = [
-        (np.array(render_chip(meta.get("guest_label") or GUEST_DEFAULT, f_chip)), TOP_Y + TILE_H - 44),
-        (np.array(render_chip(meta.get("host_label") or HOST_DEFAULT, f_chip)), BOT_Y + TILE_H - 44),
+        (np.array(render_chip(meta.get("guest_label") or GUEST_DEFAULT)), TOP_Y + TILE_H - 44),
+        (np.array(render_chip(meta.get("host_label") or HOST_DEFAULT)), BOT_Y + TILE_H - 44),
     ]
 
     # 记笔记 panels sit over the guest's tile: the face there is a sticker

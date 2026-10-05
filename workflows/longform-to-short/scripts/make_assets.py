@@ -2,7 +2,8 @@
 """Step 6a: chapter cards (cards/card_NN.png) + transparent hook overlay (hook_overlay.png).
 
 Card titles come from keep.chapters in keep order; override the on-card wording with
-cards.titles (same count). "Main：sub" titles render as a small grey kicker + big title.
+cards.titles (same count). Cards are vstudio.overlays.chapter_card: "Main：sub" titles render as a
+small grey kicker + big title (long titles wrap).
 Hook overlay: hook.lines [big line, accent sub line] in a dark rounded box at top centre.
 Look: style.accent / style.bg (persona longform.accent / longform.ground), vstudio CJK fonts.
 
@@ -14,6 +15,7 @@ import os
 from PIL import Image, ImageDraw
 
 import _lfc
+from vstudio import overlays
 
 cfg, _ = _lfc.load(description=__doc__)
 P = _lfc.palette(cfg)
@@ -28,20 +30,10 @@ if override:
     titles = override
 
 os.makedirs("cards", exist_ok=True)
-f_idx, f_title = _lfc.font(int(40 * s)), _lfc.font(int(76 * s), bold=True)
+T = _lfc.theme(cfg)
 for i, title in enumerate(titles, 1):
-    im = Image.new("RGB", (W, H), P["bg"])
-    d = ImageDraw.Draw(im)
-    d.text((120 * s, 96 * s), f"{i:02d} / {len(titles)}", font=f_idx, fill=P["accent"])
-    sep = "：" if "：" in title else (": " if ": " in title else None)
-    main, sub = (title.split(sep, 1) if sep else (title, ""))
-    if sub:
-        d.text((120 * s, H // 2 - 110 * s), main, font=f_idx, fill=P["muted"])
-        d.text((118 * s, H // 2 - 50 * s), sub, font=f_title, fill=P["ink"])
-    else:
-        d.text((118 * s, H // 2 - 50 * s), main, font=f_title, fill=P["ink"])
-    d.rectangle([120 * s, H // 2 + 78 * s, 300 * s, H // 2 + 86 * s], fill=P["accent"])
-    im.save(f"cards/card_{i:02d}.png")
+    card = overlays.chapter_card(i, len(titles), title, size=(W, H), theme=T, ground=P["bg"])
+    card.convert("RGB").save(f"cards/card_{i:02d}.png")
 
 lines = cfg.get("hook.lines") or []
 if lines:

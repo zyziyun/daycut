@@ -4,7 +4,8 @@
 Panel windows (source s) are mapped through timeline.json; a window edge that fell into a
 removed gap snaps forward (start) / back (end). Each PNG input needs `-loop 1` + overlay
 `shortest=1`, else the single-frame stream EOFs before its enable window and never shows.
-Needs an ffmpeg with libass: system ffmpeg if it has the `ass` filter, else static_ffmpeg.
+Needs an ffmpeg with libass: vstudio.media.ffmpeg_bin(need=["ass"]) picks the system ffmpeg if it has
+the `ass` filter, else static_ffmpeg.
 Fonts for libass come from vstudio's font dir (fontsdir=).
 
 Usage: python3 burn_final.py work/config.py [--no-subs]
@@ -13,6 +14,7 @@ import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().par
 import os
 
 import _lfc
+from vstudio import media
 from vstudio.config import FONT_DIR
 
 
@@ -21,8 +23,8 @@ def extra(ap):
 
 
 cfg, args = _lfc.load(description=__doc__, extra=extra)
-ff = _lfc.ffmpeg_bin(need_libass=not args.no_subs)
-timeline = _lfc.load_json("timeline.json")
+ff = media.ffmpeg_bin(need=[] if args.no_subs else ["ass"])
+tm = _lfc.timemap(_lfc.load_json("timeline.json"))
 panels = _lfc.load_json("panels.json") if os.path.exists("panels.json") else []
 W, H = cfg.get("render.size", [1920, 1080])
 PX, PY = cfg.get("panel_pos", [W - 498, 240])
@@ -31,10 +33,11 @@ dst = os.path.join(cfg.out, "final_subbed.mp4")
 
 inputs, chains, prev = ["-i", src], [], "0:v"
 for i, p in enumerate(panels):
-    a, b = _lfc.map_src(timeline, p["t0"], "fwd"), _lfc.map_src(timeline, p["t1"], "back")
-    if a is None or b is None or b <= a:
+    span = tm.map_span(p["t0"], p["t1"], tag="body")
+    if not span:
         print(f"WARN panel {i} window unmapped, skipped")
         continue
+    a, b = span
     inputs += ["-loop", "1", "-i", p["png"]]
     idx = inputs.count("-i") - 1
     py = PY if p["h"] + PY < H - 40 else H - 40 - p["h"]
@@ -48,7 +51,7 @@ if args.no_subs:
 else:
     fontsdir = FONT_DIR.replace(":", r"\:")
     chains.append(f"[{prev}]ass=subs.ass:fontsdir='{fontsdir}'[vout]")
-_lfc.run([ff, "-y", "-v", "error", *inputs, "-filter_complex", ";".join(chains),
-          "-map", "[vout]", "-map", "0:a", *_lfc.video_encoder(cfg),
-          "-c:a", "copy", "-movflags", "+faststart", dst])
+media.run([ff, "-y", *inputs, *media.filter_complex_args(";".join(chains)),
+           "-map", "[vout]", "-map", "0:a", *_lfc.video_encoder(cfg),
+           "-c:a", "copy", "-movflags", "+faststart", dst])
 print("done:", dst)

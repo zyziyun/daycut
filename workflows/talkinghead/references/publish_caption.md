@@ -16,7 +16,7 @@ When the creator proposes a title, count it, give an honest verdict, and offer 3
 
 ## Chapter timeline: final-video time
 The hook montage occupies `0 .. hook_dur`. A chapter at body / original second `o` lands at
-`BODY_START + o / BODY_SPEED` (V track: from `timeline.json`; H track: `main_start = hook_dur - XFADE`).
+`BODY_START + o / BODY_SPEED`, both tracks from `timeline.json` (written by compose.py / build_filter.py).
 List the hook montage as `00:00 高光预告`, then each chapter. These line up with the burned
 progress-bar labels, which is a good QC check: they should match.
 

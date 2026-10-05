@@ -38,48 +38,32 @@ import argparse, json, os, subprocess
 from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 
+from vstudio import media
 from vstudio.config import persona
 
 COLORBALANCE = "colorbalance=rs=0.02:rm=0.02:bm=-0.02:bs=-0.03:rh=0.01:bh=-0.02"
 UNSHARP = "unsharp=5:5:0.5:5:5:0.0"
 DEFAULT_GRADE = {"brightness": 0.05, "contrast": 1.12, "saturation": 1.18, "gamma": 1.04}
-HDR_TRC = {"arib-std-b67", "smpte2084"}
 
 
 def vlog_persona():
     return persona().get("vlog", {}) or {}
 
 
-@lru_cache(maxsize=1)
-def has_filter(name):
-    out = subprocess.run(["ffmpeg", "-hide_banner", "-filters"], capture_output=True, text=True).stdout
-    return any(line.split()[1:2] == [name] for line in out.splitlines() if len(line.split()) > 1)
-
-
 @lru_cache(maxsize=None)
 def clip_info(path):
-    out = subprocess.run(["ffprobe", "-v", "error", "-show_streams", "-of", "json", path],
-                         capture_output=True, text=True, check=True).stdout
-    streams = json.loads(out)["streams"]
-    v = next(s for s in streams if s.get("codec_type") == "video")
-    return {"trc": v.get("color_transfer", ""),
-            "audio": any(s.get("codec_type") == "audio" for s in streams)}
+    """Cached media.probe (each source is asked once per segment, possibly several times)."""
+    return media.probe(path)
 
 
 def hdr_chain(cfg, src):
+    """media.hdr_to_sdr_args per the config "hdr" mode, with a trailing comma (or "")."""
     mode = cfg.get("hdr", "auto")
     if mode is False or mode == "false":
         return ""
-    if mode == "auto" and clip_info(src)["trc"] not in HDR_TRC:
-        return ""
-    if has_filter("zscale"):
-        return ("zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,"
-                "tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p,")
-    # No libzimg in this ffmpeg build: gamut-only conversion. Highlights stay a bit flat;
-    # the grade below compensates partly. Better: install an ffmpeg with zscale.
-    print(f"[warn] {os.path.basename(src)} is HDR but ffmpeg lacks zscale; using approximate "
-          "colorspace conversion (install ffmpeg with libzimg for proper tone-mapping)", flush=True)
-    return "colorspace=all=bt709:iall=bt2020:itrc=bt2020-10:fast=1,format=yuv420p,"
+    chain = media.hdr_to_sdr_args(src, transfer=clip_info(src)["transfer"],
+                                  force=mode is True or mode == "true")
+    return chain + "," if chain else ""
 
 
 def fit_chain(cfg):
@@ -133,17 +117,6 @@ def seg_speed(cfg, seg):
     return float(cfg.get("default_speed", cfg.get("deer_speed", vp.get("speed_subject", 1.2))))
 
 
-def atempo(speed):
-    """atempo accepts 0.5..2.0 per instance; chain for anything outside."""
-    parts, s = [], speed
-    while s > 2.0:
-        parts.append("atempo=2.0"); s /= 2.0
-    while s < 0.5:
-        parts.append("atempo=0.5"); s /= 0.5
-    parts.append(f"atempo={s:.5f}")
-    return ",".join(parts)
-
-
 def render_seg(args):
     i, cfg, seg, segdir, dry = args
     src = os.path.join(cfg["_src_dir"], cfg["clips"][seg["clip"]])
@@ -158,9 +131,9 @@ def render_seg(args):
     cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
            "-ss", str(seg["start"]), "-t", str(seg["dur"]), "-i", src]
     if cfg.get("ambient_audio"):
-        if clip_info(src)["audio"]:
+        if clip_info(src)["has_audio"]:
             fc = (f"[0:v]{vf}[v];[0:a]aresample=48000,aformat=channel_layouts=stereo,"
-                  f"{atempo(speed)},apad,atrim=0:{eff:.3f}[a]")
+                  f"{media.atempo_chain(speed)},apad,atrim=0:{eff:.3f}[a]")
             cmd += ["-filter_complex", fc]
         else:
             cmd += ["-f", "lavfi", "-t", f"{eff:.3f}", "-i", "anullsrc=r=48000:cl=stereo",
@@ -211,6 +184,9 @@ def main():
     for s in segs:
         inputs += ["-i", s]
     audio = bool(cfg.get("ambient_audio"))
+    # Kept local (not cut.xfade_assemble): segments are pre-rendered with per-segment HDR/fit/grade/
+    # stabilize chains, joins use the configurable "transition", and silent masters have no audio
+    # streams; xfade_assemble has one global vf, fixed "fade" and always maps [i:a]. See PORT_NOTES.
     fc, prev, aprev, L = [], "0:v", "0:a", durs[0]
     for k in range(1, len(segs)):
         fc.append(f"[{prev}][{k}:v]xfade=transition={cfg.get('transition', 'fade')}"

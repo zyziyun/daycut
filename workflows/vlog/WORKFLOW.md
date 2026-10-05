@@ -40,8 +40,8 @@ Read `references/recipes.md` before writing edit.json or hand-rolling any filter
    ```bash
    bash $VSTUDIO/workflows/vlog/scripts/contact_sheets.sh work/sheets 4 footage/*
    ```
-   Read every `work/sheets/*_sheet.jpg`: one tile per 4 s, 5 across, left->right top->bottom
-   (tile n ~= (n-1)*4 s). Mark windows where the subject is clearly framed and the move is smooth;
+   Read every `work/sheets/*_sheet.jpg`: one tile per 4 s, 5 across, left->right top->bottom,
+   each labelled with its source time (tile n = (n-1)*4 s). Mark windows where the subject is clearly framed and the move is smooth;
    skip approach/retreat tails, pocket shots, shaky stretches.
 
 3. **Write the edit list.**
@@ -86,9 +86,9 @@ Read `references/recipes.md` before writing edit.json or hand-rolling any filter
    python3 $VSTUDIO/workflows/vlog/scripts/add_music.py work/vlog_master.mp4 \
      music/Atlantean_Twilight_KevinMacLeod.mp3 work/vlog_music.mp4 --fade 2
    ```
-   `add_music.py` loops the track to fill, fades in/out, normalizes to persona
+   `add_music.py` loops the track to fill, fades it in/out, two-pass normalizes to persona
    `audio.loudness_lufs` (-14), and copies the video stream (fast). With an ambient master add
-   `--ambient-db -12` to keep the place's sound under the music.
+   `--ambient-db -12` to keep the place's sound 12 dB under the music bed (`vstudio.audio.mix_bed`).
    **Attribution:** these tracks are CC BY 4.0. `music/ATTRIBUTION.txt` holds the credit line(s);
    give them to the user to paste into the post description.
    **Catalog alternative:** `npx hyperframes media-use resolve --type bgm` (HyperFrames / HeyGen
@@ -103,13 +103,13 @@ Read `references/recipes.md` before writing edit.json or hand-rolling any filter
 
 ## Scripts
 - `scripts/probe.py` - per-clip size/fps/duration/audio/HDR; `--init` writes a starter edit.json.
-- `scripts/contact_sheets.sh` - thumbnail grids per clip (landscape or portrait tiles).
+- `scripts/contact_sheets.sh` - time-labelled thumbnail grids per clip (wraps `vstudio.media.contact_sheet`).
 - `scripts/build_vlog.py` - config-driven HDR tone-map + fit + grade + speed + stabilize + crossfade master.
 - `scripts/make_cover.py` - torn-paper scrapbook cover, any size, optional title; Chrome/Chromium/Playwright.
 - `scripts/fetch_music.sh` - CC-BY Incompetech tracks by title + `ATTRIBUTION.txt`.
-- `scripts/add_music.py` - loop/trim/fade/loudnorm music mux (optional ambient bed), video copied.
+- `scripts/add_music.py` - loop/fade/two-pass-loudnorm music mux (optional ambient bed), video copied.
 
 ## Persona keys (all optional)
 `vlog.speed_subject` (1.2), `vlog.speed_empty` (1.3), `vlog.grade` ({brightness, contrast,
 saturation, gamma}), `vlog.cover_tape` (title label underline colour); plus existing
-`audio.loudness_lufs`, `export.audio_bitrate`.
+`audio.loudness_lufs`, `audio.music_lufs` (bed level before the final loudnorm), `export.audio_bitrate`.

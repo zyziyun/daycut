@@ -31,8 +31,8 @@ the reasons behind every rule are in `references/craft-notes.md` — read it bef
 
 `./install.sh` (fonts, `face_landmarker.task`, Python deps), `ffmpeg`. No `drawtext`/`libass`
 needed: every glyph is drawn with PIL. Whisper: `mlx_whisper` on Apple Silicon, else
-`faster_whisper` (`transcribe.py` picks). Chrome/Chromium or Playwright only to re-render
-sticker art.
+`faster_whisper` (`transcribe.py` → `vstudio.asr`, cached in `work/audio16k.wav.asr.json`).
+Chrome/Chromium/Edge (`$CHROME` first) or Playwright only to re-render sticker art.
 
 ## Pipeline
 
@@ -60,7 +60,7 @@ the conversation (`clip[k].end == clip[k+1].start`), dropping only hesitation. C
 
 ### 3. Transcribe once, whole recording
 ```bash
-python3 $S/transcribe.py recordings/my-call.mp4 --out work/audio16k     # -> .wav + .json (word timestamps)
+python3 $S/transcribe.py recordings/my-call.mp4 --out work/audio16k [--prompt "Term, Term"]   # -> .wav + raw .json (word timestamps)
 python3 $S/transcript_tools.py outline work/audio16k.json               # 45s chunks, pick segments
 ```
 Snap every clip boundary to a whisper segment start so nothing opens or closes mid-word.
@@ -117,10 +117,11 @@ python3 $S/build_clips.py --config clips.json --renderer render_trio.py        #
 python3 $S/build_clips.py --config clips.json --no-mask                        # nobody hidden
 ```
 Per clip: cut each piece at its own speed (hooks 1.35× +3dB, body 1.2×; persona
-`call_clips.*` overrides) → dissolve (`xfade`/`acrossfade`) → `track_face.py` per masked person
+`call_clips.*` overrides) → dissolve (`vstudio.cut.xfade_assemble`: whole-frame durations,
+plain `xfade`/`acrossfade`, chunks of 30 pieces; its `TimeMap` maps source→final) → `track_face.py` per masked person
 on the **assembled** file → `verify_coverage.py` on every track (**exits on FAIL**) → subtitles,
 node cards, panels mapped source→final → render → two-pass loudnorm to
-`audio.loudness_lufs`. `--reuse` skips cut/dissolve/track when work files exist (restyling in
+`audio.loudness_lufs` (`vstudio.audio.loudnorm_2pass`) + bt709 VUI retag (`media.retag_bt709`). `--reuse` skips cut/dissolve/track when work files exist (restyling in
 ~30s instead of minutes); any timeline change invalidates every track. Single frames:
 `render_*.py ... --preview <sec> --out x.jpg`.
 
@@ -129,8 +130,10 @@ node cards, panels mapped source→final → render → two-pass loudnorm to
   at 100% (build_clips already enforces this). Never "verify" by re-detecting faces in the
   masked video: the detector locks onto the cartoon's eyes and reports a face on every frame.
 - **Subtitle review:** read every line of `work/<id>.subs.json`; re-listen to doubtful lines
-  with large-v3 on a ~12s window; put fixes in `term_fix` (recording) or persona
-  `subtitles.term_fixes` (creator). If audio cannot settle a word, drop the phrase.
+  with large-v3 on a ~12s window; put fixes in `term_fix` (recording, `[[regex, repl]]`) or
+  persona `subtitles.term_fixes` (creator, `{"heard": "meant"}`: **literal**, case-insensitive; a
+  regex there no longer matches, move it to `term_fix`). Order: `term_fix` →
+  `build_subs.CALL_TERM_FIXES` → persona → `vstudio.asr` generic list. If audio cannot settle a word, drop the phrase.
 - **Redactions:** re-transcribe the finished mp4 and grep it — a clean config proves nothing
   about the render.
 
@@ -163,7 +166,8 @@ scale/offset with a `verify_coverage.py` sweep (craft notes → Sticker sizing).
 
 ## Persona keys read
 `audio.loudness_lufs`, `brand.accent` / `brand.highlight` (note-panel header, badge, 记笔记 tag),
-`subtitles.term_fixes` (regex → replacement), `creator.language` (transcribe), and new
+`brand.panel_theme` (记笔记 panel theme, default notes-red), `subtitles.term_fixes` (literal
+heard → meant), `creator.language` (transcribe), `export.audio_bitrate`, and new
 `call_clips.*`: `body_speed`, `hook_speed`, `hook_gain_db`, `sticker`, `frame_accent`
 (default `#2DD4BF`), `labels.{hook_badge, hook_badge_landscape, node_eyebrow, note_tag, guest, host}`.
 

@@ -1,21 +1,21 @@
 """Shared look for every call-clips renderer: fonts (via vstudio font roles),
-colours (via the persona) and the labels drawn on frame furniture.
+colours (via the persona), the labels drawn on frame furniture, and the one
+compositing call they all use.
 
 Every renderer imports from here so the vertical, trio and landscape layouts
-stay one design and nothing points at a system font.
+stay one design and nothing points at a system font. The furniture itself
+(chips, badges, node cards, 记笔记 panels, subtitle strips) is drawn by
+vstudio.overlays / vstudio.draw.
 """
 import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
-from functools import lru_cache
 
-from PIL import ImageFont
-
-from vstudio.config import font as font_path, persona
+from vstudio import draw
+from vstudio.config import persona
 
 
 def _hex(h, default):
     try:
-        h = str(h).lstrip("#")
-        return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+        return draw.rgb(h)
     except (ValueError, TypeError):
         return default
 
@@ -41,7 +41,34 @@ GUEST_DEFAULT = _L.get("guest", "Guest")
 HOST_DEFAULT = _L.get("host", "Host")
 
 
-@lru_cache(maxsize=None)
+# overlays theme for the teal frame furniture (node cards use only "accent")
+FRAME_THEME = {"accent": TEAL}
+
+
 def font(size, bold=True):
-    """CJK font at `size` px: role cjk-bold or cjk (Noto Sans SC by default)."""
-    return ImageFont.truetype(font_path("cjk-bold" if bold else "cjk"), int(size))
+    """CJK font at `size` px: role cjk-bold or cjk (Noto Sans SC by default), cached."""
+    return draw.load_font("cjk-bold" if bold else "cjk", int(size))
+
+
+def alpha_paste(dst_bgr, rgba, cx, cy, opacity=1.0):
+    """Composite an RGBA overlay (numpy or PIL) onto a BGR frame, CENTRED at (cx, cy), clipped."""
+    draw.alpha_paste(dst_bgr, rgba, (cx, cy), opacity=opacity, center=True, bgr=True)
+
+
+def frame_at(video, t):
+    """BGR frame of `video` at second t, frame-accurate (vstudio.media.grab_frame
+    pre-rolls and decodes forward; a plain seek on a sparse-keyframe call
+    recording lands seconds off). Exits if the still cannot be read."""
+    import os, tempfile
+    import cv2
+    from vstudio import media
+    with tempfile.TemporaryDirectory() as tmp:
+        p = os.path.join(tmp, "f.png")
+        try:
+            media.grab_frame(video, max(0.0, float(t)), p)
+        except media.FFmpegError as e:
+            raise SystemExit(f"could not read a still at {t}s: {e}")
+        fr = cv2.imread(p)
+    if fr is None:
+        raise SystemExit(f"could not read a still at {t}s")
+    return fr

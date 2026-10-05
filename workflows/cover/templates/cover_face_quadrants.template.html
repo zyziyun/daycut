@@ -6,10 +6,10 @@
 <!-- Pattern B. Copy to work/cover.html; put bg_tl/bg_tr/bg_bl/bg_br.png in work/cover_src/ and the matted
      face as work/cover_face.png. Set .face-wrap to the face PNG aspect (matte.py prints it). -->
 <style>
-  /* fonts: render_html.py copies the repo fonts (Noto Sans SC, OFL) into ./assets/fonts/ */
+  /* fonts: vstudio.render copies the repo fonts (Noto Sans SC, OFL) into ./assets/fonts/ */
   @font-face{font-family:"VS Sans";src:url("assets/fonts/NotoSansSC-Regular.otf");font-weight:100 600;}
   @font-face{font-family:"VS Sans";src:url("assets/fonts/NotoSansSC-Bold.otf");font-weight:700 900;}
-  /* --accent comes from persona.brand.accent (injected by render_html.py); teal is the original look */
+  /* --accent comes from persona.brand.accent (injected by vstudio.render); teal is the original look */
   :root{ --teal:var(--accent,#2dd4bf); --dim:#9ca3af;
     --teal-35:color-mix(in srgb,var(--teal) 35%,transparent); --teal-40:color-mix(in srgb,var(--teal) 40%,transparent);
     --teal-45:color-mix(in srgb,var(--teal) 45%,transparent); --teal-55:color-mix(in srgb,var(--teal) 55%,transparent);

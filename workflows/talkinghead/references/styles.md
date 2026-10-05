@@ -16,8 +16,9 @@ In 混合 mode, pop words and stamps automatically step aside while a 记笔记 
 
 ## Shared by every preset
 - **Hook montage.** It runs 3-6 clips at HOOK_SPEED, joined with 0.3s dissolves and audio crossfades.
-  - Each hook after the first gets a muted lead-in of XF*HOOK_SPEED, so the dissolve never swallows its first syllable.
-  - The last hook gets a muted tail, and the body gets a 0.3s cloned-frame pre-roll.
+  - Every dissolve runs over muted pads on both sides (XF*speed of extra source, muted), so it never swallows
+    the first syllable of the incoming hook or the last syllable of the outgoing one.
+  - The body gets a 0.3s cloned-frame pre-roll (there is nothing before body second 0 to pad with).
   - The hook title is 2 lines at the top, line 2 with yellow keywords, and pops in.
 - **Subtitles.** Small, white with a dark stroke, centered around y 1525. KEYWORDS are colored yellow.
   Line breaks come from `|` in the sentence text.
@@ -28,7 +29,7 @@ In 混合 mode, pop words and stamps automatically step aside while a 记笔记 
 **progress='classic'.** A full-width bar at y 262 with chapter ticks and 2-4 character labels under it.
 The active chapter gets a red pill, with a red fill and a white playhead. Readable, a bit heavy.
 
-**callouts.** A top-left white bubble with a red bar holding one full-sentence punchline for about 5-7s.
+**callouts.** A top-left white bubble (`STYLE['callout_theme']`, default `notes-yellow`; `notes-red` = dark) with a red bar holding one full-sentence punchline for about 5-7s.
 Use 1-3 where there is no panel. Config: `CALLOUTS = [(t, on_screen_sec, text)]`.
 
 **panels (记笔记).** A white card above the subtitles with a red header, a rotated yellow 「记笔记 ↓」 tag

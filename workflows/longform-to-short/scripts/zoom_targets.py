@@ -14,6 +14,7 @@ import numpy as np
 from PIL import Image
 
 import _lfc
+from vstudio import media
 
 cfg, _ = _lfc.load(description=__doc__)
 SHARE = cfg.get("share") or sys.exit("config.share [x0,y0,x1,y1] is required for zoom targets")
@@ -29,7 +30,7 @@ for t0, t1 in cfg.get("zoom.windows", []):
         cx, cy = manual[str(t0)]
         npx = -1
     else:
-        _lfc.grab_frame(cfg.src, (t0 + t1) / 2, "zoomchk.png")
+        media.grab_frame(cfg.src, (t0 + t1) / 2, "zoomchk.png")
         reg = np.asarray(Image.open("zoomchk.png").convert("RGB"), dtype=np.int16)[y0:y1, x0:x1]
         r, g, b = reg[..., 0], reg[..., 1], reg[..., 2]
         mask = ((abs(r - R) < TR) & (abs(g - Gc) < TG) & (abs(b - B) < TB)

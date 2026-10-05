@@ -17,6 +17,7 @@ import subprocess
 import numpy as np
 
 import _lfc
+from vstudio import media
 
 cfg, _ = _lfc.load(description=__doc__)
 W, H = 160, 90
@@ -27,7 +28,7 @@ THRESH = cfg.get("transients.white_thresh", 0.55)
 LUMA = cfg.get("transients.luma", 200)
 skip = set(cfg.get("demo.keep_idx", []) if cfg.get("demo.enabled") else [])
 
-proc = subprocess.run([_lfc.ffmpeg_bin(), "-v", "error", "-i", cfg.src, "-vf", f"fps=1,scale={W}:{H}",
+proc = subprocess.run([media.ffmpeg_bin(), "-v", "error", "-i", cfg.src, "-vf", f"fps=1,scale={W}:{H}",
                        "-f", "rawvideo", "-pix_fmt", "gray", "-"], capture_output=True)
 buf = np.frombuffer(proc.stdout, dtype=np.uint8)
 n = len(buf) // (W * H)

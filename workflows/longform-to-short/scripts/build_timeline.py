@@ -23,6 +23,7 @@ import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().par
 import os
 
 import _lfc
+from vstudio import media
 
 cfg, _ = _lfc.load(description=__doc__)
 LECTURE = _lfc.speed(cfg, "lecture", 1.2)
@@ -106,7 +107,7 @@ if hook:
                      "crop": crop_for((hook[0] + hook[1]) / 2), "demo_slice": None,
                      "overlay": "hook_overlay.png", "hook": True, "cont_in": False, "cont_out": False})
 
-rec_dur = _lfc.probe_duration(cfg.path_of(cfg.get("demo.rec"))) if DEMO_ON else 0.0
+rec_dur = media.duration(cfg.path_of(cfg.get("demo.rec"))) if DEMO_ON else 0.0
 rec_cursor = float(cfg.get("demo.rec_in", 0.0))
 chapter_no = 0
 for i, seg in enumerate(keep):

@@ -7,10 +7,10 @@
 <!-- Copy to work/slides.html. One <section class="slide" data-key="NN_name"> per slide.
      Render: python3 $VSTUDIO/workflows/slides/scripts/render_slides.py work/slides.html work/slides/ -->
 <style>
-  /* fonts: render_html.py copies the repo fonts (Noto Sans SC, OFL) into ./assets/fonts/ */
+  /* fonts: vstudio.render copies the repo fonts (Noto Sans SC, OFL) into ./assets/fonts/ */
   @font-face{font-family:"VS Sans";src:url("assets/fonts/NotoSansSC-Regular.otf");font-weight:100 600;}
   @font-face{font-family:"VS Sans";src:url("assets/fonts/NotoSansSC-Bold.otf");font-weight:700 900;}
-  /* --accent is injected from persona.brand.accent by render_html.py; teal is the template fallback */
+  /* --accent is injected from persona.brand.accent by vstudio.render; teal is the template fallback */
   :root{
     --bg:#000;
     --fg:#fff;

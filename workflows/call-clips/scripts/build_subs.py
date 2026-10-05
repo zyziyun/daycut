@@ -1,28 +1,28 @@
 #!/usr/bin/env python3
 """Slice whisper segments into clip-relative, term-fixed subtitle lines.
 
-Also the home of fix(), the term-fix pass build_clips.py applies to every line.
+Also the home of fix(), the term-fix pass build_clips.py applies to every line
+(a thin wrapper over ``vstudio.asr.apply_term_fixes``).
 
 Usage (standalone, one plain range):
-  build_subs.py work/audio16k.json --start 120 --end 180 --out work/test.subs.json
+  build_subs.py work/audio16k.json --start 120 --end 180 --out work/test.subs.json [--config clips.json]
 """
 import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
-import argparse, json, re
+import argparse, json
 
-from vstudio.config import persona
+from vstudio.asr import apply_term_fixes
 
-# Generic whisper mishearings of English terms code-switched into Chinese speech.
-# Creator- or recording-specific fixes do NOT go here:
-#   - per creator (product names, employers, recurring jargon):
-#       persona.local.yaml -> subtitles.term_fixes: {"regex": "replacement"}
-#   - per recording: clips.json -> "term_fix": [[regex, replacement], ...]
-# Order applied: clips.json term_fix, then persona term_fixes, then this list.
-TERM_FIX = [
-    (r"readnning|readning", "reasoning"),
+# Call-site REGEX fixes for code-switched zh/en call audio, on top of vstudio.asr's generic list
+# (reasoning, 思维导图, figure out, GitHub, ... live there). Where fixes come from, in order:
+#   1. per recording: clips.json -> "term_fix": [[regex, replacement], ...]
+#   2. this list (regex)
+#   3. persona.local.yaml -> subtitles.term_fixes: {"heard": "meant"}  (LITERAL, case-insensitive;
+#      a regex there no longer works -- move it to clips.json term_fix)
+#   4. vstudio.asr.GENERIC_TERM_FIXES
+# NB: \b does not work next to CJK (CJK counts as \w), so these are unanchored.
+CALL_TERM_FIXES = [
     (r"engagent", "engaging"),
-    (r"思维导徒", "思维导图"),
-    # NB: \b does not work next to CJK (CJK counts as \w), so these are unanchored
-    (r"favor out|fake out|figur out", "figure out"),
+    (r"fake out", "figure out"),
     (r"Pendix", "Appendix"),
     (r"迭代迭到", "迭代得"),
     (r"文档reveal", "文档review"),
@@ -30,26 +30,12 @@ TERM_FIX = [
     (r"scate", "skip"),
     (r"体效", "提效"),
 ]
-_persona_loaded = False
 
 
-def _load_persona_fixes():
-    """Prepend persona.subtitles.term_fixes once (keys are regexes)."""
-    global _persona_loaded
-    if _persona_loaded:
-        return
-    _persona_loaded = True
-    fixes = ((persona().get("subtitles") or {}).get("term_fixes")) or {}
-    TERM_FIX[:0] = [(k, v) for k, v in fixes.items()]
-
-
-def fix(s):
-    _load_persona_fixes()
-    for pat, rep in TERM_FIX:
-        s = re.sub(pat, rep, s)
-    # tighten spacing around latin runs inside CJK
-    s = re.sub(r"\s+", " ", s).strip()
-    return s
+def fix(s, extra=None):
+    """Term-fix one subtitle line. extra: per-recording [[regex, replacement], ...] (clips.json
+    term_fix), applied first. Also collapses whitespace and drops 嗯嗯 / 5+ repeated-char runs."""
+    return apply_term_fixes(s, extra=[tuple(x) for x in (extra or [])] + CALL_TERM_FIXES)
 
 
 def main():
@@ -60,14 +46,16 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--max-chars", type=int, default=20)
     ap.add_argument("--max-gap", type=float, default=0.45)
+    ap.add_argument("--config", default=None, help="clips.json whose term_fix list to apply first")
     args = ap.parse_args()
+    extra = json.load(open(args.config, encoding="utf-8")).get("term_fix") if args.config else None
 
     segs = [s for s in json.load(open(args.whisper_json, encoding="utf-8"))["segments"]
             if s["end"] > args.start and s["start"] < args.end]
 
     lines = []
     for s in segs:
-        txt = fix(s["text"])
+        txt = fix(s["text"], extra)
         if not txt:
             continue
         a = max(s["start"], args.start) - args.start

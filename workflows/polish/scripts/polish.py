@@ -16,44 +16,29 @@ Usage:
 import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
 
 import argparse
-import json
-import re
 import shutil
-import subprocess
 import tempfile
-from fractions import Fraction
 
+from vstudio import audio, media
 from vstudio.config import persona
 
-BT709 = ["-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv"]
 
-
-def run(cmd, capture=False):
+def run(cmd):
     print("  $ " + " ".join(str(c) for c in cmd[:6]) + (" ..." if len(cmd) > 6 else ""), flush=True)
-    r = subprocess.run([str(c) for c in cmd], capture_output=capture, text=True)
-    if r.returncode != 0:
-        if capture:
-            sys.stderr.write(r.stderr[-3000:])
-        raise SystemExit(f"ffmpeg failed ({r.returncode})")
-    return r
+    try:
+        media.run(cmd)
+    except media.FFmpegError as e:
+        raise SystemExit(str(e))
 
 
 def probe(path):
-    out = subprocess.run(["ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", str(path)],
-                         capture_output=True, text=True, check=True).stdout
-    d = json.loads(out)
-    v = next((s for s in d["streams"] if s["codec_type"] == "video"), None)
-    a = next((s for s in d["streams"] if s["codec_type"] == "audio"), None)
-    if v is None:
+    """vstudio.media.probe + the two names this script uses (fps as a Fraction, vbr = video bps)."""
+    info = media.probe(str(path))
+    if not info["has_video"]:
         raise SystemExit(f"{path}: no video stream")
-    fps = Fraction(v.get("avg_frame_rate") or v.get("r_frame_rate") or "30/1")
-    if fps == 0:
-        fps = Fraction(v.get("r_frame_rate", "30/1"))
-    vbr = int(v.get("bit_rate") or 0)
-    if not vbr and d["format"].get("bit_rate"):
-        vbr = int(d["format"]["bit_rate"]) - int((a or {}).get("bit_rate") or 192000)
-    return dict(w=int(v["width"]), h=int(v["height"]), fps=fps, vbr=max(vbr, 0), vcodec=v["codec_name"],
-                has_audio=a is not None, duration=float(d["format"].get("duration") or 0))
+    info["fps"] = info["fps_q"] or 30
+    info["vbr"] = info["vbitrate"]
+    return info
 
 
 def venc_args(info, args):
@@ -63,17 +48,7 @@ def venc_args(info, args):
     else:
         br = info["vbr"] if args.bitrate == "match" else int(float(args.bitrate.rstrip("Mm")) * 1e6)
         q = ["-b:v", str(br), "-maxrate", str(int(br * 1.15)), "-bufsize", str(br * 2)]
-    return ["-c:v", "libx264", "-preset", args.preset, *q, "-pix_fmt", "yuv420p", *BT709]
-
-
-def atempo_chain(s):
-    parts = []
-    while s > 2.0:
-        parts.append(2.0); s /= 2.0
-    while s < 0.5:
-        parts.append(0.5); s /= 0.5
-    parts.append(s)
-    return ",".join(f"atempo={p:.6g}" for p in parts)
+    return ["-c:v", "libx264", "-preset", args.preset, *q, "-pix_fmt", "yuv420p", *media.BT709]
 
 
 def resolve_speed(val):
@@ -95,53 +70,33 @@ def step_cover(src, cover, out, info, args):
     fc = (f"[0:v]{fit},setsar=1,fps={fps},format=yuv420p[c];"
           f"[1:v]trim=start={t},setpts=PTS-STARTPTS,scale={w}:{h},setsar=1,fps={fps},format=yuv420p[r];"
           f"[c][r]concat=n=2:v=1:a=0[v]")
-    cmd = ["ffmpeg", "-y", "-loglevel", "error", "-loop", "1", "-t", t, "-i", cover, "-i", src,
+    cmd = ["ffmpeg", "-y", "-loop", "1", "-t", t, "-i", cover, "-i", src,
            "-filter_complex", fc, "-map", "[v]"]
     cmd += (["-map", "1:a", "-c:a", "copy"] if info["has_audio"] else [])
     run(cmd + venc_args(info, args) + [out])
 
 
 def step_speed(src, out, s, info, args):
-    fc = f"[0:v]setpts=PTS/{s}[v]" + (f";[0:a]{atempo_chain(s)}[a]" if info["has_audio"] else "")
-    cmd = ["ffmpeg", "-y", "-loglevel", "error", "-i", src, "-filter_complex", fc, "-map", "[v]"]
+    fc = f"[0:v]setpts=PTS/{s}[v]" + (f";[0:a]{media.atempo_chain(s)}[a]" if info["has_audio"] else "")
+    cmd = ["ffmpeg", "-y", "-i", src, "-filter_complex", fc, "-map", "[v]"]
     # keep audio lossless-ish until loudnorm; PCM in MOV avoids a lossy generation
     cmd += (["-map", "[a]", "-c:a", "pcm_s24le"] if info["has_audio"] else [])
     run(cmd + venc_args(info, args) + [out])
 
 
-def measure(path, lufs, tp, lra):
-    r = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-i", str(path), "-vn", "-af",
-                        f"loudnorm=I={lufs}:TP={tp}:LRA={lra}:print_format=json", "-f", "null", "-"],
-                       capture_output=True, text=True)
-    m = re.search(r"\{[^{}]*\"input_i\"[^{}]*\}", r.stderr, re.S)
-    if not m:
-        raise SystemExit("loudnorm measurement failed:\n" + r.stderr[-1500:])
-    return json.loads(m.group(0))
-
-
 def step_loudness(src, out, args, lufs):
-    m = measure(src, lufs, args.tp, args.lra)
+    """Two-pass linear loudnorm (vstudio.audio.loudnorm_2pass): 48 kHz stereo AAC, video stream-copied."""
+    if args.skip_if_close:
+        m = audio.measure_loudness(str(src), lufs, args.tp, args.lra)
+        if abs(m["input_i"] - lufs) <= 1.0 and m["input_tp"] <= args.tp + 0.5:
+            print(f"  measured: I={m['input_i']} LUFS  TP={m['input_tp']} dBTP - within 1 LU of target; "
+                  "encoding audio as AAC without gain change")
+            ab = persona().get("export", {}).get("audio_bitrate", "192k")
+            run(["ffmpeg", "-y", "-i", src, "-map", "0:v", "-map", "0:a", "-c:v", "copy",
+                 "-af", "aresample=48000", "-c:a", "aac", "-b:a", ab, out])
+            return
+    m = audio.loudnorm_2pass(str(src), str(out), lufs=lufs, tp=args.tp, lra=args.lra)
     print(f"  measured: I={m['input_i']} LUFS  TP={m['input_tp']} dBTP  LRA={m['input_lra']}")
-    if args.skip_if_close and abs(float(m["input_i"]) - lufs) <= 1.0 and float(m["input_tp"]) <= args.tp + 0.5:
-        print("  already within 1 LU of target; copying audio as AAC without gain change")
-        af = "anull"
-    else:
-        af = (f"loudnorm=I={lufs}:TP={args.tp}:LRA={args.lra}:measured_I={m['input_i']}:"
-              f"measured_TP={m['input_tp']}:measured_LRA={m['input_lra']}:measured_thresh={m['input_thresh']}:"
-              f"offset={m['target_offset']}:linear=true:print_format=summary")
-    ab = persona().get("export", {}).get("audio_bitrate", "192k")
-    run(["ffmpeg", "-y", "-loglevel", "error", "-i", src, "-map", "0:v", "-map", "0:a", "-c:v", "copy",
-         "-af", f"{af},aresample=48000", "-c:a", "aac", "-b:a", ab, out])
-
-
-def step_finalize(src, out, vcodec):
-    bsf = {"h264": "h264_metadata", "hevc": "hevc_metadata"}.get(vcodec)
-    cmd = ["ffmpeg", "-y", "-loglevel", "error", "-i", src, "-map", "0:v", "-map", "0:a?", "-c", "copy"]
-    if str(src).endswith(".mov"):  # speed step left PCM audio (loudnorm skipped): encode it for MP4
-        cmd += ["-c:a", "aac", "-b:a", persona().get("export", {}).get("audio_bitrate", "192k")]
-    if bsf:
-        cmd += ["-bsf:v", f"{bsf}=colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1"]
-    run(cmd + BT709 + ["-movflags", "+faststart", out])
 
 
 def main():
@@ -164,9 +119,10 @@ def main():
     p.add_argument("--check", action="store_true", help="after writing, dump first frame next to the output")
     args = p.parse_args()
 
-    for tool in ("ffmpeg", "ffprobe"):
-        if not shutil.which(tool):
-            raise SystemExit(f"{tool} not found on PATH")
+    try:
+        media.ffmpeg_bin(); media.ffprobe_bin()
+    except media.FFmpegError as e:
+        raise SystemExit(str(e))
     lufs = args.lufs if args.lufs is not None else float(persona().get("audio", {}).get("loudness_lufs", -14))
     speed = resolve_speed(args.speed)
     cap = float(persona().get("speed", {}).get("cjk_max_intelligible", 1.4))
@@ -179,19 +135,19 @@ def main():
 
     work = pathlib.Path(args.keep) if args.keep else pathlib.Path(tempfile.mkdtemp(prefix="polish_"))
     work.mkdir(parents=True, exist_ok=True)
-    cur, vcodec = pathlib.Path(args.src), info["vcodec"]
+    cur = pathlib.Path(args.src)
     try:
         if args.cover:
             print(">>> 1/4 cover")
-            nxt = work / "01_cover.mp4"; step_cover(cur, args.cover, nxt, info, args); cur, vcodec = nxt, "h264"
+            nxt = work / "01_cover.mp4"; step_cover(cur, args.cover, nxt, info, args); cur = nxt
         if abs(speed - 1.0) > 1e-6:
             print(f">>> 2/4 speed x{speed}")
-            nxt = work / "02_speed.mov"; step_speed(cur, nxt, speed, info, args); cur, vcodec = nxt, "h264"
+            nxt = work / "02_speed.mov"; step_speed(cur, nxt, speed, info, args); cur = nxt
         if info["has_audio"] and not args.no_loudnorm:
             print(f">>> 3/4 loudnorm -> {lufs} LUFS (two-pass)")
             nxt = work / "03_loud.mp4"; step_loudness(cur, nxt, args, lufs); cur = nxt
         print(">>> 4/4 bt709 tags + faststart")
-        step_finalize(cur, args.out, vcodec)
+        media.retag_bt709(str(cur), str(args.out))
     finally:
         if not args.keep:
             shutil.rmtree(work, ignore_errors=True)
@@ -200,11 +156,11 @@ def main():
     print(f"\ndone: {args.out}\n  {fin['w']}x{fin['h']} @ {float(fin['fps']):.3f} fps, {fin['vbr'] / 1e6:.1f} Mbps, "
           f"{fin['duration']:.2f}s (expected ~{info['duration'] / speed:.2f}s)")
     if fin["has_audio"]:
-        m = measure(args.out, lufs, args.tp, args.lra)
+        m = audio.measure_loudness(str(args.out), lufs, args.tp, args.lra)
         print(f"  loudness: I={m['input_i']} LUFS  TP={m['input_tp']} dBTP")
     if args.check:
         png = pathlib.Path(args.out).with_suffix(".first.png")
-        run(["ffmpeg", "-y", "-loglevel", "error", "-ss", "0.3", "-i", args.out, "-frames:v", "1", png])
+        media.grab_frame(str(args.out), 0.3, str(png))
         print(f"  first frame: {png}")
 
 

@@ -25,16 +25,20 @@ Run from the project folder; `$VSTUDIO` = repo root. Working files go in `work/`
 ## Pattern A — collage
 1. Find 4 moments (1 hook, 2–3 content, optionally 1 face):
    `python3 $VSTUDIO/workflows/cover/scripts/extract_frames.py sheet my-talk.mp4 work/cover_src --every 5`
-   → `work/cover_src/contact_sheet.jpg` with timestamps.
+   → `work/cover_src/contact_sheet.jpg` with timestamps (`--save-frames` also writes full-size `cand_<t>.png`).
+   Talking-head source? `extract_frames.py pick my-talk.mp4 work/cover_src --top 6` ranks frames by smile /
+   eyes open / centred face (`vstudio.cover.score_frames`) → `pick<N>_<t>.png` + `picks_sheet.jpg`.
 2. Pre-crop the cells (crop boxes are fractions of the *decoded* frame; append `:face` to use the face box):
    `python3 $VSTUDIO/workflows/cover/scripts/extract_frames.py collage my-talk.mp4 work/cover_src 2.5 37 76 80:face`
    Defaults fit a "slide on top, face below" layout; change `--slide-box/--face-box` for other layouts.
 3. `cp $VSTUDIO/workflows/cover/templates/cover_collage.template.html work/cover.html`, edit the tag, badges,
    headline and pills.
-4. `python3 $VSTUDIO/workflows/cover/scripts/render_html.py work/cover.html -o work/cover.png`
+4. `python3 -m vstudio.render work/cover.html -o work/cover.png` (`--size 1080x1920` default; needs
+   `PYTHONPATH=$VSTUDIO/lib`, see SKILL.md)
 
 ## Pattern B — face on quadrants
-1. Pick a **talking** frame (mid-word, mouth slightly open, eyes on camera; idle frames look posed) from the contact sheet.
+1. Pick a **talking** frame (mid-word, mouth slightly open, eyes on camera; idle frames look posed) from the contact sheet
+   (or the `pick` ranking above).
 2. Crop the face region, stopping **above any burned-in caption band**:
    `python3 $VSTUDIO/workflows/cover/scripts/extract_frames.py face my-talk.mp4 work/cover_src/face_src.png --t 70 --box 0,0.5,1,0.948`
 3. Optional retouch: `python3 -m vstudio.retouch work/cover_src/face_src.png work/cover_src/face_src.png --slim .05 --eye .04`
@@ -72,11 +76,11 @@ Run from the project folder; `$VSTUDIO` = repo root. Working files go in `work/`
 ## Rules (all patterns)
 - Exact canvas sizes: 1080×1920 for A/B; whatever `outputs` says for C.
 - Cover, slides and on-video graphics share one design language: the HTML templates read `--accent` (and
-  `--highlight/--ink/--ground`) injected from `persona.brand` by render_html.py; `--no-persona` keeps the template
+  `--highlight/--ink/--ground`) injected from `persona.brand` by `vstudio.render`; `--no-persona` keeps the template
   fallback (the original teal `#2dd4bf` on black look).
 - Headline pattern for A/B: `Subject <span class="punch">is/isn't [contrarian punch].</span>` (accent italic punch).
   It should be the same sentence as the script hook (see `workflows/preproduction`).
-- Fonts: the templates use `@font-face` on `assets/fonts/*` which render_html.py copies from the repo font cache.
+- Fonts: the templates use `@font-face` on `assets/fonts/*` which `vstudio.render` copies from the repo font cache.
   Never point at system fonts.
 - Each quadrant / cell must show distinct content; four near-identical frames read as a glitch.
 - Trust the decoded frame size over ffprobe metadata (it has reported 720×1280 for a 1080×1920 file).

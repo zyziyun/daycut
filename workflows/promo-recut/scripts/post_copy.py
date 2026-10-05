@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Assemble the post copy (title, body, links, chapter timeline, tags) from the project config and the
-built timeline, check the title length for the platform and flag persona voice-rule breaks.
+built timeline with vstudio.publish: title-length check for the platform, chapter lines, hashtags and
+persona voice-rule warnings.
 
   python3 $VSTUDIO/workflows/promo-recut/scripts/post_copy.py promo.config.json [--platform xiaohongshu]
 
@@ -12,48 +13,30 @@ import json
 import os
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from common import Project, P  # noqa: E402
-from vstudio.config import xhs_len  # noqa: E402
-
-
-def mmss(t):
-    t = int(round(t)); return f"{t // 60}:{t % 60:02d}"
+from common import Project  # noqa: E402
+from vstudio import publish  # noqa: E402
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("config")
-    ap.add_argument("--platform", default=None)
+    ap.add_argument("--platform", default=None, help="default: persona platforms.default (xiaohongshu)")
     a = ap.parse_args()
     prj = Project(a.config)
     post = prj.cfg.get("post") or {}
-    plat = a.platform or P("platforms.default", "xiaohongshu")
-    tmax = P(f"platforms.{plat}.title_max", 20)
-    title = post.get("title", "")
-    n = xhs_len(title) if plat == "xiaohongshu" else len(title)
-    warn = []
-    if n > tmax:
-        warn.append(f"title length {n:g} > {tmax} for {plat}")
-    lines = [title, ""] + list(post.get("body", []))
-    for lab, url in post.get("links", []):
-        lines.append(f"{lab}: {url}")
+    chapters = None
     tl_path = os.path.join(prj.p(prj.cfg.get("promo_dir", "promo")), "timeline.json")
     if os.path.exists(tl_path) and post.get("chapters", True):
-        tl = json.load(open(tl_path, encoding="utf-8"))
-        lines += ["", P("publish.chapter_line", "")]
-        lines += [f"{mmss(s)} {lab}" for s, _, lab in tl["chapters"]]
-    tags = list(post.get("tags", [])) + list(P("publish.tags", []) or [])
-    if tags:
-        lines += ["", " ".join(t if t.startswith("#") else f"#{t}" for t in dict.fromkeys(tags))]
-    text = "\n".join(lines).strip() + "\n"
-    rules = " ".join(P("voice.rules", []) or [])
-    if "em-dash" in rules and "—" in "".join(post.get("body", [])):
-        warn.append("body contains an em-dash (persona voice rule)")
+        chapters = json.load(open(tl_path, encoding="utf-8"))["chapters"]
+    warns = []
+    text = publish.post_body(None, post.get("body", []), chapters=chapters, links=post.get("links", []),
+                             tags=post.get("tags", []), platform=a.platform, title=post.get("title", ""),
+                             warn=warns.append)
     out = prj.p(post.get("out", "post.md"))
     open(out, "w", encoding="utf-8").write(text)
     print(text)
     print("->", out)
-    for w in warn:
+    for w in warns:
         print("WARNING:", w)
 
 

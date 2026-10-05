@@ -14,7 +14,8 @@ PROMPT="以下是普通话口播，提到 TermA、TermB、Product-X" \
   - elsewhere: ffmpeg `zscale`+`tonemap=hable` (or `libplacebo`). Force with `TONEMAP=ffmpeg`.
   - Later steps resample to 30fps.
 - Clips are numbered 1..N in the order given.
-- Whisper (mlx_whisper, else faster_whisper; see `scripts/asr.py`) still mishears English terms in Chinese
+- Whisper (`vstudio.asr`: mlx_whisper, else faster_whisper, else OpenAI; cached in `<wav>.asr.json`; CLI
+  `scripts/asr.py`) still mishears English terms in Chinese
   speech. Re-transcribe doubtful spans with a term prompt (`python3 ../asr.py clip.wav out.json --prompt ...`)
   and add recurring fixes to persona `subtitles.term_fixes`.
 
@@ -37,8 +38,8 @@ E = [
 python3 $V/cut_pass1.py edit_list.py      # TH -45 dB, MAXGAP 0.20, KEEPGAP 0.10, overridable in edit_list.py
 ```
 - Snaps each range to voiced audio and squeezes internal pauses.
-- Cuts video **by frame index**, `trim=start_frame/end_frame`.
-- Splices audio sample-exact with numpy and 12ms fades.
+- Cuts with `vstudio.cut.cut_segments` (via `bodycut.cut_sources`): frame-grid snap, a 2 s accurate pre-seek
+  then `trim=start_frame/end_frame`, audio sliced sample-exact on the same grid with 12ms fades.
 
 Per-segment `ffmpeg -ss -t` drifted 0.57s over 163 cuts, so don't go back to it.
 
@@ -68,6 +69,9 @@ python3 $V/strict_pass.py apply strict.py body_rt.mp4 body_a.wav body2_rt.mp4 bo
 - **Pauses**: squeezed to persona `audio.pause_squeeze` (0.06s) with MAXGAP 0.12.
 - **Effect**: about 10% shorter (212s → 191s in the reference video).
 - The apply step prints `kept words || subtitle` per sid. Read every line and fix the TEXT entries.
+- The kept words (with new times) go into `segs.json`; compose.py ends each `|` / CJK-space subtitle chunk where
+  its last word ends (`vstudio.asr.align_script`), so a chunk change lands on the speech, not on a character-count
+  guess (that guess is still the fallback when a body has no words, i.e. before strict_pass).
 - Example: `examples/v_strict_example.py`.
 
 ## 6. Cut padding sentences (废话), optional

@@ -46,3 +46,29 @@ cover, retouch, other (matting / segmentation, HTML→PNG render, contact sheet)
 - `--engine rvm` not run here (needs torch + network); code path identical to the source except device selection.
 - `color-mix()` needs Chrome ≥ 111.
 - Pattern C layout is landscape only (photo left / panel right); a portrait variant would need a new layout.
+
+## Phase 2b rewire
+Swaps (old → new):
+- `scripts/render_html.py` (whole file) → **deleted**; `python3 -m vstudio.render page.html -o out.png` (same flags:
+  `--size --query --wait --no-persona`, plus `--scale --transparent`). No shim: WORKFLOW.md/templates now call the module.
+- `split_cover.py:build/draw_title/face_center_x/rgb/F/tw` → `vstudio.cover.split_cover`; the script is now a JSON
+  shim (config format unchanged: photo, retouch, retouch_force, photo_lift, face_x, quote, title, thumbnail, chips,
+  stamp, corner_tag, colors, glow, photo_shift, outputs[{path, size, photo_w, photo_shift, quality}]). Outputs may also
+  use `"aspect": "4:3"|"16:9"|"3:4"` (3:4 = new portrait stacked layout). Retouch caching (`*.retouched.png`) kept locally.
+- `extract_frames.py:grab` → `media.grab_frame` (frame-accurate preroll seek instead of fast `-ss`);
+  `cmd_sheet`/`duration` → `media.contact_sheet`; new `pick` subcommand → `cover.score_frames` + `cover.contact_sheet`.
+- `matte.py` unchanged (MediaPipe / RVM engines stay local, out of lib scope).
+Behaviour changes:
+- split cover: per-output `fade`/`overlap` keys are no longer honoured (lib uses fixed 220/40 px × scale); plain-string
+  chips after the first are drawn `dim` (dict chips unchanged); quote→title spacing follows the quote height instead
+  of a fixed y; photo crop scales to fill (identical for photos taller than the cover). Visual diff on the synthetic
+  config: same layout, thumbnail a few px taller.
+- `sheet` no longer writes full-size `cand_<t>.png` unless `--save-frames` (the sheet is a single decode pass now).
+- Font staging copies installed font roles (`config.FONTS`) instead of every file in FONT_DIR; persona CSS injects all
+  hex `brand.*` keys (superset of accent/highlight/ink/ground).
+Tests: collage + face-quadrant templates rendered via `vstudio.render` (collage pixel-identical to the old render_html,
+mean abs diff 0.0); split_cover 4:3 + 16:9 (synthetic photo/thumbnail) and a 3:4 aspect output; extract_frames
+sheet (+`--save-frames`), collage, face on a lavfi clip; `pick` exits cleanly with no face; py_compile + `--help`
+for all 3 CLIs (+ matte.py); `pytest tests` 34 passed.
+Lib requests: `cover.split_cover` could accept `fade`/`overlap` (photo fade width, panel overlap) to keep per-output
+tuning.

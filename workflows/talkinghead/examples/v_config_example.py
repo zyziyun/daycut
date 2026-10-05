@@ -17,7 +17,7 @@ KEYWORDS = ["关键词", "Keyword", "API"]                # coloured yellow in s
 # Preset 精剪风. 记笔记风: zoom/pops/stamps/circles/cards/sfx False, progress='classic', callouts/panels/hook_badge True.
 STYLE = dict(zoom=True, emph_zoom=1.32, alt_zoom=1.16,
              pops=True, stamps=True, circles=True, cards=True, sfx=True, progress='refined',
-             callouts=False, panels=False, hook_badge=False, fx_in_hooks=True,
+             callouts=False, panels=False, hook_badge=False, fx_in_hooks=True,   # callout_theme='notes-yellow' (white bubble)
              sub_size=54, sub_y=1525, sub_stroke=5)
 
 HOOK_TITLE = ["第一行白字标题", "第二行带关键词的标题"]

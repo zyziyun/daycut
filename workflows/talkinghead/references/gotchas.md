@@ -25,12 +25,17 @@ but their ffmpeg inputs are added **sequentially**. So the filter must reference
 uses the original `i`.) Getting this wrong gives `Invalid file index` errors.
 
 ## xfade offset math
-For clips with sped durations `d[0..n]` and crossfade `X`:
-`L[0]=d[0]`, `L[k]=L[k-1]+d[k]-X`. The xfade that adds clip `k` uses `offset=L[k-1]-X`.
-Final hook→main xfade uses `offset=hook_dur-X`. `main_start = hook_dur - X` (where body content
-effectively begins; use it for all overlay timing via `tmap(o)=main_start+o/BODY_SPEED`).
+For clips with sped, frame-quantised durations `d[0..n]` and crossfade `X`: `offset[k] = offset[k-1] + d[k-1] - X`
+(`vstudio.cut.xfade_assemble` does this; `scripts/montage.py` wraps it for the hook montage). With muted pads each
+`d[k]` includes the pads, so body second 0 plays at `BODY_START = body dissolve start + X`; use
+`Montage.b2f(o) = BODY_START + o/BODY_SPEED` for all overlay timing (both tracks write it to `timeline.json`).
 Each xfade and each acrossfade shortens the combined stream by exactly `X`, so video and audio
 stay in sync as long as both chains use the same `X`.
+
+## drawbox cannot animate
+`drawbox` evaluates x/y/w/h once, and its `t` is the box THICKNESS, not time: a progress fill written as
+`drawbox=w='(t-T0)/D*W'` is drawn full (or not at all) on every frame. The H track builds the fill and playhead
+from `color` sources overlaid with per-frame `x` expressions (`overlay` evaluates per frame).
 
 ## Audio/video sync with crossfades
 Use `xfade` for video AND `acrossfade` for audio at the SAME `X`. Don't hard-concat video while
@@ -64,11 +69,18 @@ paths in commands (the scripts and run.sh already do).
 A 0.3s `xfade` + `acrossfade` fades the incoming clip in over its first 0.3s of output, which at
 1.65x is about 0.5s of speech. A half-sentence hook starting on an English word lost its first
 syllable, and the first word of every hook after the first was soft.
-Fix, built into `compose.py`:
-- every hook after the first starts XF*HOOK_SPEED earlier with that lead-in muted (`volume=0:enable='lt(t,pad)'`)
-- the last hook gets a muted tail of the same length
-- the body gets `tpad` and `adelay` of XF
-Check with an RMS envelope: after the muted lead-in there should be a dip, then the syllable at full level.
+Fix, built into `scripts/montage.py` (both tracks) on `vstudio.cut.xfade_assemble(mute_pad="both")`:
+- at every dissolve the incoming clip starts XF*speed earlier and the outgoing clip runs XF*speed longer,
+  both muted, so the dissolve plays over silence (an outgoing hook's last syllable was faded too before)
+- the body gets `tpad` (cloned first frame) and `adelay` of XF, since nothing precedes body second 0
+Check with an RMS envelope: full level right up to each dissolve, silence (or the whoosh SFX) inside it,
+full level right after it.
+
+## Concat-joined bodies carry ~1 ms timestamp jitter
+Parts joined with the concat demuxer get timestamps a millisecond off the 1/30 grid. `cut.cut_segments` seeks
+with an accurate `-ss`, so a frame sitting 1 ms early is dropped and the whole range shifts one frame (and the
+last frame goes missing). `bodycut.mux` snaps timestamps back to the grid while stream-copying
+(`setts=pts=round(PTS*TB*30)/(TB*30)`); every V-track cut and compose's base input go through it.
 
 ## Never trust ASR on a 1-2s sped-up clip
 Whisper returns unrelated words, 「如何如何如何…」 loops and similar garbage. Slow the clip back with
@@ -93,8 +105,9 @@ Output flags like `-color_trc` are ignored when the input is rawvideo. Use
 ## Frame-exact cutting
 Per-segment `ffmpeg -ss A -t D` drifted 0.57s of A/V offset over 163 segments, because each segment
 can carry one extra frame. Cut video with `trim=start_frame:end_frame` on frame-quantized times and
-splice audio with numpy at the same quantized boundaries. The concat demuxer with `-c copy` and
-`-video_track_timescale 30000` is then exact.
+splice audio with numpy at the same quantized boundaries (`vstudio.cut.cut_segments` does both). The concat
+demuxer with `-c copy` and `-video_track_timescale 30000` keeps frame COUNTS exact, but see the timestamp jitter
+note below before cutting such a file again.
 
 ## Whisper word timestamps
 - A word's *start* swallows the pause before it. A word's *end* is reliable. So cut runs at

@@ -22,10 +22,9 @@ import numpy as np
 from PIL import Image
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from render_landscape import (W, H, font, render_chip, render_node_card, render_hook_badge,
-                              build_frame_png, render_panel, render_sub, alpha_paste,
-                              NODE_FADE, PANEL_FADE)
-from style import GUEST_DEFAULT, HOST_DEFAULT
+from render_landscape import (W, H, render_chip, render_node_card, render_hook_badge,
+                              build_frame_png, render_panel, render_sub, NODE_FADE, PANEL_FADE)
+from style import GUEST_DEFAULT, HOST_DEFAULT, alpha_paste
 
 TILE_W, TILE_H = 640, 720
 TILE_Y = 96
@@ -85,8 +84,7 @@ def main():
                   "x0": smooth_centres(htr["cx"], fps, hx, hw)})
 
     base_bgr = np.array(build_frame_png(meta.get("yt_title", ""), meta.get("accent", "")))[:, :, ::-1].copy()
-    f_chip = font(28)
-    chips = [(np.array(render_chip(t["label"], f_chip)), k * TILE_W) for k, t in enumerate(tiles)]
+    chips = [(np.array(render_chip(t["label"])), k * TILE_W) for k, t in enumerate(tiles)]
 
     hook_end = float(meta.get("hook_end", 0.0))
     badge = np.array(render_hook_badge()) if hook_end > 0 else None

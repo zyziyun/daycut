@@ -14,36 +14,21 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 import argparse
 import os
-import random
 
 import cv2
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw
 
-from photostory.ctx import Ctx, font, font_for, load_spec
-from photostory.util import crop_aspect
+from vstudio import cover as vcover
+
+from photostory.ctx import Ctx, _font_path, font_for, load_spec
+from photostory.util import crop_aspect, has_cjk
 
 
 def polaroid(im, size, rot, k, cap=None, seed=0):
-    q = lambda v: max(1, int(round(v * k)))
-    im = im.resize(size, Image.LANCZOS)
-    b, bb = q(22), q(70) if cap else q(22)
-    card = Image.new("RGBA", (im.width + 2 * b, im.height + b + bb), (250, 247, 240, 255))
-    card.paste(im, (b, b))
-    if cap:
-        ImageDraw.Draw(card).text((card.width / 2, im.height + b + bb / 2 - 2), cap,
-                                  font=font_for(cap, q(30), "sans", "cjk"), fill=(70, 56, 40), anchor="mm")
-    r = random.Random(seed)
-    tape = Image.new("RGBA", (q(170), q(48)), (236, 222, 180, 170)).rotate(r.uniform(-14, 14), expand=True)
-    pad = q(50)
-    big = Image.new("RGBA", (card.width + 2 * pad, card.height + 2 * pad), (0, 0, 0, 0))
-    shd = Image.new("RGBA", big.size, (0, 0, 0, 0))
-    ImageDraw.Draw(shd).rectangle((pad + q(12), pad + q(18), pad + card.width + q(12), pad + card.height + q(18)),
-                                  fill=(0, 0, 0, 130))
-    big = Image.alpha_composite(shd.filter(ImageFilter.GaussianBlur(q(14))), big)
-    big.paste(card, (pad, pad), card)
-    big.alpha_composite(tape, (pad + card.width // 2 - tape.width // 2, pad - tape.height // 2 + q(4)))
-    return big.rotate(rot, resample=Image.BICUBIC, expand=True)
+    """vstudio.cover.polaroid with the story's caption font (sans for latin, cjk for 中文)."""
+    role = "cjk" if cap and has_cjk(cap) else "sans"
+    return vcover.polaroid(im, size, rot=rot, cap=cap, scale=k, seed=seed, cap_role=_font_path(role))
 
 
 def circled(im, ell, red):

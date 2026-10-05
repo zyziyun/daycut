@@ -16,7 +16,9 @@ script itself is the preproduction side (persona `voice.*`); this workflow cover
 Scripts: `$VSTUDIO/workflows/talkinghead/scripts/` (H track + shared `asr.py`, `caption.py`) and
 `scripts/vertical/` (V track). Run from the project dir (the user's video folder) unless a step says WORK.
 Prereqs: `ffmpeg`, Python with `numpy opencv-python pillow soundfile mediapipe`, a whisper backend
-(`mlx_whisper` on Apple Silicon, else `faster_whisper`), and `./install.sh` for fonts + face model.
+(`mlx_whisper` on Apple Silicon, else `faster_whisper`, else OpenAI `whisper-1` via `OPENAI_API_KEY`), and
+`./install.sh` for fonts + face model. Both tracks are built on `lib/vstudio` (cutting, dissolves, loudness,
+ASR, overlays, covers, publish copy); only the V-track per-frame animation engine and the cut-list logic are local.
 
 ## Step 0: pick the track and the style
 
@@ -24,8 +26,9 @@ Prereqs: `ffmpeg`, Python with `numpy opencv-python pillow soundfile mediapipe`,
 - **V track, vertical (main engine)**: raw phone clips, usually 1080x1920 HLG HDR, possibly several, no
   subtitles. `scripts/vertical/`. Supports every style. See below and `references/vertical_pipeline.md`.
 - **H track, horizontal (legacy)**: a 1920x1080 剪映 export that already has burned subtitles. `scripts/*.py`.
-  Notes-board style only. **`scripts/vertical/compose.py` supersedes `build_filter.py`** (muted hook pads,
-  sid anchors, all styles, per-frame overlays); the H scripts are kept working for horizontal 剪映 exports.
+  Notes-board style only. **`scripts/vertical/compose.py` supersedes `build_filter.py`** (sid anchors, all
+  styles, per-frame overlays); the H scripts are kept working for horizontal 剪映 exports. Both tracks share
+  `scripts/montage.py` (muted-pad hook dissolves).
 
 **Style.** Read `references/styles.md` (the strategy menu: what each looks like, when it fits, its knobs).
 Ask the creator which preset they want:
@@ -54,8 +57,12 @@ On the V track the style is just the `STYLE` dict in the config, so switching la
 - **Subtitles.** Read every line against the audio before handover. Whisper mangles English terms in Chinese
   speech: pass a term prompt, put recurring fixes in persona `subtitles.term_fixes`, fix the rest by hand.
   Mark line breaks with `|` so a word is never split.
+- **Hook dissolves never cost a syllable.** Every join plays over muted pads on BOTH sides (`cut.xfade_assemble`
+  `mute_pad="both"`): the outgoing clip runs on and the incoming one starts early by XF*speed, both muted, and the
+  body opens on a cloned first frame + silence. So each join adds about 2*XF of silent dissolve; keep XF short
+  (0.3s on V; the H example's 0.8s gives 1.6s per join, lower it if the montage drags).
 - **Export.** 1080p30 H.264 high, bt709 tags via the `h264_metadata` bsf, AAC 192k 48k, `+faststart`,
-  loudness persona `audio.loudness_lufs`.
+  two-pass linear loudnorm to persona `audio.loudness_lufs` (`vstudio.audio.loudnorm_2pass`).
 - **Caption.** `references/publish_caption.md`; `scripts/caption.py` does the counting and the timeline.
 
 ## V track: vertical phone clips, all styles
@@ -64,14 +71,16 @@ Run in a WORK dir (e.g. `mkdir -p work && cd work`), `V=$VSTUDIO/workflows/talki
 Full notes in `references/vertical_pipeline.md`.
 
 1. **HDR→SDR, audio, word-level whisper.** `PROMPT="术语 列表" bash $V/prep_sources.sh . ../clip1.MOV ../clip2.MOV`
-   → `sdrN.mp4`, `a48_N.wav`, `aN.json`. Uses `avconvert` on macOS, ffmpeg zscale tonemap elsewhere.
+   → `sdrN.mp4`, `aN.wav`, `aN.json` (`vstudio.media.to_sdr`: `avconvert` for HDR on macOS, ffmpeg zscale tonemap
+   elsewhere; whisper is cached next to the wav).
 2. **Keep list**, one entry per sentence (sid = list index): write `edit_list.py` from `examples/v_edit_list_example.py`.
 3. **Snap to voice, squeeze pauses, frame-exact cut.** `python3 $V/cut_pass1.py edit_list.py` → `body_v.mp4 body_a.wav segs.json`.
 4. **Per-frame retouch** (slim, eyes, de-shine, skin; EMA-smoothed landmarks; ~1 s/frame/worker).
    `python3 $V/retouch_video.py body_v.mp4 x --test 300,2500` to check, then
    `python3 $V/retouch_video.py body_v.mp4 body_rt.mp4 --workers 5`.
-5. **Strict filler pass on the retouched body.** `python3 $V/strict_pass.py transcribe body_a.wav "$PROMPT"`,
-   write `strict.py` (`examples/v_strict_example.py`), then
+5. **Strict filler pass on the retouched body.** `python3 $V/strict_pass.py transcribe body_a.wav "$PROMPT"`
+   (prints the indexed words plus `DEL candidates` from `vstudio.cut.suggest_fillers`: fillers, repeats, merged
+   restarts; check each by ear), write `strict.py` (`examples/v_strict_example.py`), then
    `python3 $V/strict_pass.py apply strict.py body_rt.mp4 body_a.wav body2_rt.mp4 body2_a.wav`.
 6. **Optional: drop 废话 sentences by sid.** `python3 $V/drop_pass.py "1,7,11" body2_rt.mp4 body2_a.wav body3_rt.mp4 body3_a.wav`.
 7. **Face track on the final body.** `python3 $V/face_track.py body3_rt.mp4 face3.npy`.
@@ -102,9 +111,10 @@ already-retouched body.
    CALLOUTS (full-sentence bubbles of ~5s), PANELS (记笔记 cards, 5-7, anchored where the point is said),
    REMOVE (callouts now covered by a panel), HOOKS.
 4. `python3 $H/make_assets.py work/config.py` renders the bar, active-chapter highlights, hook badge, callouts, panels, `assets.json`.
-5. `python3 $H/build_filter.py work/config.py && bash work/run.sh`: hook montage with xfade + acrossfade, body
-   speed-up, eq grade, always-on bar, overlays, loudnorm.
-6. **QC.** Duration ≈ `HOOK_DUR + MAIN_DUR/BODY_SPEED`, loudness, 3-4 frames: a hook, the handoff, a panel, a callout.
+5. `python3 $H/build_filter.py work/config.py && bash work/run.sh`: hook montage with muted-pad dissolves, body
+   speed-up, eq grade, always-on bar (fill + playhead now actually move), overlays, two-pass loudnorm.
+   Also writes `work/timeline.json` (read by `caption.py`).
+6. **QC.** Duration ≈ `BODY_START + MAIN_DUR/BODY_SPEED` (`work/timeline.json`), loudness, 3-4 frames: a hook, the handoff, a panel, a callout.
 7. **Cover.** `python3 $H/detect_head.py frame.jpg` → `COVER_HEAD_X`, then `python3 $H/make_cover.py work/config.py`:
    notes-board cover with the face centred, 2-3 mini panels and a yellow sticky. Keep cards inside the 4:3 crop
    x[240,1680] and judge `work/cover43.png`, not the full frame.

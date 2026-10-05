@@ -68,3 +68,60 @@ Existing keys used: `speed.body`, `speed.b_roll`, `audio.voice_lufs`, `audio.lou
   switch to `hevc_metadata`.
 - The GSAP CDN script (same as the original) needs network access at render time.
 - No third-party assets were copied: no stickers, SFX or music. Fonts are fetched by install.sh (OFL).
+
+## Phase 2b rewire (onto `lib/vstudio`)
+
+**Swaps (old → new)**
+- `common.py:run/need/duration/extract_wav/read_wav` → `media.run/duration/extract_wav`, `audio.read_wav`;
+  `common.transcribe/words_of` → `asr.transcribe(cache=False, fix_terms=False)` (work/audio.json stays the cache);
+  `common.raw2cut` + `tight_cut.rawmap` → `cut.TimeMap` (layout.json `maps` are now TimeMap item lists;
+  build_promo's `BT/OT` use `to_final(t, "fwd")`, falling back to `"back"` past the end = old raw2cut semantics).
+  common.py now only holds `Project`, `P`, `link_or_copy`.
+- `tight_cut.tighten` → `cut.tighten`; `suggest/hidden_onset/rms_envelope` → `cut.suggest_fillers` (uses
+  `cut.hidden_onset` + `audio.rms_envelope`); `cut_file` (trim/concat + single-pass loudnorm) →
+  `cut.cut_segments` (frame-exact) + `audio.loudnorm_2pass`; `montage` → `cut.xfade_assemble` +
+  `cut.render_assembly` + `audio.loudnorm_2pass`; `HDR_TONEMAP` → `media.hdr_to_sdr_args`;
+  draft-subs term fixes → `asr.apply_term_fixes`.
+- `build_promo.subset_fonts` → `render.subset_project_fonts`; progress bar CSS/HTML/JS → `overlays.hf_progress`;
+  cue CSS → `overlays.hf_cue_css`; 【】→`<em>` (now HTML-escaped, in Python) → `overlays.cue_html`.
+- `make_cover.build/get_photo` (own PIL layout + retouch) → `cover.split_cover` (config mapped onto it);
+  frame grabs → `media.grab_frame`.
+- `post_copy.py` → `publish.post_body` (title check, chapter_lines, hashtags, voice warnings).
+- `export.sh` (inline 2-pass loudnorm + h264_metadata) → new `scripts/export.py` (`audio.loudnorm_2pass` +
+  `media.retag_bt709`); export.sh is kept as a thin `exec python3 export.py "$@"` entry point (same args,
+  plus `--lufs`).
+
+**Behaviour changes (deliberate)**
+- Cuts snap to the frame grid (segments move ≤ 1 frame; body 42.80 → 42.83 s, final timeline shifts ≤ 0.03 s);
+  audio is 48 kHz stereo with 12 ms edge fades. Stems use two-pass loudnorm (measured: body -16.0, outro -15.9,
+  montage -17.0 LUFS; old single-pass -15.9/-16.0/-17.0).
+- Montage uses `mute_pad=False` (plain acrossfade, same clip timing the step labels are computed from);
+  `montage.scale` is now scale-to-cover + crop instead of a bare scale (identical for 16:9 sources).
+- `cut.tighten` without audio is equivalent to the old function; new opt-in `cut.rms_snap: true` (config key)
+  snaps pause edges to voiced energy. Persona `audio.pause_squeeze` is read but below pad_in/pad_out it has no effect.
+- `hdr_tonemap` accepts `"auto"` (tone-map only HLG/PQ sources); falls back to libplacebo / approximate if no zimg.
+- Default filler list (when `cut.fillers` is unset) is the library's broader zh + en list; `--suggest` now also
+  prints a PATCH list.
+- Post copy: timestamps `00:08` (floored, MM:SS) instead of `0:09` (rounded); links use `：` on 小红书; a blank
+  line separates body and links; 小红书 chapter labels capped at 14 chars.
+- Cover: split_cover's layout (scaled by min(W,H)/1080, chips/tags via `overlays`) — visually matches the old
+  cover; retouch runs once per size (slower, same result).
+- Vertical chapter labels are 24 px (hf_progress vertical geometry) instead of 22 px.
+
+**Test evidence** (synthetic project /tmp/promo-recut-after vs the phase-1 outputs, old code from `git show HEAD`)
+- `tight_cut --suggest`: same candidates and DROP list as the old script (text format of the note differs).
+- `tight_cut` default: 6 body + 1 outro segments, same boundaries within 1 frame; durations 42.83 / 6.47 / 40.0 s.
+- `build_promo` horizontal + vertical: `hyperframes lint` 0 errors, the same 6 advisory warnings; snapshots at
+  7.5/23.8/34.9/45/74.5/78 s match the old ones (cards, chips, cues with highlight, montage label/badge/tag,
+  progress bar + active chapter, end card).
+- `make_cover`: 4:3 / 16:9 / 3:4 visually match the old covers (synthetic footage has no face → centred crop).
+- `post_copy`: OK (format changes above). `export.sh --skip-render`: -14.0 LUFS, bt709 primaries/transfer/space.
+- `python3 -m pytest tests -q`: 34 passed; py_compile + `--help` for every script; `export.sh --help`.
+- Not run: `--verify`/real whisper, a full HyperFrames render.
+
+**Lib requests**
+- `cover.split_cover`: accept a pre-retouched photo + face_x so multi-size runs retouch once, and a pixel `crop`
+  for thumbnails (we crop locally today).
+- `media.grab_frame`: return `out`, and an optional JPEG quality (build_promo still uses `media.run` with `-q:v 2`
+  for the freeze frame).
+- A small `link_or_copy` (hard link, else copy) in `media` or `render` would remove the last local file helper.

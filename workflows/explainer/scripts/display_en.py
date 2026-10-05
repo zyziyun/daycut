@@ -10,15 +10,24 @@ replacements (acronyms, formulas) come from subtitles/display_rules.json:
   "digit_lines": [7, 8, 9],          # lines where even small numbers become digits
   "post": [["total is one", "total is 1"]]
 }
+
+Library-free on purpose (nothing in vstudio converts spoken numbers to digits).
+Usage:  python3 display_en.py [--project .]     # preview every cue's display form from subtitles/cues.json
 """
-import json, os, re
+import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
+import argparse, json, os, re
 
 U = {w: i for i, w in enumerate("zero one two three four five six seven eight nine ten eleven twelve thirteen "
                                 "fourteen fifteen sixteen seventeen eighteen nineteen".split())}
 TENS = {w: 10 * i for i, w in enumerate("_ _ twenty thirty forty fifty sixty seventy eighty ninety".split()) if w != "_"}
 SCALE = {"hundred": 100, "thousand": 1000, "million": 10**6, "billion": 10**9}
 NUMW = set(U) | set(TENS) | set(SCALE)
-RULES = json.load(open("subtitles/display_rules.json")) if os.path.exists("subtitles/display_rules.json") else {}
+
+
+def load_rules(project="."):
+    """<project>/subtitles/display_rules.json, or {} when absent."""
+    p = os.path.join(project, "subtitles", "display_rules.json")
+    return json.load(open(p)) if os.path.exists(p) else {}
 
 
 def _cardinal(ws):
@@ -74,7 +83,9 @@ def _convert(text, aggressive):
     return "".join(out)
 
 
-def display(en, line):
+def display(en, line, rules=None):
+    """Display form of spoken chunk ``en`` from SCRIPT.md line ``line`` (rules: see load_rules)."""
+    RULES = load_rules() if rules is None else rules
     s = re.sub(r"\ba hundred\b", "one hundred", en).replace("a few hundred", "a few QQQ")
     for a, b in RULES.get("replace", []):
         s = re.sub(a, b, s)
@@ -86,5 +97,9 @@ def display(en, line):
 
 
 if __name__ == "__main__":
-    for c in json.load(open("subtitles/cues.json")):
-        print(c["line"], "|", display(c["spoken"], c["line"]))
+    ap = argparse.ArgumentParser(description="Preview spoken -> on-screen English for every cue.")
+    ap.add_argument("--project", "-C", default=".", help="project dir (default: current dir)")
+    a = ap.parse_args()
+    rules = load_rules(a.project)
+    for c in json.load(open(os.path.join(a.project, "subtitles", "cues.json"))):
+        print(c["line"], "|", display(c["spoken"], c["line"], rules))

@@ -7,16 +7,14 @@ Each shot is KEY:SECONDS (how long to record). Output: <out>/slide_<key>.mp4 (yu
 persona export.crf, faststart). Needs `pip install playwright && playwright install chromium`.
 """
 import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import argparse
 import asyncio
 import shutil
-import subprocess
 import tempfile
 
-from render_html import inject_persona, stage_fonts
-from vstudio.config import persona
+from vstudio import media
+from vstudio.render import inject_css, persona_css, stage_fonts
 
 
 async def record_one(p, url, key, dur, w, h, tmp, out, crf, fps):
@@ -33,10 +31,8 @@ async def record_one(p, url, key, dur, w, h, tmp, out, crf, fps):
     if not webms:
         print(f"  !! no recording for {key}"); return None
     mp4 = out / f"slide_{key}.mp4"
-    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(webms[0]), "-r", str(fps),
-                    "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", str(crf), "-preset", "slow",
-                    "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709",
-                    "-movflags", "+faststart", str(mp4)], check=True)
+    media.run(["ffmpeg", "-y", "-i", str(webms[0]),
+               *media.delivery_args(crf=crf, preset="slow", audio=False, fps=fps), str(mp4)])
     print(f"  {mp4.name}  ({mp4.stat().st_size // 1024} KB)")
     return mp4
 
@@ -48,10 +44,13 @@ async def run(a):
         raise SystemExit("pip install playwright && playwright install chromium")
     w, h = (int(x) for x in a.size.lower().split("x"))
     html = pathlib.Path(a.html).resolve()
-    stage_fonts(html.parent)
-    page_file = html if a.no_persona else inject_persona(html)
+    stage_fonts(html.parent / "assets" / "fonts")
+    page_file = html
+    if not a.no_persona:
+        page_file = html.with_name(html.stem + ".render.html")
+        page_file.write_text(inject_css(html.read_text(encoding="utf-8"), persona_css()), encoding="utf-8")
     out = pathlib.Path(a.out); out.mkdir(parents=True, exist_ok=True)
-    crf = persona().get("export", {}).get("crf", 18)
+    crf = None                                  # media.delivery_args -> persona export.crf (18)
     tmp = pathlib.Path(tempfile.mkdtemp(prefix="slide_rec_"))
     try:
         async with async_playwright() as p:

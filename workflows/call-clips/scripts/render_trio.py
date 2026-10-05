@@ -24,11 +24,10 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import render_vertical as rv
-from render_vertical import _wrap
-from style import TEAL, GUEST_DEFAULT, HOST_DEFAULT
-from render_vertical import (W, H, font, render_chip, render_hook_badge, render_node_card,
-                             render_panel, render_sub, alpha_paste, NODE_FADE, PANEL_FADE)
+from style import TEAL, GUEST_DEFAULT, HOST_DEFAULT, font, alpha_paste
+from render_vertical import (W, H, render_chip, render_hook_badge, render_node_card,
+                             render_panel, render_sub, NODE_FADE, PANEL_FADE)
+from vstudio.draw import text_width, wrap
 
 # Platform safe zone (小红书 / Douyin / Reels on iPhone): the top ~230px sit
 # under the status bar and top nav, the bottom ~270px under title, caption and
@@ -49,29 +48,21 @@ def render_quote(who, text, width=980):
     """Quote card for a 金句 compilation: big type, balanced lines, the
     speaker in teal. No 记笔记 tag -- a quote is not a note."""
     f_q, f_who, f_mark = font(58), font(34), font(120)
-    tmp = ImageDraw.Draw(Image.new("RGB", (1, 1)))
     pad = 56
     if "\n" in text:
         # hand-set breaks: a quote is short enough to break by meaning
         lines = text.split("\n")
     else:
-        maxw = width - pad * 2
-        lines = _wrap(text, f_q, maxw, tmp)
-        n, lo, hi = len(lines), maxw // 2, maxw
-        while hi - lo > 8:
-            mid = (lo + hi) // 2
-            if len(_wrap(text, f_q, mid, tmp)) <= n:
-                hi = mid
-            else:
-                lo = mid
-        lines = _wrap(text, f_q, hi, tmp)
+        # fewest lines that fit, then evened out (no orphan last line)
+        lines = wrap(text, f_q, width - pad * 2, balance=True)
     # the card hugs its text instead of leaving a dead right margin
-    tw = max(tmp.textbbox((0, 0), ln, font=f_q)[2] for ln in lines)
+    tw = max(text_width(ln, f_q) for ln in lines)
     size = 58
     while tw > width - pad * 2 and size > 40:   # never spill past the card
         size -= 2
         f_q = font(size)
-        tw = max(tmp.textbbox((0, 0), ln, font=f_q)[2] for ln in lines)
+        tw = max(text_width(ln, f_q) for ln in lines)
+    tw = int(tw)
     width = min(width, max(560, tw + pad * 2))
     lh = 80
     h = 86 + len(lines) * lh + 30 + 44 + 40
@@ -101,7 +92,7 @@ def build_frame(title_lines, accent):
         runs = line if isinstance(line, list) else [[line, False]]
         for txt, is_acc in runs:
             d.text((x, y), txt, font=f_t, fill=TEAL if is_acc else (255, 255, 255))
-            x += d.textbbox((0, 0), txt, font=f_t)[2]
+            x += text_width(txt, f_t)
         y += 74
     if accent:
         d.rectangle([64, y + 22, 64 + 72, y + 26], fill=TEAL)
@@ -152,12 +143,11 @@ def main():
 
     base_bgr = np.array(build_frame(meta["title"], meta.get("accent", "")))[:, :, ::-1].copy()
 
-    f_chip = font(30)
     chips = []
     for k, g in enumerate(guests):
-        chips.append((np.array(render_chip(g.get("label") or GUEST_DEFAULT, f_chip)),
+        chips.append((np.array(render_chip(g.get("label") or GUEST_DEFAULT)),
                       k * (G_W + GAP), TOP_Y + G_H - 44))
-    chips.append((np.array(render_chip(meta.get("host_label") or HOST_DEFAULT, f_chip)),
+    chips.append((np.array(render_chip(meta.get("host_label") or HOST_DEFAULT)),
                   0, HOST_Y + HOST_H - 44))
 
     panels = []

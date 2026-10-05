@@ -9,6 +9,8 @@ import json
 import os
 import re
 
+from vstudio import audio, media
+
 from .transitions import TRD
 
 PACING = dict(gap=0.32, sec_gap=0.75, tail=2.8, lead=0.3, end_fade=1.8)
@@ -97,3 +99,26 @@ class Timeline:
 
     def summary(self):
         return f"total {self.total:.1f}s ({self.total / 60:.1f} min), {len(self.shots)} shots, {len(self.subs)} subtitle cues"
+
+
+def place_voice(C, T, t0, t1, out):
+    """Narration track for [t0, t1): every voice unit at its timeline start -> 48 kHz stereo wav
+    (digital silence when there is no timing.json). Returns out."""
+    dur = t1 - t0
+    ins, flt = [], []
+    for u in T.units:
+        if not u["path"] or u["start"] >= t1 or u["start"] + u["dur"] <= t0:
+            continue
+        ms = int(round((u["start"] - t0) * 1000))
+        trim = f"atrim=start={-ms / 1000:.3f}," if ms < 0 else ""
+        flt.append(f"[{len(ins) // 2}:a]aresample={audio.SR},{trim}asetpts=PTS-STARTPTS,"
+                   f"adelay={max(ms, 0)}:all=1,apad[a{len(flt)}]")
+        ins += ["-i", C.path(u["path"])]
+    if not flt:
+        return audio.silence(dur, out)
+    n = len(flt)
+    flt.append("".join(f"[a{k}]" for k in range(n)) +
+               f"amix=inputs={n}:normalize=0,atrim=0:{dur:.3f},aformat=channel_layouts=stereo[vo]")
+    media.run(["ffmpeg", "-y", *ins, "-filter_complex", ";".join(flt), "-map", "[vo]",
+               "-ar", str(audio.SR), "-ac", "2", "-c:a", "pcm_s16le", out])
+    return out

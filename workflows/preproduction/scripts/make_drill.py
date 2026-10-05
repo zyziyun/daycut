@@ -11,27 +11,23 @@ Input (JSON or TXT):
 TTS engines (--engine auto picks the first available):
   kokoro  Kokoro-82M via mlx-audio (Apple Silicon; pip install mlx-audio)
   edge    Microsoft Edge neural voices via edge-tts (any OS, needs network; pip install edge-tts)
-  openai  OpenAI TTS (any OS, needs OPENAI_API_KEY; pip install openai)
+  openai  OpenAI gpt-4o-mini-tts (any OS, needs OPENAI_API_KEY; plain HTTPS, no package needed)
+Clips go through vstudio.tts.synth (48 kHz mono, cached in $VSTUDIO_CACHE/tts, so re-runs are free).
 
   python3 make_drill.py work/drill_words.json -o work/pronunciation_drill [--script SCRIPT.md] [--engine edge]
 """
 import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
 
 import argparse
-import asyncio
-import importlib.util
 import json
-import os
-import platform
 import re
-import shutil
-import subprocess
 import tempfile
 
-from vstudio.config import persona
+import numpy as np
 
-SR = 24000
-DEFAULT_VOICE = {"kokoro": "af_heart", "edge": "en-US-AriaNeural", "openai": "alloy"}
+from vstudio import audio, tts
+
+SR = audio.SR                    # vstudio.tts writes 48 kHz mono; the drill is assembled at that rate
 
 
 def load_words(path):
@@ -53,55 +49,16 @@ def load_words(path):
     return items
 
 
-def pick_engine(name):
-    if name != "auto":
-        return name
-    if platform.system() == "Darwin" and platform.machine() == "arm64" and importlib.util.find_spec("mlx_audio"):
-        return "kokoro"
-    if importlib.util.find_spec("edge_tts") or shutil.which("edge-tts"):
-        return "edge"
-    if os.environ.get("OPENAI_API_KEY") and importlib.util.find_spec("openai"):
-        return "openai"
-    raise SystemExit("no TTS engine: pip install mlx-audio (Apple Silicon) | edge-tts | openai (+OPENAI_API_KEY)")
+def say(engine, text, speed, voice, model):
+    """One TTS clip as mono float32 at SR (vstudio.tts.synth, cached by text+voice+speed)."""
+    x, sr = audio.read_wav(tts.synth(text, engine=engine, voice=voice, speed=speed, model=model), mono=True)
+    if sr != SR:
+        raise SystemExit(f"unexpected TTS sample rate {sr}")
+    return x
 
 
-def to_wav(src, dst):
-    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(src), "-ac", "1", "-ar", str(SR),
-                    "-c:a", "pcm_s16le", str(dst)], check=True)
-
-
-def tts(engine, text, speed, out_wav, voice, tmp, model):
-    raw = tmp / (out_wav.stem + "_raw")
-    if engine == "kokoro":
-        subprocess.run([sys.executable, "-m", "mlx_audio.tts.generate", "--model", model or "mlx-community/Kokoro-82M-bf16",
-                        "--text", text, "--voice", voice, "--speed", str(speed), "--join_audio", "--audio_format", "wav",
-                        "--output_path", str(tmp), "--file_prefix", raw.name], check=True, capture_output=True)
-        src = tmp / f"{raw.name}.wav"
-    elif engine == "edge":
-        src = raw.with_suffix(".mp3")
-        rate = f"{int(round((speed - 1) * 100)):+d}%"
-        if importlib.util.find_spec("edge_tts"):
-            import edge_tts
-            asyncio.run(edge_tts.Communicate(text, voice, rate=rate).save(str(src)))
-        else:
-            subprocess.run(["edge-tts", "--voice", voice, f"--rate={rate}", "--text", text, "--write-media", str(src)],
-                           check=True, capture_output=True)
-    elif engine == "openai":
-        from openai import OpenAI
-        src = raw.with_suffix(".wav")
-        r = OpenAI().audio.speech.create(model=model or "tts-1", voice=voice, input=text, speed=speed,
-                                         response_format="wav")
-        src.write_bytes(r.content)
-    else:
-        raise SystemExit(f"unknown engine {engine}")
-    to_wav(src, out_wav)
-    return out_wav
-
-
-def silence(sec, path):
-    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i",
-                    f"anullsrc=channel_layout=mono:sample_rate={SR}", "-t", str(sec), "-c:a", "pcm_s16le", str(path)],
-                   check=True)
+def gap(sec):
+    return np.zeros(int(round(sec * SR)), np.float32)
 
 
 def write_card(items, path, script_ok):
@@ -125,7 +82,7 @@ def main():
     ap.add_argument("--script", help="locked script; warns about words/sentences not in it")
     ap.add_argument("--engine", choices=["auto", "kokoro", "edge", "openai"], default="auto")
     ap.add_argument("--voice", help="voice id (default: persona tts.<engine>_voice or engine default)")
-    ap.add_argument("--model", help="kokoro HF repo or openai TTS model")
+    ap.add_argument("--model", help="kokoro HF repo or openai TTS model (default: vstudio.tts.DEFAULT_MODEL)")
     ap.add_argument("--slow", type=float, default=0.65, help="word speed (0.65 = every phoneme audible)")
     ap.add_argument("--normal", type=float, default=0.85, help="sentence speed (near-normal with breathing room)")
     ap.add_argument("--gap-short", type=float, default=1.2)
@@ -154,36 +111,26 @@ def main():
         print(f"plan: {len(items)} words, ~{est:.0f}s of audio")
         return
 
-    engine = pick_engine(a.engine)
-    tts_cfg = persona().get("tts", {}) or {}
-    voice = a.voice or tts_cfg.get(f"{engine}_voice") or DEFAULT_VOICE[engine]
-    print(f"engine={engine} voice={voice}")
-    tmp = pathlib.Path(tempfile.mkdtemp(prefix="drill_"))
     try:
-        intro = a.intro or f"Pronunciation drill. {len(items)} words. Repeat after each one."
-        seq = [tts(engine, intro, a.normal, tmp / "intro.wav", voice, tmp, a.model), tmp / "sil_long.wav"]
-        silence(a.gap_short, tmp / "sil_short.wav"); silence(a.gap_long, tmp / "sil_long.wav")
-        for i, it in enumerate(items):
-            print(f"  [{i + 1}/{len(items)}] {it['word']}", flush=True)
-            w = tts(engine, f"{it['word']}.", a.slow, tmp / f"w{i:02d}_slow.wav", voice, tmp, a.model)
-            s = tts(engine, it["sentence"], a.normal, tmp / f"w{i:02d}_sent.wav", voice, tmp, a.model)
-            seq += [w, tmp / "sil_short.wav", w, tmp / "sil_short.wav", s, tmp / "sil_long.wav"]
-        lst = tmp / "concat.txt"
-        lst.write_text("".join(f"file '{p.as_posix()}'\n" for p in seq), encoding="utf-8")
-        wav = out.with_suffix(".wav")
-        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(lst),
-                        "-c", "copy", str(wav)], check=True)
-        lufs = persona().get("audio", {}).get("loudness_lufs", -14)
-        base = f"loudnorm=I={lufs}:LRA=11:TP=-1.5"
-        r = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-i", str(wav), "-af", base + ":print_format=json",
-                            "-f", "null", "-"], capture_output=True, text=True)
-        m = json.loads(re.search(r"\{[^{}]*\"input_i\"[^{}]*\}", r.stderr, re.S).group(0))  # two-pass, linear
-        af = (f"{base}:measured_I={m['input_i']}:measured_TP={m['input_tp']}:measured_LRA={m['input_lra']}:"
-              f"measured_thresh={m['input_thresh']}:offset={m['target_offset']}:linear=true")
-        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(wav), "-af", af, "-ar", "44100",
-                        "-c:a", "aac", "-b:a", "96k", str(out.with_suffix(".m4a"))], check=True)
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        engine = tts.pick_engine(a.engine)
+    except RuntimeError as e:
+        raise SystemExit(str(e))
+    voice = a.voice                              # None -> persona tts.<engine>_voice, else vstudio.tts default
+    print(f"engine={engine} voice={voice or 'persona/engine default'}")
+    intro = a.intro or f"Pronunciation drill. {len(items)} words. Repeat after each one."
+    seq = [say(engine, intro, a.normal, voice, a.model), gap(a.gap_long)]
+    for i, it in enumerate(items):
+        print(f"  [{i + 1}/{len(items)}] {it['word']}", flush=True)
+        w = say(engine, f"{it['word']}.", a.slow, voice, a.model)
+        s = say(engine, it["sentence"], a.normal, voice, a.model)
+        seq += [w, gap(a.gap_short), w, gap(a.gap_short), s, gap(a.gap_long)]
+    with tempfile.TemporaryDirectory(prefix="drill_") as tmp:
+        raw = str(pathlib.Path(tmp) / "raw.wav")
+        audio.write_wav(raw, np.concatenate(seq), SR)
+        # two-pass linear loudnorm to persona audio.loudness_lufs; both outputs 48 kHz stereo
+        m = audio.loudnorm_2pass(raw, str(out.with_suffix(".wav")))
+        audio.loudnorm_2pass(raw, str(out.with_suffix(".m4a")), audio_bitrate="96k")
+    print(f"  loudness in: I={m['input_i']} LUFS  TP={m['input_tp']} dBTP")
     for ext in (".wav", ".m4a", ".md"):
         f = out.with_suffix(ext)
         print(f"  {f}  ({f.stat().st_size // 1024} KB)")

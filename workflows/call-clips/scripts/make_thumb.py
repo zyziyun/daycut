@@ -20,22 +20,11 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from style import TEAL, YEL, WHITE, DIM, font
+from style import TEAL, YEL, WHITE, DIM, font, alpha_paste, frame_at
+from vstudio.draw import fit_font, text_width
 
 W, H = 1280, 720
 ACCENTS = {"teal": TEAL, "yellow": YEL, "white": WHITE}
-
-
-def tw(d, s, f):
-    return d.textbbox((0, 0), s, font=f)[2]
-
-
-def fit(d, text, start, maxw):
-    """Largest size at which the line still fits the text column."""
-    size = start
-    while size > 40 and tw(d, text, font(size)) > maxw:
-        size -= 2
-    return size
 
 
 def face_crop(frame, rect, face_cx, face_cy, top_y, out_w, out_h, zoom):
@@ -82,32 +71,17 @@ def main():
     tb = meta["thumb"]
     accent = ACCENTS[tb.get("accent_color", "yellow")]
 
-    cap = cv2.VideoCapture(args.video)
-    fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
-    cap.set(cv2.CAP_PROP_POS_FRAMES, int(args.at * fps))
-    ok, fr = cap.read()
-    cap.release()
-    if not ok:
-        raise SystemExit("could not read a still")
-
-    # the guest's face is covered in the thumbnail too
+    # the guest's face is covered in the thumbnail too: grab exactly the frame
+    # the track sample j belongs to
     tr = json.load(open(args.track))
+    fps = tr.get("fps") or cv2.VideoCapture(args.video).get(cv2.CAP_PROP_FPS) or 25.0
     j = min(int(args.at * fps), len(tr["cx"]) - 1)
+    fr = frame_at(args.video, j / fps)
     gcx, gcy, gw = tr["cx"][j], tr["cy"][j], tr["w"][j]
     st = Image.open(args.sticker).convert("RGBA")
     sw = max(24, int(round(gw * args.scale)))
-    st = st.resize((sw, int(round(sw * st.height / st.width))), Image.LANCZOS)
-    sa = np.array(st)
-    x0, y0 = int(gcx - sw / 2), int(gcy + args.y_offset * sa.shape[0] - sa.shape[0] / 2)
-    sy0, sx0 = max(0, -y0), max(0, -x0)
-    patch = sa[sy0:, sx0:]
-    hgt = min(patch.shape[0], fr.shape[0] - max(0, y0))
-    wid = min(patch.shape[1], fr.shape[1] - max(0, x0))
-    patch = patch[:hgt, :wid]
-    al = patch[:, :, 3:4].astype(np.float32) / 255.0
-    roi = fr[max(0, y0):max(0, y0) + hgt, max(0, x0):max(0, x0) + wid].astype(np.float32)
-    fr[max(0, y0):max(0, y0) + hgt, max(0, x0):max(0, x0) + wid] = \
-        (patch[:, :, :3][:, :, ::-1] * al + roi * (1 - al)).astype(np.uint8)
+    sa = np.array(st.resize((sw, int(round(sw * st.height / st.width))), Image.LANCZOS))
+    alpha_paste(fr, sa, gcx, gcy + args.y_offset * sa.shape[0])
 
     grect = [int(v) for v in args.guest_region.split(",")]
     hrect = [int(v) for v in args.host_region.split(",")]
@@ -154,7 +128,7 @@ def main():
 
     y = tb.get("y", 118)
     for line, is_acc in tb["lines"]:
-        f = font(fit(d, line, tb.get("size", 104), W - 128))
+        f = fit_font(line, "cjk-bold", tb.get("size", 104), W - 128, min_size=40)
         d.text((64, y), line, font=f, fill=accent if is_acc else WHITE,
                stroke_width=9, stroke_fill=(0, 0, 0))
         y += int(f.size * 1.16)
@@ -164,10 +138,10 @@ def main():
                       (meta.get("host_label", ""), W * 0.75)):
         if not label:
             continue
-        wlab = tw(d, label, fl) + 36
+        wlab = text_width(label, fl) + 36
         d.rounded_rectangle([cx - wlab / 2, H - 58, cx + wlab / 2, H - 14],
                             radius=22, fill=(0, 0, 0, 255), outline=accent, width=2)
-        d.text((cx - tw(d, label, fl) / 2, H - 50), label, font=fl, fill=WHITE)
+        d.text((cx - text_width(label, fl) / 2, H - 50), label, font=fl, fill=WHITE)
 
     img.save(args.out, quality=95)
     print(f"-> {args.out}")

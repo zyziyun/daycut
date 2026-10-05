@@ -71,3 +71,52 @@ Override it per spec with `PALETTE`.
   9:16 was not visually checked.
 - Cover layout is tuned for portrait canvases. Landscape works but is cramped.
 - Music: the original used a third-party track from a local library. It is not copied, so supply your own licensed `BGM`.
+
+## Phase 2b rewire
+The per-frame float-array effect engine (shots, overlays, transitions, looks, header, chapter cards,
+labels) is untouched. Swaps (old → new):
+- `render.py:mix_audio` (amix + single-pass loudnorm) → new shared `timeline.place_voice` (units placed on
+  the timeline, 48 kHz stereo wav) + `audio.mix_bed` (when `BGM`) / `audio.loudnorm_2pass`, then muxed.
+- `render.py` encoder args → `media.delivery_args(audio=False)` (+ `scale=out_color_matrix=bt709` so the
+  RGB→YUV matrix matches the new bt709 tags on older ffmpeg builds; ffmpeg 9 already does this from the tags).
+- `tts.py:Transcriber` → `asr.transcribe(cache=False, fix_terms=False)`. Spec `TTS.whisper` / `faster_model`
+  still override the model. `tts.py:align` → `asr.align_script`. `best_align`, `norm`, `trim` and `spoken` stay local.
+- `tts.py:main.synth` (openai SDK streaming) → `tts.synth(engine="openai")`. The first take may come from the
+  vstudio cache, and retries pass `cache=False`. The **per-unit best-take cache** (`<TTS.dir>/cache/<md5>.wav/.json`,
+  key = voice|model|instructions|text) is unchanged, so existing caches stay valid.
+- `export.py:ts` + SRT loop → `subs.srt_write(which="both")`. `post.md` → `publish.post_body`, and chapter
+  labels go through `publish.chapter_lines`. The voice.mp3 loudnorm → `place_voice` + `audio.normalize_stem` (-16) + mp3 encode.
+- `subtitles.py:wrap/bwrap/runs` → `subs.balanced_wrap(measure=PIL textlength)` + `subs.parse_highlight` /
+  `strip_markup`. This handles both `**` and 【】. `draw.wrap` was NOT used because it only parses the persona markup (【】), so
+  `**` highlights would be measured as text and broken across lines.
+- `cover.py:polaroid` → `cover.polaroid` (identical geometry). The thin wrapper passes the caption font file as
+  `cap_role`, so latin captions keep the `sans` role fallback.
+
+Behaviour changes (deliberate):
+- Music bed is loudness-based: `BGM_LUFS` (default persona `audio.music_lufs`, -30) replaces linear
+  `BGM_VOLUME`. A set `BGM_VOLUME` prints a note and is ignored. New optional `BGM_DUCK` (dB, default 0 = the old static bed).
+  Fade-out stays 3.5 s. Final loudness is now two-pass linear rather than single-pass dynamic.
+- Audio is 48 kHz **stereo** (it was mono). TTS takes are 48 kHz (they were 24 kHz).
+- SRT times are rounded to ms (they were truncated, a ±1 ms shift) with no overlap. post.md is unchanged for the demo. On 小红书, a
+  bilingual chapter label longer than 14 chars falls back to the 中文 name. New optional `POST.platform`.
+- Long subtitle lines: a line never starts with `，`, "Claude Code"-style latin runs stay whole, and there are no empty `****`
+  fragments. Breaks are DP-balanced.
+
+Test evidence (synthetic demo in /tmp, before = `git HEAD` copy of scripts):
+- py_compile all files, `--help` for render/tts/cover/export/make_demo_assets, `ruff --select F` clean, `pytest tests` 34 passed.
+- `--stills` at 24 times, 3:4 and 16:9: **all 48 stills are bit-identical** before/after. `cover.png` is bit-identical. transcript.md
+  and post.md are identical. The SRT differs only by 1 ms rounding.
+- Wrap check, old vs new `bwrap` at real subtitle sizes: all 22 demo cues are identical on both canvases. 3 of 6 long synthetic
+  lines changed, each for the better (see above).
+- `asr.align_script` vs old `align`: 300/300 identical on randomised word streams with dropouts and substitutions.
+- `tts.py` was run with mocked `tts.synth`/`asr.transcribe`. It made 3 tries per unit, wrote timing.json, and a second run hit the per-unit cache with 0 synth calls.
+- Audio with fake narration + a lavfi music bed: 12 s preview -13.8 → -13.9 LUFS (persona -14), voice.mp3 -16.4 → -16.4 LUFS.
+  Durations were the same (12.0 s / 24.12 s). A 3 s silent `--preview` still encodes with a (silent) stereo track.
+
+Lib requests:
+- `subs.balanced_wrap`: closing punctuation glued to a highlighted token inherits the highlight
+  (`**里**，` becomes `**里，**`, so the comma is drawn gold). Keep punctuation outside the highlight.
+- `draw.wrap`/`draw.runs`: accept `**` as well as the persona markup (as `subs.parse_highlight` does).
+- `asr`: a public `backend()` resolver, so callers can pick a per-backend model override without re-probing imports.
+- `cover`: a red-pen ellipse helper (`cover.py:circled`, the tagline circle) is still local.
+- `audio`: a "place clips on a timeline → stem" helper (`timeline.place_voice`). Other TTS-driven workflows likely need it too.

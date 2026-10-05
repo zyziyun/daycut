@@ -70,3 +70,79 @@ Per-video config keys (not persona): `HOOK_BADGE_TEXT`, `NOTES_TAG`, `COVER`.
   (needs whisper), prep_sources.sh, faster_whisper backend.
 - Voice Memos TCC note is macOS-specific (kept in gotchas).
 - No third-party assets copied: SFX are synthesized in code; fonts via vstudio.
+
+## Phase 2b rewire
+
+### Swaps (old → new)
+- Hook montage + body dissolves, both tracks: `compose.py` PADS/CLIPS/L/MAP/b2f/f2b + `build_base` graph and
+  `build_filter.py` xfade/acrossfade chain → new shared `scripts/montage.py` on `cut.xfade_assemble(mute_pad="both")`
+  + `cut.TimeMap` (b2f, f2b, is_hook, join_starts, timeline). Hook ranges get their own fast-seek inputs.
+- Loudness: compose base single-pass + render single-pass, build_filter inline single-pass → `audio.loudnorm_2pass`
+  (V: voice normalised before SFX so the SFX gains keep their old meaning, then the mix again; H: run.sh writes a PCM
+  premix then calls loudnorm_2pass). Final encode → `media.delivery_args`.
+- SFX: `compose.sfx_bank/mix_audio` → `audio.place_sfx` (same synth, same gains).
+- Drawing: compose `F/text_layer/colorize/rounded/shadowed/blit/blitc/vis_len` → `draw.load_font/text_layer/runs/
+  rounded_rect/shadow/alpha_paste`, `subs.text_width`; hook badge → `overlays.badge`; stamps → `overlays.stamp`;
+  callouts → `overlays.callout` (theme `STYLE['callout_theme']`, default notes-yellow = the old white bubble);
+  panel tag → `overlays.tag`. KEYWORDS colouring now also honours 【】 markup.
+- Progress bars: `progress_refined/progress_classic` (+ precomputed SEGX/GRAD/LABELS/CLS) → `overlays.progress_bar`.
+  The refined chapter pill keeps its fade + slide-in (the strip is split at the label row).
+- Subtitle chunk timing: proportional by char width → `asr.align_script` against the strict_pass words (chunk ends
+  where its last word ends); proportional via `subs.text_width` remains the fallback when segs.json has no words.
+- Cutting: `bodycut.cut_body` (decode-from-0 trim per segment) and cut_pass1's own ffmpeg loop + numpy splice →
+  `cut.cut_segments` via `bodycut.cut_sources` (groups consecutive ranges per source); `bodycut.remap` → `cut.TimeMap`
+  (snap "fwd"). Envelopes/runs in cut_pass1 + strict_pass → `audio.rms_envelope(smooth=0)` + `audio.voiced_runs`
+  (3-frame smoothing kept in dB locally, see lib requests).
+- ASR: `scripts/asr.py:transcribe` → thin CLI over `asr.transcribe` (cache, OpenAI fallback, hallucination-safe
+  settings, generic + persona term fixes); strict_pass transcribe uses it directly and now also prints
+  `cut.suggest_fillers` DEL candidates (review aid, never applied).
+- prep_sources.sh: ffmpeg_sdr/avconvert/extract → `media.to_sdr` + `media.extract_wav` (no more `a48_N.wav`; cut_pass1
+  reads sound from `sdrN.mp4`).
+- Covers: H `make_cover.py` → `cover.notes_cover` + `media.grab_frame` (frame-accurate); V `cover.py` no longer imports
+  compose, uses `draw`/`overlays.tag`; `pick_cover_frame.py` → `cover.score_frames` + `cover.contact_sheet`.
+- H assets: `make_assets.py` → `overlays.progress_static`, `badge`, `callout`, `notes_panel`.
+- Caption: own mmss/xhs_len/tags → `publish.check_title` (with hints), `chapters_from_body`, `chapter_lines`, `hashtags`.
+  Both tracks now read `timeline.json` (build_filter writes one).
+
+### Kept local (deliberately)
+Per-frame animation engine (zoom, circle inset, card, scene logic, pop/stamp easing), face-track medians per sid
+(lib has no tracker), the V 记笔记 panel (needs per-bullet row layers for the reveal), the token pill, the cut-list
+logic of cut_pass1 / strict_pass (`cut.tighten` squeezes only whisper gaps > 0.35 s; strict_pass squeezes every RMS
+gap > 0.12 s, so it is not equivalent), retouch_video's chunked pipeline, detect_head.
+
+### Behaviour changes
+- **mute_pad="both"** (chosen over "head"): the old V code padded only the incoming side (+ the last hook's tail), so
+  the outgoing hook's last syllable was faded by every inter-hook acrossfade; the old H track had no pads at all.
+  Now every dissolve is silent on both sides. Cost: +XF per inter-hook join on V (synthetic test: 23.63 → 24.23 s,
+  body part identical 17.24 s), +2*XF per join on H (0.8 s example: 32.6 → 37.4 s). Body keeps the cloned-frame pre-roll.
+  A hook ending at the very end of the source cannot get a tail pad (clamped).
+- Durations are frame-quantised per piece; muted-pad frames show the clamped spoken range's subtitle (no flash of the
+  neighbouring sentence).
+- Loudness lands on target: V −13.9 / H −13.9 LUFS (old single-pass: −14.1 / −15.1).
+- **Bug fixed (pre-existing):** the H progress fill/playhead used `drawbox ... w='..t..'`; drawbox evaluates once and
+  its `t` is thickness, so the fill never moved. Now colour sources + per-frame `overlay` x.
+- Classic progress pill no longer fades in over 0.15 s (lib draws it on/off); badge is auto-width; stamps use brand accent.
+- Edge fades on cuts are 12 ms everywhere (bodycut used 10 ms).
+
+### Test evidence (synthetic lavfi media + macOS `say` speech in /tmp)
+- cut_pass1 → drop_pass → strict_pass apply (synthetic bw.json): segs.json subs/words/keep/total identical to HEAD;
+  body frames pixel-identical (frames 100/250/300/450/568), frame counts equal (638/596/569), audio within ±1-3 samples.
+- compose `all` (精剪 preset, all effects + SFX) and notes preset previews vs HEAD: same layout; RMS envelope at every
+  join: full level up to the dissolve, only the whoosh inside it, full level right after it (HEAD: outgoing faded).
+- Speech run: prep_sources.sh (SDR path, mlx whisper) → cut_pass1 → strict transcribe (suggestions printed) → apply →
+  compose all/preview → cover.py → caption.py (title hints) → pick_cover_frame (no-face path). Output 14.33 s, −14.0 LUFS.
+- H: make_assets → build_filter → run.sh → make_cover → caption; frame stills + bar crops at 11/16/25/36 s.
+- `python3 -m pytest tests -q` 34 passed; py_compile on every .py; `--help` on all 14 CLIs; `bash -n prep_sources.sh`.
+- Not run: retouch on a real face, face_track/pick_cover_frame on a real face, the avconvert/zscale HDR paths.
+
+### Lib requests
+1. `cut.xfade_assemble`: a pad mode for pieces that start at source 0 / end at source end (clone frame + silence),
+   so callers need not prepend `tpad/adelay` and rewrite the graph's input labels (montage.py does that today).
+2. `cut.cut_segments`: seek half a frame early (or snap source pts) — concat-joined inputs with ~1 ms pts jitter lose a
+   frame and shift by one; its own concat output has that jitter, so chaining cut_segments → cut_segments triggers it
+   (worked around by `bodycut.mux`, setts snap).
+3. `audio.rms_envelope`: option to smooth in dB (cut_pass1/strict_pass rules were tuned on that; linear smoothing
+   widens voiced runs ~10 ms and changed the synthetic cut by 1.1 s).
+4. `overlays.progress_static["drawbox"]` has the same drawbox-`t` bug (never animates).
+5. `overlays.notes_panel`: return per-bullet row layers/geometry for progressive reveal; `overlays.progress_bar`:
+   option to omit the chapter pill (for an animated label) and a fade for the classic pill.

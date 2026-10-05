@@ -59,18 +59,23 @@ optional `**Delivery:**` notes and `ZH:` translation lines (ignored by the linte
        -o work/pronunciation_drill --script SCRIPT.md
    ```
    Per word: slow word (0.65×) → 1.2 s → slow word → 1.2 s → script sentence (0.85×) → 2.2 s; spoken intro first.
-   Output `pronunciation_drill.wav`, `.m4a` (two-pass loudnorm to `persona.audio.loudness_lufs`, AAC 96k,
-   AirPods-ready), and `.md` reference card (IPA, pitfall, BAD/GOOD, source sentence; words missing from the
+   Output `pronunciation_drill.wav` and `.m4a` (both two-pass loudnorm to `persona.audio.loudness_lufs`, 48 kHz
+   stereo; the m4a is AAC 96k, AirPods-ready), and `.md` reference card (IPA, pitfall, BAD/GOOD, source sentence; words missing from the
    script are flagged). `--dry-run` writes only the card.
    Length ≈ 6 + n × 9.6 s (real runs land a bit longer with natural pacing).
 4. **TTS engine** (`--engine auto` picks the first available):
    - `kokoro` — Kokoro-82M via `mlx-audio` on Apple Silicon (`pip install mlx-audio`), local, default voice `af_heart`.
    - `edge` — `pip install edge-tts`; any OS, free, needs network; default `en-US-AriaNeural`.
-   - `openai` — `OPENAI_API_KEY`; any OS; `tts-1` with `speed`; default voice `alloy`.
+   - `openai` — `OPENAI_API_KEY`; any OS; `gpt-4o-mini-tts` with `speed` (`--model tts-1` for the old model);
+     default voice `cedar`.
+   All engines go through `vstudio.tts.synth`: clips are cached in `$VSTUDIO_CACHE/tts/`, so re-running a drill
+   after editing one sentence only synthesises that sentence.
    Voice per engine from `persona.tts.<engine>_voice`, or `--voice`. Use the same voice as any TTS preview so the
    reference stays consistent.
 
 ## Notes
+- mlx-audio Kokoro can crash on one specific sentence at one speed (`broadcast_shapes ... cannot be broadcast`,
+  surfaced as "mlx_audio produced no wav"). Reword the sentence slightly or nudge `--normal` (0.85 → 0.86).
 - The craft is written for English scripts. For 中文口播 keep the structural rules (hook formula, one insight,
   closing patterns, no em-dashes); sentence-length and wpm targets don't transfer (count characters, ~4–5 字/s).
 - Don't run the drill on a draft: words change, and the narrator ends up drilling sentences they won't say.

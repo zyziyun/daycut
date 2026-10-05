@@ -14,7 +14,7 @@ COVER_OUT = "my-talk_cover.jpg"
 MAIN_DUR   = 300.0   # real content end (whisper hallucinates over a silent tail)
 HOOK_SPEED = 1.3     # omit to use persona speed.hook
 BODY_SPEED = 1.1     # omit to use persona speed.body
-XFADE      = 0.8     # dissolve + audio crossfade between hook clips and into main
+XFADE      = 0.8     # dissolve between hook clips and into main; it plays over muted pads, so each join adds ~2*XFADE
 HOOK_VOL_DB = 4      # extra gain on hook audio
 # HOOK_BADGE_TEXT = "高光预告 · 完整版在下面"; NOTES_TAG = "记笔记 ↓"
 # GRADE = "eq=brightness=-0.06:contrast=1.08:saturation=1.05:gamma=0.96"   # brightness grade only

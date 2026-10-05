@@ -17,6 +17,7 @@ import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().par
 import time
 
 import _lfc
+from vstudio import media
 
 cfg, _ = _lfc.load(description=__doc__)
 URL = cfg.get("demo.url") or sys.exit("config.demo.url is not set")
@@ -84,4 +85,4 @@ with sync_playwright() as p:
     ctx.close()
     path = video.path()
     b.close()
-print("VIDEO:", path, f"(set demo.rec to it; duration {_lfc.probe_duration(path):.2f}s)")
+print("VIDEO:", path, f"(set demo.rec to it; duration {media.duration(path):.2f}s)")

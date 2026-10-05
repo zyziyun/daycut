@@ -7,8 +7,10 @@ The timeline is assembled BEFORE tracking, so the face track, the subtitles and
 the note panels all live in the same final-frame space and cannot drift apart.
 
 Pieces are cut from the source, each at its own speed, then dissolved together
-with xfade/acrossfade. A dissolve of D seconds shortens the joint by D, so the
-offset of piece k is sum(previous durations) - k*D.
+(vstudio.cut.xfade_assemble: frame-quantised durations, xfade + acrossfade). A
+dissolve of D seconds shortens the joint by D, so piece k starts at
+offset[k-1] + dur[k-1] - D; the resulting cut.TimeMap is the one source->final map
+used for subtitles, panels, node cards and chapters.
 
 Everything in clips.json is authored in SOURCE seconds; this script is the only
 place that converts to final time.
@@ -22,12 +24,13 @@ import argparse, json, os, re, subprocess
 HERE = os.path.dirname(os.path.abspath(__file__))
 WORKFLOW = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
-from find_disfluencies import Audio, find_cuts, split_window
+from build_subs import fix
+from vstudio import audio, media
 from vstudio.config import persona
+from vstudio.cut import Audio, find_cuts, split_window, xfade_assemble
 
 PY = sys.executable
 _CC = persona().get("call_clips") or {}
-LUFS = (persona().get("audio") or {}).get("loudness_lufs", -14)
 
 
 def script(name):
@@ -60,72 +63,63 @@ def sh(cmd):
     return r.stdout
 
 
-def cut_piece(src, start, end, speed, out, gain_db=0.0):
-    """One timeline piece, already at its final speed."""
-    af = f"atempo={speed:.4f}"
-    if gain_db:
-        af += f",volume={gain_db}dB"
-    sh(["ffmpeg", "-v", "error", "-ss", f"{start:.3f}", "-t", f"{end - start:.3f}",
-        "-i", src,
-        "-filter:v", f"setpts=PTS/{speed:.4f}",
-        "-filter:a", af,
-        "-c:v", "libx264", "-crf", "14", "-preset", "veryfast",
-        "-c:a", "aac", "-b:a", "192k", "-y", out])
-    return (end - start) / speed
-
-
-def offsets_of(durs, xfs):
-    """Where each piece starts in the dissolved output. Piece k's fade begins
-    xfs[k] before the previous output ends, and that value is also exactly the
-    `offset` xfade wants for that join. xfs[0] is unused."""
-    out = [0.0]
-    for k in range(1, len(durs)):
-        out.append(out[-1] + durs[k - 1] - xfs[k])
-    return out
-
-
+# intermediate timeline encode (the renderer re-encodes it for delivery)
+RAW_ARGS = ["-c:v", "libx264", "-crf", "14", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2"]
 CHUNK = 30
 
 
-def dissolve(pieces, durs, xfs, out):
-    """Chain pieces with xfade on video and acrossfade on audio. A long-form
-    timeline has 150+ pieces, too many inputs for one filter graph, so it is
-    dissolved in chunks and the chunks are then dissolved together. The offset
-    maths is linear, so the result is identical to a single pass."""
-    if len(pieces) > CHUNK:
-        outs, odurs, oxfs = [], [], []
-        for c0 in range(0, len(pieces), CHUNK):
-            sl = slice(c0, c0 + CHUNK)
-            o = f"{out[:-4]}.chunk{c0 // CHUNK}.mp4"
-            sub_x = [0.0] + list(xfs[sl][1:])
-            _dissolve(pieces[sl], durs[sl], sub_x, o)
-            outs.append(o)
-            odurs.append(sum(durs[sl]) - sum(sub_x[1:]))
-            oxfs.append(xfs[c0] if c0 else 0.0)
-        dissolve(outs, odurs, oxfs, out)
-        return
-    _dissolve(pieces, durs, xfs, out)
+def timeline_fps(src):
+    """Output frame rate: the source's, as an integer when it is one (30, 25)."""
+    f = media.probe(src)["fps"] or 30.0
+    return int(round(f)) if abs(f - round(f)) < 0.01 else f
 
 
-def _dissolve(pieces, durs, xfs, out):
-    if len(pieces) == 1:
-        subprocess.run(["cp", pieces[0], out], check=True)
-        return
-    args = []
+def plan(pieces, xfs, fps):
+    """Timing of the dissolved timeline without rendering it: an Assembly whose
+    timemap (source -> final, tags "hook"/"body") drives everything downstream.
+    mute_pad=False keeps call-clips' plain acrossfade: a muted pad would reach
+    past a window edge into cut (or redacted) footage."""
+    return xfade_assemble(pieces, xfade=xfs, mute_pad=False, fps=fps)
+
+
+def _render(src, pieces, xfs, fps, out):
+    """One ffmpeg pass: every piece is its own input-seeked read of the source
+    (so only its span is decoded), then speed + xfade/acrossfade in one graph."""
+    local = [dict(p, input=k, start=0.0, end=p["end"] - p["start"]) for k, p in enumerate(pieces)]
+    asm = xfade_assemble(local, xfade=xfs, mute_pad=False, fps=fps)
+    cmd = ["ffmpeg", "-y"]
     for p in pieces:
-        args += ["-i", p]
-    offs = offsets_of(durs, xfs)
-    fc = []
-    vcur, acur = "0:v", "0:a"
-    for i in range(1, len(pieces)):
-        fc.append(f"[{vcur}][{i}:v]xfade=transition=fade:duration={xfs[i]}:"
-                  f"offset={offs[i]:.3f}[v{i}]")
-        fc.append(f"[{acur}][{i}:a]acrossfade=d={xfs[i]}:c1=tri:c2=tri[a{i}]")
-        vcur, acur = f"v{i}", f"a{i}"
-    sh(["ffmpeg", "-v", "error"] + args + ["-filter_complex", ";".join(fc),
-        "-map", f"[{vcur}]", "-map", f"[{acur}]",
-        "-c:v", "libx264", "-crf", "14", "-preset", "veryfast",
-        "-c:a", "aac", "-b:a", "192k", "-y", out])
+        cmd += ["-ss", f"{p['start']:.3f}", "-t", f"{p['end'] - p['start'] + 0.25:.3f}", "-i", src]
+    media.run(cmd + media.filter_complex_args(asm.graph, workdir="work")
+              + ["-map", asm.vout, "-map", asm.aout] + RAW_ARGS + [out])
+    return asm
+
+
+def render_timeline(src, pieces, xfs, fps, out):
+    """Render the whole timeline. A long-form timeline has 150+ pieces, too many
+    inputs for one graph, so it is dissolved in chunks of CHUNK and the chunks are
+    then dissolved together; durations are whole frames, so the offset maths
+    (and the plan's TimeMap) is identical to a single pass."""
+    if len(pieces) <= CHUNK:
+        return _render(src, pieces, xfs, fps, out)
+    outs, joins, totals = [], [0.0], []
+    for c0 in range(0, len(pieces), CHUNK):
+        o = f"{out[:-4]}.chunk{c0 // CHUNK}.mp4"
+        sub_x = [0.0] + list(xfs[c0 + 1:c0 + CHUNK])
+        totals.append(_render(src, pieces[c0:c0 + CHUNK], sub_x, fps, o).total)
+        outs.append(o)
+        if c0:
+            joins.append(xfs[c0])
+    asm = xfade_assemble([(k, 0.0, d) for k, d in enumerate(totals)], xfade=joins, mute_pad=False, fps=fps)
+    cmd = ["ffmpeg", "-y"]
+    for o in outs:
+        cmd += ["-i", o]
+    media.run(cmd + media.filter_complex_args(asm.graph, workdir="work")
+              + ["-map", asm.vout, "-map", asm.aout] + RAW_ARGS + [out])
+    for o in outs:
+        os.remove(o)
+    return asm
 
 
 TERM_FIX = None
@@ -134,22 +128,17 @@ TERM_FIX = None
 MAX_CHARS = 18
 
 
-def load_subs(whisper, pieces_meta, work_id):
-    """Map whisper segments from source time into final timeline time."""
-    import build_subs
-    from build_subs import fix
-    build_subs._load_persona_fixes()
-    # per-recording term fixes live in clips.json, ahead of persona + shared list
-    if TERM_FIX and not getattr(build_subs, "_extended", False):
-        build_subs.TERM_FIX[:0] = [tuple(x) for x in TERM_FIX]
-        build_subs._extended = True
-
+def load_subs(whisper, tm):
+    """Map whisper segments from source time into final timeline time, piece by
+    piece through the TimeMap's clip items (a line never crosses a join)."""
+    items = tm.segments
     lines = []
     segs = json.load(open(whisper, encoding="utf-8"))["segments"]
-    for pm in pieces_meta:
-        s0, s1, spd, off = pm["start"], pm["end"], pm["speed"], pm["offset"]
-        edge = pm["xf"] / 2 if pm["k"] else 0.0
-        lo, hi = off + edge, off + pm["dur"] - (0.0 if pm["last"] else pm["xf"] / 2)
+    for k, it in enumerate(items):
+        s0, s1, spd, off = it["src0"], it["src1"], it["speed"], it["dst0"]
+        # a line stays clear of the dissolve halves on both sides of its piece
+        lo = off + it["xfade"] / 2
+        hi = off + it["dur"] - (items[k + 1]["xfade"] / 2 if k + 1 < len(items) else 0.0)
         for s in segs:
             if s["end"] <= s0 or s["start"] >= s1:
                 continue
@@ -160,10 +149,10 @@ def load_subs(whisper, pieces_meta, work_id):
                 kept = [w for w in ws if s0 <= (w["start"] + w["end"]) / 2 <= s1]
                 if not kept:
                     continue
-                txt = fix("".join(w["word"] for w in kept))
+                txt = fix("".join(w["word"] for w in kept), TERM_FIX)
                 t0, t1 = kept[0]["start"], kept[-1]["end"]
             else:
-                txt = fix(s["text"])
+                txt = fix(s["text"], TERM_FIX)
                 t0, t1 = s["start"], s["end"]
             if not txt:
                 continue
@@ -173,14 +162,14 @@ def load_subs(whisper, pieces_meta, work_id):
             if b - a < 0.28:
                 continue
             if lines and lines[-1]["end"] > a - 0.45 and \
-                    len(lines[-1]["text"] + txt) <= MAX_CHARS and lines[-1]["piece"] == pm["k"]:
+                    len(lines[-1]["text"] + txt) <= MAX_CHARS and lines[-1]["piece"] == k:
                 prev = lines[-1]["text"]
                 # "marketing" + "FDE" must not fuse into "marketingFDE"
                 sep = " " if re.match(r"[A-Za-z0-9%]", prev[-1:]) and re.match(r"[A-Za-z]", txt) else ""
                 lines[-1]["text"] = prev + sep + txt
                 lines[-1]["end"] = b
                 continue
-            lines.append({"start": a, "end": b, "text": txt, "piece": pm["k"]})
+            lines.append({"start": a, "end": b, "text": txt, "piece": k})
 
     for i, ln in enumerate(lines[:-1]):
         ln["end"] = min(lines[i + 1]["start"], ln["end"] + 0.3)
@@ -237,7 +226,7 @@ def main():
     os.makedirs("work", exist_ok=True)
     os.makedirs("out", exist_ok=True)
 
-    global DURS, AUDIO, SEGS
+    global AUDIO, SEGS
     if C.get("auto_trim"):
         AUDIO = Audio(C["audio"])
         if isinstance(C.get("extra_cuts"), str):
@@ -290,32 +279,29 @@ def main():
                        if guests else [f"work/{cid}.track.json"])
         reuse = args.reuse and os.path.exists(raw) and (
             args.no_track or all(os.path.exists(t) for t in track_paths))
-        paths, durs = [], []
-        for k, (s0, s1, spd, gain) in enumerate(specs):
-            p = f"work/{cid}.p{k}.mp4"
-            # durations are deterministic, so a reuse run can compute them
-            durs.append((s1 - s0) / spd if reuse else cut_piece(src, s0, s1, spd, p, gain))
-            paths.append(p)
-        offs = offsets_of(durs, xfs)
-        meta = [{"k": k, "start": s0, "end": s1, "speed": spd, "dur": durs[k],
-                 "offset": offs[k], "xf": xfs[k], "last": k == len(specs) - 1}
-                for k, (s0, s1, spd, _) in enumerate(specs)]
-
+        pieces = [dict(start=s0, end=s1, speed=spd, gain_db=gain, tag="hook" if k < n_hooks else "body")
+                  for k, (s0, s1, spd, gain) in enumerate(specs)]
+        fps = timeline_fps(src)
+        # timing is deterministic (whole frames), so a reuse run plans without rendering
+        tm = plan(pieces, xfs, fps).timemap
         if not reuse:
-            dissolve(paths, durs, xfs, raw)
+            render_timeline(src, pieces, xfs, fps, raw)
+        items = tm.segments
 
-        hook_end = meta[n_hooks]["offset"] if n_hooks else 0.0
-        total = meta[-1]["offset"] + meta[-1]["dur"]
+        hook_end = items[n_hooks]["dst0"] if n_hooks else 0.0
+        total = tm.duration
         print(f"  {n_hooks} hooks -> body at {hook_end:.2f}s, "
               f"{len(windows)} windows, total {total:.1f}s")
 
         def src_to_final(t):
-            """Source seconds -> final timeline seconds, via the window the
-            time falls in. Returns None for material that was cut out."""
-            for pm in meta[n_hooks:]:
-                if pm["start"] <= t <= pm["end"]:
-                    return pm["offset"] + (t - pm["start"]) / pm["speed"], pm
-            return None, None
+            """Source seconds -> (final seconds, piece index) through the body
+            pieces of the TimeMap; (None, None) for material that was cut out."""
+            f = tm.to_final(t, tag="body")
+            if f is None:
+                return None, None
+            k = max(k for k, it in enumerate(items) if it["tag"] == "body"
+                    and it["src0"] - 1e-6 <= t <= it["src1"] + 1e-6)
+            return f, k
 
         if not reuse and not args.no_track:
             regions = [g["region"] for g in guests] if guests else [guest]
@@ -343,11 +329,11 @@ def main():
                           "--sticker", stk] + geo)
                 print("  " + out.strip().splitlines()[-2].strip() + " " + out.strip().splitlines()[-1].strip())
 
-        subs = load_subs(C["whisper"], meta, cid)
+        subs = load_subs(C["whisper"], tm)
         # a carded seam hides its subtitles behind the card; a silent trim
         # only needs the dissolve itself kept clear
-        blanks = [(meta[n_hooks + j]["offset"] - (1.0 if j in carded else 0.05),
-                   meta[n_hooks + j]["offset"] + meta[n_hooks + j]["xf"]
+        blanks = [(items[n_hooks + j]["dst0"] - (1.0 if j in carded else 0.05),
+                   items[n_hooks + j]["dst0"] + items[n_hooks + j]["xfade"]
                    + (1.0 if j in carded else 0.05))
                   for j in range(1, len(windows))
                   # auto-trims and quote dissolves carry speech right up to
@@ -379,7 +365,7 @@ def main():
         # a node card sits on each internal edit, centred in its dissolve
         # a null entry in `nodes` is a silent trim -- excise a few seconds
         # without announcing a section that did not change
-        tj["node_cards"] = [[meta[n_hooks + j]["offset"] + XFADE / 2, title]
+        tj["node_cards"] = [[items[n_hooks + j]["dst0"] + XFADE / 2, title]
                             for j, title in enumerate(nodes, start=1) if title]
 
         # a panel may stay up across a silent trim -- nothing changed -- but
@@ -390,7 +376,7 @@ def main():
             k = i
             while k + 1 < len(windows) and (k + 1) not in carded:
                 k += 1
-            return meta[n_hooks + k]["offset"] + meta[n_hooks + k]["dur"]
+            return items[n_hooks + k]["dst0"] + items[n_hooks + k]["dur"]
 
         panels = []
         for a, d, title, bullets in c.get("panels", []):
@@ -405,7 +391,7 @@ def main():
                 sys.exit(f"{cid}: panel '{title}' at {a}s is inside a cut, move it")
             # a panel must be gone before a node card arrives, or the frame
             # carries two cards at once
-            limit = section_end(pm["k"] - n_hooks) - 0.4
+            limit = section_end(pm - n_hooks) - 0.4
             for nat, _ in tj["node_cards"]:
                 if fa < nat:
                     limit = min(limit, nat - 1.9)
@@ -466,21 +452,11 @@ def main():
             render_cmd += [f"--{k}", v]
         sh(render_cmd)
 
-        # two-pass loudness to the persona's delivery target (-14 LUFS default)
-        log = subprocess.run(
-            ["ffmpeg", "-hide_banner", "-i", f"work/{cid}.novol.mp4",
-             "-af", f"loudnorm=I={LUFS}:TP=-1.5:LRA=11:print_format=json", "-f", "null", "-"],
-            capture_output=True, text=True).stderr
-        m = json.loads(re.findall(r"\{[^{}]*input_i[^{}]*\}", log, re.S)[-1])
-        sh(["ffmpeg", "-v", "error", "-i", f"work/{cid}.novol.mp4",
-            "-af", f"loudnorm=I={LUFS}:TP=-1.5:LRA=11:measured_I={m['input_i']}:"
-                   f"measured_TP={m['input_tp']}:measured_LRA={m['input_lra']}:"
-                   f"measured_thresh={m['input_thresh']}:offset={m['target_offset']}:linear=true",
-            "-c:v", "copy", "-tag:v", "avc1",
-            # write bt709 into the h264 VUI itself; container flags alone
-            # leave iOS guessing and shifting the colours
-            "-bsf:v", "h264_metadata=colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1", "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
-            "-movflags", "+faststart", "-y", f"out/{cid}.mp4"])
+        # two-pass loudness to the persona's delivery target (-14 LUFS default),
+        # then bt709 written into the h264 VUI itself (container flags alone leave
+        # iOS guessing and shifting the colours) + faststart, all stream copy
+        audio.loudnorm_2pass(f"work/{cid}.novol.mp4", f"work/{cid}.ln.mp4")
+        media.retag_bt709(f"work/{cid}.ln.mp4", f"out/{cid}.mp4")
         print(f"  --> out/{cid}.mp4")
 
 

@@ -38,7 +38,7 @@ scipy, and `mlx-whisper` (Apple Silicon) or `faster-whisper`.
 **1. Analyse the source**
 ```bash
 python3 $S/analyze.py work/config.py          # audio16k.wav, rec_subs.srt, sounded.json, geo/*.png
-python3 $S/transcribe.py work/config.py       # -> audio16k.json (minutes; run in background)
+python3 $S/transcribe.py work/config.py       # -> audio16k.json (minutes; run in background; cached)
 python3 $S/geometry.py work/config.py         # -> geometry.json + crop_spans.json (chrome removed)
 python3 $S/speaker_timeline.py work/config.py # -> speakers.json (labels + times only)
 ```
@@ -112,18 +112,20 @@ python3 $S/qa.py work/config.py               # decode, loudness, mosaics, pitch
 - **Platform auto-captions are unusable** for non-English speech (Meet/Zoom map Chinese onto random
   English words). Keep only speaker labels + timestamps; re-transcribe with whisper.
 - **Whisper flags:** `condition_on_previous_text=False`, `hallucination_silence_threshold=2`, else it
-  loops on 嗯嗯嗯 over silence (`transcribe.py` sets both).
+  loops on 嗯嗯嗯 over silence (`transcribe.py` → `vstudio.asr.transcribe` sets both). Put domain terms in
+  `asr_prompt` (or `--prompt`); `--backend mlx|faster|openai` forces an engine. Results are cached in
+  `work/audio16k.wav.asr.json`, so re-runs are instant.
 - **Speaker labels are often misattributed.** Decide who said what by content before cutting or
   pitch-shifting anyone.
 - **Cut from the transcript, not from silence.** Meeting audio is too noisy for silencedetect-driven
   cutting; `sounded.json` only estimates dead air.
 - **Sparse keyframes:** fast input-seek + `-frames:v 1` can land seconds off in meeting recordings.
-  Stills seek ~25 s early and decode forward (`_lfc.grab_frame`); the transient scan decodes the
+  Stills seek ~25 s early and decode forward (`vstudio.media.grab_frame`); the transient scan decodes the
   whole file at 1 fps.
 - **Overlaying a PNG** needs `-loop 1` + `overlay=…:shortest=1`, or the 1-frame stream ends before its
   `enable` window and silently never renders.
 - **libass:** some ffmpeg builds (e.g. recent Homebrew) ship without the `ass` filter; `burn_final.py`
-  checks and falls back to `static_ffmpeg`.
+  asks `vstudio.media.ffmpeg_bin(need=["ass"])`, which falls back to `static_ffmpeg`.
 - **VideoToolbox:** use `-q:v` quality mode, never a fixed `-b:v` (balloons the file). For code /
   slide text libx264 crf ~20 is crisper (`burn.encoder: x264`).
 - **Seamless zoom cut-ins:** zoom/pitch/freeze splits are marked audio-continuous, so no afade at

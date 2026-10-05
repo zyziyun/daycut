@@ -1,61 +1,26 @@
 """Text layers: bilingual subtitles (**highlight**, balanced no-orphan wrapping), picture labels,
 running header with section progress, chapter cards. All return float32 RGBA arrays."""
 import math
-import re
 
 import numpy as np
 from PIL import Image, ImageDraw
 
+from vstudio.subs import balanced_wrap, parse_highlight, strip_markup
+
 from .ctx import font, font_for
-from .util import has_cjk, layer, to_arr
+from .util import layer, to_arr
 
 _D = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
 
 
-def runs(text):
-    """'a **b** c' -> [('a ', False), ('b', True), (' c', False)]"""
-    return [(p, k % 2 == 1) for k, p in enumerate(text.split("**")) if p]
-
-
-def wrap(d, text, f, maxw, cjk):
-    """Greedy wrap that keeps **highlight** markers balanced on every line."""
-    toks = list(text) if cjk else re.split(r"(\s+)", text)
-    lines, cur = [], ""
-    for tk in toks:
-        test = cur + tk
-        if d.textlength(test.replace("**", ""), font=f) > maxw and cur.strip():
-            lines.append(cur.rstrip())
-            cur = tk.lstrip()
-        else:
-            cur = test
-    if cur.strip():
-        lines.append(cur)
-    out, open_ = [], False
-    for ln in lines:
-        if open_:
-            ln = "**" + ln
-        open_ = ln.count("**") % 2 == 1
-        if open_:
-            ln += "**"
-        out.append(ln)
-    return out
-
-
-def bwrap(d, text, f, maxw, cjk):
-    """Balanced wrap: same line count as greedy, but lines of similar length (no 1-word orphan)."""
-    lines = wrap(d, text, f, maxw, cjk)
-    if len(lines) < 2:
-        return lines
-    target = d.textlength(text.replace("**", ""), font=f) / len(lines)
-    for slack in range(0, int(maxw - target), 12):
-        cand = wrap(d, text, f, target + slack + 20, cjk)
-        if len(cand) == len(lines):
-            return cand
-    return lines
+def bwrap(d, text, f, maxw):
+    """Pixel-measured balanced wrap (fewest lines, similar lengths, no 1-char orphan, latin words whole);
+    **highlight** / 【】 markers are closed and reopened on every line."""
+    return balanced_wrap(text, maxw, measure=lambda t: d.textlength(t, font=f))
 
 
 def draw_runs(C, d, x, y, line, f, base, stroke):
-    for p, hi in runs(line):
+    for p, hi in parse_highlight(line):
         d.text((x, y), p, font=f, fill=(C.GOLD if hi else base) + (255,), stroke_width=stroke,
                stroke_fill=(0, 0, 0, 210))
         x += d.textlength(p, font=f)
@@ -70,18 +35,18 @@ def make_sub(C, en, zh):
     lay = layer(C.W, C.SUB_H)
     d = ImageDraw.Draw(lay)
     m = C.t(140)
-    le = bwrap(d, en, fe, C.W - m, has_cjk(en)) if en else []
-    lz = bwrap(d, zh, fz, C.W - m, True) if zh else []
+    le = bwrap(d, en, fe, C.W - m) if en else []
+    lz = bwrap(d, zh, fz, C.W - m) if zh else []
     LE, LZ = C.t(70), C.t(82)
     G = C.t(14) if le and lz else 0
     stroke = max(1, round(2 * C.S + 0.3))
     y = (lay.height - (LE * len(le) + G + LZ * len(lz))) // 2 - C.t(6)
     for ln in le:
-        draw_runs(C, d, (C.W - d.textlength(ln.replace("**", ""), font=fe)) / 2, y, ln, fe, C.pal["sub_en"], stroke)
+        draw_runs(C, d, (C.W - d.textlength(strip_markup(ln), font=fe)) / 2, y, ln, fe, C.pal["sub_en"], stroke)
         y += LE
     y += G
     for ln in lz:
-        draw_runs(C, d, (C.W - d.textlength(ln.replace("**", ""), font=fz)) / 2, y, ln, fz, C.pal["sub_zh"], stroke)
+        draw_runs(C, d, (C.W - d.textlength(strip_markup(ln), font=fz)) / 2, y, ln, fz, C.pal["sub_zh"], stroke)
         y += LZ
     return to_arr(lay)
 

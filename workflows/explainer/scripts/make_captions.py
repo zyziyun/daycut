@@ -1,21 +1,26 @@
 #!/usr/bin/env python3
 """Build the bilingual caption sub-composition from subtitles/cues.json.
 
-Usage:  python3 make_captions.py [--font assets/fonts/subtitle-cjk-w3.woff2] [--font-bold assets/fonts/subtitle-cjk-w6.woff2]
-Writes  compositions/captions.html  (EN line on top, 中文 below, bottom band y > 840)
+Usage:  python3 make_captions.py [--project .] [--font assets/fonts/subtitle-cjk-w3.woff2] [--font-bold assets/fonts/subtitle-cjk-w6.woff2]
+Reads   <project>/subtitles/cues.json, audio/scenes.json
+Writes  <project>/compositions/captions.html  (EN line on top, 中文 below, bottom band y > 840)
 The CJK font must be a file you are allowed to ship (e.g. Noto Sans SC, OFL); see subset_cjk_font.py.
+--font paths are URLs relative to the project root (they are written into the HTML as-is).
 """
+import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
 import argparse, json
 
-ap = argparse.ArgumentParser()
+ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+ap.add_argument("--project", "-C", default=".", help="project dir (default: current dir)")
 ap.add_argument("--font", default="assets/fonts/subtitle-cjk-w3.woff2")
 ap.add_argument("--font-bold", default="assets/fonts/subtitle-cjk-w6.woff2")
 a = ap.parse_args()
+root = pathlib.Path(a.project)
 
-C = json.load(open("subtitles/cues.json"))
-total = json.load(open("audio/scenes.json"))["total"]
+C = json.load(open(root / "subtitles/cues.json"))
+total = json.load(open(root / "audio/scenes.json"))["total"]
 data = json.dumps([{"s": c["start"], "e": c["end"], "en": c["en"], "zh": c["zh"]} for c in C], ensure_ascii=False)
-open("compositions/captions.html", "w").write(f'''<template>
+open(root / "compositions/captions.html", "w").write(f'''<template>
   <style>
     @font-face {{ font-family: "Subtitle CJK"; src: url("{a.font}") format("woff2"); font-weight: 400; }}
     @font-face {{ font-family: "Subtitle CJK"; src: url("{a.font_bold}") format("woff2"); font-weight: 600; }}

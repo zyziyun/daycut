@@ -30,11 +30,12 @@ my-promo/
    cp $VSTUDIO/workflows/promo-recut/examples/promo.config.example.yaml promo.config.yaml   # then edit
    python3 $VSTUDIO/workflows/promo-recut/scripts/tight_cut.py promo.config.yaml --suggest
    ```
-   The first run writes `work/audio.json`, using whisper with word timestamps (`mlx_whisper` on Apple
-   Silicon, otherwise `faster_whisper`). `--suggest` prints three kinds of candidates: fillers
-   (然后/就是/那个/嗯/um/uh, including fillers split across tokens or glued to the next word), immediate
+   The first run writes `work/audio.json`, using `vstudio.asr.transcribe` (word timestamps; `mlx_whisper` on
+   Apple Silicon, else `faster_whisper`, else OpenAI whisper-1 if `OPENAI_API_KEY` is set). `--suggest` (`vstudio.cut.suggest_fillers`) prints three kinds of candidates: fillers
+   (`cut.fillers`, else the library's zh + en list: 然后/就是/那个/嗯/um/uh..., including fillers split across tokens or glued to the next word), immediate
    repeats (A A, A B A B), and **long words with an energy dip inside**, where whisper merged a filler into
-   the word. For the last kind it proposes a PATCH start read off the RMS envelope. Listen to each one
+   the word. For the last kind it proposes a PATCH start read off the RMS envelope, and prints ready-to-paste DROP
+   and PATCH lists. Listen to each one
    (`ffplay -ss <t-0.5> -t 2 work/audio.wav`) and copy what's right into `cut.drop` / `cut.patch`. Set
    `cut.body` / `cut.outro` KEEP spans by sentence.
 2. **Tight cut + montage + layout**
@@ -43,10 +44,12 @@ my-promo/
    python3 $VSTUDIO/workflows/promo-recut/scripts/tight_cut.py promo.config.yaml --verify
    ```
    This grades the raw once (`grade`, optional `hdr_tonemap`) and cuts the KEEP spans minus DROP words.
-   Pauses longer than `pause_threshold` (0.35 s) are squeezed to about 0.14 s. Each join gets a 15–20 ms
-   audio fade, and the voice is normalised to persona `audio.voice_lufs`. The step builds the highlights
-   montage with baked 0.3 s internal crossfades and writes `work/layout.json` with raw→cut maps and word
-   times. **`--verify` runs ASR on the cut files** and flags leftover fillers and repeats. Also listen to
+   Pauses longer than `pause_threshold` (0.35 s) are squeezed to about 0.14 s (`vstudio.cut.tighten`; set
+   `cut.rms_snap: true` to snap pause edges to the voiced energy instead of whisper's word edges). Cuts are
+   frame-exact (`cut.cut_segments`, 12 ms fades at every join) and the voice gets a two-pass loudnorm to
+   persona `audio.voice_lufs`. The step builds the highlights
+   montage with baked 0.3 s internal crossfades (`cut.xfade_assemble`, plain acrossfade) and writes
+   `work/layout.json`: durations, raw→cut maps as `vstudio.cut.TimeMap` items, and word times. **`--verify` runs ASR on the cut files** and flags leftover fillers and repeats. Also listen to
    every join before going on.
 3. **Subtitles + cards**
    ```bash
@@ -63,16 +66,17 @@ my-promo/
    cd promo && npx hyperframes lint && npx hyperframes snapshot --at <split-in>,<hold>,<zoom-through>,<outro> --no-end
    ```
    This writes `index.html` and `timeline.json`, copies media into `assets/`, and extracts the freeze frame.
-   It also copies **Noto Sans SC + STIX Two Text** from `vstudio.config.FONT_DIR` and subsets them with
-   fontTools to just the characters in the config (≈60 KB per CJK weight). Look at snapshots taken
+   It also subsets **Noto Sans SC + STIX Two Text** from `vstudio.config.FONT_DIR`
+   (`vstudio.render.subset_project_fonts`; `--no-fonts` reuses `assets/fonts/`) to just the characters in the config (≈60 KB per CJK weight). Look at snapshots taken
    **mid-transition**, not only mid-scene. Expect 0 lint errors. The `nested_structure_needs_subcomposition`
    warnings are advisory.
 5. **Render + deliver**
    ```bash
-   bash $VSTUDIO/workflows/promo-recut/scripts/export.sh promo my-promo.mp4 delivery
+   bash $VSTUDIO/workflows/promo-recut/scripts/export.sh promo my-promo.mp4 delivery    # = python3 .../export.py
    ```
-   This renders with HyperFrames, runs a two-pass loudnorm to persona `audio.loudness_lufs` (-14), writes
-   BT.709 colour tags into the H.264 stream without re-encoding, and adds `+faststart`. It then prints the
+   This renders with HyperFrames, runs a two-pass loudnorm to persona `audio.loudness_lufs` (-14; `audio.loudnorm_2pass`,
+   `--lufs` overrides), writes BT.709 colour tags into the H.264/HEVC stream without re-encoding and adds
+   `+faststart` (`media.retag_bt709`). It then prints the
    streams and the measured loudness. Use `--skip-render <raw.mp4> <out.mp4>` to redo only the delivery
    step.
 6. **Cover + post**
@@ -80,12 +84,13 @@ my-promo/
    python3 $VSTUDIO/workflows/promo-recut/scripts/make_cover.py promo.config.yaml
    python3 $VSTUDIO/workflows/promo-recut/scripts/post_copy.py promo.config.yaml
    ```
-   The cover takes a frame from the talk (or a given image) and retouches it through `vstudio.retouch` (slim,
+   The cover is `vstudio.cover.split_cover` fed from the config. It takes a frame from the talk (or a given
+   image) and retouches it through `vstudio.retouch` (slim,
    eye, de-shine, skin, light makeup, optional body slim). It crops around the detected face. Landscape
    sizes get a split cover: photo on one side, and on the other a dark panel with quote, title + highlighted
    term, a framed highlights thumbnail, chips, a red tag and a 记笔记 tag. Portrait sizes stack the photo on
-   top. The post gets the title (length checked with `xhs_len`), body, links, a chapter timeline from
-   `promo/timeline.json` and tags.
+   top. The post (`vstudio.publish.post_body`) gets the title (length checked per platform), body, links, a
+   chapter timeline from `promo/timeline.json` (MM:SS, floored) and tags.
 
 ## Timeline model (what build_promo computes)
 
@@ -93,7 +98,7 @@ my-promo/
 (`data-media-start`). These share track 2 back to back. The montage starts `zoom_through` s (0.5) before
 the body ends and runs on its own track 3 at `rates.montage`. The outro starts where the montage's nominal
 length ends, while the montage clip keeps running another `zoom_through` s underneath. The end card follows.
-Raw second → final second is `BT(raw) = raw2cut(raw)/rate (+ hold if raw ≥ hold.at)`, so you never type a
+Raw second → final second is `BT(raw) = TimeMap.to_final(raw, snap="fwd")/rate (+ hold if raw ≥ hold.at)`, so you never type a
 final-timeline time. Chapter anchors are raw body seconds or `start` / `montage` / `outro`.
 
 ## Hard-won lessons

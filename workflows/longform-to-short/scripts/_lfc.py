@@ -13,14 +13,16 @@ Paths inside the config are relative to the WORK dir unless absolute.
 import json
 import os
 import pathlib
-import re
 import runpy
-import shutil
-import subprocess
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
-from vstudio.config import font as _font_path, persona  # noqa: E402
+from vstudio import media  # noqa: E402
+from vstudio.config import persona  # noqa: E402
+from vstudio.cut import TimeMap  # noqa: E402
+from vstudio.draw import load_font, rgb  # noqa: E402
+from vstudio.overlays import get_theme  # noqa: E402
+from vstudio.publish import mmss  # noqa: E402,F401  (re-exported for the scripts)
 
 
 # --------------------------------------------------------------------------- config
@@ -59,7 +61,7 @@ class Config:
 
     def duration(self):
         d = self.get("duration")
-        return float(d) if d else probe_duration(self.src)
+        return float(d) if d else media.duration(self.src)
 
 
 def read_config(path):
@@ -86,59 +88,7 @@ def load(argv=None, description=None, extra=None):
 
 
 # --------------------------------------------------------------------------- ffmpeg
-def ffmpeg_bin(need_libass=False):
-    """System ffmpeg first; static_ffmpeg only as a fallback (e.g. a build without libass)."""
-    sysbin = shutil.which("ffmpeg")
-    if sysbin and (not need_libass or _has_filter(sysbin, "ass")):
-        return sysbin
-    try:  # pip install static-ffmpeg
-        from static_ffmpeg import run
-        ff, _ = run.get_or_fetch_platform_executables_else_raise()
-        if not need_libass or _has_filter(ff, "ass"):
-            return ff
-    except Exception:
-        pass
-    if shutil.which("static_ffmpeg"):
-        return "static_ffmpeg"
-    if sysbin:
-        sys.exit("ffmpeg has no libass ('ass' filter). Install an ffmpeg with libass "
-                 "or `pip install static-ffmpeg` as a fallback.")
-    sys.exit("ffmpeg not found")
-
-
-def _has_filter(binary, name):
-    try:
-        out = subprocess.run([binary, "-hide_banner", "-filters"], capture_output=True,
-                             text=True, timeout=30).stdout
-    except Exception:
-        return False
-    return re.search(rf"^\s*\S+\s+{name}\s", out, re.M) is not None
-
-
-def run(cmd, **kw):
-    kw.setdefault("check", True)
-    return subprocess.run([str(c) for c in cmd], **kw)
-
-
-def probe_duration(path):
-    out = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
-                          "-of", "default=nw=1:nk=1", path], capture_output=True, text=True)
-    return float(out.stdout.strip())
-
-
-def grab_frame(src, t, png, vf=None):
-    """Accurate still at source time t.
-
-    Meeting recordings have sparse keyframes: a fast input-seek + -frames:v 1 can land
-    seconds off. Seek ~25s early and decode forward to the exact time instead.
-    """
-    pre = max(0.0, t - 25)
-    sel = f"select='gte(t,{t - pre - 0.4:.3f})'"
-    run([ffmpeg_bin(), "-y", "-v", "error", "-ss", f"{pre:.3f}", "-i", src,
-         "-vf", sel + ("," + vf if vf else ""), "-frames:v", "1", png])
-    return png
-
-
+# ffmpeg discovery / run / probe / frame grabs live in vstudio.media (ffmpeg_bin, run, duration, grab_frame).
 def video_encoder(cfg):
     """('-c:v', ...) args. auto: VideoToolbox quality mode on macOS, else libx264 CRF.
 
@@ -155,11 +105,6 @@ def video_encoder(cfg):
 
 
 # --------------------------------------------------------------------------- look
-def rgb(hexstr):
-    h = hexstr.lstrip("#")
-    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
-
-
 def palette(cfg):
     lf = persona().get("longform", {})
     return {
@@ -170,18 +115,17 @@ def palette(cfg):
     }
 
 
+def theme(cfg):
+    """vstudio.overlays 'teal' panel theme with the per-video accent (style.accent) applied."""
+    T = dict(get_theme("teal"))
+    a = palette(cfg)["accent"]
+    T.update(accent=a, tag_text=a + (255,), hl=a + (255,), dot=a + (255,), outline=a + (255,), chip_fill=a)
+    return T
+
+
 def font(size, bold=False, role=None):
-    from PIL import ImageFont
-    return ImageFont.truetype(_font_path(role or ("cjk-bold" if bold else "cjk")), size)
-
-
-def font_family_name(role="cjk-bold"):
-    """Family name of a vstudio font (for ASS styles). Falls back to Noto Sans SC."""
-    try:
-        from PIL import ImageFont
-        return ImageFont.truetype(_font_path(role), 10).getname()[0]
-    except Exception:
-        return "Noto Sans SC"
+    """PIL font from vstudio roles (vstudio.draw.load_font)."""
+    return load_font(role or ("cjk-bold" if bold else "cjk"), size)
 
 
 def speed(cfg, kind, default):
@@ -189,7 +133,7 @@ def speed(cfg, kind, default):
     return float(cfg.get(f"speeds.{kind}", lf.get(kind, default)))
 
 
-# --------------------------------------------------------------------------- time maps
+# --------------------------------------------------------------------------- json / time maps
 def load_json(p):
     with open(p, encoding="utf-8") as f:
         return json.load(f)
@@ -200,26 +144,25 @@ def dump_json(obj, p, indent=1):
         json.dump(obj, f, ensure_ascii=False, indent=indent)
 
 
-def map_src(timeline, t, snap=None):
-    """Source seconds -> final seconds through timeline.json (hook clip excluded).
+def timemap(timeline):
+    """vstudio.cut.TimeMap of timeline.json: cards are holds, the cold-open hook is tagged "hook",
+    every other clip / freeze is tagged "body" (map source times with ``tag="body"``)."""
+    items = []
+    for it in timeline:
+        if it["kind"] == "card":
+            items.append(dict(kind="hold", dur=float(it["dur"]), label=it.get("title"),
+                              dst0=float(it["final_t0"]), xfade=0.0, tag="card"))
+        else:
+            items.append(dict(kind="clip", src0=float(it["t0"]), src1=float(it["t1"]), speed=float(it["speed"]),
+                              source=0, dst0=float(it["final_t0"]), dur=(it["t1"] - it["t0"]) / it["speed"],
+                              xfade=0.0, tag="hook" if it.get("hook") else "body"))
+    return TimeMap(items)
 
-    snap='fwd' / 'back': when t falls in a removed gap, snap to the next kept item's
-    start / previous kept item's end; None returns None.
-    """
-    clips = [it for it in timeline if it["kind"] != "card" and not it.get("hook")]
-    for it in clips:
-        if it["t0"] <= t <= it["t1"]:
-            return it["final_t0"] + (t - it["t0"]) / it["speed"]
-    if snap == "fwd":
-        nxt = [it for it in clips if it["t0"] > t]
-        return min((it["final_t0"] for it in nxt), default=None)
-    if snap == "back":
-        prev = [it for it in clips if it["t1"] < t]
-        if not prev:
-            return None
-        it = max(prev, key=lambda x: x["t1"])
-        return it["final_t0"] + (it["t1"] - it["t0"]) / it["speed"]
-    return None
+
+def map_src(timeline, t, snap=None):
+    """Source seconds -> final seconds through the body (hook excluded). snap: None | 'fwd' | 'back'."""
+    tm = timeline if isinstance(timeline, TimeMap) else timemap(timeline)
+    return tm.to_final(t, snap, tag="body")
 
 
 def chapters_from_timeline(timeline):
@@ -227,12 +170,4 @@ def chapters_from_timeline(timeline):
 
 
 def total_duration(timeline):
-    it = timeline[-1]
-    return it["final_t0"] + (it["dur"] if it["kind"] == "card" else (it["t1"] - it["t0"]) / it["speed"])
-
-
-def mmss(t):
-    t = int(t)
-    h, r = divmod(t, 3600)
-    m, s = divmod(r, 60)
-    return f"{h}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
+    return timemap(timeline).duration

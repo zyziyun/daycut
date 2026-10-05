@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Assemble index.html: shared ground, scene sub-compositions with transitions, captions, voice, music.
 
-Usage:  python3 make_index.py [--patch-scenes]
-Reads   scenes.config.json (ids + "transition": [type, seconds] for each scene after the first),
+Usage:  python3 make_index.py [--project .] [--patch-scenes]
+Reads   <project>/scenes.config.json (ids + "transition": [type, seconds] for each scene after the first),
         audio/scenes.json, compositions/<id>.html, compositions/captions.html,
         audio/narration.wav, optional audio/bgm.wav
-Writes  index.html
+Writes  <project>/index.html
 
 Transition types: blur, fade, push, vpush, iris, zoom, focus, blocks, chroma, flip, zoomout.
 A transition overlaps two scenes, so the OUTGOING scene must live `d` seconds longer than its
@@ -14,15 +14,24 @@ without it the outgoing scene goes blank the moment the transition starts.
 After regenerating, re-run the music carve:
   node <hyperframes-audio>/scripts/carve.mjs --comp index.html --bed bgm --voice narration --strength 0.8
 """
-import json, os, re, sys
-S = json.load(open("audio/scenes.json")); total = S["total"]
-CFG = json.load(open("scenes.config.json"))["scenes"]
+import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
+import argparse, json, os, re
+
+ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+ap.add_argument("--project", "-C", default=".", help="project dir (default: current dir)")
+ap.add_argument("--patch-scenes", action="store_true",
+                help="stretch each outgoing scene file's data-duration by its transition length")
+a = ap.parse_args()
+root = pathlib.Path(a.project)
+
+S = json.load(open(root / "audio/scenes.json")); total = S["total"]
+CFG = json.load(open(root / "scenes.config.json"))["scenes"]
 IDS = [c["id"] for c in CFG]
 TR = {k + 1: tuple(c["transition"]) for k, c in enumerate(CFG) if k > 0 and c.get("transition")}
-if "--patch-scenes" in sys.argv:
+if a.patch_scenes:
     for k, (w, fid) in enumerate(zip(S["scenes"], IDS)):
         ext = TR[k + 2][1] if k + 2 in TR else 0
-        p = f"compositions/{fid}.html"; s = open(p).read()
+        p = root / f"compositions/{fid}.html"; s = open(p).read()
         new = round(w["duration"] + ext, 2)
         # only full-length clips (root + stage) are stretched; shorter inner clips keep their timing
         s = re.sub(r'data-duration="([0-9.]+)"',
@@ -38,7 +47,7 @@ for k, (w, fid) in enumerate(zip(S["scenes"], IDS)):
       </div>''')
 trans = [{"n": n, "o": "w-" + IDS[n - 2], "i": "w-" + IDS[n - 1], "type": t, "d": d, "T": S["scenes"][n - 1]["start"]} for n, (t, d) in TR.items()]
 bgm = ""
-if os.path.exists("audio/bgm.wav"):
+if os.path.exists(root / "audio/bgm.wav"):
     bgm = f'''      <audio id="bgm" src="audio/bgm.wav" data-start="0" data-duration="{total}" data-track-index="9" data-volume="1"></audio>\n'''
 html = f'''<!doctype html>
 <html lang="en">
@@ -132,5 +141,5 @@ html = f'''<!doctype html>
   </body>
 </html>
 '''
-open("index.html", "w").write(html)
+open(root / "index.html", "w").write(html)
 print("index:", len(hosts), "scenes, total", total)

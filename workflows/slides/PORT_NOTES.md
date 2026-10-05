@@ -35,3 +35,17 @@ screenshot-cards, overlays, transitions (CSS animated diagram clips), other (HTM
 ## Platform-specific / unverified
 - Animated recording path unverified here (needs `playwright install chromium`).
 - `color-mix()` needs Chrome ≥ 111.
+
+## Phase 2b rewire
+Swaps (old → new):
+- `scripts/render_html.py` → **deleted**; `render_slides.py` calls `vstudio.render.html_to_png(..., query="export=<key>")`;
+  standalone renders use `python3 -m vstudio.render`.
+- `record_slides.py`: `stage_fonts/inject_persona` → `render.stage_fonts` + `render.inject_css(persona_css())`;
+  webm→mp4 encode → `media.run` + `media.delivery_args(audio=False, preset="slow", fps=...)` (CRF from persona
+  export.crf).
+Behaviour changes: recorded MP4s now also get H.264 High profile, `color_range tv` and bt709 in the H.264 VUI
+(h264_metadata bsf) — previously container tags only. Font staging/persona CSS as in cover's notes.
+Tests: `render_slides.py` on the template (01_title, 06_bars, 09_attn) — pixel-identical to the phase-1 render
+(mean abs diff 0.0 on 09_attn incl. the JS arrows); py_compile + `--help` for both CLIs; record path still
+unverified (Playwright Chromium not installed); `pytest tests` 34 passed.
+Lib requests: none.

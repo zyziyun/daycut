@@ -50,7 +50,8 @@ TTS = dict(dir="tts", voice="marin", model="gpt-4o-mini-tts",
                         "Pacing: calm and clear, slightly slower than conversation.")
 SAY = {"1890": "eighteen ninety"}   # spoken forms used for alignment (and for TTS when TTS['use_say'])
 BGM = None                          # e.g. "music/bed.mp3" (your own licensed track)
-BGM_VOLUME = 0.12
+BGM_LUFS = -30                      # music bed loudness before the mix (default persona audio.music_lufs)
+BGM_DUCK = 0                        # extra dB on the bed while the voice speaks (e.g. -6); 0 = static bed
 OUT = "out/lighthouse_demo.mp4"
 
 # ---------------------------------------------------------------- script

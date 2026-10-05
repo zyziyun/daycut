@@ -61,3 +61,45 @@ Existing keys used: `audio.loudness_lufs`, `export.audio_bitrate`.
 - `npx hyperframes media-use resolve --type bgm` syntax taken from the brief; not run.
 - Incompetech availability/licence is third-party; tracks are not vendored.
 - `stabilize` (deshake) inherited from the source, unverified on real footage in this port.
+
+## Phase 2b rewire
+Swaps (old -> new):
+- `probe.py:probe` -> `media.probe` (+ local rotation swap for display w/h and HLG/PQ label).
+- `build_vlog.py:clip_info` -> `media.probe` (kept as an `lru_cache` wrapper; segments probe the same source repeatedly).
+- `build_vlog.py:hdr_chain`/`has_filter` -> `media.hdr_to_sdr_args(src, transfer, force=hdr is true)`; adds the
+  libplacebo backend between zscale and the approximate colorspace fallback. Local `has_filter` deleted.
+- `build_vlog.py:atempo` -> `media.atempo_chain`.
+- `add_music.py` ffprobe + single-pass loudnorm filter graph -> `media.probe` + `audio.mix_bed(..., lufs=)`
+  (loop, fades, two-pass linear `audio.loudnorm_2pass` inside), then a video-copy mux.
+- `make_cover.py:chrome_candidates`/`render`/`stage_fonts` -> `render.find_chrome` / `render.html_to_png`
+  (`use_persona=False, fonts=False`) / `render.stage_fonts` + `render.font_face_css`.
+- `contact_sheets.sh` -> thin bash wrapper (same CLI) over `media.contact_sheet` (cols 5, max 30, start 0).
+NOT swapped: the crossfade join in `build_vlog.py:main` stays local (see Lib requests).
+
+Behaviour changes:
+- add_music: loudness now two-pass linear (synthetic test: -13.7 / -13.8 LUFS vs old -14.8 / -15.5 for a -14 target).
+  `--ambient-db` now means "ambience at music_lufs + N LUFS" (measured), not N dB on the raw track; fades shape
+  the music only (the master already fades its ambience out). `--track-start` loops the trimmed track
+  (old looped from 0 after the first pass). New optional persona key read: `audio.music_lufs` (-30, existing lib key).
+- contact sheets: time label under each tile (no drawtext needed), grid only as tall as the clip needs
+  (old always padded to 5x6), PIL compositing instead of the ffmpeg tile filter.
+- HDR: libplacebo used when zscale is missing; warning text now comes from vstudio.media (stderr).
+- Masters and covers: unchanged.
+
+Tests (synthetic lavfi media in /tmp, old run from HEAD before editing, then new):
+- build_vlog 16:9 crop (landscape + portrait + HLG-tagged clip at 0.5x slow-mo, kind:"empty") and 9:16 blur
+  (ambient audio, 0.5x + 2.5x atempo chain): identical durations (10.833 / 10.800 s), PSNR inf at t=1/5/9 s,
+  ambient loudness identical (-23.1 LUFS).
+- add_music music-only and `--ambient-db -12 --track-start 1`: durations identical; ambience/music band levels
+  within ~1.5 dB of old; integrated loudness closer to target (above).
+- make_cover 16:9 auto layout and 9:16 with CJK+Latin title: PSNR inf vs old.
+- probe.py table + `--init --max-res 960`, contact_sheets.sh landscape + portrait: OK.
+- `pytest tests -q` 34 passed; py_compile all; `--help` for all 4 Python CLIs and both shell scripts.
+
+Lib requests:
+- `cut.xfade_assemble`: (1) per-piece `vf` (dict key) so grade/bright/HDR/stabilize can vary per clip, and
+  fit modes beyond crop (pad, blur - needs a split/overlay subgraph, so a per-piece graph hook); (2) a
+  `transition=` parameter (vlog exposes any xfade transition); (3) `audio=False` video-only mode (silent drone
+  masters have no audio streams, the graph always maps `[i:a]`); (4) `render_assembly(post_video=...)` for the
+  closing `fade=t=out`. With those, build_vlog could drop its local offset maths and gain frame-quantised timing.
+- `media.probe`: optional `display_w/display_h` (rotation applied) - vlog, cover and contact sheets all re-derive it.

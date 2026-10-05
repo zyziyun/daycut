@@ -18,7 +18,8 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from style import TEAL, YEL, WHITE, font
+from style import TEAL, YEL, WHITE, frame_at
+from vstudio.draw import fit_font, load_font, text_width
 
 W, H = 1280, 720
 ACCENTS = {"teal": TEAL, "yellow": YEL, "white": WHITE}
@@ -48,12 +49,7 @@ def main():
     accent = ACCENTS[tb.get("accent_color", "yellow")]
 
     t = clean_time(meta, args.at)
-    cap = cv2.VideoCapture(args.video)
-    cap.set(cv2.CAP_PROP_POS_MSEC, t * 1000)
-    ok, fr = cap.read()
-    cap.release()
-    if not ok:
-        raise SystemExit("could not read a still")
+    fr = frame_at(args.video, t)
 
     # the three tiles, minus their bottom strip where the name chips sit
     band = fr[TILE_Y:TILE_Y + TILE_H - 60]
@@ -81,19 +77,16 @@ def main():
     d = ImageDraw.Draw(img)
     y = tb.get("y", 36)
     for line, is_acc in tb["lines"]:
-        size = tb.get("size", 100)
-        while size > 48 and d.textbbox((0, 0), line, font=font(size))[2] > W - 110:
-            size -= 2
-        f = font(size)
+        f = fit_font(line, "cjk-bold", tb.get("size", 100), W - 110, min_size=48)
         d.text((56, y), line, font=f, fill=accent if is_acc else WHITE,
                stroke_width=9, stroke_fill=(0, 0, 0))
-        y += int(size * 1.14)
+        y += int(f.size * 1.14)
     # role labels under each face, so "who is talking" reads at feed size
     labels = tb.get("labels") or []
-    fl = font(30)
+    fl = load_font("cjk-bold", 30)
     for k, lab in enumerate(labels):
         cx = W * (2 * k + 1) / (2 * len(labels))
-        wl = d.textbbox((0, 0), lab, font=fl)[2] + 40
+        wl = text_width(lab, fl) + 40
         d.rounded_rectangle([cx - wl / 2, H - 62, cx + wl / 2, H - 14], radius=24,
                             fill=(0, 0, 0), outline=accent, width=3)
         d.text((cx - (wl - 40) / 2, H - 56), lab, font=fl, fill=WHITE)

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Write one build packet per scene for frame workers (sub-agents or yourself).
 
-Usage:  python3 make_packets.py
-Reads   scenes.config.json, audio/scenes.json, audio/scene_cues.json
-Writes  .hyperframes/frame-packets/<id>.md
+Usage:  python3 make_packets.py [--project .]
+Reads   <project>/scenes.config.json, audio/scenes.json, audio/scene_cues.json
+Writes  <project>/.hyperframes/frame-packets/<id>.md
 
 scenes.config.json:
 {
@@ -15,16 +15,21 @@ scenes.config.json:
 Line N of SCRIPT.md maps to scenes[N-1]. Shot times are scene-local seconds taken from
 audio/scene_cues.json — write the shots AFTER the voice exists so reveals land on real words.
 """
-import json, os
+import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
+import argparse, json, os
 
-cfg = json.load(open("scenes.config.json"))["scenes"]
-S = json.load(open("audio/scenes.json"))["scenes"]
-CUES = json.load(open("audio/scene_cues.json"))
-os.makedirs(".hyperframes/frame-packets", exist_ok=True)
+ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+ap.add_argument("--project", "-C", default=".", help="project dir (default: current dir)")
+root = pathlib.Path(ap.parse_args().project)
+
+cfg = json.load(open(root / "scenes.config.json"))["scenes"]
+S = json.load(open(root / "audio/scenes.json"))["scenes"]
+CUES = json.load(open(root / "audio/scene_cues.json"))
+os.makedirs(root / ".hyperframes/frame-packets", exist_ok=True)
 for k, (w, sc) in enumerate(zip(S, cfg)):
     n, fid, last = w["frame"], sc["id"], k == len(S) - 1
     cues = "\n".join(f"| {c['t']:6.2f} | {c['te']:6.2f} | {c['en']} |" for c in CUES[str(n)])
-    open(f".hyperframes/frame-packets/{fid}.md", "w").write(f"""# Frame packet — {fid}
+    open(root / f".hyperframes/frame-packets/{fid}.md", "w").write(f"""# Frame packet — {fid}
 
 - frame_id: `{fid}` → write `compositions/{fid}.html` (+ `compositions/{fid}.motion.json`)
 - composition id / timeline key: `{fid}`

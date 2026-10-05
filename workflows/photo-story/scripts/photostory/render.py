@@ -12,10 +12,12 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 import argparse
 import os
 import subprocess
+import tempfile
 
 import numpy as np
 from PIL import Image
 
+from vstudio import audio, media
 from vstudio.config import persona
 
 from photostory import overlays as ov
@@ -23,7 +25,7 @@ from photostory.ctx import Ctx, load_spec
 from photostory.looks import film_look
 from photostory.shots import build, parse_src
 from photostory.subtitles import Header, make_chapter, make_label, make_sub, sub_backdrop
-from photostory.timeline import Timeline, load_timing
+from photostory.timeline import Timeline, load_timing, place_voice
 from photostory.transitions import transition
 from photostory.util import paste_rgba
 
@@ -74,10 +76,10 @@ def main():
         os.makedirs(sdir, exist_ok=True)
         frames = [int(t * C.FPS) for t in stills]
     else:
-        crf = str((persona().get("export") or {}).get("crf", 18))
-        enc = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{C.W}x{C.H}",
-                                "-r", str(C.FPS), "-i", "-", "-c:v", "libx264", "-crf", crf, "-preset", "medium",
-                                "-profile:v", "high", "-pix_fmt", "yuv420p", vid_tmp], stdin=subprocess.PIPE)
+        enc = subprocess.Popen([media.ffmpeg_bin(), "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24",
+                                "-s", f"{C.W}x{C.H}", "-r", str(C.FPS), "-i", "-",
+                                "-vf", "scale=out_color_matrix=bt709:out_range=tv",   # matches the bt709 tags
+                                *media.delivery_args(audio=False, faststart=False), vid_tmp], stdin=subprocess.PIPE)
         frames = range(int(t_from * C.FPS), int(end_t * C.FPS))
 
     live, shots = {}, T.shots
@@ -144,43 +146,30 @@ def main():
 
 
 def mix_audio(C, T, t0, t1, vid, out):
-    """Voice units placed on the timeline + looping music bed at BGM_VOLUME, then loudnorm."""
+    """Voice units placed on the timeline (+ optional looping music bed via ``audio.mix_bed``), two-pass
+    loudnorm to persona audio.loudness_lufs, muxed onto the silent picture track."""
     P = persona()
-    lufs = (P.get("audio") or {}).get("loudness_lufs", -14)
+    lufs = float((P.get("audio") or {}).get("loudness_lufs", -14))
     abr = getattr(C.spec, "AUDIO_BITRATE", None) or (P.get("export") or {}).get("audio_bitrate", "192k")
-    dur = t1 - t0
-    ins, flt, n = [], [], 0
-    for u in T.units:
-        if not u["path"] or u["start"] >= t1 or u["start"] + u["dur"] <= t0:
-            continue
-        ins += ["-i", C.path(u["path"])]
-        ms = int((u["start"] - t0) * 1000)
-        trim = f"atrim=start={-ms / 1000:.3f}," if ms < 0 else ""
-        flt.append(f"[{n + 1}:a]aresample=48000,{trim}asetpts=PTS-STARTPTS,adelay={max(ms, 0)}|{max(ms, 0)},apad[a{n}]")
-        n += 1
-    bgm = C.path(getattr(C.spec, "BGM", None))
-    if bgm and not os.path.exists(bgm):
-        print(f"! BGM not found: {bgm} - rendering without music")
-        bgm = None
-    vol = getattr(C.spec, "BGM_VOLUME", 0.12)
-    labels = []
-    if n:
-        flt.append("".join(f"[a{k}]" for k in range(n)) + f"amix=inputs={n}:normalize=0,atrim=0:{dur:.2f}[vo]")
-        labels.append("[vo]")
-    if bgm:
-        ins += ["-i", bgm]
-        flt.append(f"[{n + 1}:a]aresample=48000,aloop=loop=-1:size=2e9,atrim={t0:.2f}:{t1:.2f},asetpts=PTS-STARTPTS,"
-                   f"volume={vol},afade=t=in:d=2,afade=t=out:st={max(0, dur - 3.5):.2f}:d=3.5[bg]")
-        labels.append("[bg]")
-    if not labels:
-        ins += ["-f", "lavfi", "-t", f"{dur:.2f}", "-i", "anullsrc=r=48000:cl=stereo"]
-        flt.append("[1:a]anull[aout]")
-    else:
-        mix = f"amix=inputs={len(labels)}:normalize=0," if len(labels) > 1 else ""
-        flt.append("".join(labels) + f"{mix}loudnorm=I={lufs}:TP=-1.5:LRA=11[aout]")
-    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", vid, *ins, "-filter_complex", ";".join(flt),
-                    "-map", "0:v", "-map", "[aout]", "-c:v", "copy", "-c:a", "aac", "-b:a", str(abr), "-ar", "48000",
-                    "-movflags", "+faststart", "-shortest", out], check=True)
+    with tempfile.TemporaryDirectory(dir=C.cache_dir) as tmp:
+        vo = place_voice(C, T, t0, t1, os.path.join(tmp, "voice.wav"))
+        mix = os.path.join(tmp, "mix.wav")
+        bgm = C.path(getattr(C.spec, "BGM", None))
+        if bgm and not os.path.exists(bgm):
+            print(f"! BGM not found: {bgm} - rendering without music")
+            bgm = None
+        if bgm:
+            if hasattr(C.spec, "BGM_VOLUME") and not hasattr(C.spec, "BGM_LUFS"):
+                print("note: BGM_VOLUME is no longer used; the bed is set by loudness "
+                      "(BGM_LUFS, default persona audio.music_lufs -30)")
+            audio.mix_bed(vo, bgm, mix, duck_db=float(getattr(C.spec, "BGM_DUCK", 0) or 0),
+                          music_lufs=getattr(C.spec, "BGM_LUFS", None), lufs=lufs,
+                          fade_in=2.0, fade_out=3.5, music_start=t0)
+        else:
+            audio.loudnorm_2pass(vo, mix, lufs=lufs)
+        media.run(["ffmpeg", "-y", "-i", vid, "-i", mix, "-map", "0:v", "-map", "1:a", "-c:v", "copy",
+                   "-c:a", "aac", "-b:a", str(abr), "-ar", str(audio.SR), "-ac", "2",
+                   "-movflags", "+faststart", "-shortest", out])
     print("output:", out)
 
 

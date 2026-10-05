@@ -7,7 +7,9 @@
 
 Reads OPENAI_API_KEY from the environment only. Voice / model / instructions from spec TTS.
 Each unit is synthesised up to 3x and transcribed; the take whose words best match the script wins
-(>= 0.93 stops early). Whisper backend: mlx_whisper (Apple Silicon) -> faster_whisper -> OpenAI whisper-1.
+(>= 0.93 stops early). Synthesis: ``vstudio.tts.synth`` (OpenAI engine, 48 kHz mono wav); transcription:
+``vstudio.asr.transcribe`` (mlx_whisper -> faster_whisper -> OpenAI whisper-1); cue timing:
+``vstudio.asr.align_script``. The chosen take per unit is cached in <dir>/cache/ by text+voice+model+instructions.
 """
 import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[4] / "lib"))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
@@ -15,6 +17,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 import argparse
 import difflib
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -22,14 +25,15 @@ import re
 import numpy as np
 import soundfile as sf
 
+from vstudio import asr, tts as vtts
+
 from photostory.ctx import Ctx, load_spec
 from photostory.timeline import tts_dir
 
 DEFAULTS = dict(voice="marin", model="gpt-4o-mini-tts", tries=3, good=0.93, use_say=False,
                 instructions="Voice: a warm, articulate narrator telling a friend a story. Tone: curious, gently "
                              "enthusiastic, never salesy. Pacing: calm and clear, slightly slower than conversation.",
-                sample_voices=["marin", "coral", "nova"], whisper="mlx-community/whisper-large-v3-turbo",
-                language="en")
+                sample_voices=["marin", "coral", "nova"], language="en")
 
 norm = lambda s: re.findall(r"[a-z0-9]+", s.lower().replace("’", "").replace("'", ""))
 
@@ -49,69 +53,20 @@ def trim(a, sr, thr=0.012, pad=0.06):
     return a[s:e]
 
 
-def align(texts, words, dur):
-    """Map each cue's words onto Whisper word timestamps; unmatched words are interpolated."""
-    exp, owner = [], []
-    for ci, t in enumerate(texts):
-        for tok in norm(t):
-            exp.append(tok); owner.append(ci)
-    got, gt = [], []
-    for wd, s, e in words:
-        for tok in norm(wd):
-            got.append(tok); gt.append((s, e))
-    tmap = [None] * len(exp)
-    for blk in difflib.SequenceMatcher(None, exp, got).get_matching_blocks():
-        for j in range(blk.size):
-            tmap[blk.a + j] = gt[blk.b + j]
-    for j in range(len(exp)):
-        if tmap[j] is None:
-            prev = next((tmap[x][1] for x in range(j - 1, -1, -1) if tmap[x]), 0.0)
-            nxt = next((tmap[x][0] for x in range(j + 1, len(exp)) if tmap[x]), dur)
-            tmap[j] = (prev, max(prev, nxt))
-    out = []
-    for ci, t in enumerate(texts):
-        idx = [j for j in range(len(exp)) if owner[j] == ci]
-        out.append(dict(start=round(tmap[idx[0]][0], 3), end=round(tmap[idx[-1]][1], 3)) if idx
-                   else dict(start=round(out[-1]["end"] if out else 0.0, 3), end=round(out[-1]["end"] if out else 0.0, 3)))
-    return out
-
-
 def best_align(variants, words, dur):
+    """Align the variant (spoken forms vs display text) whose tokens best match the transcript."""
     got = [t for wd, _, _ in words for t in norm(wd)]
     v = max(variants, key=lambda tx: difflib.SequenceMatcher(None, norm(" ".join(tx)), got).ratio())
-    return align(v, words, dur)
+    return asr.align_script(v, words, dur)
 
 
-class Transcriber:
-    def __init__(self, cfg):
-        self.cfg, self.kind = cfg, None
-        try:
-            import mlx_whisper  # noqa
-            self.kind = "mlx"
-        except ImportError:
-            try:
-                import faster_whisper  # noqa
-                self.kind = "faster"
-            except ImportError:
-                self.kind = "openai"
-        self._fw = None
-
-    def words(self, path):
-        lang = self.cfg["language"]
-        if self.kind == "mlx":
-            import mlx_whisper
-            w = mlx_whisper.transcribe(path, path_or_hf_repo=self.cfg["whisper"], language=lang, word_timestamps=True)
-            return [(x["word"], x["start"], x["end"]) for s in w["segments"] for x in s.get("words", [])]
-        if self.kind == "faster":
-            from faster_whisper import WhisperModel
-            self._fw = self._fw or WhisperModel(self.cfg.get("faster_model", "large-v3-turbo"))
-            segs, _ = self._fw.transcribe(path, language=lang, word_timestamps=True)
-            return [(x.word, x.start, x.end) for s in segs for x in (s.words or [])]
-        from openai import OpenAI
-        with open(path, "rb") as f:
-            r = OpenAI().audio.transcriptions.create(model="whisper-1", file=f, language=lang,
-                                                     response_format="verbose_json", timestamp_granularities=["word"])
-        return [(x.word, x.start, x.end) for x in (r.words or [])]
+def asr_words(path, cfg):
+    """Word timestamps [(word, start, end)] of one take via vstudio.asr (no sidecar cache, no term fixes:
+    alignment wants the raw words). Spec TTS ``whisper`` / ``faster_model`` override the backend model."""
+    has = lambda m: importlib.util.find_spec(m) is not None
+    model = cfg.get("whisper") if has("mlx_whisper") else cfg.get("faster_model") if has("faster_whisper") else None
+    tr = asr.transcribe(path, language=cfg["language"], model=model, cache=False, fix_terms=False)
+    return [(w["w"], w["t"], w["te"]) for w in tr["words"]]
 
 
 def main():
@@ -123,8 +78,6 @@ def main():
     a = ap.parse_args()
     if not os.environ.get("OPENAI_API_KEY"):
         sys.exit("OPENAI_API_KEY is not set in the environment")
-    from openai import OpenAI
-    client = OpenAI()
 
     spec = load_spec(a.spec)
     C = Ctx(spec)
@@ -136,10 +89,10 @@ def main():
     os.makedirs(os.path.join(out, "cache"), exist_ok=True)
     tmp = os.path.join(out, "cache", "_take.wav")
 
-    def synth(text, v, path):
-        with client.audio.speech.with_streaming_response.create(
-                model=cfg["model"], voice=v, input=text, instructions=cfg["instructions"], response_format="wav") as r:
-            r.stream_to_file(path)
+    def synth(text, v, path, fresh=False):
+        # fresh=True forces a new take (retries); the first take may come from the vstudio TTS cache
+        vtts.synth(text, engine="openai", voice=v, instructions=cfg["instructions"], model=cfg["model"],
+                   out=path, cache=not fresh)
         x, sr = sf.read(path, dtype="float32")
         return (x.mean(1) if x.ndim > 1 else x), sr
 
@@ -151,7 +104,6 @@ def main():
             print("sample", v)
         return
 
-    tr = Transcriber(cfg)
     tpath = os.path.join(out, "timing.json")
     timing = {d["i"]: d for d in json.load(open(tpath))} if os.path.exists(tpath) else {}
     want = set(a.units) or None
@@ -172,10 +124,10 @@ def main():
             continue
         best = None
         for k in range(int(cfg["tries"])):
-            x, sr = synth(say_text, voice, tmp)
+            x, sr = synth(say_text, voice, tmp, fresh=k > 0)
             x = trim(x, sr)
             sf.write(tmp, x, sr)
-            words = tr.words(tmp)
+            words = asr_words(tmp, cfg)
             got = [t for wd, _, _ in words for t in norm(wd)]
             score = max(difflib.SequenceMatcher(None, e, got).ratio() for e in exps)
             print(f"[{i:02d}] try{k} score={score:.3f} dur={len(x) / sr:.1f}s", flush=True)

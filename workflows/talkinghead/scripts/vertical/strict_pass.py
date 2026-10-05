@@ -8,21 +8,27 @@
    -> pauses squeezed to KEEPGAP, segs.json rewritten (subs keep their sid, words carry new times)."""
 import sys, pathlib; sys.path[:0] = [str(pathlib.Path(__file__).resolve().parents[4] / "lib"), str(pathlib.Path(__file__).resolve().parents[1])]
 if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help"): print(__doc__); sys.exit(0)
-import sys, json, shutil, importlib.util, numpy as np, soundfile as sf
-from bodycut import cut_body, remap, q
+import json, shutil, importlib.util
+from bodycut import cut_body, dbenv, remap, q
+from vstudio import asr, audio, cut
 if sys.argv[1] == 'transcribe':
-    import subprocess
-    from asr import transcribe          # mlx_whisper if available, else faster_whisper
-    subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', sys.argv[2], '-ac', '1', '-ar', '16000', '_b16.wav'], check=True)
-    r = transcribe('_b16.wav', prompt=sys.argv[3] if len(sys.argv) > 3 else None)
-    ws = [dict(w=w['word'].strip(), b0=round(w['start'], 2), b1=round(w['end'], 2)) for s in r['segments'] for w in s['words']]
-    # tail hallucination = burst of zero-length / repeated words ("feed feed feed"); drop BEFORE indexing so DEL indices stay valid
-    ws = [w for k, w in enumerate(ws) if not (k and w['b1'] - w['b0'] < 0.02 and w['w'] == ws[k - 1]['w'])]
+    # vstudio.asr: mlx_whisper -> faster_whisper -> OpenAI, cached in body_a.wav.asr.json, term-fixed, with
+    # whisper's zero-length repeated tail words dropped BEFORE indexing so DEL indices stay valid
+    tr = asr.transcribe(sys.argv[2], prompt=sys.argv[3] if len(sys.argv) > 3 else None)
+    ws = [dict(w=w['w'], b0=round(w['t'], 2), b1=round(w['te'], 2)) for w in tr['words']]
     json.dump(ws, open('bw.json', 'w'), ensure_ascii=False); line = ''
     for i, w in enumerate(ws):
         line += f"{i}:{w['w']}[{w['b0']:.1f}] "
         if len(line) > 150: print(line); line = ''
-    print(line); sys.exit()
+    print(line)
+    # review aid only (never applied): fillers / repeats / merged restarts from vstudio.cut.suggest_fillers
+    sug = cut.suggest_fillers(tr['words'], audio=sys.argv[2])
+    if sug:
+        print('\nDEL candidates (check by ear):')
+        for r in sug:
+            idx = [i for i, w in enumerate(tr['words']) if r['start'] - 0.005 <= w['t'] < max(r['end'], r['start'] + 0.01) - 0.005]
+            print(f"  {r['kind']:<12} {r['text']:<8} idx {idx}  {r['note']}")
+    sys.exit()
 import os; sys.path.insert(0, os.path.dirname(os.path.abspath(sys.argv[2]))); sys.path.insert(0, os.getcwd())
 spec = importlib.util.spec_from_file_location('st', sys.argv[2]); st = importlib.util.module_from_spec(spec); spec.loader.exec_module(st)
 IN_V, IN_A, OUT_V, OUT_A = sys.argv[3:7]
@@ -33,8 +39,7 @@ prev = json.load(open('segs.json')); shutil.copy('segs.json', 'segs_prev.json');
 ws = json.load(open('bw.json'))
 ws = [w for w in ws if w['b0'] < total0 - 0.05]          # whisper hallucinates over the tail
 
-x, sr = sf.read(IN_A); mono = x.mean(1) if x.ndim > 1 else x; n = sr // 100
-r = 20 * np.log10(np.sqrt((mono[:len(mono)//n*n].reshape(-1, n)**2).mean(1)) + 1e-9); r = np.convolve(r, np.ones(3)/3, 'same')
+x, sr = audio.read_wav(IN_A, mono=True); r = dbenv(x, sr)   # 10 ms dB
 runs = []; i = 0; pend = 0.0
 while i < len(ws):
     if i in DEL: pend = ws[i]['b1']; i += 1; continue
@@ -46,19 +51,9 @@ while i < len(ws):
 runs[-1] = (runs[-1][0], total0, runs[-1][2])
 segs = []
 for a, b, _ in runs:
-    lo, hi = int(a * 100), int(b * 100); v = r[lo:hi] > TH; vr = []; k = 0
-    while k < len(v):
-        if v[k]:
-            m = k
-            while m < len(v) and v[m]: m += 1
-            if m - k >= 3: vr.append([(lo + k) / 100, (lo + m) / 100])
-            k = m
-        else: k += 1
-    if not vr: continue
-    mg = [vr[0]]
-    for s, e in vr[1:]:
-        if s - mg[-1][1] <= MAXGAP: mg[-1][1] = e
-        else: mg.append([s, e])
+    lo, hi = int(a * 100), int(b * 100)
+    mg = audio.voiced_runs(r[lo:hi], 0.01, TH, min_run=0.03, max_gap=MAXGAP, t0=lo / 100)
+    if not mg: continue
     for qq, (s, e) in enumerate(mg):
         segs.append((max(0, s - (0.04 if qq == 0 else KEEPGAP / 2)), min(total0, e + (0.06 if qq == len(mg) - 1 else KEEPGAP / 2))))
 segs.sort(); keep = []

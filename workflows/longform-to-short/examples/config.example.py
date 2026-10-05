@@ -11,6 +11,7 @@ CONFIG = {
     "out": "../out",                      # deliverables
     "duration": None,                     # auto (ffprobe) when None
     "language": "zh",                     # whisper language; default persona creator.language
+    "asr_prompt": None,                   # whisper initial prompt with domain terms, e.g. "LangChain, RAG"
     "source_size": [1280, 720],           # recording frame size (meeting recorders often 720p)
 
     # ── analysis ─────────────────────────────────────────────────────────

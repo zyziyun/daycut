@@ -14,7 +14,7 @@ Built on **HyperFrames** (HTML → video). Worked example in `example/` (model q
 - Optional: HeyGen CLI logged in (`heygen auth login --oauth`) for the music catalog.
 - A CJK font you may redistribute (Noto Sans SC / Source Han Sans, OFL) and STIX Two Text (OFL, Google Fonts) in `assets/fonts/`.
 
-Scripts live in `$VSTUDIO/workflows/explainer/scripts/` — call them from the **project root**. Below, `scripts/` means that folder.
+Scripts live in `$VSTUDIO/workflows/explainer/scripts/`. Every path they read/write is relative to the project dir: run them from the **project root**, or pass `--project <dir>` (`-C`) from anywhere. Below, `scripts/` means that folder. They use the shared library in `$VSTUDIO/lib/vstudio` (TTS cache, two-pass loudnorm, ASR, SRT writer, font subsetting).
 
 ## The pipeline
 
@@ -35,9 +35,11 @@ One static 1920×1080 SVG per scene at its most complete moment, drawn with the 
 
 ### 4. Voice
 ```bash
-python3 scripts/tts.py --voice cedar            # → audio/vo/lineNN.wav
-python3 scripts/concat_vo.py --gap 0.7          # → audio/narration.wav (-16 LUFS) + audio/vo/offsets.json
+python3 scripts/tts.py --voice cedar            # → audio/vo/lineNN.wav (cached per line; --fresh = new take)
+python3 scripts/concat_vo.py --gap 0.7          # → audio/narration.wav (-16 LUFS, two-pass, 48 kHz stereo) + audio/vo/offsets.json
 npx hyperframes transcribe audio/narration.wav -l en -m small.en   # → audio/transcript.json
+#   or, without node: python3 scripts/transcribe.py --model mlx-community/whisper-small.en-mlx
+#   (vstudio.asr: mlx_whisper → faster_whisper → OpenAI whisper-1; same transcript.json shape)
 ```
 QA: diff the transcript against SCRIPT.md per line (difflib ratio < 0.9 → inspect). Number formatting diffs are fine; missing words are not.
 

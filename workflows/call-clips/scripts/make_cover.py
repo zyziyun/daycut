@@ -12,13 +12,10 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from style import TEAL, DIM, WHITE, font
+from style import TEAL, DIM, WHITE, font, frame_at
+from vstudio.draw import text_width
 
 W, H = 1080, 1920
-
-
-def tw(d, s, f):
-    return d.textbbox((0, 0), s, font=f)[2]
 
 
 def main():
@@ -31,12 +28,7 @@ def main():
 
     meta = json.load(open(args.title_json))
 
-    cap = cv2.VideoCapture(args.clip)
-    cap.set(cv2.CAP_PROP_POS_MSEC, args.at * 1000)
-    ok, fr = cap.read()
-    cap.release()
-    if not ok:
-        raise SystemExit("could not read a still from the clip")
+    fr = frame_at(args.clip, args.at)
 
     img = Image.new("RGB", (W, H), (0, 0, 0))
 
@@ -59,8 +51,7 @@ def main():
     lines = meta["title"]
     size = 96 if max(sum(len(r[0]) for r in ln) for ln in lines) <= 9 else 82
     # shrink until the widest line fits inside the side margins
-    probe = ImageDraw.Draw(Image.new("RGB", (1, 1)))
-    while size > 56 and max(sum(tw(probe, r[0], font(size)) for r in ln) for ln in lines) > W - 144:
+    while size > 56 and max(sum(text_width(r[0], font(size)) for r in ln) for ln in lines) > W - 144:
         size -= 2
     f_t = font(size)
     y = meta.get("cover_title_y", 176)
@@ -68,7 +59,7 @@ def main():
         x = 72
         for txt, acc in ln:
             d.text((x, y), txt, font=f_t, fill=TEAL if acc else WHITE)
-            x += tw(d, txt, f_t)
+            x += text_width(txt, f_t)
         y += int(f_t.size * 1.28)
 
     if meta.get("accent"):

@@ -40,7 +40,7 @@ Run from the project folder; `$VSTUDIO` = repo root.
 
 ## Design language
 - Black ground, white text, grey dims, **one accent**: `var(--accent)` injected from `persona.brand.accent` by
-  `render_html.py` (`--no-persona` keeps the template's original teal `#2dd4bf`). Tints use `color-mix()`.
+  `vstudio.render` (`--no-persona` keeps the template's original teal `#2dd4bf`). Tints use `color-mix()`.
   Use the same accent as the cover (`workflows/cover`) so the channel reads as one design.
 - Fonts via `@font-face` on `assets/fonts/` (copied from the repo font cache at render time; Noto Sans SC covers CJK).
 - Square 1080×1080 because the slide region of a split layout is roughly square and degrades gracefully to 4:5.

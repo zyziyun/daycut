@@ -8,29 +8,13 @@ Usage:
   apply_sticker.py VIDEO --track track.json --sticker cat.png --out masked.mp4
 """
 import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
-import argparse, subprocess, sys
-import json
+import argparse, json, os, subprocess
 import cv2
 import numpy as np
 from PIL import Image
 
-
-def alpha_paste(dst, sticker_rgba, cx, cy):
-    """Alpha-blend sticker_rgba (H,W,4 uint8) onto BGR dst, centred at (cx,cy)."""
-    sh, sw = sticker_rgba.shape[:2]
-    x0, y0 = int(round(cx - sw / 2)), int(round(cy - sh / 2))
-    x1, y1 = x0 + sw, y0 + sh
-    H, W = dst.shape[:2]
-    sx0, sy0 = max(0, -x0), max(0, -y0)
-    sx1, sy1 = sw - max(0, x1 - W), sh - max(0, y1 - H)
-    dx0, dy0 = max(0, x0), max(0, y0)
-    if sx1 <= sx0 or sy1 <= sy0:
-        return
-    patch = sticker_rgba[sy0:sy1, sx0:sx1]
-    a = patch[:, :, 3:4].astype(np.float32) / 255.0
-    rgb = patch[:, :, :3][:, :, ::-1].astype(np.float32)  # RGB -> BGR
-    roi = dst[dy0:dy0 + patch.shape[0], dx0:dx0 + patch.shape[1]].astype(np.float32)
-    dst[dy0:dy0 + patch.shape[0], dx0:dx0 + patch.shape[1]] = (rgb * a + roi * (1 - a)).astype(np.uint8)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from style import alpha_paste     # vstudio.draw.alpha_paste, centred, BGR frame
 
 
 def main():

@@ -11,12 +11,12 @@ moves, collages, maps, timelines, quotes, highlight circles, film looks, and bur
 Not for talking-head footage (see talkinghead workflows) or HTML/HyperFrames motion graphics.
 
 **Inputs → Outputs**: `my_photos/*.jpg`, optional `my_clips/*.mov`, optional music bed, a `spec.py`
-(titles, sections, script lines with EN+中文 cues, shot list) → `out/story.mp4` (H.264 + AAC, loudnorm),
+(titles, sections, script lines with EN+中文 cues, shot list) → `out/story.mp4` (H.264 + AAC, bt709-tagged, two-pass loudnorm),
 `out/cover.png`, `out/subtitles.srt`, `out/transcript.md`, `out/voice.mp3`, `out/post.md`.
 
 Scripts live in `$VSTUDIO/workflows/photo-story/scripts/photostory/`; run them from the project
 folder. Paths inside the spec are relative to the spec file. Needs `ffmpeg`, numpy, opencv-python,
-Pillow, soundfile, openai (TTS), and a whisper backend (`mlx_whisper` on Apple Silicon, else
+Pillow, soundfile, `OPENAI_API_KEY` for TTS (no `openai` package needed), and a whisper backend (`mlx_whisper` on Apple Silicon, else
 `faster_whisper`, else the OpenAI `whisper-1` API). Fonts come from `vstudio.config.font` (`./install.sh`).
 
 ## Pipeline
@@ -40,7 +40,8 @@ Pillow, soundfile, openai (TTS), and a whisper backend (`mlx_whisper` on Apple S
    python3 $VSTUDIO/workflows/photo-story/scripts/photostory/tts.py work/spec.py 4 9         # redo units 4 and 9
    ```
    Each unit is taken up to 3× and the take whose transcript best matches the script wins (log shows `score`).
-   Takes are cached by text+voice+instructions, so editing shots never re-bills; editing a line re-synthesises only that line.
+   The chosen take is cached in `work/tts/cache/` by text+voice+model+instructions, so editing shots never re-bills; editing a line
+   re-synthesises only that line. Synthesis goes through `vstudio.tts` (48 kHz mono wav), transcription through `vstudio.asr`.
 5. **Preview, then render.**
    ```bash
    python3 .../render.py work/spec.py --preview 20 --from 60      # -> work/cache/preview.mp4
@@ -51,7 +52,7 @@ Pillow, soundfile, openai (TTS), and a whisper backend (`mlx_whisper` on Apple S
 6. **Cover + side outputs.**
    ```bash
    python3 .../cover.py work/spec.py         # COVER dict -> out/cover.png
-   python3 .../export.py work/spec.py        # subtitles.srt, transcript.md, voice.mp3, post.md
+   python3 .../export.py work/spec.py        # subtitles.srt, transcript.md, voice.mp3 (-16 LUFS), post.md
    ```
 
 ## Spec reference (all optional except SCRIPT)
@@ -71,8 +72,8 @@ Pillow, soundfile, openai (TTS), and a whisper backend (`mlx_whisper` on Apple S
 | `FILM_CAPTION` | caption under film-strip frames, `{n}` / `{name}` |
 | `TTS` | `dir voice model instructions tries good use_say sample_voices sample_line whisper faster_model language` |
 | `SAY` | spoken forms for numbers/names (alignment; also TTS input when `use_say`) |
-| `BGM`, `BGM_VOLUME`, `OUT`, `AUDIO_BITRATE`, `FPS`, `PACING` | music bed (your own licensed file), mix, output; `PACING` = `gap sec_gap tail lead end_fade` |
-| `COVER`, `POST`, `VOCAB` | cover.py layout data / post copy / optional study table |
+| `BGM`, `BGM_LUFS`, `BGM_DUCK`, `OUT`, `AUDIO_BITRATE`, `FPS`, `PACING` | music bed (your own licensed file) at `BGM_LUFS` loudness (default persona `audio.music_lufs`, -30), `BGM_DUCK` dB while the voice speaks (default 0 = static bed), output; `PACING` = `gap sec_gap tail lead end_fade`. `BGM_VOLUME` is no longer used |
+| `COVER`, `POST`, `VOCAB` | cover.py layout data / post copy (`title intro outro tags platform`; `platform` picks the `vstudio.publish` format, default persona `platforms.default`) / optional study table |
 
 ### Shot sources
 `"img"` photo · `"v<clip>"` / `"video:<clip>"` (opts `off`, `speed`, `grade`) · `collage:a,b,c` · `film:a,b,c` ·

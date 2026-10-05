@@ -93,3 +93,81 @@ Existing keys read: `audio.loudness_lufs`, `brand.accent`, `brand.highlight`,
   tuned by eye may wrap differently — check `--preview` frames.
 - `render_vertical.py` still has the pre-safe-zone layout (as in the source).
 - `FILLERS`/`EMPHASIS` in find_disfluencies and on-frame default labels are Mandarin.
+
+## Phase 2b rewire (onto lib/vstudio)
+
+### Swaps (old → new)
+- `find_disfluencies.py` `Audio/find_cuts/split_window/all_words/words_in/load_energy` + constants
+  → `vstudio.cut` (promoted intact). The script is now a thin CLI, same args/output; its
+  `--json` output is byte-identical to the old one on the synthetic run. build_clips imports
+  from `vstudio.cut` directly.
+- `build_clips.cut_piece/offsets_of/dissolve/_dissolve` → `cut.xfade_assemble` (plan) + local
+  `_render/render_timeline` (one input-seeked read per piece, chunks of 30, same encode args).
+  `src_to_final` and every meta[...] offset → the plan's `cut.TimeMap` (`to_final(tag="body")`,
+  clip items' `dst0/dur/xfade`). `load_subs` keeps its per-piece/word logic but reads the TimeMap.
+- loudnorm block → `audio.loudnorm_2pass` + `media.retag_bt709` (bt709 VUI, faststart, copy).
+- `build_subs.fix/TERM_FIX/_load_persona_fixes` → `asr.apply_term_fixes`; regex entries not in
+  the lib's generic list kept as `build_subs.CALL_TERM_FIXES` (call-site). `build_subs --config`
+  (new, optional) applies a clips.json `term_fix`.
+- `transcribe.run_mlx/run_faster` → `asr.transcribe(fix_terms=False)` (+ `media.extract_wav`);
+  new optional `--prompt`; `--mlx-model/--faster-model` default to the lib's models.
+- `export_srt.ts/write` → `subs.Cue.from_dict` + `subs.srt_write(which=text|alt|both)`.
+- Renderers: `render_chip` → `overlays.chip(style="tag")`, `render_hook_badge` → `overlays.badge`,
+  `render_node_card` → `overlays.node_card(theme={"accent": teal})`, `render_panel` + `_toks/_wrap`
+  → `overlays.notes_panel` (sized to the old 940/880 px, 40/36 px bullets), `wrap_sub/wrap/
+  render_sub` → `draw.text_layer(max_w=…)` (balanced CJK wrap), `alpha_paste` (4 copies incl.
+  apply_sticker) → `draw.alpha_paste` via `style.alpha_paste`; `render_quote` wrap → `draw.wrap(
+  balance=True)`; `style.font` → `draw.load_font`, `_hex` → `draw.rgb`.
+- Covers/thumbs: cv2 seeks → `style.frame_at` (`media.grab_frame`, frame-accurate); make_thumb's
+  hand-rolled sticker blend → `draw.alpha_paste`; `fit()` / size loops → `draw.fit_font`;
+  `tw()` → `draw.text_width`. Layouts stay local (no lib equivalent of these designs).
+- `render_sticker.find_chrome` + Chrome/Playwright code → `render.html_to_png(transparent=True,
+  use_persona=False, fonts=False)` (nothing is staged into assets/).
+
+### Behaviour changes (deliberate)
+- `xfade_assemble(mute_pad=False)`: plain acrossfade as before. Muted pads would extend pieces
+  into cut stumbles and silent redactions.
+- Piece durations are whole frames: title.json `total`/offsets now match the encoded file (old
+  drifted ~20 ms over 9 pieces); auto_trim seams land ≤1 frame differently. Timeline audio is now
+  48 kHz stereo (was the source layout).
+- load_subs: a line's late edge now stops at the midpoint of the OUTGOING dissolve (old used the
+  piece's own incoming xfade, wrong when consecutive fades differ).
+- Overlapping body windows: a source time maps to the LAST containing piece (was the first).
+- Term fixes: persona `subtitles.term_fixes` are LITERAL now (regex → move to clips.json
+  `term_fix`); order is term_fix → CALL_TERM_FIXES → persona → lib generic (old: persona before
+  the shared list). `apply_term_fixes` also drops 嗯嗯 runs and 5+ repeated-char runs.
+- loudnorm raises its LRA target to the measured LRA (stays linear); measured after 48 kHz stereo.
+- Panels follow persona `brand.panel_theme` (default notes-red = old look; title now bold, long
+  titles shrink instead of a WARN). Subtitle strips use balanced wrap; landscape chip/node card
+  sizes within ~4 px of the old ones.
+- export_srt writes a .zh.srt from `text` even when subs.json has no `zh` key (old wrote 0 cues).
+- transcribe: lib settings (hallucination_silence_threshold, zero-length repeated words dropped),
+  ASR cache `<out>.wav.asr.json`, default faster-whisper model large-v3-turbo (was large-v3).
+
+### Test evidence (synthetic: 1280x720 testsrc2 + 16 kHz tone "speech" with pauses/restart/repeat/
+filler, hand-made whisper JSON, clips.json with auto_trim, 1 hook, 3 windows, node card, null seam,
+2 panels, 3 chapters, term_fix, translations; old code run from `git archive HEAD`)
+- find_disfluencies `--json`: identical. build_clips `--no-mask` (vertical) end to end: same 5 auto
+  cuts, 11 subtitle lines with identical text (term_fix + generic `readning→reasoning` applied);
+  timings within 1 frame; total 39.867 s vs 39.888 s planned / 39.95 s actual old; -13.9 LUFS both;
+  bt709 tags present. `--renderer render_landscape.py --reuse` end to end: OK, -13.9 LUFS.
+- Chunked path (CHUNK=3, 7 pieces, mixed fades): file 471 frames = plan exactly, chunks removed.
+- Four renderers' previews (masked + --no-mask, hook badge, node card, panels, bilingual subs),
+  make_cover, make_thumb, make_thumb_trio, apply_sticker, verify_coverage (PASS), export_srt
+  run on the OLD run's work files: mean abs pixel diff 0.2–3.4 vs old; side-by-side checked by eye
+  (same layout; differences are bold panel titles and ±few px in chips/cards). render_sticker:
+  alpha identical to assets/cat.png. transcribe.py: mlx smoke test on a 4 s clip.
+- `pytest tests` 34 passed; py_compile all; `--help` OK for every CLI.
+- Still unverified: a real recording with faces (tracked + masked build), faster_whisper branch.
+
+### Lib requests (kept local)
+- `cut.render_assembly`: per-input options (`-ss/-t` input seeking for N spans of one source)
+  and built-in chunking for 30+ pieces — call-clips' `_render/render_timeline` does this.
+- `subs.retime` is cue-level; call-clips needs per-piece word-level mapping (a segment straddling
+  a cut keeps only its in-piece words; lines clamped to dissolve midpoints, never across a join):
+  `build_clips.load_subs` kept.
+- `cut.TimeMap.to_final(..., with_item=True)` (item index), to drop the local piece search.
+- `face`: track gap-fill/EMA (`track_face.fill_gaps/ema`) and lip-motion talk detection
+  (`speaker_timeline.mouth_gap`) have no lib counterpart; kept.
+- `overlays.chip(style="tag")`: radius/min-width params; a bilingual stacked `text_layer` helper
+  (render_landscape.render_sub stacks two locally).
