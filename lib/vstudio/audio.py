@@ -444,54 +444,430 @@ def pitch_shift_filter(semitones, tempo=1.0, sr=SR):
 
 
 # ------------------------------------------------------------------ SFX
+# Everything here is synthesised from sine/noise maths (no samples, no licences). The vocabulary,
+# grammar and levels are documented in references/SOUND.md.
+def _sfx_t(d, sr):
+    return np.arange(int(round(d * sr))) / sr
+
+
+def _sfx_band(x, sr, lo, hi):
+    """Static band-pass by FFT masking with ~1/3-octave cosine skirts."""
+    X = np.fft.rfft(x)
+    f = np.fft.rfftfreq(len(x), 1 / sr)
+    m = np.ones_like(f)
+    with np.errstate(divide="ignore"):
+        lf = np.log2(np.maximum(f, 1e-3))
+    if lo:
+        m *= np.clip((lf - np.log2(lo) + 1 / 3) * 3, 0, 1)
+    if hi:
+        m *= np.clip((np.log2(hi) - lf + 1 / 3) * 3, 0, 1)
+    return np.fft.irfft(X * m, len(x))
+
+
+def _sfx_sweep(x, sr, fc, bw=0.6, n_fft=1024):
+    """Time-varying band-pass (overlap-add STFT, Gaussian band in log-frequency).
+    fc: callable u -> centre Hz, with u in [0, 1] across the sound."""
+    hop = n_fft // 4
+    win = np.hanning(n_fft)
+    xp = np.pad(x, (n_fft, n_fft))
+    out = np.zeros_like(xp)
+    norm = np.zeros_like(xp)
+    f = np.maximum(np.fft.rfftfreq(n_fft, 1 / sr), 1.0)
+    n = max(1, (len(xp) - n_fft) // hop + 1)
+    for i in range(n):
+        a = i * hop
+        u = np.clip((a + n_fft / 2 - n_fft) / max(1, len(x)), 0, 1)
+        g = np.exp(-0.5 * (np.log2(f / fc(u)) / bw) ** 2)
+        out[a:a + n_fft] += np.fft.irfft(np.fft.rfft(xp[a:a + n_fft] * win) * g, n_fft) * win
+        norm[a:a + n_fft] += win ** 2
+    return (out / np.maximum(norm, 1e-3))[n_fft:n_fft + len(x)]
+
+
+def _sfx_tone(freq, sr):
+    """Phase-continuous oscillator from an instantaneous-frequency array."""
+    return np.sin(2 * np.pi * np.cumsum(freq) / sr)
+
+
+def _sfx_norm(x, peak, sr, fade=0.004):
+    x = np.asarray(x, np.float64)
+    n = min(len(x), max(1, int(fade * sr)))
+    x[-n:] *= np.linspace(1, 0, n)
+    m = np.abs(x).max()
+    return x * (peak / m) if m > 0 else x
+
+
+def _sfx_new(sr):
+    """The extended vocabulary (all mono, normalised to a 0.8 peak unless noted)."""
+    rng = lambda s: np.random.default_rng(s)  # noqa: E731
+    b = {}
+    # riser: swept noise + rising detuned tones, crescendo whose peak sits ~30 ms before the end
+    tt = _sfx_t(2.4, sr)
+    u = tt / tt[-1]
+    nz = _sfx_sweep(rng(11).standard_normal(len(tt)), sr, lambda v: 300 * (6000 / 300) ** v, bw=0.5)
+    fr = 150 * (900 / 150) ** u
+    tone = sum(_sfx_tone(fr * d, sr) for d in (1.0, 1.006, 0.994)) / 3
+    env = u ** 2.2 * np.clip((tt[-1] - tt) / 0.03, 0, 1)
+    b["riser"] = _sfx_norm((nz / (np.abs(nz).max() + 1e-9) * 0.6 + tone * 0.4) * env, 0.8, sr)
+
+    # impact / boom: pitch-dropping sub + low noise transient, soft-saturated; two variants
+    def impact(base, decay, seed):
+        tt = _sfx_t(1.4, sr)
+        body = _sfx_tone(base + 90 * np.exp(-tt * 18), sr) * np.exp(-tt * decay) * np.clip(tt / 0.002, 0, 1)
+        hit = _sfx_band(rng(seed).standard_normal(len(tt)), sr, 60, 2500) * np.exp(-tt * 60)
+        hit /= np.abs(hit).max() + 1e-9
+        return _sfx_norm(np.tanh(1.6 * (body + 0.5 * hit)), 0.9, sr)
+    b["impact"], b["impact_b"] = impact(45, 3.2, 21), impact(52, 3.8, 22)
+
+    # sparkle: staggered high bell pings + a thin shimmer
+    tt = _sfx_t(0.9, sr)
+    r = rng(31)
+    sp = np.zeros(len(tt))
+    for k, (t0, f0) in enumerate(sorted(zip(r.uniform(0, 0.45, 14), r.uniform(3000, 8000, 14)))):
+        d = np.clip(tt - t0, 0, None)
+        sp += (tt >= t0) * np.sin(2 * np.pi * f0 * d) * np.exp(-d * 25) * (1 - 0.04 * k)
+    sh = _sfx_band(r.standard_normal(len(tt)), sr, 6000, 11000) * np.exp(-tt * 6) * 0.15
+    b["sparkle"] = _sfx_norm(sp + sh / (np.abs(sh).max() + 1e-9) * 0.3, 0.7, sr)
+
+    # shutter (camera): two mechanical clicks (mirror up / down) with a small body resonance
+    def shutter(gap, seed):
+        tt = _sfx_t(0.18, sr)
+        out = np.zeros(len(tt))
+        for t0, g in ((0.0, 1.0), (gap, 0.7)):
+            d = np.clip(tt - t0, 0, None)
+            on = tt >= t0
+            n = _sfx_band(rng(seed).standard_normal(len(tt)), sr, 2000, 12000)
+            out += on * g * (n / (np.abs(n).max() + 1e-9) * np.exp(-d * 400)
+                             + 0.3 * np.sin(2 * np.pi * 1200 * d) * np.exp(-d * 120)
+                             + 0.25 * np.sin(2 * np.pi * 180 * d) * np.exp(-d * 90))
+            seed += 1
+        return _sfx_norm(out, 0.8, sr)
+    b["shutter"], b["shutter_b"] = shutter(0.075, 41), shutter(0.06, 43)
+
+    # swoosh: short swept-noise swell (titles, small pushes); two variants
+    def swoosh(f0, f1, c, seed):
+        tt = _sfx_t(0.22, sr)
+        n = _sfx_sweep(rng(seed).standard_normal(len(tt)), sr, lambda v: f0 * (f1 / f0) ** v, bw=0.7, n_fft=512)
+        return _sfx_norm(n * np.exp(-0.5 * ((tt - c) / 0.045) ** 2), 0.8, sr)
+    b["swoosh"], b["swoosh_b"] = swoosh(800, 4000, 0.13, 51), swoosh(1000, 5000, 0.12, 52)
+
+    # whip: fast rising swell that peaks right at the cut and stops dead (whip pans)
+    tt = _sfx_t(0.28, sr)
+    n = _sfx_sweep(rng(61).standard_normal(len(tt)), sr, lambda v: 400 * (7000 / 400) ** v, bw=0.8, n_fft=512)
+    env = np.where(tt < 0.24, (tt / 0.24) ** 3, np.exp(-(tt - 0.24) * 120))
+    b["whip"] = _sfx_norm(n * env, 0.8, sr)
+
+    # soft transition: slow airy swell for scene changes
+    tt = _sfx_t(0.9, sr)
+    n = _sfx_sweep(rng(71).standard_normal(len(tt)), sr, lambda v: 300 * (1800 / 300) ** v, bw=1.0)
+    b["soft"] = _sfx_norm(n * np.exp(-0.5 * ((tt - 0.45) / 0.18) ** 2), 0.7, sr)
+
+    # tick: tiny pitched click (counters, list steps); two variants
+    def tick(f0, seed):
+        tt = _sfx_t(0.03, sr)
+        c = rng(seed).standard_normal(len(tt)) * np.exp(-tt * 900) * 0.3
+        return _sfx_norm(np.sin(2 * np.pi * f0 * tt) * np.exp(-tt * 250) + c, 0.7, sr)
+    b["tick"], b["tick_b"] = tick(3200, 81), tick(2700, 82)
+
+    # typewriter key: bright clack + low thock; two variants; ``typing`` = 3 s of irregular keys
+    def key(lo, f_thock, seed):
+        tt = _sfx_t(0.07, sr)
+        n = _sfx_band(rng(seed).standard_normal(len(tt)), sr, lo, 6000)
+        return _sfx_norm(n / (np.abs(n).max() + 1e-9) * np.exp(-tt * 180)
+                         + 0.5 * np.sin(2 * np.pi * f_thock * tt) * np.exp(-tt * 60), 0.8, sr)
+    b["typewriter"], b["typewriter_b"] = key(1500, 220, 91), key(1800, 190, 92)
+    r = rng(93)
+    typing = np.zeros(int(3.0 * sr))
+    t0, k = 0.0, 0
+    while t0 < 2.93:
+        s = (b["typewriter"], b["typewriter_b"])[k % 2] * r.uniform(0.55, 1.0)
+        i = int(t0 * sr)
+        j = min(len(typing), i + len(s))
+        typing[i:j] += s[:j - i]
+        t0 += r.gamma(4.0, 0.085 / 4.0) + 0.02
+        k += 1
+    b["typing"] = _sfx_norm(typing, 0.8, sr)
+
+    # record scratch: band-limited noise whose centre swings back and forth (two strokes)
+    tt = _sfx_t(0.45, sr)
+    n = _sfx_sweep(rng(101).standard_normal(len(tt)), sr,
+                   lambda v: 700 * 2 ** (1.4 * np.sin(2 * np.pi * 2 * v)), bw=0.5, n_fft=512)
+    env = np.abs(np.sin(np.pi * tt / 0.225)) ** 0.5 * np.clip(tt / 0.005, 0, 1)
+    b["scratch"] = _sfx_norm(n * env, 0.8, sr)
+
+    # tape stop: a low chord whose pitch and level fall to nothing (the "everything stops" gag)
+    tt = _sfx_t(0.7, sr)
+    fr = 220 * (1 - tt / 0.7) ** 2 + 8
+    saw = sum(_sfx_tone(fr * h * m, sr) / h for h in range(1, 7) for m in (1.0, 1.5)) * 0.5
+    b["stop"] = _sfx_norm(saw * (1 - tt / 0.7) ** 2 * np.clip(tt / 0.004, 0, 1), 0.8, sr)
+
+    # pop variant (alternation partner for list pops)
+    tt = _sfx_t(0.08, sr)
+    b["pop_b"] = _sfx_norm(np.sin(2 * np.pi * (600 + 2200 * tt) * tt) * np.exp(-tt * 50), 0.5, sr)
+    # whoosh variant
+    tt = _sfx_t(0.32, sr)
+    n = rng(3).standard_normal(len(tt))
+    b["whoosh_b"] = np.convolve(n, np.ones(14) / 14, "same") * np.exp(-((tt - 0.15) / 0.065) ** 2) * 0.35
+    return b
+
+
+# alias -> canonical name (aliases are in the bank too, but write_sfx skips them)
+SFX_ALIASES = dict(thud="stamp", boom="impact", transition="soft", camera="shutter", keyclick="typewriter",
+                   record_scratch="scratch", tapestop="stop", whip_pan="whip")
+
+
+_SFX_CACHE = {}
+
+
 def sfx_bank(sr=SR):
-    """Synthesised, licence-free UI sounds as mono float arrays: pop (rising chirp), whoosh
-    (band-limited noise swell), ding (two-partial bell), stamp (low thud + click; alias ``thud``).
-    From talkinghead ``compose.sfx_bank`` (pop/whoosh/thud), ``ding`` added."""
-    t = lambda d: np.arange(int(d * sr)) / sr
-    tt = t(0.09)
-    pop = np.sin(2 * np.pi * (500 + 2500 * tt) * tt) * np.exp(-tt * 45) * 0.5
-    tt = t(0.32)
-    n = np.random.default_rng(1).standard_normal(len(tt))
-    whoosh = np.convolve(n, np.ones(18) / 18, "same") * np.exp(-((tt - 0.16) / 0.07) ** 2) * 0.35
-    tt = t(0.22)
-    stamp = (np.sin(2 * np.pi * 95 * tt) * np.exp(-tt * 22) * 0.8
-             + np.random.default_rng(2).standard_normal(len(tt)) * np.exp(-tt * 90) * 0.25)
-    tt = t(0.9)
-    ding = (np.sin(2 * np.pi * 1318.5 * tt) * 0.6 + np.sin(2 * np.pi * 2637 * tt) * 0.2) * np.exp(-tt * 5.5) \
-        * np.clip(tt / 0.004, 0, 1) * 0.5
-    bank = dict(pop=pop, whoosh=whoosh, stamp=stamp, thud=stamp, ding=ding)
-    return {k: v.astype(np.float32) for k, v in bank.items()}
+    """Synthesised, licence-free sounds as mono float32 arrays (fresh copies each call).
+
+    Original four (unchanged): pop (rising chirp), whoosh (band-limited noise swell), ding
+    (two-partial bell), stamp (low thud + click; alias ``thud``).
+    Extended vocabulary: riser (2.4 s build, peak at the end), impact / impact_b (boom), sparkle,
+    shutter / shutter_b (camera), swoosh / swoosh_b (short), whip (whip pan, peak at 0.24 s),
+    soft (scene-change transition), tick / tick_b, typewriter / typewriter_b (one key), typing
+    (3 s of keys; trim with ``dur``), scratch (record scratch), stop (tape stop), pop_b, whoosh_b.
+    ``*_b`` = alternation partner for repeated hits. Aliases: see ``SFX_ALIASES``.
+    From talkinghead ``compose.sfx_bank`` (pop/whoosh/thud), ``ding`` added, the rest new.
+    """
+    if sr not in _SFX_CACHE:
+        t = lambda d: np.arange(int(d * sr)) / sr  # noqa: E731
+        tt = t(0.09)
+        pop = np.sin(2 * np.pi * (500 + 2500 * tt) * tt) * np.exp(-tt * 45) * 0.5
+        tt = t(0.32)
+        n = np.random.default_rng(1).standard_normal(len(tt))
+        whoosh = np.convolve(n, np.ones(18) / 18, "same") * np.exp(-((tt - 0.16) / 0.07) ** 2) * 0.35
+        tt = t(0.22)
+        stamp = (np.sin(2 * np.pi * 95 * tt) * np.exp(-tt * 22) * 0.8
+                 + np.random.default_rng(2).standard_normal(len(tt)) * np.exp(-tt * 90) * 0.25)
+        tt = t(0.9)
+        ding = (np.sin(2 * np.pi * 1318.5 * tt) * 0.6 + np.sin(2 * np.pi * 2637 * tt) * 0.2) * np.exp(-tt * 5.5) \
+            * np.clip(tt / 0.004, 0, 1) * 0.5
+        bank = dict(pop=pop, whoosh=whoosh, stamp=stamp, ding=ding, **_sfx_new(sr))
+        for a, k in SFX_ALIASES.items():
+            bank[a] = bank[k]
+        _SFX_CACHE[sr] = {k: v.astype(np.float32) for k, v in bank.items()}
+    return {k: v.copy() for k, v in _SFX_CACHE[sr].items()}
 
 
-SFX_GAINS = dict(pop=0.32, whoosh=0.4, stamp=0.45, thud=0.45, ding=0.35)
+# Base linear gains applied by place_sfx (multiplied by the event's gain_db). Peaks after gain land
+# around -21 dBFS (tick) to -7 dBFS (impact); see references/SOUND.md for levels vs voice and music.
+SFX_GAINS = dict(pop=0.32, whoosh=0.4, stamp=0.45, thud=0.45, ding=0.35,
+                 riser=0.3, impact=0.5, sparkle=0.35, shutter=0.45, swoosh=0.35, whip=0.4, soft=0.3,
+                 tick=0.25, typewriter=0.3, typing=0.28, scratch=0.35, stop=0.4)
 
 
-def place_sfx(x, events, sr=SR, gains=None, bank=None):
-    """Add SFX into audio ``x`` (n,) or (n, ch) in place. events: [(t_seconds, name), ...].
-    Returns x. From talkinghead ``compose.mix_audio``."""
+def _sfx_gain(name, gains):
+    for k in (name, SFX_ALIASES.get(name), name[:-2] if name.endswith("_b") else None):
+        if k and k in gains:
+            return gains[k]
+    return 0.4
+
+
+def sfx_peak(s, sr=SR, win=0.005):
+    """Seconds from the start of sample ``s`` to its energy peak (5 ms moving RMS)."""
+    s = np.asarray(s, np.float64)
+    if s.ndim > 1:
+        s = s.mean(1)
+    w = max(1, int(win * sr))
+    if len(s) <= w:
+        return 0.0
+    c = np.concatenate([[0.0], np.cumsum(s ** 2)])
+    e = c[w:] - c[:-w]
+    return (int(np.argmax(e)) + w / 2) / sr
+
+
+def place_sfx(x, events, sr=SR, gains=None, bank=None, peak_align=None):
+    """Add SFX into audio ``x`` (n,) or (n, ch) in place. Returns x.
+
+    events: tuples ``(t, name)`` / ``(t, name, gain_db)`` or dicts
+      ``{t, sfx (or name), gain_db=0, dur=None, peak_align=True, fade=0.02}``.
+      gain_db  - on top of the base level (``SFX_GAINS`` / ``gains``),
+      dur      - trim the sound to ``dur`` s with a short fade-out (long samples such as ``typing``),
+      peak_align - put the sound's energy PEAK (not its first sample) on ``t``; risers and whips
+                 peak late, so start-aligning them makes every hit sound late.
+    peak_align default: dict events True, tuple events False (backward compatible); a value passed
+    here overrides that default, a per-event key overrides both.
+    From talkinghead ``compose.mix_audio``.
+    """
     bank = bank or sfx_bank(sr)
     gains = {**SFX_GAINS, **(gains or {})}
-    for t, k in events:
-        i = int(t * sr)
-        s = bank[k] * gains.get(k, 0.4)
+    for ev in events:
+        if isinstance(ev, dict):
+            t, k = float(ev["t"]), ev.get("sfx", ev.get("name"))
+            gdb, dur, fade = float(ev.get("gain_db") or 0), ev.get("dur"), float(ev.get("fade", 0.02))
+            pa = ev.get("peak_align", True if peak_align is None else peak_align)
+        else:
+            t, k = float(ev[0]), ev[1]
+            gdb, dur, fade = (float(ev[2]) if len(ev) > 2 else 0.0), None, 0.02
+            pa = bool(peak_align)
+        s = bank[k]
+        if dur is not None:
+            s = s[:max(1, int(round(float(dur) * sr)))].copy()
+            nf = min(len(s), max(1, int(min(fade, float(dur) / 4) * sr)))
+            s[-nf:] *= np.linspace(1, 0, nf, dtype=np.float32)
+        s = s * (_sfx_gain(k, gains) * (_db(gdb) if gdb else 1.0))
+        if pa:
+            t -= sfx_peak(s, sr)
+        i = int(round(t * sr)) if (pa or isinstance(ev, dict)) else int(t * sr)
         if i < 0:
             s, i = s[-i:], 0
         j = min(len(x), i + len(s))
-        if i < len(x):
+        if i < len(x) and j > i:
             x[i:j] += s[:j - i, None] if x.ndim > 1 else s[:j - i]
     return x
 
 
 def write_sfx(directory, sr=SR):
-    """Write every bank sound as <directory>/<name>.wav (48 kHz stereo). Returns {name: path}."""
+    """Write every bank sound (aliases skipped) as <directory>/<name>.wav (48 kHz stereo).
+    Returns {name: path}."""
     os.makedirs(directory, exist_ok=True)
     out = {}
     for k, v in sfx_bank(sr).items():
-        if k == "thud":
+        if k in SFX_ALIASES:
             continue
         out[k] = write_wav(os.path.join(directory, f"{k}.wav"), np.stack([v, v], 1), sr)
     return out
+
+
+# ---- cue sheets: a declarative SFX table + grammar rules
+# A cue is {t, sfx, gain_db, dur, note}: t = where the sound's PEAK lands (render_cue_sheet peak-aligns).
+_TRANSITIONS = {"soft", "swoosh", "swoosh_b", "whoosh", "whoosh_b", "whip"}
+_CUT_SFX = {"scene": "soft", "move": "whoosh", "push": "whoosh", "zoom": "swoosh", "whip": "whip",
+            "landing": "impact", "impact": "impact", "stop": "stop", "freeze": "scratch", "beat": None,
+            "montage": None, "hard": None, "jump": None}
+_REVEAL_SFX = {"text": "swoosh", "title": "swoosh", "photo": "shutter", "snap": "shutter", "landing": "impact",
+               "stamp": "stamp", "small": "stamp", "item": "pop", "list": "pop", "type": "typing",
+               "sparkle": "sparkle", "glow": "sparkle", "check": "ding", "ding": "ding", "tick": "tick",
+               "count": "tick", "freeze": "scratch", "stop": "stop", "move": "whoosh", "whip": "whip",
+               "finale": "finale"}
+_PRIO = {"impact": 4, "riser": 4, "sparkle": 3, "stop": 3, "scratch": 3, "whip": 3, "soft": 2, "whoosh": 2,
+         "swoosh": 2, "stamp": 2, "shutter": 2, "ding": 1, "typing": 1, "pop": 0, "tick": 0, "typewriter": 0}
+# per video kind: density cap (SFX per 2 s), overall gain offset, vocabulary swaps
+CUE_PROFILES = {
+    "travel-fun": dict(max_per_2s=3, gain_db=0.0, swap={}),
+    "promo": dict(max_per_2s=3, gain_db=0.0, swap={"pop": "tick", "ding": "sparkle", "scratch": "stop"}),
+    "talking-head": dict(max_per_2s=2, gain_db=-3.0, swap={"scratch": "stop", "whip": "swoosh"}),
+    "story": dict(max_per_2s=2, gain_db=-2.0, swap={"pop": "tick", "scratch": "soft", "whip": "soft",
+                                                    "stop": "soft"}),
+}
+
+
+def _as_event(e, default):
+    if isinstance(e, dict):
+        return dict(e, kind=e.get("kind", default))
+    return dict(t=float(e), kind=default)
+
+
+def cue_sheet_for(cuts=(), reveals=(), kind="travel-fun", max_per_2s=None, beats=None, snap_tol=0.12,
+                  repeat_window=1.5, step_db=1.5, max_step_db=9.0):
+    """Turn edit events into a cue sheet [{t, sfx, gain_db, dur, note}] by grammar rules.
+
+    cuts:    times or {t, kind, note}; kind 'scene' (default: one ``soft`` transition), 'move'/'push'
+             (whoosh), 'zoom' (swoosh), 'whip' (whip), 'landing' (impact), 'stop' (tape stop),
+             'freeze' (scratch), 'beat'/'montage'/'jump' (no SFX: the music's drums carry beat cuts).
+    reveals: times or {t, kind, dur, note}; kind 'text' (default, swoosh), 'photo' (shutter),
+             'landing' (impact), 'stamp', 'item'/'list' (pop), 'type' (typing trimmed to dur),
+             'sparkle', 'check' (ding), 'tick'/'count', 'freeze', 'finale' (riser peaking at t ->
+             impact at t -> sparkle 0.6 s later).
+    kind:    video kind (``CUE_PROFILES``): density cap, gain offset, vocabulary swaps (promo and
+             story drop the cartoon sounds).
+    Rules applied: one transition per scene change (transitions within 0.3 s collapse to the most
+    important); repeated sounds within ``repeat_window`` s alternate with their ``_b`` variant and
+    step down ``step_db`` per repeat (max ``max_step_db``); impacts / finales snap to the nearest
+    beat within ``snap_tol`` when ``beats`` (a ``vstudio.beats.Beats``) is given; at most
+    ``max_per_2s`` cues in any 2 s window (a finale triple counts once), keeping the important ones.
+    """
+    prof = CUE_PROFILES.get(kind, CUE_PROFILES["travel-fun"])
+    cap = int(max_per_2s if max_per_2s is not None else prof["max_per_2s"])
+    swap = prof["swap"]
+    raw = []
+
+    def snap(t):
+        if beats is None:
+            return t
+        s = float(beats.snap(t, "beat"))
+        return s if abs(s - t) <= snap_tol else t
+
+    def add(t, sfx, note, dur=None, group=None, src="reveal", gain=0.0):
+        sfx = swap.get(sfx, sfx)
+        raw.append(dict(t=float(t), sfx=sfx, gain_db=gain, dur=dur, note=note, group=group, src=src))
+
+    for e in (_as_event(c, "scene") for c in cuts):
+        sfx = _CUT_SFX.get(e["kind"], "soft")
+        if sfx:
+            t = snap(e["t"]) if sfx == "impact" else e["t"]
+            add(t, sfx, e.get("note") or f"{e['kind']} cut", src="cut")
+    for gi, e in enumerate(_as_event(r, "text") for r in reveals):
+        sfx = _REVEAL_SFX.get(e["kind"], "swoosh")
+        note = e.get("note") or f"{e['kind']} reveal"
+        if sfx == "finale":
+            t = snap(e["t"])
+            g = f"finale{gi}"
+            add(t, "riser", note + ": riser builds into the hit", group=g, gain=-2.0)
+            add(t, "impact", note + ": impact (loudest moment)", group=g)
+            add(t + 0.6, "sparkle", note + ": sparkle tail", group=g, gain=-3.0)
+        elif sfx == "typing":
+            add(e["t"], "typing", note, dur=float(e.get("dur", 1.0)))
+        else:
+            add(snap(e["t"]) if sfx == "impact" else e["t"], sfx, note, dur=e.get("dur"))
+    raw.sort(key=lambda c: c["t"])
+
+    # one transition per scene change: collapse transition-class cues closer than 0.3 s
+    kept = []
+    for c in raw:
+        if c["sfx"] in _TRANSITIONS and kept:
+            near = [k for k in kept if k["sfx"] in _TRANSITIONS and abs(k["t"] - c["t"]) < 0.3]
+            if near:
+                k = near[0]
+                better = (c["src"] == "cut", _PRIO.get(c["sfx"], 1)) > (k["src"] == "cut", _PRIO.get(k["sfx"], 1))
+                if better:
+                    kept[kept.index(k)] = c
+                continue
+        kept.append(c)
+
+    # repeats: alternate variants + step the level down
+    bank_names = set(sfx_bank(SR)) if kept else set()
+    last = {}
+    for c in kept:
+        base = c["sfx"]
+        prev = last.get(base)
+        j = prev[1] + 1 if prev is not None and c["t"] - prev[0] <= repeat_window else 0
+        last[base] = (c["t"], j)
+        if j:
+            if j % 2 and base + "_b" in bank_names:
+                c["sfx"] = base + "_b"
+            c["gain_db"] -= min(step_db * j, max_step_db)
+
+    # density cap (priority first, then time); a group counts once
+    def units(lst):
+        return sorted({(c["group"] or id(c)): c["t"] for c in lst}.values())
+
+    order = sorted(kept, key=lambda c: (-_PRIO.get(c["sfx"].removesuffix("_b"), 1) - (2 if c["group"] else 0),
+                                        c["t"]))
+    final = []
+    for c in order:
+        trial = units(final + [c])
+        ok = True
+        for a in trial:
+            if sum(1 for u in trial if a <= u < a + 2.0) > cap:
+                ok = False
+                break
+        if ok or (c["group"] and any(f["group"] == c["group"] for f in final)):
+            final.append(c)
+    out = []
+    for c in sorted(final, key=lambda c: c["t"]):
+        out.append(dict(t=round(c["t"], 4), sfx=c["sfx"], gain_db=round(c["gain_db"] + prof["gain_db"], 2),
+                        dur=c["dur"], note=c["note"]))
+    return out
+
+
+def render_cue_sheet(cues, total, sr=SR, bank=None, channels=2, gains=None):
+    """Render a cue sheet to a float32 array (n, channels) of ``total`` seconds. Each cue's sound is
+    peak-aligned to its ``t`` unless the cue says ``peak_align: False``. Write it with ``write_wav``
+    or place it under the mix with ``place_clips``."""
+    x = np.zeros((int(round(total * sr)), channels), np.float32)
+    return place_sfx(x, [dict(c) for c in cues], sr=sr, gains=gains, bank=bank or sfx_bank(sr), peak_align=True)
 
 
 def silence(seconds, path, sr=SR, channels=2):

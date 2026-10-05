@@ -7,14 +7,23 @@ creator:
   language: zh             # subtitle + caption language for the creator's own speech
 
 platforms:
-  default: xiaohongshu     # xiaohongshu | youtube | bilibili | tiktok
+  # Full per-platform profiles (canvas, UI safe zones, caption band/size, length, LUFS, encode, cover,
+  # title/description limits) live in lib/vstudio/platform.py (sources: references/PLATFORMS.md).
+  # Anything under platforms.<name> is deep-merged over those defaults; per-orientation overrides go
+  # under platforms.<name>.orientations.<vertical|full|horizontal>.
+  default: xiaohongshu     # xiaohongshu | douyin | tiktok | youtube | youtube-shorts | bilibili
   xiaohongshu:
     title_max: 20          # 小红书 counts CJK = 1, latin/digit/space = 0.5 (vstudio.config.xhs_len)
     cover_aspect: "3:4"    # vertical posts; horizontal posts show a 4:3 centre crop
-    safe_zone: {top: 240, bottom: 1660, right_lower_keepout: 160}   # 1080x1920 canvas
+    safe_zone: {top: 240, bottom: 1660, right_lower_keepout: 160}   # legacy form, 1080x1920 ("full") canvas
+    # orientations:
+    #   vertical: {caption: {band: [1060, 1260], size: [56, 76]}}   # e.g. bigger captions on 3:4
   youtube:
     title_max: 100
     cover_aspect: "16:9"
+  # douyin:
+  #   loudness: {lufs: -12, tp: -1.0}   # a hotter short-form master, if you prefer
+  #   length: {sweet: [20, 45]}
 
 speed:                     # playback rates used when the creator just says "speed it up"
   hook: 1.3

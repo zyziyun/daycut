@@ -1,0 +1,111 @@
+# Aesthetics checklist
+
+Go through this list before delivering any cut. Report each rule as `A3 ✓` or `A3 ✗ (where: shot /
+timestamp)`. Breaking a rule on purpose is fine, but write down which rule you broke and why in
+the project notes.
+
+Inspired by the case-based aesthetic rules in
+[video-shotcraft](https://github.com/Vincentwei1021/video-shotcraft) by Wei Yihao (Apache-2.0).
+The rules below are restated in our own words and widened from product promos to vlogs and
+talking-heads. Audio rules live in [SOUND.md](SOUND.md).
+
+## Rhythm
+
+**A1. Hold key information for at least 1 s.** A title, place name, price, number or logo must
+sit fully still for ≥ 1 s after it lands, before the next cut or move. Give the hold to what the
+viewer should remember, not to filler.
+*Self-check:* Pause on every "remember this" moment. Is there a full second of stillness? Did the
+hold go to the right element?
+
+**A2. Speed comes from acceleration, not linear motion.** Fly-ins and pans use easing and
+uneven staggers. A group of items arriving should get faster and faster (`cut_plan(...,
+"accelerate")`), then rest about 0.5 s when the frame is full. Constant-speed motion reads as a
+cheap slideshow. A physical metaphor helps: dealing cards, stamping a passport, pins dropping on
+a map.
+*Self-check:* Is anything moving at a constant speed in a straight line? Does each burst speed up
+and then rest?
+
+**A3. Make the first version slower.** First cuts are nearly always too fast. Give the main action
+of the opening a complete arc of ≥ 3 s. Play real interactions (ordering, walking in, typing) at
+human speed. Leave hold and rest frames in the timeline budget.
+*Self-check:* Watch it as a first-time viewer. Where did you miss something? Could you follow
+along?
+
+**A4. Beat sync sets timing, not size. ≤ 3 full-frame hits per video, ≥ 16 beats apart.** A
+full-frame hit is anything that moves the whole frame or camera at once: frame-wide scale pump,
+shake, flash frame, invert frame. Treat each as a big slam. Each one goes on a strong hit from
+`b.hits`. Other on-beat motion moves only the subject layer: a card, a title, a sticker. Kick
+detections are a pool of candidates, not triggers. Count one technique use as one slot, even if it
+flashes several times inside.
+*Self-check:* Step through any 8 beats of the busiest section frame by frame. Is the whole frame
+pulsing on every beat? How many full-frame hits are there in total, and does each sit on a listed
+strong hit?
+
+**A5. One transition per cut, taken from the neighbours' budgets.** A transition's length is
+borrowed from the two shots it joins: half from the end of one, half from the start of the next.
+It does not stretch the video. Use a single transition per cut, never two stacked. A plain hard
+cut is the default. Use a styled transition only where the story changes place, day or mood.
+*Self-check:* Does every transition steal its frames from its neighbours? Do the neighbour shots
+still keep their A1 holds after the steal? Is any cut wearing two effects?
+
+## Look and readability
+
+**A6. Readable text is ≥ 5 % of frame height. Test it at 480 px wide.** Caption and story text
+needs an on-screen cap height of at least 5 % of frame height: 54 px on 1080p, about 96 px on a
+1920-tall vertical. Secondary text (dates, prices, URLs) needs at least 3 %. Measure the rendered
+frame, including any scale or perspective applied, not the font size in code. Text is either
+readable or deliberately decorative, never in between.
+*Self-check:* Scale one frame from each texted shot down to 480 px wide. Can you still read every
+line?
+
+**A7. Each technique stars once.** A signature move (speed ramp, glint sweep, map fly-through,
+freeze-frame with stamp, split-screen, crash zoom) is strongest the first time. Use it once as the
+star moment. If it appears again, make it smaller and quieter. Never apply a glint or glow to
+every item in a group, and clip any glow to the shape that carries it.
+*Self-check:* Count each named technique. Does any appear more than once at full strength? Does
+any glow spill outside its card's corners?
+
+**A8. One subject in the opening.** The hook opens on one hero image or action with a complete
+arc. A crowd of moving pieces can't hold attention.
+*Self-check:* How many things does the opening shot ask you to look at?
+
+**A9. Steady camera by default.** Add no fake handheld shake to bright, clean footage. Use shake
+only for a deliberate documentary feel, keep it tiny, and check rendered frames for wobble you
+didn't mean.
+*Self-check:* Is there any camera motion that serves no story purpose?
+
+**A10. The finale is the energy peak.** The ending brings back the best moments, plays on the
+loudest section of the music, and carries the riser → impact → sparkle sentence. First versions
+of endings are almost always too timid, so push them one notch further.
+*Self-check:* Is the finale the most energetic point of the video? Does it bring back each place
+or highlight once?
+
+## Sound (summary, details in SOUND.md)
+
+**A11. Choose sounds by genre, and give real actions matching sounds.** Does the soundtrack sound
+like this kind of video with your eyes closed? Does every distinctive on-screen action have its
+own sound, trimmed to its length?
+
+**A12. Picture first, sound last. Repeated sounds alternate and step down.** Did any shot length
+change after the cue sheet was built? If so, rebuild it. Do repeated hits sound countable?
+
+## Delivery
+
+**A13. Deliver with-music and without-music versions** from the same timeline. Both keep voice
+and SFX.
+*Self-check:* Are both files rendered, and does the no-music version still hold up?
+
+**A14. Verify the beat sync on the rendered file.** Run `beats.verify` on the cut times. Any cut
+> 3 frames off is a must-fix. A same-direction offset across all cuts points to an output audio
+offset, not to the analysis.
+
+## Travel-fun quick sheet
+
+`beats.energy_arc(duration, "travel-fun", beats=b)` gives this layout:
+
+- Hook (0-8 %): max energy, the best 5-8 shots, ends on a strong hit.
+- Intro: where, who and why, with the title held ≥ 1 s.
+- 3-5 place or day blocks. Each block is a fast montage that accelerates into a breather (one
+  moment that gets to breathe: a reaction, food, a view, a line). Energy rises block to block.
+- Peak finale: accelerate cuts, riser → impact → sparkle.
+- Outro: a slow wide shot and a sign-off.
