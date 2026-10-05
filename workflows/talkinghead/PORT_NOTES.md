@@ -146,3 +146,87 @@ gap > 0.12 s, so it is not equivalent), retouch_video's chunked pipeline, detect
 4. `overlays.progress_static["drawbox"]` has the same drawbox-`t` bug (never animates).
 5. `overlays.notes_panel`: return per-bullet row layers/geometry for progressive reveal; `overlays.progress_bar`:
    option to omit the chapter pill (for an animated label) and a fade for the classic pill.
+
+## Wave B
+
+### Platform wiring
+- New `scripts/vertical/layout.py`: `resolve_profile` (config `PLATFORM` / `--platform`, default persona
+  `platforms.default` in the track's natural orientation: V 9:16 "full", H horizontal), `Layout` (every V-track overlay
+  position from `platform.safe_box` / `caption_box` / `keepouts`), face-aware candidate picking, `h_track_geo` (H track).
+  On 小红书 9:16 / 16:9 the derived values equal the old constants (bar y 250, title 330/390, callouts (60, 350), panel
+  940 wide ending sub_y-60, circle (540, 1100) R 290, card (243, 600), captions 1525; H bar y 1000 x 80..1840, badge
+  (70, 44), callouts (70, 70), panels (66, 86)).
+- `compose.py`: canvas from the profile (3:4 1080x1440, 9:16, 16:9 1920x1080). A body of another aspect is reframed once
+  with `vstudio.reframe` (face mode; no face: centre crop 9:16→3:4, pad-blur otherwise; 9:16 body on 16:9 = pad-blur)
+  into `body_<W>x<H>.mp4` + `.crop.json`; the face track is mapped through the plan. Landscape layout: bar 1.25x, panel /
+  callouts on the side away from the face, circle left + tokens right, card left + text right, split left/right.
+  Caption band centre and width (shrinks long chunks), loudness LUFS + true peak, length warning from the profile.
+  POPS / STAMPS coordinates (authored on 1080x1920) are mapped relative to the face and clamped above the captions and
+  left of the button column. `STYLE sub_y` outside the band is ignored with a note (example no longer sets it).
+  `--clean-master` writes `<OUT>.clean.mp4` (no captions) + `<OUT>.cues.json` (final-time cues incl. hooks) for
+  `python -m vstudio.export`. `timeline.json` gains PLATFORM/W/H.
+- `cover.py` (V): per-platform cover size (`--platform` repeatable), face-centred crop for non-legacy sizes, title inside
+  `cover_title_safe`, `.feed.jpg` for feed crops, ≤ max_bytes for YouTube. 3:4 from a 9:16 body = old layout.
+- H track: `make_assets.py` / `build_filter.py` take `--platform` / `PLATFORM` (positions via `h_track_geo`, loudness +
+  true peak from the profile, size from the profile; vertical profiles refused with the export hint);
+  `make_cover.py --platform youtube --platform bilibili` re-fits the cover (1280x720 ≤ 2 MB, 1146x717) + feed previews.
+- `caption.py`: `--platform` repeatable (default config PLATFORM → timeline PLATFORM → persona), title via
+  `platform.check_text` + `publish.check_title`, `--body` description limit, tag count, length sweet spot / max, note when
+  the platform has no native chapters.
+- `pick_cover_frame.py`: the 3:4 band only for 9:16 frames.
+
+### Horizontal footage
+- `prep_sources.sh`: the median-face-x crop is replaced by `vstudio.reframe` face mode (One Euro target, dead zone,
+  eased pans, cut resets, safe box of the 9:16 profile; pad-blur fallback). `ORIENT=horizontal` (or old
+  `KEEP_LANDSCAPE=1`) keeps 16:9 for `compose --platform youtube|bilibili|xiaohongshu:horizontal`. `PLATFORM`,
+  `REFRAME_MODE` env. Writes `prep.json` (mode, hit rate, pan stats, **upscale** incl. a small source enlarged by the fit).
+- Punch-in fix (real webcam crop: too tight, title over the eyes): `zoom_level` caps every zoom by
+  `STYLE max_upscale` (2.0) / source upscale (`SRC_UPSCALE` or prep.json x reframe scale), by `max_face_frac` (0.62 of
+  the canvas width) and by keeping the zoomed face box below the progress bar. `face_track.py` now stores the landmark
+  box (8 columns; old 4-column files get an estimated box). The hook title block is checked against the face core
+  (brows..chin, after the punch-in) of every hook frame: pushed up to the safe top, shrunk (≥ 0.7), or moved between
+  chin and captions (≥ 0.62). Callouts, PiP cards (shrink to 0.58 first), pop words (dropped below the chin) and the
+  vertical 记笔记 panel (compacts to 0.78) avoid the face core too. All no-ops on the default synthetic layout.
+
+### B-roll (new `scripts/vertical/broll.py`, config `BROLL`)
+cut (full cut-away; screenshots as a card on their own blurred fill), pip (rounded rimmed card, face-aware corner, pop
+in), split (top/bottom vertical, left/right 16:9; speaker half cropped on the face). Images taller than their box = the
+screenshot-card idea in PIL: scroll top→bottom or follow `highlight` rows, marker wipe per row, optional label badge.
+Voice continues (b-roll audio unused); whooshes with `sfx`; zoom / stamps / pops pause under cut / split; circle / card
+scenes win. Drawing uses `draw.rounded_rect/alpha_paste/text_width` + local card/shadow (numpy, per frame).
+
+### Other fixes
+- `retouch_video.py`: ffprobe `csv=p=0` prints `30/1,` on ffmpeg 8+/9 → crashed on real media (`'1,'`); stripped.
+- `lib/vstudio/retouch.py` (allowed edit): new shade `mlbb` Lab (56, 30, 9) ≈ #BB7177 (muted rosy MLBB pink);
+  preset `daily` lip_shade coral → mlbb. Other presets unchanged.
+
+### Tests
+- Synthetic (lavfi 1080x1920 + `say` speech, 10 sentences, 精剪 config + notes preset) vs `git archive HEAD` copy:
+  cut_pass1 segs.json identical; `compose all` out.mp4 16 sampled frames max diff 0 and mix.wav byte-identical;
+  notes-preset preview max diff 0; V cover.py 3:4 max diff 0. H track (lavfi 1920x1080): make_assets → build_filter →
+  run.sh: 13 sampled frames max diff 0, audio identical; make_cover identical.
+- Other targets: compose base+preview on `xiaohongshu:vertical` (1080x1440), `douyin` (captions y 1345), `youtube`
+  (1920x1080, pad-blur from 9:16); both presets; B-roll cut/pip/split + screenshot scroll/highlight on 9:16, 3:4, 16:9;
+  `--clean-master` (out.mp4 unchanged, clean master caption-free, 22 cues) → `vstudio.export` xiaohongshu:vertical +
+  douyin at −14.0 LUFS; H track on bilibili (bar y 980, −14.0 LUFS / −1.5 dBTP); covers 3:4 / 9:16 / 1280x720 / 1146x717.
+- Real (outputs in /tmp only): creator's vertical HLG 口播, first 65 s: prep (avconvert HDR→SDR) → auto keep list
+  (18 whisper segments) → cut_pass1 (51.5 s) → retouch_video `--preset daily` (6 workers) → strict_pass suggest + apply
+  (51.5 → 40.9 s; auto-DEL took every candidate, test only) → face_track (100 %) → compose previews on 3:4 and 抖音 9:16
+  with hook, callout, 记笔记 panel, refined progress bar, pop word. Horizontal webcam (60 s): prep → reframe face mode
+  (hit 1.0, p95 pan 0.05 crop-widths/s, x1.78 upscale) → cut → face_track → 抖音 9:16 previews (punch-in capped to
+  none: face already 0.75 of the width; title shrunk above the glasses; PiP shrunk off the eyes; split; circle scene);
+  and ORIENT=horizontal → 16:9 YouTube previews (landscape layout).
+- `python3 -m pytest tests -q`: 318 passed. py_compile + `--help` on all CLIs, `bash -n prep_sources.sh`.
+
+### Persona / config keys
+Config: `PLATFORM`, `SRC_UPSCALE`, `REFRAME_MODE`, `BROLL`, `STYLE max_upscale / max_face_frac`. Persona: none new
+(reads `platforms.*` through vstudio.platform).
+
+### Lib requests
+1. `references/RETOUCH.md` preset table still says "coral lip" for `daily` (now `mlbb`); add `mlbb` to the shade list.
+2. `media.py:211` (and photo-story `shots.py`) parse ffprobe `csv=p=0`; ffmpeg 8+/9 appends a trailing comma on stream
+   entries (format=duration seems fine) — worth a shared `ffprobe_value()` helper.
+3. `reframe.plan`: return the source→target scale / upscale factor (callers recompute it from crop_w).
+4. `platform`: a per-profile "ui_top" (bottom of the progress-bar / top-bar zone) and a face-safe helper
+   (`avoid_face(rect_candidates, face_boxes)`) — layout.py has local versions.
+5. `export.caption_overlay`: optional keyword colouring (cues.json from compose carry the raw chunk text).

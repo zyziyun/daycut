@@ -14,6 +14,9 @@ PROMPT="以下是普通话口播，提到 TermA、TermB、Product-X" \
   - elsewhere: ffmpeg `zscale`+`tonemap=hable` (or `libplacebo`). Force with `TONEMAP=ffmpeg`.
   - Later steps resample to 30fps.
 - Clips are numbered 1..N in the order given.
+- Landscape clips (webcam, camera) are reframed to 1080x1920 with `vstudio.reframe` face mode (tracked, smoothed
+  virtual camera; pad-blur when no face); `ORIENT=horizontal` keeps them 16:9 for a horizontal render
+  (`compose.py --platform youtube`). `prep.json` records the reframe mode, face hit rate and upscale factor.
 - Whisper (`vstudio.asr`: mlx_whisper, else faster_whisper, else OpenAI; cached in `<wav>.asr.json`; CLI
   `scripts/asr.py`) still mishears English terms in Chinese
   speech. Re-transcribe doubtful spans with a term prompt (`python3 ../asr.py clip.wav out.json --prompt ...`)

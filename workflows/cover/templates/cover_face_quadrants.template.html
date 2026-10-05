@@ -9,14 +9,15 @@
   /* fonts: vstudio.render copies the repo fonts (Noto Sans SC, OFL) into ./assets/fonts/ */
   @font-face{font-family:"VS Sans";src:url("assets/fonts/NotoSansSC-Regular.otf");font-weight:100 600;}
   @font-face{font-family:"VS Sans";src:url("assets/fonts/NotoSansSC-Bold.otf");font-weight:700 900;}
-  /* --accent comes from persona.brand.accent (injected by vstudio.render); teal is the original look */
-  :root{ --teal:var(--accent,#2dd4bf); --dim:#9ca3af;
+  /* --cover-accent = persona cover.accent (default teal #2dd4bf, the original look), injected by
+     scripts/render_cover.py together with --W/--H/--fs for the platform size; plain vstudio.render keeps teal */
+  :root{ --teal:var(--cover-accent,#2dd4bf); --dim:#9ca3af;
     --teal-35:color-mix(in srgb,var(--teal) 35%,transparent); --teal-40:color-mix(in srgb,var(--teal) 40%,transparent);
     --teal-45:color-mix(in srgb,var(--teal) 45%,transparent); --teal-55:color-mix(in srgb,var(--teal) 55%,transparent);
     --teal-62:color-mix(in srgb,var(--teal) 62%,transparent); }
   *{box-sizing:border-box;margin:0;padding:0;}
   html,body{
-    width:1080px;height:1920px;background:#000;color:#fff;overflow:hidden;
+    width:var(--W,1080px);height:var(--H,1920px);background:#000;color:#fff;overflow:hidden;
     font-family:"VS Sans",system-ui,sans-serif;
     -webkit-font-smoothing:antialiased;
   }
@@ -55,16 +56,16 @@
 
   /* ─── center face (foreground) — aspect matches the matted PNG ─── */
   .face-wrap{
-    position:absolute;left:50%;top:540px;
+    position:absolute;left:50%;top:calc(var(--H,1920px) * .28125);
     transform:translateX(-50%);
-    width:980px;height:700px;     /* matches face PNG ratio 1080×770 */
+    width:calc(980px * var(--fs,1));height:calc(700px * var(--fs,1));     /* matches face PNG ratio 1080×770 */
     z-index:5;
   }
   /* big teal radial glow behind face */
   .face-wrap::before{
     content:"";position:absolute;
     left:50%;top:50%;transform:translate(-50%,-50%);
-    width:820px;height:820px;border-radius:50%;
+    width:calc(820px * var(--fs,1));height:calc(820px * var(--fs,1));border-radius:50%;
     background:radial-gradient(circle, var(--teal-62), transparent 65%);
     filter:blur(55px);z-index:0;
   }
@@ -90,12 +91,12 @@
   /* ─── BOTTOM overlay ─── */
   .bot{
     position:absolute;bottom:0;left:0;right:0;
-    padding:40px 60px 60px;z-index:7;
+    padding:calc(40px * var(--fs,1)) 60px calc(60px * var(--fs,1));z-index:7;
     background:linear-gradient(to top, rgba(0,0,0,.95) 25%, rgba(0,0,0,.85) 60%, rgba(0,0,0,.0) 100%);
     display:flex;flex-direction:column;align-items:center;gap:16px;text-align:center;
   }
   .headline{
-    font-size:120px;font-weight:900;letter-spacing:-.045em;line-height:.95;
+    font-size:calc(120px * var(--fs,1));font-weight:900;letter-spacing:-.045em;line-height:.95;
     text-shadow:0 4px 22px rgba(0,0,0,.85);
   }
   .headline .punch{color:var(--teal);font-style:italic;}

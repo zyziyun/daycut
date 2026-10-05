@@ -5,7 +5,8 @@ platform thumbnail (小红书, Shorts, TikTok, Reels, B站, YouTube). Three patt
 stills, **B** the speaker's matted face over a 2×2 grid of slides, **C** premium split cover (retouched face photo
 left, dark panel right with quote / title / thumbnail / chips) for 4:3 and 16:9 posts.
 **Inputs:** the cut video (and/or a face photo, slide PNGs). **Outputs:** `cover.png` (1080×1920, A/B) or
-`cover-4x3.jpg` + `cover-16x9.jpg` (C). Feed the cover to `workflows/polish` (`--cover`).
+`cover-4x3.jpg` + `cover-16x9.jpg` (C), plus one file per platform on request (see Platforms). Feed the cover to
+`workflows/polish` (`--cover`) or `python -m vstudio.export --cover`.
 
 Run from the project folder; `$VSTUDIO` = repo root. Working files go in `work/`.
 
@@ -33,8 +34,8 @@ Run from the project folder; `$VSTUDIO` = repo root. Working files go in `work/`
    Defaults fit a "slide on top, face below" layout; change `--slide-box/--face-box` for other layouts.
 3. `cp $VSTUDIO/workflows/cover/templates/cover_collage.template.html work/cover.html`, edit the tag, badges,
    headline and pills.
-4. `python3 -m vstudio.render work/cover.html -o work/cover.png` (`--size 1080x1920` default; needs
-   `PYTHONPATH=$VSTUDIO/lib`, see SKILL.md)
+4. `python3 $VSTUDIO/workflows/cover/scripts/render_cover.py work/cover.html -o work/cover.png` (1080x1920; add
+   `--platform xiaohongshu --platform douyin ...` for per-platform sizes, see Platforms)
 
 ## Pattern B — face on quadrants
 1. Pick a **talking** frame (mid-word, mouth slightly open, eyes on camera; idle frames look posed) from the contact sheet
@@ -55,7 +56,7 @@ Run from the project folder; `$VSTUDIO` = repo root. Working files go in `work/`
 6. `cp $VSTUDIO/workflows/cover/templates/cover_face_quadrants.template.html work/cover.html`; set
    `.face-wrap` width/height to the **same aspect as the matted PNG** (matte.py prints it). Otherwise
    `object-fit:contain` shrinks the face and leaves empty space. Example: PNG 1080×770 (1.40) → 980×700.
-7. Render as in A.
+7. Render as in A (`render_cover.py`).
 
 ## Pattern C — premium split cover (retouched face left, dark panel right)
 1. Grab the best face frame at full resolution (any aspect; it is scaled to the cover height) and retouch it:
@@ -70,15 +71,39 @@ Run from the project folder; `$VSTUDIO` = repo root. Working files go in `work/`
      `corner_tag` (bottom-right `brand.highlight` tag, e.g. 记笔记 ↓).
    - `outputs`: one entry per size, e.g. 1440×1080 with `photo_w` 760 (4:3) and 1920×1080 with `photo_w` 900 (16:9).
    - `face_x: "auto"` centres the photo crop on the detected face (`vstudio.face`); a number (0–1) overrides.
-4. `python3 $VSTUDIO/workflows/cover/scripts/split_cover.py work/split_cover.json`
+4. `python3 $VSTUDIO/workflows/cover/scripts/split_cover.py work/split_cover.json [--platforms xiaohongshu:horizontal,xiaohongshu,douyin,youtube]`
 5. Look at both sizes. 小红书 shows a centre crop of horizontal covers in the feed, so keep the face and the first
    title line inside the middle ~75 %. Title length rules: `persona.platforms.<platform>.title_max`.
 
+## Platforms
+Cover sizes come from `vstudio.platform.cover_size` (PLATFORMS.md):
+
+| platform | cover | feed shows |
+|---|---|---|
+| 小红书 (`xiaohongshu`, 3:4 / 9:16 posts) | 1080x1440 | whole cover |
+| 小红书 horizontal (`xiaohongshu:horizontal`) | 1920x1080 | **centre 4:3** (x 240..1680) |
+| 抖音 / TikTok (`douyin`, `tiktok`) | 1080x1920 | profile grid: centre 3:4 |
+| YouTube Shorts | 1080x1920 | whole cover |
+| YouTube | 1280x720, ≤ 2 MB; keep titles left of x 1100 (timestamp) | whole cover |
+| B站 | 1146x717 (16:10) | whole cover |
+
+- **A / B (templates)**: `render_cover.py page.html -o cover.png --platform xiaohongshu --platform douyin --platform youtube`
+  lays the page out at a design size of the same aspect (short side 1080), scales type with `--fs`, then resizes to the
+  exact cover size; `<out>.<platform>-<orientation>.png` each, + `.feed.jpg` where the feed crops.
+- **C (split cover)**: an output with `"platform": "..."` takes its size from the profile. Portrait sizes (3:4, 9:16)
+  use the stacked layout (photo band on top, panel below). For 小红书 16:9 the design is laid out **feed-safe**: the
+  whole 4:3 design sits in the centre crop and the photo runs on to the left edge (`"feed_safe": false` turns it
+  off); every platform output with a feed crop also writes `<path>.feed.jpg`. `--platforms a,b,c` adds outputs.
+- V-track talking-head covers: `workflows/talkinghead/scripts/vertical/cover.py config.py --platform ...` (same sizes).
+
 ## Rules (all patterns)
-- Exact canvas sizes: 1080×1920 for A/B; whatever `outputs` says for C.
-- Cover, slides and on-video graphics share one design language: the HTML templates read `--accent` (and
-  `--highlight/--ink/--ground`) injected from `persona.brand` by `vstudio.render`; `--no-persona` keeps the template
-  fallback (the original teal `#2dd4bf` on black look).
+- Exact canvas sizes: 1080×1920 for A/B by default (per platform with `render_cover.py --platform`); whatever
+  `outputs` says for C.
+- **Accent.** The collage / face-quadrant templates use `--cover-accent` = persona `cover.accent` (default teal
+  `#2dd4bf`, their original look; `render_cover.py --accent '#ff2442'` for one render). They no longer follow
+  `brand.accent`, which stays the on-video red. Pattern C (split cover) still uses `brand.accent` / `brand.highlight`
+  (stamp, chips, title highlight) so it matches the video's graphics. Plain `python -m vstudio.render` on a template
+  renders teal at 1080x1920.
 - Headline pattern for A/B: `Subject <span class="punch">is/isn't [contrarian punch].</span>` (accent italic punch).
   It should be the same sentence as the script hook (see `workflows/preproduction`).
 - Fonts: the templates use `@font-face` on `assets/fonts/*` which `vstudio.render` copies from the repo font cache.

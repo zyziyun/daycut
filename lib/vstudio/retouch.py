@@ -45,6 +45,7 @@ SHADES = {
     "rose": (50, 40, 12), "coral": (58, 42, 30), "red": (42, 58, 22), "berry": (36, 44, 6),
     "nude": (58, 24, 20), "pink": (68, 30, 6), "peach": (72, 24, 24), "brown": (30, 10, 16),
     "black": (14, 1, 2), "taupe": (48, 7, 9), "bronze": (46, 14, 26), "plum": (38, 22, -6),
+    "mlbb": (56, 30, 9),     # "my lips but better": muted rosy pink, a touch deeper than bare lips (~#BB7177)
 }
 COMPONENTS = ("lip", "blush", "brow", "liner", "shadow", "contour", "highlight", "gloss")
 SHADE_KEYS = ("lip_shade", "blush_shade", "shadow_shade", "liner_shade")
@@ -53,7 +54,7 @@ PRESETS = {
     "natural": dict(lip=.45, blush=.35, brow=.3, liner=0, shadow=0, contour=.15, highlight=.2, gloss=.3,
                     lip_shade="rose", blush_shade="pink", shadow_shade="taupe", liner_shade="brown"),
     "daily": dict(lip=.65, blush=.45, brow=.45, liner=.35, shadow=.3, contour=.25, highlight=.25, gloss=.4,
-                  lip_shade="coral", blush_shade="peach", shadow_shade="bronze", liner_shade="brown"),
+                  lip_shade="mlbb", blush_shade="peach", shadow_shade="bronze", liner_shade="brown"),
     "glam": dict(lip=.9, blush=.55, brow=.6, liner=.7, shadow=.6, contour=.4, highlight=.4, gloss=.6,
                  lip_shade="red", blush_shade="rose", shadow_shade="plum", liner_shade="black"),
 }

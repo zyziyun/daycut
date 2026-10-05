@@ -9,6 +9,8 @@ SRC  = "my-talk.mp4"            # 1920x1080 剪映 export with burned subtitles
 OUT  = "my-talk_final.mp4"
 WORK = "work"                   # assets + filter.txt + run.sh land here
 COVER_OUT = "my-talk_cover.jpg"
+# PLATFORM = "youtube"          # 16:9 profile for bar/badge/callout/panel positions, loudness, cover size
+#                               # (default persona platforms.default, horizontal = 小红书 16:9)
 
 # ---- timing / speed ----
 MAIN_DUR   = 300.0   # real content end (whisper hallucinates over a silent tail)

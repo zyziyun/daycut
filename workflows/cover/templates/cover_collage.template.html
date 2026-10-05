@@ -4,14 +4,14 @@
 <meta charset="utf-8" />
 <title>Cover · 4-frame diagonal collage</title>
 <!-- Pattern A. Copy to work/cover.html; put q1..q4.png (extract_frames.py collage) in work/cover_src/.
-     Render: python3 -m vstudio.render work/cover.html -o work/cover.png -->
+     Render: python3 $VSTUDIO/workflows/cover/scripts/render_cover.py work/cover.html -o work/cover.png [--platform douyin ...] -->
 <style>
   @font-face{font-family:"VS Sans";src:url("assets/fonts/NotoSansSC-Regular.otf");font-weight:100 600;}
   @font-face{font-family:"VS Sans";src:url("assets/fonts/NotoSansSC-Bold.otf");font-weight:700 900;}
-  :root{ --teal:var(--accent,#2dd4bf); --dim:#9ca3af;
+  :root{ --teal:var(--cover-accent,#2dd4bf); --dim:#9ca3af;
     --teal-45:color-mix(in srgb,var(--teal) 45%,transparent); --teal-55:color-mix(in srgb,var(--teal) 55%,transparent); }
   *{box-sizing:border-box;margin:0;padding:0;}
-  html,body{width:1080px;height:1920px;background:#000;color:#fff;overflow:hidden;
+  html,body{width:var(--W,1080px);height:var(--H,1920px);background:#000;color:#fff;overflow:hidden;
     font-family:"VS Sans",system-ui,sans-serif;-webkit-font-smoothing:antialiased;}
   .stage{position:relative;width:100%;height:100%;}
   .grid{position:absolute;inset:0;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;}
@@ -34,17 +34,17 @@
   .qbadge{position:absolute;padding:8px 14px;border-radius:8px;background:rgba(0,0,0,.72);
     border:1px solid var(--teal-45);color:var(--teal);font-size:18px;font-weight:800;letter-spacing:.22em;z-index:6;}
   .qbadge.q1{top:140px;left:30px;} .qbadge.q2{top:140px;right:30px;}
-  .qbadge.q3{top:1000px;left:30px;} .qbadge.q4{top:1000px;right:30px;}
+  .qbadge.q3{top:calc(50% + 40px);left:30px;} .qbadge.q4{top:calc(50% + 40px);right:30px;}
 
   .toptag{position:absolute;top:50px;left:50%;transform:translateX(-50%);z-index:7;display:inline-flex;
     align-items:center;gap:12px;padding:12px 24px;border:1.5px solid var(--teal);border-radius:999px;color:var(--teal);
     font-size:22px;font-weight:700;letter-spacing:.30em;background:rgba(0,0,0,.75);}
   .toptag .dot{width:10px;height:10px;border-radius:50%;background:var(--teal);box-shadow:0 0 16px var(--teal);}
 
-  .bot{position:absolute;bottom:0;left:0;right:0;padding:120px 60px 70px;z-index:7;
+  .bot{position:absolute;bottom:0;left:0;right:0;padding:calc(120px * var(--fs,1)) 60px calc(70px * var(--fs,1));z-index:7;
     background:linear-gradient(to top,rgba(0,0,0,.96) 35%,rgba(0,0,0,.8) 65%,rgba(0,0,0,0) 100%);
     display:flex;flex-direction:column;align-items:center;gap:18px;text-align:center;}
-  .headline{font-size:116px;font-weight:900;letter-spacing:-.04em;line-height:.98;text-shadow:0 4px 22px rgba(0,0,0,.85);}
+  .headline{font-size:calc(116px * var(--fs,1));font-weight:900;letter-spacing:-.04em;line-height:.98;text-shadow:0 4px 22px rgba(0,0,0,.85);}
   .headline .punch{color:var(--teal);font-style:italic;}
   .pills{display:flex;gap:10px;}
   .pill{padding:12px 20px;border-radius:10px;background:rgba(0,0,0,.75);border:1px solid var(--teal-55);

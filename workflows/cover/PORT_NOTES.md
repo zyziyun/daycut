@@ -72,3 +72,26 @@ sheet (+`--save-frames`), collage, face on a lavfi clip; `pick` exits cleanly wi
 for all 3 CLIs (+ matte.py); `pytest tests` 34 passed.
 Lib requests: `cover.split_cover` could accept `fade`/`overlap` (photo fade width, panel overlap) to keep per-output
 tuning.
+
+## Wave B
+- **Per-platform cover sizes.** New `scripts/render_cover.py` (Patterns A/B): `--platform` (repeatable) → size from
+  `platform.cover_size`; the page is laid out at a same-aspect design size (short side 1080) and resized to the exact
+  size (YouTube 1280x720, B站 1146x717); `.feed.jpg` centre-crop preview where the feed crops (抖音 grid 3:4, 小红书 16:9
+  4:3). Templates now read `--W/--H` (canvas), `--fs` (type / face scale) and `--cover-accent`; defaults reproduce the
+  old 1080x1920 page (q3/q4 badges `calc(50% + 40px)` = the old 1000 px, face-wrap top `.28125*H` = 540 px).
+- **`cover.accent`** (persona, default teal `#2dd4bf`): collage / face-quadrant templates use `--cover-accent`, no longer
+  `brand.accent` (parity audit: these templates were teal; red stays the on-video brand). Plain `vstudio.render` on a
+  template → teal fallback. `render_cover.py --accent` overrides once. Behaviour change: with the repo persona
+  (brand red) the default A/B render is teal now instead of red.
+- **Split cover (C)**: outputs accept `"platform"` (size from the profile; portrait 3:4 / 9:16 → stacked layout, photo
+  band 0.47 / 0.52 of the height), `"feed_safe"` (default on for 小红书 16:9: the 4:3 design is rendered for the centre
+  crop and laid over a full-width render of the same photo with no text, aligned on the face, so the feed tile shows the
+  whole design and the full cover has no empty side), `max_bytes` (YouTube 2 MB), and `.feed.jpg` previews.
+  CLI `--platforms a,b,c` adds outputs. Existing outputs (size / aspect / photo_w) unchanged.
+- Tests: collage default render vs HEAD template with `--no-persona` (teal): mean diff 0.0. Collage on xiaohongshu
+  3:4 / douyin / youtube; face-quadrants on xiaohongshu / youtube-shorts / bilibili (snapshots read). split_cover:
+  example config 4:3 + 16:9 pixel-identical to HEAD (max diff 0); platforms xiaohongshu:horizontal (feed-safe, seam
+  invisible, design inside x 240..1680), xiaohongshu 3:4, douyin 9:16, youtube 1280x720. pytest green.
+- Note: headless Chrome exited 2 intermittently under heavy CPU load here; `render_cover.py` retries 3x.
+- Lib requests: `vstudio.render.html_to_png(extra_css=...)` so wrappers need not write a sibling page; RETOUCH.md
+  `daily` row → mlbb lip (see talkinghead PORT_NOTES).

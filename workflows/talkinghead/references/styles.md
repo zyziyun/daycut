@@ -77,7 +77,7 @@ gaps.
 - A small dark pill underneath reads 「03 / 06 不适应」 and slides in on chapter change.
 - Hidden during hooks, fades in with the body. This is the default (`progress='refined'`).
 
-## Layout map, vertical 1080x1920
+## Layout map, vertical 1080x1920 (小红书 9:16; other canvases are derived from the platform profile, see WORKFLOW.md Platforms)
 | y | element |
 |---|---|
 | 250-300 | progress bar + chapter pill |
