@@ -46,6 +46,10 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("clips", nargs="+")
     ap.add_argument("--init", metavar="EDIT_JSON", help="write a starter edit.json (won't overwrite)")
+    ap.add_argument("--style", choices=["calm", "fun"], default="calm",
+                    help="starter for the calm crossfade vlog (default) or the fun beat-cut travel vlog")
+    ap.add_argument("--platform", help="fun starter: platform[:orientation] (e.g. xiaohongshu:full, youtube)")
+    ap.add_argument("--music", help="fun starter: music track path")
     ap.add_argument("--max-res", type=int, default=0,
                     help="cap master long edge (e.g. 1920 for a quick 1080p draft)")
     a = ap.parse_args()
@@ -72,6 +76,20 @@ def main():
     base = os.path.dirname(os.path.abspath(a.init))
     used = set()
     clips = {short_id(i["path"], used): os.path.relpath(os.path.abspath(i["path"]), base) for i in infos}
+    if a.style == "fun":
+        cfg = {
+            "style": "fun", "platform": a.platform or "xiaohongshu:full", "src_dir": ".",
+            "music": os.path.relpath(os.path.abspath(a.music), base) if a.music else "MUSIC.mp3",
+            "title": {"text": "TITLE", "sub": ""}, "end_card": {"text": "SEE YOU", "sub": ""},
+            "clips": clips, "out": "fun_vlog.mp4",
+            # no start/dur: windows are auto-picked; add "place", "day", "speech": "auto", "ramp", ...
+            "shots": [dict({"clip": k}, **({"speech": "auto"} if i["audio"] else {})) for k, i in zip(clips, infos)],
+        }
+        os.makedirs(base, exist_ok=True)
+        with open(a.init, "w") as f:
+            json.dump(cfg, f, indent=2)
+        print(f"fun starter -> {a.init} (set music, title, place/day per shot; see WORKFLOW.md 'Fun style')")
+        return
     cfg = {
         "src_dir": ".",
         "clips": clips,

@@ -1,0 +1,41 @@
+{
+  "style": "fun",
+  "platform": "xiaohongshu:full",
+  "src_dir": "../footage",
+  "photo_dir": "../photos",
+  "music": "../music/upbeat-track.mp3",
+  "music_start": "auto",
+  "drops": [],
+  "pace": "fast",
+  "title": {"text": "Coast Weekend", "sub": "3 days, 2 towns, 1 ferry"},
+  "map": {
+    "places": [
+      {"name": "Town A", "lat": 40.10, "lon": 8.20},
+      {"name": "Harbour B", "lat": 40.05, "lon": 8.35},
+      {"name": "Cape C", "lat": 40.20, "lon": 8.55}
+    ],
+    "beats": 8
+  },
+  "word_pops": ["GO", "EAT", "SWIM"],
+  "end_card": {"text": "See you next trip", "sub": "@your-handle"},
+  "captions": true,
+  "tighten": false,
+  "sfx": true,
+  "music_lufs": -19,
+  "duck_db": -12,
+  "reframe": "face",
+  "reframe_fallback": "pad-blur",
+  "photo_style": "card",
+  "out": "fun_vlog.mp4",
+  "shots": [
+    {"clip": "IMG_0001.MOV", "place": "Town A", "day": 1, "date": "2026.05.01 09:12"},
+    {"clip": "IMG_0002.MOV", "place": "Town A", "day": 1},
+    {"clip": "IMG_0003.MOV", "speech": "auto", "place": "Town A", "day": 1},
+    {"clip": "IMG_0004.MOV", "ramp": "slowmo", "place": "Harbour B", "day": 2},
+    {"photo": "IMG_0005.HEIC", "place": "Harbour B", "day": 2},
+    {"clip": "DJI_0006.MP4", "start": 12.0, "dur": 3.0, "place": "Harbour B", "day": 2, "freeze": true},
+    {"clip": "IMG_0007.MOV", "ramp": "fast-slow-fast", "place": "Cape C", "day": 3, "pop": "WOW"},
+    {"clip": "IMG_0008.MOV", "speech": true, "start": 4.0, "tighten": true, "place": "Cape C", "day": 3},
+    {"clip": "DJI_0009.MP4", "fit": "crop", "place": "Cape C", "day": 3, "transition": "glitch"}
+  ]
+}

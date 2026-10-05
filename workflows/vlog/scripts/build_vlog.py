@@ -32,9 +32,14 @@ folder. Full schema + worked example: ../references/recipes.md. Quick schema:
 }
 Per segment: clip, start, dur (SOURCE seconds), optional speed, kind
 ("subject" | "empty"), bright (added to grade.brightness), stabilize.
+
+"style": "calm" (default, this script) | "fun" (beat-cut travel vlog: hands over to build_fun.py).
+"platform": "youtube" / "xiaohongshu:full" / ... (vstudio.platform) - used when "res" is absent: canvas
+from the profile, fps default from the profile, length check printed. --platform overrides it.
 """
 import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
 import argparse, json, os, subprocess
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 
@@ -161,11 +166,26 @@ def main():
     ap.add_argument("config", help="edit.json")
     ap.add_argument("--dry-run", action="store_true", help="print commands, render nothing")
     ap.add_argument("--workers", type=int, help="override parallel segment encodes")
-    a = ap.parse_args()
+    ap.add_argument("--platform", help="platform[:orientation] canvas when the config has no res (see vstudio.platform)")
+    a, rest = ap.parse_known_args()
 
     base = os.path.dirname(os.path.abspath(a.config))
     with open(a.config) as f:
         cfg = json.load(f)
+    if cfg.get("style", "calm") == "fun":
+        import build_fun
+        return build_fun.main([a.config] + (["--dry-run"] if a.dry_run else [])
+                              + (["--platform", a.platform] if a.platform else []) + rest)
+    if rest:
+        ap.error(f"unrecognized arguments: {' '.join(rest)}")
+    prof = None
+    if (a.platform or cfg.get("platform")) and not cfg.get("res"):
+        from vstudio import platform as P
+        prof = P.profile(a.platform or cfg["platform"])
+        cfg["res"] = [prof.w, prof.h]
+        cfg.setdefault("fps", prof.fps.get("default", 30))
+        print(f"platform {prof.key}: {prof.w}x{prof.h} @ {cfg['fps']} fps "
+              f"(loudness {prof.loudness['lufs']} LUFS via add_music.py --platform {prof.key})", flush=True)
     cfg["_src_dir"] = os.path.join(base, os.path.expanduser(cfg.get("src_dir", ".")))
     out = os.path.join(base, os.path.expanduser(cfg["out"]))
     segdir = os.path.join(os.path.dirname(out), "clips")
@@ -215,6 +235,10 @@ def main():
         return
     subprocess.run(cmd, check=True)
     print(f"DONE -> {out}", flush=True)
+    if prof is not None:
+        from vstudio import platform as P
+        for w in P.check_length(prof, L):
+            print("[warn]", w)
 
 
 if __name__ == "__main__":

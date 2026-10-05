@@ -103,3 +103,69 @@ Lib requests:
   masters have no audio streams, the graph always maps `[i:a]`); (4) `render_assembly(post_video=...)` for the
   closing `fade=t=out`. With those, build_vlog could drop its local offset maths and gain frame-quantised timing.
 - `media.probe`: optional `display_w/display_h` (rotation applied) - vlog, cover and contact sheets all re-derive it.
+
+## Wave B: platform wiring + fun travel style + speech clips
+Changes:
+- `"style": "calm" | "fun"` in edit.json. calm = `build_vlog.py` unchanged when `res` is set (regression test
+  below); `build_vlog.py` hands `"style": "fun"` to the new `build_fun.py` (one command for both).
+- New `scripts/build_fun.py` + `scripts/funvlog/` (score, plan, frames, gfx, mix): music-first beat-grid
+  edit (`beats.analyze`, `energy_arc("travel-fun")`, `cut_plan(..., "accelerate")` for hook/finale, drops),
+  auto best windows (per-second sharpness/motion/exposure/face score, cached), speed ramps inside a shot
+  (rate keys, smoothstep, true slow-mo from 60/120 fps, frame blend on 24/30 fps + warning), photo inserts
+  (Ken Burns card/full, HEIC via pillow-heif or `sips`), freeze-to-photo-card, transitions (whip >= 300 px/f,
+  zoom punch, flash, light leak, glitch-lite; one per cut, borrowed frames, A4 hit budget), graphics (title
+  pop, location tag, DAY stamp, date stamp, word pops, route map card, end card), SFX via
+  `audio.cue_sheet_for`, music via `loop_bed` + `mix_bed` ducking, look-ahead limiter + two-pass loudnorm to
+  the profile, `.nomusic.mp4` (A13), `--clean-master` + cues.json/SRT, report.json (verify, hits, boxes,
+  cue sheet, measured duck).
+- Speech clips (`speech: auto|true`): transcript file / `<clip>.words.json` -> `asr.transcribe` -> RMS
+  fallback; windows grow to whole sentences; shot ends on the next beat; optional `cut.tighten`; captions in
+  `platform.caption_box` via `export.caption_overlay`.
+- Platform wiring: `platform` / `--platform` on build_vlog (canvas + fps when `res` absent, length check),
+  build_fun (canvas, fps, safe box, caption box/style, loudness, encode, length, reframe), add_music
+  (loudness target + length), make_cover (`platform.cover_size` + title-safe box); probe `--init --style fun`.
+- No change to `lib/vstudio/cut.py` was needed (the fun engine composites per frame; hard cuts stay exact).
+
+Tests (`workflows/vlog/tests/test_vlog.py`, synthetic; 22 passed, ~6 min): fun renders for
+xiaohongshu:full 1080x1920 and youtube 1920x1080 - canvas/duration/frame count; every cut within +-1 frame
+of the TRUE beats of a 120 BPM drum track and `beats.verify` ok (max 0.01 frames); frame-difference spike on
+each planned cut frame; flash = white frame, leak = brighter frame, whip = horizontal gradient energy < 25 %;
+all six transition kinds used; <= 3 hits >= 16 beats apart; drop -> zoom; loudness -14 +-1 LU, TP <= -0.9;
+captions (master minus clean master) inside the caption box; overlay boxes inside the safe box; SFX peaks
+>= 15 dB over the local floor at cue times in the no-music file; speech window covers whole sentences; music
+measurably ducked (-11.9 dB for duck_db -12); 120 fps slow-mo shot has no repeated frames; HEIC photo;
+dry run + douyin. Calm: HEAD `build_vlog.py` vs new on two configs (16:9 crop + slow-mo, 9:16 blur + ambient
+atempo) -> identical frames and durations; calm with `platform: youtube-shorts` -> 1080x1920, add_music
+`--platform` uses the profile target. `pytest tests -q`: 318 passed.
+
+Unverified / limits:
+- Synthetic media only: no real faces (face-mode reframe exercised only through its pad-blur fallback; face
+  score term always 0), no real speech (captions from a transcript sidecar; the whisper path is the lib's
+  `asr.transcribe`, not run here), no HDR source in the fun path (same `media.hdr_to_sdr_args` as calm).
+- Speed: per-frame Python compositing ~10 output fps at 1080x1920 on an M-series Mac (38 s video ~2 min);
+  4K 120 fps sources decode at full size per shot.
+- The synthetic drum track has a ~20 dB crest factor: the limiter works hard; real mastered music needs less.
+- `add_music.py` on that track lands ~2 dB under target (lib loudnorm true-peak guard; unchanged behaviour).
+
+Duplicates for later unification:
+- `funvlog/frames.py:load_photo` (HEIC via pillow-heif/sips) = photo-story `ctx.py` HEIC cache.
+- `funvlog/frames.py:photo_frames` / `_cover` (Ken Burns) ~ photo-story shots; `card_renderer` ~ hf.freeze_hold.
+- `funvlog/gfx.py` easing (`out_back`, `out_cubic`) ~ hf/HyperFrames easing; `pin_icon`, `MapCard` new.
+- `funvlog/score.py:clip_scores` ~ `cover.score_frames` (frame scoring) - a per-second clip scorer fits `media`.
+- `funvlog/mix.py:limit` (look-ahead peak limiter) - none in lib yet.
+- `funvlog/frames.py:grade_chain` = build_vlog `grade_chain` (separate defaults).
+
+New persona keys (read with defaults): `vlog.fun_grade`, `vlog.fun_music_lufs` (-19). Existing used:
+`brand.*`, `platforms.default`, `audio.voice_lufs`, `export.audio_bitrate`.
+
+Lib requests:
+- `subs.cues_from_words`: Latin text loses the space after punctuation ("everyone,welcome"); build_fun
+  re-inserts it (`build_fun.captions`). Join rule should add a space when the next token starts with a
+  letter/digit and the text is not CJK.
+- `audio.loudnorm_2pass` falls back to dynamic mode on peaky mixes and overshoots true peak after AAC; an
+  `audio.limit(x, ceiling_db)` (see `funvlog/mix.py:limit`) or a pre-limit option would fix it for everyone.
+- `audio.mix_bed`: return/write the ducked music stem (or the gain curve) so callers can report the dip
+  (`funvlog/mix.py:measured_duck` recomputes it from the voice gain).
+- `beats.Beats.shift(seconds)`: music time -> video time copy (`funvlog/plan.py:shift_beats`).
+- `reframe.plan`: accept already-decoded frames / a frame iterator (the fun engine decodes each window twice:
+  once for face detection, once to render).

@@ -28,11 +28,22 @@ def main():
     ap.add_argument("track")
     ap.add_argument("out")
     ap.add_argument("--fade", type=float, default=2.0, help="music fade-in and fade-out seconds (default 2)")
-    ap.add_argument("--lufs", type=float, default=float((p.get("audio") or {}).get("loudness_lufs", -14)))
+    ap.add_argument("--lufs", type=float, default=None,
+                    help="target loudness (default: --platform profile, else persona audio.loudness_lufs, -14)")
+    ap.add_argument("--platform", help="platform[:orientation]: loudness target + length check from vstudio.platform")
     ap.add_argument("--ambient-db", type=float, default=None,
                     help="keep the video's own audio this many dB under the music bed (e.g. -12)")
     ap.add_argument("--track-start", type=float, default=0.0, help="skip this many seconds into the track")
     a = ap.parse_args()
+    if a.lufs is None:
+        if a.platform:
+            from vstudio import platform as P
+            prof = P.profile(a.platform)
+            a.lufs = float(prof.loudness["lufs"])
+            for w in P.check_length(prof, media.probe(a.video)["duration"]):
+                print("[warn]", w)
+        else:
+            a.lufs = float((p.get("audio") or {}).get("loudness_lufs", -14))
 
     info = media.probe(a.video)
     dur = info["duration"]

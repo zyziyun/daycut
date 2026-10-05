@@ -150,10 +150,18 @@ def main():
     ap.add_argument("--frames", nargs="*", default=[], help="other frames (4-5 recommended)")
     ap.add_argument("--base", help="wide frame for the darkened backing (default: hero)")
     ap.add_argument("--config", help="explicit layout JSON (see docstring)")
-    ap.add_argument("--size", default="1920x1080", help="WxH canvas, e.g. 1080x1920 for vertical")
+    ap.add_argument("--size", default=None, help="WxH canvas, e.g. 1080x1920 for vertical (default 1920x1080)")
+    ap.add_argument("--platform", help="size from vstudio.platform.cover_size, e.g. xiaohongshu:full -> 1080x1440")
     ap.add_argument("--title", help="optional scrapbook label (default: no text)")
     ap.add_argument("--scale", type=int, default=2, help="device scale (2 => 2x px output)")
     a = ap.parse_args()
+    if a.platform and not a.size:
+        from vstudio import platform as P
+        prof = P.profile(a.platform)
+        cw, ch = P.cover_size(prof)
+        a.size = f"{cw}x{ch}"
+        print(f"{prof.key}: cover {a.size}; keep any title inside {P.cover_title_safe(prof)}")
+    a.size = a.size or "1920x1080"
 
     if a.config:
         with open(a.config) as f:
