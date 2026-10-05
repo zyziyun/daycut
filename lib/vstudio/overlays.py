@@ -471,10 +471,69 @@ def progress_static(chapters, total, width=1920, y=1000, x0=80, bar_w=None, scal
 # ---------------------------------------------------------------- HyperFrames / HTML snippets
 HF_GEO = {
     "horizontal": dict(W=1920, H=1080, scrim_t=990, scrim_h=90, bar_l=80, bar_t=1046, bar_w=1760, chap_t=1012,
-                       cue_lr=160, cue_t=922, cue_fs=50, chap_fs=22),
+                       cue_lr=160, cue_t=922, cue_fs=50, chap_fs=22,
+                       top_scrim_t=0, top_scrim_h=96, top_bar_t=30, top_chap_t=44),
     "vertical": dict(W=1080, H=1920, scrim_t=1580, scrim_h=120, bar_l=60, bar_t=1640, bar_w=960, chap_t=1606,
-                     cue_lr=60, cue_t=820, cue_fs=54, chap_fs=24),
+                     cue_lr=60, cue_t=820, cue_fs=54, chap_fs=24,
+                     top_scrim_t=110, top_scrim_h=150, top_bar_t=160, top_chap_t=176),
 }
+
+
+def _label_w(label, fs):
+    """Rough rendered width (px) of a chapter label: CJK 1 em, other 0.56 em, +12 % for the active scale."""
+    return sum(fs if ord(c) >= 0x2E80 else 0.56 * fs for c in str(label)) * 1.12
+
+
+def _shorten(label, max_w, fs):
+    label = str(label)
+    if _label_w(label, fs) <= max_w:
+        return label
+    for n in range(len(label) - 1, 1, -1):
+        cand = label[:n].rstrip() + "…"
+        if _label_w(cand, fs) <= max_w:
+            return cand
+    return label[:2] + "…" if len(label) > 2 else label
+
+
+def layout_chapter_labels(chapters, start, total, bar_l, bar_w, fs, gap=12, max_rows=2):
+    """Collision handling for chapter labels centred on their chapter span of a progress bar.
+
+    Overlapping labels are (1) shortened with "…" to their own span, then (2) staggered onto a second
+    row, then (3) merged (the shorter chapter's label hidden). Returns (labels, rows, notes) where
+    notes lists what was done (empty when nothing collided)."""
+    ch = _norm_chapters(chapters)
+    span = max(1e-9, total - start)
+    X = lambda t: bar_l + (t - start) / span * bar_w  # noqa: E731
+    cx = [(X(a) + X(b)) / 2 for a, b, _ in ch]
+    labels = [str(lab) for _, _, lab in ch]
+    rows = [0] * len(ch)
+    notes = []
+
+    def clash(i, j, labs):
+        return abs(cx[j] - cx[i]) < (_label_w(labs[i], fs) + _label_w(labs[j], fs)) / 2 + gap
+
+    if not any(clash(i, i + 1, labels) for i in range(len(ch) - 1)):
+        return labels, rows, notes
+    for i, (a, b, _) in enumerate(ch):                          # 1. shorten to the own span
+        near = (i and clash(i - 1, i, labels)) or (i + 1 < len(ch) and clash(i, i + 1, labels))
+        if near:
+            new = _shorten(labels[i], max(X(b) - X(a) - gap, 2.2 * fs), fs)
+            if new != labels[i]:
+                notes.append(f"shortened {labels[i]!r} -> {new!r}")
+                labels[i] = new
+    if max_rows > 1:                                            # 2. stagger
+        for i in range(1, len(ch)):
+            if rows[i - 1] == 0 and clash(i - 1, i, labels):
+                rows[i] = 1
+        if any(rows):
+            notes.append(f"staggered {sum(rows)} label(s) onto a second row")
+    for i in range(len(ch)):                                    # 3. merge what still collides on a row
+        for j in range(i + 1, len(ch)):
+            if rows[i] == rows[j] and labels[i] and labels[j] and clash(i, j, labels):
+                k = i if (ch[i][1] - ch[i][0]) < (ch[j][1] - ch[j][0]) else j
+                notes.append(f"hid label {labels[k]!r} (chapter too short)")
+                labels[k] = ""
+    return labels, rows, notes
 
 
 def _geo(geo):
@@ -485,13 +544,26 @@ def _geo(geo):
     return g
 
 
-def hf_progress(chapters, start, total, geo="horizontal", font_family="CJK", track_index=8, timeline_var="tl"):
-    """Progress bar + chapter labels on a bottom scrim (labels are unreadable over bright footage without it).
-    Returns {"css", "html", "js"}; js expects a paused GSAP timeline named `timeline_var`.
-    `start`..`total` is the bar span in composition seconds; chapters are (start, end, label) in the same clock."""
+def hf_progress(chapters, start, total, geo="horizontal", font_family="CJK", track_index=8, timeline_var="tl",
+                position="bottom", collisions="auto"):
+    """Progress bar + chapter labels on a scrim (labels are unreadable over bright footage without it).
+    Returns {"css", "html", "js"} (+ "notes": collision fixes); js expects a paused GSAP timeline named
+    `timeline_var`. `start`..`total` is the bar span in composition seconds; chapters are (start, end, label)
+    in the same clock.
+    position: "bottom" (scrim fades up from the bottom, labels above the bar) or "top" (scrim fades down
+    from ``top_scrim_t``, labels under the bar; geo keys top_scrim_t/top_scrim_h/top_bar_t/top_chap_t).
+    collisions: "auto" shortens / staggers / merges labels that would overlap (``layout_chapter_labels``)
+    and warns; "off" places them as given."""
+    import warnings
     g = _geo(geo); B = brand()
+    top = position == "top"
+    if position not in ("top", "bottom"):
+        raise ValueError("position must be 'top' or 'bottom'")
+    if top:
+        g.update(scrim_t=g["top_scrim_t"], scrim_h=g["top_scrim_h"], bar_t=g["top_bar_t"], chap_t=g["top_chap_t"])
     acc = "#%02X%02X%02X" % B["accent"]; acc2 = "#%02X%02X%02X" % B.get("accent_soft", B["accent"])
-    css = f"""#bar-scrim {{ position: absolute; left: 0; right: 0; top: {g["scrim_t"]}px; height: {g["scrim_h"]}px; background: linear-gradient(to bottom, rgba(5,8,16,0), rgba(5,8,16,.72) 55%, rgba(5,8,16,.85)); }}
+    grad = "to top" if top else "to bottom"
+    css = f"""#bar-scrim {{ position: absolute; left: 0; right: 0; top: {g["scrim_t"]}px; height: {g["scrim_h"]}px; background: linear-gradient({grad}, rgba(5,8,16,0), rgba(5,8,16,.72) 55%, rgba(5,8,16,.85)); }}
 #bar {{ position: absolute; left: {g["bar_l"]}px; top: {g["bar_t"]}px; width: {g["bar_w"]}px; height: 4px; background: rgba(255,255,255,.22); border-radius: 2px; }}
 #bar-fill {{ position: absolute; left: 0; top: 0; width: {g["bar_w"]}px; height: 4px; background: var(--accent, {acc}); border-radius: 2px; transform-origin: 0 50%; }}
 .tick {{ position: absolute; top: -5px; width: 2px; height: 14px; background: rgba(255,255,255,.75); }}
@@ -500,8 +572,17 @@ def hf_progress(chapters, start, total, geo="horizontal", font_family="CJK", tra
     html = (f'<div id="barwrap" class="clip full" data-start="{start:.3f}" data-duration="{total - start:.3f}" '
             f'data-track-index="{track_index}" style="pointer-events:none">\n'
             f'  <div id="bar-scrim"></div><div id="bar"><div id="bar-fill"></div></div><div id="chaps"></div>\n</div>')
+    ch = _norm_chapters(chapters)
+    labels, rows, notes = [lab for _, _, lab in ch], [0] * len(ch), []
+    if collisions == "auto":
+        labels, rows, notes = layout_chapter_labels(ch, start, total, g["bar_l"], g["bar_w"], g["chap_fs"])
+        if notes:
+            warnings.warn("hf_progress chapter labels: " + "; ".join(notes), stacklevel=2)
     data = dict(H=start, TOTAL=total, BAR_L=g["bar_l"], BAR_W=g["bar_w"], ACC2=acc2,
-                CHAP=[[round(a, 3), round(b, 3), lab] for a, b, lab in _norm_chapters(chapters)])
+                CHAP=[[round(a, 3), round(b, 3), lab] for (a, b, _), lab in zip(ch, labels)])
+    if any(rows):
+        data["ROWS"] = rows
+        data["ROW_DY"] = round(g["chap_fs"] * 1.3 * (1 if top else -1), 1)
     js = f"""(function () {{
 const P = {json.dumps(data, ensure_ascii=False)};
 const chaps = document.querySelector("#chaps"), bar = document.querySelector("#bar"), span = P.TOTAL - P.H;
@@ -510,13 +591,14 @@ P.CHAP.forEach(([s, e, label], i) => {{
   if (i) {{ const tk = document.createElement("div"); tk.className = "tick"; tk.style.left = (X(s) - P.BAR_L) + "px"; bar.appendChild(tk); }}
   const c = document.createElement("div"); c.className = "chap"; c.id = "chap" + i; c.textContent = label;
   c.style.left = ((X(s) + X(e)) / 2) + "px"; chaps.appendChild(c);
+  if (P.ROWS && P.ROWS[i]) c.style.marginTop = (P.ROWS[i] * P.ROW_DY) + "px";
   {timeline_var}.to(c, {{ color: P.ACC2, fontWeight: 700, scale: 1.12, duration: 0.2 }}, s);
   {timeline_var}.to(c, {{ color: "rgba(255,255,255,0.9)", fontWeight: 400, scale: 1, duration: 0.2 }}, e);
 }});
 {timeline_var}.fromTo("#bar-fill", {{ scaleX: 0 }}, {{ scaleX: 1, duration: span, ease: "none" }}, P.H);
 }})();
 """
-    return {"css": css, "html": html, "js": js}
+    return {"css": css, "html": html, "js": js, "notes": notes}
 
 
 def hf_cue_css(geo="horizontal", font_family="CJK", highlight=None):

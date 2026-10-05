@@ -4,6 +4,7 @@
     audio.loudnorm_2pass("joined.mp4", "final.mp4")          # persona audio.loudness_lufs (-14), linear
     audio.normalize_stem("vo.wav", "vo_n.wav")               # persona audio.voice_lufs (-16)
     audio.mix_bed("vo_n.wav", "music.mp3", "mix.wav", duck_db=-10)
+    y = audio.limit(x, ceiling_dbtp=-1.5)                    # 4x-oversampled true-peak limiter
     env, hop = audio.rms_envelope(x, sr)                     # 10 ms hop, dB or linear
 
 Every stem this module writes is 48 kHz STEREO: mono is up-mixed BEFORE loudness is measured,
@@ -14,6 +15,7 @@ re-initialises the audio stream. Unified from polish ``polish.measure/step_loudn
 talkinghead ``cut_pass1``/``strict_pass`` RMS and ``compose.sfx_bank``.
 """
 import json
+import math
 import os
 import re
 import shutil
@@ -126,7 +128,7 @@ def loudnorm_filter(m, lufs, tp=-1.5, lra=11.0):
             f"linear=true:print_format=summary")
 
 
-def loudnorm_2pass(src, dst, lufs=None, tp=-1.5, lra=11.0, audio_bitrate=None, video="copy"):
+def loudnorm_2pass(src, dst, lufs=None, tp=-1.5, lra=11.0, audio_bitrate=None, video="copy", limit=True):
     """Two-pass loudness normalisation of ``src`` -> ``dst`` (48 kHz stereo).
 
     Args: lufs target (default persona audio.loudness_lufs, -14); tp true-peak ceiling; lra;
@@ -134,10 +136,17 @@ def loudnorm_2pass(src, dst, lufs=None, tp=-1.5, lra=11.0, audio_bitrate=None, v
     .m4a/.mp4/.mov/.mkv -> AAC (persona export.audio_bitrate) + video copy + faststart.
     Single-pass loudnorm undershoots on short or quiet cuts, hence measure-then-apply in linear mode
     and resample back to 48 kHz (loudnorm works at 192 kHz internally).
+    limit=True (default): pure gain to ``lufs`` followed by the true-peak limiter (``limit``, 4x
+    oversampled, look-ahead) at ``tp`` instead of loudnorm's own dynamic fallback, re-measured after
+    encoding (AAC overshoot is taken back by lowering the ceiling, loudness the limiter took by raising
+    the gain; up to 4 rounds). The dict then also carries ``output_i`` / ``output_tp`` /
+    ``limit_ceiling``. limit=False is the previous ffmpeg-loudnorm-only path (byte-identical).
     Returns the first-pass measurement dict. From polish ``step_loudness``, call-clips, longform render.py.
     """
     lufs = float(_persona_audio().get("loudness_lufs", -14) if lufs is None else lufs)
     m = measure_loudness(src, lufs, tp, lra)
+    if limit and np.isfinite(m["input_i"]):
+        return _loudnorm_limited(src, dst, m, lufs, tp, audio_bitrate, video)
     if not np.isfinite(m["input_i"]):
         af = _STEREO48                       # silence: nothing to normalise
     else:
@@ -159,6 +168,206 @@ def loudnorm_2pass(src, dst, lufs=None, tp=-1.5, lra=11.0, audio_bitrate=None, v
         cmd += [dst]
     media.run(cmd)
     return m
+
+
+def _encode_audio(src, wav, dst, audio_bitrate=None, video="copy"):
+    """Mux a processed 48 kHz stereo ``wav`` into ``dst``: .wav -> PCM s16 copy; else AAC (+ the
+    first video stream of ``src`` stream-copied, like ``loudnorm_2pass``)."""
+    ext = os.path.splitext(dst)[1].lower()
+    if ext == ".wav":
+        media.run(["ffmpeg", "-y", "-i", wav, "-ar", str(SR), "-ac", "2", "-c:a", "pcm_s16le", dst])
+        return dst
+    info = media.probe(src)
+    br = audio_bitrate or _persona_export_bitrate()
+    if info["has_video"] and video == "copy" and ext not in (".m4a", ".aac"):
+        cmd = ["ffmpeg", "-y", "-i", src, "-i", wav, "-map", "0:v:0", "-c:v", "copy", "-map", "1:a:0"]
+    else:
+        cmd = ["ffmpeg", "-y", "-i", wav, "-vn", "-map", "0:a:0"]
+    cmd += ["-ar", str(SR), "-ac", "2", "-c:a", "aac", "-b:a", br]
+    if ext in (".mp4", ".m4a", ".mov"):
+        cmd += ["-movflags", "+faststart"]
+    media.run(cmd + [dst])
+    return dst
+
+
+def _filt(b, a, x):
+    try:
+        from scipy.signal import lfilter
+        return lfilter(b, a, x, axis=0)
+    except ImportError:                                  # plain biquad loop (slow, but dependency-free)
+        y = np.zeros_like(x)
+        x1 = x2 = y1 = y2 = np.zeros(x.shape[1:])
+        for i in range(len(x)):
+            y[i] = b[0] * x[i] + b[1] * x1 + b[2] * x2 - a[1] * y1 - a[2] * y2
+            x2, x1, y2, y1 = x1, x[i], y1, y[i]
+        return y
+
+
+def integrated_lufs(x, sr=SR):
+    """EBU R128 / BS.1770 gated integrated loudness of float audio (n,) / (n, ch) at 48 kHz
+    (K-weighting, 400 ms blocks, 75 % overlap, -70 LUFS absolute and -10 LU relative gates).
+    Agrees with ffmpeg ``loudnorm``'s input_i to ~0.1 LU. -inf for silence."""
+    if sr != 48000:
+        raise ValueError("integrated_lufs expects 48 kHz audio")
+    x = np.asarray(x, np.float64)
+    if x.ndim == 1:
+        x = x[:, None]
+    z = _filt([1.53512485958697, -2.69169618940638, 1.19839281085285], [1.0, -1.69065929318241, 0.73248077421585], x)
+    z = _filt([1.0, -2.0, 1.0], [1.0, -1.99004745483398, 0.99007225036621], z)
+    p = (z ** 2).sum(1)
+    blk, hop = int(0.4 * sr), int(0.1 * sr)
+    if len(p) < blk:
+        return float("-inf")
+    c = np.concatenate([[0.0], np.cumsum(p)])
+    st = np.arange(0, len(p) - blk + 1, hop)
+    ms = (c[st + blk] - c[st]) / blk
+    lk = -0.691 + 10 * np.log10(np.maximum(ms, 1e-20))
+    ms = ms[lk > -70]
+    if not len(ms):
+        return float("-inf")
+    rel = -0.691 + 10 * np.log10(ms.mean()) - 10
+    ms = ms[-0.691 + 10 * np.log10(ms) > rel]
+    return float(-0.691 + 10 * np.log10(ms.mean()))
+
+
+def _solve_gain(x, lufs, ceil, gain, iters=6, tol=0.05):
+    """Gain (dB) so that integrated_lufs(limit(x * gain)) == lufs (secant on the limited loudness)."""
+    hist = []
+    y = None
+    for _ in range(iters):
+        y = limit(x * _db(gain), ceiling_dbtp=ceil)
+        li = integrated_lufs(y)
+        if not np.isfinite(li):
+            break
+        hist.append((gain, li))
+        d = lufs - li
+        if abs(d) <= tol:
+            break
+        slope = 1.0
+        if len(hist) > 1 and abs(hist[-1][0] - hist[-2][0]) > 1e-3:
+            slope = (hist[-1][1] - hist[-2][1]) / (hist[-1][0] - hist[-2][0])
+        gain += float(np.clip(d / max(0.1, min(1.0, slope)), -12.0, 24.0))
+    return gain, y
+
+
+def _loudnorm_limited(src, dst, m, lufs, tp, audio_bitrate=None, video="copy", rounds=4):
+    x = decode_audio(src, sr=SR, channels=2)
+    gain = lufs - m["input_i"]
+    lossy = not dst.lower().endswith(".wav")
+    ceil = tp - (0.3 if lossy else 0.0)          # lossy codecs overshoot a little; corrected below
+    target = lufs
+    fd, tmp = tempfile.mkstemp(suffix=".wav")
+    os.close(fd)
+    best = last = None
+    try:
+        for _ in range(rounds):
+            gain, y = _solve_gain(x, target, ceil, gain)
+            write_wav(tmp, y, SR)
+            _encode_audio(src, tmp, dst, audio_bitrate, video)
+            o = measure_loudness(dst, lufs, tp)
+            d_i, d_tp = lufs - o["input_i"], o["input_tp"] - tp
+            if os.environ.get("VSTUDIO_DEBUG_LIMIT"):
+                print(f"limit round: gain {gain:.2f} ceil {ceil:.2f} -> I {o['input_i']} TP {o['input_tp']}")
+            bad = max(0.0, abs(d_i) - 0.2) + 2 * max(0.0, d_tp)
+            last = (bad, gain, ceil, o)
+            if best is None or bad < best[0]:
+                best = last
+            if bad == 0.0:
+                break
+            if d_tp > 0.0:
+                ceil -= d_tp + 0.1
+            if abs(d_i) > 0.2:                   # codec / meter disagreement: move the target
+                target += d_i
+        if best is not last:                     # a later round ended worse: re-render the best one
+            y = limit(x * _db(best[1]), ceiling_dbtp=best[2])
+            write_wav(tmp, y, SR)
+            _encode_audio(src, tmp, dst, audio_bitrate, video)
+        _, gain, ceil, o = best
+        m.update(output_i=o["input_i"], output_tp=o["input_tp"], limit_ceiling=round(ceil, 2), gain_db=round(gain, 2))
+    finally:
+        os.remove(tmp)
+    return m
+
+
+# ------------------------------------------------------------------ true-peak limiter
+def _tp_kernel(oversample=4, taps=32):
+    N = oversample * taps + 1                       # odd: centre tap at a whole input sample
+    k = np.arange(N) - (N - 1) / 2
+    return (np.sinc(k / oversample) * np.kaiser(N, 5.0)).astype(np.float64), (N - 1) // (2 * oversample)
+
+
+def true_peak(x, oversample=4):
+    """Per-sample true peak (n,) of float audio (n,) or (n, ch): max |x| over the ``oversample``
+    interpolated points in [i, i+1) (windowed-sinc polyphase, ITU-R BS.1770 style), max over channels."""
+    x = np.asarray(x, np.float32)
+    if x.ndim == 1:
+        x = x[:, None]
+    h, d = _tp_kernel(oversample)
+    n = len(x)
+    out = np.abs(x).max(1).astype(np.float64)
+    if n == 0 or oversample <= 1:
+        return out
+    for c in range(x.shape[1]):
+        xc = x[:, c].astype(np.float64)
+        for p in range(1, oversample):
+            y = np.convolve(xc, h[p::oversample])         # y[q] = signal at time q - d + p/os
+            seg = np.abs(y[d:d + n])
+            out = np.maximum(out, seg)
+    return out
+
+
+def limit(x, ceiling_dbtp=-1.5, lookahead_ms=5.0, release_ms=50.0, sr=SR, out=None, oversample=4, block=16):
+    """Look-ahead true-peak limiter.
+
+    x: float array (n,) / (n, ch) at ``sr``, or a media path (decoded to 48 kHz stereo).
+    The gain needed to keep every 4x-oversampled peak under ``ceiling_dbtp`` is held over the
+    look-ahead, ramped in over ``lookahead_ms`` (no click, no overshoot) and released with a one-pole
+    ``release_ms``. Sections below the ceiling pass untouched. A second pass catches the tiny
+    inter-sample overshoot the gain modulation itself can create.
+    Returns the limited array, or ``out`` (written: .wav PCM, else AAC) when given.
+    """
+    if isinstance(x, (str, os.PathLike)):
+        x, sr = decode_audio(str(x), sr=SR, channels=2), SR
+    x = np.asarray(x, np.float32)
+    y = x
+    c = 10 ** (ceiling_dbtp / 20)
+    for _ in range(3):
+        tp = true_peak(y, oversample)
+        if len(tp) == 0 or tp.max() <= c * 1.0005:
+            break
+        greq = np.minimum(1.0, c / np.maximum(tp, 1e-12))
+        n, B = len(greq), max(1, int(block))
+        nb = -(-n // B)
+        gp = np.ones(nb * B)
+        gp[:n] = greq
+        gb = gp.reshape(nb, B).min(1)
+        L = max(1, int(math.ceil(lookahead_ms / 1000 * sr / B)))
+        from numpy.lib.stride_tricks import sliding_window_view as swv
+        hold = swv(np.pad(gb, (L, L), constant_values=1.0), 2 * L + 1).min(1)
+        cs = np.concatenate([[0.0], np.cumsum(np.pad(hold, (L, 0), constant_values=1.0))])
+        att = (cs[L + 1:] - cs[:-L - 1]) / (L + 1)            # mean of hold[k-L..k] <= gb[k]
+        rel = 1 - math.exp(-B / max(1.0, release_ms / 1000 * sr))
+        g = np.empty(nb)
+        cur = 1.0
+        for k, v in enumerate(att):
+            cur = v if v < cur else cur + (v - cur) * rel
+            g[k] = cur
+        gs = np.interp(np.arange(n), np.arange(nb) * B + (B - 1) / 2, g)
+        gs = np.minimum(gs, greq).astype(np.float32)
+        y = y * (gs[:, None] if y.ndim > 1 else gs)
+        c *= 0.999                                            # next round (if any) aims a hair lower
+    if out is None:
+        return y
+    if out.lower().endswith(".wav"):
+        return write_wav(out, y, sr)
+    fd, tmp = tempfile.mkstemp(suffix=".wav")
+    os.close(fd)
+    try:
+        write_wav(tmp, y, sr)
+        media.run(["ffmpeg", "-y", "-i", tmp, "-c:a", "aac", "-b:a", _persona_export_bitrate(), "-ar", str(SR), out])
+    finally:
+        os.remove(tmp)
+    return out
 
 
 def _persona_export_bitrate():
@@ -275,9 +484,58 @@ def _db(g):
     return 10 ** (g / 20)
 
 
+def duck_curve(key, duck_db, n=None, attack=0.08, release=0.40, threshold_db=None, sr=SR):
+    """Per-sample linear gain (n,) that dips by ``duck_db`` while ``key`` (float audio at ``sr``) is
+    active: one-pole attack/release in dB on the 10 ms RMS, looked ahead by ``attack``.
+
+    threshold_db: absolute RMS threshold (use one for stems that are digital silence between events);
+    None -> recording floor + 30 % of the floor->speech range (the ``mix_bed`` default).
+    n: output length in samples (default len(key)). This is the curve ``mix_bed`` applies."""
+    key = np.asarray(key, np.float32)
+    n = len(key) if n is None else int(n)
+    if not duck_db or len(key) == 0 or not np.any(key):
+        return np.ones(n, np.float32)
+    env, hop = rms_envelope(key, sr, hop=0.01, win=0.03)
+    if threshold_db is None:
+        floor, speech = np.percentile(env, 8), np.percentile(env, 70)
+        threshold_db = floor + 0.30 * (speech - floor)
+    tgt = np.where(env > threshold_db, duck_db, 0.0)
+    a_k, r_k = 1 - np.exp(-hop / max(attack, 1e-3)), 1 - np.exp(-hop / max(release, 1e-3))
+    cur, curve = 0.0, np.empty(len(tgt), np.float32)
+    for i, x in enumerate(tgt):
+        cur += (x - cur) * (a_k if x < cur else r_k)
+        curve[i] = cur
+    # look-ahead by the attack time so the dip lands with the first syllable, not after it
+    shift = int(round(attack / hop))
+    curve = np.concatenate([curve[shift:], np.full(shift, curve[-1] if len(curve) else 0.0)])
+    t = np.arange(n) / sr
+    return _db(np.interp(t, np.arange(len(curve)) * hop + 0.015, curve)).astype(np.float32)
+
+
+def clip_audio(src, dst, start=0.0, dur=None, speed=1.0, fade_in=0.0, fade_out=0.0, sr=SR):
+    """Cut a clip's sound: ``dur`` output seconds from ``start`` of ``src`` at ``speed`` (atempo,
+    pitch kept), padded/trimmed to exactly ``dur``, with fades -> 48 kHz stereo PCM wav.
+    (photo-story ``audiomix._clip_wav``.) Returns dst."""
+    af = [media.atempo_chain(speed)] if abs(float(speed) - 1) > 1e-3 else []
+    af += [f"aresample={sr}"]
+    if dur is not None:
+        af += [f"apad=whole_dur={dur:.3f}", f"atrim=0:{dur:.3f}"]
+    if fade_in and fade_in > 0:
+        af.append(f"afade=t=in:d={fade_in:.3f}")
+    if fade_out and fade_out > 0 and dur is not None:
+        af.append(f"afade=t=out:st={max(0.0, dur - fade_out):.3f}:d={fade_out:.3f}")
+    cmd = ["ffmpeg", "-y"]
+    if start:
+        cmd += ["-ss", f"{start:.3f}"]
+    if dur is not None:
+        cmd += ["-t", f"{dur * speed + 0.2:.3f}"]
+    media.run(cmd + ["-i", src, "-vn", "-af", ",".join(a for a in af if a), "-ac", "2", "-c:a", "pcm_s16le", dst])
+    return dst
+
+
 def mix_bed(voice, music, out, duck_db=-10.0, music_lufs=None, voice_lufs=None, lufs=None, carve=False,
             fade_in=2.0, fade_out=3.0, attack=0.08, release=0.40, threshold_db=None, music_start=0.0,
-            ambient_db=None):
+            ambient_db=None, return_stems=False):
     """Mix a looping music bed under a voice track with volume-automation ducking -> 48 kHz stereo.
 
     Args:
@@ -293,7 +551,9 @@ def mix_bed(voice, music, out, duck_db=-10.0, music_lufs=None, voice_lufs=None, 
         30% of the floor->speech range, the find_disfluencies rule).
       music_start: skip into the track; ambient_db: keep the voice file's audio as "ambience" at this
         gain instead of treating it as speech (vlog ``add_music --ambient-db``): no ducking.
-    Writes ``out`` (.wav PCM, or AAC if another extension). Returns out.
+    Writes ``out`` (.wav PCM, or AAC if another extension). Returns out, or with return_stems=True
+    ``(out, {"music": ducked+faded music (n, 2), "voice": levelled voice (n, 2), "gain": music gain
+    (n,) linear, "duck": duck-only gain (n,), "sr": 48000})`` (before any final ``lufs`` loudnorm).
     From vlog ``add_music`` (loop+fade+loudnorm), photo-story ``render.mix_audio`` (bed volume),
     explainer ``make_bgm_bed`` (-30 LUFS bed).
     """
@@ -322,21 +582,10 @@ def mix_bed(voice, music, out, duck_db=-10.0, music_lufs=None, voice_lufs=None, 
     if fade_out > 0 and n:
         g *= np.clip((t[-1] - t) / fade_out, 0, 1)
     # ducking curve from the voice envelope (one-pole attack/release in dB)
+    duck = np.ones(n, np.float32)
     if duck_db and ambient_db is None:
-        env, hop = rms_envelope(v, SR, hop=0.01, win=0.03)
-        if threshold_db is None:
-            floor, speech = np.percentile(env, 8), np.percentile(env, 70)
-            threshold_db = floor + 0.30 * (speech - floor)
-        tgt = np.where(env > threshold_db, duck_db, 0.0)
-        a_k, r_k = 1 - np.exp(-hop / max(attack, 1e-3)), 1 - np.exp(-hop / max(release, 1e-3))
-        cur, curve = 0.0, np.empty(len(tgt), np.float32)
-        for i, x in enumerate(tgt):
-            cur += (x - cur) * (a_k if x < cur else r_k)
-            curve[i] = cur
-        # look-ahead by the attack time so the dip lands with the first syllable, not after it
-        shift = int(round(attack / hop))
-        curve = np.concatenate([curve[shift:], np.full(shift, curve[-1] if len(curve) else 0.0)])
-        g *= _db(np.interp(t, np.arange(len(curve)) * hop + 0.015, curve)).astype(np.float32)
+        duck = duck_curve(v, duck_db, n, attack=attack, release=release, threshold_db=threshold_db)
+        g *= duck
     mix = v + m * g[:, None]
     tmp = out if out.lower().endswith(".wav") and lufs is None else tempfile.mktemp(suffix=".wav")
     write_wav(tmp, mix, SR)
@@ -346,6 +595,8 @@ def mix_bed(voice, music, out, duck_db=-10.0, music_lufs=None, voice_lufs=None, 
     elif tmp != out:
         media.run(["ffmpeg", "-y", "-i", tmp, "-c:a", "aac", "-b:a", _persona_export_bitrate(), "-ar", str(SR), out])
         os.remove(tmp)
+    if return_stems:
+        return out, {"music": m * g[:, None], "voice": v, "gain": g, "duck": duck, "sr": SR}
     return out
 
 

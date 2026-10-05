@@ -457,3 +457,106 @@ def to_pil(img, bgr=None):
     if bgr:
         a = a[..., [2, 1, 0] + ([3] if a.shape[2] == 4 else [])]
     return Image.fromarray(np.clip(a, 0, 255).astype(np.uint8))
+
+
+# ---------------------------------------------------------------- redaction
+def _redact_frame(frame, rects, mode="blur", color=None, factor=16):
+    """In place on a numpy frame (H, W, C): 'blur' (1/factor downscale, upscale, blur: no glyph
+    survives), 'pixelate' (blocks of ``factor`` px), 'cover' (fill with ``color`` or the region's
+    median colour)."""
+    from PIL import Image as _I
+    H, W = frame.shape[:2]
+    C = frame.shape[2] if frame.ndim == 3 else 1
+    for r in rects:
+        x, y, w, h = (int(round(v)) for v in r[:4])
+        x0, y0, x1, y1 = max(0, x), max(0, y), min(W, x + w), min(H, y + h)
+        if x1 <= x0 or y1 <= y0:
+            continue
+        reg = frame[y0:y1, x0:x1]
+        if mode == "cover":
+            if color is not None:
+                c = np.asarray(rgb(color) if isinstance(color, str) else color, float)[:C]
+            else:
+                c = np.median(reg.reshape(-1, C), axis=0)
+            reg[:] = c.astype(frame.dtype)
+            continue
+        sw, sh = max(1, (x1 - x0) // factor), max(1, (y1 - y0) // factor)
+        try:
+            import cv2
+            small = cv2.resize(reg, (sw, sh), interpolation=cv2.INTER_AREA)
+            if mode == "pixelate":
+                reg[:] = cv2.resize(small, (x1 - x0, y1 - y0), interpolation=cv2.INTER_NEAREST).reshape(reg.shape)
+            else:
+                reg[:] = cv2.GaussianBlur(cv2.resize(small, (x1 - x0, y1 - y0), interpolation=cv2.INTER_LINEAR),
+                                          (0, 0), 3).reshape(reg.shape)
+        except ImportError:
+            im = _I.fromarray(np.ascontiguousarray(reg).squeeze())
+            small = im.resize((sw, sh), _I.BOX)
+            if mode == "pixelate":
+                big = small.resize((x1 - x0, y1 - y0), _I.NEAREST)
+            else:
+                big = small.resize((x1 - x0, y1 - y0), _I.BILINEAR).filter(ImageFilter.GaussianBlur(3))
+            reg[:] = np.asarray(big).reshape(reg.shape)
+    return frame
+
+
+def redact_rects(frame_or_video, rects, mode="blur", out=None, color=None, factor=16, start=None, end=None,
+                 encode_args=None):
+    """Hide rectangles (name labels, bookmark bars, e-mails) in a frame or a whole video.
+
+    frame_or_video: numpy frame (H, W, 3|4, any channel order; changed IN PLACE and returned) or a
+    video path (then ``out`` is required; ffmpeg crop/scale/boxblur/overlay or drawbox graph, audio
+    copied, ``media.delivery_args`` video). rects: [(x, y, w, h), ...] in px.
+    mode: "blur" (default; 1/16 downscale + blur), "pixelate" (blocks), "cover" (``color`` or, for a
+    frame, each region's median colour; for a video the median of a middle frame).
+    start/end: video only, seconds during which the rects are hidden (default: the whole video).
+    (call-clips ``layout.mask_names``.) Returns the frame or ``out``."""
+    if mode not in ("blur", "pixelate", "cover"):
+        raise ValueError("mode must be 'blur', 'pixelate' or 'cover'")
+    if not isinstance(frame_or_video, (str, os.PathLike)):
+        return _redact_frame(frame_or_video, rects, mode, color, factor)
+    from . import media
+    if out is None:
+        raise ValueError("redact_rects(video, ...) needs out=")
+    src = os.fspath(frame_or_video)
+    rects = [[int(round(v)) for v in r[:4]] for r in rects]
+    if not rects:
+        media.run(["ffmpeg", "-y", "-i", src, "-c", "copy", os.fspath(out)])
+        return out
+    en = ""
+    if start is not None or end is not None:
+        en = f":enable='between(t,{float(start or 0):.3f},{float(end if end is not None else 1e9):.3f})'"
+    info = media.probe(src)
+    W, H = info.get("display_w") or info.get("w"), info.get("display_h") or info.get("h")
+    rects = [[max(0, x), max(0, y), min(w, W - max(0, x)), min(h, H - max(0, y))] for x, y, w, h in rects]
+    rects = [r for r in rects if r[2] > 1 and r[3] > 1]
+    if mode == "cover":
+        cols = []
+        if color is None:
+            import tempfile
+            with tempfile.TemporaryDirectory() as td:
+                png = os.path.join(td, "f.png")
+                media.grab_frame(src, (info.get("duration") or 0) / 2, png)
+                fr = np.asarray(Image.open(png).convert("RGB"))
+            for x, y, w, h in rects:
+                c = np.median(fr[y:y + h, x:x + w].reshape(-1, 3), axis=0).astype(int)
+                cols.append("0x%02X%02X%02X" % tuple(c))
+        else:
+            c = rgb(color) if isinstance(color, str) else tuple(color)[:3]
+            cols = ["0x%02X%02X%02X" % tuple(c)] * len(rects)
+        graph = "[0:v]" + ",".join(f"drawbox=x={x}:y={y}:w={w}:h={h}:color={c}:t=fill{en}"
+                                   for (x, y, w, h), c in zip(rects, cols)) + "[v]"
+    else:
+        n = len(rects)
+        parts = [f"[0:v]split={n + 1}[b0]" + "".join(f"[s{i}]" for i in range(n))]
+        for i, (x, y, w, h) in enumerate(rects):
+            sw, sh = max(2, w // factor), max(2, h // factor)
+            post = f"scale={w}:{h}:flags=neighbor" if mode == "pixelate" else f"scale={w}:{h},boxblur=3:1"
+            parts.append(f"[s{i}]crop={w}:{h}:{x}:{y},scale={sw}:{sh}:flags=area,{post}[r{i}]")
+        for i, (x, y, w, h) in enumerate(rects):
+            parts.append(f"[b{i}][r{i}]overlay={x}:{y}{en}[b{i + 1}]")
+        graph = ";".join(parts).rsplit(f"[b{n}]", 1)[0] + "[v]"
+    args = list(encode_args) if encode_args is not None else media.delivery_args(audio=None)
+    media.run(["ffmpeg", "-y", "-i", src, "-filter_complex", graph, "-map", "[v]", "-map", "0:a?", *args,
+               "-c:a", "copy", os.fspath(out)])
+    return out

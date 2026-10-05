@@ -92,20 +92,24 @@ def subtitles_html(start, duration, container="subs", track=7):
 
 
 # ---------------------------------------------------------------- camera / zoom
-def split_screen(windows, inset, x=0, y=0, target="#face", dur=0.7, lead=0.15, tail=0.3, bridge=0.2, tl="tl"):
+def split_screen(windows, inset, x=0, y=0, target="#face", dur=0.7, lead=0.15, tail=0.3, bridge=0.2, tl="tl",
+                 scale=None):
     """Split screen: the full-frame `target` (a wrapper around the talking-head video) is clipped to `inset`
     (CSS clip-path inset(...)) and slid by (x, y) for each [start, end] window, then restored. Windows closer
     than `bridge` s are merged so the face does not bounce. Put the other half (cards, a screen recording)
-    in the freed area."""
+    in the freed area. scale: optional zoom of the clipped band (transform-origin 0 0; < 1 shows more of
+    the frame in the same band, > 1 tighter); `inset` and (x, y) are in the unscaled element's px."""
     W = _v(windows)
+    sc_in = f", scale: {_v(scale)}" if scale is not None else ""
+    sc_out = ", scale: 1" if scale is not None else ""
     css = f"{target} {{ transform-origin: 0 0; }}\n"
     js = ('const FULL = "inset(0px 0px 0px 0px round 0px)";\n'
-          f'{tl}.set("{target}", {{ clipPath: FULL, x: 0, y: 0 }}, 0);\n'
+          f'{tl}.set("{target}", {{ clipPath: FULL, x: 0, y: 0{sc_out} }}, 0);\n'
           f"{W}.forEach(([s, e], i) => {{\n"
           f"  const prevEnd = i ? {W}[i - 1][1] : -1;\n"
-          f'  if (s - prevEnd > {bridge}) {tl}.to("{target}", {{ clipPath: {_v(inset)}, x: {_v(x)}, y: {_v(y)}, duration: {dur}, ease: "power3.inOut" }}, s - {lead});\n'
+          f'  if (s - prevEnd > {bridge}) {tl}.to("{target}", {{ clipPath: {_v(inset)}, x: {_v(x)}, y: {_v(y)}{sc_in}, duration: {dur}, ease: "power3.inOut" }}, s - {lead});\n'
           f"  const next = {W}[i + 1];\n"
-          f'  if (!next || next[0] - e > {bridge}) {tl}.to("{target}", {{ clipPath: FULL, x: 0, y: 0, duration: {dur}, ease: "power3.inOut" }}, e - {tail});\n'
+          f'  if (!next || next[0] - e > {bridge}) {tl}.to("{target}", {{ clipPath: FULL, x: 0, y: 0{sc_out}, duration: {dur}, ease: "power3.inOut" }}, e - {tail});\n'
           "});\n")
     return _out(css, "", js)
 

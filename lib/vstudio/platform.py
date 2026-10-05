@@ -384,31 +384,44 @@ def check_length(p: Profile, seconds: float):
     return w
 
 
-def fit_text_size(p: Profile, text: str, role="cjk-bold"):
+def fit_text_size(p: Profile, text: str, role="cjk-bold", fit_height=True):
     """Largest caption font size in the profile's range at which ``text`` wraps into at most
-    ``max_lines`` lines that fit ``caption_box`` width and the per-line char limit (zh or en by
-    content). Returns dict(size, lines, fits). Falls back to the min size (fits=False) when it can't fit."""
+    ``max_lines`` lines that fit ``caption_box`` width, the per-line char limit (zh or en by
+    content) and (fit_height, default) the caption band HEIGHT as ``export.caption_overlay`` stacks the
+    rows. Lines are wrapped by whichever of pixel width / char limit binds first, so a long CJK line
+    is split instead of failing the char check.
+    Returns dict(size, lines, fits, height). Falls back to the min size (fits=False) when it can't fit."""
     from . import draw
-    from .subs import text_width as cjk_w
-    x0, _, x1, _ = caption_box(p)
+    from .subs import text_width as cjk_w, balanced_wrap, caption_block_height
+    x0, y0, x1, y1 = caption_box(p)
     cap = p.caption
     lo, hi = (int(v) for v in cap["size"])
     max_lines = int(cap.get("max_lines", 2))
     cjk = _has_cjk(text)
     max_chars = cap["max_chars_zh"] if cjk else cap["max_chars_en"]
     stroke_frac = float(cap.get("stroke", 0.08))
-    lines = [text]
-    for size in range(hi, lo - 1, -2):
+    chars = (lambda s: cjk_w(draw.plain(s))) if cjk else (lambda s: len(draw.plain(s)))  # noqa: E731
+
+    def attempt(size, cap_lines=None):
         f = draw.load_font(role, size)
         avail = (x1 - x0) - 2 * int(size * stroke_frac) - 8
-        lines = _wrap(text, f, avail)
+        meas = lambda s: max(draw.text_width(s, f) / max(1.0, avail), chars(s) / max(1, max_chars))  # noqa: E731
+        lines = balanced_wrap(text.strip(), 1.0, measure=meas, max_lines=cap_lines)
+        if cap_lines and len(lines) > cap_lines:
+            lines = lines[:cap_lines]
         width_ok = all(draw.text_width(ln, f) <= avail for ln in lines)
-        chars_ok = all((cjk_w(draw.plain(ln)) if cjk else len(draw.plain(ln))) <= max_chars for ln in lines)
-        if len(lines) <= max_lines and width_ok and chars_ok:
-            return dict(size=size, lines=lines, fits=True)
-    f = draw.load_font(role, lo)
-    avail = (x1 - x0) - 2 * int(lo * stroke_frac) - 8
-    return dict(size=lo, lines=_wrap(text, f, avail, max_lines), fits=False)
+        chars_ok = all(chars(ln) <= max_chars for ln in lines)
+        h = caption_block_height(len(lines), f, max(2, int(size * stroke_frac)))
+        ok = len(lines) <= max_lines and width_ok and chars_ok and (not fit_height or h <= y1 - y0)
+        return dict(size=size, lines=lines, fits=bool(ok), height=h)
+
+    for size in range(hi, lo - 1, -2):
+        r = attempt(size)
+        if r["fits"]:
+            return r
+    r = attempt(lo, max_lines)
+    r["fits"] = False
+    return r
 
 
 def _wrap(text, f, avail, max_lines=None):

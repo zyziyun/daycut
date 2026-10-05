@@ -206,10 +206,26 @@ def probe(path):
     return info
 
 
+def ffprobe_value(path, entry="format=duration", stream=None, cast=None):
+    """One ffprobe value (``-show_entries entry``, ``-select_streams stream`` e.g. "v:0"), robust to the
+    trailing comma / extra lines newer ffprobe builds print with ``csv=p=0`` on stream entries.
+    cast: optional type (float, int); returns None when the value is empty or "N/A"."""
+    cmd = ["ffprobe", "-v", "error"]
+    if stream:
+        cmd += ["-select_streams", stream]
+    r = run(cmd + ["-show_entries", entry, "-of", "default=nw=1:nk=1", os.fspath(path)], capture=True)
+    vals = [v.strip().rstrip(",") for v in r.stdout_text.splitlines() if v.strip().rstrip(",")]
+    if not vals or vals[0] == "N/A":
+        return None
+    return cast(vals[0]) if cast else vals[0]
+
+
 def duration(path):
     """Container duration in seconds (float). From promo-recut ``common.duration``."""
-    r = run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path], capture=True)
-    return float(r.stdout_text.strip())
+    v = ffprobe_value(path, "format=duration", cast=float)
+    if v is None:
+        raise FFmpegError(f"no duration for {path}")
+    return v
 
 
 # ------------------------------------------------------------------ extraction

@@ -4,6 +4,8 @@
     plan = R.plan("talk-16x9.mp4", 1080, 1440, mode="face", safe=(48, 60, 1032, 1290))
     R.render("talk-16x9.mp4", "talk-3x4.mp4", plan)            # rawvideo pipe: decode -> warp -> encode
     R.reframe("talk-16x9.mp4", "talk-9x16.mp4", 1080, 1920)     # plan + render + <dst>.crop.json
+    pl = R.plan(None, 1080, 1920, frames=frames, fps=30)        # frames already in memory: decode once
+    R.render(src, dst, pl, frames=frames)                       # HDR sources are tone-mapped (hdr="auto")
 
     python -m vstudio.reframe talk.mp4 out.mp4 --size 1080x1920 --mode face [--platform douyin]
 
@@ -113,21 +115,36 @@ def _face_detector(max_faces, analysis_w):
     return det
 
 
-def _scan(src, start, dur, every, detector, cut_thresh=None):
+def _scan(src, start, dur, every, detector, cut_thresh=None, frames=None, fps=None, region=None):
     """One decode pass: per-frame thumbnail differences + detections at sample frames (and right after a
-    cut). Returns fps, n, sw, sh, diffs[n], samples {i: [(x0, y0, x1, y1, talk|None)]}."""
+    cut). frames: already-decoded BGR frames (sequence or iterator) of the window instead of decoding
+    ``src``; region: (x, y, w, h) sub-rectangle analysed instead of the whole frame.
+    Returns fps, n, sw, sh, diffs[n], samples {i: [(x0, y0, x1, y1, talk|None)]}."""
     import cv2
-    cap = cv2.VideoCapture(str(src))
-    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-    if start:
-        cap.set(cv2.CAP_PROP_POS_MSEC, start * 1000.0)
+    cap = None
+    if frames is None:
+        cap = cv2.VideoCapture(str(src))
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        if start:
+            cap.set(cv2.CAP_PROP_POS_MSEC, start * 1000.0)
+        it = None
+    else:
+        fps = fps or 30.0
+        it = iter(frames)
     n_max = int(round(dur * fps)) if dur else None
     diffs, samples, prev, i, sw, sh, force = [], {}, None, 0, 0, 0, False
     try:
         while n_max is None or i < n_max:
-            ok, fr = cap.read()
+            if it is None:
+                ok, fr = cap.read()
+            else:
+                fr = next(it, None)
+                ok = fr is not None
             if not ok:
                 break
+            if region is not None:
+                rx, ry, rw, rh = (int(round(v)) for v in region)
+                fr = fr[ry:ry + rh, rx:rx + rw]
             sh, sw = fr.shape[:2]
             th = cv2.resize(cv2.cvtColor(fr, cv2.COLOR_BGR2GRAY), (64, 36), interpolation=cv2.INTER_AREA).astype(np.float32)
             d = float(np.abs(th - prev).mean()) if prev is not None else 0.0
@@ -141,7 +158,8 @@ def _scan(src, start, dur, every, detector, cut_thresh=None):
                 force = False
             i += 1
     finally:
-        cap.release()
+        if cap is not None:
+            cap.release()
     return fps, i, sw, sh, diffs, samples
 
 
@@ -272,30 +290,64 @@ def _interp_targets(points, n):
     return list(np.interp(np.arange(n), xs, [points[i] for i in xs]))
 
 
+interp_targets = _interp_targets   # public name (longform-to-short ``_vertical``)
+
+
 # ----------------------------------------------------------------------------------- plan
-def plan(src, target_w, target_h, mode="face", safe=None, start=0.0, dur=None, detector=None, **opts):
+def plan(src, target_w, target_h, mode="face", safe=None, start=0.0, dur=None, detector=None, frames=None,
+         fps=None, region=None, **opts):
     """Per-frame crop rects for ``src`` -> target_w x target_h. safe: (x0, y0, x1, y1) in TARGET px
     (default: whole canvas inset 6 %). Returns a JSON-able dict (see module doc); ``mode_used`` says
-    what actually ran (face may fall back)."""
+    what actually ran (face may fall back); ``scale`` = target px per source px (> 1 = upscaled).
+
+    frames: already-decoded BGR frames of the [start, start+dur) window (a list, array or iterator) so
+    a caller that also renders from memory decodes once; src may then be None (pass ``fps``; size
+    comes from the first frame). region: (x, y, w, h) in source px -> plan inside that sub-rectangle
+    (e.g. a camera tile); rects are in region coordinates and ``render``/``frame_fn`` crop it first."""
     o = dict(DEFAULTS, **{k: v for k, v in opts.items() if v is not None})
     if mode not in MODES:
         raise ValueError(f"mode={mode!r} (one of {MODES})")
     tw, th = int(target_w), int(target_h)
     safe = tuple(safe) if safe else (tw * 0.06, th * 0.06, tw * 0.94, th * 0.94)
-    info = media.probe(src)
-    fps = info["fps"] or 30.0
-    sw, sh = info["display_w"], info["display_h"]
-    total = info["duration"] - (start or 0)
+    if frames is not None and not hasattr(frames, "__len__"):
+        frames = iter(frames)
+    if src is not None:
+        info = media.probe(src)
+        fps = fps or info["fps"] or 30.0
+        sw, sh = info["display_w"], info["display_h"]
+        total = info["duration"] - (start or 0)
+    else:
+        if frames is None:
+            raise ValueError("plan needs src or frames")
+        if hasattr(frames, "__len__"):
+            first = frames[0]
+        else:
+            first = next(frames)
+            import itertools
+            frames = itertools.chain([first], frames)
+        fps = float(fps or 30.0)
+        sh, sw = first.shape[:2]
+        total = len(frames) / fps if hasattr(frames, "__len__") else (dur or 0.0)
+    full_w, full_h = sw, sh
+    if region is not None:
+        region = [int(round(v)) for v in region]
+        rx, ry = max(0, region[0]), max(0, region[1])
+        region = [rx, ry, min(region[2], sw - rx), min(region[3], sh - ry)]
+        sw, sh = region[2], region[3]
     dur = min(dur, total) if dur else total
     n_est = int(round(dur * fps))
-    out = dict(src=os.fspath(src), src_w=sw, src_h=sh, fps=fps, start=float(start or 0), dur=dur,
-               target=[tw, th], safe=[round(v, 1) for v in safe], mode=mode, mode_used=mode, hit_rate=None,
-               cuts=[], switches=0)
+    out = dict(src=os.fspath(src) if src is not None else None, src_w=sw, src_h=sh, fps=fps,
+               start=float(start or 0), dur=dur, target=[tw, th], safe=[round(v, 1) for v in safe], mode=mode,
+               mode_used=mode, hit_rate=None, cuts=[], switches=0)
+    if region is not None:
+        out.update(region=region, full_w=full_w, full_h=full_h)
     cw, ch = crop_size(sw, sh, tw, th, o["zoom"])
+    fit_scale = min(tw / sw, th / sh)
     if mode in ("pad-blur", "letterbox"):
-        out.update(crop_w=sw, crop_h=sh, n_frames=n_est, rects=None)
+        out.update(crop_w=sw, crop_h=sh, n_frames=n_est, rects=None, scale=round(fit_scale, 4))
         return out
     cx0, cy0 = (sw - cw) / 2, (sh - ch) / 2
+    out["scale"] = round(tw / cw, 4)
     if mode == "center":
         out.update(crop_w=cw, crop_h=ch, n_frames=n_est, rects=None, fixed=[cx0, cy0, cw, ch])
         return out
@@ -309,7 +361,8 @@ def plan(src, target_w, target_h, mode="face", safe=None, start=0.0, dur=None, d
         det.close = lambda: None
         out["detector_error"] = f"{type(e).__name__}: {e}"
     try:
-        fps, n, sw2, sh2, diffs, samples = _scan(src, start, dur, o["every"], det, o["cut_thresh"])
+        fps, n, sw2, sh2, diffs, samples = _scan(src, start, dur, o["every"], det, o["cut_thresh"],
+                                                 frames=frames, fps=fps, region=region)
     finally:
         if own:
             det.close()
@@ -326,7 +379,7 @@ def plan(src, target_w, target_h, mode="face", safe=None, start=0.0, dur=None, d
         if fb == "center":
             out.update(crop_w=cw, crop_h=ch, rects=None, fixed=[cx0, cy0, cw, ch])
         else:
-            out.update(crop_w=sw, crop_h=sh, rects=None)
+            out.update(crop_w=sw, crop_h=sh, rects=None, scale=round(fit_scale, 4))
         return out
 
     chosen, switches = _choose_subjects(samples, n, fps, cuts, sw, sh, o)
@@ -347,6 +400,12 @@ def plan(src, target_w, target_h, mode="face", safe=None, start=0.0, dur=None, d
              for x, y in zip(xs, ys)]
     out.update(crop_w=cw, crop_h=ch, rects=rects, switches=switches, stats=path_stats(rects, fps, cuts))
     return out
+
+
+def plan_region(src, region, target_w, target_h, mode="face", **kw):
+    """``plan`` constrained to ``region`` = (x, y, w, h) of the source (a camera tile in a screen
+    recording): faces are searched and the crop moves only inside it; no temp clip is encoded."""
+    return plan(src, target_w, target_h, mode=mode, region=region, **kw)
 
 
 def path_stats(rects, fps, cuts=()):
@@ -376,6 +435,7 @@ def frame_fn(pl, blur_dim=None):
     tw, th = pl["target"]
     sw, sh = pl["src_w"], pl["src_h"]
     mode = pl["mode_used"]
+    region = pl.get("region")
     if mode in ("pad-blur", "letterbox"):
         fw, fh, ox, oy = _fit(sw, sh, tw, th)
         dim = DEFAULTS["blur_dim"] if blur_dim is None else blur_dim
@@ -383,6 +443,8 @@ def frame_fn(pl, blur_dim=None):
         canvas = np.zeros((th, tw, 3), np.uint8)
 
         def fn(i, fr):
+            if region is not None:
+                fr = fr[region[1]:region[1] + region[3], region[0]:region[0] + region[2]]
             interp = cv2.INTER_AREA if fw < sw else cv2.INTER_CUBIC
             fg = cv2.resize(fr, (fw, fh), interpolation=interp)
             if mode == "letterbox":
@@ -402,6 +464,8 @@ def frame_fn(pl, blur_dim=None):
 
     def fn(i, fr):
         x, y, cw, ch = fixed if rects is None else rects[min(i, len(rects) - 1)]
+        if region is not None:
+            x, y = x + region[0], y + region[1]
         s = tw / cw
         if abs(s - 1.0) < 1e-6 and float(x).is_integer() and float(y).is_integer():
             return np.ascontiguousarray(fr[int(y):int(y) + th, int(x):int(x) + tw])
@@ -411,19 +475,24 @@ def frame_fn(pl, blur_dim=None):
     return fn
 
 
-def render(src, dst, pl, overlay=None, encode_args=None, audio=True, fps=None):
+def render(src, dst, pl, overlay=None, encode_args=None, audio=True, fps=None, frames=None, hdr="auto"):
     """Decode ``src`` (from plan start/dur) as raw BGR, apply the plan (+ ``overlay(i, t, img)`` that
     may draw on the target frame in place), encode to ``dst``. encode_args default
     ``media.delivery_args()`` (H.264 + AAC). audio: map the source audio (same window) if present.
-    Returns dst."""
-    info = media.probe(src)
-    sw, sh = pl["src_w"], pl["src_h"]
+    frames: already-decoded BGR frames (sequence / iterator) used instead of decoding ``src`` (src then
+    only supplies the audio; may be None). hdr: "auto" tone-maps an HLG/PQ source to SDR bt709 in the
+    decoder (``media.hdr_to_sdr_args``; for avconvert quality pre-convert with ``media.to_sdr``),
+    False/"keep" leaves it. Returns dst."""
+    info = media.probe(src) if src is not None else dict(fps_q=None, has_audio=False, hdr=False, transfer="")
+    sw, sh = pl.get("full_w") or pl["src_w"], pl.get("full_h") or pl["src_h"]
     tw, th = pl["target"]
     start, dur = pl.get("start") or 0.0, pl.get("dur")
     rate = str(info["fps_q"]) if info["fps_q"] else f"{pl['fps']:.6g}"
     ff = media.ffmpeg_bin()
     win = (["-ss", f"{start:.3f}"] if start else []) + (["-t", f"{dur:.3f}"] if dur else [])
-    dec = [ff, "-v", "error", *win, "-i", os.fspath(src), "-map", "0:v:0", "-f", "rawvideo", "-pix_fmt", "bgr24", "-"]
+    vf = media.hdr_to_sdr_args(src, info.get("transfer")) if (hdr == "auto" and info.get("hdr")) else ""
+    dec = [ff, "-v", "error", *win, "-i", os.fspath(src or ""), "-map", "0:v:0", *(["-vf", vf] if vf else []),
+           "-f", "rawvideo", "-pix_fmt", "bgr24", "-"]
     has_a = audio and info["has_audio"]
     enc = [ff, "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{tw}x{th}", "-r", rate, "-i", "-"]
     if has_a:
@@ -438,15 +507,21 @@ def render(src, dst, pl, overlay=None, encode_args=None, audio=True, fps=None):
     enc += args + [os.fspath(dst)]
     fn = frame_fn(pl)
     fsize = sw * sh * 3
-    p_dec = subprocess.Popen(dec, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    p_dec = None if frames is not None else subprocess.Popen(dec, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    it = iter(frames) if frames is not None else None
     p_enc = subprocess.Popen(enc, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
     i = 0
     try:
         while True:
-            buf = p_dec.stdout.read(fsize)
-            if len(buf) < fsize:
-                break
-            fr = np.frombuffer(buf, np.uint8).reshape(sh, sw, 3)
+            if it is not None:
+                fr = next(it, None)
+                if fr is None:
+                    break
+            else:
+                buf = p_dec.stdout.read(fsize)
+                if len(buf) < fsize:
+                    break
+                fr = np.frombuffer(buf, np.uint8).reshape(sh, sw, 3)
             img = fn(i, fr)
             if overlay is not None:
                 img = np.ascontiguousarray(img)
@@ -461,8 +536,9 @@ def render(src, dst, pl, overlay=None, encode_args=None, audio=True, fps=None):
             p_enc.stdin.close()
         except BrokenPipeError:
             pass
-        p_dec.stdout.close()
-        p_dec.wait()
+        if p_dec is not None:
+            p_dec.stdout.close()
+            p_dec.wait()
         err = p_enc.stderr.read().decode("utf-8", "replace")
         rc = p_enc.wait()
     if rc != 0 or i == 0:

@@ -5,6 +5,7 @@ bilingual pairing and retiming through a cut.
     cues = subs.cues_from_words(tr["words"])                 # draft lines from ASR words
     cues = subs.retime(cues, timemap)                         # source -> final seconds
     subs.wrap_cjk("我们用Claude Code做了一个HyperFrames视频", 12)
+    subs.fit_caption(text, "cjk-bold", box=(x0, y0, x1, y1), max_lines=2)   # -> size + lines, fits w AND h
     subs.srt_write(cues, "out/zh.srt"); subs.ass_write(cues, "work/subs.ass", w=1080, h=1920)
 
 Width rule (same as ``vstudio.config.xhs_len``): CJK/full-width = 1, latin/digit/space = 0.5.
@@ -138,9 +139,68 @@ def _trim(toks):
     return toks[a:b]
 
 
-def balanced_wrap(text, max_width, measure=None, max_lines=None):
+_PARTICLE_AFTER = set("的了着过吗呢吧啊呀哦么嘛啦")       # a break right after these reads naturally
+_BREAK_BEFORE = set("和与及或但而就都也还在是把被给让从到对向跟如")  # ... and right before these
+
+
+def _cjk(ch):
+    return bool(ch) and ord(ch) >= 0x2E80
+
+
+def _word_bounds(plain):
+    """Character offsets that are word boundaries in ``plain`` (jieba when installed), else None."""
+    try:
+        import jieba  # noqa: WPS433 (optional)
+    except ImportError:
+        return None
+    try:
+        import logging
+        jieba.setLogLevel(logging.WARNING)
+        out, i = set(), 0
+        for w in jieba.lcut(plain, HMM=True):
+            i += len(w)
+            out.add(i)
+        return out
+    except Exception:
+        return None
+
+
+def _break_bonus(toks, word_aware=True):
+    """Per-boundary preference (index j = break before toks[j]) in units of the target width:
+    negative = a good place to break. Punctuation is handled by the caller."""
+    m = len(toks)
+    bonus = [0.0] * (m + 1)
+    if not word_aware or m < 2:
+        return bonus
+    plain = "".join(strip_markup(t) for t, _ in toks)
+    offs, k = [], 0
+    for t, _ in toks:
+        k += len(strip_markup(t))
+        offs.append(k)
+    bounds = _word_bounds(plain) if any(_cjk(c) for c in plain) else None
+    for j in range(1, m):
+        a, b = strip_markup(toks[j - 1][0]), strip_markup(toks[j][0])
+        if not a or not b:
+            continue
+        ca, cb = a[-1], b[0]
+        if _cjk(ca) and _cjk(cb):
+            if bounds is not None and offs[j - 1] not in bounds:
+                bonus[j] += 0.6                              # inside a word ("组|件")
+            if ca in _PARTICLE_AFTER:
+                bonus[j] -= 0.25
+            elif cb in _BREAK_BEFORE:
+                bonus[j] -= 0.15
+        elif _cjk(ca) != _cjk(cb) and not ca.isspace() and not cb.isspace():
+            bonus[j] -= 0.15                                 # CJK <-> latin transition
+    return bonus
+
+
+def balanced_wrap(text, max_width, measure=None, max_lines=None, word_aware=True):
     """Wrap into the FEWEST lines that fit ``max_width``, then balance them (similar lengths, breaks
     preferred after punctuation, never a one-character orphan line, latin words never split).
+    word_aware: CJK breaks avoid splitting a word (jieba segmentation when installed: "前端组件|库"
+    rather than "前端组|件库") and prefer breaks after particles (的/了/吧...), before conjunctions /
+    prepositions (和/在/把...) and at CJK<->latin changes.
 
     Args: measure(str) -> width (default ``text_width``: CJK 1, latin 0.5; pass a PIL textlength for
     pixel wrapping); max_lines caps the line count (lines may then overflow). Markup is preserved on
@@ -166,6 +226,7 @@ def balanced_wrap(text, max_width, measure=None, max_lines=None):
         tt = _trim(toks[i:j])
         return len(tt) == 1 and len(tt[0][0]) == 1 and not _LATIN.fullmatch(tt[0][0])
 
+    bonus = _break_bonus(toks, word_aware)
     n0 = max(2, math.ceil(total / max_width))
     best = None
     for n in range(n0, min(m, max_lines or m) + 1):
@@ -190,6 +251,8 @@ def balanced_wrap(text, max_width, measure=None, max_lines=None):
                     last = toks[j - 1][0]
                     if j < m and last and last[-1] in _CLOSE:
                         c -= 0.5 * target                   # break after punctuation
+                    elif j < m:
+                        c += bonus[j] * target
                     if dp[L - 1][i] + c < dp[L][j]:
                         dp[L][j], bk[L][j] = dp[L - 1][i] + c, i
         if dp[n][m] < float("inf"):
@@ -212,6 +275,62 @@ def wrap_cjk(text, max_chars=None, max_lines=None):
     From longform ``subs_lib.wrap``, call-clips ``render_vertical._wrap/_toks/wrap_sub``."""
     max_chars = max_chars or _persona_subs().get("max_cjk_chars", 18)
     return balanced_wrap(text, max_chars, max_lines=max_lines)
+
+
+def caption_block_height(n_lines, f, stroke, pad=6):
+    """Pixel height of ``n_lines`` stroked caption rows as ``export.caption_overlay`` stacks them
+    (each row ascent+descent + 2*(pad+stroke), rows overlapping by 12 % of the font size)."""
+    if n_lines <= 0:
+        return 0
+    asc, desc = f.getmetrics()
+    row = asc + desc + 2 * (pad + stroke)
+    return n_lines * row - int(f.size * 0.12) * (n_lines - 1)
+
+
+def fit_caption(text, font_role="cjk-bold", box=(1080, 220), max_lines=2, sizes=None, stroke=0.08,
+                max_chars=None, step=2, pad=6):
+    """Largest font size at which ``text`` wraps into <= ``max_lines`` lines that fit ``box`` in
+    width AND height.
+
+    box: (x0, y0, x1, y1) or (w, h). sizes: (min, max) px (default (20, min(110, h))). stroke: stroke
+    width as a fraction of the size. max_chars: optional per-line width cap in CJK units (CJK 1,
+    latin 0.5); lines are wrapped by whichever of pixel width / char cap binds first.
+    Returns dict(size, lines, width, height, fits); falls back to the min size (fits=False, lines
+    capped at max_lines) when nothing fits."""
+    from . import draw
+    if len(box) == 4:
+        bw, bh = box[2] - box[0], box[3] - box[1]
+    else:
+        bw, bh = box
+    lo, hi = sizes or (20, int(min(110, bh)))
+    lo, hi = int(lo), int(max(lo, hi))
+    text = text.replace("\n", " ").strip()
+
+    def attempt(size, cap_lines=None):
+        f = draw.load_font(font_role, size)
+        st = max(2, int(size * stroke)) if stroke else 0
+        avail = bw - 2 * int(size * stroke) - 8
+        if max_chars:
+            meas = lambda t: max(draw.text_width(t, f) / max(1.0, avail), text_width(draw.plain(t)) / max_chars)  # noqa: E731
+            lines = balanced_wrap(text, 1.0, measure=meas, max_lines=cap_lines)
+            w_ok = all(meas(ln) <= 1.0 + 1e-9 for ln in lines)
+        else:
+            lines = balanced_wrap(text, avail, measure=lambda t: draw.text_width(t, f), max_lines=cap_lines)
+            w_ok = all(draw.text_width(ln, f) <= avail for ln in lines)
+        if cap_lines and len(lines) > cap_lines:
+            lines = lines[:cap_lines]
+        width = int(max([draw.text_width(ln, f) for ln in lines] or [0])) + 2 * (pad + st)
+        height = caption_block_height(len(lines), f, st, pad)
+        ok = w_ok and len(lines) <= max_lines and height <= bh
+        return dict(size=size, lines=lines, width=width, height=height, fits=bool(ok))
+
+    for size in range(hi, lo - 1, -max(1, int(step))):
+        r = attempt(size)
+        if r["fits"]:
+            return r
+    r = attempt(lo, max_lines)
+    r["fits"] = False
+    return r
 
 
 # ------------------------------------------------------------------ timestamps
@@ -400,7 +519,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 # ------------------------------------------------------------------ building / timing
 def cues_from_words(words, max_chars=None, max_gap=0.45, linger=0.3, fixes=None):
     """Draft cues from ASR words: a new cue at a gap > max_gap or when the line would exceed
-    max_chars (CJK width); latin words keep a space between them; each cue lingers up to ``linger``
+    max_chars (CJK width); latin words keep a space between them (also after latin punctuation,
+    "everyone, welcome"; CJK punctuation and "3.5" / "1,000" stay tight); each cue lingers up to ``linger``
     s into the following pause. fixes: passed to ``asr.apply_term_fixes`` (None = persona+generic,
     False = none). Words: {"w","t","te"} or whisper {"word","start","end"}.
     From promo ``tight_cut.draft_subs``, call-clips ``build_subs`` / ``build_clips.load_subs``."""
@@ -419,8 +539,10 @@ def cues_from_words(words, max_chars=None, max_gap=0.45, linger=0.3, fixes=None)
         s = ""
         for t, _, _ in items:
             t = t.strip()
-            if s and re.match(r"[A-Za-z0-9%]", s[-1]) and re.match(r"[A-Za-z0-9]", t[:1]):
-                s += " "
+            if s and re.match(r"[A-Za-z0-9]", t[:1]) and (
+                    re.match(r"[A-Za-z0-9%]", s[-1])
+                    or (s[-1] in ",.!?;:)]" and not (len(s) > 1 and s[-2].isdigit() and s[-1] in ",." and t[:1].isdigit()))):
+                s += " "                      # latin words (also after latin punctuation: "everyone, welcome")
             s += t
         return s
 

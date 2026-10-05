@@ -173,9 +173,11 @@ def subset_project_fonts(out_dir, text, roles=(("cjk", "cjk-400"), ("cjk-bold", 
 
 # ---------------------------------------------------------------- render
 def html_to_png(html, out, size=(1080, 1920), scale=1, wait=2000, query="", use_persona=True,
-                fonts=True, transparent=False):
+                fonts=True, transparent=False, extra_css=None):
     """Render an HTML file path or HTML string to PNG. Fonts are staged into <html dir>/assets/fonts/
     and persona colours injected as CSS variables (into a temp sibling copy, the source is untouched).
+    extra_css: a CSS string, or a dict of :root variables ({"accent": "#..."} -> --accent), injected
+    after the persona block (so it wins) without writing a second copy.
     Tries each working Chrome, then Playwright. Returns the output path."""
     w, h = (int(v) for v in size)
     tmpdir = None
@@ -187,9 +189,16 @@ def html_to_png(html, out, size=(1080, 1920), scale=1, wait=2000, query="", use_
     if fonts:
         stage_fonts(src.parent / "assets" / "fonts")
     page = src
-    if use_persona:
+    if isinstance(extra_css, dict):
+        extra_css = ":root{" + "".join(f"--{str(k).replace('_', '-')}:{v};" for k, v in extra_css.items()) + "}"
+    if use_persona or extra_css:
         page = src.with_name(src.stem + ".render.html")
-        page.write_text(inject_css(src.read_text(encoding="utf-8"), persona_css()), encoding="utf-8")
+        txt = src.read_text(encoding="utf-8")
+        if use_persona:
+            txt = inject_css(txt, persona_css())
+        if extra_css:
+            txt = inject_css(txt, extra_css, style_id="vstudio-extra")
+        page.write_text(txt, encoding="utf-8")
     url = page.as_uri() + (f"?{query}" if query else "")
     png = pathlib.Path(out).resolve(); png.parent.mkdir(parents=True, exist_ok=True); png.unlink(missing_ok=True)
     try:

@@ -629,20 +629,37 @@ def words_in(segs, lo, hi):
     return out
 
 
-def find_cuts(audio, segs, lo, hi, extra=None):
+def find_cuts(audio, segs, lo, hi, extra=None, pause_min=None, pause_keep=None, editor_pause_min=None,
+              editor_pause_keep=None, snap="word", snap_reach=0.15, min_cut=None):
     """Cut intervals [[a, b, why], ...] (source s) inside window [lo, hi].
 
     audio: ``Audio``; segs: whisper segments with words (word_timestamps=True); extra: editor cuts.
+    Thresholds (defaults = the "word" profile, unchanged): pause_min (PAUSE_MIN 0.60 s) - shortest
+    silence that is cut; pause_keep (2*PAUSE_EDGE = 0.36 s) - silence kept in total, half each side;
+    editor_pause_min / editor_pause_keep - the same when an editor pass (``extra``) is given (default:
+    the plain values); snap - "word" (restart/repeat/filler/editor edges to the quietest frame between
+    the neighbouring words, ``Audio.boundary``) or "back" (quietest frame at or up to ``snap_reach`` s
+    before the edge, ``Audio.snap_back``; call-clips "classic"); min_cut (MIN_CUT 0.25 s).
     From call-clips ``find_disfluencies.find_cuts`` (algorithm unchanged).
     """
+    if snap not in ("word", "back"):
+        raise ValueError("snap must be 'word' or 'back'")
+    editor = bool(extra)
+    pmin = PAUSE_MIN if pause_min is None else float(pause_min)
+    pkeep = 2 * PAUSE_EDGE if pause_keep is None else float(pause_keep)
+    if editor:
+        pmin = pmin if editor_pause_min is None else float(editor_pause_min)
+        pkeep = pkeep if editor_pause_keep is None else float(editor_pause_keep)
+    edge = pkeep / 2
+    min_cut = MIN_CUT if min_cut is None else float(min_cut)
     cuts = []
     AWp = all_words(segs)
     for a, b in audio.silences(lo, hi):
-        if b - a < PAUSE_MIN:
+        if b - a < pmin:
             continue
         if any(a < (w["s"] + w["e"]) / 2 < b for w in AWp if w["e"] > a - 1 and w["s"] < b + 1):
             continue
-        ca, cb = a + PAUSE_EDGE, b - PAUSE_EDGE
+        ca, cb = a + edge, b - edge
         if cb - ca >= 0.2:
             cuts.append((ca, cb, "pause"))
 
@@ -684,20 +701,24 @@ def find_cuts(audio, segs, lo, hi, extra=None):
 
     snapped = []
     AW = all_words(segs)
+    if snap == "back":
+        edge_at = lambda t: audio.snap_back(t, snap_reach)  # noqa: E731
+    else:
+        edge_at = lambda t: audio.boundary(t, AW)  # noqa: E731
     kept_onsets = [b for a, b, why in cuts if why.startswith(("repeat", "restart"))]
     for a, b, why in (extra or []):
         if any(abs(a - k) < 0.05 for k in kept_onsets):
             continue
         if lo <= a < b <= hi:
-            a, b = audio.boundary(a, AW), audio.boundary(b, AW)
+            a, b = edge_at(a), edge_at(b)
             a, b = max(a, lo + 0.05), min(b, hi - 0.05)
             if b - a >= 0.12:
                 snapped.append([a, b, "edit:" + why[:40]])
     for a, b, why in cuts:
         if why != "pause":
-            a, b = audio.boundary(a, AW), audio.boundary(b, AW)
+            a, b = edge_at(a), edge_at(b)
         a, b = max(a, lo + 0.05), min(b, hi - 0.05)
-        if b - a >= MIN_CUT:
+        if b - a >= min_cut:
             snapped.append([a, b, why])
     snapped.sort()
     merged = []

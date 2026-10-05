@@ -81,7 +81,8 @@ def caption_overlay(prof, cues, fps, role="cjk-bold", fill=(255, 255, 255, 255))
                 L = layer(k, c)
                 h, w = L.shape[:2]
                 cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
-                draw.alpha_paste(img, L, (cx - w / 2, min(cy - h / 2, y1 - h)), bgr=True)
+                y = min(cy - h / 2, y1 - h) if h <= y1 - y0 else cy - h / 2   # over-tall: centred on the band
+                draw.alpha_paste(img, L, (cx - w / 2, y), bgr=True)
                 break
         return img
     return overlay
