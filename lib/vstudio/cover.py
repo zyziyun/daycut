@@ -122,6 +122,30 @@ def _face_and_retouch(photo, retouch_opts, face_x):
     return photo, fx
 
 
+def prepare_photo(photo, retouch=True, face_x="auto", base=None):
+    """Load + (optionally) retouch a cover photo ONCE -> (PIL RGB, face centre x fraction), to pass to
+    several ``split_cover`` sizes as {"photo": img, "retouched": True, "face_x": fx}. retouch: True |
+    {slim, eye, makeup, ...} | None/False."""
+    return _face_and_retouch(_load(photo, base), retouch, face_x)
+
+
+def redpen_ellipse(im, ellipse, color=(220, 38, 38), width=None, angle=-6, start=-100, end=282):
+    """Hand-drawn red-pen circle (an open ellipse stroke whose ends overlap) around a spot.
+    ellipse = (cx, cy, rx, ry) as fractions of the image size (values > 1 are pixels); width
+    default max(4, W/60). Returns a new PIL image (RGB/RGBA kept). From photo-story ``cover.circled``."""
+    import cv2
+    pil = to_pil(im)
+    mode = pil.mode if pil.mode in ("RGB", "RGBA") else "RGB"
+    a = np.asarray(pil.convert(mode)).copy()
+    h, w = a.shape[:2]
+    cx, cy, rx, ry = ellipse
+    fx = lambda v, n: int(v * n) if v <= 1 else int(v)
+    col = tuple(rgb(color)) + ((255,) if mode == "RGBA" else ())
+    cv2.ellipse(a, (fx(cx, w), fx(cy, h)), (fx(rx, w), fx(ry, h)), angle, start, end, col,
+                int(width or max(4, w // 60)), cv2.LINE_AA)
+    return Image.fromarray(a, mode)
+
+
 def _load(img, base=None):
     if img is None:
         return None
@@ -147,7 +171,13 @@ def split_cover(cfg: dict, out=None, base=None):
       face_x       "auto" | 0..1                   photo_lift   brightness multiplier (1.03)
       aspect       "4:3" | "16:9" | "3:4"  or size [W, H] (+ photo_w: photo width / band height)
       quote        "text" or {"text", "by"}        title        {"lines": [...], "highlight": [...]} (【】 works too)
-      thumbnail    path/PIL or {"path"|"image", "crop": [x0,y0,x1,y1] fractions}
+      thumbnail    path/PIL or {"path"|"image", "crop": [x0,y0,x1,y1] fractions (values > 1: pixels),
+                   "crop_px": [x0,y0,x1,y1] pixels}
+      retouched    True: the photo is already retouched (``prepare_photo``) - skip retouch/detection
+      face_box     [x0,y0,x1,y1] face box in photo pixels -> face_x (no detection)
+      fade         photo -> panel fade width (px at 1080, default 220)
+      overlap      how far the panel text reaches back over the photo (px at 1080; default 40
+                   side-by-side, 70 stacked)
       chips        ["a", {"text", "style": ink|dim|highlight|accent}]   (first plain chip = ink, rest dim)
       stamp        {"text", "rotate": 8}           corner_tag   {"text"} (记笔记 ↓ bottom-right)
       colors       {ground, highlight, accent, ink, dim}   glow   [r,g,b]
@@ -168,13 +198,20 @@ def split_cover(cfg: dict, out=None, base=None):
     photo = _load(cfg.get("photo"), base)
     if photo is None:
         photo = Image.new("RGB", (W, H), tuple(min(255, c + 30) for c in GROUND))
-    photo, fx = _face_and_retouch(photo, cfg.get("retouch"), cfg.get("face_x", "auto"))
+    face_x = cfg.get("face_x", "auto")
+    if cfg.get("face_box"):
+        fb = cfg["face_box"]
+        face_x = (fb[0] + fb[2]) / 2 / photo.width
+    if cfg.get("retouched") and face_x == "auto":
+        photo, fx = _face_and_retouch(photo, None, "auto")
+    else:
+        photo, fx = _face_and_retouch(photo, None if cfg.get("retouched") else cfg.get("retouch"), face_x)
     lift = float(cfg.get("photo_lift", 1.0))
     if lift != 1.0:
         photo = photo.point(lambda v: min(255, int(v * lift)))
 
     img = Image.new("RGB", (W, H), GROUND)
-    fade = int(220 * k)
+    fade = max(1, int(cfg.get("fade", 220) * k))
     if not portrait:
         pw = ext
         s = max(H / photo.height, pw / photo.width)
@@ -183,7 +220,7 @@ def split_cover(cfg: dict, out=None, base=None):
         y0 = max(0, (ph.height - H) // 3)
         img.paste(ph.crop((x0, y0, x0 + pw, y0 + H)), (0, 0))
         img.paste(Image.new("RGB", (fade, H), GROUND), (pw - fade, 0), hgradient_mask(fade, H))
-        px, py = pw - int(40 * k), int(96 * k)
+        px, py = pw - int(cfg.get("overlap", 40) * k), int(96 * k)
     else:
         bh = ext
         s = max(bh / photo.height, W / photo.width)
@@ -192,7 +229,7 @@ def split_cover(cfg: dict, out=None, base=None):
         y0 = max(0, min(ph.height - bh, int(ph.height * 0.05)))
         img.paste(ph.crop((x0, y0, x0 + W, y0 + bh)), (0, 0))
         img.paste(Image.new("RGB", (W, fade), GROUND), (0, bh - fade), vgradient_mask(W, fade))
-        px, py = int(60 * k), bh - int(70 * k)
+        px, py = int(60 * k), bh - int(cfg.get("overlap", 70) * k)
     pwid = W - px - int(60 * k)
 
     glow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
@@ -230,8 +267,14 @@ def split_cover(cfg: dict, out=None, base=None):
         tsrc = th_cfg.get("image", th_cfg.get("path")) if isinstance(th_cfg, dict) else th_cfg
         th = _load(tsrc, base)
         c = th_cfg.get("crop") if isinstance(th_cfg, dict) else None
-        if th is not None and c:
-            th = th.crop((int(c[0] * th.width), int(c[1] * th.height), int(c[2] * th.width), int(c[3] * th.height)))
+        cpx = th_cfg.get("crop_px") if isinstance(th_cfg, dict) else None
+        if th is not None and cpx:
+            th = th.crop(tuple(int(v) for v in cpx))
+        elif th is not None and c:
+            if max(c) > 1:
+                th = th.crop(tuple(int(v) for v in c))
+            else:
+                th = th.crop((int(c[0] * th.width), int(c[1] * th.height), int(c[2] * th.width), int(c[3] * th.height)))
         if th is not None:
             tw_ = pwid; thh = int(th.height * tw_ / th.width)
             max_h = H - y - int((190 if chips else 110) * k)

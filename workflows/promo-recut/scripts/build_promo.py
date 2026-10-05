@@ -19,7 +19,7 @@ import os
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from common import Project, P, link_or_copy  # noqa: E402
-from vstudio import media, overlays, render  # noqa: E402
+from vstudio import hf, media, overlays, render  # noqa: E402
 from vstudio.cut import TimeMap  # noqa: E402
 
 # ---------------------------------------------------------------- geometry per orientation
@@ -263,53 +263,69 @@ def render_html(g, DATA, faces, c, D, BR, MR, Mdur, Odur, END, hold, mcfg, oc, e
     ff = lambda fam, key, extra: f'@font-face {{ font-family: "{fam}"; src: url("{faces[key][0]}") format("{faces[key][1]}"); {extra} }}'
     fonts_css = "\n".join([ff("CJK", "cjk-400", "font-weight: 400;"), ff("CJK", "cjk-700", "font-weight: 700;"),
                            ff("Serif", "serif", "font-style: normal;"), ff("Serif", "serif-italic", "font-style: italic;")])
-    ACC, HL, INK, GROUND, GOLD = col["ACC"], col["HL"], col["INK"], col["GROUND"], col["GOLD"]
+    ACC, INK, GROUND, GOLD = col["ACC"], col["INK"], col["GROUND"], col["GOLD"]
     CW, CHH = g["CW"], g["CHH"]
 
+    J = hf.JS
+    # effect snippets (vstudio.hf); the page keeps its numbers in `const D`, the snippets reference D.*
+    subs = hf.subtitles(J("D.cues"), height=Hc)
+    split = hf.split_screen(J("D.SPLITS"), J("D.SPLIT"), J("D.SPLIT_X"), J("D.SPLIT_Y"))
+    punch = hf.punch_in(J("D.PUNCH"))
+    cards = hf.screenshot_cards(DATA["CARDS"], CW, CHH, g["card_l"], g["card_t"], ACC,
+                                cards_js=J("D.CARDS"), card_w_js=J("D.CW"))
+    chips = hf.chips(DATA["CHIPS"], J("D.CHIP_END"), g["chips_l"], g["chips_t"], g["chips_w"], INK, GOLD, items_js=J("D.CHIPS"))
+    himg = "assets/img/hold-" + os.path.basename(hold["image"]) if hold.get("image") else ""
+    freeze = hf.freeze_hold(J("D.T_HOLD"), J("D.HOLD"), J("D.FLY"), hold.get("label", ""), himg,
+                            g["pz_l"], g["pz_t"], g["pz_w"], ACC, GOLD, clip=(T_HOLD, HOLD))
+    screen = hf.framed_screen("assets/video/montage.mp4", M, Mdur + TZ, J("D.O"), MR,
+                              g["scr_l"], g["scr_t"], g["scr_w"], g["scr_h"])
+    zoom = hf.zoom_through(J("D.M"), J("D.O"), J("D.SCR_IN"), J("D.SCR_Y"), J("D.SCR_DRIFT"))
+    steps = hf.step_labels(DATA["mlab"], M + TZ, Mdur, g["mlabel_l"], g["mlabel_t"], INK, GOLD, labels_js=J("D.mlab"))
+    mtag = hf.tag(mcfg.get("tag"), M + TZ, Mdur, J("D.M + 0.8"), g["mtag_css"])
+    mbadge = hf.badge(mcfg.get("badge"), M + TZ, Mdur, J("D.M + 0.6"), g["mbadge_l"], g["mbadge_t"], ACC)
+    mtitle = hf.title_card(mcfg.get("title"), M + TZ, J("D.M + D.TZ"), mcfg.get("title_sub"), g["mtitle_t"], g["mtitle_fs"], GOLD)
+    ow = hf.enter_zoom("#ow", J("D.O"))
+    opunch = hf.punch_at("#ow", J("D.OUTRO_PUNCH"))
+    stamp = hf.stamp(oc.get("stamp"), O, Odur, J("D.OUTRO_PUNCH + 0.9"), g["stamp_l"], g["stamp_t"], ACC)
+    end = hf.end_card(E, END, endc.get("kicker", ""), endc.get("main", ""), endc.get("sub", ""), J("D.E"), g["end_fs"], GOLD)
+    I = hf.indent
+
     if DATA["HAS_HOLD"]:
-        body_html = (
-            f'<video id="body" class="full" src="assets/video/body.mp4" playsinline data-has-audio="true" data-start="{r(H)}" data-duration="{r(TC / BR)}" data-playback-rate="{BR}" data-track-index="2" data-volume="1"></video>\n'
-            f'    <img id="freeze" class="full clip" src="assets/img/freeze.jpg" alt="" data-start="{r(T_HOLD)}" data-duration="{r(HOLD)}" data-track-index="2" />\n'
-            f'    <video id="body2" class="full" src="assets/video/body.mp4" playsinline data-has-audio="true" data-start="{r(T_HOLD + HOLD)}" data-duration="{r((D["body"] - TC) / BR)}" data-media-start="{r(TC)}" data-playback-rate="{BR}" data-track-index="2" data-volume="1"></video>')
-        himg = "assets/img/hold-" + os.path.basename(hold["image"]) if hold.get("image") else ""
-        pz_html = (f'<div id="pz" class="clip full" data-start="{r(T_HOLD)}" data-duration="{r(HOLD)}" data-track-index="6">\n'
-                   f'    <div id="pz-dim" class="full"></div>\n'
-                   f'    <div id="pz-box"><div id="pz-label">{hold.get("label", "")}</div>'
-                   + (f'<img id="pz-img" src="{himg}" alt="" />' if himg else "") + '</div>\n  </div>')
+        body_html = hf.freeze_clips("assets/video/body.mp4", "assets/img/freeze.jpg", H, TC, HOLD, D["body"], BR)
+        pz_html = freeze["html"]
     else:
         body_html = f'<video id="body" class="full" src="assets/video/body.mp4" playsinline data-has-audio="true" data-start="{r(H)}" data-duration="{r(B)}" data-playback-rate="{BR}" data-track-index="2" data-volume="1"></video>'
         pz_html = ""
 
-    cards_html = "".join(f'<div class="card" id="{cd["id"]}"><div class="scroller" id="{cd["id"]}-s"><img src="{cd["img"]}" alt="" /><div id="{cd["id"]}-hls"></div></div></div>' for cd in DATA["CARDS"])
-    chips_html = "".join(f'<div class="chip{" star" if st else ""}" id="chip{i}">{t}</div>' for i, (_, t, st) in enumerate(DATA["CHIPS"]))
-
     m_html = ""
     if DATA["HAS_M"]:
-        m_html = f'''<div id="plate-grid" class="full clip" data-start="{r(M)}" data-duration="{r(Mdur + TZ)}" data-track-index="1"></div>
-  <div id="screen" class="wrap"><div id="screen-frame">
-    <video id="montage" src="assets/video/montage.mp4" playsinline data-has-audio="true" data-start="{r(M)}" data-duration="{r(Mdur + TZ)}" data-playback-rate="{MR}" data-track-index="3" data-volume="1"></video>
-  </div></div>
-  <div id="mlabel" class="clip" data-start="{r(M + TZ)}" data-duration="{r(Mdur)}" data-track-index="4">{"".join(f'<div class="ml" id="ml{m["n"]}"><b>{m["n"]:02d}</b>{m["t"]}</div>' for m in DATA["mlab"])}</div>'''
-        if mcfg.get("tag"):
-            m_html += f'\n  <div id="mtag" class="clip" data-start="{r(M + TZ)}" data-duration="{r(Mdur)}" data-track-index="4">{mcfg["tag"]}</div>'
-        if mcfg.get("badge"):
-            m_html += f'\n  <div id="mbadge" class="clip" data-start="{r(M + TZ)}" data-duration="{r(Mdur)}" data-track-index="4">{mcfg["badge"]}</div>'
-        if mcfg.get("title"):
-            m_html += (f'\n  <div id="mtitle" class="clip" data-start="{r(M + TZ)}" data-duration="2.4" data-track-index="5"><span>{mcfg["title"]}</span>'
-                       + (f'<small>{mcfg["title_sub"]}</small>' if mcfg.get("title_sub") else "") + '</div>')
+        m_html = "\n  ".join(x for x in (screen["html"], steps["html"], mtag["html"], mbadge["html"], mtitle["html"]) if x)
 
     o_html = ""
     if DATA["HAS_O"]:
         o_html = f'<div id="ow" class="wrap"><video id="outro" class="full" src="assets/video/outro.mp4" playsinline data-has-audio="true" data-start="{r(O)}" data-duration="{r(Odur)}" data-playback-rate="{BR}" data-track-index="2" data-volume="1"></video></div>'
-        if oc.get("stamp"):
-            o_html += f'\n  <div id="stamp" class="clip" data-start="{r(O)}" data-duration="{r(Odur)}" data-track-index="4">{oc["stamp"]}</div>'
-    end_html = ""
-    if DATA["HAS_END"]:
-        end_html = f'''<div id="endcard" class="full clip" data-start="{r(E)}" data-duration="{END}" data-track-index="5">
-    <div id="end-k">{endc.get("kicker", "")}</div>
-    <div id="end-m">{endc.get("main", "")}</div>
-    <div id="end-s">{endc.get("sub", "")}</div>
-  </div>'''
+        if stamp["html"]:
+            o_html += "\n  " + stamp["html"]
+    end_html = end["html"] if DATA["HAS_END"] else ""
+
+    css = (hf.grid_backdrop_css()
+           + f".wrap {{ position: absolute; inset: 0; width: {W}px; height: {Hc}px; transform-origin: 50% 40%; }}\n"
+           + split["css"] + screen["css"] + ow["css"] + cards["css"] + chips["css"] + subs["css"]
+           + cue_css + prog["css"] + steps["css"] + freeze["css"] + mbadge["css"] + mtitle["css"] + mtag["css"]
+           + stamp["css"] + end["css"])
+    js = ("// subtitles\n" + subs["js"]
+          + "\n// talking head: split-screen moves (clip + slide) and punch-ins\n" + split["js"] + punch["js"]
+          + "\n// cards: 3D slide-in, scroll, highlights, box\n" + cards["js"] + chips["js"]
+          + "\n// prompt hold: dim, fly the prompt out of the screenshot card, hold, fly back\n"
+          + "if (D.HAS_HOLD) {\n" + I(freeze["js"], 2) + "}\n"
+          + "if (D.HAS_M) {\n"
+          + "  // body -> montage: zoom through into the framed screen (body2 is still playing underneath)\n"
+          + I(zoom["js"] + steps["js"] + mtag["js"] + mbadge["js"] + mtitle["js"], 2)
+          + "  // montage -> outro: frame shrinks away (montage clip runs TZ past O so it is alive while it leaves)\n"
+          + I(screen["js"], 2) + "}\n"
+          + "if (D.HAS_O) {\n" + I(ow["js"], 2)
+          + "  if (D.OUTRO_PUNCH !== null) {\n" + I(opunch["js"] + stamp["js"], 4) + "  }\n}\n"
+          + "if (D.HAS_END) {\n" + I(end["js"], 2) + "}\n")
 
     return f'''<!doctype html>
 <html lang="{c.get("language", "zh")}">
@@ -325,45 +341,7 @@ html, body {{ width: {W}px; height: {Hc}px; overflow: hidden; background: {GROUN
 .full {{ position: absolute; inset: 0; width: {W}px; height: {Hc}px; }}
 video.full, img.full {{ object-fit: cover; object-position: {g["face_pos"]}; }}
 #plate {{ background: radial-gradient(ellipse 70% 60% at 50% 42%, #16203d 0%, {GROUND} 62%, #070a14 100%); }}
-#plate-grid {{ background-image: linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px); background-size: 64px 64px; }}
-.wrap {{ position: absolute; inset: 0; width: {W}px; height: {Hc}px; transform-origin: 50% 40%; }}
-#face {{ transform-origin: 0 0; }}
-#screen {{ transform-origin: 50% 45%; opacity: 0; }}
-#screen-frame {{ position: absolute; left: {g["scr_l"]}px; top: {g["scr_t"]}px; width: {g["scr_w"]}px; height: {g["scr_h"]}px; border-radius: 26px; overflow: hidden;
-  box-shadow: 0 40px 120px rgba(0,0,0,.6), 0 0 0 2px rgba(255,255,255,.12); }}
-#montage {{ position: absolute; left: 0; top: 0; width: {g["scr_w"]}px; height: {g["scr_h"]}px; object-fit: cover; }}
-#ow {{ opacity: 0; }}
-.card {{ position: absolute; left: {g["card_l"]}px; top: {g["card_t"]}px; width: {CW}px; height: {CHH}px; border-radius: 22px; overflow: hidden; background: #fff;
-  box-shadow: 0 30px 80px rgba(0,0,0,.45), 0 0 0 1px rgba(0,0,0,.08); opacity: 0; }}
-.card img {{ position: absolute; left: 0; top: 0; width: {CW}px; display: block; }}
-.hl {{ position: absolute; left: 14px; height: 0; background: rgba(255, 214, 10, .45); mix-blend-mode: multiply; border-radius: 6px; transform-origin: 0 50%; }}
-.box {{ position: absolute; left: 10px; width: {CW - 20}px; border: 5px solid {ACC}; border-radius: 16px; transform-origin: 50% 50%; opacity: 0; }}
-#chips {{ position: absolute; left: {g["chips_l"]}px; top: {g["chips_t"]}px; width: {g["chips_w"]}px; display: flex; gap: 9px; flex-wrap: nowrap; }}
-.chip {{ font: 700 23px "CJK"; color: {INK}; padding: 7px 14px; border-radius: 999px; background: rgba(16,20,34,.82);
-  border: 2px solid rgba(255,255,255,.22); opacity: 0; white-space: nowrap; }}
-.chip.star {{ color: #111; background: {GOLD}; border-color: {GOLD}; }}
-#subs {{ position: absolute; left: 0; right: 0; top: 0; height: {Hc}px; pointer-events: none; }}
-{cue_css}{prog["css"]}#mlabel {{ position: absolute; left: {g["mlabel_l"]}px; top: {g["mlabel_t"]}px; font: 700 30px "CJK"; color: {INK}; }}
-.ml {{ position: absolute; left: 0; top: 0; white-space: nowrap; opacity: 0; }}
-.ml b {{ font: italic 34px "Serif"; color: {GOLD}; margin-right: 14px; }}
-#pz-dim {{ background: rgba(5,8,16,.72); opacity: 0; }}
-#pz-box {{ position: absolute; left: {g["pz_l"]}px; top: {g["pz_t"]}px; width: {g["pz_w"]}px; padding: 26px 30px 30px; border-radius: 26px; background: #EFEFEC;
-  box-shadow: 0 40px 120px rgba(0,0,0,.6), 0 0 0 6px {ACC}; transform-origin: 85% 10%; opacity: 0; }}
-#pz-label {{ position: absolute; left: 0; top: -70px; font: 700 40px "CJK"; color: {GOLD}; opacity: 0; }}
-#pz-img {{ display: block; width: {g["pz_w"] - 60}px; }}
-#mbadge {{ position: absolute; left: {g["mbadge_l"]}px; top: {g["mbadge_t"]}px; padding: 4px 16px; border-radius: 10px; background: {ACC}; color: #fff; font: 700 28px "CJK"; opacity: 0; }}
-#mtitle {{ position: absolute; left: 0; right: 0; top: {g["mtitle_t"]}px; display: flex; flex-direction: column; align-items: center; gap: 18px; opacity: 0; }}
-#mtitle span {{ font: 700 {g["mtitle_fs"]}px "CJK"; color: #fff; padding: 18px 56px; border-radius: 24px; background: rgba(11,16,32,.82); border: 2px solid {GOLD}b3; text-shadow: 0 6px 30px rgba(0,0,0,.6); }}
-#mtitle small {{ font: 400 34px "CJK"; color: {GOLD}; text-shadow: 0 2px 10px rgba(0,0,0,.9); }}
-#mtag {{ position: absolute; {g["mtag_css"]} font: 400 24px "CJK"; color: rgba(236,238,242,.75); padding: 8px 18px;
-  border: 1.5px solid rgba(236,238,242,.3); border-radius: 999px; opacity: 0; }}
-#stamp {{ position: absolute; left: {g["stamp_l"]}px; top: {g["stamp_t"]}px; padding: 10px 30px; border: 7px solid {ACC}; color: {ACC}; font: 700 96px "CJK";
-  border-radius: 18px; opacity: 0; background: rgba(255,255,255,.12); }}
-#endcard {{ display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 0 60px; }}
-#end-k {{ font: italic 46px "Serif"; color: {GOLD}; opacity: 0; }}
-#end-m {{ margin-top: 26px; font: 700 {g["end_fs"]}px "CJK"; color: #fff; opacity: 0; }}
-#end-s {{ margin-top: 30px; font: 400 34px "CJK"; color: rgba(236,238,242,.75); opacity: 0; }}
-</style>
+{css}</style>
 </head>
 <body>
 <div id="root" data-composition-id="main" data-start="0" data-width="{W}" data-height="{Hc}" data-duration="{TOTAL}">
@@ -374,8 +352,8 @@ video.full, img.full {{ object-fit: cover; object-position: {g["face_pos"]}; }}
     {body_html}
   </div></div>
   <div id="cards" class="clip full" data-start="{r(H)}" data-duration="{r(B)}" data-track-index="4" style="pointer-events:none">
-    {cards_html}
-    <div id="chips">{chips_html}</div>
+    {cards["html"]}
+    {chips["html"]}
   </div>
   {pz_html}
 
@@ -386,107 +364,14 @@ video.full, img.full {{ object-fit: cover; object-position: {g["face_pos"]}; }}
   {o_html}
   {end_html}
 
-  <div id="subs" class="clip" data-start="0" data-duration="{r(E)}" data-track-index="7"></div>
+  {hf.subtitles_html(0, E)}
   {prog["html"]}
 </div>
 <script>
 (function () {{
 const D = {json.dumps(DATA, ensure_ascii=False)};
-const tl = gsap.timeline({{ paused: true }});
-const $ = (s) => document.querySelector(s);
-
-// subtitles
-const subs = $("#subs");
-D.cues.forEach((c, i) => {{
-  const el = document.createElement("div"); el.className = "cue"; el.id = "cue" + i;
-  el.innerHTML = c.t; subs.appendChild(el);   // escaped, 【term】 -> <em> (vstudio.overlays.cue_html)
-  tl.fromTo(el, {{ opacity: 0, y: 14 }}, {{ opacity: 1, y: 0, duration: 0.18, ease: "power2.out" }}, c.s);
-  tl.to(el, {{ opacity: 0, duration: 0.12, ease: "none" }}, Math.max(c.s + 0.25, c.e - 0.12));
-}});
-
-// talking head: split-screen moves (clip + slide) and punch-ins
-const FULL = "inset(0px 0px 0px 0px round 0px)";
-tl.set("#face", {{ clipPath: FULL, x: 0, y: 0 }}, 0);
-D.SPLITS.forEach(([s, e], i) => {{
-  const prevEnd = i ? D.SPLITS[i - 1][1] : -1;
-  if (s - prevEnd > 0.2) tl.to("#face", {{ clipPath: D.SPLIT, x: D.SPLIT_X, y: D.SPLIT_Y, duration: 0.7, ease: "power3.inOut" }}, s - 0.15);
-  const next = D.SPLITS[i + 1];
-  if (!next || next[0] - e > 0.2) tl.to("#face", {{ clipPath: FULL, x: 0, y: 0, duration: 0.7, ease: "power3.inOut" }}, e - 0.3);
-}});
-D.PUNCH.forEach(([s, e]) => {{
-  tl.to("#face-zoom", {{ scale: 1.14, duration: 0.45, ease: "power2.out" }}, s);
-  tl.to("#face-zoom", {{ scale: 1.0, duration: 0.5, ease: "power2.inOut" }}, e);
-}});
-
-// cards: 3D slide-in, scroll, highlights, box
-D.CARDS.forEach((c) => {{
-  const k = D.CW / c.w;
-  const card = $("#" + c.id), scr = $("#" + c.id + "-s"), hls = $("#" + c.id + "-hls");
-  tl.fromTo(card, {{ opacity: 0, x: 140, rotationY: -28, transformPerspective: 1400 }},
-                  {{ opacity: 1, x: 0, rotationY: -6, duration: 0.75, ease: "power3.out" }}, c.s);
-  tl.to(card, {{ rotationY: -2, y: -8, duration: Math.max(1, c.e - c.s - 1.2), ease: "sine.inOut" }}, c.s + 0.75);
-  tl.to(card, {{ opacity: 0, x: 80, rotationY: 18, duration: 0.45, ease: "power2.in" }}, c.e - 0.45);
-  tl.set(scr, {{ y: -c.scroll[0][1] * k }}, 0);
-  c.scroll.slice(1).forEach(([t, y], j) => {{
-    const t0 = c.scroll[j][0];
-    tl.to(scr, {{ y: -y * k, duration: Math.min(1.2, Math.max(0.6, t - t0)), ease: "power2.inOut" }}, t - 0.2);
-  }});
-  (c.hl || []).forEach(([t, y0, y1, frac], j) => {{
-    const h = document.createElement("div"); h.className = "hl"; h.id = c.id + "-hl" + j;
-    h.style.top = (y0 * k - 6) + "px"; h.style.height = ((y1 - y0) * k + 12) + "px"; h.style.width = ((D.CW - 28) * frac) + "px";
-    hls.appendChild(h);
-    tl.fromTo(h, {{ scaleX: 0 }}, {{ scaleX: 1, duration: 0.5, ease: "power2.out" }}, t);
-  }});
-  if (c.box) {{
-    const [t, y0, y1] = c.box, b = document.createElement("div"); b.className = "box"; b.id = c.id + "-box";
-    b.style.top = (y0 * k - 10) + "px"; b.style.height = ((y1 - y0) * k + 20) + "px"; hls.appendChild(b);
-    tl.fromTo(b, {{ opacity: 0, scale: 1.15 }}, {{ opacity: 1, scale: 1, duration: 0.35, ease: "back.out(1.8)" }}, t);
-  }}
-}});
-D.CHIPS.forEach(([t], i) => {{
-  tl.fromTo("#chip" + i, {{ opacity: 0, y: 16, scale: 0.9 }}, {{ opacity: 1, y: 0, scale: 1, duration: 0.3, ease: "back.out(1.7)" }}, t);
-}});
-if (D.CHIPS.length) tl.to("#chips", {{ opacity: 0, duration: 0.35 }}, D.CHIP_END - 0.4);
-
-// prompt hold: dim, fly the prompt out of the screenshot card, hold, fly back
-if (D.HAS_HOLD) {{
-  tl.fromTo("#pz-dim", {{ opacity: 0 }}, {{ opacity: 1, duration: 0.3 }}, D.T_HOLD);
-  tl.fromTo("#pz-box", {{ opacity: 0, scale: 0.3, x: D.FLY[0], y: D.FLY[1] }}, {{ opacity: 1, scale: 1, x: 0, y: 0, duration: 0.45, ease: "power3.out" }}, D.T_HOLD);
-  tl.fromTo("#pz-label", {{ opacity: 0, y: 10 }}, {{ opacity: 1, y: 0, duration: 0.3 }}, D.T_HOLD + 0.35);
-  tl.to("#pz-box", {{ opacity: 0, scale: 0.3, x: D.FLY[0], y: D.FLY[1], duration: 0.35, ease: "power2.in" }}, D.T_HOLD + D.HOLD - 0.38);
-  tl.to("#pz-dim", {{ opacity: 0, duration: 0.3 }}, D.T_HOLD + D.HOLD - 0.3);
-}}
-if (D.HAS_M) {{
-  // body -> montage: zoom through into the framed screen (body2 is still playing underneath)
-  tl.to("#face", {{ scale: 1.35, opacity: 0, filter: "blur(10px)", transformOrigin: "50% 45%", duration: 0.7, ease: "power3.in" }}, D.M - 0.1);
-  tl.fromTo("#screen", {{ scale: 1.25, opacity: 0 }}, {{ scale: D.SCR_IN, y: D.SCR_Y, opacity: 1, duration: 0.9, ease: "power3.out" }}, D.M + 0.1);
-  tl.to("#screen", {{ scale: D.SCR_DRIFT, duration: Math.max(0.5, D.O - D.M - 1.5), ease: "sine.inOut" }}, D.M + 1.0);
-  D.mlab.forEach((m) => {{
-    tl.fromTo("#ml" + m.n, {{ opacity: 0, x: -24 }}, {{ opacity: 1, x: 0, duration: 0.35, ease: "power2.out" }}, m.s + 0.1);
-    tl.to("#ml" + m.n, {{ opacity: 0, duration: 0.2 }}, m.e - 0.2);
-  }});
-  if ($("#mtag")) tl.fromTo("#mtag", {{ opacity: 0 }}, {{ opacity: 1, duration: 0.5 }}, D.M + 0.8);
-  if ($("#mbadge")) tl.fromTo("#mbadge", {{ opacity: 0, x: -20 }}, {{ opacity: 1, x: 0, duration: 0.35, ease: "power2.out" }}, D.M + 0.6);
-  if ($("#mtitle")) {{
-    tl.fromTo("#mtitle", {{ opacity: 0, scale: 0.92 }}, {{ opacity: 1, scale: 1, duration: 0.45, ease: "back.out(1.6)" }}, D.M + D.TZ + 0.05);
-    tl.to("#mtitle", {{ opacity: 0, y: -20, duration: 0.4, ease: "power2.in" }}, D.M + D.TZ + 1.95);
-  }}
-  // montage -> outro: frame shrinks away (montage clip runs TZ past O so it is alive while it leaves)
-  tl.to("#screen", {{ scale: 0.6, opacity: 0, duration: 0.6, ease: "power3.in" }}, D.O - 0.45);
-}}
-if (D.HAS_O) {{
-  tl.fromTo("#ow", {{ scale: 1.15, opacity: 0 }}, {{ scale: 1, opacity: 1, duration: 0.6, ease: "power3.out" }}, D.O);
-  if (D.OUTRO_PUNCH !== null) {{
-    tl.to("#ow", {{ scale: 1.16, duration: 0.5, ease: "power2.out", transformOrigin: "50% 38%" }}, D.OUTRO_PUNCH);
-    if ($("#stamp")) tl.fromTo("#stamp", {{ opacity: 0, scale: 2.2, rotation: -12 }}, {{ opacity: 1, scale: 1, rotation: -12, duration: 0.3, ease: "back.out(2)" }}, D.OUTRO_PUNCH + 0.9);
-  }}
-}}
-if (D.HAS_END) {{
-  tl.fromTo("#end-k", {{ opacity: 0, y: 16 }}, {{ opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }}, D.E + 0.15);
-  tl.fromTo("#end-m", {{ opacity: 0, y: 20 }}, {{ opacity: 1, y: 0, duration: 0.55, ease: "power2.out" }}, D.E + 0.45);
-  tl.fromTo("#end-s", {{ opacity: 0 }}, {{ opacity: 1, duration: 0.5 }}, D.E + 1.0);
-}}
-
+{hf.prelude()}
+{js}
 // progress bar + chapters on a scrim (vstudio.overlays.hf_progress)
 {prog["js"]}
 window.__timelines = window.__timelines || {{}};

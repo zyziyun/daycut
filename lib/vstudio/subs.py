@@ -90,38 +90,42 @@ def text_width(s):
 
 
 def _tokens(text):
-    """[(token, highlighted)] with latin/number runs whole, CJK per char, closing punctuation glued to
-    the token before it and opening punctuation to the token after it (no line starts with ，)."""
+    """[(token, parts)] with latin/number runs whole, CJK per char, closing punctuation glued to
+    the token before it and opening punctuation to the token after it (no line starts with ，).
+    parts = [(substring, highlighted)]: a glued punctuation mark keeps its OWN highlight state, so
+    ``**里**，`` never becomes ``**里，**``."""
     raw = []
     for seg, hi in parse_highlight(text):
         i = 0
         while i < len(seg):
             m = _LATIN.match(seg, i)
             if m:
-                raw.append([m.group(), hi]); i = m.end()
+                raw.append((m.group(), hi)); i = m.end()
             else:
-                raw.append([seg[i], hi]); i += 1
+                raw.append((seg[i], hi)); i += 1
     out = []
-    for tok in raw:
-        if out and tok[0] and tok[0][0] in _CLOSE and not out[-1][0].isspace():
-            out[-1][0] += tok[0]
-        elif out and out[-1][0] and out[-1][0][-1] in _OPEN and not tok[0].isspace():
-            out[-1][0] += tok[0]; out[-1][1] = out[-1][1] or tok[1]
+    for t, hi in raw:
+        if out and t and t[0] in _CLOSE and not out[-1][0].isspace():
+            out[-1][0] += t; out[-1][1].append([t, hi])
+        elif out and out[-1][0] and out[-1][0][-1] in _OPEN and not t.isspace():
+            out[-1][0] += t; out[-1][1].append([t, hi])
         else:
-            out.append(tok)
-    return [tuple(t) for t in out]
+            out.append([t, [[t, hi]]])
+    return [(t, [tuple(x) for x in parts]) for t, parts in out]
 
 
 def _render(toks, style):
+    a, b = ("【", "】") if style == "【】" else ("**", "**")
     s, open_ = "", False
-    for t, hi in toks:
-        if hi and not open_:
-            s += "【" if style == "【】" else "**"; open_ = True
-        elif not hi and open_:
-            s += "】" if style == "【】" else "**"; open_ = False
-        s += t
+    for _, parts in toks:
+        for t, hi in parts:
+            if hi and not open_:
+                s += a; open_ = True
+            elif not hi and open_:
+                s += b; open_ = False
+            s += t
     if open_:
-        s += "】" if style == "【】" else "**"
+        s += b
     return s
 
 
@@ -248,10 +252,11 @@ def _clean_times(cues, no_overlap=True, min_ms=40):
 
 
 # ------------------------------------------------------------------ writers
-def srt_write(cues, path, which="text", wrap=None, no_overlap=True):
+def srt_write(cues, path, which="text", wrap=None, no_overlap=True, trailing_newline=False):
     """Write an .srt. which: "text" | "alt" | "both" (text line(s) then alt). wrap: max chars per
     line (CJK-aware) or None. Markup stripped; empty cues skipped; times clamped >= 0, end > start,
-    no overlap. Returns the number of cues written. From call-clips ``export_srt.write``."""
+    no overlap. trailing_newline=True ends the file with a blank line (conventional SRT ending).
+    Returns the number of cues written. From call-clips ``export_srt.write``."""
     n, lines = 0, []
     for a, b, c in _clean_times(cues, no_overlap):
         parts = []
@@ -265,7 +270,7 @@ def srt_write(cues, path, which="text", wrap=None, no_overlap=True):
         n += 1
         lines.append(f"{n}\n{srt_ts(a)} --> {srt_ts(b)}\n" + "\n".join(parts) + "\n")
     with open(path, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines))
+        f.write("\n".join(lines) + ("\n" if trailing_newline and lines else ""))
     return n
 
 
@@ -314,14 +319,30 @@ def font_family(role="cjk-bold"):
         return "Noto Sans SC"
 
 
+def ass_style(name, font_name=None, size=40, primary="#FFFFFF", outline_colour="#000000", back="#000000",
+              back_alpha=0x88, bold=True, italic=False, border_style=1, outline=2.4, shadow=1, alignment=2,
+              margin_l=60, margin_r=60, margin_v=42):
+    """One ``Style:`` line for ``ass_write(extra_styles=...)``. alignment = numpad position (2 bottom
+    centre, 8 top centre); border_style 3 = opaque box (``back``/``back_alpha`` is the box colour)."""
+    font_name = font_name or font_family()
+    ba = f"&H{int(back_alpha):02X}" + _ass_colour(back)[4:]
+    return (f"Style: {name},{font_name},{int(size)},{_ass_colour(primary)},{_ass_colour(primary)},"
+            f"{_ass_colour(outline_colour)},{ba},{-1 if bold else 0},{-1 if italic else 0},0,0,100,100,0,0,"
+            f"{border_style},{outline:g},{shadow:g},{alignment},{int(margin_l)},{int(margin_r)},{int(margin_v)},1")
+
+
 def ass_write(cues, path, w=1920, h=1080, font_name=None, size=None, wrap=None, highlight=None,
-              alt_scale=0.72, margin_v=None, outline=2.4, no_overlap=True):
+              alt_scale=0.72, margin_v=None, outline=2.4, no_overlap=True, extra_styles=None, extra_events=None):
     """Write an .ass for burning with ffmpeg's ``ass`` filter (needs libass: ``media.ffmpeg_bin(need=["ass"])``).
 
     Style "Sub": bold white, black outline, bottom-centre; size defaults to 52 px at 1080 lines
     (scaled to ``h``). Highlights render in ``highlight`` (persona brand.highlight); ``alt`` goes on
     a smaller second line (alt_scale). wrap: max chars per line (CJK-aware) for the main text.
-    Times clamped like ``srt_write``. Returns the number of events.
+    Times clamped like ``srt_write``.
+    extra_styles: more named styles - ``Style:`` lines (see ``ass_style``) or dicts of ``ass_style``
+      kwargs (with "name"); extra_events: [(start, end, text, style)] or dicts {start, end, text,
+      style, layer=1} drawn with them (e.g. a top-boxed "Note" style for 勘误); markup is honoured.
+    Returns the number of events (Sub cues + extra events).
     From longform ``subs_lib.ass_header/ass_ts`` + ``build_subs``.
     """
     k = min(w, h) / 1080.0
@@ -335,6 +356,11 @@ def ass_write(cues, path, w=1920, h=1080, font_name=None, size=None, wrap=None, 
         except Exception:
             highlight = "#FFD60A"
     hc = _ass_colour(highlight)
+    extra = ""
+    for st in extra_styles or ():
+        if isinstance(st, dict):
+            st = ass_style(**{"font_name": font_name, **st})
+        extra += st.strip() + "\n"
     head = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {w}
@@ -345,7 +371,7 @@ ScaledBorderAndShadow: yes
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Sub,{font_name},{size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H88000000,1,0,0,0,100,100,0,0,1,{outline},1,2,{int(60 * k)},{int(60 * k)},{mv},1
-
+{extra}
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
@@ -359,6 +385,13 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         if not txt:
             continue
         ev.append(f"Dialogue: 0,{ass_ts(a)},{ass_ts(b)},Sub,,0,0,0,,{txt}")
+    for e in extra_events or ():
+        if isinstance(e, dict):
+            a, b, t, sty, layer = e["start"], e["end"], e["text"], e.get("style", "Sub"), e.get("layer", 1)
+        else:
+            a, b, t, sty = e[:4]
+            layer = e[4] if len(e) > 4 else 1
+        ev.append(f"Dialogue: {layer},{ass_ts(a)},{ass_ts(b)},{sty},,0,0,0,,{_ass_text(t, hc)}")
     with open(path, "w", encoding="utf-8") as f:
         f.write(head + "\n".join(ev) + "\n")
     return len(ev)

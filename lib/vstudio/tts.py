@@ -59,6 +59,12 @@ def pick_engine(name="auto"):
     raise RuntimeError("no TTS engine: pip install mlx-audio (Apple Silicon) | edge-tts | openai (+OPENAI_API_KEY)")
 
 
+def default_voice(engine="auto"):
+    """The voice ``synth`` uses for ``engine`` when none is passed (persona tts.<engine>_voice, else
+    DEFAULT_VOICE) - for logging. engine "auto" resolves through ``pick_engine``."""
+    return _voice(pick_engine(engine), None)
+
+
 def _voice(engine, voice):
     if voice:
         return voice
@@ -91,12 +97,16 @@ def _openai(text, voice, speed, instructions, model, dst):
 def _kokoro(text, voice, speed, model, dst, tmp):
     if not importlib.util.find_spec("mlx_audio"):
         raise RuntimeError("kokoro needs mlx-audio (pip install mlx-audio; Apple Silicon)")
-    subprocess.run([sys.executable, "-m", "mlx_audio.tts.generate", "--model", model, "--text", text,
-                    "--voice", voice, "--speed", str(speed), "--join_audio", "--audio_format", "wav",
-                    "--output_path", tmp, "--file_prefix", "k"], check=True, capture_output=True)
+    r = subprocess.run([sys.executable, "-m", "mlx_audio.tts.generate", "--model", model, "--text", text,
+                        "--voice", voice, "--speed", str(speed), "--join_audio", "--audio_format", "wav",
+                        "--output_path", tmp, "--file_prefix", "k"], capture_output=True, text=True)
+    tail = lambda: "\n".join(((r.stdout or "") + (r.stderr or "")).strip().splitlines()[-15:])
+    if r.returncode != 0:
+        raise RuntimeError(f"mlx_audio failed (exit {r.returncode}):\n{tail()}")
     cands = [f for f in os.listdir(tmp) if f.startswith("k") and f.endswith(".wav")]
     if not cands:
-        raise RuntimeError("mlx_audio produced no wav")
+        # mlx_audio prints the real error (bad voice, model download) to stdout and exits 0
+        raise RuntimeError(f"mlx_audio produced no wav; its output:\n{tail()}")
     shutil.move(os.path.join(tmp, sorted(cands)[0]), dst)
 
 

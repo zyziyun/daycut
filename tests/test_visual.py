@@ -47,7 +47,9 @@ def test_overlays_render_per_theme(theme):
 def test_progress_static_and_html():
     st = overlays.progress_static(CHAPTERS, 60, width=1920)
     _rgba_ok(st["bar"]); assert st["bar"].width == 1920
-    assert len(st["active"]) == len(CHAPTERS) and "drawbox" in st["drawbox"]
+    assert len(st["active"]) == len(CHAPTERS)
+    # the fill is a per-frame overlay graph (drawbox never animated); "drawbox" stays as an alias
+    assert "overlay=x='" in st["fill"] and st["drawbox"] == st["fill"] and "[in]" in st["fill"]
     for orient in ("horizontal", "vertical"):
         snip = overlays.hf_progress(CHAPTERS, 3.0, 60.0, orient)
         assert {"css", "html", "js"} <= set(snip) and "#bar-fill" in snip["css"] and "barwrap" in snip["html"]

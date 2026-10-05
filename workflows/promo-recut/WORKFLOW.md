@@ -137,3 +137,11 @@ final-timeline time. Chapter anchors are raw body seconds or `start` / `montage`
 label positions). Override any value with `layout.horizontal.*` / `layout.vertical.*` in the config.
 Vertical stacks the face band (top) above the card (bottom). It crops the 16:9 talk with `object-fit: cover`,
 so set `layout.vertical.face_pos` if the speaker is off-centre.
+
+## Effects are shared (`vstudio.hf`)
+
+Every packaging effect here (split screen, screenshot cards with scroll / highlighter / red box, chips,
+keyword subtitles, punch-ins, freeze hold, zoom-through into a framed screen, step labels, badge, tag, title,
+stamp, end card) is a generator in `lib/vstudio/hf.py` returning `{css, html, js}`. build_promo only lays out
+times and geometry and passes `hf.JS("D.X")` references into its `const D` data object. To reuse one effect in
+another HyperFrames project, call the generator with plain numbers. Catalogue: `references/EFFECTS.md`.

@@ -81,3 +81,12 @@ persona `audio.*` / `tts.*` are not consulted.
   would let `make_bgm_bed.py` drop its local acrossfade graph.
 - `subs.srt_write`: option to end with a blank line (conventional SRT ending) to drop the append in `align_cues.py`.
 - `asr`: an exporter for the HyperFrames `transcript.json` word shape (`[{text,start,end,id}]`).
+
+## Phase 3: transitions moved to `vstudio.hf`
+
+`make_index.py` takes the transition CSS (`.scene-wrap`, `#tx-blocks`), the 8-block overlay and the GSAP switch
+for all 11 types from `vstudio.hf.scene_transitions`, and builds each spec with `hf.transition` (which rejects
+unknown types). `index.html` is **byte-identical** to the pre-refactor script on the example's 18 scenes
+(synthetic `audio/scenes.json`) and on a variant using all 11 types + a bgm track; `hyperframes lint` 0 errors,
+0 warnings on both.
+

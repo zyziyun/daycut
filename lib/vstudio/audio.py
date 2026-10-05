@@ -180,10 +180,12 @@ def normalize_stem(src, dst, lufs=None, tp=-1.5):
 
 
 # ------------------------------------------------------------------ envelopes / silence
-def rms_envelope(x, sr, hop=0.01, win=0.03, db=True, smooth=3):
+def rms_envelope(x, sr, hop=0.01, win=0.03, db=True, smooth=3, smooth_db=False):
     """Short-time RMS envelope of mono float audio (stereo is averaged).
 
-    Args: hop/win in seconds; db -> 20*log10(rms) (floor -120); smooth = moving-average frames.
+    Args: hop/win in seconds; db -> 20*log10(rms) (floor -120); smooth = moving-average frames,
+    applied to the linear RMS (default) or, with smooth_db=True, to the dB values (talkinghead
+    cut_pass1/strict_pass rules were tuned on dB smoothing; linear smoothing widens voiced runs ~10 ms).
     Returns (env, hop). Frame i covers samples [i*hop, i*hop + win).
     Vectorised merge of promo ``tight_cut.rms_envelope`` (linear, 10/30 ms) and talkinghead
     ``cut_pass1``/``strict_pass`` (dB, 10 ms, 3-frame smoothing).
@@ -197,6 +199,11 @@ def rms_envelope(x, sr, hop=0.01, win=0.03, db=True, smooth=3):
     idx = np.arange(frames) * h
     end = np.minimum(idx + n, len(x))
     env = np.sqrt((c[end] - c[idx]) / np.maximum(1, end - idx) + 1e-12)
+    if smooth_db and db:
+        env = 20 * np.log10(np.maximum(env, 1e-6))
+        if smooth and smooth > 1 and len(env) >= smooth:
+            env = np.convolve(env, np.ones(smooth) / smooth, mode="same")
+        return env.astype(np.float32), hop
     if smooth and smooth > 1 and len(env) >= smooth:
         env = np.convolve(env, np.ones(smooth) / smooth, mode="same")
     if db:
@@ -340,6 +347,88 @@ def mix_bed(voice, music, out, duck_db=-10.0, music_lufs=None, voice_lufs=None, 
         media.run(["ffmpeg", "-y", "-i", tmp, "-c:a", "aac", "-b:a", _persona_export_bitrate(), "-ar", str(SR), out])
         os.remove(tmp)
     return out
+
+
+def _write_out(x, out, lufs=None, tp=-1.5, lra=11.0):
+    """float (n, 2) -> ``out`` (.wav PCM, else AAC); optional two-pass loudnorm."""
+    if lufs is None and out.lower().endswith(".wav"):
+        return write_wav(out, x, SR)
+    fd, tmp = tempfile.mkstemp(suffix=".wav")
+    os.close(fd)
+    try:
+        write_wav(tmp, x, SR)
+        if lufs is not None:
+            loudnorm_2pass(tmp, out, lufs=lufs, tp=tp, lra=lra)
+        else:
+            media.run(["ffmpeg", "-y", "-i", tmp, "-c:a", "aac", "-b:a", _persona_export_bitrate(), "-ar", str(SR), out])
+    finally:
+        os.remove(tmp)
+    return out
+
+
+def loop_bed(src, dst, total, xfade=6.0, lufs=-30.0, fade_in=3.0, fade_out=5.0, start=0.0, tp=-6.0, lra=7.0):
+    """Loop a music track to ``total`` seconds with ``xfade`` s linear crossfades between the loops
+    (no hard seam, unlike ``mix_bed``'s tiling), fade in/out, then two-pass loudnorm to ``lufs``
+    (None = leave the level) -> 48 kHz stereo ``dst`` (.wav PCM, else AAC). start: skip into the
+    track first. Raises ValueError if the track is not longer than xfade. Returns dst.
+    From explainer ``make_bgm_bed.py`` (acrossfade c1=tri:c2=tri chain, -30 LUFS, tp -6, LRA 7)."""
+    x = decode_audio(src, start=start or None)
+    L, X, N = len(x), int(round(xfade * SR)), int(round(total * SR))
+    if L <= X or L == 0:
+        raise ValueError(f"source ({L / SR:.1f}s) must be longer than xfade ({xfade}s)")
+    out = np.zeros((max(N, L), 2), np.float32)
+    out[:L] = x
+    end = L
+    if X:
+        up = np.linspace(0, 1, X, dtype=np.float32)[:, None]
+    while end < N:
+        pos = end - X
+        if X:
+            out[pos:end] = out[pos:end] * (1 - up) + x[:X] * up
+        rest = x[X:]
+        need = min(len(rest), len(out) - end)
+        if end + len(rest) > len(out):
+            out = np.concatenate([out, np.zeros((end + len(rest) - len(out), 2), np.float32)])
+            need = len(rest)
+        out[end:end + need] = rest[:need]
+        end += len(rest)
+    y = out[:N].copy()
+    t = np.arange(N) / SR
+    g = np.ones(N, np.float32)
+    if fade_in > 0:
+        g *= np.clip(t / fade_in, 0, 1)
+    if fade_out > 0 and N:
+        g *= np.clip((total - t) / fade_out, 0, 1)
+    return _write_out(y * g[:, None], dst, lufs, tp, lra)
+
+
+def place_clips(clips, total, dst, lufs=None, tp=-1.5):
+    """Place audio files on a timeline -> one 48 kHz stereo stem ``dst`` of ``total`` seconds.
+
+    clips: [(path, start)] or [(path, start, gain_db)] or dicts {path, start, gain_db, trim}
+    (start in timeline seconds; a negative start drops the clip's head; trim = max seconds used).
+    Overlapping clips are summed (no normalisation); lufs: optional final two-pass loudnorm.
+    Returns dst. From photo-story ``timeline.place_voice`` (adelay + amix normalize=0)."""
+    N = int(round(total * SR))
+    mix = np.zeros((N, 2), np.float32)
+    for c in clips:
+        if isinstance(c, dict):
+            path, st, gdb, trim = c["path"], float(c["start"]), float(c.get("gain_db", 0) or 0), c.get("trim")
+        else:
+            path, st = c[0], float(c[1])
+            gdb, trim = (float(c[2]) if len(c) > 2 else 0.0), None
+        if st >= total:
+            continue
+        x = decode_audio(str(path))
+        if trim is not None:
+            x = x[:int(round(float(trim) * SR))]
+        i = int(round(st * SR))
+        if i < 0:
+            x, i = x[-i:], 0
+        j = min(N, i + len(x))
+        if j > i:
+            mix[i:j] += x[:j - i] * (_db(gdb) if gdb else 1.0)
+    return _write_out(mix, dst, lufs, tp)
 
 
 # ------------------------------------------------------------------ pitch

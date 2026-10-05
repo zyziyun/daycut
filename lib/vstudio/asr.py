@@ -94,6 +94,13 @@ def apply_term_fixes(text, extra=None, generic=True, clean=True):
 
 
 # ------------------------------------------------------------------ backends
+def resolve_backend(name="auto"):
+    """The ASR backend ``transcribe(backend=name)`` would use: "mlx" | "faster" | "openai" (probes
+    imports / OPENAI_API_KEY for "auto"; raises RuntimeError if none). Lets callers pick a
+    per-backend model before transcribing."""
+    return _backend(name)
+
+
 def _backend(name="auto"):
     if name != "auto":
         return name
@@ -249,6 +256,18 @@ def _finish(raw, term_fixes, fix_terms):
     out = dict(raw, segments=segs)
     out["text"] = "".join(s["text"] for s in segs).strip()
     out["words"] = words_of(out)
+    return out
+
+
+def to_hyperframes_transcript(tr, path=None, words=None):
+    """Transcript (``transcribe`` result, or a flat [{"w","t","te"}] list) -> the HyperFrames
+    ``transcript.json`` word shape [{"text", "start", "end", "id": "w0"}, ...]; written to ``path``
+    (UTF-8 JSON, indent 2) if given. Returns the list. From explainer ``transcribe.py``."""
+    ws = words if words is not None else (tr["words"] if isinstance(tr, dict) else tr)
+    out = [{"text": w["w"], "start": w["t"], "end": w["te"], "id": f"w{k}"} for k, w in enumerate(ws)]
+    if path is not None:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(out, f, indent=2, ensure_ascii=False)
     return out
 
 

@@ -125,3 +125,13 @@ Existing keys used: `speed.body`, `speed.b_roll`, `audio.voice_lufs`, `audio.lou
 - `media.grab_frame`: return `out`, and an optional JPEG quality (build_promo still uses `media.run` with `-q:v 2`
   for the freeze frame).
 - A small `link_or_copy` (hard link, else copy) in `media` or `render` would remove the last local file helper.
+
+## Phase 3: effects moved to `vstudio.hf`
+
+`render_html` now composes `vstudio.hf` generators (split_screen, punch_in, punch_at, enter_zoom,
+screenshot_cards, chips, subtitles, freeze_clips, freeze_hold, framed_screen, zoom_through, step_labels, tag,
+badge, title_card, stamp, end_card) instead of inline CSS/HTML/GSAP. Output is **byte-identical**:
+`index.html` diffed against the pre-refactor script on /tmp/promo-recut-after (horizontal + vertical) and a
+minimal variant (no hold / montage / outro / end card / chips, explicit `split`). `hyperframes lint`: 0 errors,
+the same advisory warnings as before. Unused local `HL` dropped from render_html.
+

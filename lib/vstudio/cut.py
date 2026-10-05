@@ -114,34 +114,46 @@ class TimeMap:
         return [it for it in self.items if it["kind"] == "clip" and (tag is None or it.get("tag") == tag)
                 and (source is None or it.get("source", 0) == source)]
 
-    def to_final(self, t, snap=None, tag=None, source=0):
+    def to_final(self, t, snap=None, tag=None, source=0, with_item=False):
         """Source second -> final second. snap for times that were cut out: None -> None,
         "fwd" -> start of the next kept span, "back" -> end of the previous one, "nearest".
         If several items contain t (a hook re-using body footage), the LAST one wins unless ``tag``
-        filters (pass tag="body")."""
+        filters (pass tag="body"). with_item=True -> (final_t, index into ``items``) ((None, None)
+        when unmapped)."""
+        r, it = self._to_final(t, snap, tag, source)
+        if with_item:
+            return (r, None) if it is None or r is None else (r, self.items.index(it))
+        return r
+
+    def _to_final(self, t, snap, tag, source):
         clips = self._clips(tag, source)
-        hit = None
+        hit = hit_it = None
         for it in clips:
             if it["src0"] - 1e-6 <= t <= it["src1"] + 1e-6:
                 hit = it["dst0"] + (min(max(t, it["src0"]), it["src1"]) - it["src0"]) / it["speed"]
+                hit_it = it
         if hit is not None or snap is None:
-            return hit
+            return hit, hit_it
         nxt = [it for it in clips if it["src0"] > t]
         prv = [it for it in clips if it["src1"] < t]
-        f = min(nxt, key=lambda it: it["src0"])["dst0"] if nxt else None
-        b = None
+        nit = min(nxt, key=lambda it: it["src0"]) if nxt else None
+        f = nit["dst0"] if nit else None
+        b = pit = None
         if prv:
-            it = max(prv, key=lambda it: it["src1"])
-            b = it["dst0"] + (it["src1"] - it["src0"]) / it["speed"]
+            pit = max(prv, key=lambda it: it["src1"])
+            b = pit["dst0"] + (pit["src1"] - pit["src0"]) / pit["speed"]
         if snap == "fwd":
-            return f
+            return f, nit
         if snap == "back":
-            return b
+            return b, pit
         if snap == "nearest":
-            cands = [(abs(min(nxt, key=lambda it: it["src0"])["src0"] - t), f)] if nxt else []
-            if prv:
-                cands.append((abs(t - max(prv, key=lambda it: it["src1"])["src1"]), b))
-            return min(cands)[1] if cands else None
+            cands = [(abs(nit["src0"] - t), f, nit)] if nit else []
+            if pit:
+                cands.append((abs(t - pit["src1"]), b, pit))
+            if not cands:
+                return None, None
+            c = min(cands, key=lambda c: (c[0], c[1]))
+            return c[1], c[2]
         raise ValueError(f"snap={snap!r}")
 
     def owner(self, t):
@@ -688,8 +700,13 @@ def cut_segments(src, segments, out, fps=None, crf=14, preset="fast", fade=0.012
     def job(k_ab):
         k, (a, b) = k_ab
         pre_f = max(0, a - int(2 * F))
-        pre = float(Fraction(pre_f) / F)
-        chain = f"fps={F.numerator}/{F.denominator},trim=start_frame={a - pre_f}:end_frame={b - pre_f}," \
+        # Seek HALF A FRAME before the grid point and shift back by the same amount: an input whose
+        # timestamps jitter by ~1 ms (concat-demuxer joins, including our own output) would otherwise
+        # lose the frame at pre_f to the accurate seek (pts a hair before -ss) and shift by one.
+        half = 0.5 / float(F) if pre_f > 0 else 0.0
+        pre = float(Fraction(pre_f) / F) - half
+        chain = (f"setpts=PTS-{half:.6f}/TB," if half else "") + \
+                f"fps={F.numerator}/{F.denominator},trim=start_frame={a - pre_f}:end_frame={b - pre_f}," \
                 f"setpts=PTS-STARTPTS" + (f",{vf}" if vf else "") + ",setsar=1,format=yuv420p"
         p = os.path.join(tmp, f"{k:04d}.mp4")
         media.run(["ffmpeg", "-y", "-ss", f"{pre:.6f}", "-i", src, "-an", "-vf", chain, "-c:v", "libx264",
@@ -734,7 +751,11 @@ def cut_segments(src, segments, out, fps=None, crf=14, preset="fast", fade=0.012
 # =================================================================== crossfaded assembly
 @dataclass
 class Assembly:
-    """Result of ``xfade_assemble``: ffmpeg filter graph + the timing it implies."""
+    """Result of ``xfade_assemble``: ffmpeg filter graph + the timing it implies.
+
+    aout is None for a video-only assembly (``audio=False``). input_specs (seek mode) lists one
+    ffmpeg input per piece: {"input": original input index, "ss": seek s, "t": read length s};
+    ``render_assembly`` turns them into ``-ss/-t -i`` options."""
     graph: str
     vout: str
     aout: str
@@ -745,24 +766,67 @@ class Assembly:
     timemap: TimeMap
     pieces: list = field(default_factory=list)
     inputs: list = field(default_factory=list)
+    transitions: list = field(default_factory=list)
+    audio: bool = True
+    fps: float = 30
+    input_specs: list = None
+    chains: list = field(default_factory=list)      # per piece: graph statements with "{IN}" input placeholder
 
 
 def _piece(p):
     if isinstance(p, dict):
         return dict(input=p.get("input", 0), start=float(p["start"]), end=float(p["end"]), speed=p.get("speed"),
-                    gain_db=p.get("gain_db", 0.0), tag=p.get("tag"))
+                    gain_db=p.get("gain_db", 0.0), tag=p.get("tag"), vf=p.get("vf"), vf_pre=p.get("vf_pre"),
+                    fit=p.get("fit"), af=p.get("af"))
     if len(p) == 2:
         return dict(input=0, start=float(p[0]), end=float(p[1]), speed=None, gain_db=0.0, tag=None)
     return dict(input=int(p[0]), start=float(p[1]), end=float(p[2]), speed=None, gain_db=0.0, tag=None)
 
 
+FITS = ("crop", "pad", "blur", "stretch")
+
+
+def fit_chain(size, fit="crop", blur_sigma=40, blur_dim=-0.08):
+    """Filter that fits any frame into ``size`` ("W:H" / "WxH" / (W, H)): crop (fill + centre crop),
+    pad (letterbox on black), stretch, or blur (sharp fitted frame over a blurred, dimmed fill of
+    itself - a split/overlay subgraph: the returned string uses labels and needs an input label in
+    front and an output label after it). From vlog ``build_vlog.fit_chain``."""
+    w, h = (size if isinstance(size, (list, tuple)) else str(size).replace("x", ":").split(":"))
+    if fit == "stretch":
+        return f"scale={w}:{h}:flags=lanczos"
+    if fit == "pad":
+        return (f"scale={w}:{h}:force_original_aspect_ratio=decrease:flags=lanczos,"
+                f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color=black")
+    if fit == "blur":
+        return (f"split=2[{{L}}bg][{{L}}fg];[{{L}}bg]scale={w}:{h}:force_original_aspect_ratio=increase,"
+                f"crop={w}:{h},gblur=sigma={blur_sigma},eq=brightness={blur_dim}[{{L}}bgb];"
+                f"[{{L}}fg]scale={w}:{h}:force_original_aspect_ratio=decrease:flags=lanczos[{{L}}fgs];"
+                f"[{{L}}bgb][{{L}}fgs]overlay=(W-w)/2:(H-h)/2")
+    if fit != "crop":
+        raise ValueError(f"fit={fit!r} (one of {FITS})")
+    return f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}"
+
+
+def _per_join(v, n, cast=float):
+    """Scalar or per-join list (len n-1, or len n with a dummy first) -> [None] + n-1 values."""
+    if isinstance(v, (list, tuple)):
+        v = list(v[1:] if len(v) == n else v)
+        if len(v) != n - 1:
+            raise ValueError(f"need {n - 1} per-join values, got {len(v)}")
+        return [None] + [cast(x) for x in v]
+    return [None] + [cast(v)] * (n - 1)
+
+
 def xfade_assemble(pieces, xfade=0.3, speeds=1.0, mute_pad=True, fps=30, size=None, vf=None,
-                   src_durations=None, fade_edge=0.015):
+                   src_durations=None, fade_edge=0.015, transition="fade", audio=True, fit="crop",
+                   seek=False):
     """Filter graph that plays ``pieces`` back to back, each at its own speed, dissolving between them.
 
     Args:
       pieces: [(start, end)] on input 0, [(input, start, end)], or dicts {input, start, end, speed,
-        gain_db, tag} - source seconds.
+        gain_db, tag, vf, vf_pre, fit, af} - source seconds. Per-piece ``vf_pre`` runs before the
+        fit/scale, ``vf`` after it (then the global ``vf``): grade / HDR / stabilise per clip; ``fit``
+        overrides the global fit for that piece; ``af`` is an extra audio chain.
       xfade: dissolve seconds (float, or one per join: len n-1; 0 = hard cut).
       speeds: float or one per piece (dict ``speed`` wins).
       mute_pad: True/"both" -> every join gets muted pads: the next piece starts xfade*speed source
@@ -770,14 +834,24 @@ def xfade_assemble(pieces, xfade=0.3, speeds=1.0, mute_pad=True, fps=30, size=No
         over silence and never swallows a first or last syllable (talkinghead compose's pads, done on
         both sides). "head" -> only the incoming side (talkinghead's original). False -> plain
         acrossfade. Pads are clamped at 0 (negative starts) and at src_durations[input] if given.
+        "clone" -> like "both", but a pad that would reach before 0 / past src_durations[input] is
+        NOT clamped: the missing part is the first/last frame cloned + silence (a body that starts
+        at 0 of its file, a hook at the very end), so the dissolve never fades speech.
       fps / size ("1080:1920") / vf: every piece is normalised to the same rate, size and yuv420p so
         xfade accepts it; vf is an extra chain (grade) per piece.
+      fit: how off-aspect pieces fill ``size``: crop (default) | pad | blur | stretch (``fit_chain``).
+      transition: any ffmpeg xfade transition name (fade, dissolve, wipeleft, smoothup, ...), or one
+        per join.
+      audio: False -> video-only graph (inputs without audio streams, e.g. drone masters); aout=None.
+      seek: True (or a margin in seconds, default 1.0) -> every piece becomes its OWN ffmpeg input,
+        input-seeked to just before its span (``asm.input_specs``; ``render_assembly`` builds the
+        ``-ss/-t -i`` options), so a piece at minute 50 does not decode minutes 0-50.
     Durations are quantised to whole frames and audio is padded/trimmed to the same sample count, so
     offset maths stays exact over hundreds of joins: offset[k] = offset[k-1] + dur[k-1] - xfade[k].
     Returns an ``Assembly`` (graph, "[vout]", "[aout]", offsets, durations, xfades, total, timemap).
     From call-clips ``build_clips.offsets_of/_dissolve``, talkinghead ``compose.build_base`` (muted pads),
-    vlog ``build_vlog`` xfade chain. For 30+ pieces from separate files, render in chunks (call-clips
-    ``dissolve``) - the offset maths is linear so chunked output is identical.
+    vlog ``build_vlog`` xfade chain. For 30+ pieces use ``render_assembly(chunk=30)`` - the offset maths
+    is linear so chunked output has the same timing.
     """
     P = [_piece(p) for p in pieces]
     n = len(P)
@@ -791,7 +865,20 @@ def xfade_assemble(pieces, xfade=0.3, speeds=1.0, mute_pad=True, fps=30, size=No
     else:
         xf = [0.0] + [float(xfade)] * (n - 1)
     xf = [round(x * fps) / fps for x in xf]
+    trans = _per_join(transition, n, str)
     mode = "both" if mute_pad is True else (mute_pad or None)
+    if mode not in (None, "both", "head", "clone"):
+        raise ValueError(f"mute_pad={mute_pad!r}")
+    clone = mode == "clone"
+
+    def lim_of(inp):
+        if src_durations is None:
+            return None
+        try:
+            return src_durations[inp]
+        except (KeyError, IndexError):
+            return None
+
     for k, p in enumerate(P):
         p["head"] = p["tail"] = 0.0
     for k in range(1, n):
@@ -799,80 +886,216 @@ def xfade_assemble(pieces, xfade=0.3, speeds=1.0, mute_pad=True, fps=30, size=No
             continue
         cur, prev = P[k], P[k - 1]
         want = xf[k] * cur["speed"]
-        cur["head"] = min(want, cur["start"])                    # clamp: never before 0
-        if mode == "both":
-            lim = None
-            if src_durations is not None:
-                try:
-                    lim = src_durations[prev["input"]]
-                except (KeyError, IndexError):
-                    lim = None
+        cur["head"] = want if clone else min(want, cur["start"])          # clamp: never before 0
+        if mode in ("both", "clone"):
+            lim = lim_of(prev["input"])
             want_t = xf[k] * prev["speed"]
-            prev["tail"] = want_t if lim is None else max(0.0, min(want_t, lim - prev["end"]))
-    graph, durs = [], []
+            prev["tail"] = want_t if (lim is None or clone) else max(0.0, min(want_t, lim - prev["end"]))
+    margin = (1.0 if seek is True else float(seek)) if seek else None
+    chains, durs, specs = [], [], []
     for i, p in enumerate(P):
-        s0, s1 = p["start"] - p["head"], p["end"] + p["tail"]
         sp = p["speed"]
-        N = max(1, int(round((s1 - s0) / sp * fps)))
+        s0, s1 = p["start"] - p["head"], p["end"] + p["tail"]
+        cf = 0                                       # frames of cloned first frame in front (clone mode)
+        if s0 < 0:
+            if clone:
+                cf = int(round(-s0 / sp * fps))
+            s0 = 0.0 if clone else s0
+        ct = 0.0                                     # seconds of cloned last frame after the source end
+        lim = lim_of(p["input"])
+        if clone and lim is not None and s1 > lim:
+            ct = (s1 - lim) / sp
+        N = max(1, int(round((s1 - s0) / sp * fps)) + cf)
         D = N / fps
         durs.append(D)
-        p.update(s0=s0, s1=s1, frames=N, dur=D)
-        vchain = [f"trim=start={s0:.4f}:end={s1 + 2.0 / fps:.4f}", f"setpts=(PTS-STARTPTS)/{sp:.6g}", f"fps={fps}"]
-        if size:
-            w, h = str(size).replace("x", ":").split(":")
-            vchain.append(f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}")
+        v0 = s0 - cf * sp / fps                      # virtual source start (clone frames included)
+        p.update(s0=v0, s1=s1, frames=N, dur=D)
+        off = 0.0
+        if margin is not None:
+            off = max(0.0, s0 - margin)
+            specs.append(dict(input=p["input"], ss=round(off, 4), t=round(s1 - off + margin + 2.0 / fps, 4)))
+        a0, a1 = s0 - off, s1 - off
+        L = f"p{i}"
+        st = []
+        vchain = [f"trim=start={a0:.4f}:end={a1 + 2.0 / fps:.4f}", f"setpts=(PTS-STARTPTS)/{sp:.6g}", f"fps={fps}"]
+        if cf:
+            vchain.append(f"tpad=start={cf}:start_mode=clone")
+        if p.get("vf_pre"):
+            vchain.append(p["vf_pre"])
+        pfit = p.get("fit") or fit
+        if size and pfit == "blur":
+            st.append("{IN}:v]" + ",".join(vchain) + f"[{L}pre]")
+            st.append(f"[{L}pre]" + fit_chain(size, "blur").replace("{L}", L) + f"[{L}fit]")
+            src_lab, vchain = f"[{L}fit]", []
+        else:
+            src_lab = "{IN}:v]"
+            if size:
+                vchain.append(fit_chain(size, pfit))
+        if p.get("vf"):
+            vchain.append(p["vf"])
         if vf:
             vchain.append(vf)
-        vchain += ["setsar=1", "format=yuv420p", "tpad=stop_mode=clone:stop_duration=1",
+        stop = max(1.0, ct + 1.0)
+        vchain += ["setsar=1", "format=yuv420p", f"tpad=stop_mode=clone:stop_duration={stop:g}",
                    f"trim=end_frame={N}", "setpts=PTS-STARTPTS", "settb=AVTB"]
-        graph.append(f"[{p['input']}:v]" + ",".join(vchain) + f"[v{i}]")
-        achain = [f"atrim=start={s0:.4f}:end={s1:.4f}", "asetpts=PTS-STARTPTS", f"aresample={SR}",
-                  "aformat=sample_fmts=fltp:channel_layouts=stereo"]
-        if abs(sp - 1) > 1e-6:
-            achain.append(media.atempo_chain(sp))
-        if p["gain_db"]:
-            achain.append(f"volume={p['gain_db']}dB")
-        if p["head"] > 0 or (i > 0 and xf[i]):
-            achain.append(f"afade=t=in:st={p['head'] / sp:.4f}:d={fade_edge}")
-        if p["tail"] > 0 or (i < n - 1 and xf[i + 1]):
-            achain.append(f"afade=t=out:st={max(0.0, D - p['tail'] / sp - fade_edge):.4f}:d={fade_edge}")
-        achain += ["apad", f"atrim=end_sample={int(round(D * SR))}", "asetpts=PTS-STARTPTS"]
-        graph.append(f"[{p['input']}:a]" + ",".join(achain) + f"[a{i}]")
+        st.append(src_lab + ",".join(vchain) + f"[v{i}]")
+        if audio:
+            achain = [f"atrim=start={a0:.4f}:end={a1:.4f}", "asetpts=PTS-STARTPTS", f"aresample={SR}",
+                      "aformat=sample_fmts=fltp:channel_layouts=stereo"]
+            if abs(sp - 1) > 1e-6:
+                achain.append(media.atempo_chain(sp))
+            if p.get("af"):
+                achain.append(p["af"])
+            if p["gain_db"]:
+                achain.append(f"volume={p['gain_db']}dB")
+            if cf:
+                achain.append(f"adelay=delays={int(round(cf / fps * SR))}S:all=1")
+            if p["head"] > 0 or (i > 0 and xf[i]):
+                achain.append(f"afade=t=in:st={p['head'] / sp:.4f}:d={fade_edge}")
+            if p["tail"] > 0 or (i < n - 1 and xf[i + 1]):
+                achain.append(f"afade=t=out:st={max(0.0, D - p['tail'] / sp - fade_edge):.4f}:d={fade_edge}")
+            achain += ["apad", f"atrim=end_sample={int(round(D * SR))}", "asetpts=PTS-STARTPTS"]
+            st.append("{IN}:a]" + ",".join(achain) + f"[a{i}]")
+        chains.append(st)
     offs = [0.0]
     for k in range(1, n):
         offs.append(offs[-1] + durs[k - 1] - xf[k])
-    vc, ac = "[v0]", "[a0]"
-    for k in range(1, n):
-        if xf[k] > 0:
-            graph.append(f"{vc}[v{k}]xfade=transition=fade:duration={xf[k]:.4f}:offset={offs[k]:.4f}[vx{k}]")
-            graph.append(f"{ac}[a{k}]acrossfade=d={xf[k]:.4f}:c1=tri:c2=tri[ax{k}]")
-        else:
-            graph.append(f"{vc}[v{k}]concat=n=2:v=1:a=0[vx{k}]")
-            graph.append(f"{ac}[a{k}]concat=n=2:v=0:a=1[ax{k}]")
-        vc, ac = f"[vx{k}]", f"[ax{k}]"
-    graph.append(f"{vc}null[vout]")
-    graph.append(f"{ac}anull[aout]")
+    graph = []
+    for i, st in enumerate(chains):
+        inp = i if margin is not None else P[i]["input"]
+        graph += [s.replace("{IN}", f"[{inp}") for s in st]
+    graph += _join_graph(range(n), offs, xf, trans, audio)
     tm = TimeMap()
     for k, p in enumerate(P):
         tm.add_segment(p["s0"], p["s1"], p["speed"], source=p["input"], xfade=xf[k], tag=p["tag"], dur=p["dur"],
                        mute_head=p["head"], mute_tail=p["tail"])
     total = offs[-1] + durs[-1]
-    return Assembly(graph=";".join(graph), vout="[vout]", aout="[aout]", offsets=offs, durations=durs, xfades=xf,
-                    total=total, timemap=tm, pieces=P, inputs=sorted({p["input"] for p in P}))
+    return Assembly(graph=";".join(graph), vout="[vout]", aout="[aout]" if audio else None, offsets=offs,
+                    durations=durs, xfades=xf, total=total, timemap=tm, pieces=P,
+                    inputs=sorted({p["input"] for p in P}), transitions=trans, audio=bool(audio), fps=fps,
+                    input_specs=specs if margin is not None else None, chains=chains)
 
 
-def render_assembly(asm, inputs, out, args=None, post_audio=None):
-    """Run ffmpeg for an ``Assembly``. inputs: paths indexed like the pieces' ``input``.
-    args: encoder args (default ``media.delivery_args()``); post_audio: extra chain on [aout]
-    (e.g. a loudnorm string). Returns out."""
-    cmd = ["ffmpeg", "-y"]
-    for p in inputs:
-        cmd += ["-i", p]
-    graph, aout = asm.graph, asm.aout
-    if post_audio:
+def _join_graph(idx, offs, xf, trans, audio, vlab="v", alab="a", vout="[vout]", aout="[aout]"):
+    """xfade/acrossfade (or concat for 0-length joins) chain over pieces ``idx`` (labels [v{i}]/[a{i}]);
+    offs are relative to the first piece of ``idx``."""
+    idx = list(idx)
+    g = []
+    o0 = offs[idx[0]]
+    vc, ac = f"[{vlab}{idx[0]}]", f"[{alab}{idx[0]}]"
+    for k in idx[1:]:
+        if xf[k] > 0:
+            g.append(f"{vc}[{vlab}{k}]xfade=transition={trans[k] or 'fade'}:duration={xf[k]:.4f}:"
+                     f"offset={offs[k] - o0:.4f}[vx{k}]")
+            if audio:
+                g.append(f"{ac}[{alab}{k}]acrossfade=d={xf[k]:.4f}:c1=tri:c2=tri[ax{k}]")
+        else:
+            g.append(f"{vc}[{vlab}{k}]concat=n=2:v=1:a=0[vx{k}]")
+            if audio:
+                g.append(f"{ac}[{alab}{k}]concat=n=2:v=0:a=1[ax{k}]")
+        vc, ac = f"[vx{k}]", f"[ax{k}]"
+    g.append(f"{vc}null{vout}")
+    if audio:
+        g.append(f"{ac}anull{aout}")
+    return g
+
+
+CHUNK_ARGS = ["-c:v", "libx264", "-crf", "12", "-preset", "veryfast", "-pix_fmt", "yuv420p", "-c:a", "pcm_s16le"]
+
+
+def _input_args(asm, inputs, idx=None):
+    """ffmpeg input options for the pieces ``idx`` (all) of an assembly. inputs items: a path, or a
+    dict {"path", "args": [...extra input options such as -ss/-t/-itsoffset]}."""
+    def one(src, extra=()):
+        if isinstance(src, dict):
+            return list(src.get("args", [])) + list(extra) + ["-i", src["path"]]
+        return list(extra) + ["-i", src]
+    cmd = []
+    if asm.input_specs is not None:
+        for i in (idx if idx is not None else range(len(asm.pieces))):
+            s = asm.input_specs[i]
+            cmd += one(inputs[s["input"]], ["-ss", f"{s['ss']:.4f}", "-t", f"{s['t']:.4f}"])
+        return cmd
+    for src in inputs:
+        cmd += one(src)
+    return cmd
+
+
+def render_assembly(asm, inputs, out, args=None, post_audio=None, post_video=None, chunk=None, workdir=None,
+                    chunk_args=None):
+    """Run ffmpeg for an ``Assembly``. inputs: paths indexed like the pieces' ``input`` (or dicts
+    {"path", "args": [per-input options]}).
+    args: encoder args (default ``media.delivery_args()``); post_audio / post_video: extra chain on
+    [aout] / [vout] (a loudnorm string, a closing ``fade=t=out:st=..:d=..``).
+    chunk: render at most this many pieces per ffmpeg graph (long timelines: 150 pieces is too many
+    inputs / filters for one graph); chunks go to lossless-ish intermediates (``chunk_args``) that are
+    then dissolved together with the same joins, so the timing equals the single-pass plan.
+    Returns out."""
+    n = len(asm.pieces)
+    if chunk and n > chunk:
+        return _render_chunked(asm, inputs, out, args, post_audio, post_video, int(chunk), workdir,
+                               chunk_args or CHUNK_ARGS)
+    graph, vout, aout = asm.graph, asm.vout, asm.aout
+    if post_audio and aout:
         graph += f";{aout}{post_audio}[apost]"
         aout = "[apost]"
-    cmd += media.filter_complex_args(graph) + ["-map", asm.vout, "-map", aout]
-    cmd += list(args) if args is not None else media.delivery_args()
+    if post_video:
+        graph += f";{vout}{post_video}[vpost]"
+        vout = "[vpost]"
+    cmd = ["ffmpeg", "-y"] + _input_args(asm, inputs)
+    cmd += media.filter_complex_args(graph, workdir) + ["-map", vout] + (["-map", aout] if aout else [])
+    cmd += list(args) if args is not None else media.delivery_args(audio=bool(aout))
     media.run(cmd + [out])
+    return out
+
+
+def _render_chunked(asm, inputs, out, args, post_audio, post_video, chunk, workdir, chunk_args):
+    n = len(asm.pieces)
+    tmp = tempfile.mkdtemp(prefix="vstudio_asm_", dir=workdir)
+    try:
+        files, firsts = [], []
+        for c0 in range(0, n, chunk):
+            idx = list(range(c0, min(n, c0 + chunk)))
+            g = []
+            if asm.input_specs is not None:
+                remap = {i: k for k, i in enumerate(idx)}
+            else:
+                used = sorted({asm.pieces[i]["input"] for i in idx})
+                remap = {i: used.index(asm.pieces[i]["input"]) for i in idx}
+            for i in idx:
+                g += [s.replace("{IN}", f"[{remap[i]}") for s in asm.chains[i]]
+            g += _join_graph(idx, asm.offsets, asm.xfades, asm.transitions, asm.audio)
+            if asm.input_specs is not None:
+                ia = _input_args(asm, inputs, idx)
+            else:
+                ia = []
+                for u in used:
+                    src = inputs[u]
+                    ia += (list(src.get("args", [])) + ["-i", src["path"]]) if isinstance(src, dict) else ["-i", src]
+            f = os.path.join(tmp, f"chunk{c0 // chunk:03d}.mkv")
+            media.run(["ffmpeg", "-y"] + ia + media.filter_complex_args(";".join(g), tmp) + ["-map", "[vout]"]
+                      + (["-map", "[aout]"] if asm.audio else []) + list(chunk_args) + [f])
+            files.append(f); firsts.append(idx[0])
+        # join the chunks with the boundary dissolves (chunk durations are whole frames)
+        m = len(files)
+        offs = [asm.offsets[i] for i in firsts]
+        xf = [0.0] + [asm.xfades[i] for i in firsts[1:]]
+        tr = [None] + [asm.transitions[i] for i in firsts[1:]]
+        g = []
+        for k in range(m):
+            g.append(f"[{k}:v]settb=AVTB,setpts=PTS-STARTPTS[c{k}]")
+            if asm.audio:
+                g.append(f"[{k}:a]asetpts=PTS-STARTPTS[d{k}]")
+        g += _join_graph(range(m), offs, xf, tr, asm.audio, vlab="c", alab="d")
+        vout, aout = "[vout]", "[aout]" if asm.audio else None
+        if post_audio and aout:
+            g.append(f"{aout}{post_audio}[apost]"); aout = "[apost]"
+        if post_video:
+            g.append(f"{vout}{post_video}[vpost]"); vout = "[vpost]"
+        cmd = ["ffmpeg", "-y"] + sum((["-i", f] for f in files), [])
+        cmd += media.filter_complex_args(";".join(g), tmp) + ["-map", vout] + (["-map", aout] if aout else [])
+        cmd += list(args) if args is not None else media.delivery_args(audio=bool(aout))
+        media.run(cmd + [out])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
     return out

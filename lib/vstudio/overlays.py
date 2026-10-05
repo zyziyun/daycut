@@ -154,30 +154,35 @@ def callout(text, theme=None, max_w=560, scale=1.0, keywords=None):
     return im
 
 
-def chip(text, style="outline", theme=None, scale=1.0, color=None, size=30):
+def chip(text, style="outline", theme=None, scale=1.0, color=None, size=30, radius=None, min_width=None, padx=18):
     """Pill label. style: outline (thin border, on dark plates) | filled (theme chip colour) |
-    star (highlight fill, dark text) | tag (flush name tag, small radius, black + accent border) | ghost (translucent)."""
+    star (highlight fill, dark text) | tag (flush name tag, small radius, black + accent border) | ghost (translucent).
+    radius / min_width / padx (design px, scaled): override the corner radius (default: full pill, tag 10),
+    the minimum width (tag default 230) and the horizontal padding."""
     T = get_theme(theme); B = brand()
     f = load_font("cjk-bold" if style in ("filled", "star", "tag") else "cjk", _s(size, scale))
     asc, desc = f.getmetrics()
-    padx, h = _s(18, scale), asc + desc + _s(16, scale)
+    padx, h = _s(padx, scale), asc + desc + _s(16, scale)
     w = int(text_width(text, f)) + 2 * padx
-    if style == "tag":
-        w = max(w, _s(230, scale))
+    if min_width is None and style == "tag":
+        min_width = 230
+    if min_width:
+        w = max(w, _s(min_width, scale))
+    r = int(round(radius * scale)) if radius is not None else (_s(10, scale) if style == "tag" else h // 2)
     col = rgb(color) if color is not None else None
     if style == "filled":
-        im = rounded_rect((w, h), h // 2, (col or T["chip_fill"]) + (255,)); tc = T["chip_text"] + (255,)
+        im = rounded_rect((w, h), r, (col or T["chip_fill"]) + (255,)); tc = T["chip_text"] + (255,)
     elif style == "star":
-        im = rounded_rect((w, h), h // 2, (col or B["highlight_alt"]) + (255,)); tc = (17, 17, 17, 255)
+        im = rounded_rect((w, h), r, (col or B["highlight_alt"]) + (255,)); tc = (17, 17, 17, 255)
     elif style == "tag":
-        im = rounded_rect((w, h), _s(10, scale), (0, 0, 0, 255), outline=(col or T["accent"]) + (220,), width=_s(2, scale))
+        im = rounded_rect((w, h), r, (0, 0, 0, 255), outline=(col or T["accent"]) + (220,), width=_s(2, scale))
         tc = (255, 255, 255, 255)
     elif style == "ghost":
-        im = rounded_rect((w, h), h // 2, (16, 20, 34, 210), outline=(255, 255, 255, 56), width=_s(2, scale))
+        im = rounded_rect((w, h), r, (16, 20, 34, 210), outline=(255, 255, 255, 56), width=_s(2, scale))
         tc = (col or B["ink"]) + (255,)
     else:
         c = (col or B["ink"]) + (255,)
-        im = rounded_rect((w, h), h // 2, None, outline=c, width=_s(2, scale)); tc = c
+        im = rounded_rect((w, h), r, None, outline=c, width=_s(2, scale)); tc = c
     ImageDraw.Draw(im).text((w / 2, h / 2), text, font=f, fill=tc, anchor="mm")
     return im
 
@@ -233,29 +238,65 @@ def node_card(title, eyebrow="", theme=None, scale=1.0, min_w=620, max_w=960):
     return im
 
 
-def chapter_card(index, total, title, size=(1920, 1080), theme=None, ground=None):
+def with_accent(theme, accent):
+    """Theme dict with its accent (rail, outline, highlight, dot, chip, tag) replaced by ``accent``."""
+    T = dict(get_theme(theme))
+    if accent is None:
+        return T
+    a = rgb(accent)
+    T.update(accent=a, hl=a + (255,), dot=a + (255,), chip_fill=a)
+    if T.get("outline") is not None and T.get("name") == "teal":
+        T["outline"] = a + (255,)
+    if T.get("name") == "teal":
+        T["tag_text"] = a + (255,)
+    return T
+
+
+def chapter_card(index, total, title, size=(1920, 1080), theme=None, ground=None, accent=None, title_frac=0.075,
+                 max_lines=3):
     """Full-frame chapter card (opaque RGBA): '02 / 05' in accent, 'Main：sub' -> grey kicker + big title,
-    accent rule. Text sizes scale with the frame height."""
-    T = get_theme(theme); B = brand()
-    W, H = size; s = min(W, H) / 1080.0
+    accent rule. Type scales with the card: the title is ``title_frac`` of the frame height (7.5%:
+    81 px at 1080, 144 px at 1920 tall), number and kicker ~45% of it, shrunk only if the longest
+    word would not fit; the whole block (number, kicker, title, rule) is centred vertically and the
+    left-aligned block is centred horizontally. accent: per-video accent override."""
+    T = with_accent(theme, accent); B = brand()
+    W, H = size
     bg = rgb(ground) if ground else B["ground"]
     im = Image.new("RGBA", (W, H), bg + (255,))
     d = ImageDraw.Draw(im)
-    x = int(120 * s * (1 if W >= H else 0.7))
-    fi, ftl = load_font("cjk", int(40 * s)), load_font("cjk-bold", int(76 * s))
-    d.text((x, int(96 * s)), f"{index:02d} / {total:02d}" if total else f"{index:02d}", font=fi, fill=T["accent"] + (255,))
+    margin = int(W * (0.09 if W >= H else 0.08))
+    max_w = W - 2 * margin
     sep = next((p for p in ("：", ": ", "｜", " | ") if p in title), None)
     main, sub = title.split(sep, 1) if sep else (title, "")
     big = sub or main
-    lines = wrap(big, ftl, W - 2 * x, balance=True)
-    lh = int(sum(ftl.getmetrics()) * 1.12)
-    y = H // 2 - int(50 * s) - (len(lines) - 1) * lh // 2
+    ts = max(12, int(round(H * title_frac)))
+    while True:
+        ftl = load_font("cjk-bold", ts)
+        lines = wrap(big, ftl, max_w, balance=True)
+        if (len(lines) <= max_lines and max(text_width(ln, ftl) for ln in lines) <= max_w) or ts <= 24:
+            break
+        ts = int(ts * 0.92)
+    ss = max(10, int(round(ts * 0.45)))
+    fi = load_font("cjk", ss)
+    lh = int(sum(ftl.getmetrics()) * 1.15)
+    num = f"{index:02d} / {total:02d}" if total else f"{index:02d}"
+    gap1 = int(ts * 0.55)                                 # number -> kicker/title
+    gap2 = int(ts * 0.25)                                 # kicker -> title
+    rule_gap, rule_h, rule_w = int(ts * 0.38), max(2, int(ts * 0.1)), int(ts * 2.3)
+    nh = sum(fi.getmetrics())
+    block_h = nh + gap1 + (nh + gap2 if sub else 0) + len(lines) * lh + rule_gap + rule_h
+    block_w = max([text_width(ln, ftl) for ln in lines] + [text_width(num, fi), text_width(main, fi) if sub else 0])
+    x = int(max(margin, (W - block_w) / 2))
+    y = int((H - block_h) / 2)
+    d.text((x, y), num, font=fi, fill=T["accent"] + (255,))
+    y += nh + gap1
     if sub:
-        d.text((x, y - int(60 * s)), main, font=fi, fill=B["dim"] + (255,))
+        d.text((x, y), main, font=fi, fill=B["dim"] + (255,))
+        y += nh + gap2
     for k, ln in enumerate(lines):
-        draw_runs(d, (x - 2, y + k * lh), ln, ftl, B["ink"] + (255,), T["hl"])
-    yr = y + len(lines) * lh + int(24 * s)
-    d.rectangle([x, yr, x + int(180 * s), yr + int(8 * s)], fill=T["accent"] + (255,))
+        draw_runs(d, (x - max(1, ts // 40), y + k * lh), ln, ftl, B["ink"] + (255,), T["hl"])
+    yr = y + len(lines) * lh + rule_gap
+    d.rectangle([x, yr, x + rule_w, yr + rule_h], fill=T["accent"] + (255,))
     return im
 
 
@@ -362,10 +403,41 @@ def chapter_label(i, n, label, scale=1.0):
     return im
 
 
-def progress_static(chapters, total, width=1920, y=1000, x0=80, bar_w=None, scale=None, theme=None):
+def progress_fill(x, y, w, h, dur, color, t0=0.0, fps=30, inp="[in]", out="[out]", head=None, prefix="pf",
+                  enable=True):
+    """ffmpeg filtergraph that grows a ``color`` fill bar w x h at (x, y) from 0 to full width over
+    [t0, t0 + dur] (output seconds), plus an optional white playhead ``head=(hw, hh)`` centred on the
+    fill's edge. Works per frame: colour sources + ``overlay`` x expressions (``drawbox`` evaluates its
+    expressions once - and its ``t`` is the box thickness - so a drawbox fill never moves).
+    With inp="[in]"/out="[out]" it is a complete ``-vf`` string; pass labels for a -filter_complex.
+    From talkinghead ``build_filter.py`` (the fix for the static-fill bug)."""
+    c = color if isinstance(color, str) else "0x%02X%02X%02X" % tuple(color[:3])
+    P = f"min(1,max(0,(t-{t0:.3f})/{max(dur, 1e-3):.3f}))"
+    en = f":enable='gte(t,{t0:.3f})'" if enable and t0 > 0 else ""
+    g = [f"color=c=black@0:s={w}x{h}:r={fps},format=rgba[{prefix}cv]",
+         f"color=c={c}:s={w}x{h}:r={fps},format=rgba[{prefix}col]",
+         f"[{prefix}cv][{prefix}col]overlay=x='-{w}+{P}*{w}':eof_action=pass:shortest=1[{prefix}fill]"]
+    last = f"[{prefix}fill]"
+    if head:
+        hw, hh = head
+        g.append(f"color=c=white:s={hw}x{hh}:r={fps},format=rgba[{prefix}head]")
+        g.append(f"{inp}{last}overlay=x={x}:y={y}:shortest=1{en}[{prefix}a]")
+        g.append(f"[{prefix}a][{prefix}head]overlay=x='{x}+{P}*{w}-{hw / 2:g}':y={y + h / 2 - hh / 2:g}:shortest=1{en}{out}")
+    else:
+        g.append(f"{inp}{last}overlay=x={x}:y={y}:shortest=1{en}{out}")
+    return ";".join(g)
+
+
+def progress_static(chapters, total, width=1920, y=1000, x0=80, bar_w=None, scale=None, theme=None, t0=0.0,
+                    speed=1.0, fps=30, head=False):
     """Static assets for an ffmpeg overlay pass (no per-frame Python):
     {"bar": RGBA (dim track, ticks, labels), "bar_xy": (0, y), "active": [(RGBA, x, y, start, end)],
-     "drawbox": ffmpeg filter that grows the accent fill with t}. Times are in the same clock as `total`."""
+     "fill": complete ``-vf`` graph ([in] -> [out]) that grows the accent fill with t,
+     "fill_graph": fn(inp, out, t0=t0, speed=speed) -> the same for a -filter_complex,
+     "drawbox": alias of "fill" (kept for old callers; it used to be a drawbox that never animated)}.
+    Chapter times are in the same clock as `total`; t0 = output second where that clock's 0 plays,
+    speed = playback speed of that part (the fill spans total/speed output seconds). head=True adds
+    a white playhead."""
     T = get_theme(theme)
     s = scale if scale is not None else width / 1920.0
     bar_w = bar_w or (width - 2 * x0)
@@ -387,8 +459,13 @@ def progress_static(chapters, total, width=1920, y=1000, x0=80, bar_w=None, scal
                                 stroke_width=_s(4, s), stroke_fill=(255, 255, 255, 255))
         active.append((im, int(round(cx - w / 2)), y + LY + (sum(fl.getmetrics()) - h) // 2, a, b))
     hexc = "0x%02X%02X%02X" % tuple(T["accent"])
-    drawbox = (f"drawbox=x={x0}:y={y + BY}:w='max(1,min({bar_w},{bar_w}*t/{total:.3f}))':h={BH}:color={hexc}@1:t=fill")
-    return {"bar": bar, "bar_xy": (0, y), "active": active, "drawbox": drawbox}
+    hd = (_s(12, s), _s(15, s)) if head else None
+
+    def fill_graph(inp="[in]", out="[out]", t0=t0, speed=speed, prefix="pf"):
+        return progress_fill(x0, y + BY, int(round(bar_w)), BH, total / speed, hexc, t0=t0, fps=fps, inp=inp,
+                             out=out, head=hd, prefix=prefix)
+    fill = fill_graph()
+    return {"bar": bar, "bar_xy": (0, y), "active": active, "fill": fill, "fill_graph": fill_graph, "drawbox": fill}
 
 
 # ---------------------------------------------------------------- HyperFrames / HTML snippets

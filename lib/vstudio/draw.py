@@ -57,6 +57,18 @@ def markup() -> str:
     return m if len(m) == 2 else "【】"
 
 
+_STARS = re.compile(r"\*\*(.+?)\*\*")
+
+
+def std_markup(text: str, mk: str = None) -> str:
+    """``**term**`` -> the persona markup (``【term】``), so every drawing helper accepts both styles
+    (as ``subs.parse_highlight`` does)."""
+    a, b = mk or markup()
+    if "**" not in text or a == "*":
+        return text
+    return _STARS.sub(lambda m: a + m.group(1) + b, text)
+
+
 # ---------------------------------------------------------------- fonts / measuring
 @lru_cache(maxsize=256)
 def load_font(role: str = "cjk-bold", size: int = 40):
@@ -82,7 +94,7 @@ _D0 = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
 def plain(text: str) -> str:
     """Text with highlight markup removed (what is actually drawn)."""
     m = markup()
-    return text.replace(m[0], "").replace(m[1], "")
+    return std_markup(text, m).replace(m[0], "").replace(m[1], "")
 
 
 def text_width(text: str, f) -> float:
@@ -199,7 +211,9 @@ def wrap(text: str, f, max_w: float, balance: bool = False, max_lines: int = Non
     """CJK-aware wrap -> list of lines (markup kept and balanced per line).
 
     balance=True keeps the greedy line count but evens line lengths (subtitles, titles).
-    Never ends with a lone CJK character: one more token is pulled down from the line above."""
+    Never ends with a lone CJK character: one more token is pulled down from the line above.
+    ``**term**`` markup is accepted and returned as the persona markup (``【term】``)."""
+    text = std_markup(text)
     toks = _split_wide(tokens(text), f, max_w)
     lines = _greedy(toks, f, max_w)
     if balance and len(lines) > 1:
@@ -229,8 +243,10 @@ def wrap(text: str, f, max_w: float, balance: bool = False, max_lines: int = Non
 
 
 def runs(text: str, keywords=None, mk: str = None):
-    """'普通【重点】文本' -> [('普通', False), ('重点', True), ('文本', False)]. keywords also highlight."""
+    """'普通【重点】文本' (or '普通**重点**文本') -> [('普通', False), ('重点', True), ('文本', False)].
+    keywords also highlight."""
     a, b = mk or markup()
+    text = std_markup(text, (a, b))
     out, cur, hi = [], "", False
     for c in text:
         if c == a and not hi:
@@ -386,6 +402,31 @@ def text_layer(text, f, fill=WHITE, hl_fill=None, stroke=6, stroke_fill=(20, 20,
             x += dr.textlength(t, font=f)
     if shadow_alpha:
         return Image.alpha_composite(sh.filter(ImageFilter.GaussianBlur(4)), im)
+    return im
+
+
+def bilingual_layer(primary, secondary, f1, f2=None, fill=WHITE, fill2=(203, 213, 225, 255), max_w=None,
+                    gap=0, stroke=5, stroke_fill=(0, 0, 0, 235), shadow_alpha=0, pad=13, line_gap=1.2, **kw):
+    """Two stacked, centred subtitle rows (primary above, e.g. Chinese; secondary below, e.g. English)
+    as one RGBA strip; each row is a balanced-wrapped ``text_layer`` (max_w) and the rows sit ``gap``
+    px apart (their pads overlap). f2 defaults to f1 at ~76% size. Empty secondary -> primary only.
+    From call-clips ``render_landscape.render_sub``."""
+    if f2 is None:
+        f2 = load_font("cjk", max(8, int(getattr(f1, "size", 40) * 0.76)))
+    common = dict(max_w=max_w, stroke=stroke, stroke_fill=stroke_fill, shadow_alpha=shadow_alpha, pad=pad,
+                  line_gap=line_gap, **kw)
+    rows = [text_layer(primary, f1, fill=fill, **common)] if primary else []
+    if secondary:
+        rows.append(text_layer(secondary, f2, fill=fill2, **common))
+    if not rows:
+        return Image.new("RGBA", (1, 1), (0, 0, 0, 0))
+    step = lambda r: r.height - 2 * pad + gap
+    w = max(r.width for r in rows)
+    im = Image.new("RGBA", (w, sum(step(r) for r in rows) - gap + 2 * pad), (0, 0, 0, 0))
+    y = 0
+    for r in rows:
+        im.alpha_composite(r, ((w - r.width) // 2, y))
+        y += step(r)
     return im
 
 

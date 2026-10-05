@@ -161,7 +161,8 @@ def probe(path):
     Returns dict: w, h, fps (float), fps_q (Fraction), duration (s), has_video, has_audio, vcodec,
     acodec, pix_fmt, transfer (color_transfer), primaries, hdr (bool: HLG/PQ), rotation (deg),
     sample_rate, channels, bitrate (container bps), vbitrate (video bps, estimated if missing),
-    abitrate. w/h are the coded size (rotation NOT applied; see ``rotation``).
+    abitrate, display_w/display_h (the size as displayed: w/h swapped for a +-90/270 deg rotation).
+    w/h are the coded size (rotation NOT applied; see ``rotation`` / ``display_w``).
     From polish ``polish.probe`` + vlog ``build_vlog.clip_info``/``probe.py``.
     """
     r = run(["ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", path], capture=True)
@@ -200,6 +201,8 @@ def probe(path):
                     channels=int(a.get("channels") or 0), abitrate=int(a.get("bit_rate") or 0))
     if v is not None and not info["vbitrate"] and info["bitrate"]:
         info["vbitrate"] = max(0, info["bitrate"] - (info["abitrate"] or (192000 if a else 0)))
+    turned = abs(int(info["rotation"])) % 180 == 90
+    info["display_w"], info["display_h"] = (info["h"], info["w"]) if turned else (info["w"], info["h"])
     return info
 
 
@@ -227,17 +230,19 @@ def extract_wav(src, dst, sr=16000, channels=1, start=None, end=None):
     return dst
 
 
-def grab_frame(src, t, out, vf=None, preroll=25.0):
-    """Frame-accurate still at source time ``t`` -> image file ``out``.
+def grab_frame(src, t, out, vf=None, preroll=25.0, quality=None):
+    """Frame-accurate still at source time ``t`` -> image file ``out``; returns ``out``.
 
     Recordings with sparse keyframes (meetings, screen captures) make a plain ``-ss t -frames:v 1``
     land seconds off, so seek ``preroll`` s early and decode forward to the exact time.
-    vf: optional extra filter chain (e.g. a crop). From longform-to-short ``_lfc.grab_frame``
+    vf: optional extra filter chain (e.g. a crop). quality: JPEG ``-q:v`` (2 = best .. 31) for .jpg
+    outputs (default: ffmpeg's). From longform-to-short ``_lfc.grab_frame``
     (cover ``extract_frames.grab`` is the fast-but-inexact variant).
     """
     pre = max(0.0, t - preroll)
     chain = f"trim=start={t - pre:.4f},setpts=PTS-STARTPTS" + ("," + vf if vf else "")
-    run(["ffmpeg", "-y", "-ss", f"{pre:.3f}", "-i", src, "-vf", chain, "-frames:v", "1", "-update", "1", out])
+    q = ["-q:v", str(int(quality))] if quality is not None else []
+    run(["ffmpeg", "-y", "-ss", f"{pre:.3f}", "-i", src, "-vf", chain, "-frames:v", "1", *q, "-update", "1", out])
     if not os.path.exists(out):
         raise FFmpegError(f"no frame decoded at t={t} from {src}")
     return out
@@ -361,32 +366,79 @@ def _persona_export():
         return {}
 
 
+def _bps(v):
+    """'28M' / '900k' / 28e6 -> int bits per second."""
+    if isinstance(v, (int, float)):
+        return int(v)
+    m = re.fullmatch(r"\s*([\d.]+)\s*([kKmM]?)\s*", str(v))
+    if not m:
+        raise ValueError(f"bitrate {v!r}")
+    return int(float(m.group(1)) * {"": 1, "k": 1e3, "m": 1e6}[m.group(2).lower()])
+
+
 def delivery_args(crf=None, preset="medium", audio=True, audio_bitrate=None, faststart=True, fps=None,
-                  maxrate=None):
+                  maxrate=None, vbitrate=None, maxrate_factor=1.15, bufsize=None, encoder="libx264", quality=None):
     """Encoder args for a publishable MP4: H.264 High yuv420p, CRF (persona export.crf, 18),
     bt709 tags in the container AND the H.264 VUI (h264_metadata bsf, so iOS does not guess),
     AAC ``audio_bitrate`` (persona export.audio_bitrate, 192k) 48 kHz stereo, +faststart.
 
-    fps: optional output rate (-r); maxrate: optional VBV cap like "30M". Returns an arg list
-    to put between the inputs/filters and the output path.
-    From polish ``BT709``/``venc_args``/``step_finalize`` and call-clips loudnorm/export block.
+    fps: optional output rate (-r); maxrate: optional VBV cap like "30M".
+    vbitrate: bitrate-target mode instead of CRF ("28M" or bps): -b:v, -maxrate vbitrate*maxrate_factor,
+      -bufsize (default 2x maxrate) - match a source's bitrate (polish ``venc_args``).
+    audio: True -> AAC args; False -> "-an" (drop audio); None -> no audio args at all (the caller
+      maps/copies audio itself).
+    encoder: "libx264" | "videotoolbox" (h264_videotoolbox, macOS hardware: ``-q:v quality`` (default
+      65) unless vbitrate is given; no preset/crf). Returns an arg list to put between the
+      inputs/filters and the output path.
+    From polish ``BT709``/``venc_args``/``step_finalize``, call-clips loudnorm/export block, longform
+    ``_lfc.video_encoder``.
     """
     ex = _persona_export()
     crf = ex.get("crf", 18) if crf is None else crf
-    args = ["-c:v", "libx264", "-profile:v", "high", "-pix_fmt", "yuv420p", "-preset", preset, "-crf", str(crf)]
-    if maxrate:
-        args += ["-maxrate", str(maxrate), "-bufsize", str(maxrate)]
+    vt = encoder in ("videotoolbox", "h264_videotoolbox")
+    if vt:
+        args = ["-c:v", "h264_videotoolbox", "-profile:v", "high", "-pix_fmt", "yuv420p"]
+        if not vbitrate:
+            args += ["-q:v", str(65 if quality is None else quality)]
+    elif encoder == "libx264":
+        args = ["-c:v", "libx264", "-profile:v", "high", "-pix_fmt", "yuv420p", "-preset", preset]
+        if not vbitrate:
+            args += ["-crf", str(crf)]
+    else:
+        raise ValueError(f"encoder={encoder!r} (libx264 | videotoolbox)")
+    if vbitrate:
+        vb = _bps(vbitrate)
+        mr = _bps(maxrate) if maxrate else int(vb * maxrate_factor)
+        args += ["-b:v", str(vb), "-maxrate", str(mr), "-bufsize", str(_bps(bufsize) if bufsize else 2 * mr)]
+    elif maxrate:
+        args += ["-maxrate", str(maxrate), "-bufsize", str(bufsize or maxrate)]
     if fps:
         args += ["-r", str(fps)]
     args += BT709 + ["-bsf:v", "h264_metadata=colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1"]
     if audio:
         args += ["-c:a", "aac", "-b:a", str(audio_bitrate or ex.get("audio_bitrate", "192k")),
                  "-ar", str(SR), "-ac", "2"]
-    else:
+    elif audio is not None:
         args += ["-an"]
     if faststart:
         args += ["-movflags", "+faststart"]
     return args
+
+
+def link_or_copy(src, dst):
+    """Hard-link ``src`` to ``dst`` (instant, no extra space), else copy it. Replaces dst. Returns dst."""
+    src, dst = os.fspath(src), os.fspath(dst)
+    if os.path.abspath(src) == os.path.abspath(dst):
+        return dst
+    d = os.path.dirname(os.path.abspath(dst))
+    os.makedirs(d, exist_ok=True)
+    if os.path.lexists(dst):
+        os.remove(dst)
+    try:
+        os.link(src, dst)
+    except OSError:
+        shutil.copy2(src, dst)
+    return dst
 
 
 def retag_bt709(src, dst):
