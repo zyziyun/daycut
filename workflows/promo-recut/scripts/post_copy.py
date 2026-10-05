@@ -31,7 +31,7 @@ def main():
     warns = []
     text = publish.post_body(None, post.get("body", []), chapters=chapters, links=post.get("links", []),
                              tags=post.get("tags", []), platform=a.platform, title=post.get("title", ""),
-                             warn=warns.append)
+                             warn=warns.append, use_persona_tags=post.get("use_persona_tags", True), tag_set=post.get("tag_set"))
     out = prj.p(post.get("out", "post.md"))
     open(out, "w", encoding="utf-8").write(text)
     print(text)

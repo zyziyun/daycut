@@ -140,3 +140,23 @@ title strip, above the caption band), caption sizes from the band height (EN 38 
 vertical sketches at canvas size by hand; 3:4 built only via the canvas numbers (not snapshotted for the explainer).
 
 **Lib requests**: none required. Nice to have: `platform.caption_box` variant for two-language blocks (size pairs).
+
+## Demo round fixes (2026-10-05)
+
+Vertical CUDA short demo (9:16, 7 scenes). Tests: `tests/test_lfs_explainer_fixes.py`.
+- `make_captions.py` creates `compositions/` (a blank `hyperframes init` has none; it crashed).
+- `display_en.py`: a comma inside a cardinal ("sixteen thousand, eight hundred and ninety-six" → 16,896, while
+  "one thousand, two thousand" stays a list); "a hundred / thousand / million" → "one ..." (was "a 1 million");
+  "one point five million" → "1.5 million"; "1 million" already in digits is left alone. Example en.srt unchanged.
+- New `scripts/vo_check.py`: numbers normalised on both sides, the take's ASR aligned to the script word by word,
+  coverage per script sentence; `tts.py` runs it on every take, re-generates a take that dropped a sentence
+  (`--retries 2`) and exits non-zero naming the sentence if it still drops it (`--no-check`; skipped with a warning
+  when no ASR backend is available). Replaces the 0.9 difflib-ratio QA (clean takes scored 0.68–0.74).
+- `render_cover.py` (cover workflow) with `--platform` always writes `<stem>.<platform>-<orientation>.<ext>`
+  (a single platform used to overwrite `-o`, the 9:16 cover). WORKFLOW says to render 小红书's 3:4 cover this way.
+- Vertical scenes sat small in the top half of the math area (a big empty band above the captions). The portrait
+  design truth now requires the scene to fill the math area (≥ 70 % of its height, result line just above the
+  caption band, main graphic ≥ 80 % of the width); the reference portrait scene was re-laid out to fill the
+  portable 9:16 area (bigger dots / labels / equation, result at y 1170); packets carry the rule; new
+  `scripts/layout_check.py` measures each snapshot (warns < 60 % height or > 30 % empty bottom). On the demo's
+  snapshots it flags 8/15 frames; the new reference scene passes on 小红书 full, 抖音, Shorts and TikTok.

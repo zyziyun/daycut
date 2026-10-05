@@ -247,3 +247,68 @@ Accent parity: the cover-collage design used teal `#2dd4bf`, but `vstudio.render
   longform-to-short and promo-recut screen recordings have the same problem.
 - `export.export(..., layout_fn)` hook so a composed multi-tile layout can be re-laid per platform instead of
   reframing a finished canvas.
+
+## Demo round fixes
+
+2026-10-05, after a real 3-person podcast demo (`render_trio`, 小红书 9:16). Tests: `tests/test_call_clips_fixes.py`
+(synthetic tones + lavfi only).
+
+- **Editor-cut snap ate a word (MED, fixed).** classic's backward snap (≤ 0.15 s to the quietest frame) could land
+  inside the last kept word (a sentence lost its final syllable). `cut_profiles.WordClampedAudio` clamps the snapped
+  edge to the end of the last word ending at/before it. classic is now `vstudio.cut.find_cuts(snap="back", ...)`
+  through that wrapper; the local copy of the rule loop is gone (checked equal to lib on real + synthetic windows
+  before deletion; the clamp is the only behaviour change).
+- **Hook→body dissolve swallowed the hook's last word (MED, fixed).** `hook_edges.extend_hook`: the hook ends in the
+  first ≥ 60 ms sub-threshold run after its last word (energy envelope) + fade × speed, never past the next word
+  (−0.05 s); a tight gap shortens the fade (min 0.12 s). Called by `build_clips.py` for every hook;
+  clips.json `"hook_tail": false` opts out.
+- **Notes panel under the chips, no WARN (LOW, fixed).** The fit height ignored the label chips at the row's bottom
+  and the WARN tested the already-scaled image. `render_trio.fit_panel`: scale to 0.6, then drop trailing bullets;
+  always prints `WARN panel ...` when the authored panel does not fit; rows layout places panels above the chips.
+- **Trio layout quality (fixed, new default with a platform).** `--trio-layout stage`: active speaker large
+  (from `"speakers"` → `active_speaker.py` smoothing → `work/<id>.speakers.json` → `--speakers`), other two below
+  down to the safe-box bottom, captions over them in the caption box, panels above the captions (never over the
+  talker), 0.3 s dissolve on a change. Masks are applied on the source tile before crop/scale. `rows` = old layout
+  (`--trio-layout rows`, persona `call_clips.trio_layout`); no platform = legacy rows, unchanged. Synthetic
+  previews checked by eye (xiaohongshu, douyin, rows). `render_trio` also accepts `--host-track` (build_clips
+  already passed it with `track_host`).
+- **Docs / friction (LOW, fixed).** WORKFLOW step 1: how to identify the creator's tile (name label, self-intro +
+  speaker timeline, host role). `speaker_timeline.py --start/--end` (times stay source seconds).
+  `make_cover.py --size canvas` (or an explicit `:full` platform) → 9:16 canvas cover, headline in the safe box.
+- **Removed duplicate:** `layout.mask_names` now calls `vstudio.draw.redact_rects` (pixel-identical, tested).
+- New persona key: `call_clips.trio_layout` (stage | rows). New clips.json keys: `speakers`, `host_speaker`,
+  `speaker_min_run`, `hook_tail`.
+- Not verified: no full real-media re-render of the stage layout (synthetic previews + a synthetic `--subs-only`
+  build only); `speaker_timeline --start` seeks with `CAP_PROP_POS_FRAMES` (frame-accurate on the files tried
+  via OpenCV's ffmpeg backend, not on sparse-keyframe call recordings).
+
+### Lib requests (demo round)
+- ~~`vstudio.cut.find_cuts(snap="back")`: clamp at word ends natively~~ (done: `vstudio.cleanup`, see Shared cleanup).
+- `Audio.word_tail(t, limit)` / a shared "end of the sounding word" helper: talkinghead and longform hooks have the
+  same early-whisper-end problem at every dissolve.
+- `overlays.notes_panel(max_h=)` with a fit policy (scale, then drop bullets) so every workflow fits panels alike.
+
+## Shared cleanup
+
+2026-10-05: auto-trim, editor-cut edges and hook ends run on the shared `vstudio.cleanup` tool (repo
+`references/CLEANUP.md`); the call-clips copies are gone. Tests: `tests/test_call_clips_fixes.py`
+(rewritten for the new path: editor cut never eats the previous word, aliases, `find_cuts == clean()["cuts"]`,
+reviewed-EDL decisions, three hook-end cases on `cleanup.extend_end`).
+- `cut_profiles.py` is now an adapter: `find_cuts` = `cleanup.clean(...)["cuts"]` + word-safe editor cuts
+  (`editor_cut`: `cleanup.word_tail` / `cleanup.safe_edge`; replaces `WordClampedAudio`); `window()` returns the
+  kept pieces (replaces `vstudio.cut.split_window`). Profiles: `classic` → `gentle` (default), `word` →
+  `standard`, plus `gentle | standard | tight`; old names kept as aliases. Persona `cleanup.profile` is used when
+  `call_clips.cut_profile` is unset.
+- Behaviour change: the classic "editor pass lowers the pause threshold to 0.5 s" rule is gone (one profile
+  per run); pick `word` / `tight` for a tighter cut. Filler detection is now word-level (not filler-only
+  segments), so more is cut than the old ~3 %.
+- `hook_edges.py` deleted → `cleanup.extend_end(words, energy, h0, h1, fade, speed)`.
+- `find_disfluencies.py` → `cleanup.analyze(wav, transcript, ranges=windows)`: `work/cleanup.json` +
+  `work/cleanup_review.md`; `--extra` / `--json` still report editor and AUTO cuts. build_clips applies a reviewed
+  sheet with clips.json `"cleanup_edl"` + `"cleanup_reply"` (new keys).
+- `build_clips.py`: one word list + one calibrated `cleanup.Energy` per run (was `vstudio.cut.Audio`).
+- Smoke-tested `build_clips.py --no-mask --subs-only` on a synthetic call (auto-trim + editor cut + hook); not
+  re-verified on real call audio.
+- 2026-10-05 cleanup API round: `cut_profiles.editor_cut` / `editor_cuts` are thin wrappers over the public
+  `cleanup.snap_cut` / `cleanup.snap_cuts`; a fresh window is one `cleanup.clean(..., extra=editor cuts)` call. Same
+  cuts / keep as before (tests/test_call_clips_fixes.py).

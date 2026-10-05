@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Transcribe the whole recording once, with word timestamps (vstudio.asr.transcribe).
 
-Writes <out>.wav (16 kHz mono, what find_disfluencies.py / auto_trim read) and <out>.json
+Writes <out>.wav (16 kHz mono, what find_disfluencies.py / auto_trim (vstudio.cleanup) read) and <out>.json
 (whisper format: {"segments": [{start, end, text, words: [{word, start, end}]}]}), RAW: term
 fixes are applied later, per subtitle line, by build_clips.py. Backend: mlx_whisper on Apple
 Silicon if importable, else faster_whisper (else OpenAI whisper-1 if OPENAI_API_KEY is set).

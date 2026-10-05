@@ -95,3 +95,18 @@ Lib requests:
 - A shared `vstudio.text` helper for CJK detection / spoken-length units (`detect_lang`, `zh_units` in
   `lint_script.py`; `platform._has_cjk` and `config.xhs_len` are close cousins).
 - `persona.example.yaml` `voice:` could adopt the `en:`/`zh:` sub-blocks (flat keys keep working).
+
+## Parity audit (content-skills sweep)
+Restored generic craft that the first port had dropped from script-voice / pronunciation-drill:
+- `script_craft.md`: §0 scope (not for ad copy, >15 min essays, written articles) + generic stance (no false
+  modesty, inclusive "we"); format shape per format (slide pacing, mid-length transitions); fragment / slide-annotation
+  BAD/GOOD pairs; word-level pairs; "What to cut" list (medium self-narration, filler reassurance, doubled
+  definitions); four generic signposts; pattern C detail and closing rules; extra anti-pattern rows; hook
+  three-rung ladder, closings A and C (all synthetic); process time budgets; full pre-lock self-check (§10).
+- `lint_script.py`: new error lists `MEDIUM` ("in this video", "next slide", "we'll cover"...), `REASSURE`
+  ("don't worry if", "this might sound complex"...), `ZH_REASSURE` (别担心, 听起来有点复杂...), warning list
+  `PADDING`. Example script still clean.
+- WORKFLOW.md: lock-and-freeze rule, fuller self-check, drill scope ("not a general course", >12 → split, drill
+  audio never goes into the video) and drill self-check (incl. m4a size sanity).
+- End-to-end recipe from `sops/publish-short-video.md` → `references/SOP_SHORT_VIDEO.md`.
+Tests: `tests/test_preproduction.py`.

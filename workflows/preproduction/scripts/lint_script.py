@@ -2,7 +2,8 @@
 """Lint a spoken script against the craft rules (references/script_craft.md) + persona voice.*.
 
 English checks: em-dashes, parentheses, creator-trope openers, generic CTAs, authority framing, AI-tell
-vocabulary, meta/forward references, sentences > 25 words, possible fragments, digits under 10,
+vocabulary, meta/forward references, self-narration about the medium ("in this video", "next slide"),
+filler reassurance ("don't worry if..."), padding (warning), sentences > 25 words, possible fragments, digits under 10,
 presence of an insight signpost, and word count vs. the length target at voice.en.wpm (default 165).
 Chinese (口播) checks: em-dashes, parentheses, 口播 trope openers (家人们, 今天给大家分享...), generic CTAs
 (点赞关注, 一键三连...), authority framing, AI-tell words, meta lines, emoji, phrases_avoid, signpost,
@@ -40,6 +41,13 @@ AI_TELL = ["delve", "dive into", "deep dive", "navigate", "leverage", "tapestry"
            "unlock the power", "game-changer", "game changer"]
 META = ["this slide", "this video", "if you remember one thing", "this is the most important", "we've got a lot to cover",
         "more on that later", "we'll come back to", "to recap", "as i mentioned", "in a few minutes"]
+REASSURE = ["don't worry if", "don't worry, ", "this might sound complex", "this might sound complicated",
+            "this may sound complex", "this may sound complicated", "this might seem complicated",
+            "it sounds scarier than it is", "bear with me"]
+MEDIUM = ["in this video", "this episode", "next slide", "on this slide", "these slides", "we'll cover",
+          "we'll get to", "later in this video", "stick around", "stay tuned"]
+PADDING = ["so what i want to say is", "what i'm trying to say is", "basically what i'm saying",
+           "so basically what", "needless to say"]
 SIGNPOSTS = ["explained enough", "most explanations skip", "doesn't get talked about", "what's actually happening",
              "here's the detail", "the part that", "underneath"]
 TARGETS = {"short": (165, 250), "long-short": (250, 510), "mid": (500, 1650)}
@@ -56,6 +64,7 @@ ZH_AI_TELL = ["赋能", "抓手", "闭环", "颗粒度", "值得注意的是", "
               "在这个信息爆炸的时代", "不可或缺", "全方位", "一站式", "助力"]
 ZH_META = ["这一页", "这页PPT", "本期视频", "这期视频", "后面再讲", "后面会讲", "前面说过", "前面提到",
            "如果你只记住一件事", "这是最重要的"]
+ZH_REASSURE = ["别担心", "听起来可能有点复杂", "听起来有点复杂", "可能有点难懂", "可能有点绕"]
 ZH_SIGNPOSTS = ["很少有人讲", "很少有人提", "真正的问题是", "关键在于", "本质上", "真正决定", "说白了", "换个角度",
                 "底层原因"]
 ZH_THROAT = r"^(那么|好的|嗯|那个|OK|ok|好吧)[，,\s]"
@@ -161,9 +170,12 @@ def lint_en(a, text, v, errs, warns):
     for p in find_any(tail, CTAS):
         errs.append(f"generic CTA in closing: '{p}'")
     for label, lst in (("authority framing", AUTHORITY), ("AI-tell word", AI_TELL), ("meta/navigation", META),
+                       ("self-narration about the medium", MEDIUM), ("filler reassurance", REASSURE),
                        ("persona voice.phrases_avoid", avoid)):
         for p in find_any(tl, lst):
             errs.append(f"{label}: '{p}'")
+    for p in find_any(tl, PADDING):
+        warns.append(f"padding (cut it): '{p}'")
     if any(0x1F300 <= ord(c) <= 0x1FAFF for c in text):
         errs.append("emoji in spoken script")
 
@@ -213,7 +225,7 @@ def lint_zh(a, text, v, errs, warns):
     for p in find_zh(tail, ZH_CTAS):
         errs.append(f"generic CTA in closing: '{p}'")
     for label, lst in (("authority framing", ZH_AUTHORITY), ("AI-tell word", ZH_AI_TELL), ("meta/navigation", ZH_META),
-                       ("persona voice.phrases_avoid", avoid)):
+                       ("filler reassurance", ZH_REASSURE), ("persona voice.phrases_avoid", avoid)):
         for p in find_zh(text, lst):
             errs.append(f"{label}: '{p}'")
     if any(0x1F300 <= ord(c) <= 0x1FAFF for c in text):

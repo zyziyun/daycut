@@ -9,7 +9,12 @@ about "she said / I said" cannot survive, so this is measured, not guessed.
 
 Usage:
   speaker_timeline.py VIDEO --tiles guest=0,180,640,360 host=640,180,640,360 \
-      --out speakers.json [--every 3]
+      --out speakers.json [--every 3] [--start 1200 --end 1400]
+
+``--start/--end`` (source seconds) analyse only that range (a 70-min call takes ~7 min in full);
+the JSON ``times`` stay in SOURCE seconds, so it plugs into transcript_tools / build_clips unchanged.
+Name the tiles after clips.json: each masked guest's ``name`` and ``host`` for the host, so
+build_clips.py (clips.json ``"speakers"``) can give the talker render_trio's big tile.
 """
 import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
 import argparse, json
@@ -32,6 +37,8 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--every", type=int, default=3)
     ap.add_argument("--win", type=float, default=0.8, help="variance window, seconds")
+    ap.add_argument("--start", type=float, default=0.0, help="first source second to analyse")
+    ap.add_argument("--end", type=float, default=None, help="last source second to analyse")
     args = ap.parse_args()
 
     import mediapipe as mp
@@ -57,7 +64,13 @@ def main():
 
     times, series = [], {n: [] for n in tiles}
     i = 0
+    if args.start > 0:
+        i = int(round(args.start * fps))
+        cap.set(cv2.CAP_PROP_POS_FRAMES, i)
+    last = int(round(args.end * fps)) if args.end is not None else None
     while True:
+        if last is not None and i > last:
+            break
         ok, fr = cap.read()
         if not ok:
             break

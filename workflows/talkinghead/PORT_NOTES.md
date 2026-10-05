@@ -249,3 +249,62 @@ Config: `PLATFORM`, `SRC_UPSCALE`, `REFRAME_MODE`, `BROLL`, `STYLE max_upscale /
   skin/makeup delta, 384 px landmark crop, warp_tol 1.0, grid 240, blemish 0, x264 faster. Real vertical frame:
   0.21 vs 0.64 s/frame (1 worker), mean abs diff fast vs quality 1.9 levels. Uses `vstudio.retouch._warp/_opts`
   (private): lib request — a public `retouch(..., work_scale=0.5)`.
+
+## Demo round fixes
+From the 2026-10-05 demo (a full real 口播 edit; anonymised).
+- **Idempotent cut passes (was HIGH).** `cut_pass1` writes `segs.pass1.json` (root), `strict_pass apply` always derives
+  `segs.strict.json` from it, `drop_pass` derives `segs.drop.json` from strict (or pass 1). `segs.json` = newest stage
+  (+ `stage` / `parent` keys). Every pass checks the input wav length against its parent's `total` (±0.07 s) and exits
+  with an explanation otherwise; a re-run of an earlier stage renames later ones to `segs.<stage>.stale.json`.
+  `strict_pass verify` reads the pass-1 total instead of `segs_prev.json` (no longer written). Helpers in `bodycut.py`
+  (`save_stage`, `load_stage`, `pick_parent`). A pre-versioning work dir (plain `segs.json`, no words) counts as pass 1.
+- **Pass-1 boundaries (MED/LOW).** `bodycut.snap_range` (used by `cut_pass1`): the voiced-run search window and the
+  head/tail padding are bounded by the previous word's end (+0.03 s) and the next word's start from `a<N>.json`.
+  `WORD_LIMITS = False` in `edit_list.py` restores the old window. Held vowels: documented (gotchas.md), not fixed.
+- **Covers (MED).** `cover.py` writes OUT only for the config's own platform; other `--platform` covers always get
+  `<OUT stem>.<platform>-<orientation>.jpg`.
+- **Export keep-outs (MED).** `<OUT>.cues.json` is now `{cues, keepouts, size, platform}`; cue text carries KEYWORDS as
+  `【kw】` markup; keep-outs = panels, stamps, pops, callouts, PiP cards, hook title, as `{t0, t1, box: [x, y, w, h],
+  kind}` in final seconds / master pixels (`compose.body_to_final` maps body windows through hooks + body).
+  New stage `compose.py config.py cues`. Older `vstudio.export` reads `cues` and ignores `keepouts`.
+- **Stamps off the face (LOW).** With a face track, a stamp stack (same t1) covering the face core moves as one block
+  below the chin or beside the face; pop words now also avoid the face core on the measured 9:16 layout. Without a
+  face track the 9:16 output is unchanged.
+- **Platform docs (MED).** WORKFLOW/example: bare `xiaohongshu` = 3:4; 9:16 小红书 is `xiaohongshu:full` / no PLATFORM.
+- **Removed workaround.** `retouch_video._rate` uses `vstudio.media.ffprobe_value` (strips ffprobe's trailing comma;
+  checked: `30000/1001` on a synthetic clip). Chunks now report read failures / exceptions with their frame range
+  immediately and the run exits listing short chunks instead of concatenating a truncated body.
+- Not changed here (lib): compose `mix_audio` still limits the wav before the AAC encode (TP −1.2 vs −1.5 in the
+  demo) — wants the lib post-encode true-peak check; export "letterbox" log on a same-aspect no-op; MediaPipe telemetry.
+- Tests: `tests/test_talkinghead_fixes.py` (snap vs neighbour word, pass idempotence + stale refusal, cues keep-outs +
+  markup + stamp moved off the face, cover names).
+
+## Shared cleanup
+
+2026-10-05: 去气口 / filler / 重复 / 口误 now go through the ONE shared tool, `vstudio.cleanup`
+(`references/CLEANUP.md`); no talkinghead-local detection or cut-decision code is left.
+- `cut_pass1.py`: range edges via `cleanup.snap_range` (replaces `bodycut.snap_range` / `word_limits`, deleted);
+  `cleanup.analyze` on each RAW clip (`sdrN.mp4` + `aN.json`, ranges = the snapped edit list) → `cleanup.cN.json`
+  (ids offset so they are unique across clips: one reply covers the video) + combined `cleanup_review.md`. Only the
+  气口 edits (pause / breath / lead / tail) are applied in pass 1 (the old voiced-run squeeze: `TH` ignored, legacy
+  `MAXGAP` / `KEEPGAP` → `pause_min` / kept gap, new `PROFILE` / `CLEANUP` / `REPLY`). `--analyze-only`.
+  `segs.pass1.json` gains `segs` (clip, raw t0/t1, body b0/b1), `body_words`, `applied`, `edls`.
+- `strict_pass.py`: `review` (alias `transcribe`, no body ASR any more; no `bw.json`) prints the sheet and writes
+  `strict_draft.py` with `REPLY = ""` + the CONFIRM rows. `apply` = `cleanup.keep_segments` per clip with the reply
+  (AUTO only by default; `APPROVE` / `KEEP` / `ALL_CONFIRM` / `CUT` too; legacy `DEL` + `bw.json` still cut), mapped
+  through the pass-1 segments onto the retouched body (`bodycut.body_spans`), then cut as before. Writes a cleanup
+  sidecar `<OUT_A stem>.cleanup.json`; `verify` = `cleanup.verify` (+ applied edit ids near each loss). Keeping a
+  pause already squeezed in pass 1 is refused with the fix. Stage names, CLIs, stale-stage refusal unchanged.
+- `drop_pass.py`: unchanged cut; also writes the cleanup sidecar for its output.
+- `scripts/filler_policy.py`: reduced to a compat shim over `cleanup.content_check` (`score` deleted; nothing imports it).
+- `bodycut.py`: `dbenv`, `word_limits`, `snap_range` deleted; new glue `body_spans`, `raw_to_body`, `word_remap`,
+  `on_body`, `cleanup_overrides`, `load_edls`. The local `write_sidecar` is gone: strict / drop call the public
+  `cleanup.write_sidecar` (same sidecar, same tag); `cut_pass1` numbers the clips' edits with
+  `cleanup.analyze(..., id_offset=)` instead of rewriting the EDLs.
+- Behaviour change: the pause squeeze is the cleanup profile's (standard: ≥ 0.45 s → 0.18-0.40 s) instead of
+  "> 0.20 s → 0.10 s" (pass 1) and "> 0.12 s → 0.06 s" (strict), so bodies are a little longer and less clipped;
+  `PROFILE = "tight"` (≥ 0.25 s → 0.08-0.20 s) is the closest to the old feel. Subtitle chunk timing still comes
+  from the strict-stage words.
+- Tests: `tests/test_talkinghead_fixes.py` (snap via cleanup; pass 1 analyses + applies only 气口; reply 确认 / 保留,
+  idempotent re-apply from pass 1, stale + unknown-id + kept-pause refusals, drop sidecar; verify OK / lost word;
+  legacy DEL).

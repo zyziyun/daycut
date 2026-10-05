@@ -12,8 +12,8 @@ scaled to the exact cover size (YouTube 1280x720, B站 1146x717). The templates 
 
 Accent: persona ``cover.accent`` (default teal #2dd4bf, the original collage / face-quadrant look; the
 brand red stays for on-video graphics). ``--accent '#ff2442'`` overrides it for one render.
-Without --platform the output is the old 1080x1920 cover at -o. With several platforms each file is
-<out stem>.<platform>-<orientation>.<ext>.
+Without --platform the output is the old 1080x1920 cover at -o. With --platform (one or several) each file is
+<out stem>.<platform>-<orientation>.<ext>, so a platform render never overwrites the plain -o cover.
 """
 import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
 
@@ -91,7 +91,7 @@ def main():
     stem, ext = os.path.splitext(a.out)
     for sp in a.platform:
         prof = P.profile(sp)
-        out = a.out if len(a.platform) == 1 else f"{stem}.{prof.name}-{prof.orientation}{ext}"
+        out = f"{stem}.{prof.name}-{prof.orientation}{ext}"      # always suffixed: never clobbers the -o cover
         render(a.html, out, P.cover_size(prof), accent, a.wait)
         fp = feed_preview(prof, out)
         print(f"{prof.key}: {P.cover_size(prof)} -> {out}" + (f"  (feed preview {fp})" if fp else ""))

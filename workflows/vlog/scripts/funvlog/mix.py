@@ -6,7 +6,10 @@
                 persona audio.voice_lufs (-16), music ducked ``duck_db`` (-12) while anyone speaks
     SFX         audio.cue_sheet_for(...) -> render_cue_sheet, summed on top
     final       two-pass loudnorm to the platform profile (LUFS / true peak)
-    no-music    voice + SFX with the SAME gain as the final mix (A13: a re-scorable version)
+    accent      ``keep_audio`` shots' native sound, each piece at voice_lufs + gain_db (-8), under the bed
+    no-music    voice + accents + SFX with the SAME gain as the final mix (A13: a re-scorable version). With
+                no speech and no accents it is SFX only, so it measures well below the target (e.g. -17
+                LUFS against -14): it is a stem for re-scoring, not a finished upload.
 """
 import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[4] / "lib"))
 import os
@@ -18,17 +21,24 @@ from vstudio import audio as A
 SR = A.SR
 
 
-def voice_stem(pieces, total, fade=0.01):
-    """pieces: [{src, a, b, t}] (source span a..b placed at timeline t) -> (n, 2) float32."""
+def voice_stem(pieces, total, fade=0.01, level=None):
+    """pieces: [{src, a, b, t, rate?, gain_db?}] (source span a..b placed at timeline t, played at ``rate``)
+    -> (n, 2) float32. ``level`` (LUFS): each piece normalised to level + its gain_db (accent stems)."""
     N = int(round(total * SR))
     x = np.zeros((N, 2), np.float32)
     nf = max(1, int(fade * SR))
     ramp = np.linspace(0, 1, nf, dtype=np.float32)[:, None]
     for p in pieces:
-        n = int(round((p["b"] - p["a"]) * SR))
+        rate = float(p.get("rate", 1.0))
+        n = int(round((p["b"] - p["a"]) / rate * SR))
         if n <= 0:
             continue
-        y = A.decode_audio(p["src"], start=p["a"], dur=p["b"] - p["a"])[:n]
+        af = f"atempo={rate:.5f}" if abs(rate - 1.0) > 1e-3 else None
+        y = A.decode_audio(p["src"], start=p["a"], dur=p["b"] - p["a"], af=af)[:n]
+        if level is not None and len(y):
+            li = A.integrated_lufs(y)
+            if np.isfinite(li):
+                y = y * np.float32(10 ** ((level + float(p.get("gain_db", 0.0)) - li) / 20))
         if len(y) < n:
             y = np.concatenate([y, np.zeros((n - len(y), 2), np.float32)])
         if n > 2 * nf:
@@ -42,10 +52,20 @@ def voice_stem(pieces, total, fade=0.01):
 
 
 def build_mix(work, total, music, music_start, speech_pieces, cues, prof, music_lufs=-19.0, duck_db=-12.0,
-              fade_out=1.5, music_xfade=4.0):
-    """Write work/{voice,bed,vm,sfx,mix,nomusic}.wav; returns dict(paths, measured loudness, gain)."""
+              fade_out=1.5, music_xfade=4.0, accent_pieces=None):
+    """Write work/{voice,bed,vm,accent,sfx,mix,nomusic}.wav; returns dict(paths, measured loudness, gain).
+
+    accent_pieces: native audio of non-speech shots kept with ``keep_audio`` ([{src, a, b, t, rate,
+    gain_db}]): each piece at persona voice_lufs + gain_db (default -8 dB, i.e. ducked under the voice
+    level), 30 ms fades, laid UNDER the music bed (the bed does not duck for it), also in the no-music mix."""
     os.makedirs(work, exist_ok=True)
     pa = A._persona_audio()
+    n_all = int(round(total * SR))
+    accent = None
+    if accent_pieces:
+        accent = _fit_len(voice_stem(accent_pieces, total, fade=0.03,
+                                     level=float(pa.get("voice_lufs", -16))), n_all)
+        out_acc = A.write_wav(os.path.join(work, "accent.wav"), accent)
     voice = voice_stem(speech_pieces, total)
     vp = A.write_wav(os.path.join(work, "voice.wav"), voice)
     out = dict(voice=vp)
@@ -62,8 +82,11 @@ def build_mix(work, total, music, music_start, speech_pieces, cues, prof, music_
         mv = A.measure_loudness(vp)
         if np.isfinite(mv["input_i"]):
             mixed *= 10 ** ((float(pa.get("voice_lufs", -16)) - mv["input_i"]) / 20)
-    n = int(round(total * SR))
+    n = n_all
     mixed = _fit_len(mixed, n)
+    if accent is not None:
+        mixed = mixed + accent
+        out["accent"] = out_acc
     sfx = A.render_cue_sheet(cues, total) if cues else np.zeros((n, 2), np.float32)
     sfx = _fit_len(sfx, n)
     out["sfx"] = A.write_wav(os.path.join(work, "sfx.wav"), sfx)
@@ -78,7 +101,7 @@ def build_mix(work, total, music, music_start, speech_pieces, cues, prof, music_
     ceil = tp - 2.0                                            # headroom for AAC / inter-sample overshoot
     lim = os.path.join(work, "limited.wav")
     for _ in range(3):                                         # limit, re-measure, re-gain: loudnorm stays linear
-        A.write_wav(lim, limit(x * g, ceil))                  # impacts would clip / force dynamic loudnorm
+        A.write_wav(lim, A.limit(x * g, ceil))                # true-peak limiter: impacts never force dynamic loudnorm
         ml = A.measure_loudness(lim)
         if not np.isfinite(ml["input_i"]) or abs(lufs - ml["input_i"]) < 0.2:
             break
@@ -90,7 +113,7 @@ def build_mix(work, total, music, music_start, speech_pieces, cues, prof, music_
     mv = A.measure_loudness(vp)
     if np.isfinite(mv["input_i"]):
         vlev *= 10 ** ((float(pa.get("voice_lufs", -16)) - mv["input_i"]) / 20)
-    nm = limit((_fit_len(vlev, n) + sfx) * g, ceil)
+    nm = A.limit((_fit_len(vlev, n) + sfx + (accent if accent is not None else 0)) * g, ceil)
     out["nomusic"] = A.write_wav(os.path.join(work, "nomusic.wav"), nm)
     out["mix"] = final
     out["premix_lufs"] = round(float(m0["input_i"]), 2)
@@ -116,6 +139,16 @@ def measured_duck(voice, vp, bed, vm, pieces, pa):
     for p in pieces:
         i, j = int((p["t"] + 0.3) * SR), int((p["t"] + p["b"] - p["a"] - 0.1) * SR)
         sp[max(0, i):max(0, min(n, j))] = True
+    # only where the voice actually sounds: a speech piece also carries room tone (lead-in, the stretch to
+    # the beat, squeezed pauses) where the ducker has released
+    hop = SR // 20
+    vm1 = voice[:n].mean(1).astype(np.float64)
+    m = len(vm1) // hop
+    if m:
+        env = 10 * np.log10(np.mean(vm1[:m * hop].reshape(m, hop) ** 2, axis=1) + 1e-12)
+        on = np.repeat(env > env.max() - 30.0, hop)
+        sp[:len(on)] &= on
+        sp[len(on):] = False
     away = np.ones(n, bool)
     for p in pieces:
         i, j = int((p["t"] - 1.0) * SR), int((p["t"] + p["b"] - p["a"] + 1.0) * SR)
@@ -125,31 +158,6 @@ def measured_duck(voice, vp, bed, vm, pieces, pa):
         return None
     r = lambda y: 10 * np.log10(np.mean(y.astype(np.float64) ** 2) + 1e-12)
     return round(float((r(mus[sp]) - r(bb[sp])) - (r(mus[away]) - r(bb[away]))), 2)
-
-
-def limit(x, ceiling_db, release=0.08, look=0.003, block=0.001):
-    """Look-ahead peak limiter (numpy): per-1 ms block gain = min(1, ceiling/peak), held over the look-ahead,
-    released at ``release`` s; linear between blocks. Keeps impacts under the true-peak ceiling without
-    pumping the whole mix."""
-    c = 10 ** (ceiling_db / 20)
-    a = np.abs(x).max(1) if x.ndim > 1 else np.abs(x)
-    B = max(1, int(block * SR))
-    nb = int(np.ceil(len(a) / B))
-    pad = np.zeros(nb * B, np.float32)
-    pad[:len(a)] = a
-    pk = pad.reshape(nb, B).max(1)
-    g = np.minimum(1.0, c / np.maximum(pk, 1e-9))
-    L = max(1, int(round(look / block)))
-    gl = np.array([g[max(0, i - L):i + L + 1].min() for i in range(nb)]) if L else g
-    rel = 1 - np.exp(-block / release)
-    out = np.empty(nb)
-    cur = 1.0
-    for i, v in enumerate(gl):
-        cur = v if v < cur else cur + (v - cur) * rel
-        out[i] = cur
-    gs = np.interp(np.arange(len(a)), np.arange(nb) * B + B / 2, out).astype(np.float32)
-    gs = np.minimum(gs, c / np.maximum(a, 1e-9))              # never above the ceiling, sample-exact
-    return x * (gs[:, None] if x.ndim > 1 else gs)
 
 
 def _fit_len(x, n):

@@ -13,7 +13,10 @@ options (anywhere after the config):
                                     (default: config PLATFORM, else persona platforms.default in 9:16;
                                     e.g. xiaohongshu:vertical = 3:4 1080x1440, douyin = 9:16, youtube = 16:9)
   --clean-master                    comp/all: also write <OUT stem>.clean.mp4 without burned captions
-                                    + <OUT stem>.cues.json, for `python -m vstudio.export`
+                                    + <OUT stem>.cues.json ({cues, keepouts}: captions with 【keyword】 markup,
+                                    and the time-boxed panels / stamps / pops / callouts / PiP / hook title in
+                                    master pixels), for `python -m vstudio.export --cues`
+  cues                              only (re)write <OUT stem>.cues.json (no render)
 A body whose aspect differs from the canvas (9:16 body -> 3:4 or 16:9 canvas) is reframed once with
 vstudio.reframe (face mode, pad-blur fallback) into body_<W>x<H>.mp4; the face track follows it.
 Template config: $VSTUDIO/workflows/talkinghead/examples/v_config_example.py
@@ -314,10 +317,10 @@ def token_img(text):
 
 def _pop_xy(b, im, x, y):
     """Authoring-frame centre -> canvas, clamped above the captions and off the face core / button column."""
-    if L.legacy: return x, y
-    x, y = L.map_point(x, y, face(sid_at(b)))
+    if L.legacy and not HAVE_FACE: return x, y
+    if not L.legacy: x, y = L.map_point(x, y, face(sid_at(b)))
     w, h = im.shape[1], im.shape[0]
-    x0, y0 = L.clamp_rect(x - w / 2, y - h / 2, w, h)
+    x0, y0 = (x - w / 2, y - h / 2) if L.legacy else L.clamp_rect(x - w / 2, y - h / 2, w, h)
     fb = face_core(face_on_canvas(sid_at(b)))
     if overlap((x0, y0, x0 + w, y0 + h), fb) > 0:            # never over the mouth: drop below the chin
         x0, y0 = L.clamp_rect(x0, fb[3] + 20, w, h)
@@ -326,6 +329,32 @@ def _stamp_xy(b, im, x, y):
     if L.legacy: return x, y
     x, y = L.map_point(x, y, face(sid_at(b)))
     return L.clamp_rect(x, y, im.shape[1], im.shape[0])
+def _stamps_off_face(items):
+    """Stamps sharing an end time form a stack; a stack covering the face core (brows..chin) of any sentence it
+    is on screen in moves down below the chin as one block, else beside the face, like pop words do."""
+    if not HAVE_FACE: return items
+    out = list(items)
+    for b1 in sorted({it[1] for it in items}):
+        idx = [i for i, it in enumerate(out) if it[1] == b1]
+        cores = [face_core(bx) for bx in _boxes_during(min(out[i][0] for i in idx), b1)]
+        rect = lambda i, dx=0, dy=0: (out[i][3] + dx, out[i][4] + dy, out[i][3] + dx + out[i][2].shape[1], out[i][4] + dy + out[i][2].shape[0])
+        hit = lambda dx, dy: sum(overlap(rect(i, dx, dy), c) for i in idx for c in cores)
+        if hit(0, 0) <= 0: continue
+        top = min(out[i][4] for i in idx); bot = max(out[i][4] + out[i][2].shape[0] for i in idx)
+        left = min(out[i][3] for i in idx); right = max(out[i][3] + out[i][2].shape[1] for i in idx)
+        cx0 = min(c[0] for c in cores); cx1 = max(c[2] for c in cores); chin = max(c[3] for c in cores)
+        bx0, by0, bx1, by1 = L.content_box()
+        cands = [(0, chin + 20 - top)] if chin + 20 + (bot - top) <= by1 else []
+        cands += [(bx0 - left, 0) if cx0 - bx0 >= right - left + 10 else None,
+                  (bx1 - right, 0) if bx1 - cx1 >= right - left + 10 else None]
+        cands = [c for c in cands if c is not None]
+        best = min(cands, key=lambda c: hit(*c), default=None)
+        if best is None or hit(*best) >= hit(0, 0):
+            print(f"WARN stamp stack ending at body {b1:.2f}s covers the face; no clear spot - move it in STAMPS"); continue
+        for i in idx:
+            b0_, b1_, im_, x_, y_ = out[i]; out[i] = (b0_, b1_, im_, x_ + best[0], y_ + best[1])
+        print(f"stamp stack ending at body {b1:.2f}s moved ({best[0]:+.0f}, {best[1]:+.0f}) px off the face")
+    return out
 POPI = []
 if ST['pops']:
     for b, t, col, x, y, sz, hold in G('POPS', []):
@@ -342,6 +371,7 @@ CARI = [(t0, t1, fit_layer(lambda sz: text_layer([(ti, YEL + (255,))], F(sz), st
 
 def _boxes_during(b0, b1):
     return [face_on_canvas(s['sid']) for s in SUBS if s['start'] < b1 and s['end'] > b0] or [face_on_canvas(-1)]
+STI = _stamps_off_face(STI)
 
 # callouts (notes style): top-left bubble with an accent rail (overlays.callout; white on 'notes-yellow')
 CALI = []
@@ -593,18 +623,58 @@ def render(out, captions=True, audio_path='mix.wav'):
         if fi % 900 == 0: print('frame', fi, f'{fi/FPS:.1f}/{TOTAL:.1f}', flush=True)
     enc.stdin.close(); enc.wait()
 
+def body_to_final(b0, b1, hooks=True):
+    """Final-video windows [(t0, t1)] where body time [b0, b1) is on screen (the body, plus every hook that
+    replays it when `hooks`)."""
+    out = []
+    for i, it in enumerate(M.tm.items):
+        if it['kind'] != 'clip' or (not hooks and it.get('tag') != 'body'): continue
+        lo = it['src0'] + it.get('mute_head', 0.0) + M.off[i]; hi = it['src1'] - it.get('mute_tail', 0.0) + M.off[i]
+        a2, b2 = max(b0, lo), min(b1, hi)
+        if b2 - a2 > 1e-3:
+            tf = lambda s_: it['dst0'] + (s_ - M.off[i] - it['src0']) / it['speed']
+            out.append((round(tf(a2), 3), round(tf(b2), 3)))
+    return out
+
+def cue_text(text):
+    """Caption chunk with KEYWORDS (and existing markup) as persona highlight markup (【kw】), so
+    vstudio.export burns the keyword colour too."""
+    a, z = D.markup()
+    return ''.join(f'{a}{t}{z}' if h else t for t, h in D.runs(text, _KW))
+
 def final_cues():
     """Caption chunks in FINAL-video seconds (hooks included), as subs.Cue dicts for vstudio.export."""
     out = []
-    for i, it in enumerate(M.tm.items):
-        if it['kind'] != 'clip': continue
-        lo = it['src0'] + it.get('mute_head', 0.0) + M.off[i]; hi = it['src1'] - it.get('mute_tail', 0.0) + M.off[i]
-        for a, b, text in CHUNKS:
-            a2, b2 = max(a, lo), min(b, hi)
-            if b2 - a2 > 0.05:
-                tf = lambda s: it['dst0'] + (s - M.off[i] - it['src0']) / it['speed']
-                out.append(vsubs.Cue(round(tf(a2), 3), round(tf(b2), 3), text).to_dict())
+    for a, b, text in CHUNKS:
+        for t0, t1 in body_to_final(a, b):
+            if t1 - t0 > 0.05:
+                out.append(vsubs.Cue(t0, t1, cue_text(text)).to_dict())
     return sorted(out, key=lambda c: c['start'])
+
+def final_keepouts():
+    """Burned overlays an export must not put captions on: [{t0, t1, box: [x, y, w, h], kind}] in master
+    pixels and final seconds (panels, stamps, pop words, callouts, PiP cards, the hook title)."""
+    ko = []
+    def add(kind, b0, b1, x, y, w, h, hooks=True):
+        for t0, t1 in body_to_final(b0, b1, hooks):
+            ko.append(dict(t0=t0, t1=t1, box=[int(x), int(y), int(w), int(h)], kind=kind))
+    for p0, p1, bg, x, y, rows in PANI: add('panel', p0, p1, x, y, bg.shape[1], bg.shape[0], hooks=False)
+    for b0, b1, im, x, y in STI: add('stamp', b0, b1, x, y, im.shape[1], im.shape[0], ST['fx_in_hooks'])
+    for b0, im, x, y, hold in POPI: add('pop', b0, b0 + hold, x - im.shape[1] / 2, y - im.shape[0] / 2, im.shape[1], im.shape[0], ST['fx_in_hooks'])
+    for b0, b1, im, x, y in CALI: add('callout', b0, b1, x, y, im.shape[1], im.shape[0], hooks=False)
+    for it in BRI:
+        if it.mode == 'pip': x0, y0, x1, y1 = it.rect; add('pip', it.t0, it.t1, x0, y0, x1 - x0, y1 - y0, hooks=False)
+    if HOOKS and (HTI or BADGE is not None):
+        ims = [(CXM, y, im) for y, im in zip(HOOK_TITLE_Y, HTI)] + ([(CXM, HOOK_BADGE_Y, BADGE)] if BADGE is not None else [])
+        x0 = min(cx - im.shape[1] * HOOK_K / 2 for cx, cy, im in ims); x1 = max(cx + im.shape[1] * HOOK_K / 2 for cx, cy, im in ims)
+        y0 = min(cy - im.shape[0] * HOOK_K / 2 for cx, cy, im in ims); y1 = max(cy + im.shape[0] * HOOK_K / 2 for cx, cy, im in ims)
+        ko.append(dict(t0=0.0, t1=round(M.body_start, 3), box=[int(x0), int(y0), int(x1 - x0), int(y1 - y0)], kind='hook_title'))
+    return sorted(ko, key=lambda k: k['t0'])
+
+def write_cues(path):
+    """<OUT>.cues.json for `python -m vstudio.export --cues`: {cues, keepouts, size, platform}."""
+    json.dump(dict(cues=final_cues(), keepouts=final_keepouts(), size=[W, H], platform=PROF.key),
+              open(path, 'w'), ensure_ascii=False, indent=1)
 
 def preview(ts):
     outs = []; tw = 360 if L.portrait else 640; th = int(round(tw * H / W))
@@ -626,10 +696,12 @@ if __name__ == '__main__':
         if CLEAN:
             stem = os.path.splitext(C.OUT)[0]
             render(stem + '.clean.mp4', captions=False)
-            json.dump(final_cues(), open(stem + '.cues.json', 'w'), ensure_ascii=False, indent=1)
+            write_cues(stem + '.cues.json')
             print('clean master', stem + '.clean.mp4', '+', stem + '.cues.json')
         from vstudio import platform as P
         for w_ in P.check_length(PROF, TOTAL): print('WARN', w_)
     if STAGE == 'preview': preview([float(x) for x in sys.argv[3].split(',')])
+    if STAGE == 'cues':
+        write_cues(os.path.splitext(C.OUT)[0] + '.cues.json'); print('wrote', os.path.splitext(C.OUT)[0] + '.cues.json')
     tl_ = M.timeline(); tl_.update(PLATFORM=PROF.key, W=W, H=H)
     json.dump(tl_, open('timeline.json', 'w'))

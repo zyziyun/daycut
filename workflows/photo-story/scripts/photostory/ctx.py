@@ -30,11 +30,14 @@ PRESETS = {
 REF_W, REF_H, REF_BOX_H = 1620, 2160, 1500   # geometry the original pixel constants were tuned on
 
 # Font roles. The original used macOS system fonts; they map onto vstudio roles:
-#   Songti (CJK serif titles)      -> "cjk-serif"   (optional persona fonts.cjk-serif, falls back to cjk-bold)
+#   Songti (CJK serif titles)      -> "cjk-serif"   (Noto Serif SC from install.sh, or persona fonts.cjk-serif -
+#                                     a file or "Songti.ttc#N"; missing -> cjk-serif-bold -> cjk-bold WITH a loud warning)
 #   Hiragino Sans GB (CJK body)    -> "cjk" / "cjk-bold"
 #   Avenir Next (latin UI/subs)    -> "sans" / "sans-bold" (optional persona keys, fall back to cjk / cjk-bold)
 #   Georgia Italic (latin display) -> "serif-italic"
-FALLBACK = {"cjk-serif": "cjk-bold", "sans": "cjk", "sans-bold": "cjk-bold", "serif-italic": "serif"}
+FALLBACK = {"cjk-serif": "cjk-serif-bold", "cjk-serif-bold": "cjk-bold", "sans": "cjk", "sans-bold": "cjk-bold",
+            "serif-italic": "serif"}
+SERIF_ROLES = ("cjk-serif", "cjk-serif-bold")
 
 DEFAULT_PALETTE = dict(
     accent=(222, 184, 112),      # gold: highlights, progress, frames, labels
@@ -94,12 +97,23 @@ def parse_canvas(v):
 
 @lru_cache(maxsize=None)
 def _font_path(role):
-    try:
-        return vfont(role)
-    except MissingAsset:
-        if role in FALLBACK:
-            return _font_path(FALLBACK[role])
-        raise
+    """vstudio font for ``role``, else the first available along FALLBACK. A serif role that ends on a sans face
+    prints one loud warning naming the role asked for (the WORKFLOW promises 中文 serif titles)."""
+    r, tried = role, []
+    while True:
+        try:
+            p = vfont(r)
+            break
+        except MissingAsset:
+            tried.append(r)
+            if r not in FALLBACK:
+                raise
+            r = FALLBACK[r]
+    if role in SERIF_ROLES and r not in SERIF_ROLES:
+        print(f"!! photo-story: no {' / '.join(repr(t) for t in tried)} font -> 中文 titles/quotes use '{r}' (sans) "
+              f"instead of serif. Run ./install.sh (Noto Serif SC) or set persona fonts.{role} to a serif file "
+              "(a collection face works: \"/path/Songti.ttc#1\").", file=sys.stderr, flush=True)
+    return p
 
 
 @lru_cache(maxsize=256)

@@ -4,10 +4,7 @@ Go through this list before delivering any cut. Report each rule as `A3 ✓` or 
 timestamp)`. Breaking a rule on purpose is fine, but write down which rule you broke and why in
 the project notes.
 
-Inspired by the case-based aesthetic rules in
-[video-shotcraft](https://github.com/Vincentwei1021/video-shotcraft) by Wei Yihao (Apache-2.0).
-The rules below are restated in our own words and widened from product promos to vlogs and
-talking-heads. Audio rules live in [SOUND.md](SOUND.md).
+The rules cover product promos, vlogs and talking-heads. Audio rules live in [SOUND.md](SOUND.md).
 
 ## Rhythm
 

@@ -91,7 +91,12 @@ Video: temporal stability). `--makeup 0` turns it off.
 
 ## Video: temporal stability
 - `vstudio.face.VideoFaceTracker`: VIDEO-mode landmarker on a face crop (face ≈ half the crop, ≤ 640 px),
-  crop re-centred with hysteresis, IMAGE-mode full-frame detection to (re)acquire.
+  crop re-centred with hysteresis, IMAGE-mode full-frame detection to (re)acquire. `face.detect` keeps
+  VIDEO-mode timestamps strictly increasing per landmarker (a lost-face re-acquire used to re-send the same
+  timestamp and crash the chunk); a tracker error is re-raised with the frame index and time.
+- Telemetry: the MediaPipe 0.10.x task library links a Google usage logger (clearcut, `play.googleapis.com/log`)
+  and exposes no opt-out in its Python API or environment (checked on 0.10.35), so vstudio cannot switch it off.
+  Retouch works offline; block that host at the firewall if you need zero outbound traffic.
 - `vstudio.face.LandmarkSmoother`: One Euro filter in face-width units; centroid filtered separately from
   the per-landmark offsets; eyes / lips / brows get a higher cutoff (blinks and speech are not lagged),
   the outline that carries the slim warp is steadier. Resets on cuts.

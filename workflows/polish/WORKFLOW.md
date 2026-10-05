@@ -10,7 +10,9 @@ With `--platform <name>`: the same, tuned to that platform's profile + `final.co
 with `--platform a,b,...`: the polished master plus one file + cover per platform and `exports/manifest.json`
 (see [Platforms](#platforms)).
 
-Run from the project (video) folder. `$VSTUDIO` = repo root.
+Run from the project (video) folder. `$VSTUDIO` = repo root. Don't polish a file you haven't probed, and don't
+polish twice (a second loudness pass only costs headroom). Long-form uploads take the loudness and tag steps but
+usually not the speed step. End-to-end context: [`references/SOP_SHORT_VIDEO.md`](../../references/SOP_SHORT_VIDEO.md).
 
 ## Pipeline
 
@@ -42,6 +44,24 @@ Run from the project (video) folder. `$VSTUDIO` = repo root.
    ```bash
    ffmpeg -i final.mp4 -af loudnorm=I=-14:print_format=summary -f null - 2>&1 | grep -E "Input Integrated|Input True Peak"
    ```
+
+### Optional: 气口 / filler / repeat cleanup of the export (`--cleanup`, default off)
+An NLE export that still has long pauses, 嗯/呃 or repeats can take the shared cleanup tool (`vstudio.cleanup`,
+[`references/CLEANUP.md`](../../references/CLEANUP.md)) as step 0, before the cover:
+```bash
+python3 $VSTUDIO/workflows/polish/scripts/polish.py export.mp4 -o final.mp4 --cleanup gentle      # 1st pass: auto edits
+# read final_review.md (待确认 items) to the creator, then:
+python3 $VSTUDIO/workflows/polish/scripts/polish.py export.mp4 -o final.mp4 --cleanup gentle \
+    --cleanup-reply "确认 3,5 / 保留 7" [--cleanup-verify]
+```
+- Profiles: `pauses` (气口 only, no word edits), `gentle`, `standard`, `tight`. Only `auto` edits are cut until the
+  creator replies; `--cleanup-verify` re-transcribes the cut and stops if a content word was lost.
+- The EDL (`<out stem>.cleanup.json`) and `<out stem>_review.md` sit next to the output and are **reused** on re-runs
+  (ids stay valid; `--cleanup-fresh` re-analyses). Transcript: `--cleanup-transcript` (any shape) else ASR (`--cleanup-lang`).
+- **Never cut twice**: a file that is itself a cleanup output (has its `.cleanup.json` sidecar) is not cut again, and
+  `cleanup.apply`'s duration guard refuses an EDL made from a different-length file. Exports from Descript /
+  CapCut / 剪映 where the creator already removed pauses usually want `pauses` or nothing.
+- Duration afterwards = cleaned length ÷ speed (the self-check's expectation follows it).
 
 ## Platforms
 
@@ -106,6 +126,7 @@ PYTHONPATH=$VSTUDIO/lib python3 -m vstudio.export master.mp4 --platforms douyin,
 - [ ] Video bitrate close to the source (or CRF chosen on purpose)
 - [ ] Integrated loudness within ±1 LU of target, true peak ≤ -1.0 dBTP
 - [ ] Frame 0 is the cover, not black
-- [ ] Duration ≈ source ÷ speed (±0.5 s)
+- [ ] Audio at t=0 is the source's audio at t=0 (the cover replaces picture only; nothing shifted)
+- [ ] Duration ≈ source (cleaned length with `--cleanup`) ÷ speed (±0.5 s)
 - [ ] Shorts: 1.2× (or persona `speed.body`) was proposed and the user's answer applied
 - [ ] With `--platform`: no length warnings you didn't mention; cover jpg at the platform size; manifest warnings read

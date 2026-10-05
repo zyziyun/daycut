@@ -17,6 +17,7 @@ import numpy as np
 from vstudio import audio, media
 from vstudio.config import persona
 
+from . import speechclean
 from .shots import parse_src
 
 SR = audio.SR
@@ -26,22 +27,12 @@ def _db(g):
     return 10 ** (np.asarray(g, np.float32) / 20)
 
 
-def duck_curve(stem, duck_db, n, attack=0.08, release=0.40, threshold_db=-42.0):
-    """Per-sample gain (n,) that dips by ``duck_db`` while ``stem`` is active (absolute RMS threshold,
-    so stems that are digital silence between clips work)."""
-    if not duck_db or stem is None or not np.any(stem):
+def duck_curve(stem, duck_db, n, threshold_db=-42.0):
+    """Per-sample gain (n,) dipping by ``duck_db`` while ``stem`` is active: ``vstudio.audio.duck_curve`` with an
+    absolute RMS threshold (stems are digital silence between clips); no stem -> unity."""
+    if stem is None:
         return np.ones(n, np.float32)
-    env, hop = audio.rms_envelope(stem, SR, hop=0.01, win=0.03)
-    tgt = np.where(env > threshold_db, float(duck_db), 0.0)
-    a_k, r_k = 1 - np.exp(-hop / attack), 1 - np.exp(-hop / release)
-    cur, curve = 0.0, np.empty(len(tgt), np.float32)
-    for i, x in enumerate(tgt):
-        cur += (x - cur) * (a_k if x < cur else r_k)
-        curve[i] = cur
-    shift = int(round(attack / hop))          # look-ahead: the dip starts with the sound, not after it
-    curve = np.concatenate([curve[shift:], np.full(shift, curve[-1] if len(curve) else 0.0)])
-    t = np.arange(n) / SR
-    return _db(np.interp(t, np.arange(len(curve)) * hop + 0.015, curve))
+    return audio.duck_curve(stem, duck_db, n, threshold_db=threshold_db)
 
 
 def clip_sounds(C, T):
@@ -57,10 +48,11 @@ def clip_sounds(C, T):
         if not media.probe(src)["has_audio"]:
             print(f"! {sh['src']}: audio={mode} but the clip has no sound")
             continue
+        src, off = speechclean.cleaned(C, sh, src)       # cleanup= (opt-in): the cleaned speech, from 0
         nxt = T.shots[k + 1]["trd"] if k + 1 < len(T.shots) else 0.0
         fi = max(0.08, sh.get("trd") or 0.0)
         out.append(dict(src=src, shot=sh["src"], start=sh["start"], dur=sh["end"] - sh["start"] + nxt, mode=mode,
-                        gain=float(sh.get("gain", 0) or 0), off=float(sh.get("off", 0.0)),
+                        gain=float(sh.get("gain", 0) or 0), off=float(off),
                         speed=float(sh.get("speed", 1.0)), fade_in=fi if k else 0.02, fade_out=max(0.12, nxt)))
     return out
 

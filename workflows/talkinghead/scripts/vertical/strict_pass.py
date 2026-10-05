@@ -1,107 +1,137 @@
 #!/usr/bin/env python3
-"""Strict disfluency pass on an existing body (keeps the retouch, no re-render of it).
-1) python strict_pass.py transcribe body_a.wav "术语 prompt"   -> bw.json + indexed word list printed
-   Also writes strict_suggest.json + strict_draft.py: DEL pre-filled ONLY with high-confidence
-   candidates (standalone 嗯/呃/um/uh, stutter repeats); semantic fillers (就是 那个 然后), merged-filler /
-   "hidden onset" PATCHes and 2-word repeats are listed under CONFIRM and need the creator's yes.
-2) the creator confirms the DEL list; copy strict_draft.py to strict.py and edit:
-       DEL = {13, 18, 25, ...}            # word indices from step 1 (confirmed)
-       TEXT = {3: "职业发展的初期|对于大家的习惯", ...}   # optional subtitle rewrites per sid
+"""Strict pass: apply the creator's decisions on the speech cleanup (vstudio.cleanup) to the existing body
+(keeps the retouch, no re-render of it). The detection already ran on the RAW clips in cut_pass1
+(cleanup.c<N>.json + cleanup_review.md: fillers, repeats, stammers, restarts, re-takes, 气口).
+1) python strict_pass.py review            (old name: transcribe [body_a.wav] ["prompt"] - same thing, no ASR)
+   -> prints cleanup_review.md and writes strict_draft.py with REPLY = "" and the CONFIRM list as comments.
+2) the creator answers the sheet; copy strict_draft.py to strict.py and fill in:
+       REPLY = "确认 3,5,9 / 保留 7"     # 确认 = also cut these (CONFIRM / KEEP rows), 保留 = do not cut (AUTO rows too)
+       CUT = [(1, 12.30, 12.90)]          # optional extra editor cuts: (clip, raw t0, raw t1)
+       TEXT = {3: "职业发展的初期|对于大家的习惯"}   # optional subtitle rewrites per sid
+   (APPROVE = {3, 5}, KEEP = {7}, ALL_CONFIRM = True work too; a legacy DEL = {bw.json index} is still cut.)
+   With REPLY = "" only the AUTO edits are applied: CONFIRM rows are never cut without the creator's yes.
 3) python strict_pass.py apply strict.py IN_V IN_A OUT_V OUT_A
-   -> pauses squeezed to KEEPGAP, segs.json rewritten (subs keep their sid, words carry new times).
-4) python strict_pass.py verify strict.py OUT_A ["术语 prompt"]
-   -> re-ASR the cut and compare with the original words minus DEL; flags missing content words
-      (exit 1 when something is missing: listen, then remove that index from DEL and re-apply)."""
+   -> segs.strict.json + segs.json (subs keep their sid, words carry new times) + <OUT_A stem>.cleanup.json
+   (cleanup sidecar). Always derived from the immutable segs.pass1.json, so re-applying (another reply, or after
+   a drop_pass) is idempotent; IN_A must be the pass-1 (retouched) body, anything else is refused.
+4) python strict_pass.py verify strict.py OUT_A ["术语 prompt"] [--transcript got.json]
+   = cleanup.verify: re-ASR the cut and compare with the words that should remain; lost content words ->
+   exit 1, with the edit ids near each one (add 保留 N to REPLY and re-apply)."""
 import sys, pathlib; sys.path[:0] = [str(pathlib.Path(__file__).resolve().parents[4] / "lib"), str(pathlib.Path(__file__).resolve().parents[1])]
 if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help"): print(__doc__); sys.exit(0)
-import json, shutil, importlib.util
-from bodycut import cut_body, dbenv, remap, q
-from vstudio import asr, audio, cut
-import filler_policy as fp
-if sys.argv[1] == 'verify':
-    import os, importlib.util as ilu
-    sp = ilu.spec_from_file_location('st', sys.argv[2]); st = ilu.module_from_spec(sp); sp.loader.exec_module(st)
-    ws = json.load(open('bw.json'))
-    if os.path.exists('segs_prev.json'):
-        t0 = json.load(open('segs_prev.json'))['total']; ws = [w for w in ws if w['b0'] < t0 - 0.05]
-    expected = [w for i, w in enumerate(ws) if i not in st.DEL]
-    got = asr.transcribe(sys.argv[3], prompt=sys.argv[4] if len(sys.argv) > 4 else None)['words']
-    flags = fp.content_check(expected, got, fillers=cut.FILLERS_ZH + cut.FILLERS_EN)
-    fp.print_flags(flags, f' ({sys.argv[3]})')
-    for f in flags:   # map back to bw.json indices near the flag so the DEL entry is easy to find
-        near = [i for i, w in enumerate(ws) if abs(w['b0'] - f['t']) < 1.0]
-        print(f"     bw idx near: {near}  DEL there: {sorted(set(near) & set(st.DEL))}")
-    sys.exit(1 if flags else 0)
-if sys.argv[1] == 'transcribe':
-    # vstudio.asr: mlx_whisper -> faster_whisper -> OpenAI, cached in body_a.wav.asr.json, term-fixed, with
-    # whisper's zero-length repeated tail words dropped BEFORE indexing so DEL indices stay valid
-    tr = asr.transcribe(sys.argv[2], prompt=sys.argv[3] if len(sys.argv) > 3 else None)
-    ws = [dict(w=w['w'], b0=round(w['t'], 2), b1=round(w['te'], 2)) for w in tr['words']]
-    json.dump(ws, open('bw.json', 'w'), ensure_ascii=False); line = ''
-    for i, w in enumerate(ws):
-        line += f"{i}:{w['w']}[{w['b0']:.1f}] "
-        if len(line) > 150: print(line); line = ''
-    print(line)
-    # review aid (vstudio.cut.suggest_fillers), scored by filler_policy: only "auto" rows are pre-filled
-    sug = fp.score(cut.suggest_fillers(tr['words'], audio=sys.argv[2]))
-    for r in sug:
-        r['idx'] = [i for i, w in enumerate(tr['words']) if r['start'] - 0.005 <= w['t'] < max(r['end'], r['start'] + 0.01) - 0.005]
-    auto, confirm, info = fp.split_tiers(sug)
-    json.dump(sug, open('strict_suggest.json', 'w'), ensure_ascii=False, indent=1)
-    for title, rows in (('AUTO (high confidence, pre-filled - still listen)', auto),
-                        ('CONFIRM (creator must say yes; often real words)', confirm), ('INFO (listen, no cut)', info)):
-        if rows: print(f'\n{title}:')
-        for r in rows:
-            print(f"  {r['conf']:.2f} {r['kind']:<12} {r['text']:<8} idx {r['idx']}  {r['why']}. {r['note']}")
-    auto_idx = sorted({i for r in auto for i in r['idx']})
-    with open('strict_draft.py', 'w') as f:
-        f.write('"""strict_pass DEL draft. The creator confirms this list before apply. AUTO = high-confidence only;\n'
-                'move CONFIRM indices into DEL only after listening (they are often real words)."""\n')
-        f.write(f'DEL = {set(auto_idx) or "set()"}\n')
-        f.write('# CONFIRM (not applied):\n')
-        for r in confirm: f.write(f"#   {r['idx']}  {r['kind']} '{r['text']}'  {r['why']}\n")
-        f.write('TEXT = {}\n')
-    print(f"\nstrict_draft.py: DEL = {auto_idx} ({len(auto)} auto, {len(confirm)} to confirm). "
-          'Show the creator AUTO + CONFIRM, then copy to strict.py; after apply run `verify`.')
-    sys.exit()
-import os; sys.path.insert(0, os.path.dirname(os.path.abspath(sys.argv[2]))); sys.path.insert(0, os.getcwd())
-spec = importlib.util.spec_from_file_location('st', sys.argv[2]); st = importlib.util.module_from_spec(spec); spec.loader.exec_module(st)
-IN_V, IN_A, OUT_V, OUT_A = sys.argv[3:7]
-DEL = st.DEL; TEXT = getattr(st, 'TEXT', {}); TH = getattr(st, 'TH', -45); MAXGAP = getattr(st, 'MAXGAP', 0.12)
-from vstudio.config import persona
-KEEPGAP = getattr(st, 'KEEPGAP', (persona().get('audio') or {}).get('pause_squeeze', 0.06))   # 气口 target
-prev = json.load(open('segs.json')); shutil.copy('segs.json', 'segs_prev.json'); total0 = prev['total']
-ws = json.load(open('bw.json'))
-ws = [w for w in ws if w['b0'] < total0 - 0.05]          # whisper hallucinates over the tail
+import json, os, importlib.util
+from bodycut import (F, body_spans, cut_body, load_edls, load_stage, on_body, pick_parent, q, raw_to_body,
+                     save_stage, word_remap)
+from vstudio import cleanup
 
-x, sr = audio.read_wav(IN_A, mono=True); r = dbenv(x, sr)   # 10 ms dB
-runs = []; i = 0; pend = 0.0
-while i < len(ws):
-    if i in DEL: pend = ws[i]['b1']; i += 1; continue
-    j = i
-    while j + 1 < len(ws) and j + 1 not in DEL: j += 1
-    b = ws[j]['b1'] + 0.04
-    if j + 1 < len(ws): b = min(b, ws[j + 1]['b1'] - 0.12)
-    runs.append((pend, b, list(range(i, j + 1)))); pend = ws[j]['b1']; i = j + 1
-runs[-1] = (runs[-1][0], total0, runs[-1][2])
-segs = []
-for a, b, _ in runs:
-    lo, hi = int(a * 100), int(b * 100)
-    mg = audio.voiced_runs(r[lo:hi], 0.01, TH, min_run=0.03, max_gap=MAXGAP, t0=lo / 100)
-    if not mg: continue
-    for qq, (s, e) in enumerate(mg):
-        segs.append((max(0, s - (0.04 if qq == 0 else KEEPGAP / 2)), min(total0, e + (0.06 if qq == len(mg) - 1 else KEEPGAP / 2))))
-segs.sort(); keep = []
-for s, e in segs:
-    if keep and s <= keep[-1][1]: keep[-1][1] = max(keep[-1][1], e)
-    else: keep.append([s, e])
-keep = [(q(s), q(e)) for s, e in keep if e - s > 0.05]
-T = cut_body(IN_V, IN_A, keep, OUT_V, OUT_A, 'seg_strict'); m = remap(keep)
-def old_sid(t):
-    for s in prev['subs']:
-        if s['start'] - 0.15 <= t < s['end'] - 0.15: return s['sid']
-    return prev['subs'][-1]['sid']
-words = [dict(w=ws[i]['w'], b0=m(ws[i]['b0']), b1=m(ws[i]['b1']), sid=old_sid(ws[i]['b0'])) for _, _, idx in runs for i in idx]
+
+def _mod(path):
+    sys.path[:0] = [os.path.dirname(os.path.abspath(path)), os.getcwd()]
+    spec = importlib.util.spec_from_file_location('st', path); m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m); return m
+
+
+def _pass1():
+    p1 = load_stage('pass1')
+    if p1 is None or 'segs' not in p1:
+        raise SystemExit('segs.pass1.json is missing or predates the shared cleanup (vstudio.cleanup): re-run cut_pass1.py')
+    return p1
+
+
+def decisions(st, known):
+    """(approve, keep, all_confirm, extra {clip: [(a, b, why)]}) from a strict.py module."""
+    r = cleanup.parse_reply(getattr(st, 'REPLY', '') or '')
+    ap = set(r['approve']) | set(getattr(st, 'APPROVE', ()) or ())
+    kp = set(r['keep']) | set(getattr(st, 'KEEP', ()) or ())
+    allc = bool(r['all_confirm'] or getattr(st, 'ALL_CONFIRM', False))
+    bad = (ap | kp) - known
+    if bad: raise SystemExit(f'unknown edit ids {sorted(bad)} (see cleanup_review.md)')
+    extra = {}
+    for c, a, b in getattr(st, 'CUT', ()) or ():
+        extra.setdefault(int(c), []).append((float(a), float(b), 'editor cut'))
+    return ap, kp, allc, extra
+
+
+if sys.argv[1] in ('review', 'transcribe'):
+    p1 = _pass1(); edls = load_edls(p1)
+    if sys.argv[1] == 'transcribe' and len(sys.argv) > 2:
+        print('note: the cleanup analysed the raw clips in cut_pass1; no body transcription is needed\n')
+    txt = open('cleanup_review.md', encoding='utf-8').read() if os.path.exists('cleanup_review.md') else \
+        '\n\n'.join(cleanup.review_sheet(e) for e in edls.values())
+    print(txt)
+    conf = [e for edl in edls.values() for e in edl['edits'] if e['action'] == 'confirm']
+    auto = [e for edl in edls.values() for e in edl['edits'] if e['action'] == 'auto']
+    with open('strict_draft.py', 'w', encoding='utf-8') as f:
+        f.write('"""strict_pass decisions. The creator answers cleanup_review.md before apply: AUTO rows are cut unless\n'
+                'kept (保留 N), CONFIRM rows only after a yes (确认 N) - they are often real words."""\n')
+        f.write('REPLY = ""        # e.g. "确认 3,5,9 / 保留 7"\n# CONFIRM (not applied unless named in REPLY):\n')
+        for e in conf:
+            f.write(f"#   {e['id']:>3}  {e['kind']:<13} '{e['text']}'  {e['reason']}\n")
+        f.write('CUT = []          # extra editor cuts: (clip, raw t0, raw t1)\nTEXT = {}\n')
+    print(f'\nstrict_draft.py: {len(auto)} auto edits (applied by default), {len(conf)} to confirm. '
+          'Show the creator the sheet, put the reply in REPLY, copy to strict.py; after apply run `verify`.')
+    sys.exit()
+
+st = _mod(sys.argv[2])
+p1 = _pass1(); edls = load_edls(p1)
+known = {e['id'] for edl in edls.values() for e in edl['edits']}
+AP, KP, ALLC, EXTRA = decisions(st, known)
+
+if sys.argv[1] == 'verify':
+    args = sys.argv[3:]; tr = None
+    if '--transcript' in args:
+        i = args.index('--transcript'); tr = args[i + 1]; args = args[:i] + args[i + 2:]
+    out_a = args[0]; prompt = args[1] if len(args) > 1 else None
+    rep = cleanup.verify(out_a, got=tr, prompt=prompt)
+    for x in rep['leftovers']:
+        print(f"  leftover @{x['t_out']:.2f}s '{x['text']}': {x['why']}")
+    segs = p1['segs']
+    for fl in rep['missing']:          # map back to the applied edits near the loss so 保留 N is easy to find
+        near = []
+        for c, edl in edls.items():
+            for e in edl['edits']:
+                if e['id'] in cleanup.applied_ids(edl['edits'], AP, KP, ALLC):
+                    b = raw_to_body(segs, c, e['t0'])
+                    if b is not None and abs(b - fl['t_src']) < 1.0: near.append(e['id'])
+        print(f"  '{fl['text']}' @body {fl['t_src']:.2f}s: applied edits near it {near} -> add 保留 N to REPLY, re-apply")
+    sys.exit(0 if rep['ok'] else 1)
+
+IN_V, IN_A, OUT_V, OUT_A = sys.argv[3:7]
+TEXT = getattr(st, 'TEXT', {})
+_, prev = pick_parent(IN_A, ['pass1'])   # never segs.json: it may already be cut
+segs = prev['segs']; total0 = prev['total']
+keep_raw, applied = {}, {}
+for c, edl in edls.items():
+    ids = cleanup.applied_ids(edl['edits'], AP, KP, ALLC)
+    lost = sorted(set(prev['applied'].get(str(c), [])) - set(ids))
+    if lost:
+        raise SystemExit(f'保留 {lost}: those 气口 were already squeezed in pass 1. Put REPLY = "保留 '
+                         f'{",".join(map(str, lost))}" in edit_list.py and re-run cut_pass1.py (then retouch again).')
+    applied[str(c)] = ids
+    keep_raw[c] = cleanup.keep_segments(edl['edits'], edl['ranges'], AP, KP, ALLC, EXTRA.get(c, ()),
+                                        edl['settings'].get('min_piece'), words=cleanup.load_words(edl['words']))
+keep = body_spans(segs, keep_raw)
+words0 = prev.get('body_words', [])
+DEL = set(getattr(st, 'DEL', ()) or ())
+if DEL:                                  # legacy: bw.json word indices on the pass-1 body
+    bw = json.load(open('bw.json'))
+    cuts = sorted((bw[i]['b0'], bw[i]['b1']) for i in DEL if i < len(bw))
+    out = []
+    for a, b in keep:
+        for ca, cb in cuts:
+            if cb <= a or ca >= b: continue
+            if ca > a: out.append((a, ca))
+            a = max(a, cb)
+        if b > a: out.append((a, b))
+    keep = out
+merged = []
+for a, b in ((q(a), q(b)) for a, b in keep):
+    if merged and a <= merged[-1][1] + 1e-6: merged[-1][1] = max(merged[-1][1], b)
+    elif b - a > 0.05: merged.append([a, b])
+keep = [tuple(k) for k in merged]
+if not keep: raise SystemExit('nothing left to keep')
+T = cut_body(IN_V, IN_A, keep, OUT_V, OUT_A, 'seg_strict')
+words = word_remap(words0, keep)
 first = {}
 for w in words: first.setdefault(w['sid'], w['b0'])
 sids = [s['sid'] for s in prev['subs'] if s['sid'] in first]; subs = []
@@ -109,7 +139,16 @@ for k, sid in enumerate(sids):
     st0 = 0.0 if k == 0 else subs[-1]['end']; en = first[sids[k + 1]] if k + 1 < len(sids) else T
     old = next(s['text'] for s in prev['subs'] if s['sid'] == sid)
     subs.append(dict(sid=sid, text=TEXT.get(sid, old), start=round(st0, 3), end=round(en, 3)))
-json.dump(dict(subs=subs, words=words, total=T, keep=keep), open('segs.json', 'w'), ensure_ascii=False, indent=1)
-print(f'{len(keep)} ranges, body {total0:.1f}s -> {T:.1f}s. Re-read every subtitle against the audio:')
+reply = getattr(st, 'REPLY', '') or ''
+side = cleanup.write_sidecar(OUT_A, IN_A, keep, on_body(words0), prev.get('language'), fps=F, applied=applied,
+                             approve=sorted(AP), keep_ids=sorted(KP), all_confirm=ALLC, reply=reply,
+                             legacy_del=sorted(DEL))
+save_stage('strict', dict(subs=subs, words=words, total=T, keep=keep, applied=applied, reply=reply,
+                          approve=sorted(AP), keep_ids=sorted(KP), all_confirm=ALLC, DEL=sorted(DEL), sidecar=side,
+                          language=prev.get('language')),
+           parent='pass1')
+n = sum(len(v) for v in applied.values()) - sum(len(v) for v in prev['applied'].values())
+print(f'{n} word edits applied ({len(keep)} ranges), body {total0:.1f}s -> {T:.1f}s. Re-read every subtitle against the audio:')
 for s in subs:
     print(s['sid'], ''.join(w['w'] for w in words if w['sid'] == s['sid']), ' || ', s['text'])
+print(f'next: python strict_pass.py verify {sys.argv[2]} {OUT_A}')

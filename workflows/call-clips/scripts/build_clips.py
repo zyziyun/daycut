@@ -18,7 +18,14 @@ place that converts to final time.
 Platform (wave B): ``--platform`` / clips.json ``"platform"`` (xiaohongshu, douyin, youtube-shorts,
 youtube, bilibili ...) is passed to the renderer (canvas, safe box, caption box) and the clip length is
 checked against that platform. ``name_mask`` (blur | cover | off | {mode, box, tiles, extra}) hides the
-call app's name labels. ``cut_profile`` (classic | word) picks the auto-trim defaults (cut_profiles.py).
+call app's name labels. ``"auto_trim": true`` cleans every window with the shared speech-cleanup tool
+(``vstudio.cleanup.clean`` per window via cut_profiles.py; ``cut_profile`` classic = gentle (default) | word =
+standard | gentle | standard | tight); a reviewed sheet (find_disfluencies.py = ``cleanup analyze --ranges``)
+is applied with clips.json ``"cleanup_edl"`` + ``"cleanup_reply"`` ("确认 3,5 / 保留 7").
+Hooks: each hook's end is moved over its last word's sounding tail plus the dissolve, never into the next
+word, and the hook->body fade is shortened when that pause is tight (``cleanup.extend_end``; clips.json
+``"hook_tail": false`` keeps the authored ends). ``"speakers"`` (speaker_timeline.py output, source
+time) is mapped to final time as work/<id>.speakers.json for render_trio's active-speaker layout.
 ``--clean-master`` renders a caption-free out/<id>.clean.mp4 + work/<id>.cues.json for
 ``python -m vstudio.export``.
 
@@ -32,12 +39,14 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 WORKFLOW = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 from build_subs import fix
+import active_speaker
 import cut_profiles
 import layout
 from vstudio import audio, media
 from vstudio import platform as P
+from vstudio import cleanup
 from vstudio.config import persona
-from vstudio.cut import Audio, split_window, xfade_assemble
+from vstudio.cut import xfade_assemble
 
 PY = sys.executable
 _CC = persona().get("call_clips") or {}
@@ -222,9 +231,9 @@ def main():
                          "check, e.g. xiaohongshu, douyin, youtube-shorts, youtube; overrides clips.json "
                          "'platform'. 'legacy' = the fixed pre-platform layouts")
     ap.add_argument("--cut-profile", default=None, choices=list(cut_profiles.PROFILES),
-                    help="auto-trim defaults: classic (pause>0.75s keep 0.30s; editor pass >0.50s keep "
-                         "0.25s; edges snap back to the quietest frame) or word (vstudio.cut). Default: "
-                         "clips.json cut_profile, persona call_clips.cut_profile, else classic")
+                    help="auto-trim profile (vstudio.cleanup): classic (= gentle) | word (= standard) | gentle | "
+                         "standard | tight. Default: clips.json cut_profile, persona call_clips.cut_profile, "
+                         "persona cleanup.profile, else classic")
     ap.add_argument("--clean-master", action="store_true",
                     help="render caption-free out/<id>.clean.mp4 (+ work/<id>.cues.json) for vstudio.export")
     args = ap.parse_args()
@@ -258,13 +267,25 @@ def main():
     os.makedirs("work", exist_ok=True)
     os.makedirs("out", exist_ok=True)
 
-    global AUDIO, SEGS
+    # one word list + one calibrated energy envelope (vstudio.cleanup) for auto-trim and hook edges
+    WORDS = EN = None
+    if C.get("whisper") and os.path.exists(C["whisper"]):
+        WORDS = cut_profiles.words_of(json.load(open(C["whisper"], encoding="utf-8"))["segments"])
+        if C.get("audio") and os.path.exists(C["audio"]):
+            EN = cut_profiles.energy(C["audio"], WORDS, None, cut_profile)
+    EDL_EDITS, DEC = None, cleanup.parse_reply("")
     if C.get("auto_trim"):
-        AUDIO = Audio(C["audio"])
+        if WORDS is None or EN is None:
+            sys.exit("auto_trim needs \"audio\" (16 kHz wav) and \"whisper\" (word timestamps)")
         if isinstance(C.get("extra_cuts"), str):
             # a path: editor cuts reviewed separately, [[from, to, why], ...]
             C["extra_cuts"] = json.load(open(C["extra_cuts"], encoding="utf-8"))
-        SEGS = json.load(open(C["whisper"], encoding="utf-8"))["segments"]
+        if C.get("cleanup_edl"):
+            # the creator reviewed find_disfluencies.py's sheet: apply exactly those decisions
+            EDL_EDITS = json.load(open(C["cleanup_edl"], encoding="utf-8"))["edits"]
+            DEC = cleanup.parse_reply(C.get("cleanup_reply", ""))
+            print(f"cleanup: {C['cleanup_edl']} reply {C.get('cleanup_reply', '') or '(none: AUTO edits only)'}")
+        print(f"auto-trim profile {cut_profile} -> {cut_profiles.resolve(cut_profile)}")
     for c in C["clips"]:
         cid = c["id"]
         if args.only and args.only != cid:
@@ -285,11 +306,12 @@ def main():
                 kinds.append("fade" if t == "~" else "card" if t else "trim")
             parts = [[lo, hi]]
             if C.get("auto_trim"):
-                cuts = cut_profiles.find_cuts(AUDIO, SEGS, lo, hi, C.get("extra_cuts"), cut_profile)
-                parts = split_window(lo, hi, cuts) or [[lo, hi]]
-                trimmed = sum(b - a for a, b, _ in cuts)
-                if cuts:
-                    print(f"  window {lo:.1f}-{hi:.1f}: {len(cuts)} auto cuts, -{trimmed:.1f}s")
+                res = cut_profiles.window(WORDS, EN, lo, hi, C.get("extra_cuts"), cut_profile, edits=EDL_EDITS,
+                                          approve=DEC["approve"], keep=DEC["keep"], all_confirm=DEC["all_confirm"])
+                parts = [list(p) for p in res["keep"]] or [[lo, hi]]
+                trimmed = (hi - lo) - sum(b - a for a, b in parts)
+                if res["cuts"]:
+                    print(f"  window {lo:.1f}-{hi:.1f}: {len(res['cuts'])} auto cuts, -{trimmed:.1f}s")
             for k, w in enumerate(parts):
                 if k:
                     titles.append(None)
@@ -305,6 +327,16 @@ def main():
         fade_of = {"card": XFADE, "fade": XFADE, "trim": TRIM_FADE, "auto": AUTO_FADE}
         xfs = [0.0] + [XFADE if k <= n_hooks else fade_of[kinds[k - n_hooks - 1]]
                        for k in range(1, len(specs))]
+        if n_hooks and EN is not None and C.get("hook_tail", True):
+            # whisper word ends run early: end each hook after its last word's sounding tail,
+            # plus the dissolve, so the fade never swallows that word (cleanup.extend_end)
+            for k in range(n_hooks):
+                h0, h1, spd, gain = specs[k]
+                nh1, nf, info = cleanup.extend_end(WORDS, EN, h0, h1, xfs[k + 1], spd)
+                specs[k] = (h0, nh1, spd, gain)
+                xfs[k + 1] = nf
+                if info:
+                    print(f"  hook {k + 1}: {info}")
 
         raw = f"work/{cid}.raw.mp4"
         track_paths = ([f"work/{cid}.track.{g['name']}.json" for g in guests]
@@ -470,6 +502,22 @@ def main():
         if guests:
             gj = [dict(g, track=tp) for g, tp in zip(guests, track_paths)]
             json.dump(gj, open(f"work/{cid}.guests.json", "w", encoding="utf-8"), ensure_ascii=False)
+        spk_path = None
+        if C.get("speakers") and guests:
+            # who gets the big tile in render_trio's stage layout: speaker_timeline.py labels
+            # (tile names = each guest's "name", and "host" or clips.json "host_speaker")
+            host_lab = C.get("host_speaker", "host")
+            valid = {g["name"] for g in guests} | {host_lab}
+            times, labels = active_speaker.load(C["speakers"])
+            raw_lab = active_speaker.to_final(times, labels, tm, total, valid=valid)
+            raw_lab = ["host" if x == host_lab else x for x in raw_lab]
+            act = active_speaker.smooth(raw_lab, default="host",
+                                        min_run=float(C.get("speaker_min_run", 1.6)))
+            spk_path = f"work/{cid}.speakers.json"
+            json.dump({"step": active_speaker.STEP, "labels": act}, open(spk_path, "w"))
+            sw = active_speaker.switches(act)
+            print(f"  active speaker: {len(sw)} turns ("
+                  + ", ".join(f"{t:.1f}s {x}" for t, x in sw[:8]) + (" ..." if len(sw) > 8 else "") + ")")
         if args.subs_only:
             print("  --subs-only: stopping before render")
             continue
@@ -495,6 +543,8 @@ def main():
             render_cmd += ["--host-track", f"work/{cid}.track.host.json"]
         if args.no_mask:
             render_cmd += ["--no-mask"]
+        if spk_path and os.path.basename(args.renderer) == "render_trio.py":
+            render_cmd += ["--speakers", spk_path]
         for kv in args.renderer_arg:
             k, _, v = kv.partition("=")
             render_cmd += [f"--{k}", v]

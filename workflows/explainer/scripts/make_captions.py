@@ -50,6 +50,7 @@ else:
     for c in long:
         print(f"warning: line {c['line']} cue at {c['start']:.2f}s exceeds 2 lines in the {cv['key']} caption box "
               f"(EN {len(c['en'])}/{cv['max_en']}, ZH {len(c['zh'])}/{cv['max_zh']}): split it in cues.txt")
+(root / "compositions").mkdir(parents=True, exist_ok=True)       # a blank `hyperframes init` has none yet
 open(root / "compositions/captions.html", "w").write(f'''<template>
   <style>
     @font-face {{ font-family: "Subtitle CJK"; src: url("{a.font}") format("woff2"); font-weight: 400; }}

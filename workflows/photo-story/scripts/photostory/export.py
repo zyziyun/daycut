@@ -5,7 +5,9 @@
     <out>/transcript.md       read-along script by section (+ VOCAB table if the spec has one)
     <out>/voice.mp3           narration only (no music), persona audio.voice_lufs (-16)   (needs timing.json)
     <out>/post.md             post copy (vstudio.publish.post_body): title, intro, outro, chapter timestamps, tags
-                              (POST platform= picks the format; default persona platforms.default)
+                              (POST platform= picks the format; default persona platforms.default; POST tags=
+                              [...] own tags, use_persona_tags=False drops the persona's, tag_set="art" picks
+                              persona publish.tag_sets.art)
 
     python3 export.py spec.py [--out out/] [--no-voice]
 """
@@ -13,6 +15,7 @@ import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().par
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 import argparse
+import inspect
 import json
 import os
 import tempfile
@@ -26,6 +29,21 @@ from photostory.ctx import Ctx, check_profile, load_spec
 from photostory.timeline import Timeline, load_timing, place_voice
 
 clean = lambda s: strip_markup(s or "")
+
+
+def tag_args(post):
+    """POST keys for the hashtag line -> publish.post_body kwargs. ``tags`` = the post's own; persona tags are
+    appended unless ``use_persona_tags: False``; ``tag_set`` picks persona ``publish.tag_sets[<name>]`` (e.g.
+    "art") instead of the default ``publish.tags``. An older library without these arguments gets neither
+    (a warning names what was ignored)."""
+    want = dict(use_persona_tags=bool(post.get("use_persona_tags", True)), tag_set=post.get("tag_set"))
+    params = inspect.signature(publish.post_body).parameters
+    if "use_persona_tags" in params and "tag_set" in params:
+        return want
+    for k, default in (("use_persona_tags", True), ("tag_set", None)):
+        if want[k] != default:
+            print(f"! this vstudio.publish.post_body has no {k}; POST {k}={want[k]!r} ignored (update lib/)")
+    return {}
 
 
 def main():
@@ -83,7 +101,7 @@ def main():
             chapters.append((T.sec_bounds[s], lab if not cap or len(lab) <= cap else name))
     body = "\n\n".join(p for p in (post.get("intro"), post.get("outro")) if p)
     text = publish.post_body(None, body, chapters=chapters, tags=post.get("tags"), platform=pl,
-                             title=post.get("title", C.TITLE_ZH or C.TITLE_EN))
+                             title=post.get("title", C.TITLE_ZH or C.TITLE_EN), **tag_args(post))
     open(os.path.join(out, "post.md"), "w", encoding="utf-8").write(text)
 
     if not a.no_voice and has_audio:

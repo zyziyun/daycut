@@ -4,10 +4,7 @@ How to make cuts land on the music and how to place sound effects so a fast edit
 deliberate instead of busy. Code: `lib/vstudio/beats.py` (analysis, grids, cut plans, energy arcs)
 and the SFX section of `lib/vstudio/audio.py` (synthesised bank, `place_sfx`, cue sheets).
 
-Inspired by the music-beat-sync and sound-design notes of
-[video-shotcraft](https://github.com/Vincentwei1021/video-shotcraft) by Wei Yihao (Apache-2.0).
-The methods are re-expressed here in our own words and code. No audio files were copied: every sound
-in our bank is synthesised from sine and noise maths.
+Every sound in the SFX bank is synthesised from sine and noise maths, so there are no audio files to license.
 
 ## 1. Order of work
 
@@ -136,6 +133,11 @@ peak (`audio.sfx_peak`) lands on `t`. The default is `peak_align=True` for dict 
 | Regular SFX | Peaks around -18 to -10 dBFS: under the voice, level with the drums |
 | Accent SFX | The finale impact is the loudest SFX (about -7 dBFS peak), used 2-3 times per video at most |
 | Final | Two-pass loudnorm of the whole mix to -14 LUFS, true peak -1.5 dBTP (`loudnorm_2pass`) |
+
+True peak and AAC: an encoded output (`.mp4` / `.m4a`) is measured after the encode and corrected. A `.wav`
+output is usually muxed to AAC later, which adds ~0.2-0.4 dB of peak, so `loudnorm_2pass(..., "mix.wav")`
+limits `WAV_HEADROOM_DB` (0.5 dB) under the target (`headroom=0` for an exact lossless deliverable). After a
+custom mux, `audio.ensure_loudness(final.mp4)` re-measures and re-normalises only if it missed.
 
 Use loudness for importance. The most important beat gets the loudest SFX, and repeated small
 sounds sit lowest. If the music already hits hard, let the drums do most of the work and give SFX

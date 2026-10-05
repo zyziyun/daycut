@@ -16,7 +16,9 @@ scrapbook label using the vstudio font roles.
 {"size":[1920,1080], "bg":"#34301f", "base":"wide.jpg", "title":"optional",
  "pieces":[{"img":"a.jpg","left":-90,"top":40,"w":900,"h":760,"rot":2,
             "bgsize":130,"bgpos":"center 55%","seed":11}, ...]}
-bgsize = zoom % (>=100) applied after cover-fit; bgpos = focus point (CSS position).
+bgsize = zoom % (>=100) applied after cover-fit; bgpos = focus point (CSS position). The auto layout sets
+bgpos on each piece's largest face (vstudio.face, else OpenCV Haar; --no-faces keeps the fixed points).
+Output is exactly --size px (--scale 2 for a 2x render; the log prints the real pixel size).
 
 Renderer: vstudio.render.html_to_png - the first working Chrome/Chromium/Edge ($CHROME,
 PATH, common macOS/Linux/Windows paths), else Playwright.
@@ -56,7 +58,46 @@ def data_uri(path):
         return f"data:{mime};base64," + base64.b64encode(f.read()).decode()
 
 
-def auto_pieces(frames, hero, W, H):
+def face_focus(path):
+    """CSS object-position ("x% y%") on the largest face in an image, or None. vstudio.face (MediaPipe) when
+    installed, else OpenCV's bundled Haar cascade. object-position p% puts the image's p% point at the
+    piece's p% point, so the face stays inside the piece whatever its aspect, and the zoom (transform-origin
+    = the same point) grows around it."""
+    try:
+        import cv2
+        import numpy as np
+        from PIL import Image, ImageOps
+        im = ImageOps.exif_transpose(Image.open(path)).convert("RGB")
+        im.thumbnail((1280, 1280))
+        bgr = cv2.cvtColor(np.asarray(im), cv2.COLOR_RGB2BGR)
+    except Exception:                                         # noqa: BLE001 - unreadable: keep the default
+        return None
+    h, w = bgr.shape[:2]
+    box = None
+    try:
+        from vstudio import face as F
+        lm = F.landmarker(num_faces=4)
+        f = F.main_face(F.detect(lm, bgr), min_area_frac=0.002, shape=bgr.shape)
+        if f is not None:
+            p = f["pts"]
+            box = (float(p[:, 0].min()), float(p[:, 1].min()), float(p[:, 0].max()), float(p[:, 1].max()))
+    except Exception:                                         # noqa: BLE001 - no mediapipe / model
+        try:
+            casc = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+            g = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+            fs = casc.detectMultiScale(g, 1.1, 5, minSize=(max(24, w // 40), max(24, w // 40)))
+            if len(fs):
+                x, y, fw, fh = max(fs, key=lambda r: r[2] * r[3])
+                box = (float(x), float(y), float(x + fw), float(y + fh))
+        except Exception:                                     # noqa: BLE001
+            box = None
+    if box is None:
+        return None
+    cx, cy = (box[0] + box[2]) / 2 / w, (box[1] + box[3]) / 2 / h
+    return f"{100 * min(max(cx, 0.0), 1.0):.0f}% {100 * min(max(cy, 0.0), 1.0):.0f}%"
+
+
+def auto_pieces(frames, hero, W, H, faces=True):
     imgs = frames + [hero]
     n = len(imgs)
     portrait = H > W
@@ -78,9 +119,12 @@ def auto_pieces(frames, hero, W, H):
                           [-3, 2, -2, 3][k % 4], 110, "center 55%", 11 * (k + 1)))
         hw, hh = (int(W * 0.8), int(H * 0.42)) if portrait else (int(W * 0.52), int(H * 0.65))
         slots.append(((W - hw) // 2, (H - hh) // 2, hw, hh, -2, 110, "48% 58%", 99))
-    return [{"img": img, "left": l, "top": t, "w": w, "h": h, "rot": rot,
-             "bgsize": bgs, "bgpos": bgp, "seed": seed}
-            for img, (l, t, w, h, rot, bgs, bgp, seed) in zip(imgs, slots)]
+    out = []
+    for img, (l, t, w, h, rot, bgs, bgp, seed) in zip(imgs, slots):
+        ff = face_focus(img) if faces else None
+        out.append({"img": img, "left": l, "top": t, "w": w, "h": h, "rot": rot,
+                    "bgsize": bgs, "bgpos": ff or bgp, "seed": seed, "focus": "face" if ff else "default"})
+    return out
 
 
 def title_html(cfg, fonts, W, H):
@@ -153,7 +197,9 @@ def main():
     ap.add_argument("--size", default=None, help="WxH canvas, e.g. 1080x1920 for vertical (default 1920x1080)")
     ap.add_argument("--platform", help="size from vstudio.platform.cover_size, e.g. xiaohongshu:full -> 1080x1440")
     ap.add_argument("--title", help="optional scrapbook label (default: no text)")
-    ap.add_argument("--scale", type=int, default=2, help="device scale (2 => 2x px output)")
+    ap.add_argument("--scale", type=int, default=1, help="device scale (default 1 = exactly --size px; 2 => 2x px)")
+    ap.add_argument("--no-faces", action="store_true", help="auto layout: keep the fixed focus points instead of "
+                                                          "centring each piece on its largest face")
     a = ap.parse_args()
     if a.platform and not a.size:
         from vstudio import platform as P
@@ -178,7 +224,9 @@ def main():
         if not a.hero or not a.frames:
             sys.exit("provide --hero and --frames, or a --config")
         W, H = (int(v) for v in a.size.lower().split("x"))
-        cfg = {"size": [W, H], "base": a.base, "pieces": auto_pieces(a.frames, a.hero, W, H)}
+        cfg = {"size": [W, H], "base": a.base, "pieces": auto_pieces(a.frames, a.hero, W, H, faces=not a.no_faces)}
+        nf = sum(p["focus"] == "face" for p in cfg["pieces"])
+        print(f"auto layout: {nf}/{len(cfg['pieces'])} pieces centred on a face (bgpos in the --config schema)")
     if a.title:
         cfg["title"] = a.title
 
@@ -195,7 +243,13 @@ def main():
     chrome = render.find_chrome()
     render.html_to_png(html_path, a.out, size=(W, H), scale=a.scale, use_persona=False, fonts=False)
     how = os.path.basename(chrome) if chrome else "playwright"
-    print(f"cover -> {a.out}  ({W}x{H} @{a.scale}x via {how}; html: {html_path})")
+    try:
+        from PIL import Image
+        with Image.open(a.out) as im:
+            pw, ph = im.size
+    except Exception:                                         # noqa: BLE001
+        pw, ph = W * a.scale, H * a.scale
+    print(f"cover -> {a.out}  ({pw}x{ph} px = {W}x{H} layout @{a.scale}x via {how}; html: {html_path})")
 
 
 if __name__ == "__main__":

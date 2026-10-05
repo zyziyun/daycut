@@ -57,7 +57,11 @@ npx hyperframes transcribe audio/narration.wav -l en -m small.en   # → audio/t
 #   or, without node: python3 scripts/transcribe.py --model mlx-community/whisper-small.en-mlx
 #   (vstudio.asr: mlx_whisper → faster_whisper → OpenAI whisper-1; same transcript.json shape)
 ```
-QA: diff the transcript against SCRIPT.md per line (difflib ratio < 0.9 → inspect). Number formatting diffs are fine; missing words are not.
+QA is built in: `tts.py` transcribes every take (vstudio.asr) and aligns it to its SCRIPT.md line sentence by sentence,
+numbers normalised on both sides ("sixteen thousand" = "16,000"); a take that dropped a sentence is re-generated
+(`--retries 2`) and the run fails loudly if it still drops one. `python3 scripts/vo_check.py [N ...]` re-checks the
+takes on disk (exit 1 + the missing sentences). A whole-line difflib ratio can't do this: clean takes scored
+0.68–0.74 on number formatting alone, the same as a take missing its last sentence.
 
 ### 5. Bilingual subtitles
 Start from `subtitles/cues.draft.txt` (pair_cues.py), fix it, save as `subtitles/cues.txt` — EN chunks (≤ ~90 chars) paired with their 中文 (≤ ~38 chars). Machine sentence-splitting does **not** pair EN↔ZH. Add project acronyms/formulas to `subtitles/display_rules.json` (see example).
@@ -101,7 +105,7 @@ Set the canvas once in `scenes.config.json` — `"platform": "xiaohongshu:full"`
 | shape | hook → intuition → … → recap | **hook in the first 2 s** (a number or a question, first visual on screen by 0.3 s) → one core picture → **ONE worked example** (2–3 scenes, same numbers) → one-line payoff |
 | script | ~175 wpm, full sentences | same voice, ~10 % faster (`tts.py --speed 1.1`, `concat_vo.py --lead 0.1 --gap 0.4`), first sentence ≤ 6 words, cut every aside |
 | pacing | reveal per cue, 6 px drift | reveal every 2–4 s, entrances 0.35–0.6 s, fast transitions (push / fade / vpush / zoom ≤ 0.4 s), tail 1.2 s |
-| design truth | `references/design-truth.md` | `references/design-truth-portrait.md` → `frame.md`: math in the upper safe area, stacked not side by side, bigger type (title 56, math 72–120, mono 34–64) |
+| design truth | `references/design-truth.md` | `references/design-truth-portrait.md` → `frame.md`: the scene **fills the math area** (title strip → caption band, result line just above the captions), stacked not side by side, bigger type (title 56, math 72–120, mono 34–64) |
 | reference scene | `assets/reference-scene.html` | `assets/reference-scene-portrait.html` (f07 re-laid out for 1080×1920, inside the portable 9:16 area) |
 | captions | EN 38 / 中文 34 band y > 840 | the profile's caption box, bottom-anchored, EN 38 / 中文 48 (from the band height), balanced wraps; cues over 2 lines per language are reported → keep EN ≤ ~60, 中文 ≤ ~24 |
 | sketches | 1920×1080 SVG | canvas-size SVG; the caption-band stand-in sits in the profile's band |
@@ -117,13 +121,19 @@ python3 scripts/storyboard_from_script.py --force --keep-shots                  
 python3 scripts/make_captions.py && python3 scripts/make_packets.py                 # packets carry the canvas json + safe/caption/math boxes
 #   build scenes from assets/reference-scene-portrait.html, then:
 python3 scripts/make_index.py --patch-scenes && npx hyperframes lint && npx hyperframes snapshot --at <85 % of each scene>
+python3 scripts/layout_check.py                    # per snapshot: content height / empty bottom of the math area
 ```
 Check every snapshot against the boxes printed in the packets (captions inside the caption box, nothing in the
-lower-right button column, nothing above the safe top). One build per canvas: a 9:16 build ships to 小红书 full /
+lower-right button column, nothing above the safe top) and fix every `layout_check.py` WARN that is not a hook /
+mid-transition frame: a graphic sitting small in the top half with an empty band above the captions is the
+common vertical failure (scale it up, move the result line down). One build per canvas: a 9:16 build ships to 小红书 full /
 抖音 / Shorts / TikTok if the scenes stay inside the **portable 9:16 area** (design-truth-portrait.md); 3:4 needs its
 own build (different height). Deliver with `python3 -m vstudio.export renders/short.mp4 --platforms
 xiaohongshu:full,douyin,youtube-shorts --out exports/ --cover cover.png` (same aspect → plain scale + per-platform
-loudness, encode, cover and post stub). Never reframe the 16:9 film into 9:16 — the math and captions would be cut.
+loudness, encode, cover and post stub). 小红书's 3:4 cover is not a centre crop of the 9:16 one (the headline gets
+cut): render it from the cover template with `render_cover.py cover.html -o cover.png --platform xiaohongshu`
+(→ `cover.xiaohongshu-<orientation>.png`; with `--platform` every file gets its platform suffix, so the 9:16
+`cover.png` is never overwritten). Never reframe the 16:9 film into 9:16 — the math and captions would be cut.
 
 ## Platforms (16:9)
 

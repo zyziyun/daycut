@@ -326,7 +326,7 @@ def _head_build_vlog(tmp):
     except (subprocess.CalledProcessError, FileNotFoundError):
         return None
     lines = src.splitlines()
-    lines = [f"import sys; sys.path.insert(0, {str(LIB)!r})" if ln.startswith("import sys, pathlib; sys.path.insert")
+    lines = [f"import sys, pathlib; sys.path.insert(0, {str(LIB)!r})" if ln.startswith("import sys, pathlib; sys.path.insert")
              else ln for ln in lines]
     p = tmp / "head_build_vlog.py"
     p.write_text("\n".join(lines) + "\n")

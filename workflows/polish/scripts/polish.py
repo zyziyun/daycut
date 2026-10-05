@@ -2,6 +2,10 @@
 """Polish any exported edit (Descript, CapCut/剪映, Premiere, Resolve, Final Cut...) for publishing.
 
 Steps (each its own ffmpeg call, intermediates kept with --keep so you can inspect any stage):
+  0. cleanup  OPTIONAL (--cleanup pauses|gentle|standard|tight; default off): the shared 气口 / filler / repeat
+              tool vstudio.cleanup on the export (analyze -> review sheet -> apply auto edits + --cleanup-reply
+              "确认 3,5 / 保留 7"). Never re-cuts an already-cleaned file (sidecar check + cleanup.apply's
+              duration guard). See references/CLEANUP.md.
   1. cover    replace the first N seconds of picture with a still cover (audio untouched, length kept)
   2. speed    optional pitch-preserved speed-up (setpts + atempo chain)
   3. loudness two-pass loudnorm to persona.audio.loudness_lufs (measure, then linear apply)
@@ -19,10 +23,12 @@ Platforms (vstudio.platform profiles; omit --platform for the platform-neutral b
 
 Usage:
   python3 polish.py export.mp4 -o final.mp4 [--cover cover.png] [--speed 1.2|body|hook] [--platform youtube]
+  python3 polish.py export.mp4 -o final.mp4 --cleanup gentle [--cleanup-reply "确认 3,5 / 保留 7"]
 """
 import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
 
 import argparse
+import json
 import math
 import shutil
 import tempfile
@@ -90,6 +96,64 @@ def resolve_speed(val):
         return float(sp[val])
 
 
+PAUSE_KINDS = {"pause", "breath", "lead", "tail"}
+
+
+def cleaned_sidecar(path):
+    """The ``<stem>.cleanup.json`` a vstudio.cleanup apply wrote next to ``path`` (None if it isn't one)."""
+    side = pathlib.Path(path).with_suffix("").as_posix() + ".cleanup.json"
+    if not pathlib.Path(side).exists():
+        return None
+    try:
+        d = json.loads(pathlib.Path(side).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return side if d.get("tool") == "vstudio.cleanup" and d.get("out") else None
+
+
+def step_cleanup(src, args, info):
+    """Optional 气口 / filler / repeat pass with the shared tool (vstudio.cleanup) on an external export.
+    EDL + review sheet next to the output (<out stem>.cleanup.json / _review.md), reused on re-runs so the
+    creator's ids stay valid; apply = auto edits + --cleanup-reply. Returns the cleaned file (or src)."""
+    from vstudio import cleanup as CL
+    side = cleaned_sidecar(src)
+    if side:
+        print(f"  {src} is already a cleanup output ({side}); not cut again")
+        return pathlib.Path(src)
+    prof = args.cleanup
+    base = "standard" if prof == "pauses" else prof
+    edl_path = pathlib.Path(args.cleanup_edl or (pathlib.Path(args.out).with_suffix("").as_posix() + ".cleanup.json"))
+    review = edl_path.with_name(edl_path.name.replace(".cleanup.json", "") + "_review.md")
+    edl = None
+    if edl_path.exists() and not args.cleanup_fresh:
+        old = json.loads(edl_path.read_text(encoding="utf-8"))
+        same = (abs(old["source"]["duration"] - info["duration"]) <= 0.1 and old.get("profile") == base
+                and pathlib.Path(edl_path.parent, old["source"]["path"]).resolve() == pathlib.Path(src).resolve())
+        if same or args.cleanup_edl:
+            edl = dict(old, _path=str(edl_path.resolve()))      # apply's duration guard checks args.cleanup_edl
+            print(f"  reusing {edl_path} (ids in {review.name} stay valid; --cleanup-fresh to re-analyse)")
+    if edl is None:
+        edl = CL.analyze(str(src), transcript=args.cleanup_transcript, profile=base, language=args.cleanup_lang,
+                         out=str(edl_path), review=str(review), force=True)
+    r = CL.parse_reply(args.cleanup_reply or "")
+    keep = set(r["keep"])
+    if prof == "pauses":                                 # 气口 only: every word edit stays
+        keep |= {e["id"] for e in edl["edits"] if e["kind"] not in PAUSE_KINDS}
+    res = CL.apply(edl["_path"], approve=r["approve"], keep=keep, all_confirm=r["all_confirm"], media_path=str(src))
+    pend = [e["id"] for e in edl["edits"] if e["action"] == "confirm" and e["id"] not in res["applied"]
+            and e["id"] not in keep]
+    print(f"  cleanup ({prof}): {info['duration']:.2f}s -> {res['duration']:.2f}s, {len(res['applied'])} edits cut, "
+          f"{len(pend)} to confirm {pend[:12]} -> review {review}")
+    if pend:
+        print(f'  to cut more: re-run with --cleanup {prof} --cleanup-reply "确认 {",".join(map(str, pend[:3]))} / 保留 N"')
+    if args.cleanup_verify:
+        rep = CL.verify(res["out"])
+        if not rep["ok"]:
+            raise SystemExit("cleanup verify failed: content words lost (see the .verify.json); keep that edit "
+                             "with --cleanup-reply \"保留 N\" and re-run")
+    return pathlib.Path(res["out"])
+
+
 def step_cover(src, cover, out, info, args):
     w, h, fps, t = info["w"], info["h"], info["fps"], args.cover_sec
     fit = (f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}" if args.cover_fit == "fill"
@@ -145,6 +209,16 @@ def main():
     p.add_argument("--preset", default="slow")
     p.add_argument("--keep", metavar="DIR", help="keep intermediates (01_cover.mp4, 02_speed.mov, 03_loud.mp4) here")
     p.add_argument("--check", action="store_true", help="after writing, dump first frame next to the output")
+    c = p.add_argument_group("speech cleanup (vstudio.cleanup, references/CLEANUP.md) - default off")
+    c.add_argument("--cleanup", choices=["pauses", "gentle", "standard", "tight"],
+                   help="cut 气口 / fillers / repeats before the other steps: pauses = 气口 only, gentle / standard / "
+                        "tight = the shared profiles (auto edits only, see --cleanup-reply)")
+    c.add_argument("--cleanup-reply", help='creator decisions on the review sheet, e.g. "确认 3,5,9 / 保留 7"')
+    c.add_argument("--cleanup-transcript", help="transcript JSON of the export (default: transcribe it)")
+    c.add_argument("--cleanup-lang", help="ASR language (zh / en)")
+    c.add_argument("--cleanup-edl", help="use this EDL (default <out stem>.cleanup.json, reused on re-runs)")
+    c.add_argument("--cleanup-fresh", action="store_true", help="re-analyse even if the EDL exists")
+    c.add_argument("--cleanup-verify", action="store_true", help="re-ASR the cut and stop if content words were lost")
     g = p.add_argument_group("platforms (vstudio.platform)")
     g.add_argument("--platform", metavar="SPEC",
                    help="target name[:orientation] (xiaohongshu:vertical, douyin, youtube, youtube-shorts, "
@@ -210,6 +284,14 @@ def main():
     work.mkdir(parents=True, exist_ok=True)
     cur = pathlib.Path(args.src)
     try:
+        if args.cleanup:
+            if not info["has_audio"]:
+                print("  --cleanup: the export has no audio; skipped")
+            else:
+                print(f">>> 0/4 cleanup ({args.cleanup})")
+                cur = step_cleanup(cur, args, info)
+                if cur != pathlib.Path(args.src):     # same canvas / fps / bitrate target, shorter
+                    info = dict(info, duration=probe(cur)["duration"])
         if args.cover:
             print(">>> 1/4 cover")
             nxt = work / "01_cover.mp4"; step_cover(cur, args.cover, nxt, info, args); cur = nxt

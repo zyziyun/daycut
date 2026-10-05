@@ -46,13 +46,38 @@ def landmarker(num_faces: int = 1, video: bool = False):
     return vision.FaceLandmarker.create_from_options(opts)
 
 
+_LAST_TS = {}
+
+
+def _monotonic_ts(lm, ts_ms):
+    """MediaPipe VIDEO mode rejects a timestamp <= the previous one on the same landmarker ("Input
+    timestamp must be monotonically increasing"). Bump repeats/regressions to last+1 ms so a second
+    call on the same frame (e.g. re-acquire after a lost face) cannot crash a long render."""
+    ts_ms = int(ts_ms)
+    key = id(lm)
+    last = getattr(lm, "_vs_last_ts", None)
+    if last is None:
+        last = _LAST_TS.get(key)
+    if last is not None and ts_ms <= last:
+        ts_ms = last + 1
+    try:
+        lm._vs_last_ts = ts_ms
+    except Exception:                       # pybind object without __dict__: fall back to a module map
+        _LAST_TS[key] = ts_ms
+    return ts_ms
+
+
 def detect(lm, bgr, ts_ms: int = None):
-    """List of faces: {"pts": (478,2) pixel coords, "blend": {name: score}}. Pass ts_ms in VIDEO mode."""
+    """List of faces: {"pts": (478,2) pixel coords, "blend": {name: score}}. Pass ts_ms in VIDEO mode
+    (it is made strictly increasing per landmarker, see _monotonic_ts)."""
     import cv2
     import mediapipe as mp
     rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
     img = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-    res = lm.detect_for_video(img, ts_ms) if ts_ms is not None else lm.detect(img)
+    if ts_ms is not None:
+        res = lm.detect_for_video(img, _monotonic_ts(lm, ts_ms))
+    else:
+        res = lm.detect(img)
     h, w = bgr.shape[:2]
     out = []
     for i, f in enumerate(res.face_landmarks):
@@ -342,6 +367,13 @@ class VideoFaceTracker:
         return f
 
     def __call__(self, bgr, idx):
+        try:
+            return self._track(bgr, idx)
+        except Exception as e:              # fail loudly with the frame, never a bare MediaPipe error
+            raise RuntimeError(f"VideoFaceTracker failed at frame {idx} "
+                               f"(t={idx / self.fps:.3f}s): {e}") from e
+
+    def _track(self, bgr, idx):
         ts = int(round(idx * 1000.0 / self.fps))
         f = None
         if self.box is not None:

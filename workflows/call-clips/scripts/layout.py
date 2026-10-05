@@ -159,19 +159,10 @@ def name_rects(m, guest_regions, host_regions):
 
 def mask_names(frame, rects, mode="blur"):
     """Hide each rect of a BGR frame in place: 'blur' smears it (1/16 downscale, then blur: no glyph
-    survives), 'cover' fills it with the region's median colour."""
-    H, W = frame.shape[:2]
-    for x, y, w, h in rects:
-        x0, y0, x1, y1 = max(0, x), max(0, y), min(W, x + w), min(H, y + h)
-        if x1 <= x0 or y1 <= y0:
-            continue
-        reg = frame[y0:y1, x0:x1]
-        if mode == "cover":
-            reg[:] = np.median(reg.reshape(-1, 3), axis=0).astype(np.uint8)
-        else:
-            small = cv2.resize(reg, (max(1, (x1 - x0) // 16), max(1, (y1 - y0) // 16)), interpolation=cv2.INTER_AREA)
-            reg[:] = cv2.GaussianBlur(cv2.resize(small, (x1 - x0, y1 - y0), interpolation=cv2.INTER_LINEAR), (0, 0), 3)
-    return frame
+    survives), 'cover' fills it with the region's median colour. Now ``vstudio.draw.redact_rects``
+    (the same algorithm, pixel-identical: tests/test_call_clips_fixes.py); kept as the call-clips name."""
+    from vstudio.draw import redact_rects
+    return redact_rects(frame, rects, mode)
 
 
 def add_args(ap, platform_default=None):

@@ -1,0 +1,24 @@
+# SYNTHETIC series for trying package.py (tests build the media files it points at).
+out: out
+log: publish_log.json
+series:
+  name: {zh: 智能家居翻车记, en: Smart Home Fails}
+  series_tag: {zh: 智能家居翻车记, en: SmartHomeFails}
+  tags: {zh: [搞笑, AI短剧], en: [comedy, aivideo]}
+  cta: {zh: "你家哪个电器最智能？", en: "Which appliance in your home is too smart?"}
+  ai_generated: true
+  making_of: {en: "Script by me, characters from look sheets, one generation per shot, edited in post."}
+platforms:
+  douyin:  {lang: zh, variant: bilingual, cover: "9x16", uploader: sau}
+  youtube: {lang: en, variant: en, cover: "9x16", uploader: youtube}
+  xiaohongshu: {lang: zh, variant: bilingual, cover: "3x4", uploader: manual}
+  reddit_aivideo: {lang: en, variant: en, cover: "9x16", uploader: manual}
+episodes:
+  - ep: 1
+    slug: kettle-update
+    status: ready
+    publish_at: {zh: "2030-01-01 20:00 Asia/Shanghai", en: "2030-01-01 12:00 America/Los_Angeles"}
+    source: {bilingual: media/ep01-bilingual.mp4, en: media/ep01-en.mp4}
+    covers: {"9x16": media/ep01-9x16.png}
+    zh: {title: 水壶在更新, hook: 只想烧个水，它说在更新。, body: 从周二更新到现在。}
+    en: {title: The kettle is updating, hook: I just wanted hot water., body: It has been updating since Tuesday.}

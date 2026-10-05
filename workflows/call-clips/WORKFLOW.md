@@ -18,7 +18,7 @@ Layouts (`--renderer`):
 | renderer | canvas | people | notes |
 |---|---|---|---|
 | `render_vertical.py` (default) | platform 9:16 (default persona platform, 1080×1920) | 2 tiles stacked | 1 masked guest, or `--no-mask`; safe zone on by default |
-| `render_trio.py` | 1080×1920 or `--platform` | 3 tiles | 2 masked guests on top row, host below; quote cards |
+| `render_trio.py` | 1080×1920 or `--platform` | 3 tiles | with a platform: **stage** layout (the talker large, the other two below, captions + panels in the lower band; `--speakers`); `--trio-layout rows` / no platform: 2 masked guests on top, host below; quote cards |
 | `render_landscape.py` | 1920×1080 or `--platform` | 2 side by side | bilingual subs, `--crop-w`, `--no-mask` |
 | `render_landscape_trio.py` | 1920×1080 or `--platform` | 3 side by side | 2 masked guests, all tiles follow a 6s-smoothed face track |
 
@@ -56,6 +56,16 @@ host `640,180,640,360`. A three-tile gallery is two on top and one centred below
 (`0,0,640,360` / `640,0,640,360` / `320,360,640,360`). Identify who is where from the app's
 name badges before deciding which tile gets a sticker.
 
+**Which tile is the creator (the person NOT masked)?** Check, in this order, and note the evidence:
+1. the call app's name label on each tile (zoom one frame on each tile's bottom-left) against the
+   creator's name in the persona / the request;
+2. the self-introduction in the transcript (`transcript_tools.py grep work/audio16k.json 我是 这个频道
+   my channel welcome`) plus `speaker_timeline.py` over that moment (`--start/--end`): the tile
+   speaking then is the creator;
+3. the host role: who opens and closes the recording, introduces the guests, asks the questions.
+If two signals disagree, ask the user before masking anyone. Never write the creator's or a guest's
+real name into a shared config/example; use labels (`Host`, `Guest A`).
+
 ### 2. Decide the cut: highlights or tiling
 Ask. Highlights = 3–5 clips from the best moments. Tiling = clips end to end covering ~all of
 the conversation (`clip[k].end == clip[k+1].start`), dropping only hesitation. Check tiling with
@@ -71,9 +81,15 @@ Snap every clip boundary to a whisper segment start so nothing opens or closes m
 ### 4. Work out who is actually speaking
 ```bash
 python3 $S/speaker_timeline.py recordings/my-call.mp4 \
-  --tiles guest=0,180,640,360 host=640,180,640,360 --out work/speakers.json
+  --tiles guest=0,180,640,360 host=640,180,640,360 --out work/speakers.json [--start 1200 --end 1420]
 python3 $S/transcript_tools.py runs work/audio16k.json --speakers work/speakers.json
 ```
+`--start/--end` (source s) analyse only the stretch you are clipping (a full 70-min call takes ~7 min);
+`times` stay in source seconds. Name the tiles like clips.json (each guest's `name`, and `host`) and
+set clips.json `"speakers": "work/speakers.json"`: `build_clips.py` then maps it to final time and
+smooths it (`active_speaker.py`: 1 s majority vote, turns shorter than `speaker_min_run` 1.6 s merged
+away, so a "对" or "嗯" never flips the layout) into `work/<id>.speakers.json` for `render_trio`'s
+stage layout. Raw labels flip on short words: attribute a quote by the span majority, not one sample.
 A mixed single audio track has no diarisation; this calls the speaker from whose inner-lip gap
 moves more over 0.8s (any number of tiles). **Never attribute a quote from content alone** —
 publishing someone else's story in the first person is not a cosmetic error. Sanity check:
@@ -93,28 +109,45 @@ Copy `examples/clips.example.json` (2-person), `clips_trio.example.json` (3-pers
   naming the next section (0.5s dissolve), `null` = silent trim (0.16s, no card; for redacting a
   few seconds mid-topic), `"~"` = full dissolve with no card (quote compilations).
 - `hooks` — two 4–6s payoff pulls (≈7s total after speed-up), played first at hook speed with
-  a "高光预告" badge.
+  a "高光预告" badge. Whisper word ends run ~0.3 s early, and the 0.5 s hook→body dissolve fades the
+  hook's last 0.5 s: `build_clips.py` now moves each hook end into the pause after its last word
+  (20 ms energy envelope) plus the fade, never into the next word, and shortens the fade when that
+  pause is tight (`vstudio.cleanup.extend_end`; it prints `hook k: end a -> b`). `"hook_tail": false` keeps
+  the authored ends; then end a hook ≥ 0.3 s + 0.5 s × hook speed after its last word yourself.
 - `panels` — `[anchor_src_s, dur_s, title, [3–4 bullets]]` 记笔记 cards, drawn over a **masked**
-  tile (that face is a sticker already). Anchor where the point is actually *said* (check
+  tile (that face is a sticker already); in the trio stage layout over the small row, above the
+  captions, so never over the person talking. A panel taller than its room is scaled (to 0.6), then
+  loses its last bullets, with a `WARN panel ...` line naming what was dropped: 3 short bullets fit. Anchor where the point is actually *said* (check
   `work/<id>.subs.json`). `build_clips.py` exits if an anchor lands inside a cut.
 - `title` (lines of `[text, is_accent]` runs), `accent`, `guest_label`/`host_label` (or set them
   once at the top level), `chapters`, `quote_cards`, `yt_title`, `thumb`, `cover_*`.
 - Top level: `source`, `whisper`, `guest_region`+`host_region` or `guests: [{name, region,
   sticker, label, search?, upscale?}]`, `term_fix: [[regex, repl]]`, `auto_trim`, `audio`,
-  `extra_cuts`, `track_host`, `translations`.
+  `extra_cuts`, `cut_profile`, `cleanup_edl`, `cleanup_reply`, `track_host`, `translations`, `speakers` (+ `host_speaker`, `speaker_min_run`),
+  `hook_tail`.
 
-### 7. Read the auto-trim before building (optional, recommended)
+### 7. Review the auto-trim before building (recommended)
 ```bash
 python3 $S/find_disfluencies.py work/audio16k.wav work/audio16k.json --windows 12-96.5,104.9-180.2 [--profile word]
 ```
-With `"auto_trim": true` every window is split at pauses, restarts, back-to-back repeats and
-filler-only segments (~3% of body time). Two **cut profiles** (`scripts/cut_profiles.py`;
-clips.json `"cut_profile"`, `--cut-profile`, persona `call_clips.cut_profile`):
+Speech cleanup is the shared tool `vstudio.cleanup` (repo `references/CLEANUP.md`); this script is
+`cleanup analyze --ranges` with the windows: `work/cleanup.json` (EDL) + `work/cleanup_review.md`, numbered
+待确认 / 自动删 / 气口 / 保留 with context. The creator replies ("确认 3,5 / 保留 7"); put
+`"cleanup_edl": "work/cleanup.json", "cleanup_reply": "确认 3,5 / 保留 7"` in clips.json. With
+`"auto_trim": true` every window is cut with those decisions (without `cleanup_edl`: `cleanup.clean` per
+window, AUTO edits only): 气口 squeezed, fillers (嗯 / 呃, isolated 那个 / 就是 …), stammers, back-to-back
+repeats, restarts. Profiles (clips.json `"cut_profile"`, `--cut-profile`, persona `call_clips.cut_profile`,
+else persona `cleanup.profile`, else `classic`):
 
-| profile | pauses | with an editor pass | cut edges |
+| profile | = cleanup profile | pauses squeezed from | kept gap |
 |---|---|---|---|
-| `classic` (**default**, the original editor defaults) | > 0.75 s → keep 0.30 s | > 0.50 s → keep 0.25 s | snap **backward** to the quietest 20 ms frame (≤ 0.15 s before the edge) |
-| `word` (phase-2 `vstudio.cut.find_cuts`) | > 0.60 s → keep 0.36 s | same | quietest frame between the neighbouring words' midpoints |
+| `classic` (**default**) | `gentle` | 0.80 s | 0.35-0.70 s, breaths kept |
+| `word` | `standard` | 0.45 s | 0.18-0.40 s |
+| `tight` | `tight` | 0.25 s | 0.08-0.20 s |
+
+Every cut edge is word-safe (never inside a kept word). Author an editor cut as
+`[onset of first dropped word, onset of next kept word]`: the words whose midpoint is inside go, the cut
+starts after the previous word's sounding end and ends before the next kept word's onset.
 
 For a higher bar, run the **editor pass** (`references/craft-notes.md` → Editor pass):
 `transcript_tools.py editor` dumps word-onset chunks, reviewers mark `[from, to, why]`, merge
@@ -150,7 +183,7 @@ node cards, panels mapped source→final → render → two-pass loudnorm to
 
 ### 10. Covers, thumbnails, captions
 ```bash
-python3 $S/make_cover.py out/<id>.mp4 --title-json work/<id>.title.json --at <first_panel+4> --out out/<id>.cover.jpg [--platform xiaohongshu]
+python3 $S/make_cover.py out/<id>.mp4 --title-json work/<id>.title.json --at <first_panel+4> --out out/<id>.cover.jpg [--platform xiaohongshu] [--size canvas]
 python3 $S/make_thumb.py recordings/my-call.mp4 --title-json work/<id>.title.json --track work/<id>.track.json --sticker $S/../assets/cat.png --at 300 --out out/thumb.jpg [--platform bilibili]
 python3 $S/make_thumb_trio.py out/YT.mp4 --title-json work/YT.title.json --at 900 --out out/thumb.jpg [--platform youtube]
 python3 $S/export_srt.py work/YT.subs.json --prefix out/YT        # .zh / .en / .bilingual .srt
@@ -184,12 +217,17 @@ Profiles live in `lib/vstudio/platform.py` (`references/PLATFORMS.md`; override 
 | captions | `platform.caption_box`, size fitted with `fit_text_size` (shrunk to the box height), lines merged up to `caption.max_chars_zh` (14) unless `--sub-max-chars` |
 | loudness | `profile.loudness` (LUFS / true peak) in the final two-pass loudnorm |
 | length | `platform.check_length` warning on each clip's total |
-| cover / thumbnail | `make_cover.py --platform` → `cover_size` (小红书 3:4 1080×1440, headline in `cover_title_safe`); `make_thumb*.py --platform` → cover-cropped to e.g. B站 1146×717 |
+| cover / thumbnail | `make_cover.py --platform` → `cover_size` (小红书 3:4 1080×1440, headline in `cover_title_safe`); `--size canvas` or `--platform xiaohongshu:full` → the 9:16 video canvas (1080×1920, headline in the safe box); `make_thumb*.py --platform` → cover-cropped to e.g. B站 1146×717 |
 
 Defaults: `render_vertical.py` uses persona `platforms.default` (the old full-bleed layout ignored
 the phone UI: title at 150, subtitles at 1654, both under the app chrome; `--platform legacy`
 restores it). `render_trio.py` and the landscape renderers keep their fixed layouts unless given a
-platform (`render_trio`'s was already hand-fitted to 小红书 9:16). Preview any layout with
+platform. With a platform `render_trio.py` uses the **stage** layout: the active speaker full width
+under the headline (the source tile's 16:9, no crop), the other two side by side below it down to
+the safe box's bottom, captions over the lower part of that row (soft dark gradient), 记笔记 panels in
+that row above the captions; the big tile changes with a 0.3 s dissolve. Stickers and name masks
+are applied on the source tile before cropping, so a masked guest stays masked in any slot and size.
+`--trio-layout rows` (or persona `call_clips.trio_layout: rows`) keeps the previous two-rows layout. Preview any layout with
 `--preview <sec> --show-safe` (green = safe box, yellow = caption box, red = button column).
 
 Several platforms: either re-render per platform (`build_clips.py ... --reuse --platform douyin`,
@@ -227,7 +265,7 @@ scale/offset with a `verify_coverage.py` sweep (craft notes → Sticker sizing).
 `brand.panel_theme` (记笔记 panel theme, default notes-red), `subtitles.term_fixes` (literal
 heard → meant), `creator.language` (transcribe), `export.audio_bitrate`, and new
 `call_clips.*`: `body_speed`, `hook_speed`, `hook_gain_db`, `sticker`, `cut_profile` (classic),
-`name_mask` (blur), `frame_accent`
+`name_mask` (blur), `trio_layout` (stage), `frame_accent`
 (default `#2DD4BF`), `labels.{hook_badge, hook_badge_landscape, node_eyebrow, note_tag, guest, host}`.
 
 ## Consent

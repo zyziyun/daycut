@@ -7,11 +7,15 @@ Each entry = one spoken sentence = one sid (its list index), used by every later
 - ranges: whisper word bounds in that clip's timeline (a[N].json). Word STARTS swallow the pause
   before them, word ENDS are reliable. Two ranges = the words between them are cut out.
 - text must match the audio word for word; '|' forces a line break (~14 CJK chars per line max).
+- range edges are snapped word-safe by the shared cleanup (vstudio.cleanup.snap_range); the 气口 inside are
+  squeezed by cleanup.analyze's pause edits (references/CLEANUP.md). Fillers / repeats inside a range need no
+  manual split any more: they appear on cleanup_review.md and the creator confirms them (strict_pass.py).
 """
-# optional overrides of the cut_pass1 defaults
-TH = -45.0       # dB: voiced-audio threshold for snapping ranges
-MAXGAP = 0.20    # s: internal pauses up to this are kept inside a run
-KEEPGAP = 0.10   # s: what a longer pause is squeezed to in pass 1 (strict_pass later squeezes to persona audio.pause_squeeze)
+# optional cleanup knobs (all default to persona cleanup.*)
+PROFILE = "standard"               # gentle | standard | tight: how hard pauses are squeezed, auto confidence
+# CLEANUP = {"pause_min": 0.35}    # any vstudio.cleanup setting
+# REPLY = "保留 4"                  # 气口 ids (cleanup_review.md) NOT to squeeze in pass 1
+# legacy (still honoured): MAXGAP = 0.20 -> pause_min, KEEPGAP = 0.10 -> kept gap; TH is ignored
 
 E = [
     (1, [(3.10, 5.42)], "第一句是开场白|先说今天聊什么"),                          # sid 0

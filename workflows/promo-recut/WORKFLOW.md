@@ -13,7 +13,7 @@ project, `index.html`, subset fonts), `promo-vertical/` (optional), `my-promo.mp
 faststart), `cover-4x3.jpg` / `cover-16x9.jpg` / `cover-3x4.jpg`, `post.md`.
 
 Everything content-specific lives in ONE project config: `promo.config.yaml` (or `.json`). It holds the KEEP
-spans, DROP/PATCH times, subtitles, cards and their highlight rows, chips, hold point, montage clips and
+spans, the creator's cleanup reply (`cut.reply`), subtitles, cards and their highlight rows, chips, hold point, montage clips and
 labels, chapters, stamp and end card, the cover and the post. Start from
 `$VSTUDIO/workflows/promo-recut/examples/promo.config.example.yaml`, which documents every key. Taste
 (rates, loudness, brand colours, title length, tags) comes from the persona (`persona.local.yaml`).
@@ -25,36 +25,38 @@ my-promo/
   promo.config.yaml      input/talk.mp4  input/highlights.mp4  input/*.png
 ```
 
-1. **Transcribe + find what to cut**
+1. **Transcribe + find what to cut (去气口 / filler / 重复 / 口误: the shared `vstudio.cleanup`)**
    ```bash
    cp $VSTUDIO/workflows/promo-recut/examples/promo.config.example.yaml promo.config.yaml   # then edit
    python3 $VSTUDIO/workflows/promo-recut/scripts/tight_cut.py promo.config.yaml --suggest
    ```
-   The first run writes `work/audio.json`, using `vstudio.asr.transcribe` (word timestamps; `mlx_whisper` on
-   Apple Silicon, else `faster_whisper`, else OpenAI whisper-1 if `OPENAI_API_KEY` is set). `--suggest` (`vstudio.cut.suggest_fillers`) prints three kinds of candidates: fillers
-   (`cut.fillers`, else the library's zh + en list: 然后/就是/那个/嗯/um/uh..., including fillers split across tokens or glued to the next word), immediate
-   repeats (A A, A B A B), and **long words with an energy dip inside**, where whisper merged a filler into
-   the word. For the last kind it proposes a PATCH start read off the RMS envelope. Every row is confidence-scored
-   (same policy as talkinghead, `workflows/talkinghead/scripts/filler_policy.py`): the **AUTO** DROP list holds only
-   standalone 嗯/呃/um/uh and stutter repeats; semantic fillers (然后/就是/那个), two-word repeats and every PATCH are
-   **CONFIRM** lists. Listen to each one (`ffplay -ss <t-0.5> -t 2 work/audio.wav`); **the creator confirms what goes
-   into `cut.drop` / `cut.patch`** (never paste every candidate: on real footage that deletes real words). Set
-   `cut.body` / `cut.outro` KEEP spans by sentence.
+   Set `cut.body` / `cut.outro` KEEP spans by sentence first. The first run writes `work/audio.json`, using
+   `vstudio.asr.transcribe` (word timestamps; `mlx_whisper` on Apple Silicon, else `faster_whisper`, else OpenAI
+   whisper-1 if `OPENAI_API_KEY` is set). `--suggest` snaps the KEEP spans word-safe and runs the same cleanup every
+   speech workflow uses (`python -m vstudio.cleanup analyze`, `references/CLEANUP.md`) → `work/cleanup.json` + the
+   review sheet `work/cleanup_review.md`: **待确认 CONFIRM** (semantic fillers 然后/就是/那个 the audio isolates,
+   interjections, restarts, re-takes, fillers whisper glued onto the next word — the old hidden-onset PATCH), **自动删
+   AUTO** (嗯/呃/um/uh, stutters, clear repeats), **气口** (pauses squeezed per `cut.profile`, never deleted), **保留
+   KEEP** (looks like a real word). Each row shows `…before【removed】after…` and why. The creator listens to the
+   CONFIRM rows (`ffplay -ss <t-0.5> -t 2 work/audio.wav`) and answers, e.g. **`确认 3,5,9 / 保留 7`**; put it in the
+   config verbatim as `cut.reply`. Without a reply only AUTO rows are cut (never confirm every row unheard: on real
+   footage that deletes real words). Old configs with `cut.drop` / `cut.patch` still work: they are translated to
+   approvals of the matching cleanup edits (else word-safe editor cuts) and printed as `config:` lines.
 2. **Tight cut + montage + layout**
    ```bash
    python3 $VSTUDIO/workflows/promo-recut/scripts/tight_cut.py promo.config.yaml
    python3 $VSTUDIO/workflows/promo-recut/scripts/tight_cut.py promo.config.yaml --verify
    ```
-   This grades the raw once (`grade`, optional `hdr_tonemap`) and cuts the KEEP spans minus DROP words.
-   Pauses longer than `pause_threshold` (0.35 s) are squeezed to about 0.14 s (`vstudio.cut.tighten`; set
-   `cut.rms_snap: true` to snap pause edges to the voiced energy instead of whisper's word edges). Cuts are
-   frame-exact (`cut.cut_segments`, 12 ms fades at every join) and the voice gets a two-pass loudnorm to
-   persona `audio.voice_lufs`. The step builds the highlights
-   montage with baked 0.3 s internal crossfades (`cut.xfade_assemble`, plain acrossfade) and writes
-   `work/layout.json`: durations, raw→cut maps as `vstudio.cut.TimeMap` items, and word times. **`--verify` runs ASR on the cut files**, flags leftover fillers and repeats, and compares the cut transcript with
-   the raw words in the spans minus `cut.drop`: content words that went missing are printed with their raw time
-   (a DROP or PATCH ate speech; remove it and re-cut). Also listen to
-   every join before going on.
+   This grades the raw once (`grade`, optional `hdr_tonemap`) and runs `cleanup.apply` per part on it (AUTO rows +
+   `cut.reply`): word edits cut from the silence after the previous kept word to the silence before the next, video
+   frame-exact, audio sample-exact with a 20 ms equal-power crossfade at every join (A/V cannot drift), then a two-pass
+   loudnorm to persona `audio.voice_lufs`. Each part gets a sidecar `work/<part>.cleanup.json`. The step builds the
+   highlights montage with baked 0.3 s internal crossfades (`cut.xfade_assemble`, plain acrossfade) and writes
+   `work/layout.json`: durations, raw→cut maps as `vstudio.cut.TimeMap` items, and word times. **`--verify`** =
+   `cleanup.verify` per part: re-ASR, content words that went missing are printed with their raw / cut time (exit 1:
+   add `保留 N` for the edit covering it to `cut.reply` and re-cut); leftover fillers / repeats are listed. Changing the
+   KEEP spans renumbers the edits, so with a reply in the config the cut refuses until `--suggest` is re-run and the
+   reply re-confirmed. Also listen to every join before going on.
 3. **Subtitles + cards**
    ```bash
    python3 $VSTUDIO/workflows/promo-recut/scripts/tight_cut.py promo.config.yaml --draft-subs   # paste, then edit
@@ -120,8 +122,8 @@ final-timeline time. Chapter anchors are raw body seconds or `start` / `montage`
 - **Chapter labels need a scrim.** Small labels over bright footage are unreadable. The bar sits on a
   bottom gradient (`#bar-scrim`), and labels get a text shadow.
 - **Whisper merges fillers into neighbouring words.** A "word" that is too long for its characters usually
-  starts with a hidden 然后/嗯. DROP alone won't fix it, because the drop test uses word START. Check the RMS
-  envelope (`--suggest`) and PATCH the start to where energy rises after the dip.
+  starts with a hidden 然后/嗯. The cleanup finds the energy dip and lists it as a 粘连口头禅 (`filler-merged`) CONFIRM
+  row that cuts only up to the rise, so the word itself stays; confirm it by ear.
 - **ASR the cut to verify it** (`--verify`). Joins that look right on the word list can still swallow a
   syllable or keep half a filler.
 - **Captions must clear before a zoom-through.** build_promo clips any cue that crosses `M + TZ` so it ends

@@ -1,0 +1,14 @@
+# Locked edit list for assemble.py. Paths relative to this file. Filenames, order and in/out are literal.
+canvas: [1080, 1920]
+fps: 30
+takes_dir: takes                 # where generate.py put <unit>_vN.mp4
+out: master.mp4                  # caption-free master -> python -m vstudio.export
+grade: {saturation: 0.88, grain: 4}   # post look for generated footage: -10..15 % saturation, light grain
+edl:
+  - {take: u01_v2.mp4, in: 0.30, out: 2.80}          # s01 "Morning coffee." - cut on the line end
+  - {take: u01_v2.mp4, in: 2.80, out: 4.70}          # s02 same clip, second shot
+  - {take: s03_v1.mp4, in: 0.20, out: 3.10}
+  - {take: s04_v3.mp4, in: 0.00, out: 3.40, gain: -2}
+  - {still: cards/endcard.png, dur: 1.5}             # deterministic text/cards are made in post, never generated
+music: {path: null, duck_db: -10, carve: true}       # licensed bed only; set path to enable
+captions: {language: en, max_chars: 32, out: cues.json}

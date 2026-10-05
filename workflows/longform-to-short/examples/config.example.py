@@ -51,6 +51,15 @@ CONFIG = {
         },
         "merge_gap": 1.5, "pad_in": 0.15, "pad_out": 0.25,
     },
+    # speech cleanup (vstudio.cleanup, references/CLEANUP.md) per kept segment in build_keep_list.py:
+    # 气口 squeezed, fillers / stammers / repeats removed; review sheets work/cleanup_review.ep<N>.md
+    "cleanup": {
+        "enabled": True,
+        "profile": None,                  # gentle | standard | tight (default persona cleanup.profile, else standard)
+        "overrides": {},                  # e.g. {"pause_min": 0.6}
+        "reply": {},                      # per episode sheet: {"2": "确认 3,5 / 保留 7"}
+        "audio": "audio16k.wav",          # energy for word-safe edges (analyze.py writes it)
+    },
 
     # ── edit ─────────────────────────────────────────────────────────────
     "speeds": {"lecture": 1.2, "demo": 1.3, "hook": 1.1},   # default: persona longform.speed.*
@@ -58,7 +67,7 @@ CONFIG = {
         "src": [602.4, 615.0],                          # cold-open clip (source s)
         "lines": ["一句话说清你会得到什么？", "N 个概念 + 一个能跑的例子，一次讲透"],
     },
-    "cuts": [                                           # word-level deletions (source s) + why
+    "cuts": [                                           # extra deletions (source s) + why; word-safe, applied by build_keep_list
         [431.2, 434.0, "stumble / restart"],
         [512.8, 518.1, "off-topic aside"],
     ],
@@ -68,7 +77,9 @@ CONFIG = {
         "windows": [[640, 684], [1020, 1062]],          # code-block zoom cut-ins (source s)
         "box": [736, 336],                              # source window -> ~1.3x push-in
         "code_rgb": [247, 246, 243], "tol": [9, 9, 11], "min_px": 4000,
+        "detect": "auto",                               # auto: grey code block, else densest text | code | text
         "centers": {},                                  # {"640": [480, 360]} manual override
+        # windows are hand-picked from the transcript (zoom_targets.py only finds the centre)
     },
     "transients": {"white_thresh": 0.55, "luma": 200},
     "demo": {                                           # optional live re-record of a web demo
@@ -102,8 +113,11 @@ CONFIG = {
             "zoom": 1.0, "detector": "mediapipe",
         },
         "exclude": [[960, 0, 1280, 720]], # privacy: painted out before any crop (participant tiles, name tags)
-        "screen": {"min_scale": 1.6, "max_scale": 2.4, "follow": "content"},   # zoom range; content | center
-        "split": {"speaker_frac": 0.40, "band_frac": 0.24},
+        "screen": {"min_scale": 1.6, "max_scale": 3.0, "follow": "content",   # zoom range; content | center
+                   "min_text_px": 28},            # zoom until a text line is >= this tall on the canvas (0 = off)
+        "split": {"speaker_frac": 0.40, "band_frac": 0.16,   # title band height (fraction of the content area)
+                  "screen_to": "frame",           # screen runs to the frame bottom (dimmed under captions) | caption
+                  "scrim": 0.5},                  # darkening of the screen under the caption box
         "segments": [{"src": [1020, 1062], "mode": "screen"}],   # per source window override
         "series": None,                   # title-band eyebrow (default episodes.series / publish.title)
     },
@@ -135,7 +149,10 @@ CONFIG = {
             {"chapters": [1, 2], "title": "重点词｜入门1/3", "big1": "一句大字", "big2": "重点词",
              "sub": "Demo · 概念1", "shot_src": 700, "vertical": "screen"},   # vertical: per-episode layout
             {"chapters": [3, 3], "title": "循环｜入门2/3", "big1": "本质是", "big2": "一个循环",
-             "sub": "概念2", "shot_src": 1100},
+             "sub": "概念2", "shot_src": 1100,
+             "body": "这一集的正文（默认 publish.body）",            # per-episode post body
+             "hook": {"src": [1180.0, 1186.5],                       # per-episode cold open (source s), placed
+                      "lines": ["为什么一个循环就够了？", "看完这集就懂"]}},  # right before this episode's first card
             {"chapters": [4, 4], "title": "什么时候不需要｜入门3/3", "big1": "什么时候", "big2": "不需要",
              "sub": "取舍", "shot_src": 1700},
         ],

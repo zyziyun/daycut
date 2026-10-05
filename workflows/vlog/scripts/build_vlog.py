@@ -31,7 +31,9 @@ folder. Full schema + worked example: ../references/recipes.md. Quick schema:
   ]
 }
 Per segment: clip, start, dur (SOURCE seconds), optional speed, kind
-("subject" | "empty"), bright (added to grade.brightness), stabilize.
+("subject" | "empty"), bright (added to grade.brightness), stabilize, cleanup (a segment where someone
+talks: true | "gentle" | "standard" | "tight" | "pauses" | {profile, approve, keep, reply} -> the shared
+vstudio.cleanup 气口/filler/repeat pass before assembly; needs "ambient_audio": true; see clean_speech).
 
 "style": "calm" (default, this script) | "fun" (beat-cut travel vlog: hands over to build_fun.py).
 "platform": "youtube" / "xiaohongshu:full" / ... (vstudio.platform) - used when "res" is absent: canvas
@@ -124,7 +126,7 @@ def seg_speed(cfg, seg):
 
 def render_seg(args):
     i, cfg, seg, segdir, dry = args
-    src = os.path.join(cfg["_src_dir"], cfg["clips"][seg["clip"]])
+    src = seg.get("_src") or os.path.join(cfg["_src_dir"], cfg["clips"][seg["clip"]])
     speed = seg_speed(cfg, seg)
     eb = seg.get("bright", 0.0)
     eff = seg["dur"] / speed
@@ -161,6 +163,41 @@ def render_seg(args):
     return dst, eff
 
 
+def clean_speech(cfg, segdir, dry=False):
+    """Segments with speech get the shared 气口 / filler / repeat cleanup (vstudio.cleanup, references/CLEANUP.md)
+    BEFORE assembly: ``analyze --ranges start-(start+dur)`` -> ``apply`` (auto edits + the creator's approve /
+    keep / reply) -> the segment then plays the cleaned clip (start 0, dur = its length). Opt-in per segment
+    (``"cleanup": true | "gentle" | {...}``, or ``"speech": true`` with a top-level ``"cleanup"``); needs
+    ``ambient_audio`` (a calm master without sound has nothing to clean). Transcript: segment ``words``,
+    ``<clip>.words.json`` or ASR. EDL + review sheet: <out dir>/clips/cleanup/."""
+    from funvlog import speechclean as SPC
+    warnings = []
+    for i, seg in enumerate(cfg["segments"]):
+        if "cleanup" not in seg and not (seg.get("speech") and cfg.get("cleanup")):
+            continue
+        o = SPC.options(cfg, seg, default=bool(seg.get("speech")))
+        if not o["enabled"]:
+            continue
+        src = os.path.join(cfg["_src_dir"], cfg["clips"][seg["clip"]])
+        if not cfg.get("ambient_audio"):
+            print(f"[seg {i:02d}] cleanup skipped: the master has no sound (set \"ambient_audio\": true)", flush=True)
+            continue
+        if not clip_info(src)["has_audio"]:
+            print(f"[seg {i:02d}] cleanup skipped: {seg['clip']} has no audio", flush=True)
+            continue
+        a0, a1 = float(seg["start"]), min(float(seg["start"]) + float(seg["dur"]), clip_info(src)["duration"])
+        if dry:
+            print(f"[seg {i:02d}] cleanup ({o['profile']}) {a0:.2f}-{a1:.2f}s (dry run: not analysed)", flush=True)
+            continue
+        out, dur, lg = SPC.clean_file(src, SPC.words_sidecar(src, seg.get("words")), a0, a1, o,
+                                      os.path.join(segdir, "cleanup"), warnings)
+        print(f"[seg {i:02d}] cleanup ({o['profile']}): {lg['source_s']:.2f}s -> {dur:.2f}s, "
+              f"{len(lg['applied'])} edits cut, {len(lg['confirm_pending'])} to confirm -> {lg['review']}", flush=True)
+        seg.update(_src=out, start=0.0, dur=round(dur, 3), _cleanup=lg)
+    for w in warnings:
+        print("[warn]", w, flush=True)
+
+
 def main():
     ap = argparse.ArgumentParser(description="Grade + speed + crossfade B-roll clips into one master.")
     ap.add_argument("config", help="edit.json")
@@ -191,6 +228,7 @@ def main():
     segdir = os.path.join(os.path.dirname(out), "clips")
     os.makedirs(segdir, exist_ok=True)
 
+    clean_speech(cfg, segdir, a.dry_run)
     tasks = [(i, cfg, s, segdir, a.dry_run) for i, s in enumerate(cfg["segments"])]
     with ThreadPoolExecutor(max_workers=a.workers or cfg.get("workers", 3)) as ex:
         results = list(ex.map(render_seg, tasks))

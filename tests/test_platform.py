@@ -200,6 +200,6 @@ def test_export_multi_platform(master, tmp_path):
         assert white(on) > 800 and white(off) < 50, (white(on), white(off))
     xhs, yt = man["exports"]
     assert xhs["reframe"]["mode_used"] == "pad-blur"             # synthetic: no face -> blurred fill
-    assert yt["reframe"]["mode_used"] == "letterbox"             # same aspect -> plain scale
+    assert yt["reframe"]["mode_used"] == "scale"                 # same aspect -> plain scale (no face pass)
     assert any("sweet spot" in w for w in xhs["warnings"])
-    assert any("re-fitted" in n for n in xhs["notes"])
+    assert any("blurred pad" in n for n in xhs["notes"])      # other-aspect cover: fitted, not cropped

@@ -8,9 +8,15 @@
                  sections=True,     # move spec section boundaries onto the music's section changes when close
                  captions="title",  # "title" (quiet serif text) | "subs" (speech-style) | False
                  lufs=-16,          # music stem level before the final loudnorm
-                 backend="auto")    # beats.analyze backend: auto | numpy | librosa
+                 backend="auto",    # beats.analyze backend: auto | numpy | librosa
+                 min_seconds=None)  # {kind: s} overrides MIN_SECONDS (shortest time per shot kind)
 
-Each shot gets a whole number of grid units by weight (min 1), so every cut lands on a beat / downbeat.
+Each shot gets a whole number of grid units by weight, so every cut lands on a beat / downbeat. With ``length``
+(or ``min_seconds``) set, each shot gets at least its kind's minimum (MIN_SECONDS: collage / grid / rows / deck 2.5 s, film / route / quote 3 s,
+split 2 s, else 1 unit; MUSIC min_seconds={...} or a shot's ``min_s=`` override): sections are sized by weight
+but never below the sum of their shots' minimums, and a ``length`` too short for them is raised (with a
+printed suggestion) instead of squeezing a late chapter into 1-bar shots. In plain ``per`` mode (weight 1 =
+``per`` units, the old contract) short multi-picture shots are only warned about.
 Spec sections (chapter cards, header progress) start on the music's own section changes
 (``beats.analyze`` novelty sections) when one is within a quarter section; else on the nearest grid point.
 """
@@ -25,7 +31,12 @@ from vstudio import beats as vbeats
 from .transitions import TRD
 
 DEFAULTS = dict(grid="bar", per=1.0, length=None, start=0.0, tr="fade", trd=None, sections=True,
-                captions="title", lufs=-16.0, tail=0.0, backend="auto")
+                captions="title", lufs=-16.0, tail=0.0, backend="auto", min_seconds=None)
+
+# Shortest readable on-screen time per shot kind (seconds). Multi-picture shots need time to be read; a
+# tight ``length`` used to squeeze a late chapter's collage / film strip into a single bar. Override per kind
+# with MUSIC min_seconds={"collage": 3.0, ...}; a shot's own ``min_s=`` option wins. Kinds not listed: 1 unit.
+MIN_SECONDS = dict(collage=2.5, film=3.0, grid=2.5, rows=2.5, deck=2.5, route=3.0, quote=3.0, split=2.0)
 
 
 def config(C):
@@ -102,6 +113,63 @@ def allot(weights, total):
     return out
 
 
+def allot_min(weights, total, mins):
+    """Integer units per weight summing to ``total`` with out[i] >= mins[i] (>= 1): proportional to weight,
+    shots whose share falls under their minimum are pinned there and the rest is re-shared (largest
+    remainder). ``total`` below sum(mins) returns the minimums (the caller warns)."""
+    n = len(weights)
+    mins = [max(1, int(m)) for m in mins]
+    total = max(int(total), sum(mins))
+    plain = allot(weights, total)
+    if all(a >= m for a, m in zip(plain, mins)):          # nothing under its minimum: the historical split
+        return plain
+    fixed = {}
+    while True:
+        free = [i for i in range(n) if i not in fixed]
+        left = total - sum(fixed.values())
+        ws = sum(weights[i] for i in free) or 1.0
+        want = {i: left * weights[i] / ws for i in free}
+        low = [i for i in free if want[i] < mins[i]]
+        if not low:
+            break
+        for i in low:
+            fixed[i] = mins[i]
+    out = [fixed.get(i, 0) for i in range(n)]
+    for i in free:
+        out[i] = max(mins[i], int(math.floor(want[i])))
+    rest = total - sum(out)
+    order = sorted(free, key=lambda i: want[i] - math.floor(want[i]), reverse=True) or list(range(n))
+    k = 0
+    while rest > 0:
+        out[order[k % len(order)]] += 1
+        rest -= 1
+        k += 1
+    while rest < 0:                                   # rounding up to a minimum overshot: take from the largest
+        cand = [i for i in range(n) if out[i] > mins[i]]
+        if not cand:
+            break
+        j = max(cand, key=lambda i: out[i] - mins[i])
+        out[j] -= 1
+        rest += 1
+    return out
+
+
+def shot_kind(src):
+    k = str(src).split(":", 1)[0] if ":" in str(src) else ("video" if str(src).startswith("v") else "img")
+    return k if k in MIN_SECONDS or k in ("video", "img") else "img"
+
+
+def min_units(cfg, flat, unit):
+    """Minimum grid units per shot from MIN_SECONDS / MUSIC min_seconds / the shot's ``min_s`` option."""
+    table = dict(MIN_SECONDS)
+    table.update(cfg.get("min_seconds") or {})
+    out = []
+    for _, _, (src, _w, _mo, opt) in flat:
+        sec = (opt or {}).get("min_s", table.get(shot_kind(src), 0.0))
+        out.append(max(1, int(math.ceil(float(sec or 0.0) / unit - 1e-6))))
+    return out
+
+
 class MusicTimeline:
     """Same surface as timeline.Timeline (units, shots, subs, total, sec_bounds, pace) plus beats/cuts."""
 
@@ -122,20 +190,38 @@ class MusicTimeline:
         flat = [(i, sec, sh) for i, (sec, _, shots) in enumerate(script) for sh in shots]
         if not flat:
             raise SystemExit("SCRIPT has no shots")
+        mins = min_units(cfg, flat, unit)
+        if not cfg["length"] and not cfg.get("min_seconds"):
+            # per-weight mode: weight 1 = ``per`` units is the contract - only warn about short multi-picture shots
+            got = [max(1, int(round(sh[1] * float(cfg["per"])))) for _, _, sh in flat]
+            short = [f"{sh[0]} ({g} < {m})" for (_, _, sh), g, m in zip(flat, got, mins) if g < m]
+            if short:
+                print(f"! {len(short)} multi-picture shot(s) get fewer {cfg['grid']} units than their minimum time: "
+                      f"{', '.join(short[:4])}{' ...' if len(short) > 4 else ''} - raise their weight or set "
+                      "MUSIC min_seconds / length")
+            mins = [1] * len(flat)
+        self.min_units = mins
         if cfg["length"]:
             U = int((float(cfg["length"]) + m0 - G(0)) // unit)
         else:
             U = int(round(sum(sh[1] for _, _, sh in flat) * float(cfg["per"])))
-        U = max(U, len(flat))
+        if U < sum(mins):
+            need = G(sum(mins)) - G(0)
+            short = [f"{sh[0]} ({mn} {cfg['grid']})" for (_, _, sh), mn in zip(flat, mins) if mn > 1]
+            print(f"! length: {U} {cfg['grid']} units is too short for the minimum shot times "
+                  f"({sum(mins)} units = {need:.1f}s; multi-picture shots: {', '.join(short[:6])}"
+                  f"{' ...' if len(short) > 6 else ''}). Using {need:.1f}s instead of squeezing - set "
+                  f"MUSIC length={math.ceil(need + float(cfg['tail'] or 0))} (or drop a shot / lower min_seconds).")
+        U = max(U, sum(mins))
         if U > avail:
             print(f"! music has {avail} {cfg['grid']} units after {m0:.1f}s; wanted {U} - "
-                  f"{'shots get fewer units' if avail >= len(flat) else 'the bed will loop'}")
-            U = max(avail, len(flat))
+                  f"{'shots get fewer units' if avail >= sum(mins) else 'the bed will loop'}")
+            U = max(avail, sum(mins))
         # ---- per section: target unit counts by weight, boundaries moved onto music sections
         secs = sorted({sec for _, sec, _ in flat})
         sw = {s: sum(sh[1] for _, sec, sh in flat if sec == s) for s in secs}
-        nshots = {s: sum(1 for _, sec, _ in flat if sec == s) for s in secs}
-        counts = allot([sw[s] for s in secs], U)
+        smin = {s: sum(m for (_, sec, _), m in zip(flat, mins) if sec == s) for s in secs}
+        counts = allot_min([sw[s] for s in secs], U, [smin[s] for s in secs])
         bounds = [0]
         for c in counts:
             bounds.append(bounds[-1] + c)
@@ -145,7 +231,7 @@ class MusicTimeline:
             for j in range(1, len(bounds) - 1):
                 tol = max(1, int(round(0.25 * min(counts[j - 1], counts[j]))))
                 near = [m for m in mb if abs(m - bounds[j]) <= tol
-                        and m - bounds[j - 1] >= nshots[secs[j - 1]] and bounds[j + 1] - m >= nshots[secs[j]]]
+                        and m - bounds[j - 1] >= smin[secs[j - 1]] and bounds[j + 1] - m >= smin[secs[j]]]
                 if near:
                     m = min(near, key=lambda m: abs(m - bounds[j]))
                     if m != bounds[j]:
@@ -154,7 +240,8 @@ class MusicTimeline:
         units_per_shot = []
         for j, s in enumerate(secs):
             ws = [sh[1] for _, sec, sh in flat if sec == s]
-            units_per_shot += allot(ws, bounds[j + 1] - bounds[j])
+            ms = [m for (_, sec, _), m in zip(flat, mins) if sec == s]
+            units_per_shot += allot_min(ws, bounds[j + 1] - bounds[j], ms)
         # ---- shots on the grid
         trd0 = cfg["trd"] if cfg["trd"] is not None else min(1.4, max(0.25, 0.5 * unit))
         self.units, self.shots, self.subs = [], [], []

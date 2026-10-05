@@ -72,3 +72,10 @@ stays local because it emits no `-profile:v high`/bsf (switching would change th
 to skip the second loudnorm when the master is already at the profile target (currently loudnorm runs twice in the
 multi-target path; linear, so harmless but slower).
 Persona keys: none new (reads `platforms.*` via `vstudio.platform`, `speed.body` documented as the shorts proposal).
+
+## Demo round fixes (2026-10-05)
+- **Shared speech cleanup (creator requirement).** Optional step 0 `--cleanup pauses|gentle|standard|tight`
+  (default off: the no-flag commands are unchanged) runs the ONE shared tool `vstudio.cleanup` on an external export:
+  analyze (EDL + review sheet next to the output, reused on re-runs) -> apply (auto edits + `--cleanup-reply`) ->
+  optional `--cleanup-verify`. A cleanup output (sidecar present) is never cut again; a foreign EDL hits
+  `cleanup.apply`'s duration guard. Tests: `tests/test_speech_cleanup_wiring.py`.

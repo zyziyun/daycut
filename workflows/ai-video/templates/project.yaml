@@ -1,0 +1,47 @@
+# AI video project: character bible + scene masters + shot list. One file drives plan / prompts / cost / generation.
+# Copy to work/ai/project.yaml in your video folder. Paths are relative to this file.
+title: my-skit
+aspect: "9:16"                 # decide before anything is generated
+resolution: 1080p              # drafts: 720p (Kling) / 480p 样片 (Seedance), then upscale locally or upgrade
+language: en                   # spoken language of the dialogue
+voice_language: American English
+provider: kling-mcp            # kling-mcp | seedance-ark | minimax | manual:jimeng | manual:hailuo | manual:kling-web
+model: kling-video-v3_0_omni   # see scripts/providers.py CAPS
+takes_per_unit: 1
+retry_allowance: 0.4           # plan adds 30-50 % for retries on hard shots (falls, collapses, two-person framing)
+unit_pad: 0.5                  # seconds of handle per unit (cut on the line ends in the edit)
+# rates: {kling-mcp: {video: {"1080p": 12}, image: 2}}   # override observed prices (credits)
+
+style: >-
+  Photoreal handheld documentary footage on a 35mm lens, soft overcast light from screen-right, slightly
+  desaturated colour, natural film grain, vertical 9:16.
+# acting / texture / negative have safe defaults in plan.py; override only if needed.
+
+characters:                    # the bible: lock these BEFORE the main pass, review all anchors together once
+  A:
+    look: "short dark hair, round thin metal glasses, navy blazer over a white T-shirt"
+    ref: refs/A_neutral.jpg     # neutral, closed-mouth look sheet (a smiling sheet leaks a smile into every shot)
+    element: null               # Kling subject (主体) id once created from the look sheet
+    voice: "calm, dry, mid-pitch"
+  B:
+    look: "curly red hair in a bun, green hoodie"
+    ref: refs/B_neutral.jpg
+    element: null
+    voice: "fast, bright, slightly nasal"
+
+scenes:
+  kitchen:
+    description: "a small bright apartment kitchen, window on the right, kettle on the counter"
+    master: refs/kitchen_master.jpg   # one approved wide frame = the spatial authority for every shot in it
+
+shots:                         # dur = screen time you will cut; `unit` groups shots generated as one clip
+  - {id: s01, scene: kitchen, chars: [A], dur: 2.5, unit: u01, camera: "Medium shot, eye level",
+     action: "A holds a sleek kettle and presses its single button.",
+     lines: [{who: A, text: "Morning coffee. Simple."}]}
+  - {id: s02, scene: kitchen, chars: [A], dur: 2.0, unit: u01, camera: "Same set-up, slow push-in",
+     action: "The kettle's ring light pulses; nothing happens. A waits, unimpressed."}
+  - {id: s03, scene: kitchen, chars: [B], dur: 3.0, camera: "Close-up from the doorway, 50mm",
+     action: "B leans in from the doorway.", lines: [{who: B, text: "It's updating. Since Tuesday."}]}
+  - {id: s04, scene: kitchen, chars: [A, B], dur: 3.5, camera: "Two-shot, static, both full upper bodies visible",
+     action: "A slowly sets the kettle down and pulls an old stovetop pot from a cupboard. B nods.",
+     audio: native}

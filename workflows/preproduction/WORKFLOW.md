@@ -33,15 +33,22 @@ Run from the project folder; `$VSTUDIO` = repo root.
    The language is auto-detected (`--lang auto|en|zh`; zh when CJK is ≥30% of the letters) and picks the
    `voice.<lang>` profile and rule set.
    English errors: em-dashes, parentheses (if the persona bans them), trope openers, generic CTAs, authority
-   framing, AI-tell words, meta/navigation lines, emoji, `voice.en.phrases_avoid`. Warnings: sentences > 25 words,
-   possible fragments, digits under 10, missing insight signpost, word count vs. target at `voice.en.wpm`.
+   framing, AI-tell words, meta/navigation lines, self-narration about the medium ("in this video", "next slide"),
+   filler reassurance ("don't worry if…"), emoji, `voice.en.phrases_avoid`. Warnings: padding ("so what I want to
+   say is"), sentences > 25 words, possible fragments, digits under 10, missing insight signpost, word count vs.
+   target at `voice.en.wpm`.
    中文 errors: 破折号, 括号 (if banned), 口播套路开头 (家人们, 今天给大家分享, 话不多说…), 求赞求关注 CTA in the closing
    (点赞关注, 一键三连, 下期见…), authority framing (很多人不知道…), AI-tell words (赋能, 闭环, 值得注意的是…), meta
-   lines (这期视频, 后面会讲…), emoji, `voice.zh.phrases_avoid`. Warnings: sentence > 40 字, missing signpost,
+   lines (这期视频, 后面会讲…), filler reassurance (别担心, 听起来有点复杂…), emoji, `voice.zh.phrases_avoid`. Warnings: sentence > 40 字, missing signpost,
    字数 vs. target at `voice.zh.cpm`. The English-only heuristics (fragments, digits under 10, average words per
    sentence) are skipped for zh.
    Lint is a floor, not the judge: still run the self-check below.
-6. **Lock.** Hand the hook sentence to the cover headline and the first slide.
+6. **Lock.** Hand the hook sentence to the cover headline and the first slide. From here the script is frozen:
+   don't rewrite it during recording (that is how a two-hour session becomes five). End-to-end recipe:
+   [`references/SOP_SHORT_VIDEO.md`](../../references/SOP_SHORT_VIDEO.md).
+
+Time budgets per phase, the full pre-lock checklist and worked before/after revisions (hook ladder, paragraph,
+closings A/B/C, 中文口播) are in `references/script_craft.md` §7, §8, §10.
 
 `SCRIPT.md` format that other workflows read: `## SECTION` headings, the spoken text as indented blocks,
 optional `**Delivery:**` notes and `ZH:` translation lines (ignored by the linter). See
@@ -51,8 +58,10 @@ optional `**Delivery:**` notes and `ZH:` translation lines (ignored by the linte
 - [ ] Zero em-dashes; every sentence has a subject and a verb
 - [ ] Hook ≤3 sentences (≤6 mid-length) with "you" and a concrete number or year; no throat-clearing
 - [ ] Voice matches `voice.<lang>.persona`; no banned openers, closers or `voice.<lang>.phrases_avoid`
+- [ ] Not a consulted authority, no false modesty
 - [ ] Exactly one signposted insight paragraph that reframes the topic at a deeper layer
 - [ ] Closing uses pattern A/B/C/D; last line is screenshot-worthy alone
+- [ ] No AI-tell words, meta/navigation lines or filler reassurance (lint clean)
 - [ ] Word count fits the format; read aloud once with no stumbles
 
 ## Voice schema
@@ -102,6 +111,11 @@ per-platform export happens downstream (`python -m vstudio.export`).
 
 ## B. Pronunciation drill (after the script is locked)
 
+For a narrator who wants to practise the hard words of *this* script before recording (non-native accent,
+tricky stress, names and jargon). Not a general pronunciation course: words that aren't in the script add nothing,
+and more than ~12 words makes the drill too long; split it into two runs instead. The drill audio is a practice
+file only; it never goes into the video.
+
 1. **Pick 5–10 words** (8 is the sweet spot, the script refuses >12): read the script aloud, mark every stumble or
    unclear stress, prioritise by frequency in the script > visibility > pitfall risk. Every word must be in the
    locked script; drills map to what is about to be recorded, not general vocabulary.
@@ -127,6 +141,13 @@ per-platform export happens downstream (`python -m vstudio.export`).
    Voice per engine: `--voice`, else persona `voice.en.tts.<engine>_voice` (drills are English), else
    `tts.<engine>_voice`, else the engine default. Use the same voice as any TTS preview so the
    reference stays consistent.
+
+### Drill self-check
+- [ ] Every word appears in the locked script (`--script` flags the ones that don't)
+- [ ] 5–10 words; each has IPA, a one-line pitfall and the source sentence (BAD/GOOD when the mistake is typical)
+- [ ] Audio loudness-normalised (the script does this; check the printed LUFS)
+- [ ] `.m4a` well under ~1 MB per minute (larger usually means a wrong sample rate or bitrate)
+- [ ] The `.md` card sits next to the audio; practise 2–3 times before recording
 
 ## Notes
 - mlx-audio Kokoro can crash on one specific sentence at one speed (`broadcast_shapes ... cannot be broadcast`,

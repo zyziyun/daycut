@@ -16,24 +16,24 @@
           <text data-hf-id="hf-eowj" id="f07-scale-title" x="150" y="330" class="f07-scale-serif" font-size="56" font-style="italic" fill="#6B7488">Step 1 · the scale s</text>
 
           <!-- range brace + label -->
-          <path data-hf-id="hf-qg4t" id="f07-scale-brace" d="M190 560 Q190 530 230 530 L500 530 Q540 530 540 500 Q540 530 580 530 L850 530 Q890 530 890 560" fill="none" stroke="#ECEEF2" stroke-width="3" />
-          <text data-hf-id="hf-kh2o" id="f07-scale-range" x="540" y="470" text-anchor="middle" class="f07-scale-serif" font-size="52" font-style="italic" fill="#ECEEF2">range = 2 − (−1) = 3</text>
+          <path data-hf-id="hf-qg4t" id="f07-scale-brace" d="M190 520 Q190 490 230 490 L500 490 Q540 490 540 460 Q540 490 580 490 L850 490 Q890 490 890 520" fill="none" stroke="#ECEEF2" stroke-width="3" />
+          <text data-hf-id="hf-kh2o" id="f07-scale-range" x="540" y="430" text-anchor="middle" class="f07-scale-serif" font-size="60" font-style="italic" fill="#ECEEF2">range = 2 − (−1) = 3</text>
 
           <!-- ruler -->
-          <line data-hf-id="hf-w59l" id="f07-scale-axis" x1="150" y1="720" x2="930" y2="720" stroke="#6B7488" stroke-width="3" />
+          <line data-hf-id="hf-w59l" id="f07-scale-axis" x1="150" y1="740" x2="930" y2="740" stroke="#6B7488" stroke-width="3" />
           <g data-hf-id="hf-us8c" id="f07-scale-ticks" />
           <g data-hf-id="hf-7n2d" id="f07-scale-gaps" />
-          <rect data-hf-id="hf-zese" id="f07-scale-step" x="190" y="756" width="46.67" height="26" fill="#F4D35E" opacity="0.8" />
-          <text data-hf-id="hf-v8tw" id="f07-scale-steplabel" x="190" y="830" text-anchor="start" class="f07-scale-mono" font-size="34" fill="#F4D35E">one step</text>
+          <rect data-hf-id="hf-zese" id="f07-scale-step" x="190" y="780" width="46.67" height="30" fill="#F4D35E" opacity="0.8" />
+          <text data-hf-id="hf-v8tw" id="f07-scale-steplabel" x="190" y="870" text-anchor="start" class="f07-scale-mono" font-size="40" fill="#F4D35E">one step</text>
 
           <!-- weights -->
           <g data-hf-id="hf-9sa2" id="f07-scale-dots" />
 
           <!-- equation, broken at "=" over two lines (portrait: stack, don't spread): s = 3 ÷ 15 gaps / = 0.2 -->
-          <text data-hf-id="hf-q481" x="540" y="1000" text-anchor="middle" class="f07-scale-serif" font-size="84" fill="#ECEEF2">
+          <text data-hf-id="hf-q481" x="540" y="1040" text-anchor="middle" class="f07-scale-serif" font-size="96" fill="#ECEEF2">
             <tspan data-hf-id="hf-agq0" id="f07-scale-eq-s" fill="#F4D35E" font-style="italic">s</tspan><tspan data-hf-id="hf-r18e" id="f07-scale-eq-mid"> = 3 ÷ 15 gaps</tspan>
           </text>
-          <text data-hf-id="hf-q482" id="f07-scale-eq-end" x="540" y="1120" text-anchor="middle" class="f07-scale-serif" font-size="96" fill="#ECEEF2">= <tspan data-hf-id="hf-8peg" fill="#F4D35E">0.2</tspan></text>
+          <text data-hf-id="hf-q482" id="f07-scale-eq-end" x="540" y="1170" text-anchor="middle" class="f07-scale-serif" font-size="120" fill="#ECEEF2">= <tspan data-hf-id="hf-8peg" fill="#F4D35E">0.2</tspan></text>
         </g>
       </svg>
     </div>
@@ -44,8 +44,9 @@
     (function () {
       const NS = "http://www.w3.org/2000/svg";
       // portrait reference (1080x1920): everything inside the portable 9:16 area x 150-930 (x <= 880 below
-      // y 900, the button column), y 280-1190; captions own the band below (root track)
-      const X0 = 190, X1 = 890, Y = 720;
+      // y 900, the button column), y 280-1190, and it FILLS that area: picture on top, equation stacked
+      // under it, the result line just above the caption band (y 1170). Captions own the band below (root track)
+      const X0 = 190, X1 = 890, Y = 740;
       const X = (v) => X0 + (v + 1) / 3 * (X1 - X0);
       const step = (X1 - X0) / 15;
       const mk = (tag, attrs, parent) => {
@@ -60,16 +61,16 @@
       const dotsG = document.getElementById("f07-scale-dots");
       const ticks = [], gaps = [], dots = [];
       for (let i = 0; i < 16; i++) {
-        ticks.push(mk("line", { x1: X0 + i * step, y1: Y - 26, x2: X0 + i * step, y2: Y + 26, stroke: "#ECEEF2", "stroke-width": 3 }, ticksG));
+        ticks.push(mk("line", { x1: X0 + i * step, y1: Y - 30, x2: X0 + i * step, y2: Y + 30, stroke: "#ECEEF2", "stroke-width": 3 }, ticksG));
       }
       for (let i = 0; i < 15; i++) {
-        gaps.push(mk("rect", { x: X0 + i * step + 2, y: Y - 6, width: step - 4, height: 12, fill: "#F4D35E", opacity: 0 }, gapsG));
+        gaps.push(mk("rect", { x: X0 + i * step + 2, y: Y - 7, width: step - 4, height: 14, fill: "#F4D35E", opacity: 0 }, gapsG));
       }
       const W = [-1.0, -0.43, 0.0, 0.51, 1.37, 2.0];
       W.forEach((v) => {
         const g = mk("g", {}, dotsG);
-        mk("circle", { cx: X(v), cy: 650, r: 15, fill: "#58C4DD" }, g);
-        const t = mk("text", { x: X(v), y: 606, "text-anchor": "middle", "font-size": 36, fill: "#58C4DD", class: "f07-scale-mono" }, g);
+        mk("circle", { cx: X(v), cy: 640, r: 20, fill: "#58C4DD" }, g);
+        const t = mk("text", { x: X(v), y: 590, "text-anchor": "middle", "font-size": 40, fill: "#58C4DD", class: "f07-scale-mono" }, g);
         t.textContent = String(v).replace("-", "−");
         dots.push(g);
       });
@@ -91,7 +92,7 @@
       // 4.0s min and max pulse
       [0, 5].forEach((k, j) => {
         const c = dots[k].querySelector("circle");
-        tl.fromTo(c, { attr: { r: 15 } }, { attr: { r: 22 }, duration: 0.3, ease: "power2.out", yoyo: true, repeat: 1 }, 4.0 + j * 0.9);
+        tl.fromTo(c, { attr: { r: 20 } }, { attr: { r: 28 }, duration: 0.3, ease: "power2.out", yoyo: true, repeat: 1 }, 4.0 + j * 0.9);
       });
 
       // 6.9s sixteen ticks pop

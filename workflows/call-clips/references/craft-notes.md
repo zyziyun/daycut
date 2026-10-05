@@ -63,14 +63,11 @@ quote before someone else chimes in.
 
 ## Auto-trim and the editor pass
 
-- `cut_profiles.find_cuts` (CLI report: `find_disfluencies.py`) removes ~3%: restarts, back-to-back
-  repeats, filler-only segments and pauses. Default profile `classic` (the original editor
-  defaults): pauses > 0.75 s keep 0.30 s, and once an editor pass is applied pauses > 0.50 s keep
-  0.25 s; cut edges snap BACKWARD to the quietest frame just before the edge, so a cut never eats
-  the onset of the kept word. Profile `word` (`vstudio.cut.find_cuts`): pauses > 0.6 s keep 0.36 s,
-  edges at the quietest frame between word midpoints. Silence comes from audio energy because
-  whisper's word timestamps abut. One-word repeats across a sentence break are never cut; emphasis doublings are
-  whitelisted.
+- Auto-trim is the shared `vstudio.cleanup` tool (`cut_profiles.window` → `cleanup.clean` per window; review
+  sheet: `find_disfluencies.py` = `cleanup analyze --ranges`): 气口 squeezed, hesitations / isolated semantic
+  fillers, stammers, back-to-back repeats, restarts (re-takes only on confirm). Default profile `classic`
+  (= cleanup `gentle`: pauses > 0.8 s, breaths kept); `word` = `standard`. Silence comes from audio energy
+  because whisper's word timestamps abut; every edge is word-safe. Deliberate doublings (对对, very very) are kept.
 - A demanding listener still hears restarts and broken-off phrases. What met that bar: dump each
   keep-window as `speaker: [t]word [t]word ...` (`transcript_tools.py editor`, ~7 min chunks),
   have parallel reviewers (human or LLM subagents) act as dialogue editors marking
@@ -122,8 +119,9 @@ well inside the default box (bottom 10 %, left 40 % of the tile).
 
 On 小红书 / Douyin / Reels on a phone, the top ~230px of 1080×1920 sit under the status bar and
 nav, the bottom ~270px under title/caption/buttons, plus a right-side button column.
-`render_trio.py` keeps everything in y 240..1660: title at 240, guest row 440..940, host
-952..1492 (tile cropped 640×320), subtitles from 1500, hook badge on the guest row. Covers put
+`render_trio.py` (no platform / `--trio-layout rows`) keeps everything in y 240..1660: title at 240,
+guest row 440..940, host 952..1492 (tile cropped 640×320), subtitles from 1500, hook badge on the
+guest row. With a platform it uses the stage layout (active speaker large; WORKFLOW.md → Platforms). Covers put
 the headline at y≈300 and the still inside the 3:4 feed crop (`cover_title_y`,
 `cover_strip_y`, `cover_band`). With `--platform` every renderer derives this from the profile's
 safe and caption boxes instead (WORKFLOW.md → Platforms); `render_vertical.py` does so by default

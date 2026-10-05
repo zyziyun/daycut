@@ -30,6 +30,8 @@ Run from the project folder; `$VSTUDIO` = repo root.
 2. **Write the deck.** `cp $VSTUDIO/workflows/slides/templates/slides_vertical.template.html work/slides.html`.
    One `<section class="slide <preset>" data-key="NN_name">` per slide; reuse the presets (they cover ~90 % of needs)
    and only add a class when a slide is structurally new. Open it in a browser: keys `1–9, 0, q–t` flip slides.
+   Check each slide before rendering: content centred, nothing overflowing the canvas, accent visible, diagram
+   geometry intact (arrows land on their words, bars span correctly).
 3. **Render PNGs.**
    `python3 $VSTUDIO/workflows/slides/scripts/render_slides.py work/slides.html work/slides/`
    (all `data-key`s by default; list keys to re-render a few; `--platform` / `--layout full` for full-frame
@@ -37,8 +39,15 @@ Run from the project folder; `$VSTUDIO` = repo root.
 4. **Optional: animated diagrams (max 3 per video).**
    `python3 $VSTUDIO/workflows/slides/scripts/record_slides.py work/slides.html work/slides/ 06_bars:3.4 09_attn:4.0 13_resend:4.2`
    The narration over each animated slide must be at least as long as the recording, or it loops/freezes early.
-   Takes the same `--platform / --layout / --size / --accent` flags as `render_slides.py`.
-5. **Place on the timeline** in key order (`slide_NN_*` sorts deterministically).
+   Takes the same `--platform / --layout / --size / --accent` flags as `render_slides.py`. Output: H.264 yuv420p,
+   `--fps` 25 (Playwright records ~25), CRF from persona `export.crf`. Animate only where motion *is* the
+   explanation (bars growing, arrows drawing, a stack building); animating everything makes the video restless.
+5. **Place on the timeline** in key order (`slide_NN_*` sorts deterministically): in `workflows/talkinghead` as
+   `BROLL` entries with `mode="split"` (slide on top, speaker below) or `mode="cut"` for a full cut-away; in an
+   external editor, drop them into the slide region of its split layout.
+
+Not for: slides that need interactive editing (use Keynote / Figma / a slideshow tool), or full-screen landscape
+lecture decks (use `--platform youtube --layout full` only for a few cut-aways; a long deck wants its own design).
 
 ## Design language
 - Black ground, white text, grey dims, **one accent**: `--teal` = `var(--slides-accent, #2dd4bf)`. The scripts

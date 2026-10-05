@@ -54,6 +54,10 @@ brand:
   panel_theme: notes-red   # notes-red | notes-yellow | teal | navy
 
 fonts: {}                  # override any role with your own file, e.g. cjk-bold: ~/Fonts/MyFont.ttf
+# Roles shipped by install.sh: cjk, cjk-bold (Noto Sans SC), cjk-serif, cjk-serif-bold (Noto Serif SC),
+# serif, serif-italic (STIX Two), mono, mono-bold. A face inside a .ttc collection: "path.ttc#N"
+# (extracted once to ~/.cache/video-studio/fonts/extracted/), e.g.
+#   cjk-serif: /System/Library/Fonts/Supplemental/Songti.ttc#1
 
 subtitles:
   max_cjk_chars: 18
@@ -70,5 +74,13 @@ voice:                     # style rules for scripts and post copy (see workflow
     - no generic CTA
 
 publish:
-  tags: []                 # default hashtags appended to post copy
+  tags: []                 # default hashtags appended to post copy (post_body use_persona_tags=True)
+  tag_sets: {}             # named alternatives picked per post with tag_set:, e.g. {art: [看展, 艺术]}
+                           # a post/spec can also set use_persona_tags: false to use only its own tags
   chapter_line: "时间线在下面，按需跳👇"
+
+cleanup:                   # shared 气口 / filler / repeat tool (python -m vstudio.cleanup, references/CLEANUP.md)
+  profile: standard        # default profile: gentle | standard | tight (vlog / photo-story speech clips use gentle)
+  crossfade: 0.02          # seconds (20 ms) equal-power crossfade at every join; keep within 0.01-0.03
+  fillers_extra: []        # your own 口头禅, treated like 那个 / 就是, e.g. [其实, 对不对]
+  never_cut: []            # tokens never flagged as filler / repeat, e.g. [然后]

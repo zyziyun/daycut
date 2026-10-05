@@ -69,8 +69,64 @@ class Element:
         return self.t0 <= t < self.t1
 
     def info(self):
-        return dict(kind=self.kind, t0=round(self.t0, 3), t1=round(self.t1, 3),
-                    box=[int(v) for v in self.box] if self.box else None)
+        d = dict(kind=self.kind, t0=round(self.t0, 3), t1=round(self.t1, 3),
+                 box=[int(v) for v in self.box] if self.box else None)
+        if getattr(self, "note", None):
+            d["note"] = self.note
+        return d
+
+    def move(self, dy):
+        """Shift the element vertically by dy canvas px (layout collision resolution)."""
+        raise NotImplementedError(self.kind)
+
+    def _shift_box(self, dy):
+        x0, y0, x1, y1 = self.box
+        self.box = (x0, y0 + dy, x1, y1 + dy)
+
+
+CORNER_KINDS = ("location", "day", "date")
+
+
+def _overlap(a, b, pad=0.0):
+    return a[0] < b[2] + pad and b[0] < a[2] + pad and a[1] < b[3] + pad and b[1] < a[3] + pad
+
+
+def resolve_collisions(els, g, gap=None):
+    """Corner elements (location tag, DAY stamp, date stamp) never overlap on screen while both are visible,
+    whatever their kinds. Settled in order location -> day -> date (then by start time); a later one that
+    collides is moved below the obstacle (or above it when below would leave the safe box); if neither fits,
+    it waits until the obstacle has left. Returns the list of adjustments (also in each element's note)."""
+    gap = int(12 * g.unit) if gap is None else gap
+    prio = {k: i for i, k in enumerate(CORNER_KINDS)}
+    todo = sorted([e for e in els if e.kind in CORNER_KINDS and e.box], key=lambda e: (prio[e.kind], e.t0))
+    placed, moves = [], []
+    sx0, sy0, sx1, sy1 = g.safe
+    for e in todo:
+        for _ in range(8):
+            hit = next((o for o in placed if o.t0 < e.t1 and e.t0 < o.t1 and _overlap(o.box, e.box, gap / 2)), None)
+            if hit is None:
+                break
+            h = e.box[3] - e.box[1]
+            below = hit.box[3] + gap - e.box[1]
+            above = hit.box[1] - gap - e.box[3]
+            if e.box[3] + below <= sy1:
+                dy = below
+            elif e.box[1] + above >= sy0:
+                dy = above
+            else:
+                dy = None
+            if dy is not None and h > 0:
+                e.move(dy)
+                moves.append(dict(kind=e.kind, dy=round(dy), because=hit.kind))
+                e.note = f"moved {round(dy):+d}px clear of {hit.kind}"
+            else:                                         # no room: wait for the obstacle to leave
+                d = hit.t1 + 0.05 - e.t0
+                e.t0 += d
+                e.t1 += d
+                moves.append(dict(kind=e.kind, dt=round(d, 3), because=hit.kind))
+                e.note = f"delayed {d:.2f}s after {hit.kind}"
+        placed.append(e)
+    return moves
 
 
 class Geometry:
@@ -174,6 +230,10 @@ class LocationTag(Element):
         self.y = g.safe[1] + int(24 * g.unit) - p
         self.box = (self.x_end + p, self.y + p, self.x_end + p + w, self.y + p + h)
 
+    def move(self, dy):
+        self.y += dy
+        self._shift_box(dy)
+
     def draw(self, img, t):
         u = t - self.t0
         w = self.arr.shape[1]
@@ -200,6 +260,10 @@ class DayStamp(Element):
         self.cx = g.safe[2] - int(16 * g.unit) - w / 2
         self.cy = g.safe[1] + int(24 * g.unit) + h / 2
         self.box = (self.cx - w / 2, self.cy - h / 2, self.cx + w / 2, self.cy + h / 2)
+
+    def move(self, dy):
+        self.cy += dy
+        self._shift_box(dy)
 
     def draw(self, img, t):
         u = t - self.t0
@@ -228,6 +292,10 @@ class DateStamp(Element):
         y1 = min(g.caption[1], g.safe[3]) - int(10 * g.unit)
         self.xy = (x0, y1 - h)
         self.box = (x0, y1 - h, x0 + w, y1)
+
+    def move(self, dy):
+        self.xy = (self.xy[0], self.xy[1] + dy)
+        self._shift_box(dy)
 
     def draw(self, img, t):
         u = t - self.t0
@@ -296,6 +364,11 @@ def _bezier(p0, p1, bend, n=48):
 class MapCard(Element):
     kind = "map"
 
+    def info(self):
+        d = super().info()
+        d["labels"] = [dict(name=n, box=[int(v) for v in b]) for (n, _, _), b in zip(self.pts, self.label_boxes)]
+        return d
+
     def __init__(self, g, places, t0, t1, title=None):
         super().__init__(t0, t1)
         self.g = g
@@ -338,32 +411,50 @@ class MapCard(Element):
         self.font = D.load_font("cjk-bold", int(30 * g.unit))
         self.labels = self._place_labels(int(14 * g.unit))
         dur = t1 - t0
-        self.draw_from, self.draw_to = 0.35, max(0.6, dur * 0.7)
+        # the route finishes >= 1.25 s before the card leaves, so the last pin + label hold >= 1 s (A1)
+        self.draw_from, self.draw_to = 0.35, max(0.6, min(dur * 0.7, dur - 1.25))
         self.pin_times = [t0 + self.draw_from + a * (self.draw_to - self.draw_from) for a in self.arrive]
         self._cache = {}
 
     def _place_labels(self, r):
-        """Label top-left per place: below, above, right, left of the pin - first spot clear of the
-        labels and pins already placed and inside the card."""
+        """Label top-left per place. Every label is placed (never dropped): candidates below, above, right,
+        left, then the diagonals, then the same at 2x distance; the first one clear of the pins, the labels
+        already placed and the route line wins; if none is clear, the one with the least overlap (labels and
+        pins weigh far more than the line). Always inside the card."""
         asc, desc = self.font.getmetrics()
         lh = asc + desc
-        boxes = [(x - r, y - r, x + r, y + r) for _, x, y in self.pts]
-        out = []
+        pins = [(x - r, y - r, x + r, y + r) for _, x, y in self.pts]
+        path = self.path if len(self.path) else np.zeros((0, 2))
+        placed, out = [], []
+
+        def area(b, o):
+            w = min(b[2], o[2]) - max(b[0], o[0])
+            h = min(b[3], o[3]) - max(b[1], o[1])
+            return w * h if w > 0 and h > 0 else 0.0
+
         for name, x, y in self.pts:
             tw = D.text_width(name, self.font)
-            cands = [(x - tw / 2, y + r + 4), (x - tw / 2, y - r - 4 - lh), (x + r + 6, y - lh / 2),
-                     (x - r - 6 - tw, y - lh / 2)]
-            pick = None
+            cands = []
+            for k in (1.0, 2.0):
+                g_ = (r + 4) * k
+                cands += [(x - tw / 2, y + g_), (x - tw / 2, y - g_ - lh), (x + r * k + 6, y - lh / 2),
+                          (x - r * k - 6 - tw, y - lh / 2), (x + g_, y + g_ * 0.6), (x - g_ - tw, y + g_ * 0.6),
+                          (x + g_, y - g_ * 0.6 - lh), (x - g_ - tw, y - g_ * 0.6 - lh)]
+            best, best_cost = None, None
             for cx, cy in cands:
                 cx = min(max(cx, 10), self.cw - tw - 10)
-                cy = min(max(cy, 10), self.ch - lh - 10)
+                cy = min(max(cy, int(22 * self.g.unit) + lh + 4), self.ch - lh - 10)   # below the title row
                 b = (cx, cy, cx + tw, cy + lh)
-                if not any(b[0] < o[2] and o[0] < b[2] and b[1] < o[3] and o[1] < b[3] for o in boxes):
-                    pick = (cx, cy)
+                hard = sum(area(b, o) for o in pins + placed)
+                line = int(((path[:, 0] > b[0]) & (path[:, 0] < b[2]) & (path[:, 1] > b[1]) & (path[:, 1] < b[3])).sum())
+                cost = hard * 100.0 + line
+                if best_cost is None or cost < best_cost - 1e-9:
+                    best, best_cost = (cx, cy), cost
+                if cost == 0:
                     break
-            pick = pick or (min(max(cands[0][0], 10), self.cw - tw - 10), min(max(cands[0][1], 10), self.ch - lh - 10))
-            boxes.append((pick[0], pick[1], pick[0] + tw, pick[1] + lh))
-            out.append(pick)
+            placed.append((best[0], best[1], best[0] + tw, best[1] + lh))
+            out.append(best)
+        self.label_boxes = placed
         return out
 
     def _frame(self, p):

@@ -58,6 +58,30 @@ def _valid(ws):
     return True
 
 
+def _run_words(toks, k, is_num):
+    """Number words of the spoken run starting at token k (number words, single spaces, "and")."""
+    words = []
+    while k < len(toks):
+        t = toks[k]
+        if is_num(t):
+            words += [p.lower() for p in t.split("-")]
+        elif not (t == " " or t.lower() == "and"):
+            break
+        k += 1
+    return words
+
+
+def _comma_continues(words, toks, k, is_num):
+    """"sixteen thousand, eight hundred and ninety-six": a comma after thousand / million / billion continues the
+    cardinal when what follows is a smaller number ("one thousand, two thousand" is a list, not 3,000)."""
+    if not (words and words[-1] in ("thousand", "million", "billion") and toks[k] in (", ", ",")
+            and k + 1 < len(toks) and is_num(toks[k + 1])):
+        return False
+    rest = _run_words(toks, k + 1, is_num)
+    big = [SCALE[w] for w in rest if w in SCALE and w != "hundred"]
+    return (max(big) if big else 1) < SCALE[words[-1]] and _valid(words + rest)
+
+
 def _convert(text, aggressive):
     toks = re.findall(r"[A-Za-z]+(?:-[A-Za-z]+)*|[^A-Za-z]+", text)
     is_num = lambda t: all(p.lower() in NUMW for p in t.split("-"))
@@ -73,6 +97,8 @@ def _convert(text, aggressive):
             while k < len(toks):
                 if is_num(toks[k]):
                     words += [p.lower() for p in toks[k].split("-")]; k += 1
+                elif _comma_continues(words, toks, k, is_num):
+                    k += 1
                 elif toks[k] == " " and k + 1 < len(toks) and (is_num(toks[k + 1]) or (
                         toks[k + 1].lower() == "and" and words and words[-1] in SCALE and k + 3 < len(toks) and is_num(toks[k + 3]))):
                     k += 1
@@ -88,6 +114,11 @@ def _convert(text, aggressive):
                 if dec:
                     while toks[m - 1] == " ": m -= 1
                     k = m
+            if words[0] in SCALE and prev_num:         # "1 million" already in digits: leave the scale word
+                out.append("".join(toks[i:k])); i = k; continue
+            if dec and k + 1 < len(toks) and toks[k] == " " and toks[k + 1].lower() in ("thousand", "million", "billion"):
+                # "one point five million" -> "1.5 million" (not "1.5 1 million")
+                out.append(f"{_cardinal(words)}." + "".join(dec) + " " + toks[k + 1].lower()); i = k + 2; continue
             if not _valid(words):                      # several numbers in a row: leave them spoken
                 out.append("".join(toks[i:k])); i = k; continue
             val = _cardinal(words)
@@ -106,7 +137,10 @@ def _convert(text, aggressive):
 def display(en, line, rules=None):
     """Display form of spoken chunk ``en`` from SCRIPT.md line ``line`` (rules: see load_rules)."""
     RULES = load_rules() if rules is None else rules
-    s = re.sub(r"\ba hundred\b", "one hundred", en).replace("a few hundred", "a few QQQ")
+    # "a hundred / a thousand / a million" -> "one ..." (else the scale word alone became "a 1 million")
+    s = en.replace("a few hundred", "a few QQQ")
+    s = re.sub(r"\b([Aa]) (hundred|thousand|million|billion)\b", lambda m: ("One " if m.group(1) == "A" else "one ")
+               + m.group(2), s)
     for a, b in RULES.get("replace", []):
         s = re.sub(a, b, s)
     s = _convert(s, aggressive=line in RULES.get("digit_lines", []))

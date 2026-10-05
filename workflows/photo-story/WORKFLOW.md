@@ -15,6 +15,10 @@ Scripts live in `$VSTUDIO/workflows/photo-story/scripts/photostory/`; run them f
 folder. Paths inside the spec are relative to the spec file. Needs `ffmpeg`, numpy, opencv-python,
 Pillow, soundfile, `OPENAI_API_KEY` for TTS (no `openai` package needed), and a whisper backend (`mlx_whisper` on Apple Silicon, else
 `faster_whisper`, else the OpenAI `whisper-1` API). Fonts come from `vstudio.config.font` (`./install.sh`).
+中文 titles, chapter names and quotes use the `cjk-serif` role (Noto Serif SC from `install.sh`). For another serif
+(e.g. a system Songti) set persona `fonts.cjk-serif: /path/Songti.ttc#1` (a `.ttc#N` picks face N; index 0 of
+Songti is the Black face). If no serif is found the titles fall back to `cjk-bold` (sans) and the render prints a
+`!! photo-story: no 'cjk-serif' font` warning - fix it before delivering a 文艺 piece.
 
 ## Pipeline
 
@@ -56,14 +60,19 @@ Pillow, soundfile, `OPENAI_API_KEY` for TTS (no `openai` package needed), and a 
 ## Modes
 - **narration** (default): the TTS `timing.json` drives the timeline; optional `BGM` bed under the voice.
 - **music** (`MODE = "music"` or `render.py --mode music`, no TTS): `beats.analyze(BGM)` drives it. Every shot gets a
-  whole number of grid units by weight (min 1), so every cut lands on a bar (or beat). Spec sections start on the
+  whole number of grid units by weight, so every cut lands on a bar (or beat). With `length` set, each shot gets at
+  least its kind's minimum time (`MIN_SECONDS`: collage / grid / rows / deck 2.5 s, film / route / quote 3 s, split 2 s, others 1
+  unit; `MUSIC min_seconds={"collage": 3}` or a shot's `min_s=` overrides). Sections are sized by weight but never
+  below their shots' minimums, so a late chapter is not squeezed into 1-bar shots; a `length` too short for the
+  minimums is raised and the log prints `! length: ... set MUSIC length=N` - follow it or drop a shot. Without
+  `length` (weight x `per` units, as before) short multi-picture shots are only warned about (raise their weight). Spec sections start on the
   music's own section changes when one is within a quarter section (chapter cards + header follow). The `(en, zh)`
   lines become quiet title text (中文 serif + English italic, 0.6 s fades) spread over each item's shots; `captions=False`
   hides them, `"subs"` uses the speech-subtitle style. Lines may be empty: `(0, [], shots)`.
   ```python
   MODE = "music"; BGM = "music/bed.mp3"
   MUSIC = dict(grid="bar", per=1.0, length=None, start=0.0, tr="fade", trd=None, sections=True,
-               captions="title", lufs=-16, backend="auto")
+               captions="title", lufs=-16, backend="auto", min_seconds=None)
   ```
   `grid`: `bar` (calm, 文艺片) · `beat` · `2` (every 2 beats) · any number of beats. `per` = units per weight; `length` =
   target seconds instead. Default transition = a fade of half a grid unit (0.25-1.4 s) starting on the downbeat; per-shot
@@ -77,6 +86,15 @@ in the foreground (the music dips by `CLIP_DUCK`, default -10 dB); `audio="duck"
 `AMBIENT_LUFS` -26, dipping by `AMBIENT_DUCK` -12 dB while the narration speaks); `audio="mute"` = default. `gain` is dB
 on top. Kept clips are levelled to `CLIP_LUFS` (persona `audio.voice_lufs`, -16). Clip sound follows `off=`/`speed=` and
 fades with the picture transitions. iPhone HLG/PQ clips are converted to SDR first (avconvert on macOS, else ffmpeg tone-map).
+
+**Clips with speech: 气口 / filler / repeat cleanup (opt-in).** The shared tool `vstudio.cleanup`
+(`references/CLEANUP.md`) is used, never a local cutter: `dict(audio="keep", cleanup="gentle")` on the shot, or
+`CLEANUP = "gentle"` in the spec for every `audio="keep"` clip (ambient `duck` / `mute` clips are left alone; a shot's
+`cleanup=False` opts out). Values: `True` (= gentle) / `"gentle"` / `"standard"` / `"tight"` / `"pauses"` (气口 only) /
+`dict(profile=, reply="确认 3,5 / 保留 7", approve=, keep=, all_confirm=)`. It runs `analyze --ranges off-<clip end>`
+then `apply` (**auto edits only** unless the creator approves more), and picture + sound both read the cleaned clip
+from 0. EDL + review sheet: `<CACHE>/cleanup/<clip>_<off>.cleanup.json` / `.review.md`. Transcript: `words=` (file next
+to the clip), `<clip>.words.json`, else ASR.
 
 ## Voice clone (your own voice)
 Offline Qwen3-TTS (Base) via `mlx-audio` on Apple Silicon, cloned from a 5-15 s recording of your voice:
@@ -123,6 +141,7 @@ python3 -m vstudio.export out/master.mp4 --platforms douyin,tiktok --cues out/ma
 | `MODE`, `MUSIC` | `"narration"` (default) or `"music"` + its options (see Modes) |
 | `VOICE` | TTS engine options merged over `TTS`; `engine="clone"` = your own voice |
 | `CLIP_DUCK`, `AMBIENT_DUCK`, `CLIP_LUFS`, `AMBIENT_LUFS` | clip-audio levels / ducking (see Video clip audio) |
+| `CLEANUP` | 气口 / filler cleanup profile for every `audio="keep"` clip (default off; see Video clip audio) |
 | `CANVAS` | `"3:4"` 1080x1440 · `"3:4-hd"` 1620x2160 · `"9:16"` 1080x1920 · `"16:9"` 1920x1080 · `"WxH"` |
 | `LAYOUT` | `header`, `sub` (fraction of H or px), `overlay_subs`. Portrait default: header 13.9 %, picture box, sub band 16.7 %. Landscape default: header 15 % and subtitles overlaid on the picture over a gradient |
 | `PALETTE` | `accent ground paper ink mark route sub_en sub_zh` (hex or RGB) |
@@ -130,17 +149,17 @@ python3 -m vstudio.export out/master.mp4 --platforms douyin,tiktok --cues out/ma
 | `FILM_SECTIONS` | sections with the heavy memory-film look (grain, warm desat, flicker, scratches, dust) |
 | `MEDIA` | `images`, `videos` folders and extensions |
 | `FOCUS` | `{img: ((cx,cy), zoom)}` framing used inside collage/film/grid/split/rows/deck |
-| `VCROP` / `VEQ` / `VEQ_FILTER` | per-clip crop `(cx, cy, width_frac)` / clips that get the grade filter |
+| `VCROP` / `VEQ` / `VEQ_FILTER` | per-clip crop `(cx, cy, width_frac)` / clips that get the grade filter. Crop fractions are of the **displayed** frame (rotation metadata applied: an iPhone portrait clip stored landscape with a -90 deg rotation is cropped as portrait, as in any player / contact sheet). Crop and grade are part of the clip cache key. |
 | `ROUTE` | `title, note, cities={name: dict(lon, lat, zh, year, side)}, legs={key: [(a,b),...]}` |
 | `TIMELINE` | `start, end, ticks, labels, format` for the `tl=` bar |
 | `FILM_CAPTION` | caption under film-strip frames, `{n}` / `{name}` |
 | `TTS` | `dir voice model instructions tries good use_say sample_voices sample_line whisper faster_model language` |
 | `SAY` | spoken forms for numbers/names (alignment; also TTS input when `use_say`) |
 | `BGM`, `BGM_LUFS`, `BGM_DUCK`, `OUT`, `AUDIO_BITRATE`, `FPS`, `PACING` | music bed (your own licensed file) at `BGM_LUFS` loudness (default persona `audio.music_lufs`, -30), `BGM_DUCK` dB while the voice speaks (default 0 = static bed), output; `PACING` = `gap sec_gap tail lead end_fade`. `BGM_VOLUME` is no longer used |
-| `COVER`, `POST`, `VOCAB` | cover.py layout data / post copy (`title intro outro tags platform`; `platform` picks the `vstudio.publish` format, default persona `platforms.default`) / optional study table |
+| `COVER`, `POST`, `VOCAB` | cover.py layout data / post copy (`title intro outro tags platform use_persona_tags tag_set`; `platform` picks the `vstudio.publish` format, default persona `platforms.default`; `tags` are the post's own, persona `publish.tags` are appended unless `use_persona_tags=False`; `tag_set="art"` appends persona `publish.tag_sets.art` instead) / optional study table |
 
 ### Shot sources
-`"img"` photo · `"v<clip>"` / `"video:<clip>"` (opts `off`, `speed`, `grade`, `audio=keep|duck|mute`, `gain`) · `collage:a,b,c` · `film:a,b,c` ·
+`"img"` photo · `"v<clip>"` / `"video:<clip>"` (opts `off`, `speed`, `grade`, `audio=keep|duck|mute`, `gain`, `cleanup`, `words`) · `collage:a,b,c` · `film:a,b,c` ·
 `split:a|b` (`labels=`) · `grid:a,b,c,d` · `tilt:a` (`yaw=(from,to)`) · `deck:a,b,c` · `quote:a` (`q=(en, zh, who)`) ·
 `route:<leg>` or `route:A>B>C` · `medal:a` (`ring="TEXT · "`) · `rows:a,b,c`.
 Photo motions: `in out panL panR up down still flip`; options `c=(cx,cy)`, `z=zoom`, `label="..."`, `tr=<transition>`, `trd=seconds`.

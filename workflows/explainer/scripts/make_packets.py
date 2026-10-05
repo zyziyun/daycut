@@ -37,7 +37,10 @@ else:
     EXTRA = ("- canvas json: `" + json.dumps({k: cv[k] for k in ("W", "H", "key", "safe", "caption", "keepouts", "math",
                                                                    "math_narrow_from_y", "math_narrow_x1", "title_xy")})
              + "`\n- reference scene: `$VSTUDIO/workflows/explainer/assets/reference-scene-portrait.html`; design truth: "
-               "`frame.md` = `references/design-truth-portrait.md` (bigger type: titles 56, math 72–120, mono 34–64)\n")
+               "`frame.md` = `references/design-truth-portrait.md` (bigger type: titles 56, math 72–120, mono 34–64)\n"
+             f"- fill the math area: at its complete moment the scene spans >= 70 % of y {cv['math'][1]}–{cv['math'][3]}, "
+             "the result line just above the caption band, main graphic >= 80 % of the math width (checked by "
+             "`scripts/layout_check.py` on the snapshots)\n")
 
 cfg = json.load(open(root / "scenes.config.json"))["scenes"]
 S = json.load(open(root / "audio/scenes.json"))["scenes"]

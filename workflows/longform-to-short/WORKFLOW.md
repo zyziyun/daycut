@@ -56,16 +56,36 @@ python3 $S/make_blocks.py work/config.py      # -> blocks.txt (numbered, speaker
 Read `blocks.txt`; fill `keep.ranges` + `keep.chapters`. For a public video: drop chatter, logistics,
 participant-specific advice, anything that names or identifies a participant; keep the teaching.
 ```bash
-python3 $S/build_keep_list.py work/config.py  # -> keep_list.json, prints chapter table
+python3 $S/build_keep_list.py work/config.py  # -> keep_list.json + cleanup_review.ep<N>.md, prints chapter table
 ```
+**Speech cleanup (气口 / filler / 重复 / 口误)** is the shared tool `vstudio.cleanup` (repo
+`references/CLEANUP.md`), not workflow code. Per kept segment: its edges go through `cleanup.snap_range`
+(word-safe, `keep.pad_in/pad_out` never reach a dropped neighbour word), its end through
+`cleanup.extend_end` (the 40 ms cut fade lands after the last word's real tail), `cuts` split it into
+sub-ranges snapped the same way, and `cleanup.clean` runs per sub-range (profile `cleanup.profile`, else
+persona `cleanup.profile`, else `standard`; `cleanup.overrides`, `cleanup.enabled: false` to skip). The kept
+pieces go into `keep_list.json` (`keep`); build_timeline makes one clip per piece.
+Only AUTO edits are applied at first. One sheet per episode (`episodes.items` chapter ranges; one sheet
+without items): `work/cleanup_review.ep<N>.md` lists 待确认 / 自动删 / 气口 / 保留 with context. The creator
+replies per sheet → `cleanup.reply: {"2": "确认 3,5 / 保留 7"}` in the config (or
+`build_keep_list.py --reply 2:"确认 3,5 / 保留 7"`), re-run from build_keep_list. Hook clips (`hook.src`,
+`episodes.items[].hook.src`) are snapped + end-extended at the hook speed → `work/hook_edges.json`.
 
 **3. Polish targets**
 ```bash
 python3 $S/transient_scan.py work/config.py   # accidental tab / desktop flashes -> transients.json
-python3 $S/zoom_targets.py work/config.py     # code-block centroids for zoom.windows
+python3 $S/zoom_targets.py work/config.py     # focal centre for each zoom.windows entry
 ```
-Eyeball each transient; real ones → `freezes`. Participant questions to keep → `pitches.windows`
-(decide by content). Word-level stumbles / asides → `cuts`. Pick the hook clip → `hook.src` + `hook.lines`.
+Eyeball each transient; real ones → `freezes` (the scan is visual - tab / desktop flashes - which the speech
+cleanup cannot see). Participant questions to keep → `pitches.windows`
+(decide by content). Fillers / pauses / repeats are already cleaned (step 2); off-topic asides or anything
+the sheet missed → `cuts` (word-safe; re-run build_keep_list). Pick the hook clip → `hook.src` + `hook.lines`.
+For slice jobs give each episode its own cold open instead: `episodes.items[i].hook: {src: [t0, t1], lines: [..]}`
+(placed right before that episode's first chapter card; the episode starts at it; item 0's replaces `hook.src`).
+**Zoom windows are hand-written**: put `zoom.windows [[t0, t1], ...]` (source s) where the speaker walks
+through code / a doc passage (from the transcript + `geo/` frames). `zoom_targets.py` only finds each
+window's centre: a grey code block (`zoom.code_rgb`) if there is one, else the densest text in a
+`zoom.box`-sized window (GitHub / Notion / plain white pages, dark editors); `zoom.centers` overrides by hand.
 
 **4. (optional) Re-record a stale live demo**
 ```bash
@@ -164,13 +184,18 @@ then per episode and target `vstudio.export`). The source is the original record
 regions the 16:9 render cropped away. Layout per item: `--mode` > `vertical.segments [{src: [t0, t1], mode}]`
 (source s) > `episodes.items[i].vertical` > `vertical.mode` (default `split`):
 
-- **split** (default; the classic lecture slice): speaker band on top (40 %), screen below. The speaker band is
+- **split** (default; the classic lecture slice): speaker band on top (40 %), screen below, running to the
+  frame bottom (`split.screen_to: frame`; the part under the caption box is dimmed by `split.scrim` so captions
+  stay readable, reading start / activity are kept in the part above it). The speaker band is
   a `vstudio.reframe` face-mode crop of `vertical.speaker.region` (the host's cam tile, small tiles upscaled
   for detection). If there is no region, or faces are found in < `speaker.min_hit` (0.3) of the frames, the
-  band becomes a **title band** (24 %): series + current chapter title, the hook lines during the hook.
+  band becomes a **title band** (16 %, `split.band_frac`): series + current chapter title, the hook lines during the hook.
   A camera-less screen share therefore never shows participant tiles or avatar name tags.
-- **screen**: the whole content area is the screen. The crop is the main text block (column of ink;
-  panel borders ignored), scale kept within `screen.min_scale`..`max_scale` (1.6–2.4x of the source),
+- **screen**: the whole content area (to the frame bottom, like split) is the screen. The crop is the main
+  text block (column of ink; panel borders ignored), zoomed until a text line is ≥ `screen.min_text_px` (28)
+  tall on the canvas (line height measured on a full-res frame), within `screen.min_scale`..`max_scale`
+  (1.6–3.0x of the source); a share region too short to fill the box at `max_scale` is drawn at the top of the
+  box and the leftover sits under the captions / platform UI,
   centred when the block fits, else line starts kept visible. y follows on-screen activity inside the block
   (frame differences at 4 Hz: typing, highlights, new blocks; cursor-sized changes ignored), code-zoom windows
   use their `zoom_windows.json` centre, a page switch cuts to the first text block. The path goes through
@@ -190,7 +215,8 @@ reports `privacy_overlap_frames` (must be 0). Only set `speaker.region` to the H
 
 Outputs: `out/vertical/ep{N}/<platform>-<orientation>.mp4` (+ `.cover.jpg` from `cover_3x4.png` /
 `cover_9x16.png`, `.post.md`, `.crop.json`, `manifest.json`), `out/vertical/manifest.json` (canvas, measured
-loudness, length / title / label warnings). `qa.py` summarises them and writes contact sheets.
+loudness, length / title / label warnings; merged across runs, so `--targets youtube-shorts:vertical` after a
+小红书 run adds entries instead of replacing them). `qa.py` summarises them and writes contact sheets.
 Speed: ~2x real time per canvas on a laptop (decode, compose in numpy, x264), plus one export per target.
 
 ## Hard-won defaults
@@ -213,8 +239,16 @@ Speed: ~2x real time per canvas on a laptop (decode, compose in numpy, x264), pl
   asks `vstudio.media.ffmpeg_bin(need=["ass"])`, which falls back to `static_ffmpeg`.
 - **VideoToolbox:** use `-q:v` quality mode, never a fixed `-b:v` (balloons the file). For code /
   slide text libx264 crf ~20 is crisper (`burn.encoder: x264`).
+- **Never stream-copy-concat AAC segments.** Each AAC segment carries encoder priming / padding, so a
+  `-c copy` concat drifts ~25 ms per join (0.7 s over a 4-min cut: later episodes opened with the previous
+  one's last words). `render.py` renders each item to its exact frame / sample count on one grid
+  (`_lfc.segment_grid`), joins PCM, and encodes AAC once; `make_vertical.py` uses the same grid.
+- **Captions at splits:** a word straddling a zoom / pitch split goes to the piece holding its midpoint
+  (`build_subs.py`), so "面试" never comes out as "试".
 - **Seamless zoom cut-ins:** zoom/pitch/freeze splits are marked audio-continuous, so no afade at
-  those joins; fades only at real cuts (30 ms in / 40 ms out).
+  those joins; fades only at real cuts (30 ms in / 40 ms out) - every cleanup / `cuts` join is one.
+- **Many pieces:** cleanup turns a segment into several clips (one per kept piece), and render.py encodes each
+  item separately: a long lecture renders slower than before; `--from N` still reuses earlier segments.
 - **No BGM.** A synthesized hook bed was tried and rejected as odd under a lecture; only a 1.6 s card
   stinger. Don't propose music beds for this genre.
 - Geometry thresholds assume a light page on a dark meeting canvas; dark-mode shares need
@@ -232,7 +266,8 @@ Speed: ~2x real time per canvas on a laptop (decode, compose in numpy, x264), pl
 
 ## Iterating
 Change one knob, re-run from that step down:
-- cuts / freezes / pitches / speeds / hook → `build_timeline` → `render` (`--from N` reuses earlier
+- cleanup reply / profile, `cuts`, keep ranges, hook src → `build_keep_list` → `build_timeline` → … as below.
+- freezes / pitches / speeds → `build_timeline` → `render` (`--from N` reuses earlier
   segments) → `build_subs` → `burn_final`.
 - panel text only → `make_panels` → `burn_final` (no body re-render).
 - term fixes / errata → `build_subs` → `burn_final`.

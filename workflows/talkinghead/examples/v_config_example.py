@@ -8,7 +8,8 @@ from anchors import S, E, SPAN, W  # noqa: F401
 BODY = "body3_rt.mp4"; AUDIO = "body3_a.wav"; FACE = "face3.npy"   # final body after steps 4-7
 OUT = "../my-talk_xhs.mp4"
 # PLATFORM = "xiaohongshu:vertical"   # canvas + safe zones + caption band + loudness (vstudio.platform). Default:
-#   persona platforms.default in 9:16 (小红书 9:16 1080x1920). "xiaohongshu:vertical" = 3:4 1080x1440, "douyin",
+#   persona platforms.default in 9:16 (小红书 9:16 1080x1920 = "xiaohongshu:full"). A bare "xiaohongshu" is the
+#   profile default, i.e. "xiaohongshu:vertical" = 3:4 1080x1440. "douyin",
 #   "youtube-shorts", "youtube" / "bilibili" = 16:9 1920x1080. CLI --platform overrides it per render.
 # SRC_UPSCALE = 1.8                   # picture enlargement of the source (prep.json has it); caps the punch-in
 # SEGS = "segs.json"                                   # default
@@ -57,7 +58,7 @@ BROLL = [
     # dict(t0=S(8), t1=E(8), src="broll/chart.png", mode="split", side="top"),
 ]
 
-# 3:4 cover (scripts/vertical/cover.py; --platform douyin / youtube for other sizes). T from pick_cover_frame.py, on the FINAL body timeline.
+# 3:4 cover (scripts/vertical/cover.py; --platform douyin / youtube for other sizes -> <OUT stem>.douyin-vertical.jpg, OUT kept). T from pick_cover_frame.py, on the FINAL body timeline.
 COVER = dict(SRC="body3_rt.mp4", T=12.3, OUT="../my-talk_cover.jpg",
              TITLE=["第一行白字", "第二行带关键词"],
              STICKY=("记笔记", [("要点一", "ink"), ("要点二", "red")]),

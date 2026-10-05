@@ -26,7 +26,7 @@ import numpy as np
 
 from vstudio import media
 
-WHIP_MIN_PEAK = 300.0         # px per frame at the cut (shotcraft whip-pan rule: below this the swap shows)
+WHIP_MIN_PEAK = 300.0         # px per frame at the cut (whip-pan rule: below this the swap shows)
 
 
 # ----------------------------------------------------------------------------- time maps

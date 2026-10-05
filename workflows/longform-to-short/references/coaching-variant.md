@@ -25,13 +25,12 @@ Meeting recordings leak identity three ways:
 Always finish with `qa.py` mosaics at 1/15–1/30 s and look at every tile: zero names, avatars,
 bookmark bars, email addresses.
 
-## Filler / repeat tightening (word level, good for English)
-- Drop filler words {um, uh, hmm, er, ah, …} and filler phrases ("give me a second", "let me see",
-  "my bad"); collapse immediate 1- and 2-gram repeats.
-- Build kept intervals from the remaining words, breaking whenever a word was dropped between two
-  kept words (so the filler's TIME is excluded — merging on gap alone silently keeps it) or the
-  pause is ≥ 0.6 s. Then 1.2–1.25×. Typical: 25–30% runtime saved before the speed factor.
-- Feed the intervals as `cuts` (gaps between kept intervals) or build `keep.ranges` directly.
+## Filler / repeat tightening (word level)
+Done by the shared tool (`vstudio.cleanup`, repo `references/CLEANUP.md`) in `build_keep_list.py`: English
+hesitations (um / uh / er), isolated "like / you know / I mean", stammers, immediate repeats, restarts and
+re-takes, pauses squeezed. For a coaching call use `cleanup.profile: tight` and put recurring phrases
+("give me a second", "let me see") in persona `cleanup.fillers_extra`; review `cleanup_review.ep<N>.md`, reply
+via `cleanup.reply`. Then 1.2-1.25x. Off-topic asides still go to `cuts`.
 
 ## Subtitles
 - Same retime-through-timeline mapping; put accent-specific ASR mis-hearings in

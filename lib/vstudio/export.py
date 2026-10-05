@@ -1,16 +1,24 @@
 """Multi-platform export: one clean master -> a file + cover + post stub per platform, plus a manifest.
 
     python -m vstudio.export master.mp4 --platforms xiaohongshu:vertical,douyin,youtube --out exports/ \\
-        [--cues cues.json | --cues subs.srt] [--cover cover.png ...] [--title "..."] [--post post.json]
+        [--cues cues.json | --cues subs.srt] [--no-captions] [--cover cover.png | --cover douyin=c916.png ...]
+        [--title "..."] [--post post.json]
 
 Per target (vstudio.platform profile):
-  1. reframe the master to the profile canvas (vstudio.reframe): same aspect -> plain scale; otherwise
-     ``--mode`` (default face, keeping the face in the profile's safe box; no face -> pad-blur);
-  2. burn captions (if cues are given) in the profile's caption box at a fitted size (PIL, no libass);
+  1. reframe the master to the profile canvas (vstudio.reframe): same aspect -> plain scale (no face
+     tracking; reported as ``scale``); otherwise ``--mode`` (default face, keeping the face in the
+     profile's safe box; no face -> pad-blur);
+  2. burn captions (if cues are given and not --no-captions) in the profile's caption box at a fitted
+     size (PIL, no libass), keyword markup 【】 / ``hl`` spans in brand.highlight. ``keepouts`` in
+     cues.json ([{t0, t1, box: [x, y, w, h]}] in master px - or 0..1 fractions - and final seconds:
+     panels, stamps, titles already burned into the master) are mapped through the reframe and the
+     caption moves above/below them while they are on screen;
   3. two-pass loudnorm to the profile's LUFS / true-peak target (audio.loudnorm_2pass);
   4. H.264 delivery encode (media.delivery_args with the profile's encode guidance);
-  5. cover: the --cover whose aspect is closest, cover-cropped to platform.cover_size (else a frame of
-     the export); covers shown as a centre crop in the feed also get a ``.feed.jpg`` preview;
+  5. cover: a per-target ``--cover platform[:orientation]=path`` wins; else the --cover whose aspect is
+     closest - cover-cropped when the aspect matches, otherwise FITTED on a blurred pad of itself (a
+     centre crop would cut the headline off) with a warning to supply a per-target cover; else a frame
+     of the export. Covers shown as a centre crop in the feed also get a ``.feed.jpg`` preview;
   6. post stub via publish.post_body when --title / --post is given;
 and ``manifest.json`` with files, durations, measured loudness, reframe stats and warnings.
 
@@ -33,33 +41,147 @@ from . import reframe as R
 
 
 # ----------------------------------------------------------------------------------- cues
+def _hl_markup(text, hl):
+    """Apply ``hl`` (keywords ["AWS", ...] or [[i, j], ...] char spans of the plain text) as highlight
+    markup, unless the text already carries markup."""
+    from . import draw
+    a, z = draw.markup()
+    if not hl or a in text:
+        return text
+    mark = [False] * len(text)
+    for h in hl:
+        if isinstance(h, str):
+            k = text.find(h)
+            while h and k >= 0:
+                for j in range(k, k + len(h)):
+                    mark[j] = True
+                k = text.find(h, k + len(h))
+        elif isinstance(h, (list, tuple)) and len(h) == 2:
+            for j in range(max(0, int(h[0])), min(len(text), int(h[1]))):
+                mark[j] = True
+    out, on = [], False
+    for ch, m in zip(text, mark):
+        if m != on:
+            out.append(a if m else z)
+            on = m
+        out.append(ch)
+    if on:
+        out.append(z)
+    return "".join(out)
+
+
+def _cue_from_dict(d):
+    from .subs import Cue
+    c = Cue.from_dict(d)
+    hl = d.get("hl") or (d.get("style") or {}).get("hl") or (d.get("meta") or {}).get("hl")
+    if hl:
+        c.text = _hl_markup(c.text, hl)
+    st = d.get("style")
+    if isinstance(st, dict):
+        c.meta = dict(c.meta or {}, style={k: v for k, v in st.items() if k != "hl"})
+    return c
+
+
 def load_cues(path):
+    """Cues from a list, .srt, or cues.json (a list of Cue dicts, or {cues: [...], keepouts: [...]}).
+    Per-cue ``hl`` (keywords or [i, j] spans) becomes 【】 markup; ``style`` ({fill, highlight}
+    colours) is kept in ``meta["style"]``."""
     from .subs import Cue, srt_read
     if path is None:
         return []
     if isinstance(path, (list, tuple)):
-        return [c if isinstance(c, Cue) else Cue.from_dict(c) for c in path]
+        return [c if isinstance(c, Cue) else _cue_from_dict(c) for c in path]
     if str(path).lower().endswith(".srt"):
         return srt_read(path)
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
     if isinstance(data, dict):
         data = data.get("cues") or data.get("segments") or []
-    return [Cue.from_dict(d) for d in data]
+    return [_cue_from_dict(d) for d in data]
 
 
-def caption_overlay(prof, cues, fps, role="cjk-bold", fill=(255, 255, 255, 255)):
-    """overlay(i, t, img_bgr) for reframe.render: draws the active cue centred in caption_box."""
+def load_keepouts(path, master_size=None):
+    """``keepouts`` of a cues.json -> [{t0, t1, box: (x, y, w, h) in master px}]. A box whose values are
+    all <= 1 is a fraction of the frame; a top-level ``size`` [W, H] different from ``master_size``
+    rescales. Missing / SRT / list cues -> []."""
+    if path is None or isinstance(path, (list, tuple)) or str(path).lower().endswith(".srt"):
+        return []
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        return []
+    W, H = master_size or data.get("size") or (1, 1)
+    sx = sy = 1.0
+    if data.get("size") and master_size:
+        sx, sy = master_size[0] / float(data["size"][0]), master_size[1] / float(data["size"][1])
+    out = []
+    for k in data.get("keepouts") or []:
+        x, y, w, h = (float(v) for v in k["box"])
+        if max(x, y, w, h) <= 1.0:
+            x, y, w, h = x * W, y * H, w * W, h * H
+        else:
+            x, y, w, h = x * sx, y * sy, w * sx, h * sy
+        out.append(dict(t0=float(k.get("t0", 0.0)), t1=float(k.get("t1", 1e9)), box=(x, y, w, h),
+                        kind=k.get("kind", "")))
+    return out
+
+
+def map_box(pl, box, i=0):
+    """Master-px box (x, y, w, h) -> target-px (x0, y0, x1, y1) through a reframe plan at frame ``i``."""
+    x, y, w, h = box
+    tw, th = pl["target"]
+    sw, sh = pl["src_w"], pl["src_h"]
+    if pl["mode_used"] in ("pad-blur", "letterbox"):
+        s = min(tw / sw, th / sh)
+        ox, oy = (tw - sw * s) / 2, (th - sh * s) / 2
+        return (ox + x * s, oy + y * s, ox + (x + w) * s, oy + (y + h) * s)
+    rects = pl.get("rects")
+    cx, cy, cw, ch = pl.get("fixed") if rects is None else rects[min(i, len(rects) - 1)]
+    s = tw / cw
+    return ((x - cx) * s, (y - cy) * s, (x + w - cx) * s, (y + h - cy) * s)
+
+
+def _rebalance(lines, mk):
+    """Close/reopen highlight markup across wrapped lines so each line renders its own spans."""
+    a, z = mk[0], mk[-1]
+    out, open_ = [], False
+    for ln in lines:
+        s = (a if open_ else "") + ln
+        depth = 0
+        for ch in s:
+            if ch == a:
+                depth = 1
+            elif ch == z:
+                depth = 0
+        open_ = depth == 1
+        out.append(s + (z if open_ else ""))
+    return out
+
+
+def caption_overlay(prof, cues, fps, role="cjk-bold", fill=(255, 255, 255, 255), keepouts=None, plan=None,
+                    report=None):
+    """overlay(i, t, img_bgr) for reframe.render: draws the active cue centred in caption_box.
+    keepouts ([{t0, t1, box}] master px, see load_keepouts) + plan: while a keep-out is on screen and
+    overlaps the caption, the caption moves to the nearest free spot above/below it inside the
+    profile's safe box. ``report`` (dict) collects {"moved": n, "blocked": n} frame counts."""
     from . import draw
     x0, y0, x1, y1 = P.caption_box(prof)
+    sx0, sy0, sx1, sy1 = P.safe_box(prof)
     cache = {}
+    kos = list(keepouts or []) if plan is not None else []
+    rep_ = report if report is not None else {}
+    rep_.setdefault("moved", 0); rep_.setdefault("blocked", 0)
+    mk = draw.markup()
 
     def layer(k, c):
         if k not in cache:
             fit = P.fit_text_size(prof, c.text.replace("\n", " "), role)
             f = draw.load_font(role, fit["size"])
             stroke = max(2, int(fit["size"] * float(prof.caption.get("stroke", 0.08))))
-            prim = _lines_layer(fit["lines"], f, fill, stroke)
+            st = (c.meta or {}).get("style") or {}
+            fl = draw.rgba(st["fill"]) if st.get("fill") else fill
+            hl = draw.rgba(st["highlight"]) if st.get("highlight") else None
+            prim = _lines_layer(_rebalance(fit["lines"], mk), f, fl, stroke, hl)
             if c.alt and c.alt.strip():
                 fa = draw.load_font("cjk", max(16, int(fit["size"] * 0.66)))
                 alt_lines = draw.wrap(c.alt.strip(), fa, x1 - x0, balance=True, max_lines=2)
@@ -75,6 +197,23 @@ def caption_overlay(prof, cues, fps, role="cjk-bold", fill=(255, 255, 255, 255))
 
     spans = sorted(((c.start, c.end, k, c) for k, c in enumerate(cues) if c.text.strip()), key=lambda s: s[0])
 
+    def _place(i, t, w, h, cx, y):
+        boxes = [map_box(plan, k["box"], i) for k in kos if k["t0"] <= t < k["t1"]]
+        if not boxes:
+            return y
+        def hits(yy):
+            return any(not (cx + w / 2 <= b[0] or cx - w / 2 >= b[2] or yy + h <= b[1] or yy >= b[3]) for b in boxes)
+        if not hits(y):
+            return y
+        m = 12
+        cands = [b[1] - h - m for b in boxes] + [b[3] + m for b in boxes]
+        cands = [c for c in cands if sy0 <= c <= sy1 - h and not hits(c)]
+        if not cands:
+            rep_["blocked"] += 1
+            return y
+        rep_["moved"] += 1
+        return min(cands, key=lambda c: abs(c - y))
+
     def overlay(i, t, img):
         for a, b, k, c in spans:
             if a <= t < b:
@@ -82,17 +221,20 @@ def caption_overlay(prof, cues, fps, role="cjk-bold", fill=(255, 255, 255, 255))
                 h, w = L.shape[:2]
                 cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
                 y = min(cy - h / 2, y1 - h) if h <= y1 - y0 else cy - h / 2   # over-tall: centred on the band
+                if kos:
+                    y = _place(i, t, w, h, cx, y)
                 draw.alpha_paste(img, L, (cx - w / 2, y), bgr=True)
                 break
         return img
     return overlay
 
 
-def _lines_layer(lines, f, fill, stroke):
-    """Centred stroked lines (markup 【】 highlighted in brand.highlight) as one RGBA strip."""
+def _lines_layer(lines, f, fill, stroke, hl_fill=None):
+    """Centred stroked lines (markup 【】 highlighted in brand.highlight / ``hl_fill``) as one RGBA strip."""
     from PIL import Image
     from . import draw
-    rows = [draw.text_layer(ln, f, fill=fill, stroke=stroke, stroke_fill=(0, 0, 0, 235), shadow_alpha=110, pad=6)
+    rows = [draw.text_layer(ln, f, fill=fill, hl_fill=hl_fill, stroke=stroke, stroke_fill=(0, 0, 0, 235),
+                            shadow_alpha=110, pad=6)
             for ln in lines]
     if not rows:
         return Image.new("RGBA", (1, 1), (0, 0, 0, 0))
@@ -126,6 +268,48 @@ def fit_cover(src_img, size, focus=None):
     return im.crop((x, y, x + W, y + H))
 
 
+def fit_cover_pad(src_img, size, dim=0.55):
+    """Fit a PIL image INSIDE ``size`` (nothing cropped) over a blurred, dimmed cover-crop of itself -
+    for a cover whose aspect differs from the target (keeps a headline that a crop would cut)."""
+    from PIL import Image, ImageEnhance, ImageFilter
+    W, H = size
+    im = src_img.convert("RGB")
+    bg = fit_cover(im, size).filter(ImageFilter.GaussianBlur(max(8, W // 30)))
+    bg = ImageEnhance.Brightness(bg).enhance(dim)
+    s = min(W / im.width, H / im.height)
+    fg = im.resize((max(1, int(round(im.width * s))), max(1, int(round(im.height * s)))), Image.LANCZOS)
+    bg.paste(fg, ((W - fg.width) // 2, (H - fg.height) // 2))
+    return bg
+
+
+def parse_covers(covers):
+    """--cover values -> (generic [paths], {target: path}); "douyin=c.png" / "xiaohongshu:full=c.png"
+    are per-target, anything else (an existing path) is generic."""
+    generic, per = [], {}
+    for c in covers or []:
+        c = os.fspath(c)
+        if "=" in c and not os.path.exists(c):
+            k, _, v = c.partition("=")
+            per[k.strip()] = v.strip()
+        else:
+            generic.append(c)
+    return generic, per
+
+
+def _cover_for(prof, per):
+    for k, v in (per or {}).items():
+        n, _, o = k.partition(":")
+        try:
+            if P.canonical(n) != prof.name:
+                continue
+            if o and P.profile(n, o).key != prof.key:
+                continue
+        except (KeyError, ValueError):
+            continue
+        return v
+    return None
+
+
 def _face_focus(im):
     try:
         import cv2
@@ -144,24 +328,38 @@ def _face_focus(im):
         return None
 
 
-def make_cover(prof, covers, video, out_path, at=None):
-    """Write the profile's cover to out_path from the closest-aspect image in ``covers`` (paths), else from
-    a frame of ``video`` (at ``at`` s, default 1/3 in). Returns (path, notes)."""
+def make_cover(prof, covers, video, out_path, at=None, per_target=None, warnings=None):
+    """Write the profile's cover to out_path: the per-target cover (``per_target`` {"douyin": path,
+    "xiaohongshu:full": path}) if one matches, else the closest-aspect image in ``covers`` (paths), else a
+    frame of ``video`` (at ``at`` s, default 1/3 in). A cover of the right aspect (<= 5 % off) is
+    cover-cropped (face-aware); a different aspect is FITTED over a blurred pad (never centre-cropped:
+    that cuts the headline) and a warning asks for a per-target cover. Returns (path, notes)."""
     from PIL import Image
     size = P.cover_size(prof)
     notes = []
-    if covers:
-        imgs = [(c, Image.open(c)) for c in covers]
+    pad = False
+    own = _cover_for(prof, per_target)
+    if own or covers:
+        imgs = [(own, Image.open(own))] if own else [(c, Image.open(c)) for c in covers]
         c, im = min(imgs, key=lambda ci: abs(np.log(_aspect(ci[1].size) / _aspect(size))))
         if abs(np.log(_aspect(im.size) / _aspect(size))) > 0.05:
-            notes.append(f"cover {os.path.basename(c)} {im.width}x{im.height} re-fitted to {size[0]}x{size[1]} "
-                         f"({prof.cover.get('aspect')}); check the title is still inside the crop")
+            pad = True
+            msg = (f"cover {os.path.basename(c)} {im.width}x{im.height} is not {prof.cover.get('aspect')}: fitted on a "
+                   f"blurred pad to {size[0]}x{size[1]}; pass --cover {prof.name}=<{size[0]}x{size[1]} cover> for a real one")
+            notes.append(msg)
+            if warnings is not None:
+                warnings.append(msg)
     else:
         tmp = out_path + ".frame.png"
         media.grab_frame(video, at if at is not None else media.duration(video) / 3, tmp)
         im = Image.open(tmp); im.load(); os.remove(tmp)
         notes.append("no --cover given: used a frame of the export")
-    fit_cover(im, size, _face_focus(im)).save(out_path, quality=92)
+    if pad:
+        fit_cover_pad(im, size).save(out_path, quality=92)
+    elif abs(np.log(_aspect(im.size) / _aspect(size))) < 0.01:
+        fit_cover(im, size).save(out_path, quality=92)          # same aspect: a plain resize, no face pass
+    else:
+        fit_cover(im, size, _face_focus(im)).save(out_path, quality=92)
     mb = prof.cover.get("max_bytes")
     if mb and os.path.getsize(out_path) > mb:
         Image.open(out_path).save(out_path, quality=80)
@@ -182,25 +380,45 @@ def _publish_platform(prof):
     return "youtube" if prof.name == "youtube-shorts" else prof.name
 
 
+def _scale_only(master, dst, prof, info, start, dur, vargs, fps_out):
+    """Same-aspect fast path: one ffmpeg scale + encode (no Python frame pipe, no face tracking)."""
+    win = (["-ss", f"{start:.3f}"] if start else []) + (["-t", f"{dur:.3f}"] if dur else [])
+    vf = f"scale={prof.w}:{prof.h}:flags=lanczos,setsar=1"
+    cmd = [media.ffmpeg_bin(), "-y", "-v", "error", *win, "-i", master, "-map", "0:v:0", "-vf", vf]
+    if info["has_audio"]:
+        cmd += ["-map", "0:a:0"]
+    cmd += list(vargs) + (["-r", str(fps_out)] if fps_out else [])
+    cmd += (["-c:a", "pcm_s16le", "-ar", "48000", "-ac", "2"] if info["has_audio"] else ["-an", "-movflags", "+faststart"])
+    media.run(cmd + [dst])
+    return dst
+
+
 def export_one(master, prof, out_dir, cues=None, covers=None, post=None, mode="face", fallback="pad-blur",
-               start=0.0, dur=None, workdir=None, encoder="libx264", preset="medium", **reframe_opts):
-    """Export ``master`` for one Profile. Returns the manifest entry (dict)."""
+               start=0.0, dur=None, workdir=None, encoder="libx264", preset="medium", captions=True,
+               cover_targets=None, **reframe_opts):
+    """Export ``master`` for one Profile. Returns the manifest entry (dict).
+    captions=False: never burn ``cues`` (the master already has them). cover_targets: {target: path}
+    per-target covers (see make_cover)."""
     from . import audio
     info = media.probe(master)
     stem = f"{prof.name}-{prof.orientation}"
     out_mp4 = os.path.join(out_dir, stem + ".mp4")
     warnings = []
     same_aspect = abs(np.log(_aspect((info["display_w"], info["display_h"])) / _aspect(prof.size))) < 0.01
-    m = "letterbox" if same_aspect else mode
+    m = "letterbox" if same_aspect else mode       # same aspect: a fit == a plain scale, no face tracking
     pl = R.plan(master, prof.w, prof.h, mode=m, safe=P.safe_box(prof), start=start, dur=dur,
                 fallback=fallback, **reframe_opts)
     if pl["mode_used"] != m:
         warnings.append(f"reframe fell back to {pl['mode_used']}: {pl.get('fallback_reason')}")
-    cue_list = load_cues(cues) if cues is not None else []
+    cue_list = load_cues(cues) if (cues is not None and captions) else []
+    kos = load_keepouts(cues, (info["display_w"], info["display_h"])) if cue_list else []
     if start:
         from .subs import Cue
         cue_list = [Cue(c.start - start, c.end - start, c.text, c.alt, c.meta) for c in cue_list if c.end > start]
-    overlay = caption_overlay(prof, cue_list, pl["fps"]) if cue_list else None
+        kos = [dict(k, t0=k["t0"] - start, t1=k["t1"] - start) for k in kos if k["t1"] > start]
+    cap_report = {}
+    pl_geo = pl
+    overlay = caption_overlay(prof, cue_list, pl["fps"], keepouts=kos, plan=pl_geo, report=cap_report) if cue_list else None
     for c in cue_list:
         fit = P.fit_text_size(prof, c.text.replace("\n", " "))
         if not fit["fits"]:
@@ -214,15 +432,25 @@ def export_one(master, prof, out_dir, cues=None, covers=None, post=None, mode="f
     has_a = info["has_audio"]
     tmpd = workdir or tempfile.mkdtemp(prefix="vexport-")
     try:
+        fast = same_aspect and overlay is None and not info.get("hdr")
         if has_a:
             mid = os.path.join(tmpd, stem + ".mov")
-            R.render(master, mid, pl, overlay=overlay, encode_args=vargs + ["-c:a", "pcm_s16le", "-ar", "48000", "-ac", "2"],
-                     fps=fps_out)
+            if fast:
+                _scale_only(master, mid, prof, info, start, dur, vargs, fps_out)
+            else:
+                R.render(master, mid, pl_geo, overlay=overlay,
+                         encode_args=vargs + ["-c:a", "pcm_s16le", "-ar", "48000", "-ac", "2"], fps=fps_out)
             audio.loudnorm_2pass(mid, out_mp4, lufs=prof.loudness["lufs"], tp=prof.loudness["tp"])
         else:
-            R.render(master, out_mp4, pl, overlay=overlay, encode_args=vargs + ["-an", "-movflags", "+faststart"],
-                     fps=fps_out)
+            if fast:
+                _scale_only(master, out_mp4, prof, info, start, dur, vargs, fps_out)
+            else:
+                R.render(master, out_mp4, pl_geo, overlay=overlay, encode_args=vargs + ["-an", "-movflags", "+faststart"],
+                         fps=fps_out)
             warnings.append("master has no audio")
+        if cap_report.get("blocked"):
+            warnings.append(f"captions overlap a burned overlay (keepout) on {cap_report['blocked']} frames: "
+                            f"no free spot in the safe box")
     finally:
         if workdir is None:
             shutil.rmtree(tmpd, ignore_errors=True)
@@ -239,13 +467,16 @@ def export_one(master, prof, out_dir, cues=None, covers=None, post=None, mode="f
         if mm["input_tp"] > prof.loudness["tp"] + 0.5:
             warnings.append(f"true peak {mm['input_tp']:.1f} dBTP over {prof.loudness['tp']}")
     warnings += P.check_length(prof, oinfo["duration"])
-    cover_path, notes = make_cover(prof, covers, out_mp4, os.path.join(out_dir, stem + ".cover.jpg"))
+    cover_path, notes = make_cover(prof, covers, out_mp4, os.path.join(out_dir, stem + ".cover.jpg"),
+                                   per_target=cover_targets, warnings=warnings)
     entry = dict(platform=prof.name, orientation=prof.orientation, label=prof.label, file=os.path.basename(out_mp4),
                  w=oinfo["w"], h=oinfo["h"], fps=round(oinfo["fps"], 3), duration=round(oinfo["duration"], 3),
                  loudness=loud, target_loudness=prof.loudness, reframe=dict(
-                     mode=pl["mode"], mode_used=pl["mode_used"], hit_rate=pl.get("hit_rate"), cuts=len(pl.get("cuts") or []),
+                     mode="scale" if same_aspect else pl["mode"], mode_used="scale" if same_aspect else pl["mode_used"],
+                     hit_rate=pl.get("hit_rate"), cuts=len(pl.get("cuts") or []),
                      switches=pl.get("switches"), stats=pl.get("stats"), plan=os.path.basename(crop_json)),
-                 captions=len(cue_list), cover=os.path.basename(cover_path), cover_size=list(P.cover_size(prof)),
+                 captions=len(cue_list), keepouts=len(kos), captions_moved_frames=cap_report.get("moved", 0),
+                 cover=os.path.basename(cover_path), cover_size=list(P.cover_size(prof)),
                  notes=notes, safe_box=list(P.safe_box(prof)), caption_box=list(P.caption_box(prof)))
     if post:
         from . import publish
@@ -253,7 +484,8 @@ def export_one(master, prof, out_dir, cues=None, covers=None, post=None, mode="f
         tags = post.get("tags")
         body = publish.post_body(post.get("hook", ""), post.get("body", ""), chapters=post.get("chapters"),
                                  links=post.get("links"), tags=tags, platform=_publish_platform(prof),
-                                 title=post.get("title"), warn=msgs.append)
+                                 title=post.get("title"), warn=msgs.append,
+                                 use_persona_tags=post.get("use_persona_tags", True), tag_set=post.get("tag_set"))
         warnings += msgs
         warnings += P.check_text(prof, body=body, tags=tags)   # title already checked by post_body
         if post.get("chapters") and not prof.chapters.get("supported"):
@@ -273,6 +505,9 @@ def export(master, targets, out_dir="exports", cues=None, covers=None, post=None
     profs = [t if isinstance(t, P.Profile) else P.profile(t) for t in
              (P.parse_targets(targets) if isinstance(targets, str) else targets)]
     covers = [covers] if isinstance(covers, str) else list(covers or [])
+    covers, per = parse_covers(covers)
+    if per:
+        kw = dict(kw, cover_targets=dict(per, **(kw.get("cover_targets") or {})))
     entries = []
     for prof in profs:
         print(f"[export] {prof.key} {prof.w}x{prof.h}", file=sys.stderr)
@@ -293,7 +528,11 @@ def main(argv=None):
                          "(default persona platforms.default). Known: " + ", ".join(P.list_profiles()))
     ap.add_argument("--out", default="exports")
     ap.add_argument("--cues", help="cues.json (subs.Cue dicts) or .srt to burn per platform")
-    ap.add_argument("--cover", action="append", default=[], help="cover image(s); closest aspect is re-fitted")
+    ap.add_argument("--cover", action="append", default=[],
+                    help="cover image(s): a path (closest aspect wins; another aspect is fitted on a blurred pad) "
+                         "or platform[:orientation]=path for one target, e.g. --cover xiaohongshu=c34.png")
+    ap.add_argument("--no-captions", action="store_true",
+                    help="do not burn --cues (the master already carries its captions)")
     ap.add_argument("--title", help="post title (checked against each platform's limit)")
     ap.add_argument("--post", help="post.json {title, hook, body, chapters, links, tags} -> <target>.post.md")
     ap.add_argument("--mode", default="face", choices=R.MODES, help="reframe mode when the aspect changes")
@@ -317,7 +556,7 @@ def main(argv=None):
     if a.title:
         post = dict(post or {}, title=a.title)
     man = export(a.master, targets, a.out, cues=a.cues, covers=a.cover, post=post, mode=a.mode, fallback=a.fallback,
-                 start=a.start, dur=a.dur, encoder=a.encoder, preset=a.preset)
+                 start=a.start, dur=a.dur, encoder=a.encoder, preset=a.preset, captions=not a.no_captions)
     for e in man["exports"]:
         print(f"{e['file']:32s} {e['w']}x{e['h']} {e['duration']:.1f}s "
               f"{(e['loudness'] or {}).get('i', '-')} LUFS  reframe={e['reframe']['mode_used']}")

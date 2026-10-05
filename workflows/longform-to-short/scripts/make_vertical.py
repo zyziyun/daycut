@@ -9,7 +9,8 @@ For every vertical target canvas (config targets / platform, e.g. ["xiaohongshu:
      from work/cues.json re-laid into the profile's caption box (bigger font, <= max chars per line, long cues
      split), loudness to the profile target, length / title / description checks, cover fitted to the
      profile's cover size, post stub -> <out>/vertical/ep<N>/<platform>-<orientation>.mp4 (+ .cover.jpg,
-     .post.md, .crop.json) and <out>/vertical/manifest.json (sizes, loudness, warnings).
+     .post.md, .crop.json) and <out>/vertical/manifest.json (sizes, loudness, warnings; merged across runs, so
+     a second `--targets youtube-shorts:vertical` run adds to the 小红书 entries instead of replacing them).
 
 Layout per item (config.vertical.mode, per-episode episodes.items[].vertical, per source window
 vertical.segments [{"src": [t0, t1], "mode": ..}], or --mode): split (default: speaker cam on top, screen
@@ -67,7 +68,7 @@ SPK = VC.get("speaker") or {}
 SPK_REGION = SPK.get("region")
 EXCLUDE = [list(r) for r in (VC.get("exclude") or [])]
 SCREEN_O = dict(V.SCREEN_DEFAULTS, **(VC.get("screen") or {}))
-SPLIT = VC.get("split") or {}
+SPLIT = dict(V.SPLIT_DEFAULTS, **(VC.get("split") or {}))
 PAL = _lfc.palette(cfg)
 T = _lfc.theme(cfg)
 timeline = _lfc.load_json("timeline.json")
@@ -85,8 +86,7 @@ for it in timeline:
     if it["kind"] == "card":
         cur = (cur[0] + 1, it["title"])
     chap.append(cur)
-ends = [it["final_t0"] for it in timeline[1:]] + [total]
-nfr = [int(round(b * FPS)) - int(round(it["final_t0"] * FPS)) for it, b in zip(timeline, ends)]
+nfr = [g[0] for g in _lfc.segment_grid(timeline, FPS)]      # same frame grid as render.py
 
 
 def mode_for(k, it):
@@ -139,7 +139,7 @@ def speaker_band_for(L, key):
     for k in need:
         it = timeline[k]
         bx = V.boxes(L, "split" if mode_for(k, it) == "split" else "speaker", "speaker",
-                     SPLIT.get("speaker_frac", 0.40), SPLIT.get("band_frac", 0.24))["speaker"]
+                     SPLIT["speaker_frac"], SPLIT["band_frac"], SPLIT["screen_to"])["speaker"]
         tmp = f"vertical/spk_{k:03d}.mp4"
         rects, inf = V.plan_speaker(SRC, it["t0"], it["t1"], it["speed"], FPS, SPK_REGION, bx, tmp, det,
                                     zoom=SPK.get("zoom", 1.0), min_hit=SPK.get("min_hit", 0.3))
@@ -157,7 +157,7 @@ def vertical_panels(L, band):
     """记笔记 panels re-drawn for the canvas: <= 62 % of the safe width, right-aligned in the safe box, at the
     top of the screen area (below the speaker / title band), scaled to stay above the caption box."""
     sx0, sy0, sx1, sy1 = L["safe"]
-    top = V.boxes(L, "split", band, SPLIT.get("speaker_frac", 0.40), SPLIT.get("band_frac", 0.24))["screen"][1]
+    top = V.boxes(L, "split", band, SPLIT["speaker_frac"], SPLIT["band_frac"], SPLIT["screen_to"])["screen"][1]
     pw = int(min(620, (sx1 - sx0) * 0.62))
     out = []
     for p in cfg.get("panels", []):
@@ -175,7 +175,7 @@ def vertical_panels(L, band):
 def render_master(group):
     W, H = group[0].w, group[0].h
     key = f"{W}x{H}"
-    L = V.layout(group, gap=SPLIT.get("gap", 10))
+    L = V.layout(group, gap=SPLIT["gap"])
     d = os.path.join("vertical", key)
     os.makedirs(d, exist_ok=True)
     band, binfo = speaker_band_for(L, key)
@@ -186,7 +186,7 @@ def render_master(group):
     enc = [media.ffmpeg_bin(), "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{W}x{H}",
            "-r", str(FPS), "-i", "-", "-i", FINAL, "-map", "0:v:0", "-map", "1:a:0",
            "-c:v", "libx264", "-preset", args.preset, "-crf", str(VC.get("crf", 16)), "-pix_fmt", "yuv420p",
-           "-c:a", "copy", "-shortest", "-movflags", "+faststart", master]
+           "-c:a", "copy", "-t", f"{sum(nfr) / FPS:.6f}", "-movflags", "+faststart", master]
     pe = subprocess.Popen(enc, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
     report, bands, privacy_hits = [], {}, 0
     ground = np.zeros((H, W, 3), np.uint8)
@@ -204,7 +204,7 @@ def render_master(group):
             continue
         mode = mode_for(k, it)
         b = band if mode in ("split", "speaker") else "title"
-        bx = V.boxes(L, mode, b, SPLIT.get("speaker_frac", 0.40), SPLIT.get("band_frac", 0.24))
+        bx = V.boxes(L, mode, b, SPLIT["speaker_frac"], SPLIT["band_frac"], SPLIT["screen_to"])
         src = REC if it.get("demo_slice") is not None else SRC
         t0 = it["demo_slice"][0] if it.get("demo_slice") is not None else it["t0"]
         t1 = t0 + (it["t1"] - it["t0"])
@@ -219,7 +219,7 @@ def render_master(group):
         base = ground.copy()
         if "band" in bx:
             x0, y0, x1, y1 = bx["band"]
-            hk = hook_lines if it.get("hook") else None
+            hk = (it.get("hook_lines") or hook_lines) if it.get("hook") else None
             ck = (x1 - x0, y1 - y0, chap[k], bool(hk))
             if ck not in bands:
                 bands[ck] = V.title_band((x1 - x0, y1 - y0), series_label(), chap[k][1] or cfg.get("publish.title", ""),
@@ -230,13 +230,15 @@ def render_master(group):
         srects = None
         if "screen" in bx and mode != "pad-blur":
             srects, st = V.analyse_screen(src, t0, t1, it["speed"], FPS, n, region, bx["screen"],
-                                          zoom_center(it), still, SCREEN_O)
+                                          zoom_center(it), still, SCREEN_O, vis_h=V.visible_h(L, bx["screen"]))
             rec["screen"] = st
+            dim = V.scrim(L, bx["screen"], st["draw_h"], SPLIT["scrim"]) if bx["screen"][3] > L["content"][3] else None
         if (key, k) in speaker_info:
             rec["speaker"] = speaker_info[(key, k)]
         hook_ov = None
-        if it.get("hook") and hook_lines and "band" not in bx:
-            hb = V.hook_box(hook_lines, L["safe"][2] - L["safe"][0] - 40, PAL)
+        hl = (it.get("hook_lines") or hook_lines) if it.get("hook") else None
+        if hl and "band" not in bx:
+            hb = V.hook_box(hl, L["safe"][2] - L["safe"][0] - 40, PAL)
             hook_ov = (np.asarray(hb), (W - hb.width) // 2, L["content"][1] + 24)
         panel_y = (bx["screen"][1] if "screen" in bx and len(bx) > 1 else L["content"][1]) + 16
         last = None
@@ -257,7 +259,11 @@ def render_master(group):
                 else:
                     r = srects[min(i, len(srects) - 1)]
                     privacy_hits += V.overlaps(r, EXCLUDE)
-                    img[y0:y1, x0:x1] = V.warp(scr, r, (x1 - x0, y1 - y0))
+                    dh = st["draw_h"]
+                    tile = V.warp(scr, r, (x1 - x0, dh))
+                    if dim is not None:
+                        tile = (tile * dim[:, None, None]).astype(np.uint8)
+                    img[y0:y0 + dh, x0:x1] = tile
             if "speaker" in bx:
                 x0, y0, x1, y1 = bx["speaker"]
                 r = prects[min(i, len(prects) - 1)]
@@ -320,10 +326,7 @@ def main():
     root = os.path.join(cfg.out, "vertical")
     manifest = dict(targets=[p.key for p in vprofs], masters={f"{w}x{h}": m[0] for (w, h), m in masters.items()},
                     episodes=[], warnings=[])
-    cap_profs = {p.key: V.caption_fit_profile(p) for p in vprofs}
-    for p in vprofs:
-        if cap_profs[p.key] is not p:
-            print(f"{p.key}: caption size capped to {cap_profs[p.key].caption['size']} px so 2 lines fit the caption box")
+    cap_profs = {p.key: p for p in vprofs}       # vstudio.platform.fit_text_size fits the caption box height itself
     relaid = {p.key: V.relayout_cues(cues, cap_profs[p.key]) for p in vprofs}
     for p in vprofs:
         _lfc.dump_json([c.to_dict() for c in relaid[p.key]], f"vertical/cues.{p.name}-{p.orientation}.json")
@@ -347,8 +350,12 @@ def main():
             manifest["warnings"] += [f"ep{ep['n']} {p.key}: {w}" for w in e["warnings"]]
         manifest["episodes"].append(dict(n=ep["n"], a=round(a, 3), b=round(b, 3), dir=os.path.relpath(ddir, cfg.out),
                                          exports=entries))
-        _lfc.dump_json(entries, os.path.join(ddir, "manifest.json"))
-    _lfc.dump_json(manifest, os.path.join(root, "manifest.json"))
+        ep_man = os.path.join(ddir, "manifest.json")
+        old = _lfc.load_json(ep_man) if os.path.exists(ep_man) else []
+        _lfc.dump_json(V.merge_exports(old, entries), ep_man)
+    man_path = os.path.join(root, "manifest.json")
+    manifest = V.merge_manifest(_lfc.load_json(man_path) if os.path.exists(man_path) else None, manifest)
+    _lfc.dump_json(manifest, man_path)
     for e in manifest["episodes"]:
         for x in e["exports"]:
             print(f"ep{e['n']} {x['file']:28s} {x['w']}x{x['h']} {x['duration']:.1f}s "

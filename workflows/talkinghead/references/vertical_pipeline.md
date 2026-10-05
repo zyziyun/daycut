@@ -36,13 +36,20 @@ E = [
 - Whisper word *starts* swallow the preceding pause. Word *ends* are reliable.
 - Full example: `examples/v_edit_list_example.py`.
 
-## 3. First cut
+## 3. First cut + speech cleanup analysis (`vstudio.cleanup`, references/CLEANUP.md)
 ```bash
-python3 $V/cut_pass1.py edit_list.py      # TH -45 dB, MAXGAP 0.20, KEEPGAP 0.10, overridable in edit_list.py
+python3 $V/cut_pass1.py edit_list.py      # PROFILE / CLEANUP / REPLY overridable in edit_list.py
+python3 $V/cut_pass1.py edit_list.py --analyze-only    # only cleanup.cN.json + cleanup_review.md, no cut
 ```
-- Snaps each range to voiced audio and squeezes internal pauses.
+- Range edges: `cleanup.snap_range` (start before the first word's onset, end over the last word's real tail,
+  neither into a neighbour word of `aN.json`).
+- `cleanup.analyze` on each RAW clip over those ranges → `cleanup.cN.json` (EDL, ids unique across clips) and
+  `cleanup_review.md` for the creator. Only the 气口 edits (pause / breath / lead / tail; squeezed per profile,
+  never deleted) are applied in pass 1; word edits wait for the creator (step 5).
 - Cuts with `vstudio.cut.cut_segments` (via `bodycut.cut_sources`): frame-grid snap, a 2 s accurate pre-seek
   then `trim=start_frame/end_frame`, audio sliced sample-exact on the same grid with 12ms fades.
+- `segs.pass1.json` records every body segment's raw span (clip, t0, t1) and body span (b0, b1) plus the raw words
+  on the body timeline (`body_words`): later passes map the cleanup keep spans through it.
 
 Per-segment `ffmpeg -ss -t` drifted 0.57s over 163 cuts, so don't go back to it.
 
@@ -62,22 +69,27 @@ python3 $V/retouch_video.py body_v.mp4 body_rt.mp4 --workers 5
 
 **Never redo this for later cuts.** Steps 5 and 6 cut `body_rt.mp4` directly.
 
-## 5. Strict filler pass
+## 5. 去 filler / 重复 / 口误: the creator's reply, applied to the retouched body
 ```bash
-python3 $V/strict_pass.py transcribe body_a.wav "$PROMPT"     # idx:word[t] + AUTO / CONFIRM / INFO tiers, strict_draft.py
-# creator confirms; cp strict_draft.py strict.py; add confirmed CONFIRM indices; TEXT = {sid: "fixed|subtitle"}
+python3 $V/strict_pass.py review          # = old `transcribe`: prints cleanup_review.md, writes strict_draft.py (REPLY = "")
+# creator answers: cp strict_draft.py strict.py; REPLY = "确认 3,5,9 / 保留 7"; TEXT = {sid: "fixed|subtitle"}
 python3 $V/strict_pass.py apply strict.py body_rt.mp4 body_a.wav body2_rt.mp4 body2_a.wav
-python3 $V/strict_pass.py verify strict.py body2_a.wav "$PROMPT"  # flags content words the cut lost (exit 1)
+python3 $V/strict_pass.py verify strict.py body2_a.wav "$PROMPT"  # cleanup.verify: lost content words (exit 1)
 ```
-- **What goes in DEL** (the creator confirms the final list; only AUTO rows are pre-filled):
-  - AUTO (≥ 0.8): standalone 嗯 / 呃 / um / uh under 0.6 s, immediate stutter repeats (drop the first copy)
-  - CONFIRM, by ear: semantic fillers 就是, 这个, 然后, 像, 其实, 反正, 嘛, 的话 (often real words in context)
-  - CONFIRM: stray leftover syllables from pass 1; merged-filler / hidden-onset words (cut only the filler part)
-  - CONFIRM: first halves of self-repeats: in 「你要作为X你要干Y」 drop the first 你要; in 「大家都众所周知」 drop 大家都
-- **Never apply every suggestion.** A real test that did deleted real words and the subtitles drifted from the audio.
-- **Verify**: `verify` compares a fresh ASR of the cut with bw.json minus DEL (`filler_policy.content_check`,
-  single-character ASR noise ignored) and lists missing spans with nearby DEL indices.
-- **Pauses**: squeezed to persona `audio.pause_squeeze` (0.06s) with MAXGAP 0.12.
+- **What is cut**: every 自动删 AUTO row (hesitations 嗯 呃 um uh, stutters, clear repeats) unless 保留 N, plus the
+  待确认 CONFIRM rows the creator names with 确认 N (semantic fillers 就是 这个 然后 when isolated, restarts — the
+  abandoned half of 「你要作为X你要干Y」 —, re-takes, merged fillers, ASR noise). 保留 KEEP rows look like real words.
+  `REPLY = ""` = AUTO only. Extra editor cuts: `CUT = [(clip, raw t0, raw t1)]`. A legacy `DEL` set of `bw.json`
+  indices is still cut.
+- **Never confirm every row unheard.** A real test that applied every suggestion deleted real words and the
+  subtitles drifted from the audio.
+- The body ranges = the cleanup keep spans (raw clip seconds) intersected with the pass-1 segments, mapped to body
+  seconds; word edits have word-safe edges (the silence between the neighbours, never inside a kept word).
+- **Verify**: `verify` = `cleanup.verify` on `body2_a.wav` via its sidecar `body2_a.cleanup.json` (also
+  `python -m vstudio.cleanup verify body2_a.wav`): a fresh ASR vs the words that should remain, fillers ignored,
+  single-character ASR noise ignored; missing spans come with the applied edit ids near them (保留 N, re-apply).
+- **Pauses**: squeezed in pass 1 per profile (`standard`: pauses ≥ 0.45 s → 0.18-0.40 s, 0.30 s after a sentence).
+  Keeping one of those (保留 N) is refused here: put `REPLY = "保留 N"` in `edit_list.py` and re-run pass 1.
 - **Effect**: about 10% shorter (212s → 191s in the reference video).
 - The apply step prints `kept words || subtitle` per sid. Read every line and fix the TEXT entries.
 - The kept words (with new times) go into `segs.json`; compose.py ends each `|` / CJK-space subtitle chunk where
@@ -91,6 +103,13 @@ Propose the list first, then run:
 python3 $V/drop_pass.py "1,7,11,17" body2_rt.mp4 body2_a.wav body3_rt.mp4 body3_a.wav
 ```
 The reference video went from 191s to 157s.
+
+**Pass files (re-runs are safe).** `cut_pass1` writes `segs.pass1.json` (immutable root); `strict_pass apply`
+always derives `segs.strict.json` from it; `drop_pass` derives `segs.drop.json` from `segs.strict.json` (or pass 1
+when no strict pass ran). `segs.json` is a copy of the newest stage. Each pass checks that the body wav it is given
+has its parent's length and refuses otherwise, so: change REPLY and re-apply strict on `body_rt.mp4 body_a.wav`
+(the drop is then marked stale: re-run it); change the drop list and re-run drop on the strict body with the FULL
+list. Never feed `body3_*` back into a pass.
 
 ## 7. Face track on the final body
 ```bash
@@ -112,7 +131,8 @@ python3 $V/compose.py config.py comp                    # SFX mix + overlays + f
 ```bash
 python3 $V/pick_cover_frame.py body3_rt.mp4      # ranked times + cover_candidates.jpg
 # set COVER = dict(SRC=..., T=..., OUT=..., TITLE=[...], STICKY=..., TAG=...) in config.py
-python3 $V/cover.py config.py
+python3 $V/cover.py config.py                       # OUT, for the config's platform
+python3 $V/cover.py config.py --platform douyin     # -> <OUT stem>.douyin-vertical.jpg (OUT untouched)
 ```
 
 ## 10. QC

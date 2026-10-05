@@ -11,7 +11,7 @@ A one-off promo project (not a skill), all read-only:
 
 All content (sentences, DROP/PATCH times, cards, rows, chips, labels, hold, montage clips, chapters, stamp,
 end card, cover text, post) moved into one config, documented by `examples/promo.config.example.yaml`
-(synthetic text). No absolute paths. Hiragino and `~/Desktop/photo_retouch` were replaced with
+(synthetic text). No absolute paths. Hiragino and the old local photo-retouch module were replaced with
 `vstudio.config.font()` / `vstudio.retouch`.
 
 **Dropped**
@@ -180,3 +180,28 @@ the same advisory warnings as before. Unused local `HL` dropped from render_html
 - `hf.split_screen`: optional `scale` so the face band can show more of the frame (we can only clip + translate).
 - `references/EFFECTS.md` row "Vertical face band + card" still quotes the old GEO values; point it at
   `build_promo.py:vertical_geo`.
+
+## Shared cleanup
+
+2026-10-05: the tight cut runs on the ONE shared speech-cleanup tool, `vstudio.cleanup` (`references/CLEANUP.md`).
+- `tight_cut.py --suggest` = `cleanup.analyze` of the talk over the KEEP spans (snapped with `cleanup.snap_range`)
+  → `work/cleanup.json` + `work/cleanup_review.md`; the creator's answer goes in the config as
+  `cut.reply: "确认 3,5,9 / 保留 7"` (or `cut.approve` / `cut.keep_ids` / `cut.all_confirm`; `cut.profile`,
+  `cut.cleanup: {overrides}`). Default = AUTO rows only.
+- The cut = `cleanup.apply` per part (body / outro / extra) on the graded raw (`media_path`), then the two-pass
+  loudnorm; `layout.json` maps / words come from its TimeMap + sidecar (`work/<part>.cleanup.json`); new
+  `layout.cleanup` (applied ids). `--verify` = `cleanup.verify` per part (exit 1 on lost words).
+- Replaced / deleted: `cut.suggest_fillers` + `filler_policy.score` suggestions, the `cut.patch` word-start rewrite
+  (hidden onset = cleanup `filler-merged` edits), `cut.tighten` squeeze, the local content check.
+- Config compatibility: `cut.drop` [a, b) approves the cleanup edits whose words all start inside it; dropped words no
+  edit covers become word-safe editor cuts. `cut.patch` [whisper_start, real_start] approves the matching
+  `filler-merged` edit, else an editor cut up to real_start. `cut.pause_threshold` → `pause_min`,
+  `pad_in + pad_out` → kept gap, `cut.fillers` → `fillers_extra`; `cut.rms_snap` is moot (edges are always
+  energy-based). Changing the KEEP spans renumbers the edits: with a reply by id in the config, the cut refuses and
+  asks for `--suggest` again.
+- Tests: `tests/test_promo_cleanup.py` (suggest → cut AUTO + legacy drop → reply 确认 / 保留 → verify OK / lost →
+  span change refused; drop / patch translation).
+- 2026-10-05 cleanup API round: the local `_merge` / `_join` copies in `tight_cut.py` are gone: `cleanup.norm_ranges`
+  and `cleanup.join_words`. Only difference: latin words after ASCII punctuation in `--draft-subs` now get a space
+  (`hello, world`, was `hello,world`); CJK text is unchanged. Legacy `cut.drop` editor cuts benefit from the
+  `safe_edge(side="end")` fix (an edge exactly at a word's start no longer grows over that word).

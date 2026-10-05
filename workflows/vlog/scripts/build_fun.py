@@ -34,7 +34,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from funvlog import frames as FR  # noqa: E402
 from funvlog import gfx as G  # noqa: E402
 from funvlog import mix as MX  # noqa: E402
-from funvlog.plan import Planner, music_origin, shift_beats  # noqa: E402
+from funvlog.plan import Planner, music_origin  # noqa: E402
 
 
 def vlog_persona():
@@ -170,6 +170,7 @@ def build_elements(cfg, g, tl, cuts, meta, pl, fps):
         reveals.append(dict(t=t0 + 0.05, kind="text", note="end card"))
     if meta.get("finale_n") is not None:
         reveals.append(dict(t=pl.bt(meta["finale_n"]), kind="finale", note="finale"))
+    G.resolve_collisions(els, g)                       # layout-aware: tags / stamps of any kind never overlap
     order = {"map": 0, "end": 0, "title": 2, "word": 3, "location": 4, "day": 4, "date": 4}
     els.sort(key=lambda e: order.get(e.kind, 5))
     return els, reveals
@@ -189,19 +190,16 @@ def cut_events(cuts):
 
 
 def captions(tl, prof):
-    """Timeline cues from the speech shots' words (subs.cues_from_words), clipped to their shots."""
+    """Timeline cues from the speech shots' words (subs.cues_from_words), clipped to their shots. Words go
+    through the shot's kept pieces with ``cleanup.timemap`` + ``cleanup.remap_words`` (cut words drop out)."""
+    from vstudio import cleanup as CL
     from vstudio import subs
     cues = []
     for s in tl:
         if not s.get("speech") or not s.get("words"):
             continue
-        tw, off = [], 0.0
-        for a, b in s["pieces"]:
-            for w in s["words"]:
-                m = (w["t"] + w["te"]) / 2
-                if a <= m <= b:
-                    tw.append(dict(w=w["w"], t=s["t0"] + off + (w["t"] - a), te=s["t0"] + off + (w["te"] - a)))
-            off += b - a
+        tw = [dict(w=w["w"], t=s["t0"] + w["t"], te=s["t0"] + w["te"])
+              for w in CL.remap_words(s["words"], CL.timemap(s["pieces"]))]
         if not tw:
             continue
         cjk = any(ord(ch) >= 0x2E80 for w in tw for ch in w["w"])
@@ -312,6 +310,33 @@ def render(cfg, base, out, prof, pl, tl, cuts, meta, els, cues, clean, report, p
     return w_main.path, (w_clean.path if w_clean else None), w_main.n
 
 
+def accent_pieces(cfg, tl, warnings):
+    """``keep_audio`` (per shot, or top-level default): the native sound of a non-speech video shot kept as
+    an accent under the music. true = -8 dB under the persona voice level, a number = that offset in dB.
+    Constant-speed shots only (0.5-2x, atempo); ramped shots are skipped with a warning; a freeze is silent."""
+    out = []
+    for s in tl:
+        ka = s.get("keep_audio", cfg.get("keep_audio", False))
+        if ka is False or ka is None or s["kind"] != "video" or s.get("speech") or s.get("map_slot"):
+            continue
+        name = os.path.basename(s["src"])
+        if not media.probe(s["src"])["has_audio"]:
+            continue
+        keys = s.get("ramp_keys") or []
+        rates = {round(float(r), 4) for _, r in keys} or {float(s.get("speed", 1.0))}
+        if len(rates) > 1:
+            warnings.append(f"{name}: keep_audio skipped on a speed-ramped shot")
+            continue
+        rate = rates.pop()
+        if not 0.5 <= rate <= 2.0:
+            warnings.append(f"{name}: keep_audio skipped at {rate:g}x (atempo needs 0.5-2x)")
+            continue
+        a, b = s["src_span"]
+        gain = -8.0 if ka is True else float(ka)
+        out.append(dict(src=s["src"], a=float(a), b=float(b), t=s["t0"], rate=rate, gain_db=gain))
+    return out
+
+
 def mux(video, wav, out, T):
     br = str((persona().get("export") or {}).get("audio_bitrate", "192k"))
     media.run([media.ffmpeg_bin(), "-y", "-i", video, "-i", wav, "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy",
@@ -355,7 +380,7 @@ def main(argv=None):
     b.save(os.path.join(cache, "beats.json"))
     m0 = music_origin(b, cfg.get("music_start", "auto"))
     cfg["_m0"] = m0
-    bv = shift_beats(b, m0)
+    bv = b.shift(-m0)                                    # music time -> video time
     if not b.grid_ok:
         warnings.append(f"beat grid not linear (p90 residual {b.residual_p90_ms:.0f} ms): cuts follow tracked beats")
     pl = Planner(cfg, base, prof, bv, fps, cache, warnings)
@@ -383,7 +408,7 @@ def main(argv=None):
                   cuts=cuts, verify=dict(ok=ver["ok"], max_abs_frames=ver.get("max_abs_frames", 0.0),
                                          mean_abs_ms=ver.get("mean_abs_ms", 0.0), bad=ver.get("bad", [])),
                   elements=[e.info() for e in els], cue_sheet=cue_sheet,
-                  captions=[c.to_dict() for c in cap_cues], warnings=warnings,
+                  captions=[c.to_dict() for c in cap_cues], speech=pl.speech_log, warnings=warnings,
                   whip=dict(zip(("frames_per_side", "travel_px", "peak_px_per_frame"),
                                 [round(v, 1) for v in FR.whip_params(prof.w, fps)])))
     rp = stem + ".report.json"
@@ -410,9 +435,11 @@ def main(argv=None):
             for x0, x1 in s["pieces"]:
                 pieces.append(dict(src=s["src"], a=x0, b=x1, t=s["t0"] + off))
                 off += x1 - x0
+    accents = accent_pieces(cfg, tl, warnings)
     mixd = MX.build_mix(os.path.join(cache, os.path.basename(stem) + "_audio"), T, music, m0, pieces, cue_sheet, prof,
                         music_lufs=float(cfg.get("music_lufs", vlog_persona().get("fun_music_lufs", -19))),
-                        duck_db=float(cfg.get("duck_db", -12)), fade_out=float(cfg.get("music_fade", 1.5)))
+                        duck_db=float(cfg.get("duck_db", -12)), fade_out=float(cfg.get("music_fade", 1.5)),
+                        accent_pieces=accents)
     mux(vid, mixd["mix"], out, T)
     mux(vid, mixd["nomusic"], stem + ".nomusic.mp4", T)
     if vclean:

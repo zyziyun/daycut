@@ -173,6 +173,34 @@ def total_duration(timeline):
     return timemap(timeline).duration
 
 
+def segment_grid(timeline, fps, sr=48000):
+    """[(frames, samples)] per timeline item on the shared frame grid: item k spans frames
+    round(final_t0_k * fps) .. round(final_t0_{k+1} * fps) (last: round(total * fps)) and exactly the audio
+    samples of those frames (sr / fps per frame, rounded at the boundaries). Summing never drifts, so the
+    rendered audio and video are the timeline length to the sample / frame (render.py, make_vertical.py)."""
+    total = total_duration(timeline)
+    fb = [int(round(float(it["final_t0"]) * fps)) for it in timeline] + [int(round(total * fps))]
+    sb = [int(round(f * sr / fps)) for f in fb]
+    return [(fb[k + 1] - fb[k], sb[k + 1] - sb[k]) for k in range(len(timeline))]
+
+
+def concat_wavs(paths, out):
+    """Join PCM wavs (same rate / channels / width) sample-exactly (no codec priming, no container rounding)."""
+    import wave
+    with wave.open(paths[0], "rb") as w0:
+        params = w0.getparams()
+    with wave.open(out, "wb") as wo:
+        wo.setnchannels(params.nchannels)
+        wo.setsampwidth(params.sampwidth)
+        wo.setframerate(params.framerate)
+        for p in paths:
+            with wave.open(p, "rb") as wi:
+                if (wi.getnchannels(), wi.getsampwidth(), wi.getframerate()) != params[:3]:
+                    raise ValueError(f"{p}: wav format differs from {paths[0]}")
+                wo.writeframes(wi.readframes(wi.getnframes()))
+    return out
+
+
 # --------------------------------------------------------------------------- platform targets
 LONGFORM_SWEET_MIN = 300   # a target whose length sweet spot ends above this (s) takes the full cut
 
@@ -241,7 +269,8 @@ def episode_targets(cfg, profiles):
 def episode_ranges(cfg, timeline):
     """[{n, a, b (None = end), chapters, title, ...}] in FINAL seconds from config.episodes
     (items = explicit chapter ranges; count = auto split at chapter cards of similar length).
-    Episode 1 always starts at 0 (keeps the hook)."""
+    Episode 1 always starts at 0 (keeps the hook); an episode with its own hook (episodes.items[].hook,
+    build_timeline.py) starts at that hook, just before its first card."""
     total = total_duration(timeline)
     cards = chapters_from_timeline(timeline)
     items = cfg.get("episodes.items") or []
@@ -257,10 +286,17 @@ def episode_ranges(cfg, timeline):
                  for i, s in enumerate(starts)]
     if count and not items:
         print(f"episodes.count={count} but only {len(cards)} chapter cards; no episodes split")
+    # a chapter's block starts at its card, or at the per-episode hook placed right before it
+    starts, c = [], 0
+    for k, it in enumerate(timeline):
+        if it["kind"] == "card":
+            prev = timeline[k - 1] if k else None
+            starts.append(float(prev["final_t0"]) if prev is not None and prev.get("hook_ep") else cards[c][0])
+            c += 1
     eps = []
     for i, it in enumerate(items):
         first, last = it["chapters"]
-        a = 0.0 if i == 0 else cards[first - 1][0]
-        b = cards[last][0] if last < len(cards) else None
+        a = 0.0 if i == 0 else starts[first - 1]
+        b = starts[last] if last < len(cards) else None
         eps.append({**it, "n": i + 1, "a": a, "b": b})
     return eps

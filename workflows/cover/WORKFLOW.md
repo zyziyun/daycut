@@ -23,6 +23,10 @@ Run from the project folder; `$VSTUDIO` = repo root. Working files go in `work/`
 | B face on quadrants | personal brand; the face drives CTR | personal connection |
 | C split cover | horizontal post (小红书 4:3 / YouTube 16:9), quote or "亲测" angle, one hero thumbnail | premium, editorial |
 
+A new channel usually gets more from **B** (the face builds recognition); an established one can lean on **A**
+(content density). Not for: static image posts (use an image editor), or a long-form YouTube thumbnail that should
+follow YouTube's own conventions (big face, 3–5 words); `--platform youtube` only resizes these layouts to 1280x720.
+
 ## Pattern A — collage
 1. Find 4 moments (1 hook, 2–3 content, optionally 1 face):
    `python3 $VSTUDIO/workflows/cover/scripts/extract_frames.py sheet my-talk.mp4 work/cover_src --every 5`
@@ -89,7 +93,9 @@ Cover sizes come from `vstudio.platform.cover_size` (PLATFORMS.md):
 
 - **A / B (templates)**: `render_cover.py page.html -o cover.png --platform xiaohongshu --platform douyin --platform youtube`
   lays the page out at a design size of the same aspect (short side 1080), scales type with `--fs`, then resizes to the
-  exact cover size; `<out>.<platform>-<orientation>.png` each, + `.feed.jpg` where the feed crops.
+  exact cover size; `<out>.<platform>-<orientation>.png` each, + `.feed.jpg` where the feed crops. Platform files are
+  **always suffixed**, even for a single `--platform` (also `douyin`, which is 1080x1920 too), so they never overwrite
+  the plain `-o` cover; render once without `--platform` if you need the unsuffixed `cover.png`.
 - **C (split cover)**: an output with `"platform": "..."` takes its size from the profile. Portrait sizes (3:4, 9:16)
   use the stacked layout (photo band on top, panel below). For 小红书 16:9 the design is laid out **feed-safe**: the
   whole 4:3 design sits in the centre crop and the photo runs on to the left edge (`"feed_safe": false` turns it
@@ -118,3 +124,6 @@ Cover sizes come from `vstudio.platform.cover_size` (PLATFORMS.md):
 - [ ] B: matte has no halo and no caption strip; `.face-wrap` aspect = PNG aspect
 - [ ] C: face and title line 1 survive a centre crop; quote fits on one line; chips don't hit the right edge
 - [ ] Top tag / headline don't cover the focal content
+- [ ] Headline = the script's hook sentence, punch in accent italic (A/B)
+- [ ] File size sane (a 1080×1920 PNG lands around 0.5–1 MB; YouTube needs ≤ 2 MB)
+- [ ] After upload: the platform actually shows the custom cover (some swap back to a video frame)

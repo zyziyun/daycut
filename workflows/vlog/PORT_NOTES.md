@@ -152,7 +152,7 @@ Duplicates for later unification:
 - `funvlog/frames.py:photo_frames` / `_cover` (Ken Burns) ~ photo-story shots; `card_renderer` ~ hf.freeze_hold.
 - `funvlog/gfx.py` easing (`out_back`, `out_cubic`) ~ hf/HyperFrames easing; `pin_icon`, `MapCard` new.
 - `funvlog/score.py:clip_scores` ~ `cover.score_frames` (frame scoring) - a per-second clip scorer fits `media`.
-- `funvlog/mix.py:limit` (look-ahead peak limiter) - none in lib yet.
+- `funvlog/mix.py:limit` (look-ahead peak limiter) - replaced by `vstudio.audio.limit` (demo round, below).
 - `funvlog/frames.py:grade_chain` = build_vlog `grade_chain` (separate defaults).
 
 New persona keys (read with defaults): `vlog.fun_grade`, `vlog.fun_music_lufs` (-19). Existing used:
@@ -169,3 +169,46 @@ Lib requests:
 - `beats.Beats.shift(seconds)`: music time -> video time copy (`funvlog/plan.py:shift_beats`).
 - `reframe.plan`: accept already-decoded frames / a frame iterator (the fun engine decodes each window twice:
   once for face detection, once to render).
+
+## Demo round fixes (2026-10-05)
+From a real fun-style run (photo-heavy theme-park trip, template music on every clip):
+- **Speech gate (high).** `--init --style fun` marks clips with audio `speech: "auto"`, and `plan.prepare` treated
+  >= 2 ASR words as speech, so whisper's "字幕志愿者…" / "请不吝点赞订阅…" over template music became burned captions.
+  Now `plan.load_speech` runs `asr.drop_hallucinations` + `asr.has_speech(min_words=speech_min_words=4)` (local
+  phrase-filter fallbacks via `hasattr` when an older lib lacks them) AND requires loudness evidence
+  (`speech_evidence`: envelope contrast >= 10 dB and >= 50 % of words inside voiced runs). Rejected ASR = no
+  captions; `"auto"` then = no speech. Decisions are printed and written to the report (`speech`). On the demo's
+  five clips all five were rejected (credit phrase; end-of-clip word loop outside every voiced run).
+- **Tag collisions (med).** `build_elements.cut_short` only separated same-kind elements; a LocationTag and a
+  DayStamp on the same shot overlapped. `gfx.resolve_collisions` (after all elements exist) moves / delays corner
+  elements of any kind; elements gained `move(dy)` and a report `note`.
+- **Hook / finale / outro sources (med).** `hook` / `finale` accept explicit lists (clips, photos, dicts), `outro`
+  accepts `{photo}` and `beats`; photos render full-frame Ken Burns; when < 3 silent clips exist the auto pool is
+  filled with photos (`pool_photos`). Old configs plan identically (same ladder for <= 5 items).
+- **Light leak after every photo (med).** `_transitions` gave every photo after the first a leak (contradicting A5).
+  Default now: first photo flash, video -> photo leak, photo -> photo cut, then `_cap_leaks` (`max_leaks` 4,
+  `leak_gap` 16 beats; outro / requested leaks exempt).
+- **MapCard label (low).** The reported "dropped" label was the last pin arriving late (route drawn until 70 %
+  of the slot) plus a collision fallback that could overlap. Labels now pick from 16 candidates with a cost
+  (pins / labels >> line), always placed; route finishes >= 1.25 s before the card leaves; labels in `info()`.
+- **make_cover (low).** `auto_pieces` used a fixed `bgpos` that cut faces on 3:4 -> `face_focus` per piece
+  (vstudio.face, OpenCV Haar fallback, `--no-faces`). Default `--scale 1` (was 2: output was 2x the logged size);
+  the log reads the real PNG size.
+- **Docs (low).** `keep_audio` accents (new, `build_fun.accent_pieces` + `mix.build_mix(accent_pieces=)`),
+  `.nomusic.mp4` loudness (stem, below target without speech), looped-music guidance.
+- **Lib workarounds removed.** `plan.shift_beats` -> `Beats.shift(-m0)` (verified field-by-field identical);
+  `mix.limit` -> `audio.limit` (true-peak, same pass-through below the ceiling; verified before removal).
+Tests: `tests/test_vlog_photostory_fixes.py` (synthetic).
+- **Shared speech cleanup (creator requirement).** Speech clips now go through the ONE shared tool,
+  `vstudio.cleanup` (`funvlog/speechclean.py`): fun speech shots with words are cleaned by default with profile
+  `gentle`, auto edits only (`analyze --ranges <window>` -> `keep_segments` -> shot pieces; EDL + review sheet in
+  `<cache>/cleanup/`; creator decisions via the shot's `cleanup.reply` / `approve` / `keep`); captions use
+  `cleanup.timemap` + `remap_words` instead of the local piece walk. `tighten: true` (was `cut.tighten`) now means
+  profile `standard`. Calm: opt-in `cleanup` per segment, `build_vlog.clean_speech` -> `apply` before assembly
+  (needs `ambient_audio`). The speech gate still runs first. Tests: `tests/test_speech_cleanup_wiring.py`.
+- **Speech-shot stretch (found while wiring cleanup).** A speech shot stretched to the beat grid appended ALL the
+  extra time after its last piece, so a shorter (cleaned) shot pulled in the first words of the next sentence.
+  `prepare` now records `room` (previous / next sentence +-0.12 s); `_windows` grows the end up to the next
+  sentence, then a lead-in back to the previous one; any remainder is picture only (voice silent). The
+  `measured_duck` report value now measures only where the voice sounds (room tone inside a piece released the
+  ducker and read as "not ducked"). `test_calm_unchanged_vs_head`'s HEAD bootstrap kept `pathlib` imported.

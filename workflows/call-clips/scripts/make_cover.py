@@ -5,6 +5,9 @@ clip itself so the thumbnail is not a dead black frame.
 Default: the original 1080x1920 design. ``--platform`` sizes it for that profile's cover
 (小红书 3:4 1080x1440, 抖音 / Shorts 1080x1920 ...): headline inside the cover's title-safe rect
 (and the feed crop), the clip's tile band (auto-detected) under it at its own aspect.
+``--size canvas`` (or an explicit ``:full`` orientation, e.g. ``xiaohongshu:full``) makes a cover the
+size of the platform's VIDEO canvas instead (9:16 1080x1920, headline in the safe box), for a
+first-frame / 9:16 cover; ``--size profile`` (default for a bare name) keeps the profile cover size.
 
 Usage:
   make_cover.py out/<id>.mp4 --title-json work/<id>.title.json --at 12 --out out/<id>.cover.jpg [--platform xiaohongshu]
@@ -31,6 +34,9 @@ def main():
     ap.add_argument("--at", type=float, default=6.0)
     ap.add_argument("--out", required=True)
     ap.add_argument("--platform", default=None, help="cover profile, e.g. xiaohongshu, douyin, youtube-shorts")
+    ap.add_argument("--size", default=None, choices=["profile", "canvas"],
+                    help="profile = the platform's cover size (小红书 3:4); canvas = the video canvas "
+                         "(9:16 1080x1920). Default: canvas for an explicit ':full', else profile")
     args = ap.parse_args()
 
     meta = json.load(open(args.title_json))
@@ -38,7 +44,8 @@ def main():
     fr = frame_at(args.clip, args.at)
     prof = layout.cover_profile(args.platform, "vertical")
     if prof is not None:
-        return platform_cover(fr, meta, prof, args.out)
+        size = args.size or ("canvas" if args.platform.strip().lower().endswith(":full") else "profile")
+        return platform_cover(fr, meta, prof, args.out, canvas=size == "canvas")
 
     img = Image.new("RGB", (W, H), (0, 0, 0))
 
@@ -97,9 +104,17 @@ def tile_band(fr, max_gap=24):
     return max(runs, key=lambda r: r[1] - r[0])
 
 
-def platform_cover(fr, meta, prof, out):
+def cover_geometry(prof, canvas=False):
+    """(W, H, title-safe rect) of the cover: the profile's cover, or (canvas=True) the video canvas
+    with its UI-free safe box (a 9:16 cover for 小红书 / any vertical platform)."""
+    if canvas:
+        return prof.w, prof.h, tuple(P.safe_box(prof))
     W, H = P.cover_size(prof)
-    x0, y0, x1, y1 = P.cover_title_safe(prof)
+    return W, H, tuple(P.cover_title_safe(prof))
+
+
+def platform_cover(fr, meta, prof, out, canvas=False):
+    W, H, (x0, y0, x1, y1) = cover_geometry(prof, canvas)
     img = Image.new("RGB", (W, H), (0, 0, 0))
     d = ImageDraw.Draw(img)
     lines = meta["title"]
@@ -134,7 +149,7 @@ def platform_cover(fr, meta, prof, out):
     if meta.get("cover_footer"):
         ImageDraw.Draw(img).text((xl, min(H - 130, y1 - 50)), meta["cover_footer"], font=font(34), fill=DIM)
     img.save(out, quality=95)
-    print(f"-> {out} ({prof.key} cover {W}x{H})")
+    print(f"-> {out} ({prof.key} {'canvas' if canvas else 'cover'} {W}x{H})")
 
 
 if __name__ == "__main__":

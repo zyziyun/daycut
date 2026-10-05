@@ -47,10 +47,12 @@ On the V track the style is just the `STYLE` dict in the config, so switching la
     (核心观点 / 反差 / 吐槽 / 共鸣 / 金句 / 悬念) and length at the hook speed. Suggest 2-3 combos.
   - The creator picks the set and the order. Half-sentences are allowed.
   - Re-check the cut with ASR at normal speed (`atempo=1/HOOK_SPEED`).
-- **Disfluency.** Fillers, repeated words, restarts and breaths go; 气口 squeezed to persona
-  `audio.pause_squeeze` (0.06s). One heuristic pass is not enough: do the strict word-level pass every time.
-  Suggestions are conservative: only high-confidence fillers/repeats are pre-selected, everything else (semantic
-  fillers, hidden onsets) needs the creator's yes, and the cut is re-transcribed to catch lost content words.
+- **Disfluency (去气口 / filler / 重复 / 口误).** One shared tool for every speech workflow: `vstudio.cleanup`
+  (`references/CLEANUP.md`, `python -m vstudio.cleanup analyze | review | apply | verify`). Fillers, stutters, repeats,
+  restarts, re-takes and breaths go; 气口 are squeezed per profile (`gentle` / `standard` / `tight`, persona
+  `cleanup.profile`), never deleted. Only high-confidence rows are AUTO; everything else (semantic fillers, merged
+  fillers, restarts, re-takes) needs the creator's yes on the review sheet (`确认 3,5,9 / 保留 7`), and the cut is
+  re-transcribed (`verify`) to catch lost content words.
 - **Cutting padding sentences (废话).** When asked, propose the exact sentence list first: background asides,
   sentences repeating the previous one, hedges (「也可能这是我的感觉」), a second example of the same point.
   Then drop the agreed sentences by sid.
@@ -79,7 +81,14 @@ Full notes in `references/vertical_pipeline.md`.
    → `sdrN.mp4`, `aN.wav`, `aN.json`, `prep.json` (`vstudio.media.to_sdr`: `avconvert` for HDR on macOS, ffmpeg zscale
    tonemap elsewhere; whisper is cached next to the wav). Landscape clips are reframed to 9:16 (Horizontal footage).
 2. **Keep list**, one entry per sentence (sid = list index): write `edit_list.py` from `examples/v_edit_list_example.py`.
-3. **Snap to voice, squeeze pauses, frame-exact cut.** `python3 $V/cut_pass1.py edit_list.py` → `body_v.mp4 body_a.wav segs.json`.
+3. **Speech cleanup analysis + 气口 + frame-exact cut.** `python3 $V/cut_pass1.py edit_list.py` runs the shared
+   cleanup tool (`vstudio.cleanup`, `references/CLEANUP.md`, the same one every speech workflow uses) on each RAW clip:
+   range edges snapped word-safe (`cleanup.snap_range`: never inside a word, never into a neighbour word),
+   `cleanup.analyze` over the ranges → `cleanup.cN.json` (EDL; edit ids unique across clips) + `cleanup_review.md`
+   (待确认 CONFIRM / 自动删 AUTO / 气口 / 保留 KEEP, each row `…before【removed】after…` + reason). Only the 气口 edits
+   (pauses / breaths squeezed, never deleted) are applied here → `body_v.mp4 body_a.wav segs.json` + `segs.pass1.json`
+   (the immutable root of every later pass; it carries the raw → body map). `--analyze-only` writes the sheet without
+   cutting. Same thing by hand: `python -m vstudio.cleanup analyze sdr1.mp4 --transcript a1.json --ranges 3.1-5.4,5.8-8`.
 4. **Per-frame retouch** (slim, eyes, de-shine, three-band skin smoothing, subtle "natural" makeup;
    One Euro-smoothed landmarks from a VIDEO-mode face-crop tracker, landmark-anchored masks, 15-frame
    chunk warm-up so seams don't jump; ~0.64 s/frame/worker). Makeup is on by default (natural, 0.3, flicker-tested).
@@ -90,31 +99,41 @@ Full notes in `references/vertical_pipeline.md`.
    `python3 $V/retouch_video.py body_v.mp4 body_rt.mp4 --workers 5`.
    Knobs: `--preset fast|quality` (speed), `--makeup 0` (off) / `--preset daily` (rosy pink lip), `--smooth`, `--pores`, `--glasses thick`; persona
    `retouch.video.<knob>` sets your defaults. All knobs, presets and checks: `references/RETOUCH.md`.
-5. **Strict filler pass on the retouched body. The creator confirms the DEL list.**
-   `python3 $V/strict_pass.py transcribe body_a.wav "$PROMPT"` prints the indexed words and scored candidates
-   (`vstudio.cut.suggest_fillers` → `scripts/filler_policy.py`) in three tiers, and writes `strict_draft.py`:
-   - **AUTO** (confidence ≥ 0.8, pre-filled in `DEL`): standalone hesitation sounds (嗯 呃 um uh, < 0.6 s) and
-     immediate stutter repeats (我我, the the).
-   - **CONFIRM** (never pre-filled): semantic fillers (就是 那个 然后 对吧 like), interjections (啊 哦), two-word
-     repeats (could be 一点一点), fillers glued to a word, merged-filler / "hidden onset" PATCHes. These are often
-     real words; in a real test, applying every candidate deleted content and the subtitles stopped matching the audio.
-   - **INFO**: long words to listen to; no cut.
-   Show the creator AUTO + CONFIRM (text, time, why), get a yes on the final list, then copy `strict_draft.py` to
-   `strict.py` (`examples/v_strict_example.py`) and run
-   `python3 $V/strict_pass.py apply strict.py body_rt.mp4 body_a.wav body2_rt.mp4 body2_a.wav`.
-   **Verify:** `python3 $V/strict_pass.py verify strict.py body2_a.wav "$PROMPT"` re-transcribes the cut and compares
-   it with the original words minus the confirmed DEL; every missing content word is printed with its time and the
-   nearby DEL indices (exit 1). Listen there, take the index out of DEL, re-apply. Never hand over with open flags.
+5. **去 filler / 重复 / 口误 on the retouched body: the creator answers the review sheet.**
+   `python3 $V/strict_pass.py review` (old name `transcribe`, same thing; no ASR needed) prints `cleanup_review.md` and
+   writes `strict_draft.py` with `REPLY = ""` and the CONFIRM rows as comments:
+   - **自动删 AUTO** (confidence ≥ the profile's `auto_min`): hesitations 嗯 呃 um uh, stutters (我我们, the the),
+     clear back-to-back repeats (像这个像这个). Cut unless the creator says 保留 N.
+   - **待确认 CONFIRM**: semantic fillers that the audio isolates (那个 就是 然后 / like, you know), interjections (啊 哦),
+     restarts (说一半重来), re-takes (重录句), fillers whisper glued onto the next word (粘连口头禅), ASR noise. Often real
+     words: cut only after the creator says 确认 N. **保留 KEEP** rows look like real words (那个问题, 我就是喜欢).
+   Show the creator the sheet, get the answer verbatim — e.g. **`确认 3,5,9 / 保留 7`** (`全部确认`, `approve 3,5 keep 7`
+   work too) — put it in `REPLY`, copy to `strict.py` (`examples/v_strict_example.py`), and run
+   `python3 $V/strict_pass.py apply strict.py body_rt.mp4 body_a.wav body2_rt.mp4 body2_a.wav`. With `REPLY = ""` only
+   AUTO rows are applied. The body cut = the cleanup keep spans (raw) mapped through pass 1, so the retouch is kept.
+   **Verify:** `python3 $V/strict_pass.py verify strict.py body2_a.wav "$PROMPT"` (= `cleanup.verify`, also
+   `python -m vstudio.cleanup verify body2_a.wav`) re-transcribes the cut and compares it with the words that should
+   remain; every lost content word is printed with its time and the applied edit ids near it (exit 1). Listen,
+   add `保留 N` to the reply, re-apply. Never hand over with open flags. Leftover hesitations / repeats are warnings.
+   Re-applying is safe: apply always starts from `segs.pass1.json` and refuses any body but the pass-1 one; keeping a
+   气口 already squeezed in pass 1 is refused with the fix (`REPLY = "保留 N"` in `edit_list.py`, re-run pass 1).
 6. **Optional: drop 废话 sentences by sid.** `python3 $V/drop_pass.py "1,7,11" body2_rt.mp4 body2_a.wav body3_rt.mp4 body3_a.wav`.
+   Derived from the strict stage (`segs.strict.json`, or pass 1 if there was no strict pass); a re-run REPLACES
+   the drop list (give the full list), an already-dropped body is refused, and a strict re-apply marks the drop
+   stale (`segs.drop.stale.json`): re-run step 6 after it. Pause squeeze cannot shorten a held vowel (one voiced
+   run); split that range in `edit_list.py` or flag it (`references/gotchas.md`).
 7. **Face track on the final body.** `python3 $V/face_track.py body3_rt.mp4 face3.npy` (centre + face box per sample;
    compose uses the boxes to cap the punch-in and keep titles, callouts, PiP cards and pop words off the face).
 8. **Config** with STYLE switches and sid-anchored times: copy `examples/v_config_example.py` to `config.py`.
 9. **Preview, then render.** `python3 $V/compose.py config.py base`, `python3 $V/compose.py config.py preview 3,40,90`
    (look at `preview.jpg`), then `python3 $V/compose.py config.py comp` (or `all` for base+comp).
    Add `--platform xiaohongshu:vertical` (3:4) / `douyin` / `youtube` for another canvas (`preview_<platform>.jpg`).
+   A bare `xiaohongshu` means the profile's default orientation, which is **3:4**; the 9:16 小红书 canvas is
+   `xiaohongshu:full` (also what you get with no PLATFORM at all).
 10. **Cover** (3:4, 1080x1440 by default). `python3 $V/pick_cover_frame.py body3_rt.mp4` ranks frames by
     `mouthSmile - 1.5*eyeBlink - |cx-0.5|` and writes a contact sheet; set `COVER` in the config, then
-    `python3 $V/cover.py config.py` (`--platform douyin --platform youtube` adds 9:16 / 1280x720 covers). Bottom gradient + 2-line title (line 2 with yellow keywords), a 记笔记 sticky
+    `python3 $V/cover.py config.py` (`--platform douyin --platform youtube` adds 9:16 / 1280x720 covers as
+    `<OUT stem>.douyin-vertical.jpg` etc.; OUT is only ever written for the config's own platform). Bottom gradient + 2-line title (line 2 with yellow keywords), a 记笔记 sticky
     top-left, a rotated red tag top-right. Always look at the rendered cover.
 11. **Caption.** `python3 $VSTUDIO/workflows/talkinghead/scripts/caption.py config.py --title "..." [--platform douyin]`
     (title / description / tag / length limits per platform).
@@ -131,7 +150,9 @@ already-retouched body.
 1. **Work dir and transcript.** `ffprobe` (expect 1920x1080/30), `ffmpeg -i my-talk.mp4 -ac 1 -ar 16000 work/audio.wav`,
    `python3 $H/asr.py work/audio.wav work/audio.json --prompt "术语"`. Whisper hallucinates over a silent tail,
    so set `MAIN_DUR` to where the real content ends. (macOS: Voice Memos files are TCC-protected; ask the user
-   to drag them into the project folder.)
+   to drag them into the project folder.) Fillers / 气口 left in the export: clean it first with the shared tool
+   (`python -m vstudio.cleanup analyze my-talk.mp4` → the creator answers `cleanup_review.md` →
+   `python -m vstudio.cleanup apply cleanup.json --reply "确认 3,5 / 保留 7"` → `verify`) and use the cleaned file.
 2. **Hooks menu**, as in the shared rules.
 3. **Fill `work/config.py`** from `examples/h_config_example.py`: CHAPTERS (6-8, 2-4 character labels),
    CALLOUTS (full-sentence bubbles of ~5s), PANELS (记笔记 cards, 5-7, anchored where the point is said),
@@ -153,12 +174,13 @@ already-retouched body.
 ## Platforms
 One config, any canvas. `PLATFORM = "..."` in the config or `--platform` on `compose.py`, `cover.py`, `caption.py`,
 `build_filter.py`, `make_assets.py`, `make_cover.py`. Default: persona `platforms.default` in the track's natural
-orientation (V: 9:16, H: 16:9), i.e. the old 小红书 layout, pixel-identical.
+orientation (V: 9:16, H: 16:9), i.e. the old 小红书 layout, pixel-identical. A platform name without an orientation
+means that platform's own default orientation (小红书: 3:4), not the track's: write `xiaohongshu:full` for 9:16.
 
 | target | canvas | what changes |
 |---|---|---|
-| `xiaohongshu` (9:16 "full", default) | 1080x1920 | measured layout: bar y 250, title y 330, panels above captions at y 1525 |
-| `xiaohongshu:vertical` | 1080x1440 (3:4) | 9:16 body face-cropped to 3:4 once (`body_1080x1440.mp4`); bar y 70, captions band 1080..1270 (y 1170), circle scene radius fits the shorter frame |
+| no PLATFORM (default) / `xiaohongshu:full` | 1080x1920 (9:16) | measured layout: bar y 250, title y 330, panels above captions at y 1525 |
+| `xiaohongshu` = `xiaohongshu:vertical` | 1080x1440 (3:4) | 9:16 body face-cropped to 3:4 once (`body_1080x1440.mp4`); bar y 70, captions band 1080..1270 (y 1170), circle scene radius fits the shorter frame |
 | `douyin`, `tiktok`, `youtube-shorts`, `bilibili:vertical` | 1080x1920 | their safe boxes: captions higher (抖音 y 1345, above the description), stamps/pops kept left of the button column |
 | `youtube`, `bilibili`, `xiaohongshu:horizontal` | 1920x1080 | landscape layout (below) |
 
@@ -171,14 +193,22 @@ they move with the face and are clamped above the captions and off the face. A `
 circle scene = face circle left + title/tokens right, card scene = card left + text column right, split screen left/right.
 A 9:16 body on a 16:9 canvas goes on a blurred fill; a 16:9 body (Horizontal footage) fills it.
 
-**Many platforms from one render.** `python3 $V/compose.py config.py comp --clean-master` also writes
-`<OUT>.clean.mp4` (no burned captions; overlays kept) and `<OUT>.cues.json` (final-time captions). Then:
+**Many platforms from one render (recommended path).** `python3 $V/compose.py config.py comp --clean-master` also
+writes `<OUT>.clean.mp4` (no burned captions; overlays kept) and `<OUT>.cues.json`:
+`{cues: [{start, end, text}], keepouts: [{t0, t1, box: [x, y, w, h], kind}], size, platform}`, final seconds and
+master pixels. Caption text carries the KEYWORDS as `【kw】` markup (export burns them in the highlight colour);
+keep-outs are the burned panels, stamps, pop words, callouts, PiP cards and the hook title, so an export can keep
+its captions off them. (`compose.py config.py cues` rewrites just the cues file.) Then:
 ```bash
 python3 -m vstudio.export ../my-talk_xhs.clean.mp4 --platforms xiaohongshu:vertical,douyin,youtube-shorts \
     --cues ../my-talk_xhs.cues.json --cover ../my-talk_cover.jpg --out exports/
 ```
 Each export gets captions placed for that UI, loudness per profile, a cover and `manifest.json`. Overlays burned into a
-9:16 master survive a 3:4 face crop only if they sit inside it; for 16:9 or a different layout, re-render with `--platform`.
+9:16 master survive a 3:4 face crop only if they sit inside it. 抖音 / Shorts put captions higher (y ~1345) than
+小红书 (y ~1525), right where a 小红书-placed 记笔记 panel sits: if the export cannot honour the keep-outs (older lib,
+or a panel filling the caption area), render a master per UI with `compose.py config.py comp --platform douyin`
+(panels and stamps are laid out above that profile's captions) and export only the same-UI targets from it. For
+16:9 or a different layout, always re-render with `--platform`.
 
 ## Horizontal footage (webcam / camera, 精剪 / 记笔记 styles)
 - **Vertical output:** `bash $V/prep_sources.sh . ../webcam.mp4` reframes a landscape clip to 1080x1920 with

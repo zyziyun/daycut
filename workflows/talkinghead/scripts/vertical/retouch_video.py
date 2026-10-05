@@ -34,7 +34,7 @@ from multiprocessing import Pool
 import cv2
 import numpy as np
 
-from vstudio import face as VF
+from vstudio import face as VF, media
 from vstudio.config import persona
 from vstudio.retouch import PRESETS, RetouchState, retouch
 
@@ -105,10 +105,9 @@ class Retoucher:
 
 
 def _rate(src):
-    """Exact source frame rate (e.g. 30000/1001) so the re-encode never drifts against the audio."""
-    r = subprocess.run(['ffprobe', '-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=r_frame_rate',
-                        '-of', 'csv=p=0', src], capture_output=True, text=True).stdout.strip().strip(',')   # ffmpeg 8+ csv adds a trailing comma
-    return r or '30'
+    """Exact source frame rate (e.g. 30000/1001) so the re-encode never drifts against the audio
+    (vstudio.media.ffprobe_value strips the trailing comma newer ffprobe builds print)."""
+    return media.ffprobe_value(src, 'stream=r_frame_rate', stream='v:0') or '30'
 
 
 def _fps(rate):
@@ -117,6 +116,8 @@ def _fps(rate):
 
 
 def run_chunk(args):
+    """Retouch frames [a, b) -> out. Returns (out, frames written, frames expected); a read failure or an
+    exception is reported with the chunk's range straight away (not only after every other chunk finished)."""
     src, a, b, out, opts, speed = args
     rate = _rate(src)
     rt = Retoucher(_fps(rate), opts, speed)
@@ -126,18 +127,25 @@ def run_chunk(args):
     ff = subprocess.Popen(['ffmpeg', '-v', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'bgr24', '-s', f'{W}x{H}', '-r', rate,
                            '-i', '-', '-c:v', 'libx264', '-crf', '12', '-preset', speed["x264"], '-pix_fmt', 'yuv420p',
                            '-video_track_timescale', '30000', out], stdin=subprocess.PIPE)
+    written = 0
     try:
         for i in range(s, b):
             ok, img = cap.read()
             if not ok:
+                print(f"chunk {a}-{b}: cannot read frame {i}; chunk is short by {b - max(i, a)} frames", flush=True)
                 break
             r = rt(img, i)
             if i >= a:
-                ff.stdin.write(r.tobytes())
+                ff.stdin.write(r.tobytes()); written += 1
+                if written % 600 == 0:
+                    print(f"chunk {a}-{b}: {written}/{b - a}", flush=True)
+    except Exception as e:
+        print(f"chunk {a}-{b} FAILED at frame {a + written}: {e!r}", flush=True)
+        raise
     finally:
         rt.close()
         ff.stdin.close(); ff.wait()
-    return out
+    return out, written, b - a
 
 
 def main():
@@ -190,7 +198,14 @@ def main():
     jobs = [(o.src, a0 + i * step, min(n, a0 + (i + 1) * step), os.path.join(tmp, f'c{i}.mp4'), dict(P), dict(SPEED))
             for i in range(k) if a0 + i * step < n]
     with Pool(len(jobs)) as pool:
-        outs = pool.map(run_chunk, jobs)
+        res = []
+        for r_ in pool.imap(run_chunk, jobs):        # in order; each chunk is reported as soon as it is done
+            res.append(r_); print(f"done {r_[0]} ({r_[1]}/{r_[2]} frames)", flush=True)
+    short = [r_ for r_ in res if r_[1] != r_[2]]
+    if short:
+        sys.exit("retouch incomplete, re-run these chunks with --start/--frames: "
+                 + ", ".join(f"{os.path.basename(o_)} {w_}/{n_}" for o_, w_, n_ in short))
+    outs = [r_[0] for r_ in res]
     lst = os.path.join(tmp, 'list.txt')
     open(lst, 'w').write(''.join(f"file '{os.path.basename(x)}'\n" for x in outs))
     subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', lst, '-c', 'copy', o.out], check=True)

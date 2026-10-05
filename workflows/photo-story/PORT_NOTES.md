@@ -212,3 +212,27 @@ Lib requests:
 
 Unverified: a full-length render (only previews were rendered), and `xiaohongshu:horizontal` covers (the cover layout is
 still portrait-tuned).
+
+## Demo round fixes (2026-10-05)
+From a real music-mode run (museum photos + 3 iPhone clips, 3:4, 85 s):
+- **中文 serif titles (med).** `ctx._font_path` fell back from `cjk-serif` to `cjk-bold` silently. The lib now ships
+  `cjk-serif` / `cjk-serif-bold` (Noto Serif SC, `install.sh`) and `.ttc#N` persona paths; the fallback chain is
+  `cjk-serif -> cjk-serif-bold -> cjk-bold` and prints a loud `!! photo-story:` warning when it lands on sans.
+- **Persona tags forced into post (med).** `export.tag_args(POST)` passes `use_persona_tags` / `tag_set` to
+  `publish.post_body` (signature-checked; an older lib warns that the options were ignored).
+- **Late chapter squeezed (low).** `music.MusicTimeline` now gives each shot >= its kind's `MIN_SECONDS`
+  (`allot_min`: proportional, pinned at minimums, identical to `allot` when nothing is pinned); section snapping
+  respects section minimums; a too-short `length` is raised with a printed suggestion instead of 1-bar shots. Plain `per` mode
+  keeps weight x per units (only warns), so specs without `length` render as before.
+- **Rotation (low).** `shots.ffprobe_size` = `media.probe` display size (was a regex over ffprobe side data);
+  crop/zoom/grade added to the clip cache key (editing `VCROP` used to reuse the stale clip). Documented that
+  `VCROP` is in the displayed frame.
+- **Lib duplicate removed.** `audiomix.duck_curve` -> thin wrapper over `vstudio.audio.duck_curve(threshold_db=-42)`
+  (verified equal to 6e-8 before removal).
+- Not fixed here (lib): the `grid raw` log on long steady tracks is the beats steadiness fix in `vstudio.beats`.
+Tests: `tests/test_vlog_photostory_fixes.py` (synthetic).
+- **Shared speech cleanup (creator requirement).** Video shots with speech can use the ONE shared tool
+  (`photostory/speechclean.py` -> `vstudio.cleanup.analyze --ranges` + `apply`): opt-in per shot (`cleanup=`) or
+  spec-wide `CLEANUP` for `audio="keep"` clips; ambient clips untouched. `prep_video` and `audiomix.clip_sounds` both
+  read the cleaned clip (offset 0), so picture and sound stay in sync; the prep cache key includes the cleaned
+  file. Tests: `tests/test_speech_cleanup_wiring.py`.

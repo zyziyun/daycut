@@ -185,3 +185,62 @@ Lib requests:
 - `face.detect_small(bgr, upscale_to=640)` for small cam tiles (`_vertical.make_detector`).
 - Unverified: MediaPipe speaker framing on a real camera tile (the real recording has only an avatar); the
   first ~50 s of that window transcribed as English noise (ASR language issue, not wave B).
+
+## Demo round fixes (2026-10-05)
+
+Lecture-slices demo (a ~4-min cut sliced into 3 vertical episodes). Tests: `tests/test_lfs_explainer_fixes.py`.
+- **A/V drift (HIGH)**: `render.py` stream-copy-concatenated per-item AAC segments (encoder priming at each join,
+  ~25 ms each: audio 0.7 s longer than the timeline) and `make_vertical.py` muxed it with `-shortest`, so later
+  episodes opened with the previous one's last words. Now every item is rendered to its exact frame / sample
+  count on one grid (`_lfc.segment_grid`), video segments are capped (`-frames:v`, tpad clone), audio is PCM
+  (`apad,atrim=end_sample`) joined sample-exactly (`_lfc.concat_wavs`) and encoded to AAC once by the loudnorm
+  pass; `make_vertical.py` uses the same grid and `-t` instead of `-shortest`. Test: 30 short items (speed,
+  card, freeze, pitch) → |A − V| < 1 frame, joined PCM == timeline samples.
+- **Captions at splits (MED)**: `build_subs.py` dropped words straddling a zoom / pitch split ("面试" → "试");
+  each word now goes to the piece holding its midpoint (never dropped, never doubled).
+- **Per-episode hook (MED)**: `episodes.items[i].hook {src, lines}` → a cold open right before that episode's
+  first chapter card (`hook_overlay_ep<N>.png`, vertical title band / hook box use its lines); the episode
+  starts at it; item 0's hook replaces `hook.src`. Documented in WORKFLOW step 3 and the example config.
+- **zoom_targets (LOW)**: text-density fallback (`zoom.detect: auto | code | text`) for pages without grey code
+  blocks (GitHub / Notion / white docs, dark editors); output records `method`. WORKFLOW states that
+  `zoom.windows` are hand-picked.
+- **Manifests (LOW)**: a later `make_vertical --targets X` merges into `vertical/manifest.json` and the
+  per-episode manifests instead of replacing them (`_vertical.merge_manifest`).
+- **Docs (LOW)**: `episodes.items[].body` (and `.hook`) in `examples/config.example.py`.
+- **keep.pad_in (LOW)**: pads stop short of the neighbouring dropped words in `audio16k.json` (no syllable of
+  the previous sentence before a slice's first word). Filler / pause cutting rules are unchanged.
+- **3:4 / 9:16 split layout (quality)**: the screen used to stop above the caption box under a 24 % band, so
+  on 3:4 it filled about a third of the height and code was too small. Now: slim title band (16 %), the screen
+  runs to the frame bottom (`split.screen_to: frame`, dimmed under the captions by `split.scrim`; `caption`
+  restores the old box), zoom chosen so a measured text line is ≥ `screen.min_text_px` (28) px on the canvas
+  (max_scale 3.0), reading start kept above the captions. Snapshot test on synthetic share frames (3:4, 9:16).
+- `_vertical.caption_fit_profile` removed: `vstudio.platform.fit_text_size` now fits the caption box height
+  (test: re-laid cues fit the 3:4 box height).
+
+## Shared cleanup
+
+2026-10-05: speech cleanup is the shared `vstudio.cleanup` tool (repo `references/CLEANUP.md`); no
+detection / cut logic in this workflow. Tests: `tests/test_lfs_cleanup.py` (+ the keep-pad test in
+`tests/test_lfs_explainer_fixes.py`).
+- `build_keep_list.py`: segment edges = `cleanup.snap_range` + pads bounded by `cleanup.word_limits` (replaces the
+  local `pad()`), ends through `cleanup.extend_end` (fade 40 ms at the lecture speed); config `cuts` split a
+  segment into sub-ranges snapped the same way; `cleanup.clean` per sub-range (profile config `cleanup.profile` >
+  persona > standard). Output: `keep_list.json` segments gain `keep` (kept pieces) + `episode`.
+- Creator loop: per-episode `work/cleanup_review.ep<N>.md` + `cleanup.ep<N>.json` (edits numbered per episode);
+  replies via config `cleanup.reply {"N": "确认 3 / 保留 5"}` or `--reply N:"..."`. Without a reply only AUTO
+  edits apply.
+- Hooks (`hook.src`, `episodes.items[].hook.src`): `snap_range` + `extend_end` at the hook speed →
+  `work/hook_edges.json`; `build_timeline.py` uses it when its `src` still matches the config.
+- `build_timeline.py`: one clip per kept piece (`keep_pieces`; old keep lists without `keep` fall back to the
+  `cuts` subtraction). Fix: joins at real cuts are no longer marked audio-continuous (they were for `cuts`
+  pieces, so those joins had no fade); only zoom / pitch / freeze splits inside a piece are. Body clip times
+  are rounded to ms (was 10 ms: could move an edge into a word).
+- Demo-round fixes kept: sample-exact audio (`segment_grid` / `concat_wavs`, unchanged), midpoint word
+  assignment in `build_subs.py` (unchanged; it is the same rule as `cleanup.remap_words` over the same
+  `cut.TimeMap`, and it also handles speeds / cards / the hook tag, so it was not swapped), per-episode hooks.
+- `transient_scan.py` kept: it finds visual flashes (tab / desktop) by frame brightness; the cleanup tool is
+  audio + transcript only.
+- Cost: more timeline items (one per piece) → render.py takes longer on long lectures.
+- Not verified on real media in this pass (synthetic tones + fake ASR only).
+- 2026-10-05 cleanup API round: episode-wide edit numbering comes from `cleanup.clean(..., id_offset=)` instead of
+  renumbering the returned edits by hand (same ids, tests/test_lfs_cleanup.py).

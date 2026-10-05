@@ -121,6 +121,22 @@ def _backend(name="auto"):
                        "or set OPENAI_API_KEY for whisper-1")
 
 
+_STATS = ("no_speech_prob", "avg_logprob", "compression_ratio")
+
+
+def _stats(seg):
+    """Whisper's per-segment confidence numbers (dict or object), rounded; missing ones omitted."""
+    out = {}
+    for k in _STATS:
+        v = seg.get(k) if isinstance(seg, dict) else getattr(seg, k, None)
+        if v is not None:
+            try:
+                out[k] = round(float(v), 4)
+            except (TypeError, ValueError):
+                pass
+    return out
+
+
 def _run_mlx(wav, language, prompt, word_timestamps, model, hst=None, greedy=False):
     import mlx_whisper
     kw = {"temperature": 0.0} if greedy else {}
@@ -128,7 +144,7 @@ def _run_mlx(wav, language, prompt, word_timestamps, model, hst=None, greedy=Fal
                                word_timestamps=word_timestamps, initial_prompt=prompt or None,
                                condition_on_previous_text=False,
                                hallucination_silence_threshold=hst if word_timestamps else None, verbose=None)
-    return [dict(start=s["start"], end=s["end"], text=s["text"],
+    return [dict(start=s["start"], end=s["end"], text=s["text"], **_stats(s),
                  words=[dict(word=w["word"], start=w["start"], end=w["end"], p=w.get("probability"))
                         for w in s.get("words", []) or []]) for s in r["segments"]]
 
@@ -140,7 +156,7 @@ def _run_faster(wav, language, prompt, word_timestamps, model, hst=None, greedy=
     segs, _ = m.transcribe(wav, language=language, word_timestamps=word_timestamps, initial_prompt=prompt or None, **kw,
                            condition_on_previous_text=False,
                            hallucination_silence_threshold=hst if word_timestamps else None, vad_filter=False)
-    return [dict(start=s.start, end=s.end, text=s.text,
+    return [dict(start=s.start, end=s.end, text=s.text, **_stats(s),
                  words=[dict(word=w.word, start=w.start, end=w.end, p=w.probability) for w in (s.words or [])])
             for s in segs]
 
@@ -164,7 +180,7 @@ def _run_openai(wav, language, prompt, word_timestamps, model, hst=None, greedy=
     out = []
     for s in getattr(r, "segments", None) or []:
         ws = [w for w in words if s.start - 0.01 <= (w["start"] + w["end"]) / 2 < s.end + 0.01]
-        out.append(dict(start=s.start, end=s.end, text=s.text, words=ws))
+        out.append(dict(start=s.start, end=s.end, text=s.text, **_stats(s), words=ws))
     return out
 
 
@@ -208,7 +224,7 @@ HALLUCINATION_SILENCE_AUTO_MIN_S = 600.0
 
 
 def transcribe(path, language=None, prompt=None, word_timestamps=True, model=None, backend="auto",
-               cache=True, term_fixes=None, fix_terms=True, skip_silence="auto"):
+               cache=True, term_fixes=None, fix_terms=True, skip_silence="auto", drop_hallucinated=True):
     """Transcribe audio/video ``path`` with word timestamps.
 
     Args:
@@ -221,6 +237,9 @@ def transcribe(path, language=None, prompt=None, word_timestamps=True, model=Non
       fix_terms: apply term fixes to segment and word text (word count/indices unchanged).
       skip_silence: whisper hallucination_silence_threshold in s; "auto" = 2 for recordings longer
         than 10 min, else off (it drops real phrases on short clips); None/0 = off.
+      drop_hallucinated: run ``drop_hallucinations`` on the result (default True): segments whisper
+        invents over music / silence ("字幕志愿者…", "请不吝点赞订阅…", "Thanks for watching") are
+        removed and listed in ``tr["dropped"]``. False = raw whisper output.
     Returns dict: language, backend, text, segments (whisper shape: start, end, text, words[{word,
     start, end}]), words (flat [{"w", "t", "te"}], stripped). Zero-length repeated words (whisper's
     tail hallucination, talkinghead ``strict_pass``) are dropped before indexing.
@@ -249,7 +268,7 @@ def transcribe(path, language=None, prompt=None, word_timestamps=True, model=Non
                 with open(cp, encoding="utf-8") as f:
                     store = json.load(f)
                 if key in store:
-                    return _finish(store[key], term_fixes, fix_terms)
+                    return _finish(store[key], term_fixes, fix_terms, drop_hallucinated)
             except (OSError, ValueError):
                 pass
     with tempfile.TemporaryDirectory() as tmp:
@@ -278,10 +297,10 @@ def transcribe(path, language=None, prompt=None, word_timestamps=True, model=Non
                 json.dump(store, f, ensure_ascii=False)
         except OSError as e:   # never lose a finished transcription to a cache write
             print(f"asr: cache not written ({e})")
-    return _finish(raw, term_fixes, fix_terms)
+    return _finish(raw, term_fixes, fix_terms, drop_hallucinated)
 
 
-def _finish(raw, term_fixes, fix_terms):
+def _finish(raw, term_fixes, fix_terms, drop_hallucinated=False):
     segs = json.loads(json.dumps(raw["segments"]))
     for s in segs:
         ws, keep = s.get("words") or [], []
@@ -298,7 +317,107 @@ def _finish(raw, term_fixes, fix_terms):
     out = dict(raw, segments=segs)
     out["text"] = "".join(s["text"] for s in segs).strip()
     out["words"] = words_of(out)
+    return drop_hallucinations(out) if drop_hallucinated else out
+
+
+# ------------------------------------------------------------------ hallucination filter
+# Text whisper produces from its training captions when there is no speech (music beds, ride/park
+# template music, room tone). STRONG = never a real spoken line: dropped wherever it appears in a
+# segment. WEAK = could be said for real ("谢谢观看" at the end of a vlog): dropped only when the
+# segment is essentially just that phrase AND the decoder was not confident about it.
+HALLUCINATION_STRONG = [
+    "字幕志愿者", "字幕志願者", "字幕提供", "字幕by", "字幕由amara", "字幕組", "中文字幕志愿者",
+    "请不吝点赞", "請不吝點贊", "请不吝點讚", "點贊訂閱", "点赞订阅", "订阅转发", "訂閱轉發", "打赏支持", "打賞支持",
+    "明镜与点点", "明鏡與點點", "優優獨播劇場", "优优独播剧场", "amaraorg",
+    "subtitlesby", "subtitledby", "transcribedby", "captionsby", "translatedby", "subtitlesbytheamaraorgcommunity",
+]
+HALLUCINATION_WEAK = [
+    "谢谢观看", "謝謝觀看", "感谢观看", "感謝觀看", "谢谢大家观看", "谢谢收看", "謝謝收看", "请订阅", "請訂閱",
+    "thanksforwatching", "thankyouforwatching", "pleasesubscribe", "likeandsubscribe", "seeyounexttime",
+    "thankyou", "byebye", "ご視聴ありがとうございました",
+]
+
+
+def _norm(text):
+    return re.sub(r"[\W_]+", "", (text or "").lower())
+
+
+def _seg_reason(seg, phrases, no_speech, logprob, compression, loops):
+    """Why ``seg`` looks hallucinated (str), or None if it looks like real speech."""
+    t = _norm(seg.get("text") or "".join(w.get("word", "") for w in seg.get("words") or []))
+    if not t:
+        return None
+    for ph in phrases:
+        if _norm(ph) and _norm(ph) in t:
+            return f"phrase:{ph}"
+    nsp, alp, cr = (seg.get(k) for k in _STATS)
+    ps = [w.get("p") for w in seg.get("words") or [] if w.get("p") is not None]
+    mean_p = sum(ps) / len(ps) if ps else None
+    for ph in HALLUCINATION_WEAK:
+        n = _norm(ph)
+        if n and n in t and len(n) >= 0.6 * len(t):
+            unsure = ((nsp is not None and nsp >= 0.2) or (alp is not None and alp < -0.5)
+                      or (mean_p is not None and mean_p < 0.6)
+                      or (nsp is None and alp is None and mean_p is None))
+            if unsure:
+                return f"phrase?:{ph}"
+    if nsp is not None and alp is not None and nsp > no_speech and alp < logprob:
+        return f"no_speech:{nsp:.2f}/logprob:{alp:.2f}"
+    if cr is not None and cr > compression and (alp is None or alp < -0.5):
+        return f"compression:{cr:.2f}"
+    if loops and len(t) >= 10 and loop_score([dict(text=t)]) >= 0.5 * len(t):
+        return "loop"
+    return None
+
+
+def drop_hallucinations(transcript, phrases=None, no_speech=0.6, logprob=-1.0, compression=2.4, loops=True):
+    """Remove segments whisper invented over music / silence.
+
+    A segment is dropped when (first match wins): its text contains a HALLUCINATION_STRONG phrase
+    (or one of ``phrases``); it is essentially just a HALLUCINATION_WEAK phrase ("Thanks for watching",
+    "谢谢观看") and the decoder was unsure (no_speech_prob >= 0.2, avg_logprob < -0.5 or mean word
+    p < 0.6; no stats at all counts as unsure); whisper's own silence rule (no_speech_prob > no_speech
+    AND avg_logprob < logprob); compression_ratio > compression with a weak avg_logprob; or a
+    repetition loop (``loop_score``) covering >= half of a >= 10-char segment.
+
+    ``transcript``: a ``transcribe`` dict (returns a copy with segments/text/words rebuilt and the
+    removed ones in ``"dropped"`` [{start, end, text, reason}]) or a bare segment list (returns the
+    kept list). Segments without confidence stats (old caches, other tools) are judged on text only.
+    """
+    segs = transcript["segments"] if isinstance(transcript, dict) else (transcript or [])
+    extra = HALLUCINATION_STRONG + list(phrases or [])
+    keep, dropped = [], []
+    for s in segs:
+        why = _seg_reason(s, extra, no_speech, logprob, compression, loops)
+        if why:
+            dropped.append(dict(start=s.get("start"), end=s.get("end"), text=(s.get("text") or "").strip(),
+                                reason=why))
+        else:
+            keep.append(s)
+    if not isinstance(transcript, dict):
+        return keep
+    out = dict(transcript, segments=keep)
+    out["text"] = "".join(s.get("text", "") for s in keep).strip()
+    out["words"] = words_of(out)
+    out["dropped"] = list(transcript.get("dropped") or []) + dropped
     return out
+
+
+def has_speech(transcript, min_words=4):
+    """True when ``transcript`` (``transcribe`` dict, segment list, or flat [{"w",...}] word list)
+    still has >= ``min_words`` words after ``drop_hallucinations`` - i.e. the clip really talks and
+    its audio/captions are worth keeping. A music-only clip that whisper "heard" as
+    "字幕志愿者…" returns False. CJK words count per whisper token (usually 1-2 characters)."""
+    if not transcript:
+        return False
+    if isinstance(transcript, list) and isinstance(transcript[0], dict) and "w" in transcript[0]:
+        words = [w for w in transcript if (w.get("w") or "").strip()]
+        segs = [dict(text="".join(w["w"] for w in words),
+                     words=[dict(word=w["w"], start=w.get("t", 0), end=w.get("te", 0)) for w in words])]
+        return len(drop_hallucinations(segs)) > 0 and len(words) >= min_words
+    t = drop_hallucinations(transcript)
+    segs = t["segments"] if isinstance(t, dict) else t
+    return len(words_of(segs)) >= min_words
 
 
 def to_hyperframes_transcript(tr, path=None, words=None):

@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 """Step 5: master edit decision -> timeline.json.
 
-Inputs: keep_list.json, crop_spans.json, zoom_windows.json (optional) + config:
+Inputs: keep_list.json (each segment's cleaned ``keep`` pieces from build_keep_list.py: 气口 / filler / repeat
+cuts and config.cuts already applied, word-safe), hook_edges.json (word-safe hook ranges, optional),
+crop_spans.json, zoom_windows.json (optional) + config:
   hook.src [t0,t1]              cold-open clip (source s), overlaid with hook_overlay.png
-  cuts [[a,b,"why"],...]        word-level deletions inside kept segments (video+audio)
+  episodes.items[i].hook        {"src": [t0,t1], "lines": [..]} per-episode cold open (slice jobs): placed
+                                right before episode i's first chapter card (hook_overlay_ep<i+1>.png); the
+                                episode then starts at its hook. Item 0's hook replaces hook.src.
+  cuts [[a,b,"why"],...]        word-level deletions (applied by build_keep_list.py; only used here for an
+                                old keep_list.json without ``keep`` pieces)
   freezes [[a,b],...]           hold the frame before an accidental flash, audio keeps rolling
   pitches.windows [[a,b],...]   pitch-shift a participant's voice (anonymise), video untouched
   pitches.semitones (-3)
@@ -14,8 +20,9 @@ Inputs: keep_list.json, crop_spans.json, zoom_windows.json (optional) + config:
   cards.dur (1.6)
 
 Item kinds: card {png,dur,title} | clip {t0,t1,speed,crop,demo_slice,overlay,cont_in,cont_out,
-pitch?} | freeze (clip + still_at). cont_in/cont_out mark audio-continuous joins (zoom/pitch
-splits) so render skips the afade there and the cut-in is seamless.
+pitch?} | freeze (clip + still_at). cont_in/cont_out mark audio-continuous joins (zoom/pitch/freeze
+splits) so render skips the afade there and the cut-in is seamless; a join at a real cut (cleanup or
+config.cuts) is not continuous, so it gets the 30 ms / 40 ms fades.
 
 Usage: python3 build_timeline.py work/config.py
 """
@@ -44,6 +51,23 @@ DEMO_IDX = list(cfg.get("demo.keep_idx", [])) if DEMO_ON else []
 keep = _lfc.load_json("keep_list.json")
 spans = _lfc.load_json("crop_spans.json") if os.path.exists("crop_spans.json") else []
 zooms = _lfc.load_json("zoom_windows.json") if os.path.exists("zoom_windows.json") else []
+HOOK_EDGES = _lfc.load_json("hook_edges.json") if os.path.exists("hook_edges.json") else {}
+
+
+def hook_src(key, src):
+    """The word-safe hook range from build_keep_list.py (hook_edges.json) when it was made for this src."""
+    e = HOOK_EDGES.get(key)
+    if e and [float(x) for x in e["src"]] == [float(x) for x in src]:
+        return e["edge"]
+    return src
+
+
+def keep_pieces(seg):
+    """Kept source pieces of a keep-list segment: build_keep_list's cleaned ``keep`` (word-safe, nothing
+    dropped), else the legacy subtraction of config.cuts."""
+    if "keep" in seg:
+        return [tuple(p) for p in seg["keep"]]
+    return subtract_cuts(seg["t0"], seg["t1"])
 
 
 def subtract_cuts(t0, t1):
@@ -100,12 +124,37 @@ def split_windows(t0, t1):
         yield a, b, hits
 
 
+def hook_item(src, overlay, ep=None, lines=None, key="hook"):
+    src = hook_src(key, src)
+    it = {"kind": "clip", "t0": src[0], "t1": src[1], "speed": HOOK,
+          "crop": crop_for((src[0] + src[1]) / 2), "demo_slice": None,
+          "overlay": overlay, "hook": True, "cont_in": False, "cont_out": False}
+    if ep is not None:                       # per-episode cold open (episodes.items[].hook)
+        it.update(hook_ep=ep, hook_lines=list(lines or []))
+    return it
+
+
+# per-episode hooks: episodes.items[i].hook {"src": [t0, t1], "lines": [l1, l2]} -> a cold open placed right
+# before that episode's first chapter card (episode 1: at the very start, replacing the global hook)
+EP_HOOKS = {}
+for i, item in enumerate(cfg.get("episodes.items") or []):
+    h = item.get("hook")
+    if h and h.get("src"):
+        EP_HOOKS[1 if i == 0 else int(item["chapters"][0])] = (i + 1, h)
+
+
+def ep_hook(n, h):
+    return hook_item(h["src"], f"hook_overlay_ep{n}.png", n, h.get("lines"), key=f"ep{n}")
+
 timeline = []
 hook = cfg.get("hook.src")
-if hook:
-    timeline.append({"kind": "clip", "t0": hook[0], "t1": hook[1], "speed": HOOK,
-                     "crop": crop_for((hook[0] + hook[1]) / 2), "demo_slice": None,
-                     "overlay": "hook_overlay.png", "hook": True, "cont_in": False, "cont_out": False})
+if 1 in EP_HOOKS:
+    n, h = EP_HOOKS.pop(1)
+    if hook:
+        print("WARN episodes.items[0].hook replaces the global hook.src")
+    timeline.append(ep_hook(n, h))
+elif hook:
+    timeline.append(hook_item(hook, "hook_overlay.png"))
 
 rec_dur = media.duration(cfg.path_of(cfg.get("demo.rec"))) if DEMO_ON else 0.0
 rec_cursor = float(cfg.get("demo.rec_in", 0.0))
@@ -113,26 +162,31 @@ chapter_no = 0
 for i, seg in enumerate(keep):
     if seg.get("chapter"):
         chapter_no += 1
+        if chapter_no in EP_HOOKS:
+            n, h = EP_HOOKS.pop(chapter_no)
+            timeline.append(ep_hook(n, h))
         timeline.append({"kind": "card", "png": f"cards/card_{chapter_no:02d}.png",
                          "dur": CARD_DUR, "title": seg["chapter"]})
     if i in DEMO_IDX:
-        pcs = subtract_cuts(seg["t0"], seg["t1"])
+        pcs = keep_pieces(seg)
         total = sum(b - a for a, b in pcs)
         if i == DEMO_IDX[-1] and len(DEMO_IDX) > 1 and cfg.get("demo.align_last_to_end", True):
             rec_cursor = max(0.0, rec_dur - total)  # end the demo exactly on the recording's end
         for j, (a, b) in enumerate(pcs):
             timeline.append({"kind": "clip", "t0": round(a, 2), "t1": round(b, 2), "speed": DEMO,
                              "crop": None, "demo_slice": [round(rec_cursor, 3)], "overlay": None,
-                             "cont_in": j > 0, "cont_out": j < len(pcs) - 1})
+                             "cont_in": False, "cont_out": False})
             rec_cursor += b - a
         continue
     pieces = []
-    for a, b in subtract_cuts(seg["t0"], seg["t1"]):
-        pieces.extend(split_windows(a, b))
-    for j, (a, b, hits) in enumerate(pieces):
-        it = {"kind": "clip", "t0": round(a, 2), "t1": round(b, 2), "speed": LECTURE,
+    for a, b in keep_pieces(seg):
+        sub = list(split_windows(a, b))
+        # a split inside one kept piece is audio-continuous; the join between two pieces is a real cut
+        pieces += [(x, y, hits, k > 0, k < len(sub) - 1) for k, (x, y, hits) in enumerate(sub)]
+    for a, b, hits, cin, cout in pieces:
+        it = {"kind": "clip", "t0": round(a, 3), "t1": round(b, 3), "speed": LECTURE,
               "crop": crop_for((a + b) / 2), "demo_slice": None, "overlay": None,
-              "cont_in": j > 0, "cont_out": j < len(pieces) - 1}
+              "cont_in": cin, "cont_out": cout}
         for kind, val in hits:
             if kind == "zoom" and SHARE:
                 it["crop"] = zoom_crop(val)
@@ -153,6 +207,8 @@ for it in timeline:
         cur += it["dur"]
     else:
         cur += (it["t1"] - it["t0"]) / it["speed"]
+for c, (n, _) in EP_HOOKS.items():
+    print(f"WARN episodes.items[{n - 1}].hook: chapter {c} not found; hook skipped")
 _lfc.dump_json(timeline, "timeline.json")
 print(f"items={len(timeline)} total={cur/60:.2f}min  speeds lecture={LECTURE} demo={DEMO} hook={HOOK}")
 for t, title in chapters:

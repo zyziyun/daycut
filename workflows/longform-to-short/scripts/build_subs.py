@@ -3,7 +3,8 @@
 
 Each whisper segment overlapping a timeline item is retimed by that item's speed and
 final offset (cards skipped; the hook clip gets its own subs naturally). Segments clipped by
-a cut keep only the words inside the item. Filler-only lines are dropped.
+a split or cut keep the words whose midpoint is inside the item (a word straddling a zoom / pitch split is
+assigned to one piece, never dropped). Filler-only lines are dropped.
 
 Term fixes (vstudio.asr.apply_term_fixes), in order:
   1. config subtitles.term_fixes   [[regex, replacement], ...]   per-video mis-hearings (regex)
@@ -46,6 +47,13 @@ w = _lfc.load_json("audio16k.json")
 timeline = _lfc.load_json("timeline.json")
 tm = _lfc.timemap(timeline)
 
+def words_in(words, t0, t1):
+    """Words of a segment that belong to the item [t0, t1): each word goes to the piece holding its MIDPOINT,
+    so a word straddling a zoom / pitch / freeze split lands in exactly one of the two pieces (never dropped,
+    never doubled); words whose midpoint is inside a real cut are gone with the cut."""
+    return [wd for wd in words if t0 <= (wd["start"] + wd["end"]) / 2 < t1]
+
+
 events = []
 for it in timeline:
     if it["kind"] == "card":
@@ -54,15 +62,18 @@ for it in timeline:
     for seg in w["segments"]:
         if seg["end"] <= t0 or seg["start"] >= t1:
             continue
-        raw = seg["text"]
-        if (seg["start"] < t0 - 0.05 or seg["end"] > t1 + 0.05) and seg.get("words"):
-            raw = "".join(wd["word"] for wd in seg["words"]
-                          if wd["start"] >= t0 - 0.05 and wd["end"] <= t1 + 0.05)
+        raw, s0, s1 = seg["text"], seg["start"], seg["end"]
+        if (seg["start"] < t0 or seg["end"] > t1) and seg.get("words"):
+            mine = words_in(seg["words"], t0, t1)
+            if not mine:
+                continue
+            raw = "".join(wd["word"] for wd in mine)
+            s0, s1 = max(mine[0]["start"], t0), min(mine[-1]["end"], t1)
         txt = asr.apply_term_fixes(raw, FIXES)
         if not txt or FILLER_ONLY.fullmatch(txt):
             continue
-        a = f0 + (max(seg["start"], t0) - t0) / sp
-        b = f0 + (min(seg["end"], t1) - t0) / sp
+        a = f0 + (max(s0, t0) - t0) / sp
+        b = f0 + (min(s1, t1) - t0) / sp
         if b - a < 0.25:
             continue
         n = MAX_LINE * 2
@@ -82,7 +93,7 @@ _lfc.dump_json([c.to_dict() for c in cues], "cues.json")
 for prof in _lfc.horizontal(_lfc.targets(cfg)[0]):
     # per-target caption track for `python -m vstudio.export --cues`: long cues split so each fits the profile
     import _vertical
-    rc = _vertical.relayout_cues(cues, _vertical.caption_fit_profile(prof))
+    rc = _vertical.relayout_cues(cues, prof)
     _lfc.dump_json([c.to_dict() for c in rc], f"cues.{prof.name}-{prof.orientation}.json")
 shutil.copy("subs.srt", os.path.join(cfg.out, "subs.srt"))
 

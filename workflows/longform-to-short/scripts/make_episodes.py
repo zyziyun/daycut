@@ -99,7 +99,7 @@ for ep in eps:
     print(f"ep{n}: {_lfc.mmss(ep['a'])}-{_lfc.mmss(ep['b'] or total)}  {ep.get('title', '')}")
 
 # ---- 发布包.md
-tagline = publish.hashtags(cfg.get("publish.tags", []), platform="xiaohongshu")
+tagline = publish.hashtags(cfg.get("publish.tags", []), platform="xiaohongshu", use_persona=cfg.get("publish.use_persona_tags", True), tag_set=cfg.get("publish.tag_set"))
 errata = cfg.get("publish.errata_line", "")
 chapter_intro = pers.get("publish", {}).get("chapter_line", "")
 L = ["# 发布包", "", "## 完整版 (YouTube / B站)", "", f"**标题**: {cfg.get('publish.title', '')}", "",

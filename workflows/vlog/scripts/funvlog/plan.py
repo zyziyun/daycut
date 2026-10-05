@@ -20,10 +20,10 @@ Budgets: <= 3 full-frame hits (flash / zoom punch), >= 16 beats apart (A4); one 
 borrowed from both neighbours (A5); a transition is dropped to a hard cut when a neighbour is too short.
 """
 import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[4] / "lib"))
-import copy
 import json
 import math
 import os
+import re
 
 import numpy as np
 
@@ -31,25 +31,11 @@ from vstudio import beats as BT
 from vstudio import media
 
 from . import score as SC
+from . import speechclean as SPC
 from .frames import ramp_keys, src_span_of, trans_frames
 
 HIT_KINDS = ("flash", "zoom")
 TRANSITIONS = ("cut", "whip", "zoom", "flash", "leak", "glitch")
-
-
-def shift_beats(b, m0):
-    """Copy of a Beats analysis with every time shifted by -m0 (music time -> video time)."""
-    c = copy.deepcopy(b)
-    c.beats = np.asarray(b.beats) - m0
-    c.raw_beats = np.asarray(b.raw_beats) - m0
-    c.offset = b.offset - m0
-    c.sections = [dict(s, start=s["start"] - m0, end=s["end"] - m0) for s in b.sections]
-    c.hits = [dict(h, t=h["t"] - m0) for h in b.hits]
-    c.onsets = {k: [(t - m0, s) for t, s in v] for k, v in (b.onsets or {}).items()}
-    c.duration = b.duration - m0
-    if b.rms is not None:
-        c.rms = b.rms[max(0, int(round(m0 / b.rms_hop))):]
-    return c
 
 
 def music_origin(b, music_start="auto"):
@@ -99,8 +85,67 @@ def voiced_sentences(src, start=0.0, dur=None):
     return [dict(a=a, b=b, words=[]) for a, b in runs if b - a >= 0.3], hi - lo
 
 
-def load_speech(src, shot, cfg, warnings):
-    """(words or None, sentences, source of truth) for a clip that may carry speech."""
+# Whisper's stock hallucinations on music / ambience (subtitle credits, "like and subscribe", outros).
+# Used only when vstudio.asr has no drop_hallucinations of its own.
+HALLUCINATION_RE = re.compile(
+    r"字幕(志愿者|由|提供|制作|製作|组)|不吝点赞|点赞.{0,4}订阅|订阅.{0,6}(频道|栏目|转发)|打赏支持|明镜与点点|"
+    r"优优独播|thank(s| you) for watching|please (like|subscribe)|subtitles? by|amara\.org", re.I)
+
+
+def drop_hallucinations(tr):
+    """Transcript without whisper's stock hallucinations (``vstudio.asr.drop_hallucinations`` when the
+    library has it; else a phrase filter + zero-length words dropped). Returns a transcript dict."""
+    from vstudio import asr
+    fn = getattr(asr, "drop_hallucinations", None)
+    if fn is not None:
+        try:
+            out = fn(tr)
+            if isinstance(out, dict):
+                out.setdefault("words", asr.words_of(out))
+                return out
+            if isinstance(out, list):                        # a flat word list
+                return dict(tr, words=_norm_words(out))
+        except Exception:                                     # noqa: BLE001 - fall back to the local filter
+            pass
+    segs = [s for s in (tr.get("segments") or []) if not HALLUCINATION_RE.search(str(s.get("text", "")))]
+    out = dict(tr, segments=segs)
+    out["words"] = [w for w in asr.words_of(out) if w["te"] - w["t"] >= 0.02]
+    return out
+
+
+def has_speech_text(tr, min_words=4):
+    """Enough real words in a (hallucination-filtered) transcript: ``vstudio.asr.has_speech`` when present."""
+    from vstudio import asr
+    fn = getattr(asr, "has_speech", None)
+    if fn is not None:
+        try:
+            return bool(fn(tr, min_words=min_words))
+        except Exception:                                     # noqa: BLE001
+            pass
+    return len([w for w in (tr.get("words") or []) if w["te"] - w["t"] >= 0.02]) >= min_words
+
+
+def speech_evidence(src, words, min_contrast=10.0, min_overlap=0.5):
+    """Does the clip's own loudness back up the transcript? Speech has pauses (envelope contrast, 10th vs
+    95th percentile) and the words sit inside its voiced runs. Music / ride ambience under a hallucinated
+    transcript fails one of the two. Returns (ok, details)."""
+    runs, contrast = voiced_sentences(src)
+    real = [w for w in words or [] if w["te"] - w["t"] >= 0.02]
+    if not real:
+        return False, dict(contrast_db=round(contrast, 1), overlap=0.0)
+    inside = sum(1 for w in real if any(r["a"] - 0.25 <= (w["t"] + w["te"]) / 2 <= r["b"] + 0.25 for r in runs))
+    ov = inside / len(real)
+    return (contrast >= min_contrast and ov >= min_overlap), dict(contrast_db=round(contrast, 1), overlap=round(ov, 2))
+
+
+def load_speech(src, shot, cfg, warnings, log=None):
+    """(words or None, sentences, source of truth) for a clip that may carry speech.
+
+    ASR words are only trusted when the transcript survives the hallucination filter, has >= ``min_words``
+    (``speech_min_words``, 4) real words AND the clip's loudness shows speech where the words are
+    (``speech_evidence``). Otherwise words = None (no captions) and, for ``speech: "auto"``, no speech.
+    ``log`` (dict) receives the decision and why."""
+    log = log if log is not None else {}
     words = None
     wf = shot.get("words")
     if not wf:
@@ -115,17 +160,42 @@ def load_speech(src, shot, cfg, warnings):
         if isinstance(data, dict):
             data = data.get("words") or [w for s in data.get("segments", []) for w in s.get("words", [])]
         words, how = _norm_words(data), "transcript file"
+        log.update(source=how, words=len(words), reason="words from the transcript file")
     elif cfg.get("asr", True):
         try:
             from vstudio import asr
             tr = asr.transcribe(src, language=cfg.get("language"))
-            words, how = asr.words_of(tr), "asr"
         except Exception as e:                                   # no whisper backend: fall back to RMS
+            tr = None
             warnings.append(f"{os.path.basename(src)}: ASR unavailable ({type(e).__name__}); speech found from "
                             "loudness only, no captions")
+        if tr is not None:
+            n_raw = len(tr.get("words") or asr.words_of(tr))
+            tr = drop_hallucinations(tr)
+            cand = tr.get("words") or []
+            text_ok = has_speech_text(tr, int(cfg.get("speech_min_words", 4)))
+            ev_ok, ev = speech_evidence(src, cand)
+            log.update(source="asr", words_raw=n_raw, words=len(cand), **ev)
+            if text_ok and ev_ok:
+                words, how = cand, "asr"
+                log["reason"] = "transcript and loudness agree"
+            else:
+                why = []
+                if not text_ok:
+                    why.append(f"{len(cand)} real words after the hallucination filter (of {n_raw})")
+                if not ev_ok:
+                    why.append(f"loudness does not back the words (contrast {ev['contrast_db']} dB, "
+                               f"{int(ev['overlap'] * 100)}% of words in voiced runs)")
+                log.update(reason="ASR rejected: " + "; ".join(why), rejected_asr=True)
+                warnings.append(f"{os.path.basename(src)}: ASR transcript rejected as non-speech / hallucination "
+                                f"({'; '.join(why)}); no captions from it")
+                return None, [], "asr-rejected"
     if words:
         return words, sentences(words), how
     runs, contrast = voiced_sentences(src)
+    log.setdefault("source", "rms")
+    log.update(contrast_db=round(contrast, 1))
+    log.setdefault("reason", f"loudness only (contrast {contrast:.1f} dB, speech needs >= 15)")
     return None, (runs if contrast >= 15.0 else []), "rms"
 
 
@@ -160,6 +230,7 @@ class Planner:
         pace = cfg.get("pace", "fast")
         self.pace = {"fast": 1, "relaxed": 2}.get(pace, 1)
         self.scores = {}
+        self.speech_log = []                                 # per-clip speech decision + why (report)
         self.src_dir = os.path.join(base, os.path.expanduser(cfg.get("src_dir", ".")))
         self.photo_dir = os.path.join(base, os.path.expanduser(cfg.get("photo_dir", cfg.get("src_dir", "."))))
 
@@ -204,23 +275,45 @@ class Planner:
                                                      h=info["display_h"], transfer=info["transfer"]))
             sp = s.get("speech", False)
             if sp and info["has_audio"]:
-                words, sents, how = load_speech(src, s, self.cfg, self.warn)
-                if sp == "auto" and not (words and len(words) >= 2) and not sents:
+                log = dict(clip=os.path.basename(src), requested=sp)
+                words, sents, how = load_speech(src, s, self.cfg, self.warn, log)
+                if sp == "auto" and how == "asr-rejected":
+                    sp = False
+                elif sp == "auto" and not (words and len(words) >= 2) and not sents:
                     sp = False
                 elif sp == "auto" and how == "rms" and sum(x["b"] - x["a"] for x in sents) < 1.0:
                     sp = False
+                elif sp is True and how == "asr-rejected":
+                    # forced speech keeps the clip's audio over its first seconds, captions off
+                    sents = voiced_sentences(src)[0]
+                log.update(speech=bool(sp), captions=bool(sp and words))
+                self.speech_log.append(log)
+                print(f"[fun] speech {log['clip']}: {'SPEECH' if sp else 'no speech'} "
+                      f"({log.get('reason', how)})", flush=True)
                 if sp:
                     a, b = speech_window(sents, info["duration"], s.get("start"), s.get("dur"),
                                          float(self.cfg.get("max_speech", 12.0)))
                     pieces = [(a, b)]
                     wl = [w for w in (words or []) if a <= (w["t"] + w["te"]) / 2 <= b]
-                    if self.cfg.get("tighten") or s.get("tighten"):
-                        if wl:
-                            from vstudio import cut as C
-                            pieces = [tuple(p) for p in C.tighten(wl, keep=[(a, b)])] or pieces
-                        else:
-                            self.warn.append(f"{os.path.basename(src)}: tighten needs words; skipped")
-                    s.update(speech=True, pieces=pieces, words=wl, speech_from=how,
+                    # 气口 / filler / repeat cleanup: the shared vstudio.cleanup (gentle by default, auto
+                    # edits only unless the creator approves more; legacy "tighten" = standard)
+                    co = SPC.options(self.cfg, s, default=True)
+                    if co["enabled"] and wl:
+                        pieces, clog = SPC.clean_window(src, words, a, b, co, os.path.join(self.cache, "cleanup"),
+                                                        self.warn)
+                        log["cleanup"] = clog
+                        print(f"[fun] cleanup {log['clip']} ({co['profile']}): {clog['source_s']:.2f}s -> "
+                              f"{clog['kept_s']:.2f}s, {len(clog['applied'])} edits cut, "
+                              f"{len(clog['confirm_pending'])} to confirm -> {clog['review']}", flush=True)
+                    elif co["enabled"] and (s.get("tighten") or s.get("cleanup") or self.cfg.get("tighten")):
+                        self.warn.append(f"{os.path.basename(src)}: cleanup needs words (transcript); skipped")
+                    # room the shot may grow into when it is stretched to the beat grid: up to the next /
+                    # from the previous sentence (never into other speech; a cleanup makes shots shorter)
+                    nxt = [x["a"] for x in sents if x["a"] >= b - 1e-6]
+                    prv = [x["b"] for x in sents if x["b"] <= a + 1e-6]
+                    room = (max(prv) + 0.12 if prv else 0.0,
+                            min(min(nxt) - 0.12, info["duration"]) if nxt else info["duration"])
+                    s.update(speech=True, pieces=pieces, words=wl, speech_from=how, room=room,
                              sentences=[(round(x["a"], 3), round(x["b"], 3)) for x in sents if a <= x["a"] < b])
             elif sp and not info["has_audio"]:
                 self.warn.append(f"{os.path.basename(src)}: speech requested but the clip has no audio")
@@ -290,7 +383,53 @@ class Planner:
                 sc = self.score_of(s["src"])
                 pool.append((SC.best_second(sc)[1], s["src"], s))
         pool.sort(key=lambda r: -r[0])
+        if len(pool) < 3 and self.cfg.get("pool_photos", True):
+            # too few silent clips for an auto hook / finale: photos (Ken Burns, full frame) fill in
+            for s in shots:
+                if len(pool) >= 5:
+                    break
+                if s["kind"] == "photo" and s["src"] not in seen:
+                    seen.add(s["src"])
+                    pool.append((0.0, s["src"], s))
         return pool
+
+    PHOTO_EXT = (".jpg", ".jpeg", ".png", ".heic", ".heif", ".webp", ".tif", ".tiff")
+
+    def explicit(self, key):
+        """``hook`` / ``finale`` as an explicit list in edit.json -> [shot dict]; None when not a list.
+        Items: a clip id / file name, a photo file name (by extension), ``{clip, start, dur, speed}`` or
+        ``{photo, style}``."""
+        v = self.cfg.get(key)
+        if not isinstance(v, list):
+            return None
+        out = []
+        for it in v:
+            it = dict(photo=it) if isinstance(it, str) and it.lower().endswith(self.PHOTO_EXT) else \
+                (dict(clip=it) if isinstance(it, str) else dict(it))
+            out.append(self._source_item(it))
+        return out
+
+    def _source_item(self, it):
+        if it.get("photo"):
+            return dict(it, kind="photo", src=self.resolve(it["photo"], photo=True), style=it.get("style", "full"))
+        src = self.resolve(it["clip"])
+        return dict(it, kind="video", src=src, info=dict(fps=media.probe(src)["fps"]))
+
+    def pool_item(self, src, nb, avoid, speed=1.0):
+        """An auto-picked window of ``src`` (video highlight, or a full-frame Ken Burns photo)."""
+        if os.path.splitext(src)[1].lower() in self.PHOTO_EXT:
+            return dict(kind="photo", src=src, style="full", auto=True)
+        return self.highlight(src, nb, avoid, speed=speed)
+
+    def given_item(self, it, nb, avoid, speed=None):
+        """An explicit hook / finale / outro item placed for ``nb`` beats (window auto-picked if no start)."""
+        if it["kind"] == "photo":
+            return dict(it)
+        sp = float(it.get("speed", speed if speed is not None else 1.0))
+        if it.get("start") is None:
+            h = self.highlight(it["src"], nb, avoid, speed=sp)
+            return dict(it, **{k: h[k] for k in ("start", "auto", "score")}, speed=sp)
+        return dict(it, speed=sp)
 
     def highlight(self, src, nb, avoid, speed=1.0):
         L = nb * self.period * speed
@@ -338,17 +477,21 @@ class Planner:
         tl, n = [], 0
         avoid = {}
         meta = dict(drops_used=[])
-        # hook: best windows, accelerate into the bar line 8 units in
-        hook_n = min(5, len(pool)) if self.cfg.get("hook", True) else 0
-        if hook_n >= 3:
+        # hook: best windows (or the explicit ``hook`` list), accelerate into the bar line 8 units in
+        given = self.explicit("hook")
+        if given is not None:
+            hook_n = min(len(given), 6)
+        else:
+            hook_n = min(5, len(pool)) if self.cfg.get("hook", True) else 0
+        if hook_n >= (1 if given else 3):
             end_n = 8 * u
-            lad = tuple(x * u for x in (2, 2, 1, 1))[:hook_n - 1]
+            lad = tuple(x * u for x in (2, 2, 1, 1, 1))[:hook_n - 1]
             cuts = self.bv.cut_plan(hook_n, self.bt(0) + 1e-3, self.bt(end_n) + 1e-6, "accelerate", ladder=lad)
             ns = [0] + [int(round(float(self.bv.beat_n(c)) - self.n0)) for c in cuts]
-            picks = [pool[k % len(pool)][1] for k in range(hook_n)]
-            for k in range(hook_n):
+            ns = [x for k, x in enumerate(ns) if k == 0 or x > ns[k - 1]]
+            for k in range(len(ns) - 1):
                 nb = ns[k + 1] - ns[k]
-                h = self.highlight(picks[k], nb, avoid)
+                h = self.given_item(given[k], nb, avoid) if given else self.pool_item(pool[k % len(pool)][1], nb, avoid)
                 h.update(role="hook", n0=ns[k], nb=nb, section="hook")
                 tl.append(h)
             n = ns[-1]
@@ -371,22 +514,26 @@ class Planner:
         for d in drops:
             if d not in meta["drops_used"] and any(t["n0"] == d for t in tl):
                 meta["drops_used"].append(d)
-        # finale on a bar line
-        fin_n = min(5, len(pool)) if self.cfg.get("finale", True) else 0
-        if fin_n >= 3:
+        # finale on a bar line (best windows again, or the explicit ``finale`` list)
+        given = self.explicit("finale")
+        if given is not None:
+            fin_n = min(len(given), 6)
+        else:
+            fin_n = min(5, len(pool)) if self.cfg.get("finale", True) else 0
+        if fin_n >= (1 if given else 3):
             if not self.is_bar(n):
                 ext = self.next_bar(n) - n
                 tl[-1]["nb"] += ext
                 n += ext
             meta["finale_n"] = n
             end_n = n + 8 * u
-            lad = tuple(x * u for x in (2, 2, 1, 1))[:fin_n - 1]
+            lad = tuple(x * u for x in (2, 2, 1, 1, 1))[:fin_n - 1]
             cuts = self.bv.cut_plan(fin_n, self.bt(n) + 1e-3, self.bt(end_n) + 1e-6, "accelerate", ladder=lad)
             ns = [n] + [int(round(float(self.bv.beat_n(c)) - self.n0)) for c in cuts]
-            for k in range(fin_n):
+            ns = [x for k, x in enumerate(ns) if k == 0 or x > ns[k - 1]]
+            for k in range(len(ns) - 1):
                 nb = ns[k + 1] - ns[k]
-                src = pool[k % len(pool)][1]
-                h = self.highlight(src, nb, avoid)
+                h = self.given_item(given[k], nb, avoid) if given else self.pool_item(pool[k % len(pool)][1], nb, avoid)
                 h.update(role="finale", n0=ns[k], nb=nb, section="finale")
                 tl.append(h)
             n = ns[-1]
@@ -398,18 +545,19 @@ class Planner:
                 n += ext
             nb = int(self.cfg.get("outro_beats", 8))
             o = self.cfg.get("outro") if isinstance(self.cfg.get("outro"), dict) else None
-            if o:
-                src = self.resolve(o["clip"])
-                h = dict(kind="video", src=src, start=o.get("start"), speed=o.get("speed", 0.8),
-                         info=dict(fps=media.probe(src)["fps"]))
+            if o:                                          # {clip, start, speed} or {photo, style}
+                nb = int(o.get("beats", nb))
+                h = self.given_item(self._source_item(o), nb, avoid, speed=0.8)
             elif pool:
                 # calmest good window: lowest motion among the top half by score
                 src = pool[0][1]
-                h = self.highlight(src, nb, avoid, speed=0.8)
+                h = self.pool_item(src, nb, avoid, speed=0.8)
             else:
                 h = None
             if h:
-                h.update(role="outro", n0=n, nb=nb, section="outro", speed=h.get("speed", 0.8))
+                h.update(role="outro", n0=n, nb=nb, section="outro")
+                if h["kind"] == "video":
+                    h["speed"] = h.get("speed", 0.8)
                 tl.append(h)
                 meta["outro_n"] = n
                 n += nb
@@ -469,9 +617,15 @@ class Planner:
             s["freeze_s"] = fz
             if s.get("speech"):
                 L = sum(b - a for a, b in s["pieces"])
-                extra = live - L
+                extra = max(0.0, live - L)
+                lo, hi = s.get("room", (0.0, None))
                 a, b = s["pieces"][-1]
-                s["pieces"][-1] = (a, b + max(0.0, extra))          # room tone + picture to the beat
+                tail = extra if hi is None else min(extra, max(0.0, hi - b))
+                s["pieces"][-1] = (a, b + tail)                     # room tone + picture to the beat
+                a, b = s["pieces"][0]
+                head = min(extra - tail, max(0.0, a - lo))          # then a lead-in, never into other speech
+                s["pieces"][0] = (a - head, b)
+                # anything left: the picture runs on past the last piece (frames.piece_times), voice silent
                 s["src_span"] = (s["pieces"][0][0], s["pieces"][-1][1])
                 continue
             keys = ramp_keys(s.get("ramp"), (s.get("info") or {}).get("fps") or 30.0,
@@ -520,8 +674,16 @@ class Planner:
                     else:
                         kind = "whip"
                 elif b["kind"] == "photo":
+                    # A5: hard cut by default - the photo's shutter SFX carries it. Only the first photo
+                    # gets a flash (subject to the A4 hit budget); later video -> photo entries may get a
+                    # light leak, capped below (``max_leaks``, spacing) so a photo run is not a leak run.
                     photo_seen += 1
-                    kind, reason = ("flash" if photo_seen == 1 else "leak"), "photo"
+                    if photo_seen == 1:
+                        kind, reason = "flash", "photo"
+                    elif a["kind"] != "photo":
+                        kind, reason = "leak", "photo"
+                    else:
+                        kind, reason = "cut", "photo"
                 elif b.get("speech"):
                     kind, reason = "cut", "speech"
             if b.get("transition"):
@@ -552,4 +714,20 @@ class Planner:
                 c["note"] = f"{c['kind']} -> leak (full-frame hit budget, A4)"
                 c["kind"] = "leak"
         meta["hits"] = [dict(n=h["n"], t=h["t"], kind=h["kind"], reason=h["reason"]) for h in sorted(hits, key=lambda h: h["n"])]
+        self._cap_leaks(cuts)
         return cuts
+
+    def _cap_leaks(self, cuts):
+        """A5 variety: light leaks (auto ones - photos, demoted hits) at most ``max_leaks`` (4) per video and
+        >= ``leak_gap`` (16) beats apart; the outro leak and requested transitions always stay. Extra
+        leaks become hard cuts."""
+        cap, gap = int(self.cfg.get("max_leaks", 4)), int(self.cfg.get("leak_gap", 16))
+        keep = [c for c in cuts if c["kind"] == "leak" and c["reason"] in ("outro", "requested")]
+        for c in cuts:
+            if c["kind"] != "leak" or c in keep:
+                continue
+            if len(keep) < cap and all(abs(c["n"] - k["n"]) >= gap for k in keep):
+                keep.append(c)
+            else:
+                c["note"] = (c.get("note", "") + "; " if c.get("note") else "") + "leak -> cut (A5 leak cap/spacing)"
+                c["kind"] = "cut"

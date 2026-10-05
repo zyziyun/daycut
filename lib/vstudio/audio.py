@@ -128,7 +128,14 @@ def loudnorm_filter(m, lufs, tp=-1.5, lra=11.0):
             f"linear=true:print_format=summary")
 
 
-def loudnorm_2pass(src, dst, lufs=None, tp=-1.5, lra=11.0, audio_bitrate=None, video="copy", limit=True):
+# A PCM .wav written at exactly ``tp`` overshoots it by ~0.2-0.4 dB once a later step encodes it to
+# AAC (measured -1.2 dBTP from a -1.5 wav). loudnorm_2pass(..., "x.wav") therefore limits
+# WAV_HEADROOM_DB below ``tp`` by default; lossy outputs are verified after the encode instead.
+WAV_HEADROOM_DB = 0.5
+
+
+def loudnorm_2pass(src, dst, lufs=None, tp=-1.5, lra=11.0, audio_bitrate=None, video="copy", limit=True,
+                   headroom=None):
     """Two-pass loudness normalisation of ``src`` -> ``dst`` (48 kHz stereo).
 
     Args: lufs target (default persona audio.loudness_lufs, -14); tp true-peak ceiling; lra;
@@ -141,12 +148,15 @@ def loudnorm_2pass(src, dst, lufs=None, tp=-1.5, lra=11.0, audio_bitrate=None, v
     encoding (AAC overshoot is taken back by lowering the ceiling, loudness the limiter took by raising
     the gain; up to 4 rounds). The dict then also carries ``output_i`` / ``output_tp`` /
     ``limit_ceiling``. limit=False is the previous ffmpeg-loudnorm-only path (byte-identical).
+    headroom: dB kept under ``tp`` when ``dst`` is a .wav that will be AAC-encoded later (default
+    WAV_HEADROOM_DB = 0.5; pass 0 for a lossless deliverable that must sit exactly at ``tp``).
+    Encoded outputs (.mp4/.m4a/...) need none: they are measured after the encode and corrected.
     Returns the first-pass measurement dict. From polish ``step_loudness``, call-clips, longform render.py.
     """
     lufs = float(_persona_audio().get("loudness_lufs", -14) if lufs is None else lufs)
     m = measure_loudness(src, lufs, tp, lra)
     if limit and np.isfinite(m["input_i"]):
-        return _loudnorm_limited(src, dst, m, lufs, tp, audio_bitrate, video)
+        return _loudnorm_limited(src, dst, m, lufs, tp, audio_bitrate, video, headroom=headroom)
     if not np.isfinite(m["input_i"]):
         af = _STEREO48                       # silence: nothing to normalise
     else:
@@ -250,10 +260,12 @@ def _solve_gain(x, lufs, ceil, gain, iters=6, tol=0.05):
     return gain, y
 
 
-def _loudnorm_limited(src, dst, m, lufs, tp, audio_bitrate=None, video="copy", rounds=4):
+def _loudnorm_limited(src, dst, m, lufs, tp, audio_bitrate=None, video="copy", rounds=4, headroom=None):
     x = decode_audio(src, sr=SR, channels=2)
     gain = lufs - m["input_i"]
     lossy = not dst.lower().endswith(".wav")
+    if not lossy:                                # wav = usually an intermediate that gets AAC-encoded
+        tp = tp - (WAV_HEADROOM_DB if headroom is None else float(headroom))
     ceil = tp - (0.3 if lossy else 0.0)          # lossy codecs overshoot a little; corrected below
     target = lufs
     fd, tmp = tempfile.mkstemp(suffix=".wav")
@@ -363,11 +375,49 @@ def limit(x, ceiling_dbtp=-1.5, lookahead_ms=5.0, release_ms=50.0, sr=SR, out=No
     fd, tmp = tempfile.mkstemp(suffix=".wav")
     os.close(fd)
     try:
-        write_wav(tmp, y, sr)
-        media.run(["ffmpeg", "-y", "-i", tmp, "-c:a", "aac", "-b:a", _persona_export_bitrate(), "-ar", str(SR), out])
+        # AAC overshoots the PCM ceiling: start 0.3 dB under it, measure the encoded file, and
+        # re-limit the source lower by the measured overshoot (up to 3 rounds).
+        ceil = ceiling_dbtp - 0.3
+        for _ in range(3):
+            write_wav(tmp, limit(x, ceil, lookahead_ms, release_ms, sr, None, oversample, block), sr)
+            media.run(["ffmpeg", "-y", "-i", tmp, "-c:a", "aac", "-b:a", _persona_export_bitrate(), "-ar", str(SR), out])
+            try:
+                over = measure_loudness(out, tp=ceiling_dbtp)["input_tp"] - ceiling_dbtp
+            except media.FFmpegError:
+                break
+            if not np.isfinite(over) or over <= 0.0:
+                break
+            ceil -= over + 0.1
     finally:
         os.remove(tmp)
     return out
+
+
+def ensure_loudness(path, lufs=None, tp=-1.5, tol_i=0.5, tol_tp=0.05, out=None):
+    """Measure an already-encoded deliverable and re-normalise it if it misses the target: integrated
+    loudness off by > ``tol_i`` LU or true peak above ``tp`` + ``tol_tp`` (e.g. a mix that was
+    limited as a wav and then AAC-encoded in a mux). Fixes ``path`` in place (or writes ``out``) with
+    ``loudnorm_2pass``, whose limiter re-measures after the encode. Returns the final measurement
+    dict {input_i, input_tp, ..., "fixed": bool}."""
+    lufs = float(_persona_audio().get("loudness_lufs", -14) if lufs is None else lufs)
+    m = measure_loudness(path, lufs, tp)
+    ok = (not np.isfinite(m["input_i"])) or (abs(m["input_i"] - lufs) <= tol_i and m["input_tp"] <= tp + tol_tp)
+    if ok:
+        if out and os.path.abspath(out) != os.path.abspath(path):
+            shutil.copyfile(path, out)
+        return dict(m, fixed=False)
+    dst = out or path
+    ext = os.path.splitext(path)[1] or ".mp4"
+    fd, tmp = tempfile.mkstemp(suffix=ext, dir=os.path.dirname(os.path.abspath(dst)) or None)
+    os.close(fd)
+    try:
+        r = loudnorm_2pass(path, tmp, lufs=lufs, tp=tp)
+        os.replace(tmp, dst)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+    m2 = measure_loudness(dst, lufs, tp)
+    return dict(m2, fixed=True, gain_db=r.get("gain_db"))
 
 
 def _persona_export_bitrate():

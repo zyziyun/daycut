@@ -98,7 +98,19 @@ python3 -m vstudio.export work/master.mp4 --platforms xiaohongshu:vertical,douyi
 ```
 Keep the **master caption-free** and the cues separate (`subs.Cue.to_dict` JSON or SRT). Each export then gets
 captions placed and sized for that platform's UI. Text burned into a 16:9 master gets cropped off on 3:4 / 9:16.
-Reframe: `face` mode follows the main face inside the safe box. If no face is found, or the aspect is the same, it uses a blurred fill (`pad-blur`) or a plain scale.
+Reframe: `face` mode follows the main face inside the safe box. If no face is found it uses a blurred fill
+(`pad-blur`). A master of the same aspect is a plain ffmpeg scale (no face tracking; manifest says `scale`).
+
+- **Masters with burned overlays** (记笔记 panels, stamps, hook titles): put `keepouts` in cues.json -
+  `{"cues": [...], "keepouts": [{"t0", "t1", "box": [x, y, w, h], "kind"}], "size": [W, H]}`, boxes in master
+  px (or 0..1 fractions), final seconds. Each box is mapped through the reframe and the caption moves above /
+  below it while it is on screen (`captions_moved_frames` in the manifest; a warning if there is no free spot).
+  `--no-captions` skips burning when the master already has its captions.
+- **Keyword colour** survives re-burning: 【kw】 markup in cue text, or per cue `"hl": ["kw", ...]` / `[[i, j]]`
+  char spans, and `"style": {"fill": "#fff", "highlight": "#FFD60A"}`.
+- **Covers**: `--cover xiaohongshu=cover_3x4.png --cover douyin=cover_9x16.png` gives each target its own cover.
+  A generic `--cover` of another aspect is fitted on a blurred pad (a centre crop cuts the headline) with a
+  warning - render a real cover per aspect for anything you publish.
 Outputs: `<platform>-<orientation>.mp4`, `.cover.jpg` (+ `.cover.feed.jpg`), `.crop.json`, `.post.md`, and `manifest.json`
 (sizes, durations, measured loudness, reframe hit rate, pan stats, warnings).
 

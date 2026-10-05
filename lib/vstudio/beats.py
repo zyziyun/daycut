@@ -10,18 +10,21 @@
     beats.verify(cuts, b, tol_frames=3, fps=30)     # per-cut frame error report
     beats.energy_arc(60, "travel-fun", beats=b)     # section plan, boundaries snapped to bars
 
-Method (our own implementation; the workflow - fit a straight line through the tracked beats
-instead of trusting the tracker's tempo scalar, settle 1/2x-1x-2x ambiguity with where the kicks
-land, keep real transients for sparse accents, verify cut frames after the fact - was inspired by
-the music-beat-sync notes of video-shotcraft by Wei Yihao, Apache-2.0, re-expressed here):
+Method (fit a straight line through the tracked beats instead of trusting the tracker's tempo
+scalar, settle 1/2x-1x-2x ambiguity with where the kicks land, keep real transients for sparse
+accents, verify cut frames after the fact):
 
 1. Onset envelope: log-magnitude spectral flux (hop ~5.8 ms). Band envelopes for kick (<150 Hz),
    snare (150-2500 Hz) and hat (>5 kHz) come from the same STFT.
 2. Tempo: autocorrelation of the onset envelope weighted by a log-normal prior around 120 BPM.
 3. Beats: dynamic-programming tracker (onset strength minus a log-interval deviation penalty),
    then each beat is nudged onto the sharpest attack within +-40 ms on a 2 ms energy curve.
-4. Grid: least squares t_i = offset + i * period. Accepted if the p90 residual <= 15 ms (and the
-   max <= 30 ms); otherwise the raw beats are kept (tempo drift, live playing).
+4. Grid: least squares t_i = offset + i * period (beat indices from the local inter-beat intervals,
+   so a long track cannot slip an index). Accepted if the p90 residual <= 15 ms (and the max <= 30
+   ms) - or, for organic/acoustic tracks whose tracked beats jitter around a steady tempo, if the
+   jitter is small RELATIVE to the period (median |residual| <= max(15 ms, 6 % of a beat), p90 <=
+   max(30 ms, 12 %)) and there is no drift (the signed median residual of every window of beats
+   stays within 15 ms and the residuals are not a smooth curve). Otherwise the raw beats are kept (tempo drift, live playing).
 5. Tempo check: 1/2x, 1x, 2x candidate grids scored by the share of kick energy that lands on them.
    Tracking runs on a kick/snare-weighted envelope (off-beat hats cannot outvote the kicks), then a
    half-beat phase check (kick+snare on the beats vs between them, window by window and again on the
@@ -273,10 +276,40 @@ def _fit(times):
         p = float(np.median(np.diff(t))) if len(t) > 1 else 0.5
         return p, (t[0] if len(t) else 0.0), np.zeros(len(t)), np.arange(len(t))
     ibi = float(np.median(np.diff(t)))
-    idx = np.round((t - t[0]) / ibi).astype(int)
+    # index from each local interval (a skipped beat = 2), not round((t - t0) / ibi): over hundreds
+    # of beats a median IBI a few ms off slips an index and wrecks the fit of a steady track
+    steps = np.maximum(1, np.round(np.diff(t) / ibi)).astype(int)
+    idx = np.concatenate([[0], np.cumsum(steps)])
     A = np.vstack([idx, np.ones_like(idx)]).T.astype(float)
     (p, t0), *_ = np.linalg.lstsq(A, t, rcond=None)
     return float(p), float(t0), t - (t0 + idx * p), idx
+
+
+def steady_grid(res, period, tol_ms=None):
+    """Is a grid fit with residuals ``res`` (s) and ``period`` (s) a steady tempo? Returns (ok, stats).
+    Strict: p90 <= tol and max <= 2 tol. Jittery-but-steady: median |res| <= max(tol, 6 % period),
+    p90 <= max(2 tol, 12 % period) and no drift - the signed median residual of every window of
+    >= 12 beats within tol (random jitter averages out there; tempo drift / a phase slip does not),
+    and not a smooth residual curve (lag-1 autocorrelation > 0.6 with window medians > tol / 2)."""
+    tol = GRID_TOL_MS if tol_ms is None else tol_ms
+    r = np.asarray(res, float) * 1000.0
+    if len(r) < 4:
+        return False, {}
+    a = np.abs(r)
+    pms = period * 1000.0
+    st = dict(median_ms=round(float(np.median(a)), 2), p90_ms=round(float(np.percentile(a, 90)), 2),
+              max_ms=round(float(a.max()), 2), rel_jitter=round(float(np.median(a) / max(pms, 1e-9)), 4))
+    if st["p90_ms"] <= tol and st["max_ms"] <= 2 * tol:
+        return True, dict(st, rule="strict")
+    n_win = int(np.clip(len(r) // 12, 2, 8))
+    wmed = max(abs(float(np.median(c))) for c in np.array_split(r, n_win))
+    rc = r - r.mean()
+    acf1 = float((rc[1:] * rc[:-1]).sum() / max((rc * rc).sum(), 1e-12))
+    st.update(window_median_ms=round(wmed, 2), acf1=round(acf1, 3))
+    drift = wmed > tol or (acf1 > 0.6 and wmed > tol / 2)    # smooth, correlated residual = tempo drift
+    ok = (len(r) >= 16 and st["median_ms"] <= max(tol, 0.06 * pms)
+          and st["p90_ms"] <= max(2 * tol, 0.12 * pms) and not drift)
+    return bool(ok), dict(st, rule="relative" if ok else "rejected")
 
 
 def _strength_at(times, env, hop, radius=0.035):
@@ -599,7 +632,7 @@ def analyze(music, sr=None, backend="auto", n_hits=8, tol_ms=GRID_TOL_MS, prior_
     absr = np.abs(res) * 1000
     rmax = float(absr.max()) if len(absr) else 0.0
     p90 = float(np.percentile(absr, 90)) if len(absr) else 0.0
-    grid_ok = len(raw) >= 4 and p90 <= tol_ms and rmax <= 2 * tol_ms
+    grid_ok, check["grid"] = steady_grid(res, period, tol_ms)
     if grid_ok:
         # final half-beat phase check on the whole grid (kick+snare on beats vs between them)
         g_on = _strength_at(offset + np.arange(len(raw)) * period, ksenv, hs).sum()

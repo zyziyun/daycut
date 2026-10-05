@@ -1,0 +1,37 @@
+# Series publishing config for package.py - the single source of truth per episode.
+# Paths relative to this file. NO credentials here: YouTube OAuth lives in $VSTUDIO_SECRETS,
+# social-auto-upload keeps its own logins in $SAU_DIR.
+out: out                         # out/epNN/<platform>/ packages
+log: publish_log.json            # what was published where (+ URLs, used for "previous episode" links)
+
+series:
+  name: {zh: 示例系列, en: Example Series}
+  series_tag: {zh: 示例系列, en: ExampleSeries}
+  tags: {zh: [日常, 搞笑, AI短剧], en: [comedy, aivideo, skit]}
+  cta: {zh: "你遇到过吗？评论区说说。", en: "Has this happened to you? Tell me below."}
+  ai_generated: true             # every post carries the AI-generated disclosure
+  making_of:                     # first comment for AI-creator communities (they value the process)
+    en: "Workflow: script by me; characters from look sheets; each shot a separate 4-15 s generation; cut, captioned and scored in post."
+
+# platform -> which caption variant, which cover ratio, which uploader (manual | youtube | sau)
+platforms:
+  xiaohongshu: {lang: zh, variant: bilingual, cover: "3x4", uploader: manual}
+  douyin:      {lang: zh, variant: bilingual, cover: "9x16", uploader: manual}   # sau sets 内容由AI生成 itself
+  bilibili:    {lang: zh, variant: bilingual, cover: "16x10", uploader: manual}  # sau + tid: <分区 id> if wanted
+  tiktok:      {lang: en, variant: en, cover: "9x16", uploader: manual}
+  youtube:     {lang: en, variant: en, cover: "9x16", uploader: manual}          # youtube uploader = Shorts only
+  reddit_aivideo: {lang: en, variant: en, cover: "9x16", uploader: manual, title_suffix: "AI short, Ep. 1"}
+
+episodes:
+  - ep: 1
+    slug: first-episode
+    status: draft                # draft | needs-fix | ready  (only `ready` can upload)
+    publish_at: {zh: "2030-01-01 20:00 Asia/Shanghai", en: "2030-01-01 12:00 America/Los_Angeles"}
+    source:                      # exported with python -m vstudio.export
+      bilingual: exports/ep01-bilingual.mp4
+      en: exports/ep01-en.mp4
+    covers:
+      "9x16": covers/ep01-9x16.png
+      "3x4": covers/ep01-3x4.png
+    zh: {title: 标题, hook: 第一句钩子, body: 正文}
+    en: {title: Title, hook: First-line hook, body: Body}

@@ -1,0 +1,24 @@
+# SYNTHETIC example: the same kind of skit planned for Seedance in the 即梦 web UI (manual provider).
+# One unit = one <=15 s segment carrying several shots with in-prompt timecodes; cut apart in the edit.
+title: smart-kettle (seedance draft)
+aspect: "9:16"
+resolution: 480p               # 样片 draft first; upscale locally (scripts/upscale.py) instead of a 7x upgrade
+language: en
+provider: manual:jimeng
+model: seedance-2
+unit_pad: 0.5
+style: Photoreal handheld footage, 35mm, soft window light from screen-right, slightly desaturated, light grain.
+characters:
+  A: {look: "short dark hair, round thin metal glasses, navy blazer", ref: refs/A_neutral.jpg}
+  B: {look: "curly red hair in a bun, green hoodie", ref: refs/B_neutral.jpg}
+scenes:
+  kitchen: {description: "a small bright apartment kitchen, window on the right", master: refs/kitchen_master.jpg}
+shots:
+  - {id: s01, unit: seg1, scene: kitchen, chars: [A], dur: 2.5, camera: "Medium shot, eye level",
+     action: "A presses the single button on a sleek kettle.", lines: [{who: A, text: "Morning coffee. Simple."}]}
+  - {id: s02, unit: seg1, scene: kitchen, chars: [A], dur: 2.0, camera: "Macro close-up of the kettle",
+     action: "Its ring light pulses slowly; the tiny screen shows only a spinning circle."}
+  - {id: s03, unit: seg1, scene: kitchen, chars: [B], dur: 3.0, camera: "Close-up from the doorway, 50mm",
+     action: "B leans in.", lines: [{who: B, text: "It's updating. Since Tuesday."}]}
+  - {id: s04, unit: seg1, scene: kitchen, chars: [A, B], dur: 3.5, camera: "Two-shot, static, full upper bodies",
+     action: "A sets the kettle down and takes an old stovetop pot from a cupboard. B nods once."}

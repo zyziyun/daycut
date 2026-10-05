@@ -42,6 +42,11 @@ Legend: **Passed** = checked by looking at stills and/or measuring; **Limit** = 
   The verify step itself has not yet been re-run on the real clip.
 - The ffmpeg zscale HDR path has not been verified on real HLG (only avconvert has).
 - No full-length final render of real footage (previews and bodies only).
+- 2026-10-05 demo round (a full real 口播 edit, 4:38 → 2:38, 3:4 + 9:16 masters + exports): re-applying strict after a
+  drop mis-cut the body (passes now derive from immutable `segs.<stage>.json` and refuse stale bodies); pass-1 edges
+  pulled in neighbour syllables (now bounded by the neighbouring whisper words); `cover.py --platform` overwrote the
+  3:4 cover; exports from a 9:16 master put 抖音 captions over burned panels (cues.json now carries keep-outs +
+  keyword markup). Fixes regression-tested on synthetic media only (`tests/test_talkinghead_fixes.py`).
 
 ## call-clips
 **Tested on**
@@ -58,6 +63,12 @@ Legend: **Passed** = checked by looking at stills and/or measuring; **Limit** = 
 - Name chips were readable until `name_mask` was added.
 - 2-line captions climbed onto the host tile until the caption block was capped to the box height.
 - faster-whisper backend not run on real media.
+- 2026-10-05 demo round (a real 3-person podcast, 51 s 小红书 9:16 clip): the classic editor-cut snap ate the
+  previous word's tail (now clamped at word ends), the hook→body dissolve faded the hook's last word (hook ends now
+  follow the energy tail; fade shortened when tight), a 4-bullet panel sat under the chips with no WARN (auto-fit +
+  WARN), and the 9:16 trio left the lower frame empty with the silent creator largest (new stage layout: active
+  speaker large, masks follow the tile). Fixes regression-tested on synthetic media only
+  (`tests/test_call_clips_fixes.py`); the stage layout has not been re-rendered on real media.
 
 ## longform-to-short
 **Tested on**
@@ -94,6 +105,14 @@ Legend: **Passed** = checked by looking at stills and/or measuring; **Limit** = 
 - Voice clone was run for real only with a synthetic reference voice, not the creator's.
 - No full-length render; 16:9 covers are still portrait-tuned.
 
+## lib (shared)
+- 2026-10-05 demo round (six real projects): fixed in the lib - a MediaPipe VIDEO timestamp crash on face
+  re-acquire (2 of 8 retouch chunks), whisper captions invented over music-only clips (`asr.drop_hallucinations`,
+  `has_speech`), wav-then-AAC true peak -1.2 vs -1.5 dBTP, persona tags forced onto off-topic posts, a missing CJK
+  serif role, same-aspect exports reported as letterbox, covers centre-cropped across aspects, re-burned captions
+  over burned panels, and "no steady grid" on steady 128 BPM tracks with jittery beats. Each has a synthetic test
+  in `tests/test_demo_round_lib.py`.
+
 ## Workflows validated on synthetic media only (no real-footage run yet)
 - **vlog** (calm + fun): synthetic drone-like clips and a drum track.
   - Not run on real faces, real speech, HDR in the fun path, or mastered music.
@@ -107,3 +126,19 @@ Legend: **Passed** = checked by looking at stills and/or measuring; **Limit** = 
   version.
   - Slides recording (Playwright) is unverified.
   - The RVM matting engine was not verified on a real face.
+- 2026-10-05 demo round: fun vlog speech gate (hallucinated ASR over template music rejected by transcript filter +
+  loudness evidence; decisions in the report), cross-kind tag collisions, explicit/photo hook-finale-outro, A5 leak
+  cap, map labels, face-aware scrapbook cover at exact size; photo-story loud serif fallback, POST tag options,
+  per-shot minimum units in music mode, rotation-aware clip size. Synthetic tests: tests/test_vlog_photostory_fixes.py.
+  Not re-run on the real demo footage.
+- 2026-10-05 demo round: longform-to-short sample-exact render (PCM joins, one AAC encode; |A−V| < 1 frame over 30
+  items), midpoint caption words at splits, per-episode hooks, text-density zoom centres, merged vertical manifests,
+  pad_in word guard, split layout filling the 3:4 / 9:16 frame with a readable-text zoom (synthetic share frames);
+  explainer compositions/ mkdir, display_en comma / "a million" numbers, per-sentence TTS check with re-takes,
+  suffixed per-platform cover names, vertical fill rule + layout_check.py. Synthetic tests:
+  tests/test_lfs_explainer_fixes.py. Not re-run on the real demo footage / a full HyperFrames render.
+- 2026-10-05 shared speech cleanup wiring: vlog fun speech shots (gentle by default, auto edits only, captions via
+  `cleanup.remap_words`), vlog calm `cleanup` segments (analyze --ranges → apply before assembly), photo-story opt-in
+  `cleanup=` / `CLEANUP` on `audio="keep"` clips, polish `--cleanup pauses|gentle|standard|tight` (off by default,
+  never re-cuts a cleaned file). Synthetic tone-burst speech: tests/test_speech_cleanup_wiring.py. Not run on real
+  footage / real whisper.

@@ -110,10 +110,28 @@ demuxer with `-c copy` and `-video_track_timescale 30000` keeps frame COUNTS exa
 note below before cutting such a file again.
 
 ## Whisper word timestamps
-- A word's *start* swallows the pause before it. A word's *end* is reliable. So cut runs at
-  `previous_deleted.end .. last_kept.end + 0.04`, then snap to voiced RMS.
-- A whisper pass over a silent tail emits bursts like 「feed feed feed」 with zero length.
-  `strict_pass.py transcribe` drops them **before** printing indices, so DEL indices stay valid.
+- A word's *start* swallows the pause before it, and a word's *end* runs early (the sound continues). The
+  shared cleanup (`vstudio.cleanup`) therefore cuts a word edit from the silence after the previous kept word to the
+  silence before the next one (quiet-run edges ± pad, measured on the audio), never inside a kept word.
+- A whisper pass over a silent tail emits bursts like 「feed feed feed」 with zero length. `vstudio.asr` drops them,
+  and `cleanup.analyze` lists hallucinated segments as `asr-noise` CONFIRM rows instead of silently keeping them.
+
+## Pass-1 edges pull in neighbour syllables
+The old pass-1 snap searched voiced audio 0.08 s before / 0.10 s after each hand-written range and merged runs across
+gaps up to MAXGAP (0.2 s), so the tail of the previous word or the onset of the next one (a stray 就是 / 然后 /
+「情况」) used to ride along. `cut_pass1` now snaps with `cleanup.snap_range`: the start backs off to before its first
+word's onset, the end runs over the last word's real tail, and neither passes the neighbouring whisper words of
+`a<N>.json` (`cleanup.word_limits`). Still read the review sheet / the strict-pass word list for leftovers.
+
+## Pause squeeze cannot shorten a drawn-out vowel
+The cleanup's pause edits only shorten silence between voiced runs. A held syllable (a 2-3 s 「比…」) is one continuous
+voiced run, so it stays at full length. Options: cut the range in two around the hold in `edit_list.py`
+(a jump in the vowel is usually inaudible at 1.1x), or leave it and flag it to the creator.
+
+## Re-applying a pass to an already-cut body
+Before the demo-round fix, `strict_pass apply` and `drop_pass` rewrote `segs.json` in place, so re-applying strict
+after a drop cut the full body with the dropped timeline. Passes now derive from immutable `segs.<stage>.json` files
+and refuse a body whose length does not match the parent (see vertical_pipeline.md step 6).
 
 ## Re-cuts must not re-run the retouch
 The retouch takes about 1s/frame. `strict_pass.py` and `drop_pass.py` cut the already-retouched body.
@@ -130,7 +148,8 @@ filter on a jump > 25 px mean (a cut), so it never lags across a cut.
 
 ## Overlays on a punch-in shot
 At 1.32x zoom the chin drops to about y 1100. Pop words go at y ≥ 1260 and stamps between y 1050 and
-1340. Stamps must stay at x_left ≤ 480, because 小红书 buttons sit on the right in the lower half, and
+1340. With a face track, compose moves a pop word below the chin and a stamp STACK (stamps sharing t1) as one
+block below the chin or beside the face when it would cover the face core (printed as "moved"); still check. Stamps must stay at x_left ≤ 480, because 小红书 buttons sit on the right in the lower half, and
 the bottom stamp must clear the subtitle at 1525.
 
 ## Don't sed-patch output paths in a test copy

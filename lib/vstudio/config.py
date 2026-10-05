@@ -5,11 +5,14 @@ speed defaults and brand colours) resolves through here.
 
     from vstudio.config import font, model, persona
     font("cjk-bold")          -> path to Noto Sans SC Bold (downloaded by install.sh)
+    font("cjk-serif")         -> Noto Serif SC (titles in 文艺 / photo-story modes)
     model("face_landmarker")  -> path to MediaPipe face_landmarker.task
     persona()["speed"]["body"]
 """
 import json
 import os
+import re
+import sys
 from functools import lru_cache
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -21,6 +24,8 @@ MODEL_DIR = os.path.join(CACHE, "models")
 FONTS = {
     "cjk": ["NotoSansSC-Regular.otf"],
     "cjk-bold": ["NotoSansSC-Bold.otf"],
+    "cjk-serif": ["NotoSerifSC-Regular.otf"],
+    "cjk-serif-bold": ["NotoSerifSC-Bold.otf"],
     "serif": ["STIXTwoText-Regular.ttf"],
     "serif-italic": ["STIXTwoText-Italic.ttf"],
     "mono": ["JetBrainsMono-Regular.ttf"],
@@ -37,16 +42,70 @@ class MissingAsset(FileNotFoundError):
     pass
 
 
+_WARNED = set()
+
+
+def _warn_once(key, msg):
+    if key not in _WARNED:
+        _WARNED.add(key)
+        print(f"!! video-studio: {msg}", file=sys.stderr)
+
+
+def ttc_face(path: str, index: int) -> str:
+    """Face ``index`` of a .ttc/.otc collection extracted (once, fontTools) to a standalone font file
+    under FONT_DIR/extracted/, so every consumer (PIL, ffmpeg drawtext, libass) gets the right face.
+    Collections often put the Black/heavy face at index 0 (e.g. a system Songti), hence "file.ttc#N"."""
+    from fontTools.ttLib import TTCollection
+    stem = os.path.splitext(os.path.basename(path))[0]
+    out_dir = os.path.join(FONT_DIR, "extracted")
+    for ext in (".ttf", ".otf"):
+        p = os.path.join(out_dir, f"{stem}-{index}{ext}")
+        if os.path.exists(p) and os.path.getmtime(p) >= os.path.getmtime(path):
+            return p
+    coll = TTCollection(path)
+    if not 0 <= index < len(coll.fonts):
+        raise MissingAsset(f"{path} has {len(coll.fonts)} faces; index {index} is out of range")
+    f = coll.fonts[index]
+    os.makedirs(out_dir, exist_ok=True)
+    p = os.path.join(out_dir, f"{stem}-{index}{'.otf' if 'CFF ' in f else '.ttf'}")
+    f.save(p)
+    return p
+
+
+def _custom_font(role, spec):
+    """persona fonts.<role>: "path" or "path.ttc#N" (face N of a collection). None if unusable."""
+    m = re.match(r"^(.*?\.(?:ttc|otc))#(\d+)$", str(spec), re.I)
+    path, idx = (m.group(1), int(m.group(2))) if m else (str(spec), None)
+    path = os.path.expanduser(path)
+    if not os.path.exists(path):
+        _warn_once(("custom", role), f"fonts.{role} = {spec!r} does not exist; using the default for '{role}'")
+        return None
+    if idx is None:
+        return path
+    try:
+        return ttc_face(path, idx)
+    except Exception as e:  # noqa: BLE001 - surface it, then use the default role font
+        _warn_once(("ttc", role), f"fonts.{role} = {spec!r}: cannot extract face {idx} ({e})")
+        return None
+
+
 def font(role: str) -> str:
-    """Path of a font for a role. persona.fonts.<role> may point to your own file."""
+    """Path of a font for a role. persona.fonts.<role> may point to your own file, or to one face of
+    a collection as "path/to/Fonts.ttc#2". A missing role font raises MissingAsset AND prints a loud
+    warning once (callers that fall back to another role then do so visibly, not silently)."""
     custom = (persona().get("fonts") or {}).get(role)
-    if custom and os.path.exists(os.path.expanduser(custom)):
-        return os.path.expanduser(custom)
+    if custom:
+        p = _custom_font(role, custom)
+        if p:
+            return p
     for name in FONTS.get(role, [role]):
         p = os.path.join(FONT_DIR, name)
         if os.path.exists(p):
             return p
-    raise MissingAsset(f"font '{role}' not found in {FONT_DIR} - run ./install.sh (or set fonts.{role} in persona.local.yaml)")
+    msg = f"font '{role}' not found in {FONT_DIR} - run ./install.sh (or set fonts.{role} in persona.local.yaml)"
+    if role in FONTS:
+        _warn_once(("missing", role), msg + "; anything drawn with it will use a fallback face")
+    raise MissingAsset(msg)
 
 
 def model(name: str) -> str:
@@ -79,7 +138,10 @@ def _merge(a, b):
 def persona() -> dict:
     """persona.example.yaml (defaults) <- persona.yaml <- persona.local.yaml (private, gitignored)."""
     data = {}
-    for name in ("persona.example.yaml", "persona.yaml", "persona.local.yaml"):
+    names = ("persona.example.yaml", "persona.yaml", "persona.local.yaml")
+    if os.environ.get("VSTUDIO_DEFAULT_PERSONA"):     # tests: ignore the creator's own persona files
+        names = names[:1]
+    for name in names:
         d = _load(os.path.join(REPO, name))
         if d:
             data = _merge(data, d)

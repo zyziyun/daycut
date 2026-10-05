@@ -79,9 +79,13 @@ def load_font(role: str = "cjk-bold", size: int = 40):
         path = role if os.path.exists(str(role)) else font(role)
         return ImageFont.truetype(path, size)
     except (MissingAsset, OSError):
-        if role.endswith("-bold") or role.endswith("-italic") or role == "cjk":
+        if role.endswith("-bold") or role.endswith("-italic") or role.startswith("cjk"):
+            fb = "cjk-bold" if "bold" in role else "cjk"
             try:
-                return ImageFont.truetype(font("cjk-bold" if "bold" in role else "cjk"), size)
+                f = ImageFont.truetype(font(fb), size)
+                if fb != role:   # e.g. cjk-serif not installed: say so instead of silently drawing Sans
+                    print(f"vstudio.draw: font role '{role}' missing (run ./install.sh); using '{fb}'")
+                return f
             except (MissingAsset, OSError):
                 pass
         print(f"vstudio.draw: font role '{role}' missing (run ./install.sh); using Pillow default")

@@ -30,8 +30,13 @@ from vstudio import platform as PF
 from vstudio import reframe as R
 
 MODES = ("split", "screen", "speaker", "pad-blur")
-SCREEN_DEFAULTS = dict(min_scale=1.6, max_scale=2.4, sample_hz=4.0, change_luma=24, min_change_px=60,
-                       analysis_w=480, page_change=0.45, follow="content", ink=40, headroom=0.12)
+SCREEN_DEFAULTS = dict(min_scale=1.6, max_scale=3.0, sample_hz=4.0, change_luma=24, min_change_px=60,
+                       analysis_w=480, page_change=0.45, follow="content", ink=40, headroom=0.12,
+                       min_text_px=28)
+# split / screen layout: a slim title band and the screen running down to the frame bottom (under the caption
+# box and the platform UI, dimmed there by a scrim) instead of stopping above the captions; screen_to="caption"
+# restores the pre-demo-round layout (screen box ends above the caption box, band 24 %).
+SPLIT_DEFAULTS = dict(speaker_frac=0.40, band_frac=0.16, gap=10, screen_to="frame", scrim=0.5)
 CAMERA = dict(R.DEFAULTS, dead_zone=0.10, settle=0.02, gain=2.5, max_speed=0.55, max_accel=1.0,
               min_cutoff=0.4, beta=0.4)
 
@@ -52,17 +57,35 @@ def layout(profiles, gap=10):
     return dict(W=W, H=H, safe=safe, caption=cap, content=content, gap=gap)
 
 
-def boxes(L, mode, band, speaker_frac=0.40, band_frac=0.24):
-    """{'screen': box, 'speaker': box, 'band': box} (x0, y0, x1, y1) for one item."""
+def boxes(L, mode, band, speaker_frac=0.40, band_frac=0.16, screen_to="frame"):
+    """{'screen': box, 'speaker': box, 'band': box} (x0, y0, x1, y1) for one item.
+    screen_to "frame": the screen box of split / screen layouts runs to the canvas bottom (the part under the
+    caption box is scrimmed, see ``visible_h``); "caption": it stops at the content bottom (above the captions)."""
     x0, y0, x1, y1 = L["content"]
-    if mode in ("screen", "pad-blur"):
+    sy1 = L["H"] if screen_to == "frame" else y1
+    if mode == "pad-blur":
         return {"screen": (x0, y0, x1, y1)}
+    if mode == "screen":
+        return {"screen": (x0, y0, x1, sy1)}
     if mode == "speaker":
         return {"speaker": (x0, y0, x1, y1)} if band == "speaker" else {"band": (x0, y0, x1, y1)}
     frac = speaker_frac if band == "speaker" else band_frac
     yb = y0 + even((y1 - y0) * frac)
     top = {"speaker": (x0, y0, x1, yb)} if band == "speaker" else {"band": (x0, y0, x1, yb)}
-    return dict(top, screen=(x0, yb + 6, x1, y1))
+    return dict(top, screen=(x0, yb + 6, x1, sy1))
+
+
+def visible_h(L, box):
+    """Height of the part of a screen box above the caption box (what the crop must keep readable)."""
+    return max(2, min(box[3], L["content"][3]) - box[1])
+
+
+def scrim(L, box, draw_h, strength=0.5, ramp=72):
+    """Per-row multipliers (draw_h,) dimming the screen under the caption box so captions stay readable
+    (1.0 above the content bottom, easing to 1 - strength over ``ramp`` px)."""
+    y = np.arange(draw_h) + box[1]
+    t = np.clip((y - (L["content"][3] - ramp // 2)) / float(ramp), 0.0, 1.0)
+    return (1.0 - strength * (t * t * (3 - 2 * t))).astype(np.float32)
 
 
 # ----------------------------------------------------------------------------------- decoding
@@ -131,21 +154,54 @@ def main_block(ink, o=SCREEN_DEFAULTS):
     return float(a), float(b)
 
 
-def screen_size(region, box, content_w=None, o=SCREEN_DEFAULTS):
-    """Source crop (cw, ch) of the box's aspect inside region: as tight as the content column allows,
-    scale (box_w / cw) kept within [min_scale, max_scale], never larger than the region."""
+def screen_size(region, box, content_w=None, o=SCREEN_DEFAULTS, need_scale=None):
+    """Source crop (cw, ch, draw_h) for the screen box inside region: as tight as the content column allows,
+    scale (box_w / cw) at least max(min_scale, need_scale) (the readable-text scale) and at most max_scale,
+    never larger than the region. draw_h = the box height normally; when the region is too short to fill a tall
+    box at max_scale the crop takes the whole region height and draw_h < box height (the screen is drawn at the
+    top of the box: the leftover is at the bottom, under the captions / platform UI)."""
     rx0, ry0, rx1, ry1 = region
     rw, rh = rx1 - rx0, ry1 - ry0
     bw, bh = box[2] - box[0], box[3] - box[1]
     a = bw / bh
+    lo = min(max(o["min_scale"], need_scale or 0.0), o["max_scale"])
     want = (content_w * 1.08) if content_w else rw
-    want = min(max(want, bw / o["max_scale"]), bw / o["min_scale"])
+    want = min(max(want, bw / o["max_scale"]), bw / lo)
     cw = min(want, rw, rh * a)
-    return cw, cw / a
+    if cw >= min(bw / o["max_scale"], rw) - 1e-6:
+        return cw, cw / a, bh
+    cw = min(bw / o["max_scale"], rw)             # region too short for this box: cap the zoom, shorten
+    ch = min(rh, cw / a)
+    return cw, ch, min(bh, even(ch * bw / cw))
 
 
-def analyse_screen(src, t0, t1, speed, fps, n, region, box, zoom_center=None, still=None, o=SCREEN_DEFAULTS):
-    """Per-frame crop rects [x, y, cw, ch] (source px) for the screen box of one timeline item, plus stats."""
+def text_line_px(gray, x0=0, x1=None, ink=40):
+    """Median ink height (px) of the text lines in a full-resolution grey frame (columns x0..x1), or None."""
+    g = gray[:, int(x0):int(x1) if x1 else None].astype(np.int16)
+    if g.size == 0:
+        return None
+    on = (np.abs(g - np.median(g)) > ink).mean(axis=1) > 0.004
+    runs, i, n = [], 0, len(on)
+    while i < n:
+        if on[i]:
+            j = i
+            while j < n and on[j]:
+                j += 1
+            runs.append(j - i)
+            i = j
+        else:
+            i += 1
+    runs = [r for r in runs if 3 <= r <= 80]
+    return float(np.median(runs)) if len(runs) >= 3 else None
+
+
+def analyse_screen(src, t0, t1, speed, fps, n, region, box, zoom_center=None, still=None, o=SCREEN_DEFAULTS,
+                   vis_h=None):
+    """Per-frame crop rects [x, y, cw, ch] (source px) for the screen box of one timeline item, plus stats
+    (stats["draw_h"]: canvas height the crop is drawn at, from the box top). vis_h: height of the box part
+    above the captions; reading start / activity are kept inside that part of the crop.
+    The zoom is chosen so a text line is >= o["min_text_px"] tall on the canvas (line height measured on a
+    full-resolution frame), within min_scale..max_scale."""
     rx0, ry0, rx1, ry1 = [int(v) for v in region]
     rw, rh = rx1 - rx0, ry1 - ry0
     k = min(1.0, o["analysis_w"] / rw)
@@ -165,7 +221,18 @@ def analyse_screen(src, t0, t1, speed, fps, n, region, box, zoom_center=None, st
     blk = main_block(ink, o)
     cx0, cx1 = blk if blk else (0.0, float(aw))
     content_w = (cx1 - cx0) / k
-    cw, ch = screen_size(region, box, content_w if o["follow"] == "content" else None, o)
+    if still is not None:
+        full = cv2.cvtColor(still[ry0:ry1, rx0:rx1], cv2.COLOR_BGR2GRAY)
+    else:
+        tm_ = t0 + (t1 - t0) * 0.5
+        vf1 = f"crop={rw}:{rh}:{rx0}:{ry0}"
+        g1 = frames(decode_cmd(src, tm_, min(t1, tm_ + 1.0), 1.0, fps, vf1, "gray"), rw, rh, 1)
+        full = next(g1, None)
+        g1.close()
+    line_px = text_line_px(full, cx0 / k, cx1 / k, o["ink"]) if full is not None else None
+    need = (o["min_text_px"] / line_px) if (line_px and o.get("min_text_px")) else None
+    cw, ch, draw_h = screen_size(region, box, content_w if o["follow"] == "content" else None, o, need)
+    f = min(1.0, (vis_h or draw_h) / draw_h)          # visible fraction of the crop (above the captions)
     bx0, bx1 = rx0 + cx0 / k, rx0 + cx1 / k            # main text block (source px)
     margin = 0.04 * cw
     fixed_x = content_w <= cw * 1.02
@@ -173,7 +240,7 @@ def analyse_screen(src, t0, t1, speed, fps, n, region, box, zoom_center=None, st
     def reading_start(m):
         rows = np.where(m[:, int(cx0):max(int(cx0) + 1, int(cx1))].mean(axis=1) > 0.01)[0]
         y = (rows[0] / k + ry0) if len(rows) else ry0
-        return y + ch * (0.5 - o["headroom"])
+        return y + ch * f * (0.5 - o["headroom"])
 
     def x_for(ax):
         """Crop centre x: the main block centred if it fits, else line starts kept visible near the activity."""
@@ -205,7 +272,7 @@ def analyse_screen(src, t0, t1, speed, fps, n, region, box, zoom_center=None, st
     # per-frame targets -> crop top-left, followed per shot by the virtual camera
     idx = sorted(pts)
     xs = np.interp(np.arange(n), idx, [pts[i][0] for i in idx]) - cw / 2
-    ys = np.interp(np.arange(n), idx, [pts[i][1] for i in idx]) - ch / 2
+    ys = np.interp(np.arange(n), idx, [pts[i][1] for i in idx]) - ch * f / 2   # target -> centre of visible part
     bounds = [0] + [c for c in sorted(set(cuts)) if 0 < c < n] + [n]
     px, py = [], []
     for a, b in zip(bounds, bounds[1:]):
@@ -213,7 +280,9 @@ def analyse_screen(src, t0, t1, speed, fps, n, region, box, zoom_center=None, st
         py += R.follow(list(ys[a:b]), fps, ch, CAMERA)
     rects = [[min(max(x, rx0), rx1 - cw), min(max(y, ry0), ry1 - ch), cw, ch] for x, y in zip(px, py)]
     stats = dict(scale=round((box[2] - box[0]) / cw, 3), content_w=round(content_w, 1), cuts=len(bounds) - 2,
-                 fixed_x=bool(fixed_x), **R.path_stats(rects, fps, bounds[1:-1]))
+                 fixed_x=bool(fixed_x), draw_h=int(draw_h), line_px=line_px and round(line_px, 1),
+                 text_px=line_px and round(line_px * (box[2] - box[0]) / cw, 1),
+                 **R.path_stats(rects, fps, bounds[1:-1]))
     return rects, stats
 
 
@@ -350,35 +419,6 @@ def hook_box(lines, width, P):
 
 
 # ----------------------------------------------------------------------------------- captions
-def caption_fit_profile(prof, role="cjk-bold"):
-    """The profile with its caption size range capped so ``max_lines`` stroked lines (as vstudio.export draws
-    them) fit the caption box HEIGHT too (fit_text_size only checks width / chars; a 190 px 3:4 band
-    overflows at 72 px x 2 lines). Unchanged when the top size already fits."""
-    x0, y0, x1, y1 = PF.caption_box(prof)
-    lo, hi = (int(v) for v in prof.caption["size"])
-    n = int(prof.caption.get("max_lines", 2))
-    size = hi
-    for size in range(hi, min(lo, 30) - 1, -2):
-        f = draw.load_font(role, size)
-        stroke = max(2, int(size * float(prof.caption.get("stroke", 0.08))))
-        rows = [np.asarray(draw.text_layer(t, f, stroke=stroke, shadow_alpha=110, pad=6))[..., 3]
-                for t in ("国Ag字", "国Ag字")[:n]]
-        gap = -int(size * 0.12)
-        h = sum(r.shape[0] for r in rows) + gap * (n - 1)
-        ys = []
-        y = 0
-        for r in rows:                         # stacked like vstudio.export draws them
-            on = np.where(r.max(axis=1) > 128)[0]
-            ys += [y + on[0], y + on[-1]] if len(on) else []
-            y += r.shape[0] + gap
-        top = min((y0 + y1) / 2 - h / 2, y1 - h)      # export.caption_overlay placement
-        if top + min(ys) >= y0 - 2 and top + max(ys) <= y1 + 2:
-            break
-    if size == hi:
-        return prof
-    return PF.profile(prof.name, prof.orientation, overrides={"caption": {"size": [min(lo, size), size]}})
-
-
 def relayout_cues(cues, prof, role="cjk-bold"):
     """Split cues so every one fits the profile's caption box in <= max_lines at a size inside its range
     (vstudio.platform.fit_text_size); time is shared in proportion to text length."""
@@ -417,4 +457,31 @@ def relayout_cues(cues, prof, role="cjk-bold"):
             dt = (c.end - c.start) * max(1.0, text_width(s)) / tot
             out.append(Cue(t, t + dt, s, "", c.meta))
             t += dt
+    return out
+
+
+# ----------------------------------------------------------------------------------- manifests
+def merge_exports(old, new):
+    """Exports of one episode: entries of the targets just rendered replace older ones (same file), others kept."""
+    files = {e["file"] for e in new}
+    return [e for e in (old or []) if e.get("file") not in files] + list(new)
+
+
+def merge_manifest(old, new):
+    """A later `make_vertical --targets X` run updates X's entries and keeps the other targets' exports
+    (qa.py then still sees every target, not only the last run's)."""
+    if not old:
+        return new
+    keys = set(new["targets"])
+    out = dict(new, targets=list(dict.fromkeys(list(old.get("targets", [])) + new["targets"])),
+               masters={**old.get("masters", {}), **new["masters"]})
+    eps = {e["n"]: dict(e) for e in old.get("episodes", [])}
+    for e in new["episodes"]:
+        prev = eps.get(e["n"])
+        eps[e["n"]] = dict(e, exports=merge_exports(prev["exports"] if prev else [], e["exports"]))
+    out["episodes"] = [eps[n] for n in sorted(eps)]
+    stale = tuple(f" {k}: " for k in keys)
+    redone = {f"ep{e['n']} " for e in new["episodes"]}
+    out["warnings"] = [w for w in old.get("warnings", [])
+                       if not (any(s in w for s in stale) and any(w.startswith(r) for r in redone))] + new["warnings"]
     return out

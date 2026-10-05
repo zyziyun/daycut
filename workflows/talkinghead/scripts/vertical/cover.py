@@ -11,8 +11,9 @@ Reads the COVER dict from the compose config:
                  STICKY=("记笔记", [("point one", "ink"), ("point two", "red")]),   # or None
                  TAG="short tag")                # rotated pill top-right, or None
 usage: python3 cover.py work/config.py [--platform douyin --platform youtube]   (then always LOOK at the result)
-The first platform (default: config PLATFORM, else persona platforms.default) writes OUT; further platforms
-write <OUT stem>.<platform>-<orientation>.jpg (+ .feed.jpg where the feed shows a centre crop).
+OUT belongs to the config's own platform (COVER PLATFORM, else config PLATFORM, else persona platforms.default);
+every other platform writes <OUT stem>.<platform>-<orientation>.jpg (+ .feed.jpg where the feed shows a centre
+crop), so `cover.py config.py --platform douyin` never overwrites the 小红书 cover.
 A 9:16 body on the 3:4 小红书 cover keeps the measured layout (band y 200..1640, title at y 1010).
 """
 import sys, pathlib; sys.path[:0] = [str(pathlib.Path(__file__).resolve().parents[4] / "lib"), str(pathlib.Path(__file__).resolve().parent)]
@@ -115,11 +116,18 @@ def render(prof):
     return cv.convert('RGB')
 
 
-specs = plats or [CV.get('PLATFORM') or getattr(C, 'PLATFORM', None)]
-for n, sp in enumerate(specs):
-    prof = resolve_profile(sp)
+HOME = resolve_profile(CV.get('PLATFORM') or getattr(C, 'PLATFORM', None))
+def out_name(prof):
+    """OUT for the config's own platform; <stem>.<platform>-<orientation>.jpg for every other one."""
+    same = prof.key == HOME.key or (prof.name == HOME.name and P.cover_size(prof) == P.cover_size(HOME))
+    return OUT if same else f"{os.path.splitext(OUT)[0]}.{prof.name}-{prof.orientation}.jpg"
+
+
+specs = plats or [None]
+for sp in specs:
+    prof = resolve_profile(sp) if sp else HOME
     img = render(prof)
-    out = OUT if n == 0 else f"{os.path.splitext(OUT)[0]}.{prof.name}-{prof.orientation}.jpg"
+    out = out_name(prof)
     q = 93; img.save(out, quality=q)
     while prof.cover.get('max_bytes') and os.path.getsize(out) > prof.cover['max_bytes'] and q > 60:
         q -= 8; img.save(out, quality=q)

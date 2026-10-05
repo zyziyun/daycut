@@ -9,10 +9,8 @@ Effects live in three places:
 Transitions also have the cross-engine bridge `lib/vstudio/xfade.py`, which gives one name an
 implementation in HyperFrames, ffmpeg and PIL.
 
-The entry format borrows the shape of the shot cards in
-[video-shotcraft](https://github.com/Vincentwei1021/video-shotcraft) (Apache-2.0): a one-liner, when to
-use, duration, energy, a parameter table with how each value feels when changed, and pitfalls. The
-fields are restated in our own words. No card content is copied.
+Each entry has a one-liner, when to use, duration, energy, a parameter table with how each value
+feels when changed, and pitfalls.
 
 ---
 

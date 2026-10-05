@@ -89,6 +89,10 @@ def main():
         with open(a.init, "w") as f:
             json.dump(cfg, f, indent=2)
         print(f"fun starter -> {a.init} (set music, title, place/day per shot; see WORKFLOW.md 'Fun style')")
+        if any(i["audio"] for i in infos):
+            print('note: clips with audio start as "speech": "auto" - kept only when the transcript survives the '
+                  "hallucination filter AND the loudness shows speech (see the build log / report 'speech'); "
+                  'set "speech": false on clips that only carry music, "keep_audio": true to keep a clip\'s sound')
         return
     cfg = {
         "src_dir": ".",

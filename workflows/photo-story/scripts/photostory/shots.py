@@ -15,6 +15,7 @@ Source strings (first element of a shot tuple in the spec):
     "rows:a,b,c"                 three wide strips sliding in from alternating sides
 Motions for single photos: in out panL panR up down still flip. Options: c=(cx,cy) z=zoom fx=(...).
 """
+import hashlib
 import math
 import os
 import random
@@ -28,6 +29,7 @@ from PIL import Image, ImageDraw, ImageFilter
 
 from vstudio import media as vmedia
 
+from . import speechclean
 from .ctx import font, font_for
 from .looks import paper_bg
 from .util import cover, crop_focus, ease, layer, paste_rgba, to_arr
@@ -88,25 +90,31 @@ def make_card(C, n, maxside, rot, seed):
 
 
 def ffprobe_size(src):
-    w, h = map(int, re.findall(r"\d+", subprocess.check_output(
-        ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height",
-         "-of", "csv=p=0", src]).decode())[:2])
-    rot = subprocess.check_output(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
-                                   "stream_side_data=rotation:stream_tags=rotate", "-of", "csv=p=0", src]).decode()
-    if re.search(r"-?(90|270)", rot):
-        w, h = h, w
-    return w, h
+    """DISPLAY size of a clip: rotation metadata applied (an iPhone portrait clip is stored 1920x1080 with a
+    -90 deg rotation and displays 1080x1920). ffmpeg auto-rotates on decode, so VCROP / c= / z= are fractions
+    of this displayed frame - what you see in a player or contact sheet - never of the coded frame."""
+    info = vmedia.probe(src)
+    return int(info["display_w"]), int(info["display_h"])
 
 
 def prep_video(C, sh, name):
     """Trim / speed / crop (VCROP or c=, z=) / optional grade (VEQ) a clip to the box size, cached."""
     speed = sh.get("speed", 1.0)
     off = sh.get("off", 0.0)
+    csrc = None
+    if speechclean.options(C, sh) is not None:       # speech clip with cleanup=: read the cleaned clip from 0
+        csrc, off = speechclean.cleaned(C, sh, C.find_video(name))
     need = (sh["end"] - sh["start"] + sh["tail"] + 0.6) * speed
     tag = re.sub(r"[^\w.-]", "_", name)
-    out = os.path.join(C.cache_dir, f"v_{tag}_{C.BOX_W}x{C.BOX_H}_{off}_{speed}_{need:.1f}_sdr.mp4")
+    # crop / zoom / grade are part of the cache key (editing VCROP re-renders the clip)
+    look = repr((C.VCROP.get(name), sh.get("c"), sh.get("z"), name in C.VEQ, sh.get("grade"),
+                 C.VEQ_FILTER if (name in C.VEQ or sh.get("grade") is True) else None))
+    if csrc:
+        look += "|" + os.path.basename(csrc)
+    lk = "" if look == repr((None, None, None, False, None, None)) else "_" + hashlib.sha1(look.encode()).hexdigest()[:8]
+    out = os.path.join(C.cache_dir, f"v_{tag}_{C.BOX_W}x{C.BOX_H}_{off}_{speed}_{need:.1f}{lk}_sdr.mp4")
     if not os.path.exists(out):
-        src = C.find_video(name)
+        src = csrc or C.find_video(name)
         if not src:
             raise FileNotFoundError(f"video '{name}' not found in {C.vid_dirs}")
         hdr = ""
@@ -119,7 +127,7 @@ def prep_video(C, sh, name):
                 src = sdr
             else:
                 hdr = vmedia.hdr_to_sdr_args(src, info["transfer"]) + ","
-        w, h = ffprobe_size(src)
+        w, h = ffprobe_size(src)                     # displayed (rotation-applied) frame; ffmpeg auto-rotates
         if name in C.VCROP:
             cx, cy, fr = C.VCROP[name]
         else:

@@ -139,9 +139,24 @@ def chapters_from_body(chapters, body_start, body_speed):
 
 
 # ---------------------------------------------------------------- post copy
-def hashtags(tags=None, platform=None, use_persona=True):
+def persona_tags(tag_set=None, warn=print):
+    """The persona's tag list: ``publish.tag_sets[tag_set]`` when a set is named (e.g. "art", "tech"),
+    else ``publish.tags``. An unknown set name warns and returns [] (never the career tags by surprise)."""
+    if tag_set:
+        sets = _p("publish.tag_sets", {}) or {}
+        if tag_set not in sets:
+            if warn:
+                warn(f"publish.tag_sets has no {tag_set!r} (have: {', '.join(sets) or 'none'}); no persona tags added")
+            return []
+        return list(sets[tag_set] or [])
+    return list(_p("publish.tags", []) or [])
+
+
+def hashtags(tags=None, platform=None, use_persona=True, tag_set=None, warn=print):
+    """Hashtag line: ``tags`` first, then (use_persona) the persona tags - ``publish.tag_sets[tag_set]``
+    if ``tag_set`` is given, else ``publish.tags``. Duplicates and leading '#' are removed."""
     pl = platform_name(platform)
-    allt = list(tags or []) + (list(_p("publish.tags", []) or []) if use_persona else [])
+    allt = list(tags or []) + (persona_tags(tag_set, warn) if use_persona else [])
     clean = list(dict.fromkeys(t.lstrip("#").strip() for t in allt if t and t.strip("# ")))
     if not clean:
         return ""
@@ -161,9 +176,13 @@ def voice_warnings(text):
 
 
 def post_body(hook, body, chapters=None, links=None, tags=None, platform=None, title=None,
-              chapter_intro=None, warn=print):
+              chapter_intro=None, warn=print, use_persona_tags=True, tag_set=None):
     """Assemble post copy. hook: first line; body: str or list of paragraphs; chapters as for chapter_lines
-    (already final seconds); links: [(label, url)] or {label: url}; tags merged with persona publish.tags.
+    (already final seconds); links: [(label, url)] or {label: url}.
+    Tags: ``tags`` (the post's own) + persona tags. use_persona_tags=True (default, also when explicit
+    ``tags`` are passed - the historical behaviour) appends ``publish.tag_sets[tag_set]`` if ``tag_set``
+    is named, else ``publish.tags``; use_persona_tags=False = only ``tags`` (e.g. an art post that must
+    not inherit career tags).
     小红书: hook + body + chapter line + timeline + #tags.  YouTube: chapters as a plain list (auto-chapters),
     links first.  B站: 标签 line instead of hashtags."""
     pl = platform_name(platform)
@@ -186,7 +205,7 @@ def post_body(hook, body, chapters=None, links=None, tags=None, platform=None, t
         if pl == "youtube":
             intro = chapter_intro if chapter_intro is not None else (intro or "Chapters")
         out += [""] + ([intro] if intro else []) + chapter_lines(chapters, platform=pl, warn=warn)
-    tg = hashtags(tags, pl)
+    tg = hashtags(tags, pl, use_persona=use_persona_tags, tag_set=tag_set, warn=warn)
     if tg:
         out += ["", tg]
     text = "\n".join(out).strip() + "\n"

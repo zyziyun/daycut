@@ -14,6 +14,8 @@ fetch() {  # url dest
 echo "fonts (OFL) -> $CACHE/fonts"
 fetch https://github.com/notofonts/noto-cjk/raw/main/Sans/SubsetOTF/SC/NotoSansSC-Regular.otf "$CACHE/fonts/NotoSansSC-Regular.otf"
 fetch https://github.com/notofonts/noto-cjk/raw/main/Sans/SubsetOTF/SC/NotoSansSC-Bold.otf "$CACHE/fonts/NotoSansSC-Bold.otf"
+fetch https://github.com/notofonts/noto-cjk/raw/main/Serif/SubsetOTF/SC/NotoSerifSC-Regular.otf "$CACHE/fonts/NotoSerifSC-Regular.otf"
+fetch https://github.com/notofonts/noto-cjk/raw/main/Serif/SubsetOTF/SC/NotoSerifSC-Bold.otf "$CACHE/fonts/NotoSerifSC-Bold.otf"
 fetch "https://github.com/google/fonts/raw/main/ofl/stixtwotext/STIXTwoText%5Bwght%5D.ttf" "$CACHE/fonts/STIXTwoText-Regular.ttf"
 fetch "https://github.com/google/fonts/raw/main/ofl/stixtwotext/STIXTwoText-Italic%5Bwght%5D.ttf" "$CACHE/fonts/STIXTwoText-Italic.ttf"
 fetch https://github.com/JetBrains/JetBrainsMono/raw/master/fonts/ttf/JetBrainsMono-Regular.ttf "$CACHE/fonts/JetBrainsMono-Regular.ttf"
