@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""OpenAI TTS narration -> <TTS.dir>/uNN.wav + timing.json (per-cue start/end from word timestamps).
+"""TTS narration -> <TTS.dir>/uNN.wav + timing.json (per-cue start/end from word timestamps).
+Engines: OpenAI (default) or "clone" = your own voice cloned from a reference recording (Qwen3-TTS via
+mlx-audio, offline, Apple Silicon):  VOICE = dict(engine="clone")  + persona.local.yaml tts.clone.ref_wav/ref_text
+(or VOICE ref_wav= / ref_text= pointing OUTSIDE the repo; never commit your voice).
 
     python3 tts.py spec.py --sample            # one line in a few voices -> <dir>/samples/
     python3 tts.py spec.py                      # all units (cached by text+voice+instructions)
     python3 tts.py spec.py 3 7                  # only units 3 and 7
 
-Reads OPENAI_API_KEY from the environment only. Voice / model / instructions from spec TTS.
+Reads OPENAI_API_KEY from the environment only (openai engine). Voice / model / instructions from spec TTS
+(spec VOICE is merged over TTS). Clone takes: seed 1000*unit+try, 4 tries, RMS-levelled to -20 dBFS, and a
+speech-rate sanity check (< 1.6 or > 4.2 words/s = stuck or garbled -> score -0.2).
 Each unit is synthesised up to 3x and transcribed; the take whose words best match the script wins
 (>= 0.93 stops early). Synthesis: ``vstudio.tts.synth`` (OpenAI engine, 48 kHz mono wav); transcription:
 ``vstudio.asr.transcribe`` (mlx_whisper -> faster_whisper -> OpenAI whisper-1); cue timing:
@@ -75,30 +80,57 @@ def main():
     ap.add_argument("units", nargs="*", type=int, help="only these unit indices")
     ap.add_argument("--voice", help="override TTS voice")
     ap.add_argument("--sample", action="store_true", help="synthesise one line in several voices")
+    ap.add_argument("--engine", choices=["openai", "clone"], help="override VOICE/TTS engine")
     a = ap.parse_args()
-    if not os.environ.get("OPENAI_API_KEY"):
-        sys.exit("OPENAI_API_KEY is not set in the environment")
 
     spec = load_spec(a.spec)
     C = Ctx(spec)
     cfg = dict(DEFAULTS)
     cfg.update(getattr(spec, "TTS", {}) or {})
+    cfg.update(getattr(spec, "VOICE", {}) or {})
+    engine = a.engine or cfg.get("engine", "openai")
+    clone = engine == "clone"
+    if clone:
+        user_cfg = {**(getattr(spec, "TTS", {}) or {}), **(getattr(spec, "VOICE", {}) or {})}
+        cfg["tries"] = user_cfg.get("tries", 4)
+        lang = cfg.get("tts_language") or ("Chinese" if cfg["language"] == "zh" else "English")
+        um = user_cfg.get("model")
+        um = um if um and not str(um).startswith(("gpt-", "tts-")) else None   # an OpenAI model name is not ours
+        cc = vtts.clone_config(C.path(cfg.get("ref_wav")) if cfg.get("ref_wav") else None, cfg.get("ref_text"),
+                               um, lang)
+        cfg["model"] = cc["model"]
+        print(f"clone voice: ref {os.path.basename(cc['ref_wav'])} ({cc['ref_hash']}), model {cc['model']}, {lang}")
+    elif not os.environ.get("OPENAI_API_KEY"):
+        sys.exit("OPENAI_API_KEY is not set in the environment")
     voice = a.voice or cfg["voice"]
     say = getattr(spec, "SAY", {}) or {}
     out = tts_dir(C)
     os.makedirs(os.path.join(out, "cache"), exist_ok=True)
     tmp = os.path.join(out, "cache", "_take.wav")
 
-    def synth(text, v, path, fresh=False):
+    def synth(text, v, path, fresh=False, seed=None):
         # fresh=True forces a new take (retries); the first take may come from the vstudio TTS cache
-        vtts.synth(text, engine="openai", voice=v, instructions=cfg["instructions"], model=cfg["model"],
-                   out=path, cache=not fresh)
+        if clone:   # each seed is its own cached take, so retries never repeat the same take
+            vtts.synth(text, engine="clone", ref_wav=cc["ref_wav"], ref_text=cc["ref_text"], model=cc["model"],
+                       language=cc["language"], seed=seed, out=path)
+        else:
+            vtts.synth(text, engine="openai", voice=v, instructions=cfg["instructions"], model=cfg["model"],
+                       out=path, cache=not fresh)
         x, sr = sf.read(path, dtype="float32")
-        return (x.mean(1) if x.ndim > 1 else x), sr
+        x = x.mean(1) if x.ndim > 1 else x
+        if clone:     # level every take to ~-20 dBFS RMS (cloned takes vary a lot in level)
+            x = np.clip(x * (10 ** (-20 / 20) / (np.sqrt(np.mean(x ** 2)) + 1e-9)), -0.98, 0.98)
+        return x, sr
 
     if a.sample:
         os.makedirs(os.path.join(out, "samples"), exist_ok=True)
         line = cfg.get("sample_line") or " ".join(en.replace("**", "") for en, _ in spec.SCRIPT[0][1])
+        if clone:
+            p = os.path.join(out, "samples", "clone.wav")
+            x, sr = synth(line, voice, p, seed=0)
+            sf.write(p, x, sr)
+            print("sample", p)
+            return
         for v in cfg["sample_voices"]:
             synth(line, v, os.path.join(out, "samples", f"{v}.wav"))
             print("sample", v)
@@ -114,7 +146,10 @@ def main():
         disp = [en.replace("**", "") for en, zh in chunks]
         say_text = " ".join(texts if cfg["use_say"] else disp)
         exps = [norm(" ".join(texts)), norm(" ".join(disp))]
-        key = hashlib.md5(f"{voice}|{cfg['model']}|{cfg['instructions']}|{say_text}".encode()).hexdigest()[:16]
+        if clone:
+            key = hashlib.md5(f"clone|{cc['ref_hash']}|{cc['model']}|{cc['language']}|{say_text}".encode()).hexdigest()[:16]
+        else:   # unchanged key -> existing OpenAI caches stay valid
+            key = hashlib.md5(f"{voice}|{cfg['model']}|{cfg['instructions']}|{say_text}".encode()).hexdigest()[:16]
         cw, cj = os.path.join(out, "cache", f"{key}.wav"), os.path.join(out, "cache", f"{key}.json")
         if os.path.exists(cw) and os.path.exists(cj):
             c = json.load(open(cj))
@@ -124,12 +159,16 @@ def main():
             continue
         best = None
         for k in range(int(cfg["tries"])):
-            x, sr = synth(say_text, voice, tmp, fresh=k > 0)
+            x, sr = synth(say_text, voice, tmp, fresh=k > 0, seed=1000 * i + k)
             x = trim(x, sr)
             sf.write(tmp, x, sr)
             words = asr_words(tmp, cfg)
             got = [t for wd, _, _ in words for t in norm(wd)]
             score = max(difflib.SequenceMatcher(None, e, got).ratio() for e in exps)
+            if clone:      # speech-rate sanity: very slow = stuck / repeating, very fast = garbled
+                wps = len(exps[0]) / max(len(x) / sr, 0.1)
+                if wps < 1.6 or wps > 4.2:
+                    score -= 0.2
             print(f"[{i:02d}] try{k} score={score:.3f} dur={len(x) / sr:.1f}s", flush=True)
             if best is None or score > best[0]:
                 best = (score, x, sr, words)

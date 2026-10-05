@@ -19,11 +19,14 @@ import math
 import os
 import random
 import re
+import shutil
 import subprocess
 
 import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
+
+from vstudio import media as vmedia
 
 from .ctx import font, font_for
 from .looks import paper_bg
@@ -101,11 +104,21 @@ def prep_video(C, sh, name):
     off = sh.get("off", 0.0)
     need = (sh["end"] - sh["start"] + sh["tail"] + 0.6) * speed
     tag = re.sub(r"[^\w.-]", "_", name)
-    out = os.path.join(C.cache_dir, f"v_{tag}_{C.BOX_W}x{C.BOX_H}_{off}_{speed}_{need:.1f}.mp4")
+    out = os.path.join(C.cache_dir, f"v_{tag}_{C.BOX_W}x{C.BOX_H}_{off}_{speed}_{need:.1f}_sdr.mp4")
     if not os.path.exists(out):
         src = C.find_video(name)
         if not src:
             raise FileNotFoundError(f"video '{name}' not found in {C.vid_dirs}")
+        hdr = ""
+        info = vmedia.probe(src)
+        if info["hdr"]:                              # iPhone HLG / PQ clip -> SDR bt709 first (avconvert on macOS)
+            if shutil.which("avconvert"):
+                sdr = os.path.join(C.cache_dir, f"sdr_{tag}.mov")
+                if not os.path.exists(sdr):
+                    vmedia.to_sdr(src, sdr, backend="avconvert")
+                src = sdr
+            else:
+                hdr = vmedia.hdr_to_sdr_args(src, info["transfer"]) + ","
         w, h = ffprobe_size(src)
         if name in C.VCROP:
             cx, cy, fr = C.VCROP[name]
@@ -115,7 +128,7 @@ def prep_video(C, sh, name):
         ch = cw * C.BOX_H / C.BOX_W
         x = int(min(max(cx * w - cw / 2, 0), w - cw))
         y = int(min(max(cy * h - ch / 2, 0), h - ch))
-        vf = f"setpts=PTS/{speed},crop={int(cw)}:{int(ch)}:{x}:{y},scale={C.BOX_W}:{C.BOX_H}:flags=lanczos,fps={C.FPS}"
+        vf = hdr + f"setpts=PTS/{speed},crop={int(cw)}:{int(ch)}:{x}:{y},scale={C.BOX_W}:{C.BOX_H}:flags=lanczos,fps={C.FPS}"
         if name in C.VEQ or sh.get("grade"):
             vf += "," + (sh.get("grade") if isinstance(sh.get("grade"), str) else C.VEQ_FILTER)
         subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", str(off), "-t", f"{need:.2f}", "-i", src,
@@ -587,26 +600,30 @@ class MedalShot:
         im = C.open_img(arg)
         c, z = sh.get("c", (0.5, 0.5)), sh.get("z", 1.0)
         self.bg = blurred_bg(C, im, 0.3, 30)
-        self.R = R = C.b(520)
-        self.face = to_arr(cover(im, 2 * R + C.b(120), 2 * R + C.b(120), c, z))
-        self.RC = RC = C.b(1500)
+        # keep the whole ring above overlaid subtitles: centre it in the visible part of the box, shrink if needed
+        self.cy = C.BOX_H // 2 if C.LAB_BOT >= C.BOX_H else C.LAB_BOT // 2
+        k = min(1.0, (2 * self.cy - C.b(40)) / (2 * C.b(700)))
+        b = C.b if k >= 1 else (lambda v: max(1, int(round(v * C.bs * k))))
+        self.R = R = b(520)
+        self.face = to_arr(cover(im, 2 * R + b(120), 2 * R + b(120), c, z))
+        self.RC = RC = b(1500)
         h = RC // 2
         ring = layer(RC, RC)
         text = sh.get("ring", (C.TITLE_EN or "PHOTO STORY").upper() + " · ")
-        fr = font_for(text, C.b(52), "serif-italic", "cjk")
-        cs = C.b(80)
+        fr = font_for(text, b(52), "serif-italic", "cjk")
+        cs = b(80)
         for i, ch in enumerate(text):
             ang = 360 * i / len(text)
             ci = layer(cs, cs)
             ImageDraw.Draw(ci).text((cs / 2, cs / 2), ch, font=fr, fill=C.GOLD + (255,), anchor="mm")
             ci = ci.rotate(-ang, resample=Image.BICUBIC)
-            r = C.b(650)
+            r = b(650)
             ring.alpha_composite(ci, (int(h + r * math.sin(math.radians(ang)) - cs / 2),
                                       int(h - r * math.cos(math.radians(ang)) - cs / 2)))
         dr = ImageDraw.Draw(ring)
-        r1, r2 = C.b(548), C.b(590)
-        dr.ellipse((h - r1, h - r1, h + r1, h + r1), outline=C.GOLD + (255,), width=C.b(14))
-        dr.ellipse((h - r2, h - r2, h + r2, h + r2), outline=C.GOLD + (120,), width=C.b(3))
+        r1, r2 = b(548), b(590)
+        dr.ellipse((h - r1, h - r1, h + r1, h + r1), outline=C.GOLD + (255,), width=b(14))
+        dr.ellipse((h - r2, h - r2, h + r2, h + r2), outline=C.GOLD + (120,), width=b(3))
         self.ring = to_arr(ring)
         yy, xx = np.mgrid[0:2 * R, 0:2 * R]
         self.mask = np.clip(R - np.sqrt((xx - R) ** 2 + (yy - R) ** 2), 0, 1)[..., None].astype(np.float32)
@@ -619,7 +636,7 @@ class MedalShot:
         fh = self.face.shape[0]
         M = np.float32([[s, 0, R - s * fh / 2], [0, s, R - s * fh / 2]])
         face = cv2.warpAffine(self.face, M, (2 * R, 2 * R), flags=cv2.INTER_CUBIC)
-        cx, cy = C.BOX_W // 2, C.BOX_H // 2
+        cx, cy = C.BOX_W // 2, self.cy
         reg = f[cy - R:cy + R, cx - R:cx + R]
         reg[:] = reg * (1 - self.mask) + face * self.mask
         h = self.RC / 2

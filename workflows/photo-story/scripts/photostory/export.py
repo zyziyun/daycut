@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Side outputs from the same timeline the video uses:
     <out>/subtitles.srt       bilingual SRT (EN line + 中文 line per cue)
+    <out>/cues.json           the same cues as subs.Cue dicts (text = 中文, alt = EN) for python -m vstudio.export
     <out>/transcript.md       read-along script by section (+ VOCAB table if the spec has one)
     <out>/voice.mp3           narration only (no music), persona audio.voice_lufs (-16)   (needs timing.json)
     <out>/post.md             post copy (vstudio.publish.post_body): title, intro, outro, chapter timestamps, tags
@@ -12,13 +13,16 @@ import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().par
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 import argparse
+import json
 import os
 import tempfile
 
 from vstudio import audio, media, publish
 from vstudio.subs import Cue, srt_write, strip_markup
 
-from photostory.ctx import Ctx, load_spec
+from vstudio import platform as vplat
+
+from photostory.ctx import Ctx, check_profile, load_spec
 from photostory.timeline import Timeline, load_timing, place_voice
 
 clean = lambda s: strip_markup(s or "")
@@ -29,16 +33,28 @@ def main():
     ap.add_argument("spec")
     ap.add_argument("--out", help="output folder (default: folder of spec OUT)")
     ap.add_argument("--no-voice", action="store_true")
+    ap.add_argument("--platform", help="override spec PLATFORM (post format, length check)")
+    ap.add_argument("--mode", choices=["narration", "music"], help="override spec MODE")
     a = ap.parse_args()
     spec = load_spec(a.spec)
+    if a.platform:
+        spec.PLATFORM = a.platform
+    if a.mode:
+        spec.MODE = a.mode
     C = Ctx(spec)
-    timing, has_audio = load_timing(C)
-    T = Timeline(C, timing)
+    if C.MODE == "music":
+        from photostory.music import MusicTimeline
+        T, has_audio = MusicTimeline(C), False
+    else:
+        timing, has_audio = load_timing(C)
+        T = Timeline(C, timing)
     out = a.out or os.path.dirname(C.path(getattr(spec, "OUT", "out/story.mp4")))
     os.makedirs(out, exist_ok=True)
 
     srt_write([Cue(s["start"], s["end"], s["en"] or "", s["zh"] or "") for s in T.subs],
               os.path.join(out, "subtitles.srt"), which="both")
+    json.dump([Cue(s["start"], s["end"], clean(s["zh"]), clean(s["en"])).to_dict() for s in T.subs],
+              open(os.path.join(out, "cues.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
 
     title = C.TITLE_EN or C.TITLE_ZH
     md = [f"# {title}", ""]
@@ -57,7 +73,7 @@ def main():
     open(os.path.join(out, "transcript.md"), "w", encoding="utf-8").write("\n".join(md) + "\n")
 
     post = dict(getattr(spec, "POST", {}) or {})
-    pl = publish.platform_name(post.get("platform"))
+    pl = publish.platform_name(post.get("platform") or (C.prof.name if C.prof is not None else None))
     cap = publish.XHS_CHAPTER_LABEL_MAX if pl in ("xiaohongshu", "xhs") else None
     chapters = []
     if len(C.SECTIONS) > 1:
@@ -78,7 +94,10 @@ def main():
             media.run(["ffmpeg", "-y", "-i", vn, "-c:a", "libmp3lame", "-b:a", "160k", os.path.join(out, "voice.mp3")])
     elif not a.no_voice:
         print("! no timing.json - skipped voice.mp3 (timestamps above are estimates)")
-    print(f"export -> {out}: subtitles.srt transcript.md post.md" + (" voice.mp3" if has_audio and not a.no_voice else ""),
+    cp = check_profile(C)
+    for w in (vplat.check_length(cp, T.total) if cp is not None else []):
+        print("!", w)
+    print(f"export -> {out}: subtitles.srt cues.json transcript.md post.md" + (" voice.mp3" if has_audio and not a.no_voice else ""),
           f"({len(T.subs)} cues)")
 
 

@@ -1,6 +1,6 @@
 # photo-story
 
-**Use when:** Turn your photos / short clips plus a narration script into a narrated, effect-rich story video (museum visit, travel, art history, product story) with bilingual EN/中文 subtitles, a running header with section progress, chapter cards, a cover and post copy, at any canvas size (3:4, 9:16, 16:9). Pure Python (PIL + OpenCV + ffmpeg), driven by one spec.py.
+**Use when:** Turn your photos / short clips plus a narration script (or just a music track: `MODE = "music"`, cuts on bars) into an effect-rich story video (museum visit, travel, art history, product story) with bilingual EN/中文 subtitles, a running header with section progress, chapter cards, a cover and post copy, at any canvas size (3:4, 9:16, 16:9) or laid out for a platform (`PLATFORM`). Narration by OpenAI TTS or your own cloned voice. Pure Python (PIL + OpenCV + ffmpeg), driven by one spec.py.
 
 **Use when** someone has a folder of photos (and maybe a few phone clips) and a story to tell over
 them: "make a narrated video of my museum visit / trip / this artist / this product", with Ken-Burns
@@ -30,7 +30,8 @@ Pillow, soundfile, `OPENAI_API_KEY` for TTS (no `openai` package needed), and a 
    python3 $VSTUDIO/workflows/photo-story/scripts/photostory/render.py work/spec.py --stills 2,10,25,40
    ```
    Stills go to `work/stills/` at 1/3 size (`--full` for full size). Look at each one. Check mid-transition times too.
-4. **Voice.** `OPENAI_API_KEY` must be in the environment.
+4. **Voice** (skip in `MODE = "music"`). OpenAI: `OPENAI_API_KEY` must be in the environment. Your own voice:
+   `VOICE = dict(engine="clone")` (see "Voice clone" below).
    ```bash
    python3 $VSTUDIO/workflows/photo-story/scripts/photostory/tts.py work/spec.py --sample   # pick a voice
    python3 $VSTUDIO/workflows/photo-story/scripts/photostory/tts.py work/spec.py            # all units -> work/tts/
@@ -52,10 +53,76 @@ Pillow, soundfile, `OPENAI_API_KEY` for TTS (no `openai` package needed), and a 
    python3 .../export.py work/spec.py        # subtitles.srt, transcript.md, voice.mp3 (-16 LUFS), post.md
    ```
 
+## Modes
+- **narration** (default): the TTS `timing.json` drives the timeline; optional `BGM` bed under the voice.
+- **music** (`MODE = "music"` or `render.py --mode music`, no TTS): `beats.analyze(BGM)` drives it. Every shot gets a
+  whole number of grid units by weight (min 1), so every cut lands on a bar (or beat). Spec sections start on the
+  music's own section changes when one is within a quarter section (chapter cards + header follow). The `(en, zh)`
+  lines become quiet title text (中文 serif + English italic, 0.6 s fades) spread over each item's shots; `captions=False`
+  hides them, `"subs"` uses the speech-subtitle style. Lines may be empty: `(0, [], shots)`.
+  ```python
+  MODE = "music"; BGM = "music/bed.mp3"
+  MUSIC = dict(grid="bar", per=1.0, length=None, start=0.0, tr="fade", trd=None, sections=True,
+               captions="title", lufs=-16, backend="auto")
+  ```
+  `grid`: `bar` (calm, 文艺片) · `beat` · `2` (every 2 beats) · any number of beats. `per` = units per weight; `length` =
+  target seconds instead. Default transition = a fade of half a grid unit (0.25-1.4 s) starting on the downbeat; per-shot
+  `tr=`/`trd=` still win. Render prints `beats.verify` and writes `cache/music_cuts.json` + `cache/beats.json`
+  (audit trail). The music is normalised as the main track (`lufs`, then the final loudnorm), fades out over the last bar.
+  Ambient / rubato tracks have no steady grid (`grid raw` in the log): cuts then follow the tracked beats.
+
+## Video clip audio
+Video shots are silent by default. `("vIMG_1234", 1, "still", dict(audio="keep", gain=-3))` keeps the clip's own sound
+in the foreground (the music dips by `CLIP_DUCK`, default -10 dB); `audio="duck"` keeps it as ambience (set to
+`AMBIENT_LUFS` -26, dipping by `AMBIENT_DUCK` -12 dB while the narration speaks); `audio="mute"` = default. `gain` is dB
+on top. Kept clips are levelled to `CLIP_LUFS` (persona `audio.voice_lufs`, -16). Clip sound follows `off=`/`speed=` and
+fades with the picture transitions. iPhone HLG/PQ clips are converted to SDR first (avconvert on macOS, else ffmpeg tone-map).
+
+## Voice clone (your own voice)
+Offline Qwen3-TTS (Base) via `mlx-audio` on Apple Silicon, cloned from a 5-15 s recording of your voice:
+```yaml
+# persona.local.yaml (git-ignored) - never commit the recording or put it inside the repo
+tts:
+  clone:
+    ref_wav: ~/voice/ref.wav                     # clean speech, no music, one speaker
+    ref_text: "the exact words spoken in ref.wav"
+    model: mlx-community/Qwen3-TTS-12Hz-1.7B-Base-bf16   # optional (default); ~4 GB, downloaded on first use
+```
+Spec: `VOICE = dict(engine="clone")` (optional `ref_wav=`, `ref_text=`, `model=`, `tries=` 4, `good=` 0.93;
+`VOICE` is merged over `TTS`), or `tts.py spec.py --engine clone`. Each unit is generated with seeds 1000*unit+try,
+levelled to -20 dBFS RMS, transcribed by whisper and scored against the script; a speech rate < 1.6 or > 4.2 words/s
+costs 0.2 (stuck / garbled takes). The best take wins; it is cached per unit by reference-audio hash + transcript +
+model + text, and each seeded take is cached by `vstudio.tts`. Library use: `tts.synth(text, engine="clone", seed=1)`.
+
+## Platforms
+`PLATFORM = "xiaohongshu:vertical"` in the spec, or `--platform <name[:orientation]>` on `render.py`, `cover.py`,
+`export.py` (`douyin`, `tiktok`, `youtube`, `youtube-shorts`, `bilibili:horizontal`, `xiaohongshu:full|horizontal` ...).
+From `vstudio.platform`: the canvas (overrides `CANVAS`), the header content starts at the safe-zone top and stays inside
+the safe left/right margins, subtitles are fitted (size from the profile's caption range, shrunk until both languages fit)
+into `caption_box` (clear of the lower-right button column), the picture box sits between them (portrait) or under the
+overlaid subtitles (landscape), labels stay above the subtitles and inside the safe margins, the final mix is loudnormed
+to the profile's LUFS / true peak, `cover.py` uses `cover_size` (e.g. YouTube 1280x720), `post.md` uses the platform's
+format, and render/export print `check_length` warnings. Without `PLATFORM` the old CANVAS layout is used unchanged
+(length checks use persona `platforms.default` in the canvas orientation). The area below the caption box (the platform's
+description UI) stays ground-coloured.
+
+Because the header, picture box and labels are laid out per canvas, the best multi-platform route is **re-rendering per
+platform** (`render.py spec.py --platform douyin --out out/douyin.mp4`; cached shots make it cheap). For an extra
+encode/cover/post pass, or a same-aspect variant, write a caption-free master and let `vstudio.export` burn captions:
+```bash
+python3 .../render.py work/spec.py --clean-master --out out/master.mp4    # + out/master.cues.json
+python3 -m vstudio.export out/master.mp4 --platforms douyin,tiktok --cues out/master.cues.json --cover out/cover.png
+```
+`export.py` also writes `cues.json` (text = 中文, alt = EN) next to the SRT.
+
 ## Spec reference (all optional except SCRIPT)
 
 | key | meaning |
 |---|---|
+| `PLATFORM` | `vstudio.platform` profile, e.g. `"xiaohongshu:vertical"` (sets canvas + safe layout, LUFS, cover size) |
+| `MODE`, `MUSIC` | `"narration"` (default) or `"music"` + its options (see Modes) |
+| `VOICE` | TTS engine options merged over `TTS`; `engine="clone"` = your own voice |
+| `CLIP_DUCK`, `AMBIENT_DUCK`, `CLIP_LUFS`, `AMBIENT_LUFS` | clip-audio levels / ducking (see Video clip audio) |
 | `CANVAS` | `"3:4"` 1080x1440 · `"3:4-hd"` 1620x2160 · `"9:16"` 1080x1920 · `"16:9"` 1920x1080 · `"WxH"` |
 | `LAYOUT` | `header`, `sub` (fraction of H or px), `overlay_subs`. Portrait default: header 13.9 %, picture box, sub band 16.7 %. Landscape default: header 15 % and subtitles overlaid on the picture over a gradient |
 | `PALETTE` | `accent ground paper ink mark route sub_en sub_zh` (hex or RGB) |
@@ -73,7 +140,7 @@ Pillow, soundfile, `OPENAI_API_KEY` for TTS (no `openai` package needed), and a 
 | `COVER`, `POST`, `VOCAB` | cover.py layout data / post copy (`title intro outro tags platform`; `platform` picks the `vstudio.publish` format, default persona `platforms.default`) / optional study table |
 
 ### Shot sources
-`"img"` photo · `"v<clip>"` / `"video:<clip>"` (opts `off`, `speed`, `grade`) · `collage:a,b,c` · `film:a,b,c` ·
+`"img"` photo · `"v<clip>"` / `"video:<clip>"` (opts `off`, `speed`, `grade`, `audio=keep|duck|mute`, `gain`) · `collage:a,b,c` · `film:a,b,c` ·
 `split:a|b` (`labels=`) · `grid:a,b,c,d` · `tilt:a` (`yaw=(from,to)`) · `deck:a,b,c` · `quote:a` (`q=(en, zh, who)`) ·
 `route:<leg>` or `route:A>B>C` · `medal:a` (`ring="TEXT · "`) · `rows:a,b,c`.
 Photo motions: `in out panL panR up down still flip`; options `c=(cx,cy)`, `z=zoom`, `label="..."`, `tr=<transition>`, `trd=seconds`.
@@ -96,4 +163,8 @@ Photo motions: `in out panL panR up down still flip`; options `c=(cx,cy)`, `z=zo
 - Chinese text in any serif/italic slot automatically switches to a CJK font, because STIX has no CJK glyphs.
 - Highlights (`**x**`) survive line wrapping. Lines are balanced so the last line is never a lone word.
 - Route maps are schematic: an equal-aspect projection of the given lon/lat, fitted into the box. Use `side="left"` to keep labels from colliding.
+- Music mode with a click-free ambient track: `beats.analyze` may find no steady grid. Check the log (`grid raw`, p90
+  residual) and `cache/music_cuts.json`; pick a track with a pulse, or `MUSIC.backend="numpy"|"librosa"` to compare.
+- Landscape: the medal ring is shrunk and centred above the overlaid subtitles; the header puts the title left and the
+  section progress right.
 - Editing a line's cue count invalidates that unit's timing. Render falls back to an estimate for that unit and prints a warning. Re-run `tts.py <i>`.

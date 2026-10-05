@@ -5,11 +5,16 @@ running header with section progress, chapter cards, bilingual subtitles, voice 
     python3 render.py spec.py --stills 3,12.5,40        # JPEG stills (1/3 size; --full = full size)
     python3 render.py spec.py --preview 20 --from 60    # 20 s preview from 60 s -> cache/preview.mp4
     python3 render.py spec.py                           # full render -> spec OUT
+    python3 render.py spec.py --platform douyin         # re-lay the story for another platform's canvas / safe zones
+    python3 render.py spec.py --clean-master            # no burned subtitles + <out>.cues.json (for vstudio.export)
+
+MODE = "music" in the spec (or --mode music): the BGM drives the timeline (cuts on bars/beats, see music.py).
 """
 import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[4] / "lib"))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 import argparse
+import json
 import os
 import subprocess
 import tempfile
@@ -18,21 +23,31 @@ import numpy as np
 from PIL import Image
 
 from vstudio import audio, media
+from vstudio import platform as vplat
 from vstudio.config import persona
+from vstudio.subs import strip_markup
 
 from photostory import overlays as ov
-from photostory.ctx import Ctx, load_spec
+from photostory import audiomix
+from photostory.ctx import Ctx, check_profile, load_spec
 from photostory.looks import film_look
 from photostory.shots import build, parse_src
-from photostory.subtitles import Header, make_chapter, make_label, make_sub, sub_backdrop
+from photostory.subtitles import Header, make_chapter, make_label, make_sub, make_title_text, sub_backdrop
 from photostory.timeline import Timeline, load_timing, place_voice
 from photostory.transitions import transition
 from photostory.util import paste_rgba
 
 
-def prepare(spec_path):
+def prepare(spec_path, platform=None, mode=None):
     spec = load_spec(spec_path)
+    if platform:
+        spec.PLATFORM = platform
+    if mode:
+        spec.MODE = mode
     C = Ctx(spec)
+    if C.MODE == "music":
+        from photostory.music import MusicTimeline
+        return C, MusicTimeline(C), True
     timing, has_audio = load_timing(C)
     T = Timeline(C, timing)
     return C, T, has_audio
@@ -47,11 +62,23 @@ def main():
     ap.add_argument("--full", action="store_true", help="stills at full canvas size (default 1/3)")
     ap.add_argument("--stills-dir", default=None, help="where stills go (default <spec dir>/stills)")
     ap.add_argument("--out", default=None, help="output mp4 (default spec OUT, or cache/preview.mp4 for --preview)")
+    ap.add_argument("--platform", help="override spec PLATFORM, e.g. xiaohongshu:vertical, douyin, youtube")
+    ap.add_argument("--mode", choices=["narration", "music"], help="override spec MODE")
+    ap.add_argument("--clean-master", action="store_true",
+                    help="do not burn subtitles/title text; write <out>.cues.json for python -m vstudio.export")
     a = ap.parse_args()
 
-    C, T, has_audio = prepare(a.spec)
-    print(f"canvas {C.W}x{C.H}, header {C.HDR}, box {C.BOX_W}x{C.BOX_H}, subs {C.SUB_H}"
-          f"{' (overlaid)' if C.overlay_subs else ''} | {T.summary()}")
+    C, T, has_audio = prepare(a.spec, a.platform, a.mode)
+    print(f"canvas {C.W}x{C.H}{' (' + C.prof.key + ')' if C.prof is not None else ''}, header {C.HDR}, "
+          f"box {C.BOX_W}x{C.BOX_H}, subs {C.SUB_H}@{C.SUB_Y0}{' (overlaid)' if C.overlay_subs else ''} | {T.summary()}")
+    music_mode = C.MODE == "music"
+    if music_mode:
+        v = T.save(os.path.join(C.cache_dir, "music_cuts.json"), C.FPS)
+        print(f"beats.verify: {'ok' if v['ok'] else 'BAD ' + str(v['bad'])}, max {v['max_abs_frames']:.2f} frames, "
+              f"mean {v['mean_abs_ms']:.1f} ms over {len(T.cuts)} cuts")
+    cp = check_profile(C)
+    for w in (vplat.check_length(cp, T.total) if cp is not None else []):
+        print("!", w)
     total = T.total
     t_from = a.t_from
     end_t = min(total, t_from + a.preview) if a.preview else total
@@ -59,7 +86,7 @@ def main():
     header = Header(C)
     chapters = {s: make_chapter(C, s) for s in range(1, len(C.SECTIONS))}
     for s in T.subs:
-        s["_lay"] = make_sub(C, s["en"], s["zh"])
+        s["_lay"] = (make_title_text if s.get("style") == "title" else make_sub)(C, s["en"], s["zh"])
     for sh in T.shots:
         if "label" in sh and not sh["src"].startswith("split:"):
             sh["_lab"] = make_label(C, sh["label"])
@@ -112,19 +139,21 @@ def main():
             la = min(1, (gt - sh["start"] - 0.45) / 0.3, (sh["end"] - gt) / 0.3)
             if la > 0:
                 m = C.b(44)
-                lab_y = C.BOX_H - m - sh["_lab"].shape[0] - (C.SUB_H if C.overlay_subs else 0)
-                paste_rgba(box, sh["_lab"], m, lab_y, la)
+                lab_y = C.LAB_BOT - m - sh["_lab"].shape[0]
+                paste_rgba(box, sh["_lab"], max(m, C.SAFE[0]), lab_y, la)
         if chap_len and sec >= 1 and gt - T.sec_bounds[sec] < chap_len:     # chapter card
             lt = gt - T.sec_bounds[sec]
             paste_rgba(box, chapters[sec], 0, 0, min(1, lt / 0.3, (chap_len - lt) / 0.45))
         frame = C.BG.copy()
         frame[C.HDR:C.HDR + C.BOX_H] = box
         header.draw(frame, sec, gt, T.sec_bounds)
-        cue = [s for s in T.subs if s["start"] <= gt < s["end"]]
+        cue = [] if a.clean_master else [s for s in T.subs if s["start"] <= gt < s["end"]]
         if cue and backdrop is not None:
-            paste_rgba(frame, backdrop, 0, C.SUB_Y0)
+            paste_rgba(frame, backdrop, 0, C.H - backdrop.shape[0])
         for s in cue:
-            paste_rgba(frame, s["_lay"], 0, C.SUB_Y0, min(1, (gt - s["start"]) / 0.1))
+            fa = min(1, (gt - s["start"]) / 0.1) if s.get("style") != "title" else \
+                min(1, (gt - s["start"]) / 0.6, (s["end"] - gt) / 0.6)
+            paste_rgba(frame, s["_lay"], 0, C.SUB_Y0, fa)
         if gt > total - end_fade:
             frame *= max(0, (total - gt) / end_fade)
         img = np.clip(frame, 0, 255).astype(np.uint8)
@@ -146,13 +175,20 @@ def main():
     out = a.out or (os.path.join(C.cache_dir, "preview.mp4") if a.preview else C.path(getattr(C.spec, "OUT", "out/story.mp4")))
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     mix_audio(C, T, t_from, end_t, vid_tmp, out)
+    if a.clean_master:
+        from vstudio.subs import Cue
+        cues = [Cue(s["start"] - t_from, s["end"] - t_from, strip_markup(s["zh"] or ""), strip_markup(s["en"] or "")).to_dict()
+                for s in T.subs if s["end"] > t_from and s["start"] < end_t]
+        cp_ = os.path.splitext(out)[0] + ".cues.json"
+        json.dump(cues, open(cp_, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+        print("cues:", cp_, f"({len(cues)})  ->  python3 -m vstudio.export {out} --platforms ... --cues {cp_}")
 
 
 def mix_audio(C, T, t0, t1, vid, out):
     """Voice units placed on the timeline (+ optional looping music bed via ``audio.mix_bed``), two-pass
     loudnorm to persona audio.loudness_lufs, muxed onto the silent picture track."""
     P = persona()
-    lufs = float((P.get("audio") or {}).get("loudness_lufs", -14))
+    lufs = C.LUFS
     abr = getattr(C.spec, "AUDIO_BITRATE", None) or (P.get("export") or {}).get("audio_bitrate", "192k")
     with tempfile.TemporaryDirectory(dir=C.cache_dir) as tmp:
         vo = place_voice(C, T, t0, t1, os.path.join(tmp, "voice.wav"))
@@ -161,7 +197,14 @@ def mix_audio(C, T, t0, t1, vid, out):
         if bgm and not os.path.exists(bgm):
             print(f"! BGM not found: {bgm} - rendering without music")
             bgm = None
-        if bgm:
+        music_mode = C.MODE == "music"
+        if music_mode or any(str(sh.get("audio", "mute")).lower() not in ("mute", "none", "off", "false")
+                             for sh in T.shots):
+            _, clips = audiomix.mix(C, T, t0, t1, mix, voice_wav=None if music_mode else vo, music=bgm,
+                                    music_mode=music_mode)
+            for c in clips:
+                print(f"clip audio: {c['shot']} {c['mode']} {c['gain']:+.0f} dB at {c['start']:.2f}s for {c['dur']:.2f}s")
+        elif bgm:
             if hasattr(C.spec, "BGM_VOLUME") and not hasattr(C.spec, "BGM_LUFS"):
                 print("note: BGM_VOLUME is no longer used; the bed is set by loudness "
                       "(BGM_LUFS, default persona audio.music_lufs -30)")
@@ -169,7 +212,7 @@ def mix_audio(C, T, t0, t1, vid, out):
                           music_lufs=getattr(C.spec, "BGM_LUFS", None), lufs=lufs,
                           fade_in=2.0, fade_out=3.5, music_start=t0)
         else:
-            audio.loudnorm_2pass(vo, mix, lufs=lufs)
+            audio.loudnorm_2pass(vo, mix, lufs=lufs, tp=C.TP)
         media.run(["ffmpeg", "-y", "-i", vid, "-i", mix, "-map", "0:v", "-map", "1:a", "-c:v", "copy",
                    "-c:a", "aac", "-b:a", str(abr), "-ar", str(audio.SR), "-ac", "2",
                    "-movflags", "+faststart", "-shortest", out])

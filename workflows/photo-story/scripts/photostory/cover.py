@@ -43,11 +43,18 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("spec")
     ap.add_argument("--out")
+    ap.add_argument("--platform", help="override spec PLATFORM (cover size = vstudio.platform.cover_size)")
     a = ap.parse_args()
     spec = load_spec(a.spec)
+    if a.platform:
+        spec.PLATFORM = a.platform
     C = Ctx(spec)
     cfg = dict(getattr(spec, "COVER", {}) or {})
-    W, H = tuple(cfg.get("size", (C.W, C.H)))
+    if C.prof is not None:
+        from vstudio import platform as vplat
+        W, H = tuple(cfg.get("size", vplat.cover_size(C.prof)))
+    else:
+        W, H = tuple(cfg.get("size", (C.W, C.H)))
     k = min(W / 1620, H / 2160)
     q = lambda v: int(round(v * k))
     GOLD, RED = C.GOLD, C.pal["mark"]

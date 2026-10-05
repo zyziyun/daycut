@@ -48,6 +48,28 @@ DEFAULT_PALETTE = dict(
 )
 
 
+def platform_profile(name):
+    """vstudio.platform Profile for a spec PLATFORM value ("xiaohongshu:vertical", "douyin", ...), or None."""
+    if not name:
+        return None
+    from vstudio import platform as vplat
+    return vplat.profile(str(name))
+
+
+def check_profile(C):
+    """The profile used for length / copy checks: spec PLATFORM, else persona platforms.default in the
+    orientation that matches the canvas (None if that platform has no such orientation)."""
+    if C.prof is not None:
+        return C.prof
+    from vstudio import platform as vplat
+    name = (persona().get("platforms") or {}).get("default") or "xiaohongshu"
+    o = "horizontal" if C.W > C.H else "full" if C.H / C.W > 1.6 else "vertical"
+    try:
+        return vplat.profile(name, o)
+    except KeyError:
+        return None
+
+
 def load_spec(path):
     path = os.path.abspath(path)
     sp = importlib.util.spec_from_file_location("photostory_spec", path)
@@ -96,22 +118,63 @@ class Ctx:
         self.root = os.path.dirname(os.path.abspath(spec.__file__))
         g = lambda k, d=None: getattr(spec, k, d)
         P = persona()
-        self.W, self.H = parse_canvas(g("CANVAS"))
+        self.prof = platform_profile(g("PLATFORM"))       # None = legacy CANVAS-only layout
+        if self.prof is not None:
+            self.W, self.H = self.prof.size
+            if g("CANVAS") is not None and parse_canvas(g("CANVAS")) != (self.W, self.H):
+                print(f"note: PLATFORM {self.prof.key} sets the canvas {self.W}x{self.H} (CANVAS {g('CANVAS')} ignored)")
+        else:
+            self.W, self.H = parse_canvas(g("CANVAS"))
         self.FPS = int(g("FPS", (P.get("export") or {}).get("fps", 30)))
         lay = dict(g("LAYOUT", {}) or {})
         portrait = self.H >= self.W
+        self.portrait = portrait
         px = lambda v: int(round(v * self.H)) if isinstance(v, float) and v <= 1 else int(v)
         self.overlay_subs = bool(lay.get("overlay_subs", not portrait))
-        self.HDR = px(lay.get("header", 300 / 2160 if portrait else 0.15))
-        self.SUB_H = px(lay.get("sub", 360 / 2160 if portrait else 0.22))
-        self.BOX_W = self.W
-        self.BOX_H = self.H - self.HDR - (0 if self.overlay_subs else self.SUB_H)
-        self.BOX_H -= self.BOX_H % 2
-        self.SUB_Y0 = self.H - self.SUB_H
         self.S = math.sqrt(self.W * self.H / (REF_W * REF_H))          # global text scale
-        self.HS = self.HDR / 300                                         # header scale
+        if self.prof is None:
+            # legacy layout: header at the very top, subtitle band at the very bottom
+            self.HDR = px(lay.get("header", 300 / 2160 if portrait else 0.15))
+            self.SUB_H = px(lay.get("sub", 360 / 2160 if portrait else 0.22))
+            self.HDR_Y0 = 0
+            self.HS = self.HDR / 300                                     # header scale
+            self.BOX_H = self.H - self.HDR - (0 if self.overlay_subs else self.SUB_H)
+            self.BOX_H -= self.BOX_H % 2
+            self.SUB_Y0 = self.H - self.SUB_H
+            self.SAFE = (0, 0, self.W, self.H)
+            self.CAP = (self.t(70), self.SUB_Y0, self.W - self.t(70), self.H)
+        else:
+            # platform layout: header content starts at the safe top, subtitles sit in the caption box,
+            # picture box between them (portrait) or under overlaid subtitles (landscape)
+            from vstudio import platform as vplat
+            self.SAFE = vplat.safe_box(self.prof)
+            self.CAP = vplat.caption_box(self.prof)
+            hc = px(lay.get("header", 300 / 2160 if portrait else 0.15))
+            self.HS = hc / 300
+            self.HDR_Y0 = max(0, self.SAFE[1] - int(40 * self.HS))
+            self.HDR = self.HDR_Y0 + hc
+            self.SUB_Y0, self.SUB_H = self.CAP[1], self.CAP[3] - self.CAP[1]
+            if "sub" in lay:                                             # taller band, bottom-anchored
+                self.SUB_H = px(lay["sub"])
+                self.SUB_Y0 = self.CAP[3] - self.SUB_H
+            self.BOX_H = (self.H if self.overlay_subs else self.SUB_Y0) - self.HDR
+            self.BOX_H -= self.BOX_H % 2
+        self.BOX_W = self.W
+        # lowest box row (box coords) that is not covered by overlaid subtitles / below the safe area
+        self.LAB_BOT = self.BOX_H - (self.SUB_H if self.overlay_subs and self.prof is None else 0)
+        if self.prof is not None:
+            self.LAB_BOT = min(self.BOX_H, self.SAFE[3] - self.HDR, (self.SUB_Y0 - self.HDR) if self.overlay_subs
+                               else self.BOX_H)
+        self.ZH_SIZE = self.t(66)                                        # 中文 subtitle size (EN = 56/66 of it)
+        if self.prof is not None:
+            lo, hi = (int(v) for v in self.prof.caption.get("size", (self.ZH_SIZE, self.ZH_SIZE)))
+            self.ZH_SIZE = min(max(self.ZH_SIZE, lo), hi)
         self.REF = min(self.BOX_W, self.BOX_H * REF_W / REF_BOX_H)       # box reference size
         self.bs = self.REF / REF_W                                       # box scale
+        loud = self.prof.loudness if self.prof is not None else {}
+        self.LUFS = float(loud.get("lufs", (P.get("audio") or {}).get("loudness_lufs", -14)))
+        self.TP = float(loud.get("tp", -1.5))
+        self.MODE = str(g("MODE", "narration")).lower()
 
         pal = dict(DEFAULT_PALETTE)
         pal.update({k: hex_rgb(v) for k, v in (g("PALETTE", {}) or {}).items()})

@@ -11,6 +11,9 @@ Coordinates in options (c, hl, tri, loupe) are 0-1 fractions of the picture box 
 
 # ---------------------------------------------------------------- canvas
 CANVAS = "3:4"            # "3:4" 1080x1440 | "3:4-hd" 1620x2160 | "9:16" 1080x1920 | "16:9" 1920x1080 | "WxH"
+# PLATFORM = "xiaohongshu:vertical"   # canvas, safe zones, caption box, LUFS, cover size from vstudio.platform
+#                                     # (overrides CANVAS; or render.py --platform douyin)
+# MODE = "music"                      # music-only: BGM drives the cuts (no TTS); see MUSIC below
 # LAYOUT = dict(header=0.139, sub=0.167, overlay_subs=False)   # fractions of H or px; defaults by orientation
 # PALETTE = dict(accent="#DEB870", mark="#E85638")            # see ctx.DEFAULT_PALETTE for all keys
 # FPS = 30
@@ -48,10 +51,14 @@ TIMELINE = dict(start=1885, end=1910, ticks=[1885, 1890, 1896, 1903, 1910], labe
 TTS = dict(dir="tts", voice="marin", model="gpt-4o-mini-tts",
            instructions="Voice: a warm, curious narrator showing a friend around a small gallery. "
                         "Pacing: calm and clear, slightly slower than conversation.")
+# VOICE = dict(engine="clone")      # your own cloned voice (Qwen3-TTS via mlx-audio); reference recording +
+#                                   # transcript in persona.local.yaml tts.clone.ref_wav / ref_text (never commit)
 SAY = {"1890": "eighteen ninety"}   # spoken forms used for alignment (and for TTS when TTS['use_say'])
 BGM = None                          # e.g. "music/bed.mp3" (your own licensed track)
 BGM_LUFS = -30                      # music bed loudness before the mix (default persona audio.music_lufs)
 BGM_DUCK = 0                        # extra dB on the bed while the voice speaks (e.g. -6); 0 = static bed
+# MUSIC = dict(grid="bar", per=1.0, captions="title")   # MODE "music": shot weight 1 = 1 bar; text as quiet titles
+# CLIP_DUCK = -10                   # music dip under clips with audio="keep"; AMBIENT_DUCK = -12 (audio="duck" under voice)
 OUT = "out/lighthouse_demo.mp4"
 
 # ---------------------------------------------------------------- script
