@@ -1,0 +1,9 @@
+numpy
+opencv-python
+Pillow
+mediapipe>=0.10.14
+scipy
+soundfile
+PyYAML
+fonttools[woff]
+openai

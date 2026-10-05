@@ -1,0 +1,14 @@
+{
+  "size": [1920, 1080],
+  "bg": "#34301f",
+  "base": "../work/frames/wide.jpg",
+  "title": "",
+  "roughness": 13,
+  "pieces": [
+    {"img": "../work/frames/a.jpg",    "left": -90,  "top": 40,   "w": 980,  "h": 820, "rot": 2,  "bgsize": 110, "bgpos": "center 55%", "seed": 11},
+    {"img": "../work/frames/b.jpg",    "left": 1040, "top": -90,  "w": 1000, "h": 800, "rot": -2, "bgsize": 112, "bgpos": "center 50%", "seed": 22},
+    {"img": "../work/frames/c.jpg",    "left": -40,  "top": 540,  "w": 1000, "h": 700, "rot": -3, "bgsize": 106, "bgpos": "center 60%", "seed": 33},
+    {"img": "../work/frames/d.jpg",    "left": 1000, "top": 520,  "w": 1060, "h": 720, "rot": 2,  "bgsize": 104, "bgpos": "center 55%", "seed": 44},
+    {"img": "../work/frames/hero.jpg", "left": 430,  "top": 180,  "w": 1060, "h": 740, "rot": -2, "bgsize": 110, "bgpos": "48% 58%",    "seed": 55}
+  ]
+}

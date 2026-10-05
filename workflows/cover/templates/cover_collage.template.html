@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Cover · 4-frame diagonal collage</title>
+<!-- Pattern A. Copy to work/cover.html; put q1..q4.png (extract_frames.py collage) in work/cover_src/.
+     Render: python3 $VSTUDIO/workflows/cover/scripts/render_html.py work/cover.html -o work/cover.png -->
+<style>
+  @font-face{font-family:"VS Sans";src:url("assets/fonts/NotoSansSC-Regular.otf");font-weight:100 600;}
+  @font-face{font-family:"VS Sans";src:url("assets/fonts/NotoSansSC-Bold.otf");font-weight:700 900;}
+  :root{ --teal:var(--accent,#2dd4bf); --dim:#9ca3af;
+    --teal-45:color-mix(in srgb,var(--teal) 45%,transparent); --teal-55:color-mix(in srgb,var(--teal) 55%,transparent); }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{width:1080px;height:1920px;background:#000;color:#fff;overflow:hidden;
+    font-family:"VS Sans",system-ui,sans-serif;-webkit-font-smoothing:antialiased;}
+  .stage{position:relative;width:100%;height:100%;}
+  .grid{position:absolute;inset:0;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;}
+  .cell{overflow:hidden;}
+  .cell img{width:100%;height:100%;object-fit:cover;display:block;filter:brightness(.8) contrast(1.05);}
+
+  /* two diagonal accent slashes crossing the centre */
+  .slash{position:absolute;left:50%;top:50%;width:2400px;height:14px;background:var(--teal);
+    box-shadow:0 0 40px var(--teal-55);z-index:3;}
+  .slash.a{transform:translate(-50%,-50%) rotate(60.6deg);}
+  .slash.b{transform:translate(-50%,-50%) rotate(-60.6deg);}
+
+  /* centre diamond with a play glyph */
+  .diamond{position:absolute;left:50%;top:50%;width:190px;height:190px;z-index:4;
+    transform:translate(-50%,-50%) rotate(45deg);background:#000;border:6px solid var(--teal);
+    box-shadow:0 0 50px var(--teal-55);}
+  .play{position:absolute;left:50%;top:50%;z-index:5;transform:translate(-38%,-50%);
+    width:0;height:0;border-top:42px solid transparent;border-bottom:42px solid transparent;border-left:70px solid var(--teal);}
+
+  .qbadge{position:absolute;padding:8px 14px;border-radius:8px;background:rgba(0,0,0,.72);
+    border:1px solid var(--teal-45);color:var(--teal);font-size:18px;font-weight:800;letter-spacing:.22em;z-index:6;}
+  .qbadge.q1{top:140px;left:30px;} .qbadge.q2{top:140px;right:30px;}
+  .qbadge.q3{top:1000px;left:30px;} .qbadge.q4{top:1000px;right:30px;}
+
+  .toptag{position:absolute;top:50px;left:50%;transform:translateX(-50%);z-index:7;display:inline-flex;
+    align-items:center;gap:12px;padding:12px 24px;border:1.5px solid var(--teal);border-radius:999px;color:var(--teal);
+    font-size:22px;font-weight:700;letter-spacing:.30em;background:rgba(0,0,0,.75);}
+  .toptag .dot{width:10px;height:10px;border-radius:50%;background:var(--teal);box-shadow:0 0 16px var(--teal);}
+
+  .bot{position:absolute;bottom:0;left:0;right:0;padding:120px 60px 70px;z-index:7;
+    background:linear-gradient(to top,rgba(0,0,0,.96) 35%,rgba(0,0,0,.8) 65%,rgba(0,0,0,0) 100%);
+    display:flex;flex-direction:column;align-items:center;gap:18px;text-align:center;}
+  .headline{font-size:116px;font-weight:900;letter-spacing:-.04em;line-height:.98;text-shadow:0 4px 22px rgba(0,0,0,.85);}
+  .headline .punch{color:var(--teal);font-style:italic;}
+  .pills{display:flex;gap:10px;}
+  .pill{padding:12px 20px;border-radius:10px;background:rgba(0,0,0,.75);border:1px solid var(--teal-55);
+    font-size:22px;font-weight:700;display:flex;align-items:baseline;gap:8px;}
+  .pill .n{color:var(--teal);font-size:15px;font-weight:800;letter-spacing:.06em;}
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="grid">
+    <div class="cell"><img src="cover_src/q1.png" alt=""/></div>
+    <div class="cell"><img src="cover_src/q2.png" alt=""/></div>
+    <div class="cell"><img src="cover_src/q3.png" alt=""/></div>
+    <div class="cell"><img src="cover_src/q4.png" alt=""/></div>
+  </div>
+  <div class="slash a"></div><div class="slash b"></div>
+  <div class="diamond"></div><div class="play"></div>
+
+  <div class="qbadge q1">HOOK</div><div class="qbadge q2">IDEA</div>
+  <div class="qbadge q3">PROOF</div><div class="qbadge q4">RECAP</div>
+
+  <div class="toptag"><span class="dot"></span>TOPIC · 90 SECONDS</div>
+
+  <div class="bot">
+    <div class="headline">Subject <span class="punch">isn't what you think.</span></div>
+    <div class="pills">
+      <div class="pill"><span class="n">01</span>Idea A</div>
+      <div class="pill"><span class="n">02</span>Idea B</div>
+      <div class="pill"><span class="n">03</span>Idea C</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

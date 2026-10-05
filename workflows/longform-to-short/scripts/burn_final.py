@@ -1,0 +1,54 @@
+#!/usr/bin/env python3
+"""Step 7b: overlay note panels + burn subs.ass in ONE encode -> <out>/final_subbed.mp4.
+
+Panel windows (source s) are mapped through timeline.json; a window edge that fell into a
+removed gap snaps forward (start) / back (end). Each PNG input needs `-loop 1` + overlay
+`shortest=1`, else the single-frame stream EOFs before its enable window and never shows.
+Needs an ffmpeg with libass: system ffmpeg if it has the `ass` filter, else static_ffmpeg.
+Fonts for libass come from vstudio's font dir (fontsdir=).
+
+Usage: python3 burn_final.py work/config.py [--no-subs]
+"""
+import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
+import os
+
+import _lfc
+from vstudio.config import FONT_DIR
+
+
+def extra(ap):
+    ap.add_argument("--no-subs", action="store_true", help="panels only")
+
+
+cfg, args = _lfc.load(description=__doc__, extra=extra)
+ff = _lfc.ffmpeg_bin(need_libass=not args.no_subs)
+timeline = _lfc.load_json("timeline.json")
+panels = _lfc.load_json("panels.json") if os.path.exists("panels.json") else []
+W, H = cfg.get("render.size", [1920, 1080])
+PX, PY = cfg.get("panel_pos", [W - 498, 240])
+src = os.path.join(cfg.out, "final.mp4")
+dst = os.path.join(cfg.out, "final_subbed.mp4")
+
+inputs, chains, prev = ["-i", src], [], "0:v"
+for i, p in enumerate(panels):
+    a, b = _lfc.map_src(timeline, p["t0"], "fwd"), _lfc.map_src(timeline, p["t1"], "back")
+    if a is None or b is None or b <= a:
+        print(f"WARN panel {i} window unmapped, skipped")
+        continue
+    inputs += ["-loop", "1", "-i", p["png"]]
+    idx = inputs.count("-i") - 1
+    py = PY if p["h"] + PY < H - 40 else H - 40 - p["h"]
+    chains.append(f"[{prev}][{idx}:v]overlay={PX}:{py}:shortest=1:"
+                  f"enable='between(t,{a:.2f},{b:.2f})'[v{i}]")
+    prev = f"v{i}"
+    print(f"panel {i}: {_lfc.mmss(a)}-{_lfc.mmss(b)}")
+
+if args.no_subs:
+    chains.append(f"[{prev}]null[vout]")
+else:
+    fontsdir = FONT_DIR.replace(":", r"\:")
+    chains.append(f"[{prev}]ass=subs.ass:fontsdir='{fontsdir}'[vout]")
+_lfc.run([ff, "-y", "-v", "error", *inputs, "-filter_complex", ";".join(chains),
+          "-map", "[vout]", "-map", "0:a", *_lfc.video_encoder(cfg),
+          "-c:a", "copy", "-movflags", "+faststart", dst])
+print("done:", dst)

@@ -1,0 +1,33 @@
+# Example voice block for persona.local.yaml (merge into your own; these keys are read by
+# workflows/preproduction). This one encodes a "learner-educator" tech-explainer voice.
+
+voice:
+  persona: "AI/tech educator who is also actively learning; curious and observational, never a consulted authority"
+  domain: "AI / software education"     # topics the voice is calibrated for
+  language: en                          # script language (subtitles may differ: creator.language)
+  wpm: 165                              # speaking pace used for length targets
+  rules:
+    - no em-dashes
+    - no parentheses in spoken lines
+    - no phrase fragments; every sentence has a subject and a verb
+    - one 干货 reframe per piece
+    - no generic CTA
+    - no false modesty ("I'm just learning this", "I might be wrong but")
+    - '"we" only when it includes the viewer, never a royal we'
+  phrases_prefer:                       # observational framings
+    - "What I find interesting"
+    - "the lens I keep coming back to"
+    - "the detail I don't see explained enough"
+  phrases_avoid:                        # linted as errors, on top of the generic trope lists
+    - "every time someone asks me"
+    - "as an expert"
+    - "I'm just learning this"
+    - "I might be wrong but"
+  signposts:                            # how this voice flags the insight paragraph
+    - "here's the detail I don't see explained enough"
+    - "one thing in this that most explanations skip"
+
+tts:                                    # pronunciation drill / TTS previews
+  kokoro_voice: af_heart
+  edge_voice: en-US-AriaNeural
+  openai_voice: alloy

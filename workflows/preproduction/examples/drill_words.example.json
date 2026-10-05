@@ -1,0 +1,42 @@
+[
+  {
+    "word": "inference",
+    "sentence": "Inference is the part you pay for every single day.",
+    "ipa": "/ˈɪn.fər.əns/",
+    "pitfall": "stress on the first syllable, not the second",
+    "bad": "in-FER-ence",
+    "good": "IN-fer-ence"
+  },
+  {
+    "word": "cache",
+    "sentence": "The cache keeps the answer close so nobody waits.",
+    "ipa": "/kæʃ/",
+    "pitfall": "one syllable, rhymes with cash",
+    "bad": "ca-SHAY",
+    "good": "cash"
+  },
+  {
+    "word": "chatbot",
+    "sentence": "You ask a chatbot the same question twice.",
+    "ipa": "/ˈtʃæt.bɒt/",
+    "pitfall": "ch as in chat, two clear syllables",
+    "bad": "shat-bot",
+    "good": "CHAT-bot"
+  },
+  {
+    "word": "throughput",
+    "sentence": "Throughput tells you how many requests finish each second.",
+    "ipa": "/ˈθruː.pʊt/",
+    "pitfall": "voiceless th, not t or s",
+    "bad": "true-put",
+    "good": "THROO-put"
+  },
+  {
+    "word": "memory",
+    "sentence": "It's about memory, because reading a stored result is cheaper than computing it again.",
+    "ipa": "/ˈmem.ər.i/",
+    "pitfall": "three syllables, don't swallow the middle one",
+    "bad": "MEM-ree",
+    "good": "MEM-uh-ree"
+  }
+]

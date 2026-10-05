@@ -1,0 +1,111 @@
+{
+ "_comment": "SYNTHETIC long-form landscape example. Two passes: --subs-only, translate to translations json, then render with --reuse.",
+ "source": "recordings/my-panel.mp4",
+ "whisper": "work/audio16k.json",
+ "audio": "work/audio16k.wav",
+ "auto_trim": true,
+ "extra_cuts": "work/editor_cuts.json",
+ "track_host": true,
+ "translations": "work/yt_en.json",
+ "host_region": "640,0,640,360",
+ "host_label": "Host",
+ "guests": [
+  {
+   "name": "guest1",
+   "region": "0,0,640,360",
+   "sticker": "assets/cat.png",
+   "label": "Guest 1"
+  },
+  {
+   "name": "guest2",
+   "region": "320,360,640,360",
+   "sticker": "assets/dog.png",
+   "label": "Guest 2"
+  }
+ ],
+ "clips": [
+  {
+   "id": "YT_full",
+   "yt_title": "长视频标题",
+   "accent": "Speaker A × Speaker B × Speaker C",
+   "windows": [
+    [
+     2.0,
+     96.0
+    ],
+    [
+     104.9,
+     210.5
+    ],
+    [
+     214.0,
+     380.0
+    ]
+   ],
+   "nodes": [
+    "第二章",
+    "第三章"
+   ],
+   "hooks": [
+    [
+     300.0,
+     305.5
+    ],
+    [
+     150.0,
+     154.0
+    ],
+    [
+     50.0,
+     55.0
+    ],
+    [
+     360.0,
+     365.0
+    ]
+   ],
+   "panels": [
+    [
+     12.5,
+     20.0,
+     "笔记卡标题一",
+     [
+      "要点一",
+      "要点二",
+      "要点三"
+     ]
+    ],
+    [
+     120.0,
+     18.0,
+     "笔记卡标题二",
+     [
+      "要点一",
+      "要点二"
+     ]
+    ]
+   ],
+   "sticker_note": "head-only tracking sticker, not a full-tile avatar",
+   "thumb": {
+    "accent_color": "yellow",
+    "size": 100,
+    "y": 74,
+    "lines": [
+     [
+      "白色的铺垫句",
+      false
+     ],
+     [
+      "强调色的结论句",
+      true
+     ]
+    ],
+    "labels": [
+     "Guest 1",
+     "Guest 2",
+     "Host"
+    ]
+   }
+  }
+ ]
+}

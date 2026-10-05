@@ -1,0 +1,4 @@
+# word | sentence from the locked script | IPA | pitfall
+inference | Inference is the part you pay for every single day. | /ˈɪn.fər.əns/ | stress on the first syllable
+cache | The cache keeps the answer close so nobody waits. | /kæʃ/ | one syllable, rhymes with cash
+throughput | Throughput tells you how many requests finish each second. | /ˈθruː.pʊt/ | voiceless th

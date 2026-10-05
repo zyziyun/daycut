@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; padding: 0; background: transparent; }
+  body { width: 512px; height: 512px; }
+  svg { display: block; }
+</style>
+</head>
+<body>
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="furGrad" cx="42%" cy="34%" r="72%">
+      <stop offset="0%"  stop-color="#FFE2B8"/>
+      <stop offset="58%" stop-color="#FBC98A"/>
+      <stop offset="100%" stop-color="#EDAE63"/>
+    </radialGradient>
+    <linearGradient id="earIn" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#FFC0C9"/>
+      <stop offset="100%" stop-color="#F79CAA"/>
+    </linearGradient>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000000" flood-opacity="0.22"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#soft)">
+    <!-- ears -->
+    <path d="M118 148 L106 44 L206 104 Z" fill="url(#furGrad)" stroke="#C98B45" stroke-width="7" stroke-linejoin="round"/>
+    <path d="M394 148 L406 44 L306 104 Z" fill="url(#furGrad)" stroke="#C98B45" stroke-width="7" stroke-linejoin="round"/>
+    <path d="M133 140 L127 78 L185 113 Z" fill="url(#earIn)"/>
+    <path d="M379 140 L385 78 L327 113 Z" fill="url(#earIn)"/>
+
+    <!-- head -->
+    <ellipse cx="256" cy="272" rx="176" ry="158" fill="url(#furGrad)" stroke="#C98B45" stroke-width="7"/>
+
+    <!-- tabby forehead stripes -->
+    <g stroke="#D9963F" stroke-width="11" stroke-linecap="round" opacity="0.75">
+      <path d="M232 142 L222 186"/>
+      <path d="M256 136 L256 184"/>
+      <path d="M280 142 L290 186"/>
+    </g>
+
+    <!-- cheek blush -->
+    <ellipse cx="150" cy="300" rx="34" ry="21" fill="#F79CAA" opacity="0.5"/>
+    <ellipse cx="362" cy="300" rx="34" ry="21" fill="#F79CAA" opacity="0.5"/>
+
+    <!-- eyes: happy closed arcs -->
+    <path d="M168 262 q30 -34 60 0" fill="none" stroke="#3A2A20" stroke-width="16" stroke-linecap="round"/>
+    <path d="M284 262 q30 -34 60 0" fill="none" stroke="#3A2A20" stroke-width="16" stroke-linecap="round"/>
+
+    <!-- nose + mouth -->
+    <path d="M238 300 h36 l-18 18 Z" fill="#E0708A"/>
+    <path d="M256 318 v12" stroke="#3A2A20" stroke-width="8" stroke-linecap="round"/>
+    <path d="M256 330 q-22 24 -40 4" fill="none" stroke="#3A2A20" stroke-width="9" stroke-linecap="round"/>
+    <path d="M256 330 q22 24 40 4" fill="none" stroke="#3A2A20" stroke-width="9" stroke-linecap="round"/>
+
+    <!-- whiskers -->
+    <g stroke="#6B4E3D" stroke-width="7" stroke-linecap="round" opacity="0.85">
+      <path d="M120 296 q-42 -10 -66 -22"/>
+      <path d="M118 322 q-44 2 -70 -2"/>
+      <path d="M392 296 q42 -10 66 -22"/>
+      <path d="M394 322 q44 2 70 -2"/>
+    </g>
+  </g>
+</svg>
+</body>
+</html>

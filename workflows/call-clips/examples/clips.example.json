@@ -1,0 +1,158 @@
+{
+ "_comment": "SYNTHETIC example. All times are SOURCE seconds of the recording. Copy to your project dir as clips.json.",
+ "source": "recordings/my-call.mp4",
+ "whisper": "work/audio16k.json",
+ "audio": "work/audio16k.wav",
+ "auto_trim": true,
+ "extra_cuts": "work/editor_cuts.json",
+ "guest_region": "0,180,640,360",
+ "host_region": "640,180,640,360",
+ "guest_label": "Speaker B",
+ "host_label": "Speaker A",
+ "term_fix": [
+  [
+   "示例误识别",
+   "示例正确写法"
+  ]
+ ],
+ "clips": [
+  {
+   "id": "01_topic_one",
+   "title": [
+    [
+     [
+      "第一行标题",
+      false
+     ],
+     [
+      "重点词",
+      true
+     ]
+    ],
+    [
+     [
+      "第二行标题",
+      false
+     ]
+    ]
+   ],
+   "accent": "一句副标题",
+   "windows": [
+    [
+     12.0,
+     96.5
+    ],
+    [
+     104.9,
+     180.2
+    ],
+    [
+     186.0,
+     240.0
+    ]
+   ],
+   "nodes": [
+    "第二部分的小标题",
+    null
+   ],
+   "hooks": [
+    [
+     150.2,
+     155.6
+    ],
+    [
+     60.1,
+     64.8
+    ]
+   ],
+   "panels": [
+    [
+     30.0,
+     16.0,
+     "笔记卡标题一",
+     [
+      "第一条要点",
+      "第二条要点",
+      "第三条要点"
+     ]
+    ],
+    [
+     120.0,
+     15.0,
+     "笔记卡标题二",
+     [
+      "要点 A",
+      "要点 B with an English term",
+      "要点 C"
+     ]
+    ]
+   ],
+   "cover_title_y": 300,
+   "cover_footer": "",
+   "cover_band": [
+    440,
+    1492
+   ],
+   "cover_strip_y": 700
+  },
+  {
+   "id": "02_quotes",
+   "title": [
+    [
+     [
+      "金句合集",
+      true
+     ]
+    ]
+   ],
+   "accent": "Speaker A × Speaker B",
+   "windows": [
+    [
+     300.0,
+     309.5
+    ],
+    [
+     410.2,
+     418.0
+    ],
+    [
+     520.0,
+     529.4
+    ]
+   ],
+   "nodes": [
+    "~",
+    "~"
+   ],
+   "hooks": [],
+   "quote_cards": true,
+   "panels": [
+    [
+     301.0,
+     7.0,
+     "Speaker A",
+     [
+      "一句可以单独成立的话，\n按意思断行"
+     ]
+    ],
+    [
+     411.0,
+     6.0,
+     "Speaker B",
+     [
+      "另一句金句"
+     ]
+    ],
+    [
+     521.0,
+     7.0,
+     "Speaker A",
+     [
+      "第三句金句"
+     ]
+    ]
+   ],
+   "_note": "quote_cards render as big quote cards in render_trio.py; render_vertical.py draws them as ordinary note panels"
+  }
+ ]
+}

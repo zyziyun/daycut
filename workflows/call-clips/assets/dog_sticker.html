@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; padding: 0; background: transparent; }
+  body { width: 512px; height: 512px; }
+  svg { display: block; }
+</style>
+</head>
+<body>
+<!-- Same head ellipse as cat_sticker.html (256,272 r176x158) so the derived
+     --scale 2.40 / --y-offset -0.031 carry over unchanged. -->
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="fur" cx="42%" cy="34%" r="72%">
+      <stop offset="0%"  stop-color="#FFF6EA"/>
+      <stop offset="60%" stop-color="#F6E3C9"/>
+      <stop offset="100%" stop-color="#E6C9A2"/>
+    </radialGradient>
+    <linearGradient id="ear" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#A8743F"/>
+      <stop offset="100%" stop-color="#8A5A2B"/>
+    </linearGradient>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000000" flood-opacity="0.22"/>
+    </filter>
+  </defs>
+  <g filter="url(#soft)">
+    <!-- head -->
+    <ellipse cx="256" cy="272" rx="176" ry="158" fill="url(#fur)" stroke="#B98A55" stroke-width="7"/>
+    <!-- floppy ears, drawn over the head edge -->
+    <path d="M120 150 C 60 150, 34 250, 58 340 C 70 382, 118 378, 126 332 C 134 280, 150 210, 170 168 Z"
+          fill="url(#ear)" stroke="#6E4520" stroke-width="7" stroke-linejoin="round"/>
+    <path d="M392 150 C 452 150, 478 250, 454 340 C 442 382, 394 378, 386 332 C 378 280, 362 210, 342 168 Z"
+          fill="url(#ear)" stroke="#6E4520" stroke-width="7" stroke-linejoin="round"/>
+    <!-- eye patch -->
+    <ellipse cx="318" cy="250" rx="52" ry="46" fill="#D9B07E" opacity="0.8"/>
+    <!-- blush -->
+    <ellipse cx="160" cy="316" rx="30" ry="18" fill="#F79CAA" opacity="0.45"/>
+    <ellipse cx="352" cy="316" rx="30" ry="18" fill="#F79CAA" opacity="0.45"/>
+    <!-- happy eyes -->
+    <path d="M172 262 q28 -32 56 0" fill="none" stroke="#3A2A20" stroke-width="16" stroke-linecap="round"/>
+    <path d="M288 262 q28 -32 56 0" fill="none" stroke="#3A2A20" stroke-width="16" stroke-linecap="round"/>
+    <!-- muzzle -->
+    <ellipse cx="256" cy="328" rx="70" ry="52" fill="#FFFBF4" stroke="#E2C8A4" stroke-width="4"/>
+    <ellipse cx="256" cy="304" rx="26" ry="18" fill="#3A2A20"/>
+    <ellipse cx="248" cy="298" rx="8" ry="5" fill="#8A7A70"/>
+    <path d="M256 322 v12" stroke="#3A2A20" stroke-width="7" stroke-linecap="round"/>
+    <path d="M256 334 q-20 22 -36 4" fill="none" stroke="#3A2A20" stroke-width="8" stroke-linecap="round"/>
+    <path d="M256 334 q20 22 36 4" fill="none" stroke="#3A2A20" stroke-width="8" stroke-linecap="round"/>
+    <!-- tongue -->
+    <path d="M244 346 q12 30 24 0 Z" fill="#F07A8E"/>
+  </g>
+</svg>
+</body>
+</html>

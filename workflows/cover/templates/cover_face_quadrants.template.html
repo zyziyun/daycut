@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Cover · face on quadrants</title>
+<!-- Pattern B. Copy to work/cover.html; put bg_tl/bg_tr/bg_bl/bg_br.png in work/cover_src/ and the matted
+     face as work/cover_face.png. Set .face-wrap to the face PNG aspect (matte.py prints it). -->
+<style>
+  /* fonts: render_html.py copies the repo fonts (Noto Sans SC, OFL) into ./assets/fonts/ */
+  @font-face{font-family:"VS Sans";src:url("assets/fonts/NotoSansSC-Regular.otf");font-weight:100 600;}
+  @font-face{font-family:"VS Sans";src:url("assets/fonts/NotoSansSC-Bold.otf");font-weight:700 900;}
+  /* --accent comes from persona.brand.accent (injected by render_html.py); teal is the original look */
+  :root{ --teal:var(--accent,#2dd4bf); --dim:#9ca3af;
+    --teal-35:color-mix(in srgb,var(--teal) 35%,transparent); --teal-40:color-mix(in srgb,var(--teal) 40%,transparent);
+    --teal-45:color-mix(in srgb,var(--teal) 45%,transparent); --teal-55:color-mix(in srgb,var(--teal) 55%,transparent);
+    --teal-62:color-mix(in srgb,var(--teal) 62%,transparent); }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{
+    width:1080px;height:1920px;background:#000;color:#fff;overflow:hidden;
+    font-family:"VS Sans",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .stage{position:relative;width:100%;height:100%;background:#000;}
+
+  /* ─── 2×2 slide-thumb grid (background) ─── */
+  .grid{
+    position:absolute;inset:0;
+    display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:0;
+  }
+  .cell{position:relative;overflow:hidden;background:#000;}
+  .cell img{
+    width:100%;height:100%;object-fit:cover;display:block;
+    filter:brightness(.55) contrast(1.05);
+  }
+  /* hairline teal seam between cells */
+  .grid::before, .grid::after{
+    content:"";position:absolute;background:var(--teal-35);
+    box-shadow:0 0 18px var(--teal-40);pointer-events:none;
+  }
+  .grid::before{left:50%;top:0;bottom:0;width:2px;transform:translateX(-1px);}
+  .grid::after{ top:50%;left:0;right:0;height:2px;transform:translateY(-1px);}
+
+  /* corner badges identifying each quadrant */
+  .qbadge{
+    position:absolute;padding:8px 14px;border-radius:8px;
+    background:rgba(0,0,0,.72);backdrop-filter:blur(8px);
+    border:1px solid var(--teal-45);
+    color:var(--teal);font-size:18px;font-weight:800;
+    letter-spacing:.22em;text-transform:uppercase;z-index:3;
+  }
+  .qbadge.q1{ top:140px; left:30px; }
+  .qbadge.q2{ top:140px; right:30px; }
+  .qbadge.q3{ bottom:calc(50% + 30px); left:30px; }
+  .qbadge.q4{ bottom:calc(50% + 30px); right:30px; }
+
+  /* ─── center face (foreground) — aspect matches the matted PNG ─── */
+  .face-wrap{
+    position:absolute;left:50%;top:540px;
+    transform:translateX(-50%);
+    width:980px;height:700px;     /* matches face PNG ratio 1080×770 */
+    z-index:5;
+  }
+  /* big teal radial glow behind face */
+  .face-wrap::before{
+    content:"";position:absolute;
+    left:50%;top:50%;transform:translate(-50%,-50%);
+    width:820px;height:820px;border-radius:50%;
+    background:radial-gradient(circle, var(--teal-62), transparent 65%);
+    filter:blur(55px);z-index:0;
+  }
+  .face-wrap img{
+    position:relative;z-index:1;width:100%;height:100%;
+    object-fit:contain;object-position:center top;
+    filter:contrast(1.06) saturate(1.06)
+           drop-shadow(0 12px 40px rgba(0,0,0,.7))
+           drop-shadow(0 0 26px var(--teal-35));
+  }
+
+  /* ─── TOP overlay: tag ─── */
+  .toptag{
+    position:absolute;top:50px;left:50%;transform:translateX(-50%);z-index:7;
+    display:inline-flex;align-items:center;gap:12px;
+    padding:12px 24px;border:1.5px solid var(--teal);border-radius:999px;
+    color:var(--teal);font-size:22px;font-weight:700;letter-spacing:.30em;text-transform:uppercase;
+    background:rgba(0,0,0,.75);backdrop-filter:blur(10px);
+  }
+  .toptag .dot{width:10px;height:10px;border-radius:50%;background:var(--teal);
+    box-shadow:0 0 16px var(--teal);}
+
+  /* ─── BOTTOM overlay ─── */
+  .bot{
+    position:absolute;bottom:0;left:0;right:0;
+    padding:40px 60px 60px;z-index:7;
+    background:linear-gradient(to top, rgba(0,0,0,.95) 25%, rgba(0,0,0,.85) 60%, rgba(0,0,0,.0) 100%);
+    display:flex;flex-direction:column;align-items:center;gap:16px;text-align:center;
+  }
+  .headline{
+    font-size:120px;font-weight:900;letter-spacing:-.045em;line-height:.95;
+    text-shadow:0 4px 22px rgba(0,0,0,.85);
+  }
+  .headline .punch{color:var(--teal);font-style:italic;}
+  .sub{
+    color:#d1d5db;font-size:30px;font-weight:600;letter-spacing:-.005em;
+  }
+  .sub .em{color:var(--teal);font-weight:800;}
+  .pills{display:flex;gap:10px;}
+  .pill{
+    padding:12px 20px;border-radius:10px;
+    background:rgba(0,0,0,.75);backdrop-filter:blur(8px);
+    border:1px solid var(--teal-55);
+    color:#fff;font-size:22px;font-weight:700;letter-spacing:-.005em;
+    display:flex;align-items:baseline;gap:8px;
+  }
+  .pill .n{color:var(--teal);font-size:15px;font-weight:800;letter-spacing:.06em;}
+</style>
+</head>
+<body>
+<div class="stage">
+
+  <div class="grid">
+    <div class="cell tl"><img src="cover_src/bg_tl.png" alt=""/></div>
+    <div class="cell tr"><img src="cover_src/bg_tr.png" alt=""/></div>
+    <div class="cell bl"><img src="cover_src/bg_bl.png" alt=""/></div>
+    <div class="cell br"><img src="cover_src/bg_br.png" alt=""/></div>
+  </div>
+
+  <div class="qbadge q1">INTRO</div>
+  <div class="qbadge q2">PART 1</div>
+  <div class="qbadge q3">PART 2</div>
+  <div class="qbadge q4">PART 3</div>
+
+  <div class="toptag"><span class="dot"></span>TOPIC · 90 SECONDS</div>
+
+  <div class="face-wrap">
+    <img src="cover_face.png" alt=""/>
+  </div>
+
+  <div class="bot">
+    <div class="headline">Subject <span class="punch">isn't what you think.</span></div>
+    <div class="sub"><span class="em">3 ideas</span> explain the whole thing.</div>
+    <div class="pills">
+      <div class="pill"><span class="n">01</span>Idea A</div>
+      <div class="pill"><span class="n">02</span>Idea B</div>
+      <div class="pill"><span class="n">03</span>Idea C</div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

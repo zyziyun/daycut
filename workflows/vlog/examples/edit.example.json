@@ -1,0 +1,31 @@
+{
+  "src_dir": "../footage",
+  "clips": {
+    "0079": "DJI_0079.MP4",
+    "0080": "DJI_0080.MP4",
+    "0086": "DJI_0086.MP4",
+    "walk": "IMG_0001.MOV"
+  },
+  "res": [3840, 2160],
+  "fps": 30,
+  "xfade": 0.8,
+  "fade_out": 1.5,
+  "fit": "crop",
+  "hdr": "auto",
+  "ambient_audio": false,
+  "grade": {"brightness": 0.05, "contrast": 1.12, "saturation": 1.18, "gamma": 1.04},
+  "warm": true,
+  "sharpen": true,
+  "seg_crf": 12,
+  "final_crf": 18,
+  "workers": 3,
+  "out": "vlog_master_4k.mp4",
+  "segments": [
+    {"clip": "0086", "start": 4,  "dur": 10, "kind": "empty", "bright": 0.08},
+    {"clip": "0080", "start": 6,  "dur": 20},
+    {"clip": "0080", "start": 50, "dur": 20},
+    {"clip": "walk", "start": 3,  "dur": 12, "speed": 1.1, "stabilize": true},
+    {"clip": "0079", "start": 70, "dur": 22},
+    {"clip": "0086", "start": 60, "dur": 8,  "kind": "empty"}
+  ]
+}

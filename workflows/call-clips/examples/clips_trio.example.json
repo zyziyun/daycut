@@ -1,0 +1,89 @@
+{
+ "_comment": "SYNTHETIC three-tile gallery example (two guests masked). Run with --renderer render_trio.py.",
+ "source": "recordings/my-panel.mp4",
+ "whisper": "work/audio16k.json",
+ "audio": "work/audio16k.wav",
+ "auto_trim": true,
+ "host_region": "640,0,640,360",
+ "host_label": "Host",
+ "guests": [
+  {
+   "name": "guest1",
+   "region": "0,0,640,360",
+   "sticker": "assets/cat.png",
+   "label": "Guest 1"
+  },
+  {
+   "name": "guest2",
+   "region": "320,360,640,360",
+   "sticker": "assets/dog.png",
+   "label": "Guest 2",
+   "_note": "optional for a tiny face (phone video pillarboxed in the tile)",
+   "search": "460,360,360,360",
+   "upscale": 2
+  }
+ ],
+ "clips": [
+  {
+   "id": "01_panel_topic",
+   "title": [
+    [
+     [
+      "三人对谈的",
+      false
+     ],
+     [
+      "标题",
+      true
+     ]
+    ]
+   ],
+   "accent": "副标题",
+   "windows": [
+    [
+     20.0,
+     140.0
+    ],
+    [
+     148.5,
+     260.0
+    ]
+   ],
+   "nodes": [
+    "下一个话题"
+   ],
+   "hooks": [
+    [
+     200.0,
+     205.5
+    ],
+    [
+     90.0,
+     95.0
+    ]
+   ],
+   "panels": [
+    [
+     40.0,
+     15.0,
+     "笔记卡标题",
+     [
+      "要点一",
+      "要点二",
+      "要点三"
+     ]
+    ]
+   ],
+   "chapters": [
+    [
+     20.0,
+     "开场"
+    ],
+    [
+     148.5,
+     "下一个话题"
+    ]
+   ]
+  }
+ ]
+}

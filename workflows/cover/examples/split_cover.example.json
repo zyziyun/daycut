@@ -1,0 +1,17 @@
+{
+  "_comment": "Synthetic example. Paths are relative to this file. Copy to your project's work/ folder and edit.",
+  "photo": "cover_src/face.png",
+  "retouch": {"slim": 0.05, "eye": 0.04, "smooth": 0.6, "makeup": 0.5},
+  "photo_lift": 1.03,
+  "face_x": "auto",
+  "quote": {"text": "“a short line someone notable said about the topic”", "by": "— Speaker A"},
+  "title": {"lines": ["让 AI 给你做", "数学讲解视频"], "highlight": ["数学"], "size": 94},
+  "thumbnail": {"path": "cover_src/explainer_frame.png", "crop": [0, 0.14, 1, 0.77]},
+  "chips": [{"text": "Tool A × Tool B", "style": "ink"}, {"text": "主题 · 10 分钟 · 中英双语", "style": "dim"}],
+  "stamp": {"text": "亲测", "rotate": 8},
+  "corner_tag": {"text": "记笔记 ↓"},
+  "outputs": [
+    {"path": "../cover-4x3.jpg", "size": [1440, 1080], "photo_w": 760},
+    {"path": "../cover-16x9.jpg", "size": [1920, 1080], "photo_w": 900}
+  ]
+}

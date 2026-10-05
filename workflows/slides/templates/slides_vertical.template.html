@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>vertical slides</title>
+<!-- Copy to work/slides.html. One <section class="slide" data-key="NN_name"> per slide.
+     Render: python3 $VSTUDIO/workflows/slides/scripts/render_slides.py work/slides.html work/slides/ -->
+<style>
+  /* fonts: render_html.py copies the repo fonts (Noto Sans SC, OFL) into ./assets/fonts/ */
+  @font-face{font-family:"VS Sans";src:url("assets/fonts/NotoSansSC-Regular.otf");font-weight:100 600;}
+  @font-face{font-family:"VS Sans";src:url("assets/fonts/NotoSansSC-Bold.otf");font-weight:700 900;}
+  /* --accent is injected from persona.brand.accent by render_html.py; teal is the template fallback */
+  :root{
+    --bg:#000;
+    --fg:#fff;
+    --dim:#6b7280;
+    --dim2:#9ca3af;
+    --teal:var(--accent,#2dd4bf);
+    --teal-soft:color-mix(in srgb,var(--teal) 16%,transparent);
+    --teal-25:color-mix(in srgb,var(--teal) 25%,transparent);
+    --teal-40:color-mix(in srgb,var(--teal) 40%,transparent);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);
+    font-family:"VS Sans",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;overflow:hidden;}
+  body{width:1080px;height:1080px;display:flex;align-items:center;justify-content:center;}
+
+  /* ---------- shared ---------- */
+  .slide{
+    position:absolute;inset:0;
+    display:none;
+    flex-direction:column;align-items:center;justify-content:center;
+    padding:60px;
+    text-align:center;
+  }
+  .slide.on{ display:flex; }
+
+  .eyebrow{
+    color:var(--teal);font-size:28px;letter-spacing:.32em;
+    text-transform:uppercase;font-weight:600;margin-bottom:24px;
+  }
+  .eyebrow .dot{
+    display:inline-block;width:8px;height:8px;border-radius:50%;
+    background:var(--teal);margin:0 14px;vertical-align:4px;
+  }
+  .footnote{
+    position:absolute;left:0;right:0;bottom:54px;
+    color:var(--dim);font-size:24px;letter-spacing:.04em;text-align:center;
+  }
+
+  /* ---------- 1. hook title ---------- */
+  .s-title h1{
+    font-size:160px;font-weight:800;letter-spacing:-.045em;
+    margin:0;line-height:.98;
+    display:flex;flex-direction:column;gap:6px;
+  }
+  .s-title h1 span{display:block;}
+  .s-title h1 .a{color:var(--teal);font-size:.9em;line-height:1;}
+  .s-title p{color:var(--dim);font-size:34px;margin:42px 0 0;letter-spacing:.01em;}
+
+  /* ---------- 2. hook contrast ---------- */
+  .s-contrast .line{font-size:78px;font-weight:700;line-height:1.18;letter-spacing:-.02em;}
+  .s-contrast .line + .line{margin-top:24px;}
+  .s-contrast .line.you{color:var(--dim2);}
+  .s-contrast .line.dont{color:var(--fg);}
+  .s-contrast .line .em{color:var(--teal);}
+
+  /* ---------- 3. three words preview ---------- */
+  .s-three .big{font-size:96px;font-weight:800;letter-spacing:-.03em;line-height:1.1;margin-bottom:60px;}
+  .s-three .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;width:100%;}
+  .s-three .card{
+    border:1.5px solid rgba(255,255,255,.16);
+    border-radius:18px;padding:34px 18px;
+  }
+  .s-three .card .n{color:var(--teal);font-size:32px;font-weight:700;margin-bottom:14px;letter-spacing:.04em;}
+  .s-three .card .w{font-size:38px;font-weight:700;letter-spacing:-.01em;}
+
+  /* ---------- section header (4, 8, 11) ---------- */
+  .s-sec{padding-top:120px;}
+  .s-sec .num{
+    font-size:340px;font-weight:800;line-height:.85;color:var(--teal);
+    letter-spacing:-.06em;margin-bottom:8px;
+  }
+  .s-sec .word{font-size:120px;font-weight:800;letter-spacing:-.03em;line-height:1;margin-bottom:18px;}
+  .s-sec .sub{color:var(--dim);font-size:36px;letter-spacing:.02em;}
+
+  /* ---------- punchline cards ---------- */
+  .s-punch .big{font-size:108px;font-weight:800;letter-spacing:-.03em;line-height:1.06;}
+  .s-punch .big .em{color:var(--teal);}
+  .s-punch .sub{margin-top:36px;color:var(--dim);font-size:34px;letter-spacing:.01em;}
+
+  /* ---------- France/Paris bars ---------- */
+  .s-bars h2{
+    font-size:36px;font-weight:500;color:var(--dim);margin:0 0 50px;
+    letter-spacing:.01em;
+  }
+  .s-bars h2 code{
+    color:var(--fg);background:rgba(255,255,255,.08);
+    padding:8px 18px;border-radius:10px;font-family:inherit;font-size:.95em;font-weight:500;
+  }
+  .s-bars h2 .blank{
+    display:inline-block;width:1.6em;border-bottom:3px solid var(--teal);
+    margin:0 4px;vertical-align:-4px;
+  }
+  .bars{width:100%;display:flex;flex-direction:column;gap:18px;}
+  .bar-row{display:grid;grid-template-columns:130px 1fr 90px;
+    align-items:center;gap:22px;font-size:34px;}
+  .bar-row .label{text-align:right;font-weight:500;color:var(--fg);}
+  .bar-row .track{height:38px;background:rgba(255,255,255,.06);border-radius:8px;overflow:hidden;}
+  .bar-row .fill{height:100%;background:var(--teal);border-radius:8px;}
+  .bar-row.dim .label,.bar-row.dim .pct{color:var(--dim);}
+  .bar-row.dim .fill{background:#374151;}
+  .bar-row .pct{font-variant-numeric:tabular-nums;color:var(--dim);font-size:30px;text-align:left;}
+  .bar-row.top .pct{color:var(--teal);font-weight:700;font-size:34px;}
+
+  /* ---------- attention ---------- */
+  .s-attn h2{
+    font-size:34px;color:var(--dim);font-weight:500;margin:0 0 40px;letter-spacing:.02em;
+  }
+  .s-attn h2 code{
+    color:var(--fg);background:rgba(255,255,255,.08);padding:6px 14px;border-radius:8px;
+    font-family:inherit;font-size:.95em;
+  }
+  .att-wrap{position:relative;width:100%;padding-top:130px;}
+  .sentence{font-size:42px;letter-spacing:-.015em;line-height:1.2;font-weight:600;
+    white-space:nowrap;}
+  .sentence .w{display:inline-block;padding:2px 5px;}
+  .sentence .cat{position:relative;color:var(--teal);font-weight:800;}
+  .sentence .cat::after{content:"";position:absolute;left:6%;right:6%;bottom:-3px;
+    height:4px;background:var(--teal);border-radius:2px;}
+  .sentence .mat{color:#6b7280;}
+  .sentence .it{
+    background:var(--teal-soft);color:var(--teal);font-weight:800;
+    border-radius:8px;padding:4px 12px;outline:2px solid var(--teal);
+  }
+  .att-svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;}
+  .att-label{margin-top:120px;color:var(--teal);font-size:28px;letter-spacing:.32em;
+    text-transform:uppercase;font-weight:700;}
+  .att-sub{margin-top:14px;color:var(--dim);font-size:24px;letter-spacing:.04em;}
+
+  /* ---------- re-send stack ---------- */
+  .s-ctx h2{
+    font-size:38px;font-weight:600;color:var(--fg);margin:0 0 44px;letter-spacing:-.01em;
+  }
+  .s-ctx h2 .em{color:var(--teal);font-weight:700;}
+  .stack{display:flex;flex-direction:column;gap:22px;width:100%;}
+  .turn{
+    display:grid;grid-template-columns:100px 1fr 36px 110px;
+    align-items:center;gap:18px;
+  }
+  .turn .tlabel{color:var(--dim);font-size:20px;letter-spacing:.18em;text-transform:uppercase;font-weight:600;}
+  .bundle{
+    display:flex;flex-wrap:wrap;gap:8px;padding:14px 16px;
+    background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.10);
+    border-radius:14px;min-height:64px;align-items:center;
+  }
+  .msg{font-size:20px;padding:8px 14px;border-radius:18px;white-space:nowrap;}
+  .msg.u{background:#1f2937;color:#e5e7eb;}
+  .msg.a{background:var(--teal-soft);color:var(--teal);border:1px solid var(--teal-40);}
+  .msg.new{outline:2px solid var(--teal);outline-offset:2px;}
+  .arrow{color:var(--teal);font-size:36px;text-align:center;font-weight:600;}
+  .model{
+    display:flex;align-items:center;justify-content:center;
+    height:64px;border:2px solid var(--teal);border-radius:12px;
+    color:var(--teal);font-weight:700;font-size:18px;letter-spacing:.16em;
+  }
+  .stack-foot{margin-top:24px;color:var(--dim);font-size:26px;letter-spacing:.01em;line-height:1.4;text-align:center;}
+  .stack-foot b{color:var(--teal);font-weight:700;}
+
+  /* ---------- no-memory big text ---------- */
+  .s-nomem .top{font-size:80px;font-weight:700;color:var(--dim2);letter-spacing:-.02em;line-height:1.1;}
+  .s-nomem .big{font-size:200px;font-weight:900;color:var(--teal);letter-spacing:-.05em;line-height:1;margin:16px 0;}
+  .s-nomem .none{font-size:64px;color:var(--fg);font-weight:700;letter-spacing:-.01em;}
+  .s-nomem .none .dim{color:var(--dim);}
+
+  /* ---------- recap grid ---------- */
+  .s-recap h2{font-size:40px;color:var(--dim);font-weight:500;margin:0 0 50px;letter-spacing:.01em;}
+  .recap-list{display:flex;flex-direction:column;gap:28px;width:100%;}
+  .recap-row{
+    display:grid;grid-template-columns:auto 1fr;align-items:baseline;gap:24px;
+    padding:24px 32px;border:1.5px solid rgba(255,255,255,.14);border-radius:18px;
+  }
+  .recap-row .k{color:var(--teal);font-size:54px;font-weight:800;letter-spacing:-.02em;}
+  .recap-row .v{color:var(--fg);font-size:36px;letter-spacing:-.01em;font-weight:500;text-align:left;}
+  .recap-row .v .dim{color:var(--dim);}
+
+  /* ---------- outro ---------- */
+  .s-outro .wave{font-size:130px;line-height:1;}
+  .s-outro .big{font-size:84px;font-weight:800;letter-spacing:-.02em;margin:32px 0 18px;}
+  .s-outro .cta{color:var(--teal);font-size:36px;font-weight:700;letter-spacing:.04em;
+    border:2px solid var(--teal);padding:18px 36px;border-radius:999px;margin-top:32px;
+    display:inline-block;}
+
+  /* ---------- export mode hook (used by headless screenshot) ---------- */
+  body.export{background:#000;}
+
+  /* =============== animate mode (used for MP4 recording) =============== */
+  /* slide 06: bars grow — explicit from/to keyframes, "both" fill-mode pins start AND end */
+  body.animate .s-bars .bar-row.top      .fill{ animation: gParis  1.1s cubic-bezier(.2,.7,.2,1) .25s both; }
+  body.animate .s-bars .bar-row:nth-of-type(2) .fill{ animation: gLyon   .65s cubic-bezier(.2,.7,.2,1) 1.05s both; }
+  body.animate .s-bars .bar-row:nth-of-type(3) .fill{ animation: gFrance .65s cubic-bezier(.2,.7,.2,1) 1.15s both; }
+  body.animate .s-bars .bar-row:nth-of-type(4) .fill{ animation: gBerlin .65s cubic-bezier(.2,.7,.2,1) 1.25s both; }
+  body.animate .s-bars .bar-row:nth-of-type(5) .fill{ animation: gOther  .65s cubic-bezier(.2,.7,.2,1) 1.35s both; }
+  @keyframes gParis  { from{ width:0; } to{ width:87%; } }
+  @keyframes gLyon   { from{ width:0; } to{ width:4%;  } }
+  @keyframes gFrance { from{ width:0; } to{ width:2%;  } }
+  @keyframes gBerlin { from{ width:0; } to{ width:1.4%;} }
+  @keyframes gOther  { from{ width:0; } to{ width:6%;  } }
+  body.animate .s-bars .pct{ opacity:0; animation:fadeIn .4s ease-out forwards; }
+  body.animate .s-bars .bar-row.top .pct{ animation-delay:1.1s; }
+  body.animate .s-bars .bar-row:nth-of-type(2) .pct{ animation-delay:1.55s; }
+  body.animate .s-bars .bar-row:nth-of-type(3) .pct{ animation-delay:1.65s; }
+  body.animate .s-bars .bar-row:nth-of-type(4) .pct{ animation-delay:1.75s; }
+  body.animate .s-bars .bar-row:nth-of-type(5) .pct{ animation-delay:1.85s; }
+  @keyframes fadeIn{ from{opacity:0;transform:translateY(4px);} to{opacity:1;transform:none;} }
+
+  /* slide 09: attention arrows draw via stroke-dashoffset (set inline by JS) */
+  body.animate .s-attn .att-svg path.arc1{
+    animation:strokeDraw 1.0s ease-out .5s forwards; }
+  body.animate .s-attn .att-svg path.arc2{
+    animation:strokeDraw 1.0s ease-out 1.6s forwards; }
+  @keyframes strokeDraw{ to{ stroke-dashoffset:0; } }
+  body.animate .s-attn .sentence .it{
+    animation:itPulse 0.6s ease-out 0s 2 alternate; }
+  @keyframes itPulse{
+    from{ box-shadow:0 0 0 0 transparent; }
+    to{ box-shadow:0 0 0 8px var(--teal-25); }
+  }
+
+  /* slide 13: turns stagger in */
+  body.animate .s-ctx .turn{
+    opacity:0;transform:translateY(20px);
+    animation:turnIn .5s cubic-bezier(.2,.7,.2,1) forwards; }
+  body.animate .s-ctx .turn:nth-child(1){ animation-delay:.25s; }
+  body.animate .s-ctx .turn:nth-child(2){ animation-delay:1.05s; }
+  body.animate .s-ctx .turn:nth-child(3){ animation-delay:1.85s; }
+  body.animate .s-ctx .stack-foot{
+    opacity:0; animation:fadeIn .5s ease-out 2.7s forwards; }
+  @keyframes turnIn{ to{ opacity:1;transform:none; } }
+  /* "new" message in each turn pulses on arrival */
+  body.animate .s-ctx .msg.new{
+    animation:newPulse 0.6s ease-out 0s 2 alternate;
+  }
+  @keyframes newPulse{
+    from{ outline-color:var(--teal); outline-offset:2px; }
+    to{ outline-color:var(--teal); outline-offset:6px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- 1 · HOOK TITLE -->
+<section class="slide s-title" data-key="01_title">
+  <div class="eyebrow">TOPIC in 90 seconds</div>
+  <h1>
+    <span>Term A</span>
+    <span>Term B</span>
+    <span>Term C</span>
+  </h1>
+  <p>the 3 words that explain how it actually works.</p>
+</section>
+
+<!-- 2 · CONTRAST HOOK -->
+<section class="slide s-contrast" data-key="02_contrast">
+  <div class="line you">You use it<br/><span class="em">every day.</span></div>
+  <div class="line dont">You've never seen<br/><span class="em">how it works.</span></div>
+</section>
+
+<!-- 3 · THREE WORDS PREVIEW -->
+<section class="slide s-three" data-key="03_three">
+  <div class="big">3 words.<br/>That's it.</div>
+  <div class="grid">
+    <div class="card"><div class="n">01</div><div class="w">Term A</div></div>
+    <div class="card"><div class="n">02</div><div class="w">Term B</div></div>
+    <div class="card"><div class="n">03</div><div class="w">Term C</div></div>
+  </div>
+</section>
+
+<!-- 4 · SECTION HEADER (giant accent number) -->
+<section class="slide s-sec" data-key="04_a_sec">
+  <div class="num">1</div>
+  <div class="word">Term A</div>
+  <div class="sub">what the acronym stands for</div>
+</section>
+
+<!-- 5 · PUNCHLINE -->
+<section class="slide s-punch" data-key="05_a_punch">
+  <div class="eyebrow"><span class="dot"></span>WHAT IT DOES</div>
+  <div class="big">one idea<br/>in <span class="em">four words.</span></div>
+  <div class="sub">the plain-language version of the claim.</div>
+</section>
+
+<!-- 6 · PROBABILITY BARS (animated: bars grow) -->
+<section class="slide s-bars" data-key="06_bars">
+  <h2><code>the capital of France is</code> <span class="blank"></span></h2>
+  <div class="bars">
+    <div class="bar-row top"><div class="label">Paris</div>
+      <div class="track"><div class="fill" style="width:87%"></div></div>
+      <div class="pct">87%</div></div>
+    <div class="bar-row dim"><div class="label">Lyon</div>
+      <div class="track"><div class="fill" style="width:4%"></div></div>
+      <div class="pct">4%</div></div>
+    <div class="bar-row dim"><div class="label">France</div>
+      <div class="track"><div class="fill" style="width:2%"></div></div>
+      <div class="pct">2%</div></div>
+    <div class="bar-row dim"><div class="label">Berlin</div>
+      <div class="track"><div class="fill" style="width:1%"></div></div>
+      <div class="pct">1%</div></div>
+    <div class="bar-row dim"><div class="label">…</div>
+      <div class="track"><div class="fill" style="width:6%"></div></div>
+      <div class="pct">6%</div></div>
+  </div>
+  <div class="footnote">model picks the most likely next token, every step</div>
+</section>
+
+<!-- 7 · SECTION PUNCHLINE -->
+<section class="slide s-punch" data-key="07_a_punch">
+  <div class="big">Term A =<br/>a familiar thing<br/><span class="em">at huge scale.</span></div>
+</section>
+
+<!-- 8 · SECTION HEADER -->
+<section class="slide s-sec" data-key="08_b_sec">
+  <div class="num">2</div>
+  <div class="word">Term B</div>
+  <div class="sub">one-line role of term B</div>
+</section>
+
+<!-- 9 · ARROW DIAGRAM (key must end in _attn; arrows drawn by JS) -->
+<section class="slide s-attn" data-key="09_attn">
+  <h2>which words does <code>it</code> connect to?</h2>
+  <div class="att-wrap">
+    <div class="sentence" id="sent">
+      <span class="w">the</span>
+      <span class="w cat" id="w-cat">cat</span>
+      <span class="w">sat on the</span>
+      <span class="w mat" id="w-mat">mat</span>
+      <span class="w">because</span>
+      <span class="w it" id="w-it">it</span>
+      <span class="w">was tired</span>
+    </div>
+    <svg class="att-svg" id="attSvg"></svg>
+    <div class="att-label">attention</div>
+    <div class="att-sub">"it" → "cat" ✓ &nbsp;&nbsp; "it" → "mat" ✗</div>
+  </div>
+</section>
+
+<!-- 10 · PUNCHLINE WITH EYEBROW -->
+<section class="slide s-punch" data-key="10_b_punch">
+  <div class="eyebrow"><span class="dot"></span>THE TRICK</div>
+  <div class="big"><span class="em">attention</span><br/>= which words<br/>matter most.</div>
+</section>
+
+<!-- 11 · SECTION HEADER -->
+<section class="slide s-sec" data-key="11_c_sec">
+  <div class="num">3</div>
+  <div class="word">Term C</div>
+  <div class="sub">one-line role of term C</div>
+</section>
+
+<!-- 12 · GIANT SINGLE WORD -->
+<section class="slide s-nomem" data-key="12_nomem">
+  <div class="top">the model has</div>
+  <div class="big">NO</div>
+  <div class="none">memory. <span class="dim">none.</span></div>
+</section>
+
+<!-- 13 · STACK DIAGRAM (animated: rows stagger in) -->
+<section class="slide s-ctx" data-key="13_resend">
+  <h2>every turn re-sends the <span class="em">entire</span> conversation</h2>
+  <div class="stack">
+    <div class="turn">
+      <div class="tlabel">Turn 1</div>
+      <div class="bundle"><span class="msg u new">Hi</span></div>
+      <div class="arrow">→</div>
+      <div class="model">MODEL</div>
+    </div>
+    <div class="turn">
+      <div class="tlabel">Turn 2</div>
+      <div class="bundle">
+        <span class="msg u">Hi</span>
+        <span class="msg a">Hello! 👋</span>
+        <span class="msg u new">Weather?</span>
+      </div>
+      <div class="arrow">→</div>
+      <div class="model">MODEL</div>
+    </div>
+    <div class="turn">
+      <div class="tlabel">Turn 3</div>
+      <div class="bundle">
+        <span class="msg u">Hi</span>
+        <span class="msg a">Hello! 👋</span>
+        <span class="msg u">Weather?</span>
+        <span class="msg a">Sunny, 72°F</span>
+        <span class="msg u new">And tomorrow?</span>
+      </div>
+      <div class="arrow">→</div>
+      <div class="model">MODEL</div>
+    </div>
+  </div>
+  <div class="stack-foot">the "memory" you feel? it's the app re-sending — <b>every turn</b>.</div>
+</section>
+
+<!-- 14 · RECAP -->
+<section class="slide s-recap" data-key="14_recap">
+  <h2>so the next time you see this…</h2>
+  <div class="recap-list">
+    <div class="recap-row"><div class="k">Term A</div>
+      <div class="v">what it does <span class="dim">· the short reason</span></div></div>
+    <div class="recap-row"><div class="k">Term B</div>
+      <div class="v">what it does <span class="dim">· the short reason</span></div></div>
+    <div class="recap-row"><div class="k">Term C</div>
+      <div class="v">what it does <span class="dim">· the short reason</span></div></div>
+  </div>
+</section>
+
+<!-- 15 · OUTRO -->
+<section class="slide s-outro" data-key="15_outro">
+  <div class="big">the lens to keep:</div>
+  <div class="cta">ask what it was shaped for</div>
+</section>
+
+<script>
+  // ?export=<key>  → activate only that slide for headless screenshot.
+  // ?animate=1     → also turn on CSS animations (for MP4 recording).
+  const qs = new URLSearchParams(location.search);
+  const key = qs.get('export');
+  const animate = qs.get('animate') === '1';
+  const slides = [...document.querySelectorAll('.slide')];
+  if (key) {
+    document.body.classList.add('export');
+    slides.forEach(s => s.classList.toggle('on', s.dataset.key === key));
+    if (key.endsWith('_attn')) {
+      requestAnimationFrame(() => requestAnimationFrame(() => drawAttention(animate)));
+    }
+    if (animate) {
+      // Delay adding the animate class so the first frame is the "start" state,
+      // not mid-animation (avoids race with paint).
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        document.body.classList.add('animate');
+      }));
+    }
+  } else {
+    // default view in browser: show first slide. Press 1-9/0/Q-T for others.
+    slides[0].classList.add('on');
+    const keymap = ['1','2','3','4','5','6','7','8','9','0','q','w','e','r','t'];
+    document.addEventListener('keydown', (e) => {
+      const i = keymap.indexOf(e.key);
+      if (i >= 0 && slides[i]) {
+        slides.forEach(s => s.classList.remove('on'));
+        slides[i].classList.add('on');
+        if (slides[i].dataset.key.endsWith('_attn')) {
+          requestAnimationFrame(() => requestAnimationFrame(drawAttention));
+        }
+      }
+    });
+  }
+
+  function drawAttention(animate){
+    const svg = document.getElementById('attSvg');
+    const accent = getComputedStyle(document.documentElement).getPropertyValue('--teal').trim() || '#2dd4bf';
+    if (!svg) return;
+    const wrap = svg.parentElement.getBoundingClientRect();
+    const it  = document.getElementById('w-it').getBoundingClientRect();
+    const cat = document.getElementById('w-cat').getBoundingClientRect();
+    const mat = document.getElementById('w-mat').getBoundingClientRect();
+    const off = wrap;
+    const px = el => ({ x: el.left - off.left + el.width/2, y: el.top - off.top });
+    const a = px(it), b = px(cat), c = px(mat);
+    const arc1 = `M ${a.x} ${a.y} C ${a.x} ${a.y-160}, ${b.x} ${b.y-160}, ${b.x} ${b.y-6}`;
+    const arc2 = `M ${a.x} ${a.y} C ${a.x} ${a.y-110}, ${c.x} ${c.y-110}, ${c.x} ${c.y-6}`;
+    svg.setAttribute('viewBox', `0 0 ${wrap.width} ${wrap.height}`);
+    svg.innerHTML = `
+      <defs>
+        <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M0,0 L10,5 L0,10 z" fill="${accent}"/>
+        </marker>
+        <marker id="ahx" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M0,0 L10,5 L0,10 z" fill="#4b5563"/>
+        </marker>
+      </defs>
+      <path class="arc2" d="${arc2}" stroke="#4b5563" stroke-width="3" fill="none" stroke-dasharray="8 6" marker-end="url(#ahx)" opacity=".7"/>
+      <path class="arc1" d="${arc1}" stroke="${accent}" stroke-width="4" fill="none" marker-end="url(#ah)"/>
+    `;
+    if (animate) {
+      // Set dash trick on both arcs so CSS @keyframes can reveal them.
+      svg.querySelectorAll('path').forEach(p => {
+        const len = p.getTotalLength();
+        // arc2 has its own dash pattern (dashed line), so we use a different reveal:
+        // length+gap pattern, animate offset.
+        if (p.classList.contains('arc2')) {
+          p.style.strokeDasharray = `${len}`;
+          p.style.strokeDashoffset = `${len}`;
+        } else {
+          p.style.strokeDasharray = `${len}`;
+          p.style.strokeDashoffset = `${len}`;
+        }
+      });
+    }
+  }
+</script>
+</body>
+</html>

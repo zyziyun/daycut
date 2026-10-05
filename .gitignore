@@ -9,3 +9,7 @@ node_modules/
 *.wav
 assets/fonts/
 .env
+persona.local.yaml
+persona.yaml
+*.egg-info/
+.cache/
