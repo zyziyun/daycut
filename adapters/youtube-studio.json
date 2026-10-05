@@ -1,0 +1,48 @@
+{
+  "id": "youtube-studio",
+  "name": "YouTube Studio",
+  "nameZh": "YouTube 工作室",
+  "status": "unverified",
+  "lastVerified": null,
+  "packagePlatforms": ["youtube", "youtube-shorts"],
+  "uploadUrl": "https://www.youtube.com/upload",
+  "loginUrl": "https://accounts.google.com/ServiceLogin?service=youtube",
+  "allowedHosts": ["youtube.com", "*.youtube.com", "accounts.google.com", "*.google.com", "*.ytimg.com", "*.googleusercontent.com"],
+  "fields": {
+    "file": {
+      "selectors": ["input[type=\"file\"][name=\"Filedata\"]", "ytcp-uploads-file-picker input[type=\"file\"]"],
+      "timeoutMs": 30000
+    },
+    "title": {
+      "selectors": ["#title-textarea #textbox", "ytcp-social-suggestions-textbox#title-textarea [contenteditable=\"true\"]"],
+      "kind": "contenteditable",
+      "maxLength": 100,
+      "clear": true,
+      "timeoutMs": 60000
+    },
+    "description": {
+      "selectors": ["#description-textarea #textbox", "ytcp-social-suggestions-textbox#description-textarea [contenteditable=\"true\"]"],
+      "kind": "contenteditable",
+      "maxLength": 5000,
+      "clear": true,
+      "timeoutMs": 20000
+    },
+    "tags": { "mode": "append-to-description", "format": "#{tag} ", "max": 3 },
+    "cover": {
+      "selectors": ["input#file-loader[type=\"file\"]", "ytcp-thumbnails-compact-editor-uploader input[type=\"file\"]"],
+      "timeoutMs": 5000
+    }
+  },
+  "publishButton": {
+    "selectors": ["#done-button", "ytcp-button#done-button"]
+  },
+  "disclosure": {
+    "zh": "在「详细信息 → 加工或合成的内容（Altered content）」里如实选择「是」（逼真的 AI 生成/修改内容必须披露）；同时选择「是否为儿童打造」。未通过审计的 API 项目上传会被锁成私密——这里走网页手动发布，不受此限。",
+    "en": "Under Details → \"Altered or synthetic content\", answer \"Yes\" when realistic content was made or changed with AI; also set \"Made for kids\". (Unaudited API uploads are forced private - this web flow is not affected.)"
+  },
+  "notes": [
+    "UNVERIFIED selectors: YouTube Studio is a Polymer app; check ids on the live page.",
+    "Thumbnail upload needs a verified channel (phone verification); otherwise the cover input is missing and the step is reported not-found.",
+    "Tags are appended to the description as #hashtags (the first 3 show above the title)."
+  ]
+}

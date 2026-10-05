@@ -1,0 +1,27 @@
+{
+  "id": "douyin",
+  "name": "Douyin creator center",
+  "nameZh": "抖音创作者中心",
+  "status": "todo",
+  "lastVerified": null,
+  "packagePlatforms": ["douyin"],
+  "uploadUrl": "https://creator.douyin.com/creator-micro/content/upload",
+  "loginUrl": "https://creator.douyin.com/",
+  "allowedHosts": ["douyin.com", "*.douyin.com", "*.douyinpic.com", "*.douyinstatic.com", "*.bytedance.com"],
+  "fields": {
+    "file": { "selectors": ["TODO-input[type=\"file\"]"] },
+    "title": { "selectors": ["TODO-title-input"], "kind": "input", "maxLength": 30, "clear": true },
+    "description": { "selectors": ["TODO-description-editor"], "kind": "contenteditable", "maxLength": 1000, "clear": true },
+    "tags": { "mode": "append-to-description", "format": "#{tag} ", "max": 5 },
+    "cover": null
+  },
+  "publishButton": null,
+  "disclosure": {
+    "zh": "含 AI 生成内容时，请在发布页「作品声明」中选择「内容由 AI 生成」（以平台当前选项为准）。",
+    "en": "If the video contains AI-generated content, choose the AI-generated declaration under the publish page's content statement."
+  },
+  "notes": [
+    "TODO: selectors not written yet - fill is disabled; upload by hand in the built-in browser.",
+    "To enable: inspect the upload page, replace the TODO selectors, set status to unverified."
+  ]
+}

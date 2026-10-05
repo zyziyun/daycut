@@ -1,0 +1,21 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>fake upload page</title></head>
+<body>
+<!-- Mimics the TikTok Studio upload flow: a file input, then a caption editor that appears after a file is set,
+     and a post button that must never be clicked by the app. -->
+<iframe id="f" srcdoc='<input type="file" accept="video/*" id="file">'></iframe>
+<div id="after" style="display:none">
+  <div class="public-DraftEditor-content" contenteditable="true">fixture-file-name.mp4</div>
+  <button data-e2e="post_video_button" onclick="window.__clicked = true">Post</button>
+</div>
+<script>
+  window.__clicked = false;
+  document.getElementById('f').addEventListener('load', () => {
+    const inp = document.getElementById('f').contentDocument.getElementById('file');
+    inp.addEventListener('change', () => {
+      window.__fileName = inp.files[0] && inp.files[0].name;
+      setTimeout(() => (document.getElementById('after').style.display = 'block'), 300);
+    });
+  });
+</script>
+</body></html>

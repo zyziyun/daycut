@@ -1,0 +1,31 @@
+# Unsigned macOS dev build: npm run build:mac  (-> dist/mac-arm64/video-studio desk.app)
+appId: com.vstudio.desk
+productName: video-studio desk
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**
+  - package.json
+  - "!**/*.map"
+extraResources:
+  - from: engine
+    to: engine
+    filter:
+      - "**/*.py"
+      - "!tests/**"
+      - "!**/__pycache__/**"
+  - from: adapters
+    to: adapters
+asar: true
+mac:
+  target:
+    - target: dir
+    - target: dmg
+  category: public.app-category.video
+  identity: null           # unsigned dev build
+  hardenedRuntime: false
+  gatekeeperAssess: false
+  extendInfo:
+    NSCameraUsageDescription: "Not used."
+    NSMicrophoneUsageDescription: "Not used."

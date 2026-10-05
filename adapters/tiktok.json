@@ -1,0 +1,44 @@
+{
+  "id": "tiktok",
+  "name": "TikTok",
+  "nameZh": "TikTok",
+  "status": "unverified",
+  "lastVerified": null,
+  "packagePlatforms": ["tiktok"],
+  "uploadUrl": "https://www.tiktok.com/tiktokstudio/upload",
+  "loginUrl": "https://www.tiktok.com/login",
+  "allowedHosts": ["tiktok.com", "*.tiktok.com", "*.tiktokv.com", "*.ttwstatic.com", "*.tiktokcdn.com"],
+  "fields": {
+    "file": {
+      "selectors": ["input[type=\"file\"][accept*=\"video\"]", "input[type=\"file\"]"],
+      "timeoutMs": 30000
+    },
+    "title": null,
+    "description": {
+      "selectors": [
+        "div.public-DraftEditor-content[contenteditable=\"true\"]",
+        "[data-e2e=\"caption_container\"] [contenteditable=\"true\"]",
+        "div[contenteditable=\"true\"][role=\"combobox\"]"
+      ],
+      "kind": "contenteditable",
+      "maxLength": 4000,
+      "clear": true,
+      "timeoutMs": 60000
+    },
+    "tags": { "mode": "append-to-description", "format": "#{tag} ", "max": 5 },
+    "cover": null
+  },
+  "publishButton": {
+    "selectors": ["button[data-e2e=\"post_video_button\"]", "[data-e2e=\"post_video_button\"]"]
+  },
+  "disclosure": {
+    "zh": "发布前请在「更多选项」里打开「AI 生成内容」开关（内容含 AI 生成或明显修改的画面/声音时必须标注）。检查「谁可以看」与评论/合拍设置。",
+    "en": "Before posting, turn on \"AI-generated content\" under \"Show more\" when the video contains AI-generated or significantly edited images or audio. Check \"Who can watch\" and the comment / duet settings."
+  },
+  "notes": [
+    "UNVERIFIED selectors (written without a logged-in session): check them on the live page and set status to verified + lastVerified.",
+    "The caption field appears only after the video starts uploading; the fill waits up to 60 s for it.",
+    "TikTok pre-fills the caption with the file name; clear=true replaces it.",
+    "Cover (thumbnail) is chosen in TikTok's own editor: done by hand."
+  ]
+}
