@@ -90,3 +90,53 @@ unknown types). `index.html` is **byte-identical** to the pre-refactor script on
 (synthetic `audio/scenes.json`) and on a variant using all 11 types + a bgm track; `hyperframes lint` 0 errors,
 0 warnings on both.
 
+
+## Wave B: platform profiles + vertical short + drafting tools
+
+**Canvas** (`scripts/canvas.py`, from `vstudio.platform`): `--platform` on every canvas-dependent script, or
+`"platform"` (+ `"mode": "short"`) in `scenes.config.json`. No platform / a horizontal profile = legacy 16:9 (all
+strings unchanged). Vertical: canvas W×H, `safe_box`, `caption_box`, `keepouts`, a math area (safe box minus a
+title strip, above the caption band), caption sizes from the band height (EN 38 / 中文 48 on a 220 px band) and
+2-line char limits.
+- `make_captions.py`: vertical cue block bottom-anchored in the caption box (+10 px), balanced wraps, scrim from
+  60 px above the band; warns on cues over 2 lines per language. Legacy branch keeps the exact old CSS.
+- `make_index.py`: W/H everywhere (viewport, root, scene hosts, captions host, `hf.scene_transitions(W, H)`).
+- `make_packets.py`: canvas line from `canvas.describe` (+ a `canvas json` line with safe/caption/keepouts/math/title
+  and the portrait reference + design truth); legacy line unchanged.
+- `scene_windows.py`: `--tail` default 1.2 s for vertical / short (2.5 legacy); `scenes.json` gets a `canvas` key only
+  when vertical; prints platform length warnings and, in short mode, scenes > 14 s / totals > 120 s.
+- `align_cues.py`: ignores `# check:` comments left by pair_cues.py (no effect on existing cues.txt).
+- New `references/design-truth-portrait.md` (frame.md variant: zones, portable 9:16 area x 150–930 / y 280–1190,
+  stacked layout, bigger type, hook-in-2 s motion, 3:4 numbers), `assets/reference-scene-portrait.html` (f07 re-laid
+  out at 1080×1920: ruler 700 px, equation broken at "=", mono labels 36), dispatch note for vertical workers,
+  WORKFLOW.md "Vertical short" (SHORT pipeline, pacing table) + "Platforms (16:9)" + drafting steps.
+
+**Less manual work**
+- `scripts/storyboard_from_script.py`: SCRIPT.md → STORYBOARD.md + scenes.config.json (writes `*.draft.*` if they
+  exist; `--force`, `--keep-shots` keeps ids/transitions/shots). One beat per cue with hints; timing from
+  `audio/scene_cues.json` when present (the example's real beat times come out as 0.3/4.0/6.9/11.2 s on f07 — the
+  hand-written shot list used 0.4/4.0/6.9/11.2), else estimated at `--wpm` (example: ~617 s estimated vs 633.65 real).
+  Short mode: hook beat, fast transitions, warnings (scene count, first sentence > 2.2 s, > 120 s, scenes > 14 s).
+- `scripts/pair_cues.py`: EN/中文 clause split + monotone DP (length ratio, punctuation agreement, caption limits) →
+  `subtitles/cues.draft.txt` with `# check:` flags; `--compare` scores against a hand file. On `example/`: 153 cues,
+  12 flagged, **111/142 (78 %) of the hand cue boundaries reproduced**; the draft passes align_cues (EN chunks = spoken).
+  Weights tuned on the example (W_CUE 0.1, W_MID 0.3, W_STRADDLE 0.8). It cannot judge meaning: review every pair.
+- `scripts/script_md.py`: shared SCRIPT.md parser.
+
+**Tests**
+- 16:9 regression (quantization inputs from /tmp/expl_baseline, rebuilt from scratch): cues.json, en.srt, zh.srt
+  (= `example/subtitles/*.srt`), scenes.json, scene_cues.json, captions.html, 18 packets, index.html and the
+  `--patch-scenes` compositions **byte-identical** to the pre-change outputs.
+- Synthetic 3-line portrait project (macOS `say` takes, `xiaohongshu:full`): storyboard_from_script → pair_cues →
+  align_cues → scene_windows → make_captions → make_packets → 3 scenes from the portrait reference → make_index
+  `--patch-scenes`: `hyperframes lint` 0 errors / 0 warnings; snapshots at 1.0/3.5/6.5/11.5 s: caption text bbox
+  inside the caption box (160,1420,920,1640) on all four (pixel check), nothing in the button column.
+- Reference portrait scene alone (31.95 s): lint 0/0; snapshots at 12 s and 27 s read: everything inside the
+  portable 9:16 area, nothing in the button column or caption band.
+- storyboard_from_script + pair_cues on `example/SCRIPT.md` (estimated and real timing): sensible drafts (above).
+- py_compile + `--help` for all scripts; `python3 -m pytest tests -q`: 108 passed.
+
+**Not done / unverified**: no full render; sketches (`make_storyboard.py`) are still example-specific 16:9 — draw
+vertical sketches at canvas size by hand; 3:4 built only via the canvas numbers (not snapshotted for the explainer).
+
+**Lib requests**: none required. Nice to have: `platform.caption_box` variant for two-language blocks (size pairs).

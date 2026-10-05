@@ -26,7 +26,15 @@ def main():
                     help="hyperframes render --quality (default delivery)")
     ap.add_argument("--skip-render", action="store_true", help="src is an already rendered mp4: only deliver")
     ap.add_argument("--lufs", type=float, default=None, help="default persona audio.loudness_lufs (-14)")
+    ap.add_argument("--platform", default=None,
+                    help="take LUFS / true peak from a vstudio.platform profile (e.g. douyin, youtube) and check length")
     a = ap.parse_args()
+    tp = -1.5
+    if a.platform:
+        from vstudio import platform as PF
+        prof = PF.profile(a.platform)
+        a.lufs = a.lufs if a.lufs is not None else prof.loudness["lufs"]
+        tp = prof.loudness.get("tp", tp)
 
     if a.skip_render:
         raw = a.src
@@ -39,7 +47,7 @@ def main():
                        cwd=a.src, check=True)
 
     tmp = a.out[:-4] + ".loud.mp4"
-    m = audio.loudnorm_2pass(raw, tmp, lufs=a.lufs)
+    m = audio.loudnorm_2pass(raw, tmp, lufs=a.lufs, tp=tp)
     print(f"loudnorm: measured {m['input_i']:.1f} LUFS, TP {m['input_tp']:.1f}")
     media.retag_bt709(tmp, a.out)
     os.remove(tmp)
@@ -48,6 +56,9 @@ def main():
     print({k: info[k] for k in ("vcodec", "w", "h", "fps", "duration", "primaries", "transfer", "acodec", "sample_rate")})
     after = audio.measure_loudness(a.out)
     print(f"delivered: {after['input_i']:.1f} LUFS integrated, true peak {after['input_tp']:.1f} dBTP")
+    if a.platform:
+        for w in PF.check_length(prof, info["duration"]):
+            print("warning:", w)
 
 
 if __name__ == "__main__":

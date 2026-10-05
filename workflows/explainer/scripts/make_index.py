@@ -18,12 +18,18 @@ import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().par
 import argparse, json, os, re
 from vstudio import hf
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from canvas import add_platform_arg, resolve
+
 ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
 ap.add_argument("--project", "-C", default=".", help="project dir (default: current dir)")
 ap.add_argument("--patch-scenes", action="store_true",
                 help="stretch each outgoing scene file's data-duration by its transition length")
+add_platform_arg(ap)
 a = ap.parse_args()
 root = pathlib.Path(a.project)
+cv = resolve(root, a.platform)
+W, H = cv["W"], cv["H"]
 
 S = json.load(open(root / "audio/scenes.json")); total = S["total"]
 CFG = json.load(open(root / "scenes.config.json"))["scenes"]
@@ -44,10 +50,10 @@ for k, (w, fid) in enumerate(zip(S["scenes"], IDS)):
     ext = TR[n + 1][1] if n + 1 in TR else 0
     hosts.append(f'''      <div id="w-{fid}" class="scene-wrap" style="z-index:{n}">
         <div id="{fid}" data-composition-id="{fid}" data-composition-src="compositions/{fid}.html"
-          data-start="{w['start']}" data-duration="{round(w['duration'] + ext, 2)}" data-track-index="2" data-width="1920" data-height="1080"></div>
+          data-start="{w['start']}" data-duration="{round(w['duration'] + ext, 2)}" data-track-index="2" data-width="{W}" data-height="{H}"></div>
       </div>''')
 trans = [{"n": n, **hf.transition(t, "w-" + IDS[n - 2], "w-" + IDS[n - 1], S["scenes"][n - 1]["start"], d)} for n, (t, d) in TR.items()]
-tx = hf.scene_transitions(trans)  # css/html/js for the 11 transition types (vstudio.hf)
+tx = hf.scene_transitions(trans, W=W, H=H)  # css/html/js for the 11 transition types (vstudio.hf)
 bgm = ""
 if os.path.exists(root / "audio/bgm.wav"):
     bgm = f'''      <audio id="bgm" src="audio/bgm.wav" data-start="0" data-duration="{total}" data-track-index="9" data-volume="1"></audio>\n'''
@@ -55,23 +61,23 @@ html = f'''<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=1920, height=1080" />
+    <meta name="viewport" content="width={W}, height={H}" />
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
     <style>
       * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-      html, body {{ margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #0B1020; }}
+      html, body {{ margin: 0; width: {W}px; height: {H}px; overflow: hidden; background: #0B1020; }}
       #root {{ position: relative; width: 100%; height: 100%; overflow: hidden; background: #0B1020; }}
 {hf.indent(tx['css'], 6)}      #ground {{ position: absolute; inset: 0;
         background: radial-gradient(ellipse 80% 70% at 50% 40%, #111830 0%, #0B1020 60%, #080C18 100%); }}
     </style>
   </head>
   <body>
-    <div id="root" data-composition-id="main" data-start="0" data-width="1920" data-height="1080" data-duration="{total}">
+    <div id="root" data-composition-id="main" data-start="0" data-width="{W}" data-height="{H}" data-duration="{total}">
       <div id="ground" class="clip" data-start="0" data-duration="{total}" data-track-index="1"></div>
 {chr(10).join(hosts)}
       {tx["html"]}
       <div id="captions" style="position:absolute;inset:0;z-index:50" data-composition-id="captions" data-composition-src="compositions/captions.html" data-track-kind="captions"
-        data-start="0" data-duration="{total}" data-track-index="5" data-width="1920" data-height="1080"></div>
+        data-start="0" data-duration="{total}" data-track-index="5" data-width="{W}" data-height="{H}"></div>
       <audio id="narration" src="audio/narration.wav" data-start="0" data-duration="{total}" data-track-index="8" data-volume="1"></audio>
 {bgm}    </div>
     <script>

@@ -15,3 +15,7 @@
   6. Use the true minus sign "−" (U+2212) for negative numbers in visible text.
 - You MAY run `npx hyperframes lint` from PROJECT_DIR to check your files (it lints all present compositions; only fix findings in YOUR files). Do not edit index.html, STORYBOARD.md, frame.md, or any other frame's file. Do not run render or snapshot.
 - When done, reply with one line per frame: frame_id, final duration, and any deviation from the shot sequence.
+- VERTICAL canvas (packet says e.g. `canvas: 1080×1920 (xiaohongshu:full)`): use the packet's canvas json instead of
+  the 1920×1080 numbers above — root `data-width/height` = W/H, `<svg viewBox="0 0 W H">`, every element inside the
+  packet's math area (and left of `math_narrow_x1` below `math_narrow_from_y`), nothing in the caption band. Reference
+  implementation: `$VSTUDIO/workflows/explainer/assets/reference-scene-portrait.html`; type scale in `frame.md`.

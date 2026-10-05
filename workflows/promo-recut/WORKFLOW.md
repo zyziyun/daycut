@@ -1,7 +1,7 @@
 # promo-recut
 
 **Use when** someone has a talking-head recording about something they made or found and wants a premium
-16:9 short (and optionally a 9:16 version) for 小红书 / YouTube / B站. The talk is tight-cut, and the
+16:9 short (and optionally 9:16 / 3:4 versions laid out per platform) for 小红书 / YouTube / B站. The talk is tight-cut, and the
 talking head slides into a split-screen next to 3D screenshot cards that scroll to whatever is being
 discussed. The edit adds highlighter sweeps, chips, keyword subtitles, punch-ins, a freeze-frame with a
 prompt card zooming out of a screenshot, and a zoom-through into a framed highlights montage. It finishes
@@ -133,10 +133,54 @@ final-timeline time. Chapter anchors are raw body seconds or `start` / `montage`
 
 ## Geometry / vertical
 
-`build_promo.py` has a `GEO` table per orientation (card box, split inset, subtitle line, bar, screen frame,
-label positions). Override any value with `layout.horizontal.*` / `layout.vertical.*` in the config.
-Vertical stacks the face band (top) above the card (bottom). It crops the 16:9 talk with `object-fit: cover`,
-so set `layout.vertical.face_pos` if the speaker is off-centre.
+`build_promo.py` has a `GEO` table for horizontal (card box, split inset, subtitle line, bar, screen frame,
+label positions); override any value with `layout.horizontal.*`. The **vertical** geometry is not a table: it is
+computed from a platform profile (`vertical_geo`, next section), so every element lands inside that platform's
+safe box and clear of its button column. Override any computed key with `layout.vertical.*`.
+
+## Platforms
+
+```bash
+python3 $VSTUDIO/workflows/promo-recut/scripts/build_promo.py promo.config.yaml                          # horizontal (unchanged legacy layout)
+python3 $VSTUDIO/workflows/promo-recut/scripts/build_promo.py promo.config.yaml --orientation vertical    # persona platforms.default at 9:16 -> promo-vertical/
+python3 $VSTUDIO/workflows/promo-recut/scripts/build_promo.py promo.config.yaml --platform xiaohongshu:full   # -> promo-vertical-xiaohongshu-full/
+python3 $VSTUDIO/workflows/promo-recut/scripts/build_promo.py promo.config.yaml --platform douyin            # -> promo-vertical-douyin-vertical/
+```
+`--platform` (or config `platform:`) takes any `vstudio.platform` profile: `xiaohongshu:full` (9:16),
+`xiaohongshu:vertical` (3:4, 1080x1440), `douyin`, `tiktok`, `youtube-shorts`, `bilibili:vertical`; a horizontal
+profile keeps the 1920x1080 layout. `--out DIR` names the project dir. Per vertical profile the layout is:
+
+| element | where (from `platform.safe_box` / `caption_box` / `keepouts`) |
+|---|---|
+| chapter bar + labels | top of the safe box, on a top scrim (labels 22 px) |
+| talking head (split) | a band under the bar, ~42 % of the free height (~2.4 face heights when a face is detected), full safe width; the clip window is centred on the speaker's face (`vstudio.face` on 6 frames, else centred; `layout.vertical.face: [fx, fy]`), and `object-position` keeps the face centred when full-frame |
+| chips + screenshot card | under the band down to 24 px above the caption band; side margin widened to clear the lower-right button column |
+| captions | the profile's caption box, bottom-anchored, `text-wrap: balance`, size = box width / `max_chars_zh` clamped to the profile's caption size range; cues that can't fit 2 lines are warned about |
+| prompt hold card | the card column, mid-height |
+| montage screen + step label / badge / tag | 16:9 screen at the safe width, centred in the free area but kept above the button column |
+| stamp / end card | stamp top-left of the free area; end card centred between the safe top and the caption band |
+
+`timeline.json` records `platform`, `canvas` and the `boxes` used (safe, caption, keep-outs, face band, card,
+screen) so snapshots can be checked against them. The build also warns when the length is outside the
+profile's sweet spot / max and when chapter labels collide on the narrower bar (merge or shorten chapters).
+Check every vertical build: `npx hyperframes lint` (0 errors) and snapshots at a card, the hold, mid
+zoom-through, the montage and the outro.
+
+**Multi-platform delivery.** Build one project per canvas, render each, then hand the renders to
+`vstudio.export`, which (for the same aspect) only scales, re-loudnorms to the profile's LUFS / true peak,
+encodes with the profile's settings, crops covers and writes post stubs + `manifest.json`:
+```bash
+python3 $VSTUDIO/workflows/promo-recut/scripts/export.py promo my-promo.mp4 --platform youtube            # or plain persona LUFS
+python3 -m vstudio.export my-promo.mp4 --platforms youtube,bilibili,xiaohongshu:horizontal --out exports/ \
+    --cover cover-16x9.jpg --cover cover-4x3.jpg --post post.json
+python3 $VSTUDIO/workflows/promo-recut/scripts/export.py promo-vertical-douyin-vertical my-promo-douyin.mp4 --platform douyin
+python3 -m vstudio.export my-promo-douyin.mp4 --platforms douyin,tiktok,youtube-shorts --out exports/ --cover cover-3x4.jpg
+```
+Captions here are part of the design (keyword highlight, timed with the cards), so they are burned in by
+HyperFrames per canvas. If you want `vstudio.export` to place them instead, build with `--clean-master` (no
+burned subtitles) and pass `--cues <promo_dir>/cues.json` (final-timeline cues, written by every build).
+Do not reframe the 16:9 promo to 9:16 with `vstudio.export`: the split screen and cards would be cropped. Build
+the vertical layout instead.
 
 ## Effects are shared (`vstudio.hf`)
 

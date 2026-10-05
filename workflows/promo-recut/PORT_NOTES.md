@@ -135,3 +135,45 @@ badge, title_card, stamp, end_card) instead of inline CSS/HTML/GSAP. Output is *
 minimal variant (no hold / montage / outro / end card / chips, explicit `split`). `hyperframes lint`: 0 errors,
 the same advisory warnings as before. Unused local `HL` dropped from render_html.
 
+
+## Wave B: platform profiles
+
+**Changes**
+- `build_promo.py --platform <profile>` (or config `platform:`), `--out DIR`, `--clean-master`. Horizontal default =
+  the legacy GEO (byte-identical). A vertical profile (xiaohongshu:full / :vertical 3:4, douyin, tiktok,
+  youtube-shorts, bilibili:vertical) builds its layout with `vertical_geo(profile)` from `platform.safe_box`,
+  `caption_box` and `keepouts`: chapter bar + labels (22 px) at the safe top on a top scrim; talking-head band below
+  (≈42 % of the free height, ≈2.4 face heights when a face is found), clip window centred on the face
+  (`estimate_face`: `vstudio.face` landmarker on 6 frames; else centred; `layout.vertical.face: [fx, fy]`) and
+  `object-position` from the face x; chips + card under it down to 24 px above the caption band, side margin widened
+  to clear the button column; captions bottom-anchored in the caption box, `text-wrap: balance`, size = box width /
+  max_chars_zh within the profile's size range; montage screen at the safe width, centred in the free area but above
+  the button column, labels under it; stamp / end card inside the safe area. `--orientation vertical` without a
+  platform = persona `platforms.default` at 9:16 (`promo-vertical/`, deliberately changed from the old first-pass
+  GEO). Explicit `--platform` → `<promo_dir_vertical>-<name>-<orientation>/`.
+- Every build writes `<promo_dir>/cues.json` (final-timeline cues, 【】 kept) for `vstudio.export --cues`;
+  `timeline.json` gains `platform`, `canvas`, `boxes` (non-default builds only). Warnings: length vs profile, cues
+  that can't fit 2 lines, chapter labels colliding on the narrower bar.
+- `export.py --platform`: LUFS / true peak from the profile + length warning.
+- WORKFLOW.md "Geometry / vertical" rewritten + new "Platforms" section (multi-platform delivery via
+  `vstudio.export`, clean-master route, why not to reframe the 16:9 promo); example config documents `platform:` and
+  `layout.vertical.face`.
+
+**Tests** (synthetic project /tmp/promo-recut-after copied to /tmp/wb_promo)
+- Horizontal: `index.html` and `timeline.json` **cmp-identical** to the pre-change build.
+- `--platform xiaohongshu:full`, `--platform douyin`, `--platform xiaohongshu:vertical` (3:4): `hyperframes lint`
+  0 errors (the same 6 advisory warnings as horizontal). Snapshots at 7.5 (split + card + chips + caption), 19.0
+  (prompt hold), 35.3 (mid zoom-through), 45 (montage + labels) and 75.5 s (outro stamp + 2-line caption), read with
+  the safe box / caption box / button column drawn on: no overlaps, captions inside the caption box, nothing in the
+  button column or outside the safe box (the synthetic talk has no face → centred fallback; face path not exercised
+  on real footage). The synthetic chapters 起因 / 讲解视频 are only ~5 s apart and their labels touch on the
+  1080 bar → the new warning fires (content issue: merge/shorten).
+- `export.py --skip-render --platform douyin`: -14.0 LUFS, bt709, length warning. `vstudio.export.load_cues` reads
+  `cues.json`. `--clean-master` build: empty cue list. py_compile + `--help`; `python3 -m pytest tests -q`: 108 passed.
+
+**Lib requests**
+- `overlays.hf_progress`: a `position="top"` option (top scrim gradient, labels under the bar) — we override
+  `#bar-scrim` CSS for vertical today; and label collision handling (stagger or hide) for short chapters.
+- `hf.split_screen`: optional `scale` so the face band can show more of the frame (we can only clip + translate).
+- `references/EFFECTS.md` row "Vertical face band + card" still quotes the old GEO values; point it at
+  `build_promo.py:vertical_geo`.

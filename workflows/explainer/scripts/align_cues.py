@@ -36,6 +36,7 @@ for ln in open(root / "subtitles/cues.txt"):
     if ln.startswith("## "):
         cur = int(ln[3:]); groups[cur] = []
     elif "||" in ln and cur:
+        ln = re.sub(r"\s+# check:.*$", "", ln)          # review flags left by pair_cues.py
         en, zh = [x.strip() for x in ln.split("||")]; groups[cur].append((en, zh))
 
 cues = []

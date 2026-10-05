@@ -13,6 +13,9 @@ work_dir: work
 promo_dir: promo                     # HyperFrames project written by build_promo.py
 promo_dir_vertical: promo-vertical   # used by --orientation vertical
 orientation: horizontal
+# platform: douyin                   # vstudio.platform profile; a vertical one (xiaohongshu:full, douyin, youtube-shorts,
+                                     # xiaohongshu:vertical = 3:4) derives the vertical layout from its safe/caption boxes.
+                                     # --platform on the CLI overrides; unset + --orientation vertical = persona default at 9:16
 
 # ---------------------------------------------------------------- 1. tight cut (tight_cut.py)
 cut:
@@ -127,7 +130,8 @@ end_card:
 
 # layout:                            # optional per-orientation geometry overrides (see GEO in build_promo.py)
 #   horizontal: {split_inset: "inset(40px 520px 120px 500px round 28px)", split_x: -440}
-#   vertical: {face_pos: "45% 50%"}
+#   vertical: {face: [0.46, 0.38]}   # speaker's face centre (fraction of the talk frame); default = detected
+#                                     # with vstudio.face on 6 frames, else centred. Any GEO key overrides too.
 
 # ---------------------------------------------------------------- 3. cover (make_cover.py)
 cover:
