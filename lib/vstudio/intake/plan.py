@@ -622,10 +622,12 @@ def _call_model(prompt, analysis, ctx, transcripts, provider=None, model=None, c
             res = LLM.complete(TASK, system, body, schema=True, provider=provider, model=model,
                                config=ctx.get("llm_config"), max_tokens=12000, timeout=600)
     except Exception as e:  # noqa: BLE001 - auth / network / CLI errors: fall back, say why
-        info.update(fallback=True, reason=f"{type(e).__name__}: {str(e)[:240]}", seconds=round(time.time() - t0, 1))
+        info.update(fallback=True, reason=f"{type(e).__name__}: {str(e)[:240]}", seconds=round(time.time() - t0, 1),
+                    failure=LLM.failure_code(e))
         return None, info
     info.update(model=res.get("model") or info["model"], cost_usd=res.get("cost_usd", 0.0),
-                usage=res.get("usage"), seconds=round(time.time() - t0, 1))
+                usage=res.get("usage"), seconds=round(time.time() - t0, 1), routed=route.provider,
+                provider=res.get("provider") or info["provider"], provider_fallback=res.get("fallback"))
     js = res.get("json")
     if not isinstance(js, dict) or not isinstance(js.get("projects"), list):
         info.update(fallback=True, reason="the model returned no usable plan JSON")

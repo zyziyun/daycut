@@ -1,5 +1,6 @@
 """Platform profiles: canvas, UI safe zones, caption style, length / loudness / encode guidance, cover
-and post-copy limits for 小红书, 抖音, TikTok, YouTube, YouTube Shorts and B站.
+and post-copy limits for 小红书, 抖音, TikTok, YouTube, YouTube Shorts, B站, 视频号 (WeChat Channels),
+X (Twitter) and Instagram (Reels / feed).
 
     from vstudio import platform as P
     p = P.profile("xiaohongshu", "vertical")      # Profile(w=1080, h=1440, ...); persona overrides merged
@@ -8,6 +9,12 @@ and post-copy limits for 小红书, 抖音, TikTok, YouTube, YouTube Shorts and 
     P.cover_size(p)      -> (w, h)
     P.fit_text_size(p, "一行字幕")  -> {"size": 64, "lines": [...]}
     P.list_profiles()    -> ["xiaohongshu:vertical", "xiaohongshu:full", ...]
+    P.best_orientation("x", 9 / 16) -> "vertical"   (the orientation closest to a master's aspect)
+    P.cover_crops(p)     -> ["4:5", "3:4", "1:1"]   every crop a surface shows of the cover (feed / grid)
+    P.text_len(p, body)  -> X: weighted length (CJK / emoji = 2, URL = 23); else characters
+
+Account tiers: a profile may carry ``tiers`` (X: premium / premium_plus); ``account: premium`` (persona
+``platforms.x.account`` or ``overrides``) merges that tier's limits (longer videos, longer posts).
 
 Every number is either sourced or marked "convention" in references/PLATFORMS.md. Platforms change their
 UI often: treat safe zones as conservative defaults and override them in persona.local.yaml
@@ -22,9 +29,14 @@ from dataclasses import asdict, dataclass, field
 
 ALIASES = {"xhs": "xiaohongshu", "rednote": "xiaohongshu", "小红书": "xiaohongshu", "dy": "douyin", "抖音": "douyin",
            "yt": "youtube", "shorts": "youtube-shorts", "yt-shorts": "youtube-shorts", "youtube_shorts": "youtube-shorts",
-           "b站": "bilibili", "bili": "bilibili", "tt": "tiktok"}
+           "b站": "bilibili", "bili": "bilibili", "tt": "tiktok",
+           "twitter": "x", "x.com": "x", "推特": "x", "ig": "instagram", "ins": "instagram", "insta": "instagram",
+           "reels": "instagram", "instagram-reels": "instagram",
+           "视频号": "wechat-channels", "channels": "wechat-channels", "weixin-channels": "wechat-channels",
+           "wechat_channels": "wechat-channels", "wxchannels": "wechat-channels", "wechat": "wechat-channels"}
 ORIENT_ALIASES = {"v": "vertical", "portrait": "vertical", "3:4": "vertical", "feed": "vertical",
-                  "9:16": "full", "fullscreen": "full", "h": "horizontal", "landscape": "horizontal", "16:9": "horizontal"}
+                  "9:16": "full", "fullscreen": "full", "h": "horizontal", "landscape": "horizontal", "16:9": "horizontal",
+                  "1:1": "square", "sq": "square"}
 
 # ----------------------------------------------------------------------------------- shared blocks
 _VERT_CAPTION = dict(size=[52, 72], max_chars_zh=14, max_chars_en=32, max_lines=2, stroke=0.09)

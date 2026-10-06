@@ -1297,7 +1297,7 @@ def ai(d, output, instruction, apply=False, provider=None, model=None, use_asr=T
                        provider=r["provider"])
         summary = j.get("summary")
         cost = r.get("cost_usd") or 0.0
-        used = dict(provider=r["provider"], model=r["model"])
+        used = dict(provider=r["provider"], model=r["model"], routed=route.provider, fallback=r.get("fallback"))
     proposed, dropped = [], []
     cur = st
     for op in raw_ops:

@@ -51,10 +51,12 @@ Precedence (first match wins):
 
 1. an explicit provider / model (`--provider ollama`, spec `proofread.provider: kimi`, `complete(provider=...)`);
    `auto` means "not given"
-2. env `VSTUDIO_LLM_<TASK>_PROVIDER` / `VSTUDIO_LLM_<TASK>_MODEL` (e.g. `VSTUDIO_LLM_PROOFREAD_PROVIDER=ollama`)
-3. the client's `llm.tasks.<task>`, then the persona's `llm.tasks.<task>`
-4. env `VSTUDIO_LLM_PROVIDER` / `VSTUDIO_LLM_MODEL`
-5. the client's `llm.default`, then the persona's `llm.default`
+2. env `VSTUDIO_LLM_<TASK>_PROVIDER` / `VSTUDIO_LLM_<TASK>_MODEL` (e.g. `VSTUDIO_LLM_PROOFREAD_PROVIDER=ollama`;
+   `VSTUDIO_LLM_<TASK>_FALLBACK=codex,ollama` gives it a fallback chain)
+3. the desk's routes file `tasks.<task>` (env `VSTUDIO_LLM_ROUTES_FILE`, JSON `{default, tasks}`, re-read on every
+   call), then the client's `llm.tasks.<task>`, then the persona's `llm.tasks.<task>`
+4. env `VSTUDIO_LLM_PROVIDER` / `VSTUDIO_LLM_MODEL` (+ `VSTUDIO_LLM_FALLBACK`)
+5. the desk's routes file `default`, then the client's `llm.default`, then the persona's `llm.default`
 6. legacy `auto`: `anthropic` when `ANTHROPIC_API_KEY` is set, else `none`. Nothing paid, remote or
    subscription-backed is ever picked implicitly beyond that.
 
@@ -117,6 +119,36 @@ Notes per backend:
   errors, refusals and CLI timeouts are not. A broken JSON reply gets one repair round (the model sees its own
   reply and is asked for valid JSON); after that the caller gets `json=None` and falls back (proofread: glossary /
   term fixes only for that chunk; plan-segments: rule-based fill).
+
+### Fallback chains
+
+A route entry may name `fallback: [codex, ollama]`: when the routed provider fails (login expired, CLI missing,
+outage), the next one runs. The result records it - `fallback_from` (the error texts) and
+`fallback: {from, to, code, error, tried}` with `code` one of `auth-expired | not-logged-in | not-installed |
+key-missing | rate-limited | timeout | failed` - and `output ai` / the intake planner pass it on (`routed`,
+`fallback`, `provider_fallback`), so an app can say "Claude's login expired, Codex answered this time". An explicit
+provider (`--provider`) never falls back.
+
+### Login status and login commands
+
+```bash
+python3 -m vstudio.llm auth status --json         # every provider: state, account (email / plan), key present?, server up?
+python3 -m vstudio.llm auth status --no-probe     # skip the tiny claude round-trip (faster, but cannot see expiry)
+python3 -m vstudio.llm auth status --deep         # also a tiny codex round-trip
+python3 -m vstudio.llm auth login --provider claude-code --json    # the command to run yourself (nothing is run)
+python3 -m vstudio.llm auth logout --provider codex --json
+```
+
+States: `logged-in`, `expired`, `not-logged-in`, `not-installed` (CLIs); `configured`, `not-configured` (API keys:
+only whether the variable is set, never its value); `ready`, `server-down`, `no-models` (local servers). Each row has
+a `message` `{code, params, message, message_zh}`. claude-code is checked with `claude auth status --json` (plan,
+email, auth method) **and** a one-line `claude -p` on the cheapest model, because `auth status` still says
+`loggedIn: true` after the OAuth token expired (the round-trip then answers 401). codex uses `codex login status`.
+Every CLI call (status, probe, the real work) runs with `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` /
+`ANTHROPIC_BASE_URL` (claude) or `OPENAI_*` / `CODEX_API_KEY` (codex) removed from its environment. The CLIs are
+found on `PATH`, then in `~/.local/bin`, `~/.claude/local`, `/opt/homebrew/bin`, `/usr/local/bin`, ... (env
+`VSTUDIO_CLI_EXTRA_DIRS` replaces that list). `auth login` prints `claude auth login` / `codex login` (variants:
+`--console`, `--sso`, `--device-auth`) and the variables to remove; the engine never sees a password or token.
 
 ### Subscription CLIs: your own local use
 

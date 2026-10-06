@@ -8,6 +8,8 @@
 
     python -m vstudio.llm providers [--json]          # what works on this machine: keys, CLIs, local servers
     python -m vstudio.llm test --provider ollama      # one tiny round-trip (prints no secrets)
+    python -m vstudio.llm auth status --json          # login state of each provider (claude-code: real probe)
+    python -m vstudio.llm auth login --provider codex --json   # the command to run interactively (nothing runs)
 
 Providers (``provider=``; aliases: claude -> anthropic, chatgpt -> openai, gpt -> openai)
   anthropic          anthropic SDK (lazy import), ANTHROPIC_API_KEY; default claude-opus-5-5 (adaptive thinking is
@@ -112,7 +114,10 @@ ALIASES = {"claude": "anthropic", "claude-api": "anthropic", "chatgpt": "openai"
 LOCAL = {"claude-code", "codex", "none"} | {k for k, v in PRESETS.items() if v["kind"] == "local"}
 JSON_INSTRUCTION = "Reply with one JSON object only - no prose, no code fences."
 CLI_STRIP_ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL")
-CODEX_STRIP_ENV = ("OPENAI_API_KEY", "OPENAI_BASE_URL")
+CODEX_STRIP_ENV = ("OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_*", "CODEX_API_KEY")     # "X_*": every X_ variable
+# where installers put the CLIs (a Finder-launched app gets a minimal PATH); env VSTUDIO_CLI_EXTRA_DIRS replaces it
+CLI_EXTRA_DIRS = ("~/.local/bin", "~/.claude/local", "/opt/homebrew/bin", "/usr/local/bin", "~/.npm-global/bin",
+                  "~/.bun/bin", "~/.volta/bin", "~/.cargo/bin")
 
 
 class LLMError(RuntimeError):
@@ -170,6 +175,20 @@ def _persona_llm():
         return {}
 
 
+def _routes_file():
+    """The desk's routing choices: env VSTUDIO_LLM_ROUTES_FILE -> JSON {default: {...}, tasks: {task: {...}}}. Read
+    on every call (the desk edits it while the engine runs); a missing / broken file counts as empty."""
+    f = os.environ.get("VSTUDIO_LLM_ROUTES_FILE")
+    if not f or not os.path.isfile(f):
+        return {}
+    try:
+        with open(f, encoding="utf-8") as fh:
+            d = json.load(fh)
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
 def _entry(v):
     """Config entry (dict or "provider" / "provider:model"-free string) -> dict or None."""
     if not v:
@@ -186,16 +205,22 @@ def _llm_section(config):
         else {}
 
 
+def _env_list(name):
+    """env "codex, ollama" -> ["codex", "ollama"] (None when unset)."""
+    v = os.environ.get(name)
+    return [x.strip() for x in v.split(",") if x.strip()] if v else None
+
+
 def route(task="default", provider=None, model=None, config=None):
     """Which provider / model / options ``task`` uses (see module doc for the precedence)."""
     task = str(task or "default")
     T = re.sub(r"[^A-Z0-9]", "_", task.upper())
-    cfg, per = _llm_section(config), _persona_llm()
+    cfg, per, desk = _llm_section(config), _persona_llm(), _routes_file()
     p = canonical(provider)
     if p:
         opts = {}
-        for src in ((cfg.get("tasks") or {}).get(task), (per.get("tasks") or {}).get(task), cfg.get("default"),
-                    per.get("default")):
+        for src in ((desk.get("tasks") or {}).get(task), (cfg.get("tasks") or {}).get(task),
+                    (per.get("tasks") or {}).get(task), desk.get("default"), cfg.get("default"), per.get("default")):
             e = _entry(src)
             if e and canonical(e.get("provider")) == p:      # same provider configured: keep its model / options
                 opts = {k: v for k, v in e.items() if k not in ("provider",)}
@@ -204,13 +229,17 @@ def route(task="default", provider=None, model=None, config=None):
         opts.pop("model", None)
         return Route(p, mdl, opts, "argument")
     cands = [(os.environ.get(f"VSTUDIO_LLM_{T}_PROVIDER") and
-              {"provider": os.environ[f"VSTUDIO_LLM_{T}_PROVIDER"], "model": os.environ.get(f"VSTUDIO_LLM_{T}_MODEL")},
+              {"provider": os.environ[f"VSTUDIO_LLM_{T}_PROVIDER"], "model": os.environ.get(f"VSTUDIO_LLM_{T}_MODEL"),
+               "fallback": _env_list(f"VSTUDIO_LLM_{T}_FALLBACK")},
               f"env VSTUDIO_LLM_{T}_PROVIDER"),
+             (_entry((desk.get("tasks") or {}).get(task)), f"desk llm.tasks.{task}"),
              (_entry((cfg.get("tasks") or {}).get(task)), f"config llm.tasks.{task}"),
              (_entry((per.get("tasks") or {}).get(task)), f"persona llm.tasks.{task}"),
              (os.environ.get("VSTUDIO_LLM_PROVIDER") and
-              {"provider": os.environ["VSTUDIO_LLM_PROVIDER"], "model": os.environ.get("VSTUDIO_LLM_MODEL")},
+              {"provider": os.environ["VSTUDIO_LLM_PROVIDER"], "model": os.environ.get("VSTUDIO_LLM_MODEL"),
+               "fallback": _env_list("VSTUDIO_LLM_FALLBACK")},
               "env VSTUDIO_LLM_PROVIDER"),
+             (_entry(desk.get("default")), "desk llm.default"),
              (_entry(cfg.get("default")), "config llm.default"),
              (_entry(per.get("default")), "persona llm.default")]
     for e, src in cands:
@@ -427,16 +456,37 @@ def _gemini(system, prompt, model, schema, max_tokens, timeout, opts):
                                                  output=getattr(um, "candidates_token_count", 0) or 0), model
 
 
+def strip_env(env, strip):
+    """``env`` without the variables in ``strip`` ("NAME" or "PREFIX_*")."""
+    out = dict(env)
+    for k in list(out):
+        if any(k == s or (s.endswith("*") and k.startswith(s[:-1])) for s in strip):
+            del out[k]
+    return out
+
+
 def _cli_env(strip, opts):
-    env = dict(os.environ)
-    if not opts.get("inherit_env"):
-        for k in strip:
-            env.pop(k, None)
-    return env
+    return dict(os.environ) if opts.get("inherit_env") else strip_env(os.environ, strip)
+
+
+def find_cli(name, opts=None):
+    """Absolute path of a CLI: route option ``cli``, PATH, then where installers usually put it."""
+    if (opts or {}).get("cli"):
+        return opts["cli"]
+    exe = shutil.which(name)
+    if exe:
+        return exe
+    extra = os.environ.get("VSTUDIO_CLI_EXTRA_DIRS")
+    dirs = [d for d in extra.split(os.pathsep) if d] if extra is not None else CLI_EXTRA_DIRS
+    for d in dirs:
+        p = os.path.join(os.path.expanduser(d), name)
+        if os.path.isfile(p) and os.access(p, os.X_OK):
+            return p
+    return None
 
 
 def _claude_code(system, prompt, model, schema, max_tokens, timeout, opts):
-    exe = opts.get("cli") or shutil.which("claude")
+    exe = find_cli("claude", opts)
     if not exe:
         raise LLMError("provider claude-code needs the Claude Code CLI (`claude`) on PATH")
     cmd = [exe, "-p", "--output-format", "json", "--tools", "", "--no-session-persistence", "--strict-mcp-config"]
@@ -476,7 +526,7 @@ def _claude_code(system, prompt, model, schema, max_tokens, timeout, opts):
 
 
 def _codex(system, prompt, model, schema, max_tokens, timeout, opts):
-    exe = opts.get("cli") or shutil.which("codex")
+    exe = find_cli("codex", opts)
     if not exe:
         raise LLMError("provider codex needs the Codex CLI (`codex`) on PATH")
     with tempfile.TemporaryDirectory(prefix="vstudio-llm-") as tmp:
@@ -550,26 +600,59 @@ def _classify(e):
 
 
 # ------------------------------------------------------------------ public
+def failure_code(err):
+    """Why a provider failed, from its error text: auth-expired | not-logged-in | not-installed | key-missing |
+    rate-limited | timeout | failed (the desk turns this into "Claude 登录已过期，这次用了 Codex")."""
+    m = str(err or "")
+    if re.search(r"not logged in|not authenticated|login required|no credentials|please (log ?in|sign in)", m, re.I):
+        return "not-logged-in"
+    if re.search(r"\b401\b|token (has )?expired|expired token|oauth.*expired|invalid_grant|refresh token|"
+                 r"re-?authenticate|/login|log ?in again|sign in again|authentication_error|unauthori[sz]ed", m, re.I):
+        return "auth-expired"
+    if re.search(r"not on PATH|not installed|needs the .* CLI|no such file|command not found", m, re.I):
+        return "not-installed"
+    if re.search(r"needs [A-Z0-9_]+_API_KEY|needs [A-Z0-9_]+_KEY\b|api key", m, re.I):
+        return "key-missing"
+    if re.search(r"rate.?limit|\b429\b|overloaded|usage limit|quota", m, re.I):
+        return "rate-limited"
+    if re.search(r"timed out|timeout", m, re.I):
+        return "timeout"
+    return "failed"
+
+
 def complete(task, system, prompt, schema=None, provider=None, model=None, max_tokens=16000, timeout=600,
              config=None, effort=None, temperature=None, retries=2, repair=True, prices=None, **opts):
     """``complete`` with a provider fallback chain: a route entry may list ``fallback: [codex, ...]`` (persona /
-    client ``llm.tasks.<task>`` or ``llm.default``); when the routed provider fails (auth expired, CLI missing,
-    outage), the next one is tried. An explicit ``provider=`` argument disables the chain."""
+    client ``llm.tasks.<task>`` or ``llm.default``, the desk's routes file, env ``VSTUDIO_LLM_<TASK>_FALLBACK``);
+    when the routed provider fails (auth expired, CLI missing, outage), the next one is tried and the result says
+    so: ``fallback_from`` (error texts) and ``fallback`` = {from, to, code, error, tried}. An explicit ``provider=``
+    argument disables the chain."""
     kw = dict(schema=schema, model=model, max_tokens=max_tokens, timeout=timeout, config=config, effort=effort,
               temperature=temperature, retries=retries, repair=repair, prices=prices, **opts)
-    chain = [] if provider else list(route(task, None, None, config).opts.get("fallback") or [])
+    routed = None if provider else route(task, None, None, config)
+    chain = list(routed.opts.get("fallback") or []) if routed else []
     try:
         return _complete(task, system, prompt, provider=provider, **kw)
     except LLMError as first:
         errors = [str(first)]
+        tried = [routed.provider] if routed else []
         for fb in chain:
             name = fb.get("provider") if isinstance(fb, dict) else fb
+            try:
+                if canonical(name) in tried:
+                    continue
+            except ValueError:
+                errors.append(f"{name}: unknown provider")
+                continue
             try:
                 out = _complete(task, system, prompt, provider=name,
                                 **dict(kw, model=fb.get("model") if isinstance(fb, dict) else None))
                 out["fallback_from"] = errors
+                out["fallback"] = dict(**{"from": routed.provider}, to=out.get("provider") or canonical(name),
+                                       code=failure_code(first), error=str(first)[:300], tried=tried)
                 return out
             except LLMError as e:
+                tried.append(canonical(name))
                 errors.append(f"{name}: {e}")
         raise
 
@@ -710,7 +793,7 @@ def check(provider, opts=None, probe=True):
         return dict(provider=p, kind="api", ready=not miss, detail="needs " + ", ".join(miss) if miss else
                     f"key set, default {DEFAULT_MODELS[p]}")
     if p in ("claude-code", "codex"):
-        exe = o.get("cli") or shutil.which("claude" if p == "claude-code" else "codex")
+        exe = find_cli("claude" if p == "claude-code" else "codex", o)
         if not exe:
             return dict(provider=p, kind="subscription-cli", ready=False,
                         detail=f"`{'claude' if p == 'claude-code' else 'codex'}` not on PATH")
@@ -762,6 +845,10 @@ def _print_rows(title, rows):
 
 def main(argv=None):
     import argparse
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv[:1] == ["auth"]:                               # login status / login commands: vstudio.llm_auth
+        from . import llm_auth
+        return llm_auth.main(argv[1:])
     ap = argparse.ArgumentParser(prog="python -m vstudio.llm", description="LLM / ASR / TTS providers on this machine")
     sub = ap.add_subparsers(dest="cmd", required=True)
     pp = sub.add_parser("providers", help="list LLM, ASR and TTS providers and whether they work here")
@@ -769,6 +856,8 @@ def main(argv=None):
     pp.add_argument("--no-probe", action="store_true", help="skip local-server / CLI probes")
     pr = sub.add_parser("route", help="show which provider each task would use")
     pr.add_argument("--task", action="append")
+    pr.add_argument("--json", action="store_true", help="one JSON object {task: route} (fallback chains included)")
+    sub.add_parser("auth", help="auth status | login | logout (see vstudio.llm_auth)")
     pt = sub.add_parser("test", help="one tiny JSON round-trip")
     pt.add_argument("--provider", required=True)
     pt.add_argument("--model")
@@ -790,6 +879,10 @@ def main(argv=None):
         for t, r in data["routes"].items():
             print(f"  {t:<13} {r['provider']}{' / ' + r['model'] if r.get('model') else ''}  ({r['source']})")
         return 0
+    if a.cmd == "route" and a.json:
+        print(json.dumps({t: route(t).as_dict() for t in a.task or [x for x in TASKS if x != "test"] + ["default"]},
+                         ensure_ascii=False))
+        return 0
     if a.cmd == "route":
         for t in a.task or ["segment_plan", "proofread", "glossary", "copy"]:
             print(json.dumps(dict(task=t, **route(t).as_dict()), ensure_ascii=False))
@@ -808,7 +901,7 @@ def main(argv=None):
     return 0 if ok else 2
 
 
-__all__ = ["complete", "route", "Route", "check", "providers", "parse_json", "cost_usd", "price_of", "canonical",
+__all__ = ["complete", "route", "failure_code", "find_cli", "strip_env", "Route", "check", "providers", "parse_json", "cost_usd", "price_of", "canonical",
            "names", "default_model", "call_fn", "LLMError", "TransientError", "PRESETS", "PRICES", "DEFAULT_MODELS"]
 
 if __name__ == "__main__":
