@@ -322,6 +322,9 @@ textarea.inp { height: auto; padding: 8px 12px; resize: vertical; line-height: 1
 /* timeline: thumbnails + waveform + words + effects */
 .tline { position: relative; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); padding: 8px 12px 10px; user-select: none; }
 .tline .rows { position: relative; }
+.tline .tlview { overflow-x: auto; overflow-y: hidden; padding-bottom: 4px; }
+.tline .tlzoom { position: absolute; right: 8px; top: -34px; display: flex; gap: 2px; }
+.ed .tl { position: relative; padding-top: 36px; }
 .tline .tlane { position: relative; display: block; margin-top: 4px; }
 .tline .tlane .lbl { position: absolute; left: -2px; top: -1px; font-size: 11px; color: var(--text-faint); pointer-events: none; z-index: 1; }
 .tline .thumbs { height: 40px; display: flex; overflow: hidden; border-radius: 4px; background: #000; }

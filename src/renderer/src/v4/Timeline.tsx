@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { EffectInstance, OutputDoc } from '../../../shared/v04';
 import { t } from '../i18n';
 import { isCut, moveEffect, resizeEffect, snapEdge, snapRange, stackRows, toT, toX } from '../lib/timeline';
+import { ZoomIn, ZoomOut } from 'lucide-react';
 import { media } from './kit';
 import { effectLabel } from './msg';
 
@@ -20,19 +21,35 @@ export interface TimelineProps {
 }
 
 export function Timeline({ doc, time, selection, selectedFx, onSeek, onSelect, onSelectFx, onMoveFx, onTrim }: TimelineProps) {
+  const view = useRef<HTMLDivElement | null>(null);
   const box = useRef<HTMLDivElement | null>(null);
-  const [w, setW] = useState(800);
+  const [vw, setVw] = useState(800);
   const D = doc.duration || 1;
+  // zoom: pixels per second (null = fit the whole clip); words need ~60 px/s to be readable
+  const [pps, setPps] = useState<number | null>(() => {
+    const v = sessionStorage.getItem('v4.tlzoom');
+    return v === 'fit' ? null : v ? Number(v) : 60;
+  });
+  useEffect(() => sessionStorage.setItem('v4.tlzoom', pps === null ? 'fit' : String(pps)), [pps]);
   useEffect(() => {
-    const el = box.current;
+    const el = view.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => setW(el.clientWidth));
+    const ro = new ResizeObserver(() => setVw(el.clientWidth));
     ro.observe(el);
-    setW(el.clientWidth);
+    setVw(el.clientWidth);
     return () => ro.disconnect();
   }, []);
+  const w = pps ? Math.max(vw, Math.round(D * pps)) : vw;
   const x = (s: number) => toX(s, D, w);
   const tAt = (clientX: number) => toT(clientX - (box.current?.getBoundingClientRect().left ?? 0), D, w);
+  // keep the playhead in view while playing / stepping
+  useEffect(() => {
+    const el = view.current;
+    if (!el || w <= vw) return;
+    const px = x(time);
+    if (px < el.scrollLeft + 24 || px > el.scrollLeft + vw - 24) el.scrollLeft = Math.max(0, px - vw / 3);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [time, w, vw]);
 
   // drags: word selection, effect move / resize, trim handles
   const [drag, setDrag] = useState<
@@ -81,7 +98,19 @@ export function Timeline({ doc, time, selection, selectedFx, onSeek, onSelect, o
 
   return (
     <div className="tline" data-testid="timeline">
-      <div className="rows" ref={box}>
+      <div className="tlzoom">
+        <button className="btn ghost icon sm" onClick={() => setPps((p) => (p ? Math.max(10, p / 2) : Math.max(10, (vw / D) * 2)))} aria-label={t('editor.zoomOut')} data-tip={t('editor.zoomOut')} disabled={!pps}>
+          <ZoomOut className="ico" />
+        </button>
+        <button className={`btn ghost sm ${pps ? '' : 'toggle on'}`} onClick={() => setPps(null)} data-testid="tl-fit">
+          {t('editor.zoomFit')}
+        </button>
+        <button className="btn ghost icon sm" onClick={() => setPps((p) => Math.min(400, (p ?? vw / D) * 2))} aria-label={t('editor.zoomIn')} data-tip={t('editor.zoomIn')}>
+          <ZoomIn className="ico" />
+        </button>
+      </div>
+      <div className="tlview" ref={view}>
+      <div className="rows" ref={box} style={{ width: w }}>
         <div className="tlane" onPointerDown={(e) => e.button === 0 && onSeek(tAt(e.clientX))}>
           <Thumbs file={doc.files[0]?.path ?? null} duration={D} width={w} />
         </div>
@@ -108,7 +137,7 @@ export function Timeline({ doc, time, selection, selectedFx, onSeek, onSelect, o
             const sel = selection && wd.t >= selection.a - 0.01 && wd.te <= selection.b + 0.01;
             return (
               <span key={i} className={`w ${sel ? 'sel' : ''} ${isCut(wd.t, wd.te, doc.cuts) ? 'cut' : ''}`} style={{ left, width }} title={wd.w} data-t={wd.t}>
-                {width > 10 ? wd.w : ''}
+                {width >= wd.w.length * 11 ? wd.w : width >= 12 ? wd.w.slice(0, Math.floor(width / 11)) : ''}
               </span>
             );
           })}
@@ -165,13 +194,14 @@ export function Timeline({ doc, time, selection, selectedFx, onSeek, onSelect, o
         <div className="trimh" style={{ left: x(trimB) }} onPointerDown={(e) => (e.stopPropagation(), setDrag({ kind: 'trim', edge: 'r', cur: trimB }))} data-testid="trim-out" />
         <div className="phead" style={{ left: x(time) }} />
       </div>
+      </div>
     </div>
   );
 }
 
 /** Frame thumbnails drawn from a hidden video (seek, draw, next). */
 function Thumbs({ file, duration, width }: { file: string | null; duration: number; width: number }) {
-  const n = Math.max(4, Math.min(24, Math.floor(width / 64)));
+  const n = Math.max(4, Math.min(60, Math.floor(width / 64)));
   const refs = useRef<(HTMLCanvasElement | null)[]>([]);
   useEffect(() => {
     if (!file || !duration) return;

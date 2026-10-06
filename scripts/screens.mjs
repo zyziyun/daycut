@@ -1,4 +1,4 @@
-/* global location, document */
+/* global location, document, window */
 // Screenshots of every main screen with real data, window hidden (never shown): for design review against
 // ux/mockups. Usage: node scripts/screens.mjs --data /tmp/vsdemo --out /tmp/shots [--lang en|zh-CN] [--mock]
 //   --data   a folder of (cloned, read-only) demo projects to watch; nothing outside the temp profile is written
@@ -100,11 +100,29 @@ if (fuye) {
   });
   await shot('06-editor', async () => {
     await page.keyboard.press('Escape');
+    await goto(fuye);
+    await page.waitForSelector('[data-testid=clip-card]', { timeout: 30000 });
     const clip = await page.$eval('[data-testid=clip-card]', (e) => e.getAttribute('data-clip'));
     await goto(`${fuye}/clip/${encodeURIComponent(clip)}`);
     await page.waitForSelector('[data-testid=timeline]', { timeout: 30000 });
-    await page.click('[data-testid=etab-effects]');
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(1500);
+    const words = await page.$$('[data-testid=timeline] .w');
+    if (words.length > 8) {
+      await words[3].click();
+      await page.click('[data-testid=trim-start-here]');
+      await page.waitForTimeout(800);
+      await page.click('[data-testid=etab-effects]');
+      await page.click('[data-testid=fx-item][data-fx=pop-words]');
+      await page.fill('[data-testid=fxp-text]', lang === 'en' ? '底气' : '底气');
+      await (await page.$$('[data-testid=timeline] .w'))[12].click();
+      await page.click('[data-testid=fx-add-playhead]');
+      await page.waitForTimeout(800);
+    } else await page.click('[data-testid=etab-effects]');
+    if (!(await page.$('[data-testid=ai-panel]'))) await page.click('[data-testid=toggle-ai]');
+    await page.fill('[data-testid=ai-input]', lang === 'en' ? 'Tighter, remove the pauses' : '再紧凑一点，去掉停顿');
+    await page.press('[data-testid=ai-input]', 'Enter');
+    await page.waitForSelector('[data-testid=ai-proposal]', { timeout: 180000 }).catch(() => undefined);
+    await page.waitForTimeout(1500);
   });
 }
 if (rag) {
@@ -122,6 +140,14 @@ if (rag) {
 await shot('09-publish', async () => {
   await goto('#/publish');
   await page.waitForSelector('[data-testid=calendar]');
+  await page.waitForTimeout(2500);
+});
+await shot('11-light', async () => {
+  await page.evaluate(() => window.desk.setSettings({ theme: 'notebook-light' }));
+  await page.reload();
+  await page.waitForURL(/^app:\/\/desk\//);
+  await goto('#/projects');
+  await page.waitForSelector('[data-testid=project-card]', { timeout: 30000 });
   await page.waitForTimeout(2500);
 });
 await shot('10-settings', async () => {

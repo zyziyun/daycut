@@ -37,13 +37,55 @@ export function Settings({ onChange }: { onChange: (s: SettingsMsg) => void }) {
 
   if (!s) return null;
   return (
-    <>
-      <div className="topbar">
-        <h1>{t('nav.settings')}</h1>
-        <div className="sp" />
-      </div>
-      <div className="page col" style={{ maxWidth: 760, gap: 16 }}>
+    <div className="scroll">
+      <div className="pg col" style={{ maxWidth: 760, gap: 16 }}>
+        <div className="ph" style={{ marginBottom: 8 }}>
+          <h1>{t('nav.settings')}</h1>
+        </div>
         {msg && <div className="notice accent">{msg}</div>}
+        <div className="card col" data-testid="settings-appearance">
+          <b>{t('set.appearance')}</b>
+          <Field label={t('set.language')} hint={t('set.languageHint')}>
+            <div className="tabs">
+              {LANGS.map((l) => (
+                <button key={l} className={`tab ${s.lang === l ? 'on' : ''}`} onClick={() => save({ lang: l })} data-testid={`lang-${l}`}>
+                  {LOCALES[l].label}
+                </button>
+              ))}
+            </div>
+          </Field>
+          <Field label={t('set.theme')}>
+            <div className="tabs">
+              {(['studio-dark', 'notebook-light'] as const).map((th) => (
+                <button key={th} className={`tab ${s.theme === th ? 'on' : ''}`} onClick={() => save({ theme: th })}>
+                  {t(`set.theme.${th}`)}
+                </button>
+              ))}
+            </div>
+          </Field>
+          <Field label={t('set.accent')}>
+            <div className="tabs">
+              {(['teal', 'red'] as const).map((a) => (
+                <button key={a} className={`tab ${(s.accent ?? 'teal') === a ? 'on' : ''}`} onClick={() => save({ accent: a })}>
+                  <span className="dot" style={{ background: a === 'teal' ? '#4FBFAE' : '#F0435B', marginRight: 6 }} />
+                  {t(`set.accent.${a}`)}
+                </button>
+              ))}
+            </div>
+          </Field>
+        </div>
+        <div className="card col">
+          <b>{t('set.workspaces')}</b>
+          <span className="muted small">{t('set.workspacesHint')}</span>
+          <div className="row">
+            <a className="btn" href="#/clients">
+              {t('set.openClients')}
+            </a>
+            <a className="btn ghost" href="#/metrics">
+              {t('set.openMetrics')}
+            </a>
+          </div>
+        </div>
         <div className="card col">
           <b>{t('settings.engine')}</b>
           <div className="small">
@@ -137,32 +179,11 @@ export function Settings({ onChange }: { onChange: (s: SettingsMsg) => void }) {
             </button>
           </div>
         </div>
-        <div className="card col">
-          <b>{t('settings.ui')}</b>
-          <Field label={t('settings.lang')}>
-            <div className="tabs">
-              {LANGS.map((l) => (
-                <button key={l} className={`tab ${s.lang === l ? 'on' : ''}`} onClick={() => save({ lang: l })}>
-                  {LOCALES[l].label}
-                </button>
-              ))}
-            </div>
-          </Field>
-          <Field label={t('settings.theme')} hint={t('settings.themeHint')}>
-            <div className="tabs">
-              {(['studio-dark', 'notebook-light'] as const).map((th) => (
-                <button key={th} className={`tab ${s.theme === th ? 'on' : ''}`} onClick={() => save({ theme: th })}>
-                  {t(`theme.${th}`)}
-                </button>
-              ))}
-            </div>
-          </Field>
-        </div>
         <div className="card col small">
           <b>{t('settings.privacy')}</b>
           <div className="muted">{t('settings.privacyBody')}</div>
         </div>
       </div>
-    </>
+    </div>
   );
 }

@@ -89,6 +89,23 @@ def safe_name(name):
 JOB_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
+def rebase(p, bdir):
+    """B11: a batch moved or cloned keeps absolute artifact paths of its old place; map ``.../jobs/...`` (or
+    ``.../review/...``) back into this batch folder when the stored path is gone or points elsewhere."""
+    if not isinstance(p, str) or not os.path.isabs(p):
+        return p
+    root = os.path.abspath(bdir).rstrip(os.sep) + os.sep
+    if p.startswith(root) and os.path.exists(p):
+        return p
+    for seg in (f"{os.sep}jobs{os.sep}", f"{os.sep}review{os.sep}", f"{os.sep}package{os.sep}"):
+        i = p.rfind(seg)
+        if i >= 0:
+            cand = os.path.join(bdir, p[i + 1:])
+            if os.path.exists(cand):
+                return cand
+    return p
+
+
 class BadRequest(ValueError):
     pass
 

@@ -560,6 +560,9 @@ const v04Zh: Record<keyof typeof v04En, string> = {
   'issue.screen-text': '画面里有文字要看一下',
   'issue.screen-popup': '画面里出现了弹窗',
   'issue.screen-popup-visible': '弹窗露出来了',
+  'editor.zoomIn': '放大',
+  'editor.zoomOut': '缩小',
+  'editor.zoomFit': '全部',
 };
 
 export const zhCN: Record<MessageKey, string> = { ...legacyZh, ...legacyZhV02, ...v04Zh };

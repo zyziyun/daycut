@@ -13,7 +13,7 @@ import sys
 import threading
 import time
 
-from .common import safe_name, BadRequest, batch_id, need, read_json, sha1_json, write_json
+from .common import rebase, safe_name, BadRequest, batch_id, need, read_json, sha1_json, write_json
 
 EXIT_STATUS = {0: "ok", 1: "done-with-failures", 2: "over-budget", 3: "paused", 4: "pilot-waits", 6: "busy"}
 
@@ -297,6 +297,9 @@ class RealEngine:
                 if it.get(k):
                     it[k] = os.path.normpath(os.path.join(rdir, it[k]))
             it["files"] = [os.path.normpath(os.path.join(rdir, f)) for f in it.get("files") or [] if f]
+            for k in ("sheet", "snippet"):
+                it[k] = rebase(it.get(k), bdir)
+            it["files"] = [rebase(f, bdir) for f in it["files"]]
         return items
 
     def apply_review(self, bid, decisions):
@@ -338,6 +341,12 @@ class RealEngine:
                     d["engine_edit"] = full["edit"]
         except Exception:  # noqa: BLE001  (the legacy view is enough for review)
             pass
+        bdir, m = self._dir(bid), d.get("media") or {}
+        for k in ("master", "sheet", "snippet"):
+            m[k] = rebase(m.get(k), bdir)
+        for e in m.get("exports") or []:
+            for k in ("file", "cover", "post"):
+                e[k] = rebase(e.get(k), bdir)
         return d
 
     def _job_legacy(self, bid, jid):

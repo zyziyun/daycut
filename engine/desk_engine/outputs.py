@@ -194,10 +194,11 @@ def _asr_for(file, workdir=None, extra=()):
     return []
 
 
-def waveform(words, duration, n=240):
-    """A speech-shaped envelope from the word timings (deterministic)."""
+def waveform(words, duration, n=None):
+    """A speech-shaped envelope from the word timings (deterministic; ~8 bars per second)."""
     if not duration:
         return []
+    n = n or int(min(2400, max(240, duration * 8)))
     out = []
     for i in range(n):
         t = (i + 0.5) * duration / n

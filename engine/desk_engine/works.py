@@ -72,8 +72,12 @@ def _files(d, sub, exts, limit=200):
 
 def scan(d):
     outs, covers, posts = [], [], []
+    final_videos = any(_files(d, s_, VIDEO, 1) for s_ in ("final", "exports", "export"))
     for sub in OUT_DIRS:
         if not os.path.isdir(os.path.join(d, sub)):
+            continue
+        if final_videos and sub in ("out", "output"):          # intermediate renders when a final/ exists
+            covers += [p for p in _files(d, sub, IMAGE) if re.search(r"cover|封面", os.path.basename(p), re.I)]
             continue
         outs += _files(d, sub, VIDEO)
         covers += [p for p in _files(d, sub, IMAGE) if re.search(r"cover|封面", os.path.basename(p), re.I)]
@@ -227,11 +231,30 @@ ASPECT_SUFFIX = re.compile(r"(?:[_.-](?:9x16|916|3x4|34|16x9|169|1x1|vertical|ho
 CLIP_ID_RE = re.compile(r"^[\w一-鿿][\w一-鿿 .()+-]{0,119}$")
 
 
+PLATFORM_SUFFIX = re.compile(r"[_.-](xiaohongshu|xhs|rednote|douyin|tiktok|youtube[_-]?shorts|shorts|bilibili|youtube|"
+                             r"shipinhao|channels|instagram|reels)$", re.I)
+DIMS_SUFFIX = re.compile(r"[_.-]\d{3,4}x\d{3,4}$", re.I)
+COVER_SUFFIX = re.compile(r"[_.-]?(cover|封面)(\.feed)?$", re.I)
+
+
+PLATFORM_ONLY = re.compile(r"^(xiaohongshu|xhs|rednote|douyin|tiktok|youtube([_-]?shorts)?|shorts|bilibili|shipinhao|"
+                           r"channels|instagram|reels|final|output|export|cover)$", re.I)
+MAIN_KEY = "main"
+
+
 def clip_key(rel):
-    """``final/A_换圈子_9x16.mp4`` -> ``A_换圈子``; versions of one clip share a key."""
+    """``final/A_换圈子_9x16.mp4`` -> ``A_换圈子``; ``ep1_xiaohongshu_3x4`` / ``ep1_cover_9x16`` -> ``ep1``: the
+    versions (aspect, platform, size) and the cover of one clip share a key."""
     stem = os.path.splitext(os.path.basename(rel))[0]
-    stem = re.sub(r"[_.-]?(cover|封面)(\.feed)?$", "", stem, flags=re.I)
-    return ASPECT_SUFFIX.sub("", stem) or stem
+    for _ in range(4):
+        before = stem
+        for rx in (ASPECT_SUFFIX, DIMS_SUFFIX, COVER_SUFFIX, PLATFORM_SUFFIX):
+            stem = rx.sub("", stem) or stem
+        if stem == before:
+            break
+    if PLATFORM_ONLY.match(stem):                       # douyin.mp4 / xhs_3x4.mp4: versions of the folder's clip
+        return MAIN_KEY
+    return stem
 
 
 def aspect_of(w, h):
@@ -279,22 +302,46 @@ def parse_posts(text):
     return out
 
 
+COUNT_NOTE = re.compile(r"\s*[(（][^()（）]*\d+(?:\.\d+)?\s*/\s*\d+[)）]\s*$")
+
+
 def parse_post_single(text):
-    """A per-clip ``<clip>_post.md`` (title line or **标题**：..., body, #tags) -> {title, body, tags}."""
+    """A per-clip post file -> {title, body, tags}. Understands ``**标题**：…`` / ``## 标题`` + next line,
+    ``**正文**：`` / ``## 正文`` sections, #tag lines, and drops length notes like ``(15.0/20)``."""
     title, body, tags = None, [], []
+    mode = None
     for ln in (text or "").splitlines():
         s_ = ln.strip()
-        m = re.match(r"^\*\*(?:标题|title)\*\*\s*[:：]\s*(.+)$", s_, re.I)
+        m = re.match(r"^\*\*(标题|title)\*\*\s*[:：]\s*(.*)$", s_, re.I)
         if m:
-            title = m.group(1).strip()
+            title = COUNT_NOTE.sub("", m.group(2)).strip() or title
+            mode = "title" if not m.group(2).strip() else None
             continue
-        if re.match(r"^#\s", s_) or re.match(r"^(视频|封面|video|cover)\s*[:：]", s_, re.I):
+        m = re.match(r"^\*\*(正文|body)\*\*\s*[:：]\s*(.*)$", s_, re.I)
+        if m:
+            mode = "body"
+            if m.group(2).strip():
+                body.append(m.group(2))
+            continue
+        m = re.match(r"^#{1,6}\s*(.*)$", s_)
+        if m and not re.fullmatch(r"(#\S+\s*)+", s_):
+            h = m.group(1)
+            mode = "title" if re.match(r"^(标题|title)", h, re.I) else "body" if re.match(r"^(正文|body|文案)", h, re.I) \
+                else ("skip" if mode else None)
+            continue
+        if re.match(r"^(视频|封面|video|cover|备选|alternatives?)\s*[:：]", s_, re.I):
             continue
         if s_ and re.fullmatch(r"(#\S+\s*)+", s_):
             tags += [x.lstrip("#") for x in s_.split()]
             continue
-        if title is None and s_:
-            title = s_
+        if mode == "skip":
+            continue
+        if mode == "title" and s_:
+            title = COUNT_NOTE.sub("", s_).strip()
+            mode = None
+            continue
+        if title is None and s_ and mode != "body":
+            title = COUNT_NOTE.sub("", s_).strip()
             continue
         body.append(ln)
     return dict(title=title or "", body="\n".join(body).strip(), tags=tags)
@@ -374,6 +421,9 @@ def clips(d, probe=None):
     groups = {}
     for rel in found["outputs"]:
         groups.setdefault(clip_key(rel), []).append(rel)
+    others = [k for k in groups if k != MAIN_KEY]
+    if MAIN_KEY in groups and len(others) == 1:          # cuda-explainer.mp4 + douyin.mp4 + youtube.mp4 = one clip
+        groups[others[0]] += groups.pop(MAIN_KEY)
     covers = {}
     for rel in sorted(found["covers"], key=mt):
         covers[clip_key(rel)] = rel
@@ -396,7 +446,8 @@ def clips(d, probe=None):
         files.sort(key=lambda f: (0 if f["aspect"] in ("3:4", "原尺寸") else 1 if f["aspect"] == "9:16" else 2))
         post = posts.get(k)
         cov = (post or {}).get("cover")
-        cover = os.path.join(d, covers[k]) if k in covers else None
+        cover = os.path.join(d, covers[k]) if k in covers else \
+            (os.path.join(d, covers[MAIN_KEY]) if MAIN_KEY in covers and len(groups) == 1 else None)
         if cov and not cover and os.path.exists(os.path.join(d, os.path.dirname(groups[k][0]), cov)):
             cover = os.path.join(d, os.path.dirname(groups[k][0]), cov)
         letter = re.match(r"^([A-Z0-9]{1,3})[_ -]", k)

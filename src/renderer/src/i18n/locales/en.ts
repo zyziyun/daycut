@@ -559,6 +559,9 @@ export const v04En = {
   'issue.screen-text': 'Text on screen to check',
   'issue.screen-popup': 'A pop-up shows on screen',
   'issue.screen-popup-visible': 'A pop-up is visible',
+  'editor.zoomIn': 'Zoom in',
+  'editor.zoomOut': 'Zoom out',
+  'editor.zoomFit': 'Fit',
 };
 
 export const en = { ...legacyEn, ...legacyEnV02, ...v04En };
