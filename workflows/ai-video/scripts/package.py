@@ -18,6 +18,11 @@ Rules
     2020-07-28; TikTok Content Posting API: SELF_ONLY). Per platform `api_audited` (series.yaml, or env
     VSTUDIO_<PLATFORM>_API_AUDITED=1) defaults to false: the post then defaults to private, the plan and the
     upload warn, and the returned status is checked afterwards (a silent lock is reported as `locked`).
+  - X and Instagram default to `uploader: manual` (assisted publishing: the desk's built-in browser fills the
+    page, you press Post / Share). Optional API uploaders `x-api` / `instagram-api` run only when the series
+    names them explicitly AND the confirm code matches; their requirements (X: paid pay-per-use API credits +
+    OAuth 2.0 user token with media.write; Instagram: Professional account, a Meta app through review, the video
+    at a public https URL) are printed in every plan. See references/PUBLISHING.md.
   - Every post carries the AI-generated disclosure. Where the uploader cannot set the platform's AI label,
     the CHECKLIST says so and the plan prints a reminder to tick it by hand.
 Sources (video per language variant, covers per ratio) should already be exported with `python -m vstudio.export`.
@@ -36,8 +41,10 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
 
 # Title / body limits for platforms vstudio.platform does not profile (kuaishou, channels, reddit...). [C]
 LIMITS = {"kuaishou": (30, 500), "channels": (16, 1000), "weibo": (30, 2000), "reddit": (300, 10000),
-          "instagram": (0, 2200), "linkedin": (0, 3000)}
-VSTUDIO_PLATFORMS = {"xiaohongshu", "douyin", "tiktok", "youtube", "bilibili"}
+          "linkedin": (0, 3000)}
+VSTUDIO_PLATFORMS = {"xiaohongshu", "douyin", "tiktok", "youtube", "bilibili", "x", "instagram", "wechat-channels"}
+PLATFORM_ALIASES = {"channels": "wechat-channels", "weixin-channels": "wechat-channels", "twitter": "x",
+                    "ig": "instagram"}
 UPLOAD_PAGES = {
     "xiaohongshu": "https://creator.xiaohongshu.com/publish/publish",
     "douyin": "https://creator.douyin.com/creator-micro/content/upload",
@@ -47,6 +54,17 @@ UPLOAD_PAGES = {
     "tiktok": "https://www.tiktok.com/tiktokstudio/upload",
     "youtube": "https://studio.youtube.com",
     "reddit": "https://www.reddit.com/submit",
+    "wechat-channels": "https://channels.weixin.qq.com/platform/post/create",
+    "x": "https://x.com/compose/post",
+    "instagram": "https://www.instagram.com/",
+}
+# What an API uploader needs before it can work (printed in plan + CHECKLIST). [S: platform developer docs, 2026]
+API_REQUIREMENTS = {
+    "x": "X API v2: paid pay-per-use credits (no free posting tier for new apps since 2026-02), OAuth 2.0 user "
+         "token with tweet.write + media.write (+ offline.access); chunked /2/media/upload, then POST /2/tweets",
+    "instagram": "Instagram Content Publishing API: Instagram Professional (Business/Creator) account, a Meta app "
+                 "with instagram_business_content_publish approved in App Review, and the video at a PUBLIC https "
+                 "URL (Meta fetches it; no direct file upload); 100 API posts / 24 h",
 }
 # How the AI-generated label gets set, per uploader+platform (recorded in the sessions; "manual" = tick it in the UI).
 AI_LABEL = {
@@ -69,7 +87,8 @@ UPLOADED = ("published", "scheduled", "private", "locked")    # anything that al
 
 
 def base_platform(name):
-    return name.split("_")[0] if name.startswith("reddit") else name
+    name = name.split("_")[0] if name.startswith("reddit") else name
+    return PLATFORM_ALIASES.get(name, name)
 
 
 # ------------------------------------------------------------------------------------------- config
@@ -159,6 +178,9 @@ def build_post(cfg, n, platform, log=None):
     if b == "youtube":
         tags = ["shorts"] + tags[:4]
     tags = ([stag] if stag else []) + tags
+    from vstudio.publish import HASHTAG_CAP
+    if b in HASHTAG_CAP and len(tags) > HASHTAG_CAP[b]:
+        tags = tags[:HASHTAG_CAP[b]]          # X 1-2 tags by convention, Instagram hard max 5
     series_line = (f"【{name}·第{n}集】" if lang == "zh" else f"{name} · Ep. {n}") if name else ""
     prev_line = (f"上一集：{prev}" if lang == "zh" else f"Previous episode: {prev}") if prev else ""
     cta = (s.get("cta") or {}).get(lang, "")
@@ -193,6 +215,16 @@ def build_post(cfg, n, platform, log=None):
     how, note = AI_LABEL.get((up, b), ("manual", "tick the platform's AI-generated / 内容由AI生成 label by hand"))
     ai = bool(s.get("ai_generated", True))
     api = {}
+    if up in ("x-api", "instagram-api"):
+        api = {"api": API_REQUIREMENTS[b]}
+        if up == "instagram-api":
+            tpl = pc.get("public_video_url")
+            if not tpl:
+                warnings.append("instagram-api needs public_video_url (https URL template where YOU host the "
+                                "exact video.mp4, e.g. https://cdn.example.com/{slug}/instagram.mp4)")
+            else:
+                api["video_url"] = tpl.format(slug=e.get("slug", f"ep{n}"), ep=int(n), platform=platform)
+            api["share_to_feed"] = bool(pc.get("share_to_feed", True))
     if (up, b) in API_UPLOADERS:
         audited = api_audited(pc, platform)
         privacy, warn = api_privacy(platform, audited, pc.get("privacy"))
@@ -213,7 +245,8 @@ def build_post(cfg, n, platform, log=None):
 def fit_cover(src, dst, ratio):
     """Cover at the platform ratio: blurred fill + whole image centred (never crop heads or the headline)."""
     from vstudio import media
-    w, h = {"9x16": (1080, 1920), "3x4": (1080, 1440), "16x9": (1920, 1080), "16x10": (1146, 717)}[ratio]
+    w, h = {"9x16": (1080, 1920), "3x4": (1080, 1440), "16x9": (1920, 1080), "16x10": (1146, 717), "4x5": (1080, 1350),
+            "1x1": (1080, 1080)}[ratio]
     vf = (f"split[a][b];[a]scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},boxblur=30:3,"
           f"eq=brightness=-0.08[bg];[b]scale={w}:{h}:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2")
     media.run(["ffmpeg", "-y", "-i", src, "-filter_complex", vf, "-frames:v", "1", "-q:v", "2", dst])
@@ -238,6 +271,8 @@ def checklist(post, video, cover):
              f"- collection / 合集: {post['collection'] or '-'}",
              f"- AI label: {post['ai_label']['how']} - {post['ai_label']['note']}",
              f"- upload page: {UPLOAD_PAGES.get(base_platform(post['platform']), '-')}"]
+    if post.get("api"):
+        lines += [f"- API requirements: {post['api']}"]
     if post["warnings"]:
         lines += ["", "Warnings:"] + [f"- {w}" for w in post["warnings"]]
     if base_platform(post["platform"]) == "reddit":
@@ -308,7 +343,7 @@ def load_package(cfg, n, platform):
 
 def confirm_code(post, video, cover):
     keys = ("platform", "episode", "title", "body", "tags", "publish_at", "ai_generated", "ai_label", "uploader",
-            "collection", "account", "tid", "api_audited", "privacy")
+            "collection", "account", "tid", "api_audited", "privacy", "video_url", "share_to_feed")
     blob = json.dumps({k: post.get(k) for k in keys}, ensure_ascii=False, sort_keys=True)
     blob += _sha1_file(video) + (_sha1_file(cover) if cover else "")
     return hashlib.sha1(blob.encode()).hexdigest()[:8]
@@ -327,6 +362,10 @@ def plan_text(post, video, cover, code):
              f"  AI    : {post['ai_label']['how']} - {post['ai_label']['note']}"]
     if post.get("api_audited") is False:
         lines += [f"  api   : NOT AUDITED - {API_AUDIT[base_platform(post['platform'])]}"]
+    if post.get("api"):
+        lines += [f"  api   : {post['api']}"]
+    if post.get("video_url"):
+        lines += [f"  url   : {post['video_url']} (must serve exactly this video.mp4)"]
     lines += [f"  warn  : {w}" for w in post.get("warnings", [])]
     lines += [f"To publish exactly this, run with:  --confirm {code}"]
     return "\n".join(lines)
@@ -516,7 +555,122 @@ def sau_uploader(post, video, cover, out=print):
     return {"status": "scheduled" if scheduled else "published"}
 
 
-UPLOADERS = {"manual": manual_uploader, "youtube": youtube_uploader, "sau": sau_uploader}
+def _secret_json(name):
+    p = os.path.join(secrets_dir(), name)
+    if not os.path.exists(p):
+        raise UploadRefused(f"missing {p} (credentials live outside the repo, in $VSTUDIO_SECRETS)")
+    with open(p, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _http():
+    try:
+        import requests
+    except ImportError as ex:
+        raise UploadRefused("the API uploaders need `pip install requests`") from ex
+    return requests
+
+
+X_API = "https://api.x.com/2"
+
+
+def x_publish(http, token, post, video, out=print, chunk=4 << 20, poll=None):
+    """X API v2: chunked media upload (initialize / append / finalize / status) then POST /2/tweets.
+    ``token``: OAuth 2.0 user access token (tweet.write media.write). Endpoint shapes per the X API v2 media docs
+    (2025-2026); not exercised against the live API in this repo - run one post by hand first."""
+    import time
+    poll = poll or (lambda s: time.sleep(min(10, max(1, s))))
+    hdr = {"Authorization": f"Bearer {token}"}
+    size = os.path.getsize(video)
+    r = http.post(f"{X_API}/media/upload/initialize", headers=hdr,
+                  json={"media_type": "video/mp4", "total_bytes": size, "media_category": "tweet_video"})
+    r.raise_for_status()
+    mid = (r.json().get("data") or {}).get("id")
+    if not mid:
+        raise UploadRefused(f"x: initialize returned no media id: {r.text[:200]}")
+    with open(video, "rb") as f:
+        for i, part in enumerate(iter(lambda: f.read(chunk), b"")):
+            r = http.post(f"{X_API}/media/upload/{mid}/append", headers=hdr, data={"segment_index": i},
+                          files={"media": ("chunk", part, "application/octet-stream")})
+            r.raise_for_status()
+    r = http.post(f"{X_API}/media/upload/{mid}/finalize", headers=hdr)
+    r.raise_for_status()
+    info = (r.json().get("data") or {}).get("processing_info")
+    while info and info.get("state") in ("pending", "in_progress"):
+        poll(info.get("check_after_secs", 5))
+        r = http.get(f"{X_API}/media/upload", headers=hdr, params={"command": "STATUS", "media_id": mid})
+        r.raise_for_status()
+        info = (r.json().get("data") or {}).get("processing_info")
+    if info and info.get("state") == "failed":
+        raise UploadRefused(f"x: media processing failed: {info.get('error')}")
+    r = http.post(f"{X_API}/tweets", headers=hdr, json={"text": post["body"], "media": {"media_ids": [mid]}})
+    r.raise_for_status()
+    tid = (r.json().get("data") or {}).get("id")
+    return {"status": "published", "url": f"https://x.com/i/web/status/{tid}", "media_id": mid}
+
+
+def x_api_uploader(post, video, cover, out=print):
+    if post.get("publish_at"):
+        raise UploadRefused("x-api cannot schedule; post at the time or schedule it in x.com (manual)")
+    tok = _secret_json("x_oauth2_token.json").get("access_token")
+    if not tok:
+        raise UploadRefused("x_oauth2_token.json has no access_token (OAuth 2.0 user context, media.write)")
+    return x_publish(_http(), tok, post, video, out=out)
+
+
+IG_API = "https://graph.instagram.com/v25.0"
+
+
+def instagram_publish(http, cred, post, out=print, poll=None, tries=60):
+    """Instagram Content Publishing API: create a REELS container from the public ``video_url``, wait for
+    FINISHED, media_publish, read the permalink. cred: {access_token, ig_user_id}."""
+    import time
+    poll = poll or (lambda: time.sleep(5))
+    url = post.get("video_url") or ""
+    if not url.startswith("https://"):
+        raise UploadRefused("instagram-api needs the video at a public https URL (public_video_url)")
+    tok, uid = cred.get("access_token"), cred.get("ig_user_id")
+    if not tok or not uid:
+        raise UploadRefused("instagram_token.json needs access_token and ig_user_id")
+    r = http.post(f"{IG_API}/{uid}/media", params={"access_token": tok}, data={
+        "media_type": "REELS", "video_url": url, "caption": post["body"],
+        "share_to_feed": "true" if post.get("share_to_feed", True) else "false"})
+    r.raise_for_status()
+    cid = r.json()["id"]
+    for _ in range(tries):
+        st = http.get(f"{IG_API}/{cid}", params={"fields": "status_code", "access_token": tok}).json()
+        if st.get("status_code") == "FINISHED":
+            break
+        if st.get("status_code") in ("ERROR", "EXPIRED"):
+            raise UploadRefused(f"instagram: container {st.get('status_code')}")
+        poll()
+    else:
+        raise UploadRefused("instagram: container still processing; nothing published (re-run upload later)")
+    r = http.post(f"{IG_API}/{uid}/media_publish", params={"access_token": tok}, data={"creation_id": cid})
+    r.raise_for_status()
+    mid = r.json()["id"]
+    link = http.get(f"{IG_API}/{mid}", params={"fields": "permalink", "access_token": tok}).json().get("permalink")
+    return {"status": "published", "url": link, "media_id": mid}
+
+
+def instagram_api_uploader(post, video, cover, out=print):
+    if post.get("publish_at"):
+        raise UploadRefused("instagram-api cannot schedule; post at the time or schedule it in the app (manual)")
+    http = _http()
+    url = post.get("video_url") or ""
+    try:                                  # the public copy must be the reviewed file (same size at least)
+        h = http.head(url, allow_redirects=True, timeout=20)
+        n = int(h.headers.get("content-length") or -1)
+    except Exception as ex:
+        raise UploadRefused(f"instagram-api: public video URL not reachable ({ex.__class__.__name__})") from ex
+    if n != os.path.getsize(video):
+        raise UploadRefused(f"instagram-api: {url} serves {n} bytes, the package video is {os.path.getsize(video)}; "
+                            "upload the exact video.mp4 there first")
+    return instagram_publish(http, _secret_json("instagram_token.json"), post, out=out)
+
+
+UPLOADERS = {"manual": manual_uploader, "youtube": youtube_uploader, "sau": sau_uploader,
+             "x-api": x_api_uploader, "instagram-api": instagram_api_uploader}
 
 
 def status(cfg, out=print):

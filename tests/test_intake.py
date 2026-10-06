@@ -283,7 +283,10 @@ def test_parse_prompt():
     assert R.parse_prompt("用这个剧本做 AI 短剧第一季 6 集")["episodes"] == 6
     assert R.parse_prompt("把这节课切成二十条")["count"] == 20
     assert R.parse_prompt("不要讲解视频")["exclude"] == ["explainer"]
-    assert R.parse_prompt("发视频号和小红书")["unsupported_platforms"] == ["微信视频号"]
+    it = R.parse_prompt("发视频号和小红书，还有快手")
+    assert it["platforms"] == ["xiaohongshu", "wechat-channels"] and it["unsupported_platforms"] == ["快手"]
+    assert sorted(R.parse_prompt("发布方案还要支持 X 和 ins")["platforms"]) == ["instagram", "x"]
+    assert R.parse_prompt("1.2x 速度，发 B站")["platforms"] == ["bilibili"]
 
 
 def test_focus_ranges_respect_position():

@@ -13,7 +13,10 @@ import re
 
 from .config import persona, xhs_len
 
-TITLE_MAX_DEFAULT = {"xiaohongshu": 20, "youtube": 100, "bilibili": 80, "tiktok": 55, "douyin": 55}
+TITLE_MAX_DEFAULT = {"xiaohongshu": 20, "youtube": 100, "bilibili": 80, "tiktok": 55, "douyin": 55,
+                     "wechat-channels": 16, "x": 0, "instagram": 0}
+NO_TITLE = {"x", "instagram"}          # no title field: the title becomes the first line (hook) of the post text
+HASHTAG_CAP = {"x": 2, "instagram": 5}  # extra tags are dropped (with a warning): X 1-2 by convention, IG hard max 5
 XHS_CHAPTER_LABEL_MAX = 14
 
 
@@ -27,7 +30,12 @@ def _p(path, default=None):
 
 
 def platform_name(platform=None):
-    return (platform or _p("platforms.default", "xiaohongshu") or "xiaohongshu").lower()
+    pl = (platform or _p("platforms.default", "xiaohongshu") or "xiaohongshu").lower()
+    try:
+        from .platform import canonical
+        return canonical(pl.split(":")[0]) if pl not in ("xhs",) else pl
+    except Exception:
+        return pl
 
 
 def title_max(platform=None):
@@ -60,6 +68,8 @@ def check_title(title: str, platform: str = None, suggest=None):
     pl = platform_name(platform)
     n = title_len(title, pl)
     tmax = title_max(pl)
+    if not tmax:
+        return True, n, [f"{pl} has no title field: the title is used as the first line of the post"]
     if n <= tmax:
         return True, n, []
     hints = (suggest or _default_hints)(title, n, tmax, pl)
@@ -162,8 +172,13 @@ def hashtags(tags=None, platform=None, use_persona=True, tag_set=None, warn=prin
         return ""
     if pl == "bilibili":
         return "标签：" + "，".join(clean)
-    if pl == "youtube":
+    if pl in ("youtube", "x", "instagram", "tiktok"):
         clean = [re.sub(r"\s+", "", t) for t in clean]
+    cap = HASHTAG_CAP.get(pl)
+    if cap and len(clean) > cap:
+        if warn:
+            warn(f"{pl}: {len(clean)} hashtags, kept the first {cap} (dropped: {', '.join(clean[cap:])})")
+        clean = clean[:cap]
     return " ".join("#" + t for t in clean)
 
 
@@ -187,6 +202,14 @@ def post_body(hook, body, chapters=None, links=None, tags=None, platform=None, t
     links first.  B站: 标签 line instead of hashtags."""
     pl = platform_name(platform)
     out = []
+    if pl in NO_TITLE:                   # X / Instagram: no title field - the title leads the text if there is no hook
+        if title and not hook:
+            hook = title
+        title = None
+        if chapters:
+            if warn:
+                warn(f"{pl}: no chapters; timeline left out of the post text")
+            chapters = None
     if title:
         ok, n, hints = check_title(title, pl)
         if not ok and warn:
@@ -213,3 +236,161 @@ def post_body(hook, body, chapters=None, links=None, tags=None, platform=None, t
         for w in voice_warnings(text):
             warn(w)
     return text
+
+
+# ---------------------------------------------------------------- language / platform copy
+def detect_lang(texts):
+    """"en" when Latin letters outnumber CJK characters in ``texts`` (str or list of str / cue objects), "zh" when
+    CJK wins, None for no text."""
+    if isinstance(texts, str):
+        texts = [texts]
+    s = " ".join(getattr(t, "text", t) or "" for t in (texts or []))
+    cjk = sum(1 for c in s if "\u3400" <= c <= "\u9fff" or "\u3040" <= c <= "\u30ff" or "\uac00" <= c <= "\ud7af")
+    lat = sum(1 for c in s if c.isascii() and c.isalpha())
+    if not cjk and not lat:
+        return None
+    return "en" if lat > 2 * cjk else "zh"
+
+
+_COPY_KEYS = ("title", "hook", "body", "tags", "chapters", "links")
+
+
+def localize_post(post, platform, content_lang=None, lang=None, bilingual=None, warn=print):
+    """post.json -> the flat {title, hook, body, tags, chapters, links, lang} for one platform.
+
+    post may hold per-language blocks ``{"en": {title, hook, body, tags}, "zh": {...}}`` next to (or instead of)
+    the flat keys, plus ``lang`` / ``bilingual`` / ``lang_by_platform`` {platform: "en"}.
+    Language: ``lang`` arg > ``lang_by_platform`` > ``post.lang`` > the content language (``content_lang``, e.g.
+    detected from the cues): English content -> English copy on X / Instagram / TikTok / YouTube (INTL_PLATFORMS);
+    Chinese platforms take the content language too. A missing block falls back to the other language / flat keys.
+    bilingual (arg or ``post.bilingual``): English first, then Chinese (titles "EN / 中文", tags merged)."""
+    from .platform import INTL_PLATFORMS
+    pl = platform_name(platform)
+    pl = "youtube" if pl == "youtube-shorts" else pl
+    flat = {k: post.get(k) for k in _COPY_KEYS if post.get(k) is not None}
+    blocks = {k: dict(flat, **post[k]) for k in ("en", "zh") if isinstance(post.get(k), dict)}
+    want = (lang or (post.get("lang_by_platform") or {}).get(pl) or post.get("lang") or content_lang
+            or ("en" if pl in INTL_PLATFORMS and "en" in blocks else None) or ("zh" if "zh" in blocks else None))
+    if bilingual is None:
+        bilingual = bool(post.get("bilingual"))
+    if bilingual and len(blocks) == 2:
+        en, zh = blocks["en"], blocks["zh"]
+
+        def paras(b):
+            body = b.get("body") or []
+            return [body] if isinstance(body, str) else list(body)
+        out = dict(flat)
+        te, tz = en.get("title"), zh.get("title")
+        out["title"] = f"{te} / {tz}" if te and tz and te != tz else (te or tz)
+        hooks = [h for h in (en.get("hook"), zh.get("hook")) if h]
+        out["hook"] = "\n".join(dict.fromkeys(hooks))
+        out["body"] = paras(en) + ([""] if paras(en) and paras(zh) else []) + paras(zh)
+        out["tags"] = list(dict.fromkeys(list(en.get("tags") or []) + list(zh.get("tags") or [])))
+        out["chapters"] = en.get("chapters") or zh.get("chapters")
+        out["lang"] = "en+zh"
+        return out
+    if bilingual and warn:
+        warn("bilingual copy needs both an 'en' and a 'zh' block in post.json; using one language")
+    if want in blocks:
+        b = dict(blocks[want])
+    elif blocks:
+        got = next(iter(blocks))
+        if want and warn:
+            warn(f"{pl}: no '{want}' copy in post.json; using '{got}'")
+        b, want = dict(blocks[got]), got
+    else:
+        b = dict(flat)
+    b["lang"] = want
+    return b
+
+
+def _sentences(text):
+    return [x for x in re.split(r"(?<=[.!?。！？])\s*", text or "") if x.strip()]
+
+
+def fit_copy(text, platform, warn=print):
+    """Shorten a post text to the platform's length (X: 280 weighted) by dropping whole body sentences from the
+    end - the first line (hook) and the trailing hashtag line are kept. Other platforms are returned as is (warn
+    only): their limits are large and cutting copy silently is worse than a warning."""
+    from . import platform as P
+    pl = platform_name(platform)
+    if pl not in P.PLATFORMS:
+        return text
+    prof = P.profile(pl)
+    if not prof.desc_max or P.text_len(prof, text) <= prof.desc_max:
+        return text
+    if prof.desc_count != "x":
+        if warn:
+            warn(f"{pl}: post text {P.text_len(prof, text)}/{prof.desc_max}; shorten it")
+        return text
+    lines = text.rstrip("\n").split("\n")
+    tags = lines.pop() if lines and lines[-1].startswith("#") else ""
+    head = lines[0] if lines else ""
+    rest = _sentences(" ".join(x for x in lines[1:] if x.strip()))
+
+    def join(r):
+        parts = [head] + ([" ".join(r)] if r else []) + ([tags] if tags else [])
+        return "\n\n".join(p for p in parts if p).strip() + "\n"
+    while rest and P.text_len(prof, join(rest)) > prof.desc_max:
+        rest.pop()
+    out = join(rest)
+    if P.text_len(prof, out) > prof.desc_max:
+        out = join([]) if P.text_len(prof, join([])) <= prof.desc_max else head[:max(1, prof.desc_max // 2)] + "\n"
+    if warn:
+        warn(f"{pl}: post text shortened to {P.text_len(prof, out)}/{prof.desc_max} weighted chars")
+    return out
+
+
+def platform_post(post, platform, content_lang=None, lang=None, bilingual=None, warn=print, fit=True):
+    """post.json -> the finished post text for one platform: localize_post + post_body (+ fit_copy for X)."""
+    c = localize_post(post, platform, content_lang=content_lang, lang=lang, bilingual=bilingual, warn=warn)
+    use_p, tag_set = post.get("use_persona_tags", True), post.get("tag_set")
+    if c.get("lang") == "en" and "use_persona_tags" not in post and not tag_set:
+        # English copy never inherits the (usually Chinese) persona tags; publish.tag_sets.en is used if it exists
+        if "en" in (_p("publish.tag_sets", {}) or {}):
+            tag_set = "en"
+        else:
+            use_p = False
+    text = post_body(c.get("hook", ""), c.get("body", ""), chapters=c.get("chapters"), links=c.get("links"),
+                     tags=c.get("tags"), platform=platform, title=c.get("title"), warn=warn,
+                     use_persona_tags=use_p, tag_set=tag_set)
+    return (fit_copy(text, platform, warn=warn) if fit else text), c
+
+
+COPY_SCHEMA = {"type": "object", "properties": {"hook": {"type": "string"}, "body": {"type": "string"},
+                                                "tags": {"type": "array", "items": {"type": "string"}}},
+               "required": ["hook", "body", "tags"]}
+
+
+def copy_prompt(platform, source, lang="en", bilingual=False):
+    """(system, prompt) for an LLM to write post copy for ``platform`` from ``source`` (transcript / summary)."""
+    from . import platform as P
+    pl = platform_name(platform)
+    prof = P.profile(pl)
+    unit = "weighted characters (CJK and emoji count 2, a URL 23)" if prof.desc_count == "x" else "characters"
+    lo, hi = (prof.hashtags.get("recommend") or [1, prof.hashtags.get("max") or 5])
+    language = "English first, then the same in Chinese" if bilingual else {"en": "English", "zh": "Simplified Chinese"}.get(lang, lang)
+    rules = " ".join(_p("voice.rules", []) or [])
+    system = (f"You write social post copy for {prof.label}. Language: {language}. Whole post <= {prof.desc_max} {unit} "
+              f"including hashtags. First line = the hook (what the viewer gets, no clickbait). {lo}-{hi} specific "
+              f"hashtags, no generic ones. No title field on this platform: put everything in hook + body. "
+              + (f"Voice rules: {rules}" if rules else ""))
+    prompt = f"Write the post for this video.\n\nSOURCE:\n{source.strip()[:6000]}"
+    return system, prompt
+
+
+def generate_copy(platform, source, lang="en", bilingual=False, provider=None, complete=None, warn=print):
+    """LLM post copy (llm task ``copy``) -> {hook, body, tags, text}; the text is assembled with post_body and fitted
+    to the platform limit (X weighted 280). ``complete`` = a stand-in for vstudio.llm.complete (tests). Returns None
+    when no model is routed (provider ``none``) - write the copy by hand then."""
+    if complete is None:
+        from .llm import complete
+    system, prompt = copy_prompt(platform, source, lang, bilingual)
+    r = complete("copy", system, prompt, schema=COPY_SCHEMA, provider=provider)
+    j = (r or {}).get("json")
+    if not j:
+        return None
+    text = post_body(j.get("hook", ""), j.get("body", ""), tags=j.get("tags"), platform=platform, warn=warn,
+                     use_persona_tags=False)
+    text = fit_copy(text, platform, warn=warn)
+    return dict(j, text=text, lang="en+zh" if bilingual else lang)

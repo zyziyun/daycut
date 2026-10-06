@@ -31,7 +31,8 @@ METHODS = ("per-file", "single", "planner", "focus", "episodes", "list")
 FOCUS_FULL_ASR_MAX_S = 45 * 60          # transcribe a whole video at plan time only up to this length
 TRANSCRIPT_CHARS = 60000
 PLATFORM_ZH = {"xiaohongshu": "小红书", "douyin": "抖音", "tiktok": "TikTok", "youtube": "YouTube",
-               "youtube-shorts": "YouTube Shorts", "bilibili": "B站"}
+               "youtube-shorts": "YouTube Shorts", "bilibili": "B站", "wechat-channels": "视频号", "x": "X",
+               "instagram": "Instagram"}
 ORIENT_ZH = {"full": "竖屏 9:16", "vertical": "竖屏 3:4", "horizontal": "横屏"}
 
 

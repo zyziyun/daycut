@@ -372,7 +372,75 @@ def make_cover(prof, covers, video, out_path, at=None, per_target=None, warnings
         prev = os.path.splitext(out_path)[0] + ".feed.jpg"
         Image.open(out_path).crop((int(x0), int(y0), int(x0 + cw), int(y0 + ch))).save(prev, quality=90)
         notes.append(f"feed shows a centre {fc} crop: preview {os.path.basename(prev)}")
+    extra = [a for a in P.cover_crops(prof) if a != fc]
+    if extra:
+        chk = cover_crop_check(out_path, prof, write_previews=True)
+        notes.append("cover is also shown as centre " + ", ".join(extra) + " crops: previews "
+                     + ", ".join(os.path.basename(c["preview"]) for c in chk["crops"] if c.get("preview"))
+                     + f" and {os.path.basename(chk['sheet'])}")
+        for c in chk["crops"]:
+            if c["cut_detail"]:
+                msg = (f"cover: detail (text/edges) in the strips the {c['aspect']} crop cuts off "
+                       f"({c['cut_density']:.0%} busy tiles) - keep the headline inside {list(P.cover_title_safe(prof))}")
+                notes.append(msg)
+                if warnings is not None:
+                    warnings.append(msg)
     return out_path, notes
+
+
+def _busy_tiles(edges, tile=48, busy=0.04):
+    """Share of tile x tile blocks with > ``busy`` edge pixels (text / faces / detail, not flat or gradient fill)."""
+    h, w = edges.shape
+    if h < 8 or w < 8:
+        return 0.0
+    n = hit = 0
+    for y in range(0, h, tile):
+        for x in range(0, w, tile):
+            b = edges[y:y + tile, x:x + tile]
+            if b.size < tile * tile // 4:
+                continue
+            n += 1
+            hit += b.mean() > busy
+    return hit / n if n else 0.0
+
+
+def cover_crop_check(path, prof, write_previews=False, threshold=0.15):
+    """Check a cover against every centre crop a surface shows (``platform.cover_crops``: Instagram 4:5 feed /
+    3:4 grid / 1:1, 视频号 6:7 share card, B站 4:3 / 16:9, ...). For each crop: the box, and (cut_density) the
+    share of busy 48 px tiles (text, faces, detail - not flat fill) in the busiest strip the crop removes; over
+    ``threshold`` = ``cut_detail`` (something worth seeing is cut). write_previews: ``<stem>.crop-4x5.jpg`` per crop + ``<stem>.crops.jpg``,
+    the cover with every crop outlined. Returns {crops: [{aspect, box, cut_density, cut_detail, preview}], sheet}."""
+    from PIL import Image, ImageDraw, ImageFilter
+    im = Image.open(path).convert("RGB")
+    W, H = im.size
+    edges = np.asarray(im.convert("L").filter(ImageFilter.FIND_EDGES)) > 48
+    stem = os.path.splitext(path)[0]
+    out = []
+    sheet = im.copy()
+    dr = ImageDraw.Draw(sheet)
+    colours = [(255, 214, 10), (45, 212, 191), (244, 114, 182), (96, 165, 250)]
+    for k, a in enumerate(P.cover_crops(prof)):
+        box = P.crop_box(W, H, a)
+        x0, y0, x1, y1 = box
+        strips = [edges[:y0], edges[y1:], edges[:, :x0], edges[:, x1:]]       # what the crop removes, per side
+        dens = max([_busy_tiles(st) for st in strips if st.size] or [0.0])
+        cut = any(st.size for st in strips)
+        e = dict(aspect=a, box=list(box), cut_density=round(dens, 4), cut_detail=bool(cut and dens > threshold))
+        if write_previews:
+            pv = f"{stem}.crop-{a.replace(':', 'x')}.jpg"
+            im.crop(box).save(pv, quality=90)
+            e["preview"] = pv
+        c = colours[k % len(colours)]
+        dr.rectangle(box, outline=c, width=max(3, W // 200))
+        dr.text((x0 + 12, y0 + 12 + 28 * k), a, fill=c)
+        out.append(e)
+    res = dict(crops=out, sheet=None)
+    if write_previews and out:
+        ts = P.cover_title_safe(prof)
+        dr.rectangle(ts, outline=(255, 255, 255), width=2)
+        res["sheet"] = f"{stem}.crops.jpg"
+        sheet.save(res["sheet"], quality=88)
+    return res
 
 
 # ----------------------------------------------------------------------------------- export
@@ -395,7 +463,7 @@ def _scale_only(master, dst, prof, info, start, dur, vargs, fps_out):
 
 def export_one(master, prof, out_dir, cues=None, covers=None, post=None, mode="face", fallback="pad-blur",
                start=0.0, dur=None, workdir=None, encoder=None, preset="medium", captions=True,
-               cover_targets=None, **reframe_opts):
+               cover_targets=None, post_lang=None, **reframe_opts):
     """Export ``master`` for one Profile. Returns the manifest entry (dict).
     captions=False: never burn ``cues`` (the master already has them). cover_targets: {target: path}
     per-target covers (see make_cover)."""
@@ -467,6 +535,13 @@ def export_one(master, prof, out_dir, cues=None, covers=None, post=None, mode="f
         if mm["input_tp"] > prof.loudness["tp"] + 0.5:
             warnings.append(f"true peak {mm['input_tp']:.1f} dBTP over {prof.loudness['tp']}")
     warnings += P.check_length(prof, oinfo["duration"])
+    lim = prof.extra.get("limits") or {}
+    if lim.get("max_bytes") and os.path.getsize(out_mp4) > lim["max_bytes"]:
+        warnings.append(f"file {os.path.getsize(out_mp4) / 1e6:.0f} MB over the {prof.name} upload cap "
+                        f"{lim['max_bytes'] / 1e6:.0f} MB ({prof.extra.get('account') or 'standard'} account)")
+    capr = prof.extra.get("captions") or {}
+    if capr.get("burn") == "recommended" and not cue_list and captions:
+        warnings.append(f"{prof.name}: {capr.get('reason', 'burned captions recommended')} (pass --cues)")
     cover_path, notes = make_cover(prof, covers, out_mp4, os.path.join(out_dir, stem + ".cover.jpg"),
                                    per_target=cover_targets, warnings=warnings)
     entry = dict(platform=prof.name, orientation=prof.orientation, label=prof.label, file=os.path.basename(out_mp4),
@@ -478,32 +553,40 @@ def export_one(master, prof, out_dir, cues=None, covers=None, post=None, mode="f
                  captions=len(cue_list), keepouts=len(kos), captions_moved_frames=cap_report.get("moved", 0),
                  cover=os.path.basename(cover_path), cover_size=list(P.cover_size(prof)),
                  notes=notes, safe_box=list(P.safe_box(prof)), caption_box=list(P.caption_box(prof)))
+    if prof.feed_crop:
+        entry["notes"].append(f"{prof.label} feed shows a centre {prof.feed_crop} crop of the video "
+                              f"{list(P.feed_crop_box(prof))}: keep faces and captions inside it")
     if post:
         from . import publish
         msgs = []
-        tags = post.get("tags")
-        body = publish.post_body(post.get("hook", ""), post.get("body", ""), chapters=post.get("chapters"),
-                                 links=post.get("links"), tags=tags, platform=_publish_platform(prof),
-                                 title=post.get("title"), warn=msgs.append,
-                                 use_persona_tags=post.get("use_persona_tags", True), tag_set=post.get("tag_set"))
+        src_cues = cue_list or (load_cues(cues) if cues is not None else [])
+        content_lang = post_lang or publish.detect_lang(src_cues)
+        body, copy = publish.platform_post(post, _publish_platform(prof), content_lang=content_lang,
+                                           lang=post.get("_lang"), bilingual=post.get("_bilingual"), warn=msgs.append)
         warnings += msgs
-        warnings += P.check_text(prof, body=body, tags=tags)   # title already checked by post_body
-        if post.get("chapters") and not prof.chapters.get("supported"):
+        warnings += P.check_text(prof, body=body, tags=copy.get("tags"))   # title already checked by post_body
+        if copy.get("chapters") and not prof.chapters.get("supported") and prof.name not in publish.NO_TITLE:
             entry["notes"].append(f"{prof.label} has no native chapters; timeline kept as plain text")
         pp = os.path.join(out_dir, stem + ".post.md")
         with open(pp, "w", encoding="utf-8") as f:
             f.write(body)
         entry["post"] = os.path.basename(pp)
+        entry["post_lang"] = copy.get("lang")
+        entry["post_len"] = P.text_len(prof, body)
     entry["warnings"] = list(dict.fromkeys(warnings))
     return entry
 
 
-def export(master, targets, out_dir="exports", cues=None, covers=None, post=None, **kw):
+def export(master, targets, out_dir="exports", cues=None, covers=None, post=None, account=None, **kw):
     """Export to every target ("name[:orientation]" strings or Profiles). Writes out_dir/manifest.json and
-    returns the manifest dict."""
+    returns the manifest dict. A bare platform name that takes several shapes (X) gets the orientation closest
+    to the master's aspect (no letterbox); ``account`` ("premium") applies that account tier's limits."""
     os.makedirs(out_dir, exist_ok=True)
-    profs = [t if isinstance(t, P.Profile) else P.profile(t) for t in
-             (P.parse_targets(targets) if isinstance(targets, str) else targets)]
+    mi = media.probe(master)
+    aspect = mi["display_w"] / mi["display_h"]
+    ov = {"account": account} if account else None
+    profs = P.parse_targets(targets if isinstance(targets, (str, list, tuple)) else [targets], master_aspect=aspect,
+                            overrides=ov)
     covers = [covers] if isinstance(covers, str) else list(covers or [])
     covers, per = parse_covers(covers)
     if per:
@@ -537,6 +620,10 @@ def main(argv=None):
                     help="do not burn --cues (the master already carries its captions)")
     ap.add_argument("--title", help="post title (checked against each platform's limit)")
     ap.add_argument("--post", help="post.json {title, hook, body, chapters, links, tags} -> <target>.post.md")
+    ap.add_argument("--lang", default=None, help="post copy language (en | zh); default: the content language "
+                    "detected from the cues (English content -> English copy on X / Instagram / TikTok / YouTube)")
+    ap.add_argument("--bilingual", action="store_true", help="post copy in English + Chinese (post.json en + zh blocks)")
+    ap.add_argument("--account", default=None, help="account tier for limits, e.g. premium (X: longer videos/posts)")
     ap.add_argument("--mode", default="face", choices=R.MODES, help="reframe mode when the aspect changes")
     ap.add_argument("--fallback", default="pad-blur", choices=R.MODES[1:])
     ap.add_argument("--start", type=float, default=0.0)
@@ -558,7 +645,10 @@ def main(argv=None):
             post = json.load(f)
     if a.title:
         post = dict(post or {}, title=a.title)
-    man = export(a.master, targets, a.out, cues=a.cues, covers=a.cover, post=post, mode=a.mode, fallback=a.fallback,
+    if post is not None and (a.lang or a.bilingual):
+        post = dict(post, _lang=a.lang, _bilingual=a.bilingual or None)
+    man = export(a.master, targets, a.out, cues=a.cues, covers=a.cover, post=post, account=a.account,
+                 mode=a.mode, fallback=a.fallback,
                  start=a.start, dur=a.dur, encoder=a.encoder, preset=a.preset, captions=not a.no_captions)
     for e in man["exports"]:
         print(f"{e['file']:32s} {e['w']}x{e['h']} {e['duration']:.1f}s "

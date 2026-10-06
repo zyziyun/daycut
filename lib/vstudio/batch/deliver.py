@@ -38,7 +38,7 @@ from .util import read_json, sha1_json, sha256_file, write_json
 
 PLATFORM_NAMES = {"xiaohongshu": "小红书", "douyin": "抖音", "tiktok": "TikTok", "youtube-shorts": "YouTube Shorts",
                   "youtube": "YouTube", "bilibili": "B站", "kuaishou": "快手", "weixin-channels": "视频号",
-                  "instagram": "Instagram"}
+                  "instagram": "Instagram", "wechat-channels": "视频号", "x": "X"}
 AI_REMINDER = ("【AI 标识提醒】这批视频用了 AI 辅助剪辑 / 字幕 / 文案。发布时请按平台要求声明 AI 生成内容"
                "（小红书「笔记含 AI 合成内容」、抖音「内容由 AI 生成」、YouTube「Altered or synthetic content」），"
                "避免限流或下架。")

@@ -145,6 +145,8 @@ PLATFORMS = {
         label="B站 Bilibili", default="horizontal",
         title_max=80, title_count="chars", desc_max=2000,
         hashtags=dict(style="tags_line", max=10, tag_max=20, note="separate tag field, <=10 tags, <=20 chars each"),
+        category=dict(required=True, field="分区 (tid)", note="pick the 分区 in the uploader (or `tid` via the open "
+                      "platform); 自制 / 转载 (creation type) is the creator's own choice - never pre-filled"),
         chapters=dict(supported=True, min_count=2, min_len=5, first_zero=True,
                       note="分段章节 set in the uploader; timestamps in the description also link"),
         loudness=dict(_LOUD), fps=dict(default=30, max=120),
@@ -154,7 +156,8 @@ PLATFORMS = {
             horizontal=dict(w=1920, h=1080, aspect="16:9",
                             safe=dict(top=54, bottom=80, left=96, right=96),
                             caption=dict(_HORZ_CAPTION, band=[870, 1010]),
-                            cover=dict(w=1146, h=717, aspect="16:10", title_safe=[100, 40, 1046, 640], feed_crop=None),
+                            cover=dict(w=1146, h=717, aspect="16:10", title_safe=[100, 40, 1046, 640], feed_crop=None,
+                                       crops=["4:3", "16:9"], max_bytes=5_000_000),
                             cover_aspect="16:10"),
             vertical=dict(w=1080, h=1920, aspect="9:16",
                           safe=dict(top=200, bottom=420, left=60, right=150),
@@ -162,7 +165,93 @@ PLATFORMS = {
                           cover=dict(w=1080, h=1440, aspect="3:4", title_safe=[60, 120, 1020, 1240], feed_crop=None),
                           cover_aspect="3:4"),
         )),
+    "wechat-channels": dict(
+        label="视频号 WeChat Channels", default="vertical",
+        title_max=16, title_count="chars", desc_max=1000,
+        hashtags=dict(style="inline", max=10, note="#话题 / @ inside the description; counts toward 1000"),
+        chapters=dict(supported=False),
+        loudness=dict(_LOUD), fps=dict(default=30, max=60),
+        encode=dict(crf=20, maxrate="12M", bufsize="24M"),
+        length=dict(sweet=[15, 120], max=28800, min=3, note="phone app 60 min; web 视频号助手 up to 8 h"),
+        limits=dict(max_bytes=2_000_000_000, aspect_range=[0.33, 3.0], hdr=False),
+        orientations=dict(
+            vertical=dict(w=1080, h=1920, aspect="9:16",
+                          safe=dict(top=200, bottom=460, left=60, right=60),
+                          caption=dict(_VERT_CAPTION, band=[1200, 1420]),
+                          cover=dict(w=1080, h=1440, aspect="3:4", title_safe=[60, 120, 1020, 1320], feed_crop=None,
+                                     crops=["6:7"]),
+                          cover_aspect="3:4"),
+            horizontal=dict(w=1920, h=1080, aspect="16:9",
+                            safe=dict(top=54, bottom=80, left=96, right=96),
+                            caption=dict(_HORZ_CAPTION, band=[870, 1010]),
+                            cover=dict(w=1920, h=1080, aspect="16:9", title_safe=[240, 60, 1680, 1020], feed_crop=None),
+                            cover_aspect="16:9"),
+        )),
+    "x": dict(
+        label="X (Twitter)", default="horizontal", auto_orientation=True,
+        title_max=0, title_count="chars", desc_max=280, desc_count="x",
+        copy_lang="intl",
+        hashtags=dict(style="inline", max=2, recommend=[1, 2], note="1-2 tags in the post text; more reads as spam"),
+        chapters=dict(supported=False),
+        loudness=dict(_LOUD), fps=dict(default=30, max=60),
+        encode=dict(crf=20, maxrate="12M", bufsize="24M"),
+        length=dict(sweet=[15, 90], max=140, min=0.5),
+        limits=dict(max_bytes=512_000_000, max_bitrate="25M", max_w=1920, max_h=1200),
+        captions=dict(burn="recommended", reason="X autoplays video muted in the timeline: burn the captions"),
+        account="standard",
+        tiers=dict(premium=dict(desc_max=25000, length=dict(max=7200), limits=dict(max_bytes=8_000_000_000)),
+                   premium_plus=dict(desc_max=25000, length=dict(max=14400), limits=dict(max_bytes=16_000_000_000))),
+        orientations=dict(
+            horizontal=dict(w=1920, h=1080, aspect="16:9",
+                            safe=dict(top=54, bottom=90, left=96, right=96),
+                            caption=dict(_HORZ_CAPTION, band=[870, 990]),
+                            cover=dict(w=1920, h=1080, aspect="16:9", title_safe=[160, 80, 1760, 1000], feed_crop=None),
+                            cover_aspect="16:9"),
+            square=dict(w=1080, h=1080, aspect="1:1",
+                        safe=dict(top=54, bottom=90, left=60, right=60),
+                        caption=dict(size=[46, 64], max_chars_zh=16, max_chars_en=36, max_lines=2, stroke=0.09,
+                                     band=[800, 980]),
+                        cover=dict(w=1080, h=1080, aspect="1:1", title_safe=[60, 60, 1020, 1020], feed_crop=None),
+                        cover_aspect="1:1"),
+            vertical=dict(w=1080, h=1920, aspect="9:16",
+                          safe=dict(top=160, bottom=380, left=60, right=120),
+                          caption=dict(_VERT_CAPTION, band=[1240, 1460]),
+                          cover=dict(w=1080, h=1920, aspect="9:16", title_safe=[60, 240, 1020, 1680], feed_crop=None,
+                                     crops=["4:5"]),
+                          cover_aspect="9:16"),
+        )),
+    "instagram": dict(
+        label="Instagram", default="reels",
+        title_max=0, title_count="chars", desc_max=2200,
+        copy_lang="intl",
+        hashtags=dict(style="inline", max=5, recommend=[3, 5], hard=True,
+                      note="max 5 hashtags per post/reel (since Dec 2025, caption + comments)"),
+        chapters=dict(supported=False),
+        loudness=dict(_LOUD), fps=dict(default=30, max=60),
+        encode=dict(crf=20, maxrate="12M", bufsize="24M"),
+        length=dict(sweet=[15, 90], max=1200, min=3, reach_max=180,
+                    note="Reels over 3 min are not recommended to non-followers"),
+        limits=dict(max_bytes=4_000_000_000),
+        orient_aliases={"vertical": "reels", "full": "reels", "9:16": "reels", "reel": "reels", "4:5": "feed",
+                        "portrait": "feed", "post": "feed"},
+        orientations=dict(
+            reels=dict(w=1080, h=1920, aspect="9:16", feed_crop="4:5",
+                       safe=dict(top=285, bottom=450, left=60, right=130, right_lower=dict(w=170, from_y=1000)),
+                       caption=dict(_VERT_CAPTION, band=[1200, 1440]),
+                       cover=dict(w=1080, h=1920, aspect="9:16", title_safe=[60, 300, 1020, 1620], feed_crop=None,
+                                  crops=["4:5", "3:4", "1:1"]),
+                       cover_aspect="9:16"),
+            feed=dict(w=1080, h=1350, aspect="4:5",
+                      safe=dict(top=60, bottom=120, left=60, right=60),
+                      caption=dict(_VERT_CAPTION, band=[1010, 1200]),
+                      cover=dict(w=1080, h=1350, aspect="4:5", title_safe=[60, 60, 1020, 1290], feed_crop=None,
+                                 crops=["3:4", "1:1"]),
+                      cover_aspect="4:5"),
+        )),
 }
+
+# Platforms whose post copy defaults to English when the content is English (vstudio.publish.localize_post).
+INTL_PLATFORMS = {"x", "instagram", "tiktok", "youtube", "youtube-shorts"}
 
 
 @dataclass
@@ -187,6 +276,7 @@ class Profile:
     encode: dict
     length: dict
     feed_crop: str = None
+    desc_count: str = "chars"
     extra: dict = field(default_factory=dict)
 
     @property
@@ -252,7 +342,7 @@ def profile(name, orientation=None, overrides=None, use_persona=True) -> Profile
     if name not in PLATFORMS:
         raise KeyError(f"unknown platform {name!r}; one of {sorted(PLATFORMS)}")
     base = PLATFORMS[name]
-    o = ORIENT_ALIASES.get(str(orientation).lower(), str(orientation).lower()) if orientation else base["default"]
+    o = _resolve_orientation(base, orientation)
     if o not in base["orientations"]:
         if o == "full" and "vertical" in base["orientations"] and base["orientations"]["vertical"]["h"] == 1920:
             o = "vertical"
@@ -273,8 +363,41 @@ def profile(name, orientation=None, overrides=None, use_persona=True) -> Profile
         d = _merge(d, pp)
         d = _merge(d, per_o)
     d = _merge(d, overrides or {})
+    tier = (d.get("tiers") or {}).get(str(d.get("account") or "").lower().replace("-", "_"))
+    if tier:
+        d = _merge(d, tier)
     extra = {k: d.pop(k) for k in list(d) if k not in _FIELDS}
     return Profile(name=name, orientation=o, extra=extra, **d)
+
+
+def _resolve_orientation(base, orientation):
+    if not orientation:
+        return base["default"]
+    o = str(orientation).strip().lower()
+    if o in base["orientations"]:
+        return o
+    pa = base.get("orient_aliases") or {}
+    if o in pa:
+        return pa[o]
+    o = ORIENT_ALIASES.get(o, o)
+    return pa.get(o, o)
+
+
+def _ratio(a):
+    if isinstance(a, (int, float)):
+        return float(a)
+    w, h = (float(v) for v in str(a).split(":"))
+    return w / h
+
+
+def best_orientation(name, aspect):
+    """The orientation of ``name`` whose canvas aspect is closest (log distance) to ``aspect`` (w/h float or
+    "9:16") - so a master is re-laid out with the least crop and no letterbox where the platform allows it."""
+    import math
+    base = PLATFORMS[canonical(name)]
+    a = _ratio(aspect)
+    return min(base["orientations"], key=lambda o: abs(math.log((base["orientations"][o]["w"] /
+                                                                base["orientations"][o]["h"]) / a)))
 
 
 def list_profiles():
@@ -282,14 +405,20 @@ def list_profiles():
     return [f"{n}:{o}" for n, p in PLATFORMS.items() for o in p["orientations"]]
 
 
-def parse_targets(spec):
-    """"xiaohongshu:vertical,douyin,youtube" -> [Profile, ...]."""
+def parse_targets(spec, master_aspect=None, overrides=None):
+    """"xiaohongshu:vertical,douyin,youtube" -> [Profile, ...]. With ``master_aspect`` (w/h), a bare name of a
+    platform that accepts several shapes equally (``auto_orientation``: X) gets the orientation closest to the
+    master, e.g. "x" + a 9:16 master -> x:vertical (no letterbox / heavy crop)."""
     out = []
     for item in (spec if isinstance(spec, (list, tuple)) else str(spec).split(",")):
-        item = item.strip()
-        if item:
+        item = item.strip() if isinstance(item, str) else item
+        if isinstance(item, Profile):
+            out.append(item)
+        elif item:
             n, _, o = item.partition(":")
-            out.append(profile(n, o or None))
+            if not o and master_aspect and PLATFORMS.get(canonical(n), {}).get("auto_orientation"):
+                o = best_orientation(n, master_aspect)
+            out.append(profile(n, o or None, overrides=overrides))
     return out
 
 
@@ -324,18 +453,34 @@ def cover_size(p: Profile):
     return int(p.cover["w"]), int(p.cover["h"])
 
 
+def cover_crops(p: Profile):
+    """Every crop (aspect strings) a surface shows of the cover: the feed tile (``feed_crop``) plus
+    ``cover.crops`` (e.g. Instagram Reels: 4:5 feed, 3:4 profile grid, 1:1 legacy grid / share)."""
+    out = []
+    for a in [p.cover.get("feed_crop")] + list(p.cover.get("crops") or []):
+        if a and a not in out and abs(_ratio(a) - p.cover["w"] / p.cover["h"]) > 1e-3:
+            out.append(a)
+    return out
+
+
+def crop_box(W, H, aspect):
+    """(x0, y0, x1, y1) of the centre crop of aspect ``aspect`` ("4:5") inside a W x H frame."""
+    r = _ratio(aspect)
+    if W / H > r:
+        cw = H * r
+        return (int(round((W - cw) / 2)), 0, int(round((W + cw) / 2)), H)
+    ch = W / r
+    return (0, int(round((H - ch) / 2)), W, int(round((H + ch) / 2)))
+
+
 def cover_title_safe(p: Profile):
-    """Title-safe rect on the cover; for covers shown as a centre crop in the feed (feed_crop) it is
-    intersected with that crop."""
+    """Title-safe rect on the cover, intersected with every centre crop a surface shows (``cover_crops``):
+    what is inside survives the feed tile, the profile grid and share cards alike."""
     x0, y0, x1, y1 = p.cover.get("title_safe") or (0, 0, *cover_size(p))
-    fc = p.cover.get("feed_crop")
-    if fc:
-        W, H = cover_size(p)
-        aw, ah = (float(v) for v in fc.split(":"))
-        if W / H > aw / ah:
-            cw = H * aw / ah; x0, x1 = max(x0, (W - cw) / 2), min(x1, (W + cw) / 2)
-        else:
-            ch = W * ah / aw; y0, y1 = max(y0, (H - ch) / 2), min(y1, (H + ch) / 2)
+    W, H = cover_size(p)
+    for a in cover_crops(p):
+        c0, d0, c1, d1 = crop_box(W, H, a)
+        x0, y0, x1, y1 = max(x0, c0), max(y0, d0), min(x1, c1), min(y1, d1)
     return (int(x0), int(y0), int(x1), int(y1))
 
 
@@ -364,34 +509,97 @@ def title_len(p: Profile, title: str) -> float:
     return float(len(title))
 
 
+# twitter-text v3 config (github.com/twitter/twitter-text config/v3.json): weight 100 (= 1 char) for these code
+# point ranges, 200 (= 2) for everything else (CJK, most symbols); URLs count 23; an emoji sequence counts 2.
+_X_LIGHT = ((0, 4351), (8192, 8205), (8208, 8223), (8242, 8247))
+_URL_RE = None
+_EMOJI_RE = None
+
+
+def _x_res():
+    global _URL_RE, _EMOJI_RE
+    if _URL_RE is None:
+        import re
+        _URL_RE = re.compile(r"(?:https?://|www\.)[^\s]+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|io|ai|co|dev|app|me|"
+                             r"tv|ly|gg|cn|xyz)(?:/[^\s]*)?", re.I)
+        _EMOJI_RE = re.compile("(?:[\U0001F1E6-\U0001F1FF]{2}|[\U0001F000-\U0001FAFF\u2600-\u27BF\u2B00-\u2BFF\u2300-\u23FF]"
+                               "[\uFE0F\U0001F3FB-\U0001F3FF]*(?:\u200D[\U0001F000-\U0001FAFF\u2600-\u27BF][\uFE0F"
+                               "\U0001F3FB-\U0001F3FF]*)*)\uFE0F?")
+    return _URL_RE, _EMOJI_RE
+
+
+def x_weighted_len(text: str) -> int:
+    """X post length as the composer counts it (twitter-text v3 weighting): Latin / Cyrillic / Greek / most
+    punctuation = 1, CJK and other characters = 2, an emoji sequence = 2, any URL = 23. Standard accounts: <= 280."""
+    import unicodedata
+    url_re, emoji_re = _x_res()
+    t = unicodedata.normalize("NFC", text or "")
+    n = 0
+    t, k = url_re.subn(" ", t)
+    n += 23 * k - k                          # each URL -> one placeholder char counted below as 1
+    t, k = emoji_re.subn("\x00", t)
+    n += 2 * k - k
+    for ch in t:
+        c = ord(ch)
+        n += 1 if any(a <= c <= b for a, b in _X_LIGHT) else 2
+    return n
+
+
+def text_len(p: Profile, text: str) -> int:
+    """Post-text length by the profile's counting rule (``desc_count``: "x" weighted, else characters)."""
+    return x_weighted_len(text) if p.desc_count == "x" else len(text or "")
+
+
+def hashtags_in(text: str):
+    """Distinct #hashtags in a post text (case-insensitive), in order."""
+    import re
+    out = []
+    for m in re.finditer(r"(?<![\w&/#])#([^\s#.,!?;:，。！？；：、()（）\[\]{}\"'<>]+)", text or ""):
+        t = m.group(1).lower()
+        if t not in out:
+            out.append(t)
+    return out
+
+
 def check_text(p: Profile, title=None, body=None, tags=None):
-    """Warnings for title / description / tag limits of this profile."""
+    """Warnings for title / description / tag limits of this profile. X counts the post text weighted
+    (CJK = 2); hashtags are counted across ``tags`` and the #tags already in ``body`` (Instagram: hard max 5)."""
     w = []
-    if title:
+    if title and p.title_max:
         n = title_len(p, title)
         if n > p.title_max:
             w.append(f"title {n:g}/{p.title_max:g} ({p.name})")
-    if body and p.desc_max and len(body) > p.desc_max:
-        w.append(f"description {len(body)}/{p.desc_max} chars ({p.name})")
-    if tags:
+    if body and p.desc_max:
+        n = text_len(p, body)
+        if n > p.desc_max:
+            unit = "weighted chars (CJK/emoji = 2, URL = 23)" if p.desc_count == "x" else "chars"
+            w.append(f"description {n}/{p.desc_max} {unit} ({p.name})")
+    allt = list(dict.fromkeys([str(t).lstrip("#").lower() for t in (tags or []) if str(t).strip("# ")]
+                              + hashtags_in(body)))
+    if allt:
         mx = p.hashtags.get("max")
-        if mx and len(tags) > mx:
-            w.append(f"{len(tags)} tags > {mx} ({p.name})")
+        if mx and len(allt) > mx:
+            kind = "hard limit" if p.hashtags.get("hard") else "guidance"
+            w.append(f"{len(allt)} hashtags > {mx} ({p.name}, {kind})")
         tm = p.hashtags.get("tag_max")
         if tm:
-            w += [f"tag '{t}' > {tm} chars" for t in tags if len(t) > tm]
+            w += [f"tag '{t}' > {tm} chars" for t in (tags or []) if len(t) > tm]
     return w
 
 
 def check_length(p: Profile, seconds: float):
-    """Warnings when a duration is over the hard max or outside the sweet spot."""
+    """Warnings when a duration is over the hard max (for this account tier) or outside the sweet spot.
+    ``length.reach_max`` (Instagram 180 s) warns that longer posts are not recommended to non-followers."""
     L, w = p.length, []
+    if L.get("reach_max") and seconds > L["reach_max"] and not (L.get("max") and seconds > L["max"]):
+        w.append(f"duration {seconds:.1f}s over {L['reach_max']}s: {p.name} does not recommend it to non-followers")
     if L.get("max") and seconds > L["max"]:
-        w.append(f"duration {seconds:.1f}s over the {p.name} max {L['max']}s")
+        acct = p.extra.get("account")
+        w.append(f"duration {seconds:.1f}s over the {p.name} max {L['max']}s" + (f" ({acct} account)" if acct else ""))
     elif L.get("min") and seconds < L["min"]:
         w.append(f"duration {seconds:.1f}s under the {p.name} minimum {L['min']}s")
     lo, hi = L.get("sweet") or (0, 1e9)
-    if not w and not lo <= seconds <= hi:
+    if not any("over the" in x or "under the" in x for x in w) and not lo <= seconds <= hi:
         w.append(f"duration {seconds:.1f}s outside the {p.name} sweet spot {lo}-{hi}s (guidance)")
     return w
 

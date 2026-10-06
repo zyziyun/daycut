@@ -176,7 +176,8 @@ checkpoints:
       properties: {done: {type: boolean}, content: {type: string}}
     auto: never
 outputs:
-  platforms: [xiaohongshu, xiaohongshu:horizontal, douyin, tiktok, youtube-shorts, youtube, bilibili]
+  platforms: [xiaohongshu, xiaohongshu:horizontal, douyin, tiktok, youtube-shorts, youtube, bilibili, wechat-channels,
+              x, instagram, "instagram:feed"]
   collect: vstudio.project.adapters.cover:collect
   files: ["{item_dir}/covers/*"]
 agent:

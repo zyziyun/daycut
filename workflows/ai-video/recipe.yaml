@@ -193,7 +193,8 @@ checkpoints:
       required: [approve]
     auto: default
 outputs:
-  platforms: [douyin, "xiaohongshu:full", tiktok, youtube-shorts]
+  platforms: [douyin, "xiaohongshu:full", tiktok, youtube-shorts, "wechat-channels", "bilibili:vertical", "x:vertical",
+              "instagram:reels"]
   collect: vstudio.project.adapters.common:collect_vstudio_exports
 agent:
   workflow_md: workflows/ai-video/WORKFLOW.md

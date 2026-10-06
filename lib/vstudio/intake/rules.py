@@ -37,8 +37,12 @@ POSITIONS = [("前面", (0.0, 0.4)), ("开头", (0.0, 0.3)), ("前半", (0.0, 0.
 PLATFORM_WORDS = [("小红书", "xiaohongshu"), ("红书", "xiaohongshu"), ("xhs", "xiaohongshu"), ("抖音", "douyin"),
                   ("douyin", "douyin"), ("tiktok", "tiktok"), ("youtube shorts", "youtube-shorts"),
                   ("shorts", "youtube-shorts"), ("油管", "youtube"), ("youtube", "youtube"), ("b站", "bilibili"),
-                  ("bilibili", "bilibili"), ("哔哩", "bilibili")]
-UNSUPPORTED_PLATFORMS = [("视频号", "微信视频号"), ("快手", "快手"), ("instagram", "Instagram"), ("ins ", "Instagram")]
+                  ("bilibili", "bilibili"), ("哔哩", "bilibili"), ("视频号", "wechat-channels"),
+                  ("wechat channels", "wechat-channels"), ("instagram", "instagram"), ("reels", "instagram"),
+                  ("twitter", "x"), ("推特", "x"), ("x.com", "x")]
+UNSUPPORTED_PLATFORMS = [("快手", "快手")]
+# short names that are only platform names as a whole token: "ins" / "ig" -> Instagram, "x" -> X (not "1.2x")
+TOKEN_PLATFORMS = {"ins": "instagram", "ig": "instagram", "insta": "instagram", "x": "x"}
 NUM = r"(\d+|[一二两三四五六七八九十百]+)"
 
 
@@ -83,6 +87,12 @@ def platforms_of(text):
         if w in t and p not in out:
             if p == "youtube" and "youtube-shorts" in out and "shorts" in t and t.count("youtube") <= 1:
                 continue
+            out.append(p)
+    toks = re.findall(r"[a-z0-9.]+|[^\sa-z0-9.]", t)
+    for i, tok in enumerate(toks):
+        p = TOKEN_PLATFORMS.get(tok)
+        prev = toks[i - 1] if i else ""
+        if p and p not in out and not (tok == "x" and re.fullmatch(r"[0-9.]+", prev or "")):
             out.append(p)
     unsup = [name for w, name in UNSUPPORTED_PLATFORMS if w in t]
     return out, unsup
