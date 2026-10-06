@@ -35,7 +35,7 @@ Put an `llm:` section in `persona.local.yaml` (yours, gitignored) or in a client
 ```yaml
 llm:
   default: {provider: claude-code}              # string shorthand works too: default: claude-code
-  tasks:                                        # segment_plan | proofread | glossary | copy | script | planner | intake
+  tasks:                                        # segment_plan | proofread | glossary | copy | script | planner | intake | output_edit
     segment_plan: {provider: anthropic, model: claude-opus-5-5, effort: medium}
     proofread:    {provider: ollama, model: "qwen3:8b"}
     glossary:     {provider: openai-compatible, base_url: "http://gpu-box:8000/v1", api_key_env: GPU_BOX_KEY,
@@ -167,6 +167,7 @@ voice + speed + direction + text.
 |---|---|---|---|
 | plan-segments | `segment_plan` | the whole transcript as numbered sentences with times (chunks of ~150k chars), platform title rules, the client's style text and preferred tags | audio, video, file paths |
 | intake plan / revise | `intake` | the request, the material summary (file names, durations, roles, short excerpts, document headings), the recipe catalog; when the request selects content from a recording, its time-coded transcript (up to 60k chars) | audio, video, full documents |
+| output edit `ai` | `output_edit` | the instruction, the output's duration / canvas / mode / capability flags, the current edit state (trim, cuts, effect instances), the op list and the effect catalogue, the caption cues or a time-coded transcript of the output (up to 400 lines) | audio, video, file paths of the media |
 | glossary | `glossary` | the whole transcript text of one source, the series / topic, the creator's term list; then the latin tokens with short contexts; then each proposed fix with up to 5 contexts | audio, video |
 | proofread | `proofread` | the captions of one job (chunks of 120 cues), a second ASR hearing of the same span, low-confidence words, topic / title / chapter / notes, the glossary | audio, video |
 | claude planner | `planner` (Anthropic) | the transcript in ~15 min chunks with times | audio, video |

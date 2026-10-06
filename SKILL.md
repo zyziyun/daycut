@@ -37,6 +37,7 @@ Identify the **main material** and the **deliverable**, then open that workflow'
 | Many videos at once (10s–100s): one long recording → N vertical slices, a folder of 口播 clips → cleaned shorts; pilot, resumable runs, QC gates, exception-only review page, publish packages | `workflows/batch` (`python -m vstudio.batch`, references/BATCH.md) |
 | A topic → published short, end to end (script → drill → slides → record → clean up → edit → cover → export → post) | `references/SOP_SHORT_VIDEO.md` |
 | Any workflow as a project of N items (desk app / an agent in the project folder): recipe manifests, checkpoints, inbox, series, publish calendar | `python -m vstudio.project` (references/PROJECTS.md) |
+| Second-pass edit of ANY finished clip (成片二次编辑: project exports and work-folder finals): trim / word-snapped cuts, captions, title band, 16 effects (pop words, stamps, punch-in, quote / chapter cards, callouts, notes, stickers, SFX, transitions, progress bar ...), cover, speed, loudness, 3:4 / 9:16 / 16:9 re-layout, plain-language `ai` edits, undo, cached preview / final renders | `python -m vstudio.project output show / edit / render / undo / ai / effects` (references/OUTPUT_EDIT.md) |
 | A plain-language request + any mix of files / folders (video, audio, photos, pdf / docx / pptx / md) → the right recipe(s), mixed plans allowed: inventory, editable plan, follow-up edits, projects | `python -m vstudio.intake analyze / plan / revise / apply` (references/INTAKE.md) |
 
 ### What the creator typically says → workflow
