@@ -108,13 +108,15 @@ def rule_plan(words, count=6, min_s=30.0, max_s=90.0, title_max=20):
         if len(chosen) >= count:
             break
     chosen.sort(key=lambda c: c[1])
-    rows = []
+    rows, used = [], set()
     for n, (score, i0, i1, a, _b) in enumerate(chosen):
         ws = words[i0:i1 + 1]
         chapter = ws[0].get("chapter") or ""
         h0, h1 = sents[a]
         hook_ws = words[h0:min(h1, h0 + 14) + 1]
-        title = (HOOK_LINES.get(chapter) or _text(ws[:10]))[:title_max]
+        title = HOOK_LINES.get(chapter) if chapter not in used else None
+        used.add(chapter)
+        title = (title or f"{chapter}：{_text(hook_ws)}")[:title_max]
         kws = [w["w"] for w in ws if w["w"] in KEYWORDS]
         tags = list(dict.fromkeys(kws))[:5]
         hooks = _hook_candidates(words, sents, i0, i1, chapter)
@@ -194,6 +196,14 @@ def term_fix(old, new):
     if len(ops) != 1 or ops[0][0] != "replace":
         return None
     _, i0, i1, j0, j1 = ops[0]
+    latin = any(t.isascii() for t in a[i0:i1] + b[j0:j1])
+    if not latin and (i1 - i0 < 2 or j1 - j0 < 2):
+        # a one-character CJK fix ("形" -> "型") is only a term with its neighbours ("模形" -> "模型")
+        lo = 1 if i0 > 0 and j0 > 0 else 0
+        hi = 1 if i1 < len(a) and j1 < len(b) else 0
+        if not lo and not hi:
+            return None
+        i0, j0, i1, j1 = i0 - lo, j0 - lo, i1 + hi, j1 + hi
     wrong, right = _join(a[i0:i1]), _join(b[j0:j1])
     if not (1 <= len(wrong) <= 12 and 1 <= len(right) <= 12):
         return None

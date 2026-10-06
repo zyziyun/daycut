@@ -24,9 +24,13 @@ export function useReviewTiming(batch: string, job: string | null | undefined): 
     let lastMove = 0;
     const send = (event: 'start' | 'stop', active_s?: number) =>
       client.timing(batch, { job, event, what: 'review', ...(active_s !== undefined ? { active_s } : {}) }).catch(() => undefined);
+    let sent = 0;
+    // glances under a second are not reviews; they stay on the clock until they add up
     const flush = () => {
-      const d = tm.take(now());
-      if (d > 0) void send('stop', d);
+      const d = Math.round((tm.seconds(now()) - sent) * 10) / 10;
+      if (d < 1) return;
+      sent += d;
+      void send('stop', d);
     };
     void send('start');
     const onAct = (e: Event) => {

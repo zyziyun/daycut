@@ -27,7 +27,8 @@ export function ClientDetail({ slug }: { slug: string }) {
 
   useEffect(() => {
     if (!data) return;
-    const e = data.effective;
+    // the glossary shown / saved is the client's own (effective also merges the global persona's term fixes)
+    const e = { ...data.effective, glossary: data.config.glossary ?? [] };
     setCfg(e);
     setTags((e.tags ?? []).join(', '));
     setExtra((e.fillers?.extra ?? []).join(', '));
@@ -37,7 +38,7 @@ export function ClientDetail({ slug }: { slug: string }) {
   const dirty = useMemo(() => {
     if (!data || !cfg) return false;
     const now = { ...cfg, tags: list(tags), fillers: { extra: list(extra), keep: list(keep) } };
-    return JSON.stringify(now) !== JSON.stringify(data.effective);
+    return JSON.stringify(now) !== JSON.stringify({ ...data.effective, glossary: data.config.glossary ?? [] });
   }, [cfg, tags, extra, keep, data]);
 
   async function save() {

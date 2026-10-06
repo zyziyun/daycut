@@ -104,6 +104,8 @@ class PlanningTest(unittest.TestCase):
         self.assertFalse(P.faithful("今天讲RAG", "明天去爬山吧")["faithful"])
         self.assertEqual(P.term_fix("我们用rak检索", "我们用RAG检索"), dict(wrong="rak", right="RAG"))
         self.assertIsNone(P.term_fix("今天讲RAG", "今天讲 RAG。"))
+        self.assertEqual(P.term_fix("这是大模形的能力", "这是大模型的能力"), dict(wrong="模形的", right="模型的"))
+        self.assertEqual(P.term_fix("用拉格做检索", "用RAG做检索"), dict(wrong="拉格", right="RAG"))
 
 
 class RealDispatchTest(unittest.TestCase):
@@ -158,6 +160,26 @@ class RealDispatchTest(unittest.TestCase):
         self.assertEqual(call[call.index("--count") + 1], "3")
         self.st.create_client(dict(slug="acme", name="ACME"))
         self.assertTrue(any(c[:2] == ["client", "init"] for c in self.runner.calls))
+
+    def test_undo_and_engine_shapes(self):
+        self.runner.docs["job edit"] = lambda args: (
+            {"ok": True, "op": "undo", "undone": {"n": 1, "op": "caption"}, "rerun": ["export"], "pending": []}
+            if "undo" in args else {"ok": True, "faithful": True, "rerun": ["export"], "pending": ["export"],
+                                    "glossary_added": [{"wrong": "rak", "right": "RAG"}]})
+        r = self.st.edit(self.bid, "s001", "caption", dict(cue=0, text="今天我们聊一下RAG"))
+        self.assertEqual(r["glossary_added"], {"wrong": "rak", "right": "RAG"})
+        self.assertEqual(r["pending"], ["export"])
+        u = self.st.undo(self.bid, "s001")
+        self.assertEqual(u["undone"]["op"], "caption")
+        self.assertEqual(self.runner.calls[-1][-3:], ["--op", "undo", "--json"])
+        self.runner.docs["deliver"] = {"dir": "/x", "zip": None, "items": 1, "jobs": 1, "manifest": "/x/manifest.json",
+                                       "manifest_data": {"items": [{"path": "a.mp4", "sha256": "0" * 64, "bytes": 3}]}}
+        self.assertEqual(self.st.deliver(self.bid, dict(zip=False))["manifest"]["items"][0]["path"], "a.mp4")
+        self.runner.docs["metrics"] = {"scope": "all", "summary": {}, "clients": [],
+                                       "batches": [{"batch": "demo-course", "dir": self.eng.dir_of(self.bid)}]}
+        m = self.st.metrics()
+        self.assertEqual(m["batches"][0]["batch"], self.bid)
+        self.assertEqual(m["batches"][0]["name"], "demo-course")
 
     def test_real_without_commands_reports_engine_too_old(self):
         st = Studio(self.eng, tempfile.mkdtemp(), self.bus, Capabilities(fixed=set()), self.runner)
@@ -232,6 +254,8 @@ class MockFlowTest(unittest.TestCase):
         self.assertIn("cleanup", tr["rerun"])
         jd = R("GET", f"/api/batches/{bid}/jobs/s001")
         self.assertIn(jd["edit"]["range"][0], {w["t"] for w in jd["edit"]["words"]})    # snapped
+        noop = R("POST", f"/api/batches/{bid}/jobs/s001/edit", dict(op="caption", cue=0, text=fixed))
+        self.assertTrue(noop.get("noop"))
         R("POST", f"/api/batches/{bid}/jobs/s001/edit", dict(op="hook", pick=1))
         R("POST", f"/api/batches/{bid}/jobs/s001/edit", dict(op="cover", t=1.5, text="封面字"))
         R("POST", f"/api/batches/{bid}/jobs/s001/edit", dict(op="copy", title="新标题", body="新正文", tags=["#a", "b"]))

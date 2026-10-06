@@ -13,7 +13,7 @@ test.beforeAll(async () => {
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'vsdesk-e2e-'));
   app = await electron.launch({
     args: [path.resolve(import.meta.dirname, '../..')],
-    env: { ...process.env, DESK_ENGINE_MOCK: '1', DESK_MOCK_STEP: '0.02', DESK_USER_DATA: userData, VITE_DEV_SERVER_URL: '' },
+    env: { ...process.env, DESK_ENGINE_MOCK: '1', DESK_MOCK_STEP: '0.02', DESK_USER_DATA: userData, DESK_SKIP_FIRST_RUN: '1', VITE_DEV_SERVER_URL: '' },
   });
   page = await app.firstWindow();
   await page.waitForURL(/^app:\/\/desk\//); // the window loads once the engine is up

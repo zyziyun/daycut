@@ -1,7 +1,7 @@
 // In-review edits (P0-3): caption text (only edits consistent with the audio are accepted), hook swap, trim
 // (word-snapped), cover frame + text, title / body / tags. Every edit is recorded and undoable (⌘Z); the bar
 // shows which stages will re-run and "re-render affected" runs only those.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { EditBody, EditResult, JobEditInfo } from '../../../shared/v02';
 import { t } from '../i18n';
 import { useEngine } from '../lib/engine';
@@ -144,12 +144,14 @@ function summarize(a: Record<string, unknown>): string {
 function Captions({ info, busy, onEdit }: { info: JobEditInfo; busy: boolean; onEdit: (b: EditBody) => Promise<EditResult | null> }) {
   const [draft, setDraft] = useState<Record<number, string>>({});
   const [result, setResult] = useState<Record<number, EditResult>>({});
+  const inflight = useRef(new Set<number>());
   if (!info.cues.length) return <div className="muted small">{t('edit.noCues')}</div>;
   const commit = async (i: number) => {
     const c = info.cues.find((x) => x.i === i);
     const v = draft[i];
-    if (!c || v === undefined || v.trim() === c.text || !v.trim()) return;
-    const r = await onEdit({ op: 'caption', cue: i, text: v.trim() });
+    if (!c || v === undefined || v.trim() === c.text || !v.trim() || inflight.current.has(i)) return;
+    inflight.current.add(i);
+    const r = await onEdit({ op: 'caption', cue: i, text: v.trim() }).finally(() => inflight.current.delete(i));
     if (r) {
       setResult((m) => ({ ...m, [i]: r }));
       if (r.ok)
@@ -202,13 +204,24 @@ function Captions({ info, busy, onEdit }: { info: JobEditInfo; busy: boolean; on
 }
 
 function Hooks({ info, onEdit }: { info: JobEditInfo; onEdit: (b: EditBody) => Promise<EditResult | null> }) {
+  const [optimistic, setOptimistic] = useState<number | null>(null);
+  useEffect(() => setOptimistic(null), [info.hook_pick]);
   if (!info.hooks.length) return <div className="muted small">{t('edit.noHooks')}</div>;
-  const cur = info.hook_pick ?? 0;
+  const cur = optimistic ?? info.hook_pick ?? 0;
   return (
     <div className="col" role="radiogroup" style={{ gap: 6 }}>
       {info.hooks.map((h, i) => (
         <label key={i} className={`item ${cur === i ? 'on' : ''}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <input type="radio" name="hook" checked={cur === i} onChange={() => void onEdit({ op: 'hook', pick: i })} data-testid={`hook-${i}`} />
+          <input
+            type="radio"
+            name="hook"
+            checked={cur === i}
+            onChange={() => {
+              setOptimistic(i);
+              void onEdit({ op: 'hook', pick: i }).then((r) => !r?.ok && setOptimistic(null));
+            }}
+            data-testid={`hook-${i}`}
+          />
           <span className="mono small muted">{h.start != null ? `${hms(h.start)}–${hms(h.end)}` : ''}</span>
           <span>{h.text}</span>
         </label>

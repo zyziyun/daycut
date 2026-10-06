@@ -233,7 +233,15 @@ class Studio:
             if body.get("note") is not None:
                 c["note"] = body["note"]
         self.store.update("crm", f)
-        return self.crm(slug)
+        crm = self.crm(slug)
+        if self.has("client") and os.path.exists(os.path.join(self.client_dir(slug), "client.yaml")):
+            try:
+                self.runner.json(["client", "update", "--client", self.client_dir(slug), "--set",
+                                  _json(dict(crm=dict(history=crm["history"], revenue=crm["revenue"],
+                                                      posts=crm["posts"], price_next=crm["price_next"]))), "--json"])
+            except Exception:  # noqa: BLE001  (the desk copy stays authoritative for the UI)
+                pass
+        return crm
 
     # ================================================================ batches
     def create_batch(self, body):
@@ -391,6 +399,19 @@ class Studio:
         hooks = p.get("hook_candidates") or ([p["hook"]] if isinstance(p.get("hook"), dict) else [])
         rng = p.get("range") or ([p["start"], p["end"]] if p.get("start") is not None and p.get("end") is not None
                                  else None)
+        ee = d.pop("engine_edit", None)
+        ee = ee if self.has("job-edit") else None
+        if ee:                                     # the engine's own edit log is the source of truth
+            hooks = ee.get("hook_candidates") or hooks
+            copy = ee.get("copy") or {}
+            p = dict(p, title=copy.get("title", p.get("title")), body=copy.get("body", p.get("body")),
+                     tags=copy.get("tags", p.get("tags")), hook_pick=ee.get("hook_pick", p.get("hook_pick")),
+                     cover=ee.get("cover") or p.get("cover"))
+            rng = ee.get("range") or rng
+            hist = [dict(n=h["n"], op=h["op"], args=h.get("value") or {}, before=h.get("before") or {}, at=h.get("at"),
+                         rerun=h.get("rerun") or [], glossary_added=None)
+                    for h in ee.get("history") or [] if not h.get("undone")]
+            ent = dict(ent, history=hist, pending=ee.get("pending") or [])
         d["edit"] = dict(
             range=rng, words=words, cues=cues, hooks=[_hook(h) for h in hooks], hook_pick=p.get("hook_pick"),
             cover=dict(t=(p.get("cover") or {}).get("t"), text=(p.get("cover") or {}).get("text", ""),
@@ -422,6 +443,9 @@ class Studio:
         e = d["edit"]
         need(e["can_edit"], "engine lacks job-edit (update video-studio to edit in the desk)")
         before, cue = self._snapshot(d, op, args)
+        if undo_of is None and _same(op, args, before):
+            return dict(ok=True, faithful=True, reason="unchanged", rerun=[], glossary_added=None, noop=True,
+                        pending=e["pending"], history=e["history"])
         res = dict(ok=True, faithful=True, reason=None, rerun=downstream(OP_ROOTS[op]), glossary_added=None)
         if op == "caption" and undo_of is None:
             chk = P.faithful(cue["text"], args["text"], cue.get("heard"))
@@ -438,12 +462,16 @@ class Studio:
             doc = self.runner.json(["job", "edit", "--batch", self.e.dir_of(bid), "--job", jid, "--op", op,
                                     *_edit_args(op, args), "--json"])
             res.update(ok=bool(doc.get("ok", True)), faithful=bool(doc.get("faithful", doc.get("ok", True))),
-                       reason=doc.get("reason"), rerun=doc.get("rerun") or res["rerun"])
+                       reason=doc.get("reason"), rerun=doc.get("rerun") if doc.get("rerun") is not None else res["rerun"])
+            ga = doc.get("glossary_added")
+            res["glossary_added"] = (ga[0] if isinstance(ga, list) and ga else ga if isinstance(ga, dict) else None)
+            if doc.get("pending") is not None:
+                res["engine_pending"] = doc["pending"]
             if not res["ok"]:
                 return res
         else:
             self.e.apply_edit(bid, jid, op, args, res["rerun"])
-        if op == "caption" and undo_of is None and e.get("client"):
+        if op == "caption" and undo_of is None and e.get("client") and not self.has("job-edit"):
             tf = P.term_fix(cue["text"], args["text"])
             if tf:
                 tf.update(source="caption-fix", batch=bid, job=jid)
@@ -457,7 +485,9 @@ class Studio:
             ent["since_rerun"] = ent.get("since_rerun", 0) + 1
         else:
             ent["since_rerun"] = max(0, ent.get("since_rerun", 0) - 1)
-        if ent["since_rerun"] == 0 and undo_of is not None:
+        if "engine_pending" in res:
+            ent["pending"] = res.pop("engine_pending")
+        elif ent["since_rerun"] == 0 and undo_of is not None:
             ent["pending"] = []
             if not self.has("job-edit"):
                 self.e.clear_pending(bid, jid)
@@ -470,6 +500,16 @@ class Studio:
         return res
 
     def undo(self, bid, jid):
+        if self.has("job-edit"):
+            doc = self.runner.json(["job", "edit", "--batch", self.e.dir_of(bid), "--job", jid, "--op", "undo", "--json"])
+            need(doc.get("ok", True), doc.get("reason") or "nothing to undo")
+            ent = self._edits(bid).get(jid) or dict(history=[], pending=[], reruns=0, count=0, since_rerun=0)
+            ent["pending"] = doc.get("pending") or []
+            self._put_edits(bid, jid, ent)
+            self.bus.publish("job-edit", batch=bid, job=jid)
+            u = doc.get("undone") or {}
+            return dict(ok=True, faithful=True, reason=None, rerun=doc.get("rerun") or [], pending=ent["pending"],
+                        glossary_added=None, undone=dict(n=u.get("n"), op=u.get("op")))
         ent = self._edits(bid).get(jid) or {}
         hist = ent.get("history") or []
         need(hist, "nothing to undo")
@@ -533,6 +573,8 @@ class Studio:
             if days:
                 args += ["--cleanup-days", str(days)]
             r = self.runner.json(args, timeout=3600)
+            if not isinstance(r.get("manifest"), dict):
+                r["manifest"] = r.get("manifest_data") or {}
         else:
             m = self.e.manifest(bid)
             if not m.get("manifest") or not (m.get("verify") or {}).get("ok"):
@@ -616,7 +658,7 @@ class Studio:
             else:
                 args.append("--all")
             try:
-                return dict(self.runner.json(args), source="engine")
+                return self._from_engine(self.runner.json(args), client)
             except Exception:  # noqa: BLE001  (fall back to the desk's own numbers)
                 pass
         if batch:
@@ -644,12 +686,40 @@ class Studio:
             out["clients"] = [dict(c, crm=self.crm(c["slug"])) for c in self.list_clients()]
         return out
 
+    def _from_engine(self, doc, client=None):
+        from .common import batch_id
+        doc = dict(doc, source="engine")
+        for b in doc.get("batches") or []:
+            b["name"] = b.get("batch")
+            if b.get("dir"):
+                b["batch"] = batch_id(b["dir"])
+        if doc.get("scope") == "batch" and doc.get("dir"):
+            doc["name"], doc["batch"] = doc.get("batch"), batch_id(doc["dir"])
+        if doc.get("scope") == "all":
+            doc["clients"] = [dict(c, crm=self.crm(c["slug"])) for c in self.list_clients()]
+        if client:
+            doc["crm"] = self.crm(client)
+        return doc
+
     def weekly(self, today=None):
         if self.has("metrics"):
             try:
                 doc = self.runner.json(["metrics", "--all", "--csv", "--json"])
-                if isinstance(doc, dict) and doc.get("csv"):
-                    return dict(csv=doc["csv"], rows=doc.get("rows") or [], columns=M.WEEKLY_COLUMNS, source="engine")
+                if isinstance(doc, dict) and isinstance(doc.get("rows"), list):
+                    rows = doc["rows"]
+                    # the funnel lives with the desk's clients: fill what the engine left blank
+                    funnel = {r["周"]: r for r in M.weekly_rows(self.store.get("crm", {}) or {}, [], [], {}, today=today)}
+                    for r in rows:
+                        d = funnel.get(r.get("周")) or {}
+                        for c in ("线索数", "沟通数", "样片数", "确认试点数", "回传数据数", "付费数", "收入(¥)"):
+                            if r.get(c) in (None, "") and c in d:
+                                r[c] = d[c]
+                    manual = self.store.get("weekly_manual", {}) or {}
+                    for r in rows:
+                        for c, v in (manual.get(str(r.get("周", "")).split("(")[0]) or {}).items():
+                            if v not in (None, ""):
+                                r[c] = v
+                    return dict(csv=M.to_csv(rows), rows=rows, columns=M.WEEKLY_COLUMNS, source="engine")
             except Exception:  # noqa: BLE001
                 pass
         crm = self.store.get("crm", {}) or {}
@@ -690,6 +760,12 @@ def _quiet(fn, args):
         fn(args)
     except Exception:  # noqa: BLE001
         pass
+
+
+def _same(op, args, before):
+    if op == "trim":
+        return abs(args["start"] - before["start"]) < 0.005 and abs(args["end"] - before["end"]) < 0.005
+    return all(args.get(k) == before.get(k) for k in args)
 
 
 def _hook(h):

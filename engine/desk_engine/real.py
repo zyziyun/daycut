@@ -328,6 +328,8 @@ class RealEngine:
                 for k in ("captions", "transcript", "recipe"):
                     if k in full:
                         d[k] = full[k]
+                if isinstance(full.get("edit"), dict):
+                    d["engine_edit"] = full["edit"]
         except Exception:  # noqa: BLE001  (the legacy view is enough for review)
             pass
         return d
