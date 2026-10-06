@@ -12,8 +12,18 @@ import { PlatformPicker } from './Clients';
 const STEPS = ['welcome', 'keys', 'models', 'platforms', 'persona'] as const;
 type Step = (typeof STEPS)[number];
 
+const STEP_KEY = 'firstRunStep';
+
 export function FirstRun({ settings, onDone }: { settings: SettingsMsg; onDone: (s: SettingsMsg) => void }) {
-  const [step, setStep] = useState<Step>('welcome');
+  // the step survives a page reload (e.g. an engine restart that had to change port): downloads never move the user
+  const [step, setStepState] = useState<Step>(() => {
+    const s = sessionStorage.getItem(STEP_KEY) as Step | null;
+    return s && STEPS.includes(s) ? s : 'welcome';
+  });
+  const setStep = (s: Step) => {
+    sessionStorage.setItem(STEP_KEY, s);
+    setStepState(s);
+  };
   const [lang, setL] = useState(settings.lang);
   const [platforms, setPlatforms] = useState<string[]>(settings.defaultPlatforms?.length ? settings.defaultPlatforms : ['xiaohongshu:full']);
   const [persona, setPersona] = useState(settings.personaPath ?? '');
@@ -25,7 +35,9 @@ export function FirstRun({ settings, onDone }: { settings: SettingsMsg; onDone: 
   async function finish(skipped = false) {
     setErr(null);
     try {
+      // the ONLY place first run is marked done: the explicit finish / skip buttons (never a finished download)
       const s = await window.desk.firstRun.complete(platforms.length ? platforms : ['xiaohongshu:full'], skipped);
+      sessionStorage.removeItem(STEP_KEY);
       if (needsRestart) void window.desk.restartEngine().catch(() => undefined);
       location.hash = '#/batches';
       onDone(s);
@@ -102,6 +114,12 @@ export function FirstRun({ settings, onDone }: { settings: SettingsMsg; onDone: 
                   {t('fr.modelsWhy')}
                 </p>
                 <AssetsCard />
+                {assets.busy && <div className="muted small">{t('fr.downloadsRunning')}</div>}
+                <div className="row">
+                  <button className="btn ghost sm" data-testid="fr-later" onClick={() => setStep(STEPS[i + 1])}>
+                    {t('fr.later')}
+                  </button>
+                </div>
               </>
             ) : (
               <div className="notice accent">{assets ? t('fr.modelsSystem') : t('common.working')}</div>
@@ -136,7 +154,7 @@ export function FirstRun({ settings, onDone }: { settings: SettingsMsg; onDone: 
           </button>
           <div style={{ flex: 1 }} />
           <button className="btn primary" disabled={step === 'platforms' && !platforms.length} onClick={next} data-testid="fr-next">
-            {i === STEPS.length - 1 ? t('fr.finish') : t('fr.next')}
+            {i === STEPS.length - 1 ? t('fr.start') : t('fr.next')}
           </button>
         </div>
       </div>

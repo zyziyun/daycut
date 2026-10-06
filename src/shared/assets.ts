@@ -36,6 +36,8 @@ export interface AssetGroupStatus {
   licence: string;
   /** set while this group is downloading */
   progress?: { received: number; total: number; file: string };
+  /** waiting in the download queue */
+  queued?: boolean;
   error?: string;
 }
 
@@ -45,6 +47,8 @@ export interface AssetsStatusMsg {
   busy: boolean;
   /** installed since the engine started: restart the engine to use them */
   restartNeeded: boolean;
+  /** the desk restarts the engine by itself once no batch is running (set by the main process) */
+  restartWhenIdle?: boolean;
 }
 
 export function groupsFor(manifest: AssetManifest, target: string): AssetGroup[] {

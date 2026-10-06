@@ -82,7 +82,7 @@ export const ipcSchemas = {
   'publish:postedLog': z.strictObject({ batchId: batchId.optional() }),
   'assets:status': z.undefined(),
   'assets:install': z.strictObject({ ids: z.array(z.string().regex(/^[a-z0-9-]{1,40}$/)).max(20).optional() }),
-  'assets:cancel': z.undefined(),
+  'assets:cancel': z.strictObject({ id: z.string().regex(/^[a-z0-9-]{1,40}$/).optional() }).optional(),
   'update:check': z.undefined(),
   'update:install': z.undefined(),
 } as const;

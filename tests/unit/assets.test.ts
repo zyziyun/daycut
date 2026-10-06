@@ -18,6 +18,11 @@ let rangeRequests = 0;
 beforeAll(async () => {
   server = http.createServer((req, res) => {
     if (req.url === '/missing') return void res.writeHead(404).end();
+    if (req.url === '/slow') {
+      res.writeHead(200, { 'content-length': body.length });
+      res.write(body.subarray(0, 1000));
+      return void setTimeout(() => res.end(body.subarray(1000)), 150);
+    }
     const m = /bytes=(\d+)-/.exec(req.headers.range ?? '');
     if (m) {
       rangeRequests++;
@@ -90,6 +95,86 @@ describe('AssetManager', () => {
   it('reports HTTP errors per group', async () => {
     const m = new AssetManager({ manifest: manifest({ files: [{ url: `${base}/missing`, dest: 'a', sha256: sha, size: 1 }] }), dir: tmp(), target: 'x' });
     expect((await m.install()).groups[0].error).toMatch(/HTTP 404/);
+  });
+
+  it('queues groups in the background: install never throws while busy, cancel(id) drops one, onIdle once', async () => {
+    const g = (id: string) => ({ id, required: false, root: id, licence: 't', files: [{ url: `${base}/slow`, dest: 'a.bin', sha256: sha, size: body.length }] });
+    let idle = 0;
+    const m = new AssetManager({ manifest: { groups: [g('a'), g('b'), g('c')] }, dir: tmp(), target: 'x', onIdle: () => idle++ });
+    const first = m.install(['a']);
+    const second = m.install(['b', 'c']); // a is running: queued, not refused
+    expect(m.busy).toBe(true);
+    const st = m.status();
+    expect(st.groups.find((x) => x.id === 'b')?.queued).toBe(true);
+    m.cancel('c');
+    expect(m.status().groups.find((x) => x.id === 'c')?.queued).toBeUndefined();
+    await Promise.all([first, second]);
+    const done = m.status();
+    expect(done.groups.map((x) => [x.id, x.installed])).toEqual([['a', true], ['b', true], ['c', false]]);
+    expect(done.busy).toBe(false);
+    expect(idle).toBe(1);
+  });
+
+  it('a write error fails the group instead of throwing in the main process', async () => {
+    const dir = tmp();
+    const m = new AssetManager({ manifest: manifest(), dir, target: 'x' });
+    fs.mkdirSync(path.join(dir, '.downloads', 'core', `${sha}.part`), { recursive: true }); // EISDIR on open
+    const st = await m.install();
+    expect(st.groups[0].installed).toBe(false);
+    expect(st.groups[0].error).toBeTruthy();
+    expect(m.busy).toBe(false);
+  });
+
+  it('reuses files already in the Hugging Face cache (content-addressed blobs): no download, no copy', async () => {
+    const hub = tmp();
+    const snap = path.join(hub, 'models--org--whisper', 'snapshots', 'rev1');
+    fs.mkdirSync(snap, { recursive: true });
+    fs.mkdirSync(path.join(hub, 'models--org--whisper', 'blobs'));
+    fs.writeFileSync(path.join(hub, 'models--org--whisper', 'blobs', sha), body);
+    fs.symlinkSync(path.join('..', '..', 'blobs', sha), path.join(snap, 'w.bin'));
+    const grp = { id: 'asr', required: true, root: 'models/asr', env: { WHISPER: '' }, licence: 't', files: [{ url: 'https://huggingface.co/org/whisper/resolve/rev1/w.bin', dest: 'w.bin', sha256: sha, size: body.length }] };
+    const noNet = (() => Promise.reject(new Error('network used'))) as unknown as typeof fetch;
+    const dir = tmp();
+    const m = new AssetManager({ manifest: { groups: [grp] }, dir, target: 'x', hfHub: hub, fetchImpl: noNet });
+    expect(m.installed(m['groups'][0])).toBe(false);
+    await m.scan();
+    expect(m.status().groups[0].installed).toBe(true);
+    expect(m.env()).toEqual({ WHISPER: snap });
+    expect(fs.existsSync(path.join(dir, 'models', 'asr'))).toBe(false); // nothing copied
+    // a restart reads installed.json: still installed, still no network
+    const again = new AssetManager({ manifest: { groups: [grp] }, dir, target: 'x', hfHub: hub, fetchImpl: noNet });
+    expect(again.status().groups[0].installed).toBe(true);
+    expect((await again.install(['asr'])).groups[0].error).toBeUndefined();
+  });
+
+  it('a shared root (engine cache) keeps its files, gets only the missing ones, and survives a restart', async () => {
+    const shared = tmp();
+    const other = crypto.randomBytes(1000);
+    const osha = crypto.createHash('sha256').update(other).digest('hex');
+    fs.mkdirSync(path.join(shared, 'fonts'), { recursive: true });
+    fs.mkdirSync(path.join(shared, 'tts'), { recursive: true });
+    fs.writeFileSync(path.join(shared, 'fonts', 'have.otf'), other); // installed earlier by the CLI
+    fs.writeFileSync(path.join(shared, 'tts', 'keep.wav'), 'x'); // unrelated engine cache content
+    const grp = {
+      id: 'core', required: true, root: 'vstudio-cache', licence: 't',
+      files: [
+        { url: `${base}/nope`, dest: 'fonts/have.otf', sha256: osha, size: other.length },
+        { url: `${base}/f`, dest: 'models/a.bin', sha256: sha, size: body.length },
+      ],
+    };
+    const urls: string[] = [];
+    const counting = ((u: string, init: RequestInit) => (urls.push(u), fetch(u, init))) as unknown as typeof fetch;
+    const dir = tmp();
+    const m = new AssetManager({ manifest: { groups: [grp] }, dir, target: 'x', roots: { core: shared }, hfHub: null, fetchImpl: counting });
+    const st = await m.install();
+    expect(st.groups[0].installed).toBe(true);
+    expect(urls).toEqual([`${base}/f`]);
+    expect(fs.readFileSync(path.join(shared, 'tts', 'keep.wav'), 'utf8')).toBe('x');
+    expect(fs.readFileSync(path.join(shared, 'models', 'a.bin')).equals(body)).toBe(true);
+    const again = new AssetManager({ manifest: { groups: [grp] }, dir, target: 'x', roots: { core: shared }, hfHub: null, fetchImpl: counting });
+    expect(again.status().groups[0].installed).toBe(true);
+    await again.install(['core']);
+    expect(urls.length).toBe(1);
   });
 
   it('refuses paths that escape the root', () => {

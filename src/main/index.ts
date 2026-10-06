@@ -10,7 +10,7 @@ import { resolveInside } from '../shared/publish/gating';
 import { parsePostCopy } from '../shared/publish/postCopy';
 import type { EngineInfo } from '../shared/types';
 import type { AssetManifest } from '../shared/assets';
-import { AssetManager } from './assets';
+import { AssetManager, defaultHfHub, sharedEngineCache } from './assets';
 import { defaultEnginePath, EngineProcess, findPython } from './engine';
 import { isAllowedMediaPath, pathFromMediaUrl } from './media';
 import { loadAdapters } from './publish/adapters';
@@ -36,6 +36,22 @@ const RES = app.isPackaged ? process.resourcesPath : app.getAppPath();
 
 if (process.env.DESK_USER_DATA) app.setPath('userData', process.env.DESK_USER_DATA); // tests: isolated profile
 
+// ---------------------------------------------------------------- diagnostics: the main process must never die
+/** Append to <userData>/logs/main.log (and the console). Never throws. */
+function mainLog(msg: string) {
+  const line = `${new Date().toISOString()} ${msg}`;
+  console.error(line);
+  try {
+    const dir = path.join(app.getPath('userData'), 'logs');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(path.join(dir, 'main.log'), line + '\n');
+  } catch {
+    /* logging must not throw */
+  }
+}
+process.on('unhandledRejection', (e) => mainLog(`[main] unhandled rejection: ${(e as Error)?.stack ?? String(e)}`));
+process.on('uncaughtException', (e) => mainLog(`[main] uncaught exception: ${e?.stack ?? String(e)}`));
+
 let win: BrowserWindow | null = null;
 let engine: EngineProcess | null = null;
 let client: EngineClient | null = null;
@@ -51,8 +67,19 @@ function dataDir() {
   return path.join(app.getPath('userData'), 'engine-data');
 }
 
+/** Downloads, partial files and the installed-manifest. Stable: <userData>/assets (tests override userData only). */
 function assetsDir() {
   return path.join(app.getPath('userData'), 'assets');
+}
+
+/** The engine's cache, shared with the CLI skill (fonts + MediaPipe models live there). DESK_SHARED_CACHE: tests. */
+function engineCacheDir() {
+  return process.env.DESK_SHARED_CACHE || sharedEngineCache();
+}
+
+/** The Hugging Face hub cache (Whisper is reused from it). DESK_HF_HUB: tests ('' = none). */
+function hfHubDir(): string | null {
+  return process.env.DESK_HF_HUB !== undefined ? process.env.DESK_HF_HUB || null : defaultHfHub();
 }
 
 /** Settings override everything; then env vars; then the runtime bundled in the app; then a dev checkout. */
@@ -76,8 +103,8 @@ function engineEnv(bundled: boolean) {
     isolatePython: true,
     env: {
       ...r.env,
-      VSTUDIO_CACHE: path.join(assetsDir(), 'vstudio-cache'),
-      HF_HOME: path.join(assetsDir(), 'hf'),
+      // one cache with the CLI skill: fonts / models the user already has are used, nothing is fetched twice
+      VSTUDIO_CACHE: engineCacheDir(),
       ...assets.env(),
     },
   };
@@ -94,32 +121,83 @@ function settingsMsg() {
 }
 
 function startEngine(): Promise<EngineInfo> {
-  engine?.stop();
+  const old = engine;
+  const keepPort = enginePort() ?? undefined; // same port -> the page's CSP stays valid -> no window reload
   const cfg = resolvedConfig();
-  engine = new EngineProcess({
+  const next = new EngineProcess({
     engineDir: path.join(RES, 'engine'),
     enginePath: cfg.enginePath,
     python: cfg.python,
     dataDir: cfg.dataDir,
     allowedOrigins: [APP_ORIGIN],
     mock: process.env.DESK_ENGINE_MOCK === '1',
+    port: keepPort,
     ...withV02Env(engineEnv(cfg.runtime !== 'system')),
   });
+  engine = next;
+  client = null;
   assets.markEngineStarted();
-  enginePromise = engine.start().then((info) => {
+  restartWhenIdle = false;
+  const p = (old ? old.stop() : Promise.resolve()).then(() => next.start());
+  enginePromise = p.then((info) => {
+    if (engine !== next) return info; // superseded by a newer restart
     client = new EngineClient(info.baseUrl, info.token);
     rootsCache = { at: 0, roots: [] };
     win?.webContents.send('engine:status', { ok: true, mode: info.mode, note: info.note });
-    // the page's CSP pins the engine port: reload when it was served before this engine was up (first launch,
-    // slow cold start) or for a previous engine (restart, settings change)
-    if (!IS_DEV && win && servedPort !== undefined && servedPort !== enginePort()) win.reload();
+    // the page's CSP pins the engine port: reload only when it was served before any engine was up (first launch,
+    // slow cold start) or the old port could not be kept. The URL (hash route) survives a reload.
+    if (!IS_DEV && win && servedPort !== undefined && servedPort !== enginePort()) {
+      mainLog(`[engine] port ${servedPort} -> ${enginePort()}: reloading the window for its CSP`);
+      win.reload();
+    }
     return info;
   });
   enginePromise.catch((e) => {
+    if (engine !== next) return;
     client = null;
-    win?.webContents.send('engine:status', { ok: false, error: String(e.message ?? e) });
+    mainLog(`[engine] start failed: ${String(e?.message ?? e)}`);
+    win?.webContents.send('engine:status', { ok: false, error: String(e?.message ?? e) });
   });
   return enginePromise;
+}
+
+// ---------------------------------------------------------------- engine restart after downloads
+/** New assets change the engine's environment. Restart only the engine sidecar (the window and its state stay), and
+ * only when no batch is running - a restart would stop it. Checked again every 30 s until idle. */
+let restartWhenIdle = false;
+let idleTimer: NodeJS.Timeout | null = null;
+async function engineBusy(): Promise<boolean> {
+  if (!client) return false;
+  try {
+    const list = (await client.batches()) as { running?: boolean }[];
+    return list.some((b) => b.running);
+  } catch {
+    return false;
+  }
+}
+async function restartForAssets() {
+  if (!assets.status().restartNeeded) return;
+  if (assets.busy || (await engineBusy())) {
+    restartWhenIdle = true;
+    sendAssets();
+    if (!idleTimer) {
+      idleTimer = setTimeout(() => {
+        idleTimer = null;
+        void restartForAssets();
+      }, 30000);
+    }
+    return;
+  }
+  mainLog('[assets] new assets installed: restarting the engine sidecar (window kept)');
+  await startEngine().catch(() => undefined);
+  sendAssets();
+}
+function sendAssets() {
+  try {
+    win?.webContents.send('assets:progress', { ...assets.status(), restartWhenIdle });
+  } catch {
+    /* window gone */
+  }
 }
 
 // ---------------------------------------------------------------- media roots (from the engine)
@@ -229,9 +307,11 @@ function createWindow() {
       nodeIntegration: false,
       webviewTag: false,
       spellcheck: false,
+      backgroundThrottling: process.env.DESK_HIDE_WINDOW !== '1',
     },
   });
-  win.once('ready-to-show', () => win?.show());
+  // DESK_HIDE_WINDOW=1: automated tests drive the app without putting windows on the user's screen
+  if (process.env.DESK_HIDE_WINDOW !== '1') win.once('ready-to-show', () => win?.show());
   const wc = win.webContents;
   wc.setWindowOpenHandler(({ url }) => {
     if (isSafeExternal(url)) void shell.openExternal(url);
@@ -386,12 +466,13 @@ function registerIpc() {
   handle('publish:postedLog', async (p) => pstore.posted(p.batchId));
 
   // ---------------- first-run assets
-  handle('assets:status', async () => ({ ...assets.status(), bundled: resolvedConfig().runtime !== 'system' }));
+  handle('assets:status', async () => ({ ...assets.status(), restartWhenIdle, bundled: resolvedConfig().runtime !== 'system' }));
   handle('assets:install', async (p) => {
-    void assets.install(p.ids).catch((e) => console.error('[assets]', e));
-    return assets.status();
+    // queue only: downloads run in the background; nothing here may reload, navigate or quit
+    void assets.install(p.ids).catch((e) => mainLog(`[assets] ${(e as Error)?.stack ?? e}`));
+    return { ...assets.status(), restartWhenIdle };
   });
-  handle('assets:cancel', async () => assets.cancel());
+  handle('assets:cancel', async (p) => assets.cancel(p?.id));
   handle('update:check', async () => checkForUpdates());
   handle('update:install', async () => installUpdate());
   registerV02Ipc(handle, { userData: app.getPath('userData'), settings: () => settings, win: () => win, client: () => client, settingsMsg });
@@ -399,7 +480,9 @@ function registerIpc() {
 
 function loadAssetManifest(): AssetManifest {
   try {
-    return JSON.parse(fs.readFileSync(path.join(RES, 'packaging', 'assets.json'), 'utf8')) as AssetManifest;
+    // DESK_ASSETS_MANIFEST: tests point the downloader at a local server
+    const file = process.env.DESK_ASSETS_MANIFEST || path.join(RES, 'packaging', 'assets.json');
+    return JSON.parse(fs.readFileSync(file, 'utf8')) as AssetManifest;
   } catch (e) {
     console.warn('[assets] no manifest:', (e as Error).message);
     return { groups: [] };
@@ -420,9 +503,23 @@ if (!app.requestSingleInstanceLock()) {
     contents.on('will-attach-webview', (ev) => ev.preventDefault());
   });
   app.whenReady().then(() => {
+    if (process.env.DESK_HIDE_WINDOW === '1') app.dock?.hide();
     settings = new SettingsStore(app.getPath('userData'));
     runtime = findBundledRuntime(RES, app.isPackaged);
-    assets = new AssetManager({ manifest: loadAssetManifest(), dir: assetsDir(), onChange: (s) => win?.webContents.send('assets:progress', s) });
+    assets = new AssetManager({
+      manifest: loadAssetManifest(),
+      dir: assetsDir(),
+      onChange: (s) => win?.webContents.send('assets:progress', { ...s, restartWhenIdle }),
+      onIdle: () => void restartForAssets(),
+      log: mainLog,
+      roots: { core: engineCacheDir() },
+      hfHub: hfHubDir(),
+    });
+    mainLog(`[assets] dir ${assetsDir()} · engine cache ${engineCacheDir()} · hf hub ${hfHubDir() ?? '-'}`);
+    // already on disk (CLI install.sh, Hugging Face cache)? recorded as installed, nothing downloaded
+    void assets.scan().then(() => {
+      if (assets.status().restartNeeded) void restartForAssets();
+    });
     pstore = new PublishStore(path.join(app.getPath('userData'), 'publish'));
     adapters = loadAdapters([path.join(RES, 'adapters'), path.join(app.getPath('userData'), 'adapters')]);
     for (const e of adapters.errors) console.warn(`[adapters] ${e.file}: ${e.error}`);
@@ -437,10 +534,34 @@ if (!app.requestSingleInstanceLock()) {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });
   });
-  app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') app.quit();
+  app.on('render-process-gone', (_e, wc, details) => {
+    mainLog(`[main] renderer gone: ${details.reason} (${details.exitCode})`);
+    if (win && wc === win.webContents && details.reason !== 'clean-exit') win.reload();
   });
-  app.on('before-quit', () => {
-    engine?.stop();
+  app.on('child-process-gone', (_e, details) => mainLog(`[main] child process gone: ${details.type} ${details.reason}`));
+  app.on('window-all-closed', () => {
+    // a download in progress keeps the app alive (the downloads finish in the background; reopen from the dock /
+    // taskbar); otherwise quit, except on macOS
+    if (process.platform !== 'darwin' && !assets?.busy) app.quit();
+  });
+  let quitConfirmed = false;
+  app.on('before-quit', (e) => {
+    if (assets?.busy && !quitConfirmed) {
+      const choice = dialog.showMessageBoxSync({
+        type: 'question',
+        buttons: [settings?.get().lang === 'en' ? 'Keep downloading' : '继续下载', settings?.get().lang === 'en' ? 'Stop and quit' : '停止下载并退出'],
+        defaultId: 0,
+        cancelId: 0,
+        message: settings?.get().lang === 'en' ? 'Downloads are still running.' : '模型还在下载。',
+        detail: settings?.get().lang === 'en' ? 'Quitting stops them; they resume next time.' : '退出会中断下载，下次打开会接着下载。',
+      });
+      if (choice === 0) {
+        e.preventDefault();
+        return;
+      }
+      quitConfirmed = true;
+      assets.cancel();
+    }
+    void engine?.stop();
   });
 }

@@ -24,6 +24,9 @@ export interface EngineConfig {
   pythonPath?: string[];
   /** bundled runtime: ignore PYTHONPATH / PYTHONHOME inherited from the user's shell */
   isolatePython?: boolean;
+  /** ask for this port (a restart keeps the old one so the page's CSP stays valid); the engine falls back to a
+   * random port when it is taken */
+  port?: number;
 }
 
 export function newToken(): string {
@@ -93,6 +96,8 @@ export class EngineProcess {
     if (env.PYTHONPATH) pyPath.push(env.PYTHONPATH);
     if (pyPath.length) env.PYTHONPATH = pyPath.join(path.delimiter);
     if (this.cfg.mock) env.DESK_ENGINE_MOCK = '1';
+    if (this.cfg.port) env.DESK_PORT = String(this.cfg.port);
+    else delete env.DESK_PORT;
     const child = spawn(this.cfg.python, [path.join(this.cfg.engineDir, 'server.py')], {
       env,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -139,13 +144,22 @@ export class EngineProcess {
     if (this.log.length > 1000) this.log.splice(0, 500);
   }
 
-  stop() {
+  /** Stop the engine; resolves once the process has exited (SIGKILL after 3 s), so its port is free again. */
+  stop(): Promise<void> {
     const c = this.child;
     this.child = null;
     this.info = null;
-    if (!c) return;
-    c.stdin?.end();
-    c.kill('SIGTERM');
-    setTimeout(() => c.exitCode === null && c.kill('SIGKILL'), 3000).unref();
+    if (!c || c.exitCode !== null || c.signalCode !== null) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      const kill = setTimeout(() => c.exitCode === null && c.kill('SIGKILL'), 3000);
+      const cap = setTimeout(resolve, 5000); // never hang a restart on a stuck child
+      c.once('exit', () => {
+        clearTimeout(kill);
+        clearTimeout(cap);
+        resolve();
+      });
+      c.stdin?.end();
+      c.kill('SIGTERM');
+    });
   }
 }

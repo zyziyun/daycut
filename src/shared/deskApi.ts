@@ -115,8 +115,10 @@ export interface DeskApi {
   };
   assets: {
     status(): Promise<AssetsStatusMsg & { bundled: boolean }>;
+    /** queue groups for background download; returns at once */
     install(ids?: string[]): Promise<AssetsStatusMsg>;
-    cancel(): Promise<void>;
+    /** cancel the running download + the queue, or one queued / running group */
+    cancel(id?: string): Promise<void>;
   };
   update: {
     check(): Promise<UpdateStateMsg>;

@@ -55,7 +55,7 @@ const api: DeskApi = {
   assets: {
     status: () => call('assets:status'),
     install: (ids) => call('assets:install', { ids }),
-    cancel: () => call('assets:cancel'),
+    cancel: (id) => call('assets:cancel', id ? { id } : undefined),
   },
   update: {
     check: () => call('update:check'),

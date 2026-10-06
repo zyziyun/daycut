@@ -33,7 +33,10 @@ function cleanEnv(extra: Record<string, string>) {
 
 async function launch(extra: Record<string, string>): Promise<ElectronApplication> {
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'vsdesk-packaged-'));
-  const app = await electron.launch({ executablePath: appExecutable(), env: cleanEnv({ DESK_USER_DATA: userData, ...extra }) });
+  // hidden window; the engine cache and Hugging Face cache point at temp folders so a test never writes the user's
+  const cache = fs.mkdtempSync(path.join(os.tmpdir(), 'vsdesk-packaged-cache-'));
+  const env = cleanEnv({ DESK_USER_DATA: userData, DESK_HIDE_WINDOW: '1', DESK_SHARED_CACHE: cache, DESK_HF_HUB: '', ...extra });
+  const app = await electron.launch({ executablePath: appExecutable(), env });
   await (await app.firstWindow()).waitForURL(/^app:\/\/desk\//, { timeout: 60000 });
   return app;
 }
@@ -106,8 +109,11 @@ test('first-run download: the core group (fonts + MediaPipe models) installs and
       .poll(async () => page.evaluate(async () => (await window.desk.assets.status()).groups.find((g) => g.id === 'core')?.installed), { timeout: 600000, intervals: [2000] })
       .toBe(true);
     const st = await page.evaluate(() => window.desk.assets.status());
-    expect(fs.existsSync(path.join(st.dir, 'vstudio-cache', 'fonts', 'NotoSansSC-Regular.otf'))).toBe(true);
-    expect(fs.existsSync(path.join(st.dir, 'vstudio-cache', 'models', 'face_landmarker.task'))).toBe(true);
+    // the core group lives in the engine cache shared with the CLI (here the test's temp DESK_SHARED_CACHE)
+    const cache = await app.evaluate(() => process.env.DESK_SHARED_CACHE as string);
+    expect(fs.existsSync(path.join(cache, 'fonts', 'NotoSansSC-Regular.otf'))).toBe(true);
+    expect(fs.existsSync(path.join(cache, 'models', 'face_landmarker.task'))).toBe(true);
+    expect(fs.existsSync(path.join(st.dir, 'installed.json'))).toBe(true);
   } finally {
     await app.close();
   }

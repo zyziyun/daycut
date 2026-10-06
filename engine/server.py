@@ -5,6 +5,8 @@ Environment
   DESK_ALLOWED_ORIGINS  comma list of UI origins allowed to call the API (CORS), e.g. app://desk
   DESK_DATA_DIR         desk data folder (registry, generated specs); default ~/.vstudio-desk
   VSTUDIO_ENGINE_PATH   the video-studio repo; its lib/ is put on sys.path (PYTHONPATH also works)
+  DESK_PORT             preferred port (an engine restart keeps the old one so the UI's CSP stays valid);
+                        a random free port when unset or taken
   DESK_ENGINE_MOCK=1    force the in-memory mock engine
   DESK_MOCK_STEP        seconds per mock stage (default 0.25)
   ANTHROPIC_API_KEY / OPENAI_API_KEY   segment-planning providers (from the OS keychain via the desk)
@@ -58,7 +60,14 @@ def main():
     else:
         runner, caps = None, Capabilities(fixed=set())
     api = Api(engine, bus, token, origins, studio=Studio(engine, data_dir, bus, caps, runner))
-    httpd = serve(api)
+    try:
+        port = int(os.environ.get("DESK_PORT") or 0)
+    except ValueError:
+        port = 0
+    try:
+        httpd = serve(api, port=port)
+    except OSError:                         # the old engine still holds it (or something else does)
+        httpd = serve(api)
     print(json.dumps(dict(ready=True, port=api.port, mode=engine.mode, note=note)), flush=True)
     stop = threading.Event()
     signal.signal(signal.SIGTERM, lambda *a: stop.set())
