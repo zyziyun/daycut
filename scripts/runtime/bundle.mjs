@@ -38,7 +38,7 @@ async function buildPython() {
     '--require-hashes', '--only-binary=:all:', '--no-compile', '-r', req],
   { env: { ...process.env, PIP_CACHE_DIR: path.join(CACHE, 'pip'), PYTHONNOUSERSITE: '1' } });
   // licence inventory before pip itself goes
-  const inv = run(py, ['-c', INVENTORY_PY, path.join(OUT, 'licenses', 'python-packages')], { capture: true });
+  const inv = run(py, ['-c', INVENTORY_PY, path.join(OUT, 'licenses', 'python-packages')], { capture: true, quiet: true });
   fs.writeFileSync(path.join(OUT, 'licenses', 'python-packages.json'), inv);
   pruneSitePackages();
   run(py, ['-m', 'compileall', '-q', '-j', '0', '--invalidation-mode', 'unchecked-hash', path.join(OUT, 'python')], { stdio: ['ignore', 'ignore', 'ignore'], allowFail: true }); // a few template files are not valid py3

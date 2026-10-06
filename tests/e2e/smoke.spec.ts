@@ -16,6 +16,7 @@ test.beforeAll(async () => {
     env: { ...process.env, DESK_ENGINE_MOCK: '1', DESK_MOCK_STEP: '0.02', DESK_USER_DATA: userData, VITE_DEV_SERVER_URL: '' },
   });
   page = await app.firstWindow();
+  await page.waitForURL(/^app:\/\/desk\//); // the window loads once the engine is up
 });
 
 test.afterAll(async () => {

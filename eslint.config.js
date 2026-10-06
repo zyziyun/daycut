@@ -22,4 +22,5 @@ export default tseslint.config(
     },
   },
   { files: ['scripts/**/*.mjs'], languageOptions: { globals: globals.node } },
+  { files: ['**/*.cjs'], languageOptions: { globals: globals.node, sourceType: 'commonjs' } },
 );

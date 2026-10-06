@@ -21,6 +21,7 @@ import { findBundledRuntime, runtimeEnv, type BundledRuntime } from './runtime';
 import { buildCsp, isAppUrl, isSafeExternal } from './security';
 import { SettingsStore } from './settings';
 import { checkForUpdates, initUpdater, installUpdate } from './updater';
+import { registerV02Ipc, startCleanupLoop, v02EngineEnv } from './v02';
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
@@ -82,6 +83,16 @@ function engineEnv(bundled: boolean) {
   };
 }
 
+/** v0.2: API keys from the OS keychain + imported persona, for the sidecar only. */
+function withV02Env<T extends { env?: Record<string, string> }>(e: T): T {
+  return { ...e, env: { ...e.env, ...v02EngineEnv(app.getPath('userData'), settings.get()) } };
+}
+
+function settingsMsg() {
+  const s = settings.get();
+  return { ...s, firstRunDone: s.firstRunDone || process.env.DESK_SKIP_FIRST_RUN === '1', resolved: resolvedConfig() };
+}
+
 function startEngine(): Promise<EngineInfo> {
   engine?.stop();
   const cfg = resolvedConfig();
@@ -92,13 +103,16 @@ function startEngine(): Promise<EngineInfo> {
     dataDir: cfg.dataDir,
     allowedOrigins: [APP_ORIGIN],
     mock: process.env.DESK_ENGINE_MOCK === '1',
-    ...engineEnv(cfg.runtime !== 'system'),
+    ...withV02Env(engineEnv(cfg.runtime !== 'system')),
   });
   assets.markEngineStarted();
   enginePromise = engine.start().then((info) => {
     client = new EngineClient(info.baseUrl, info.token);
     rootsCache = { at: 0, roots: [] };
     win?.webContents.send('engine:status', { ok: true, mode: info.mode, note: info.note });
+    // the page's CSP pins the engine port: reload when it was served before this engine was up (first launch,
+    // slow cold start) or for a previous engine (restart, settings change)
+    if (!IS_DEV && win && servedPort !== undefined && servedPort !== enginePort()) win.reload();
     return info;
   });
   enginePromise.catch((e) => {
@@ -128,10 +142,16 @@ async function mediaRoots(): Promise<string[]> {
   return rootsCache.roots;
 }
 
-function currentCsp(): string {
-  const port = engine?.info ? Number(new URL(engine.info.baseUrl).port) : null;
-  return buildCsp({ dev: IS_DEV, enginePort: port, devServerUrl: DEV_URL });
+function enginePort(): number | null {
+  return engine?.info ? Number(new URL(engine.info.baseUrl).port) : null;
 }
+
+function currentCsp(): string {
+  return buildCsp({ dev: IS_DEV, enginePort: enginePort(), devServerUrl: DEV_URL });
+}
+
+/** Engine port baked into the CSP of the page the window last loaded (undefined: nothing loaded yet). */
+let servedPort: number | null | undefined;
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -152,6 +172,7 @@ function registerProtocols() {
     let file = path.join(RENDERER_DIR, rel);
     if (!fs.existsSync(file)) file = path.join(RENDERER_DIR, 'index.html');
     const body = await fs.promises.readFile(file);
+    if (file.endsWith('.html')) servedPort = enginePort();
     return new Response(body, {
       headers: {
         'content-type': MIME[path.extname(file)] ?? 'application/octet-stream',
@@ -223,7 +244,11 @@ function createWindow() {
     }
   });
   browser = new PublishBrowser(win, (s) => win?.webContents.send('publish:state', s));
-  void win.loadURL(IS_DEV ? DEV_URL! : 'app://desk/index.html');
+  // Load once the engine is up (or failed / is slow) so the page's CSP already carries the engine port;
+  // startEngine() reloads the page if the port changes later.
+  const url = IS_DEV ? DEV_URL! : 'app://desk/index.html';
+  const engineSettled = enginePromise ? enginePromise.then(() => {}, () => {}) : Promise.resolve();
+  void Promise.race([engineSettled, new Promise((r) => setTimeout(r, 15000))]).then(() => win?.loadURL(url));
   win.on('closed', () => {
     browser?.destroy();
     browser = null;
@@ -262,15 +287,15 @@ function registerIpc() {
     }
   });
   handle('engine:restart', async () => {
-    const info = await startEngine();
-    if (!IS_DEV) setTimeout(() => win?.reload(), 50); // new port -> new CSP
-    return info;
+    return startEngine(); // reloads the window for the new port's CSP
   });
   handle('dialog:openFile', async (p) => {
     const filters =
       p.kind === 'video'
         ? [{ name: 'Video', extensions: ['mp4', 'mov', 'm4v', 'mkv', 'webm'] }]
-        : [{ name: 'Segments', extensions: ['yaml', 'yml', 'csv', 'json'] }];
+        : p.kind === 'persona'
+          ? [{ name: 'Persona', extensions: ['yaml', 'yml'] }]
+          : [{ name: 'Segments', extensions: ['yaml', 'yml', 'csv', 'json'] }];
     const r = await dialog.showOpenDialog(win!, { properties: ['openFile'], filters });
     return r.canceled ? null : r.filePaths[0];
   });
@@ -285,7 +310,7 @@ function registerIpc() {
     if (fs.existsSync(p.path)) shell.showItemInFolder(p.path);
   });
   handle('clipboard:write', async (p) => clipboard.writeText(p.text));
-  handle('settings:get', async () => ({ ...settings.get(), resolved: resolvedConfig() }));
+  handle('settings:get', async () => settingsMsg());
   handle('settings:set', async (p) => {
     if (p.enginePath && !fs.existsSync(path.join(p.enginePath, 'lib', 'vstudio'))) {
       throw new Error('enginePath must be the video-studio repo (with lib/vstudio)');
@@ -294,9 +319,9 @@ function registerIpc() {
     const before = settings.get();
     const next = settings.set(p);
     if (next.enginePath !== before.enginePath || next.python !== before.python) {
-      void startEngine().then(() => !IS_DEV && win?.reload());
+      void startEngine();
     }
-    return { ...next, resolved: resolvedConfig() };
+    return { ...settingsMsg(), ...next, firstRunDone: settingsMsg().firstRunDone, resolved: resolvedConfig() };
   });
 
   // ---------------- publish
@@ -369,6 +394,7 @@ function registerIpc() {
   handle('assets:cancel', async () => assets.cancel());
   handle('update:check', async () => checkForUpdates());
   handle('update:install', async () => installUpdate());
+  registerV02Ipc(handle, { userData: app.getPath('userData'), settings: () => settings, win: () => win, client: () => client, settingsMsg });
 }
 
 function loadAssetManifest(): AssetManifest {
@@ -403,6 +429,7 @@ if (!app.requestSingleInstanceLock()) {
     hardenDefaultSession();
     registerProtocols();
     registerIpc();
+    startCleanupLoop(() => client);
     void startEngine().catch((e) => console.error('[engine]', e.message));
     createWindow();
     initUpdater((u) => win?.webContents.send('update:state', u));
