@@ -260,7 +260,10 @@ def parse_json(text):
         return json.loads(t)
     except ValueError:
         pass
-    for pat in (r"\{.*\}", r"\[.*\]"):
+    pats = [r"\{.*\}", r"\[.*\]"]
+    if 0 <= t.find("[") < (t.find("{") if "{" in t else len(t)):
+        pats.reverse()                           # a top-level array
+    for pat in pats:
         m = re.search(pat, t, re.S)
         if not m:
             continue
@@ -326,7 +329,7 @@ def _reasoning_model(model):
 
 
 def _openai_chat(system, prompt, model, schema, max_tokens, timeout, opts, base_url=None, api_key=None,
-                 json_mode="json_schema", official=True):
+                 json_mode="openai", official=True):
     try:
         from openai import OpenAI
     except ImportError as e:
@@ -345,11 +348,11 @@ def _openai_chat(system, prompt, model, schema, max_tokens, timeout, opts, base_
         req["max_tokens"] = max_tokens
     if opts.get("temperature") is not None and not _reasoning_model(model):
         req["temperature"] = opts["temperature"]
-    if schema and json_mode:
-        if isinstance(schema, dict) and json_mode == "json_schema":
+    if schema and json_mode:                     # "openai": both modes; presets: what the server supports
+        if isinstance(schema, dict) and json_mode in ("openai", "json_schema"):
             req["response_format"] = {"type": "json_schema",
                                       "json_schema": {"name": "output", "schema": schema, "strict": False}}
-        elif json_mode == "json_object":
+        elif json_mode in ("openai", "json_object"):
             req["response_format"] = {"type": "json_object"}
         elif json_mode == "json_schema":         # LM Studio: no json_object, a permissive object schema
             req["response_format"] = {"type": "json_schema",
