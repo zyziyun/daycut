@@ -14,13 +14,29 @@ Full reference: `references/BATCH.md`.
 
 Run from the project folder; `export PYTHONPATH="$VSTUDIO/lib:$PYTHONPATH"`.
 
-**Which recipe.** `talkinghead-clips`: a folder of 口播 clips. `longform-slices`: one long talking-head / podcast
+**Which recipe.** `talkinghead-clips`: a folder of 口播 clips (generic cleanup + captions). `talkinghead-folder`:
+the same folder through the full talkinghead V pipeline (去气口 / fillers, progress bar and the STYLE switches,
+face-aware layout). `podcast-clips`: a call / interview / video-podcast recording through call-clips (face
+tracks + stickers, name-label blur, the coverage proof as a QC gate). `longform-slices`: one long talking-head / podcast
 recording, reframed (face / pad-blur). `longform-split`: a screen-share lecture / meeting recording - every short in
 the longform-to-short split layout (title band + text-following screen crop, chapter card, 记笔记 panel, hook,
 captions, cover, post) with `privacy.exclude` for participant tiles. Look at one frame first
 (`ffmpeg -ss 600 -i rec.mp4 -frames:v 1 frame.png`): a tile column / name tags -> `longform-split` + an exclude.
 
-**1. Transcript + job list.** The creator decides what gets cut. Transcribe once (or reuse
+**0. Client (optional, one per customer).** `python3 -m vstudio.batch client init --client acme --set
+'{"name": "Acme", "platforms": ["xiaohongshu:full", "douyin"], "tags": ["RAG"], "cleanup_profile": "tight"}'`; a
+batch with `client: acme` (spec) or `plan --client acme` inherits platforms, tag set, glossary (term fixes), filler
+rules, brand colours, cleanup profile and confirm policy; caption fixes accepted in review are added to the client's
+glossary.
+
+**1. Transcript + job list.** The creator decides what gets cut. `plan-segments` drafts the list:
+```bash
+python3 -m vstudio.batch plan-segments --source raw/lecture.mp4 --client acme --count 12 --min 45 --max 150 \
+    --provider auto        # claude with ANTHROPIC_API_KEY, else rule-based; --provider openai only when asked
+```
+-> `plan-<stem>/segments.draft.yaml` (rows with title, chapter, hook + hook candidates, notes, tags, why, risk,
+score; edges on word boundaries; the transcript is shared with the batch). Go through it with the creator: drop,
+move, retitle rows - never ship the draft unseen. Or transcribe once (or reuse
 `work/audio16k.json` from longform-to-short), read it, and write `segments.yaml` with the creator - one row per
 short: `id`, `range` (or `start`/`end`), `title`, optional `hook: {src: [t0, t1], lines: [..]}` or several
 `hooks` for A/B variants, `body`, `tags`. Offer the list as a menu with a recommendation; don't silently choose.
@@ -72,7 +88,28 @@ green jobs that were not sampled; red and sampled ones need a look. Then
 `review --apply decisions.json`; rejected jobs become `needs-replan` (edit their rows, `plan` again), cleanup
 replies re-cut on the next `run`.
 
-**6. Package + clean.**
+**5b. Edits in review (no re-cut).** One job at a time, then re-run only what the edit touched:
+```bash
+B=batch-course-slices
+python3 -m vstudio.batch job edit --batch $B --job ep02 --op caption --cue 7 --text "..."   # must match the audio
+python3 -m vstudio.batch job edit --batch $B --job ep02 --op hook --pick 1                  # -1: no cold open
+python3 -m vstudio.batch job edit --batch $B --job ep02 --op trim --start 315.2 --end 360   # word-snapped
+python3 -m vstudio.batch job edit --batch $B --job ep02 --op cover --t 12.5 --text "上半句|下半句"
+python3 -m vstudio.batch job edit --batch $B --job ep02 --op copy --title "..." --tags RAG,LLM   # posts rewritten
+python3 -m vstudio.batch job rerun --batch $B --job ep02     # caption edit: re-burn + export only (~1 min / 4 platforms)
+```
+A caption change that adds or drops a spoken word is refused with the reason. `job edit --op undo` reverts the last
+edit. The desk times each review (`timing --job ep02 --event start|stop --what review`).
+
+**6. Deliver / package + clean.**
+```bash
+python3 -m vstudio.batch deliver --batch batch-course-slices --zip   # client package: per-platform folders, 文案.md,
+                                                                     # 排期表.csv, 交付说明.md, manifest hash
+python3 -m vstudio.batch metrics --batch batch-course-slices          # review s / clip, rework, red rate, cost
+python3 -m vstudio.batch metrics --all --csv > weekly_metrics.csv    # the weekly pilot sheet
+python3 -m vstudio.batch cleanup-sources --all                       # dry run; --yes deletes sources past due
+```
+Or only the publish folders:
 ```bash
 python3 -m vstudio.batch package --batch batch-course-slices --per-day 2 --start 2026-10-10
 python3 -m vstudio.batch clean --batch batch-course-slices   # drop regenerable intermediates; `du` for disk use
@@ -85,5 +122,7 @@ Read the confirmation code and item count back to the creator; nothing is upload
   refused at plan time; the split QC is red if a crop ever touched an excluded rect.
 - Only AUTO cleanup edits are cut until the creator replies; the reply goes through the review page / sheet.
 - QC green is necessary, not sufficient: always look at the pilot and the sampled greens.
-- Media stays local; `asr.backend: openai` sends audio to OpenAI, the `claude` planner sends transcript text to
-  Anthropic.
+- Media stays local; `asr.backend: openai` sends audio to OpenAI, `plan-segments --provider claude|openai` (and the
+  `claude` planner) sends transcript text to Anthropic / OpenAI.
+- `cleanup-sources --yes` deletes the creator's source recordings for good (past the delivery's cleanup date, never
+  one another batch still needs): run the dry run first and say what will go.

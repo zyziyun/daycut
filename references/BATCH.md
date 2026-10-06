@@ -6,6 +6,8 @@ and the cleanup edits that need a yes). Code: `lib/vstudio/batch/`. Playbook: `w
 
 ```
 plan -> estimate -> run --pilot N -> review -> run --confirm-pilot -> review (--approve-green) -> package -> clean
+v0.2 (desk): client init -> plan-segments -> plan -> ... -> review + job edit / job rerun (+ timing) -> deliver
+             -> metrics (--csv weekly sheet) -> cleanup-sources
 ```
 
 ## 1. Spec
@@ -13,7 +15,9 @@ plan -> estimate -> run --pilot N -> review -> run --confirm-pilot -> review (--
 ```yaml
 # batch.yaml (paths relative to this file)
 name: course-slices
-recipe: longform-slices            # or longform-split (screen-share lectures, section 2b), talkinghead-clips, a plugin
+recipe: longform-slices            # or longform-split (screen-share lectures, section 2b), talkinghead-clips,
+                                   # podcast-clips / talkinghead-folder (section 2d), a plugin
+client: acme                       # optional client workspace (section 8): defaults, glossary, persona overlay
 inputs:
   source: raw/lecture.mp4          # longform-*: the long recording (read-only, never copied; may come from the
                                    # segments.yaml header `source:` instead)
@@ -145,6 +149,25 @@ defaults: {platforms: ["xiaohongshu:vertical", "xiaohongshu:full", "douyin", "yo
 | export | cpu-render | `make_vertical.py --targets <platforms>`: vertical master per canvas from the SOURCE + `vstudio.export.export_one` per target (captions, loudness, cover, post) | |
 | verify / proofread | asr / api | re-ASR of the job's audio (lost words); caption proofreading (2c) -> the cues `make_vertical` burns | |
 | qc / preview | cpu / cpu-render | the gates of section 4 + privacy; contact sheet + snippet | |
+
+### 2d. `podcast-clips` and `talkinghead-folder` (P1 recipes)
+
+`podcast-clips` runs `workflows/call-clips` per job: the batch writes a one-clip `clips.json` (windows from the
+row range or `windows`, up to 2 cold-open pulls from `hook` / `hooks` / `hook_candidates`, title lines from the
+title, a 记笔记 panel from `notes`, the spec `call:` tiles / stickers / name mask / auto-trim) and runs
+`build_clips.py --only <id> --clean-master` (selection -> auto-trim -> hook montage -> face tracks + masks / name
+blur -> layout -> captions) -> caption-free master + cues; `coverage` re-runs `verify_coverage.py` on every guest
+track (QC `face-mask-coverage`: under 100 % is red); then proofread / export (captions re-laid per platform) / qc
+/ preview. `call: {host_region, guests: [{name, region, sticker, label}], no_mask, renderer: render_vertical.py |
+render_trio.py, name_mask, auto_trim, cut_profile, renderer_args: [scale=2.4], notes_panels}`.
+
+`talkinghead-folder` runs the talkinghead V track per clip of `inputs.folder` / `inputs.clips`: `asr`
+(prep_sources.sh: HDR -> SDR + whisper) -> `cleanup` (edit_list.py = every whisper sentence, within the row range
+when trimmed -> cut_pass1.py (word-safe edges, 气口) -> strict_pass.py apply with the row's `cleanup_reply`; CONFIRM
+rows go to the review page) -> `face` (face_track.py; optional) -> `compose` (config.py -> compose.py all
+--clean-master with `talkinghead: {style, keywords, hook_speed, body_speed}`) -> proofread / export / qc / preview.
+Both recipes' lost-word gate is the workflow's own (no batch `verify` re-hearing); the workflow scripts run
+unchanged, as subprocesses.
 
 ### 2c. Caption proofreading (`proofread`, both recipe families)
 
@@ -328,6 +351,73 @@ up (pitch kept) up to `max_speed`; the other platforms keep the full cut. The ma
 * F0 is one machine, one process (threads). Remote workers, variant compare / cherry-pick, a web board and
   phone review are F1 / F2 (see the design notes).
 
+## 8. v0.2: clients, segment planning, review edits, delivery, metrics
+
+**Clients** (`clients.py`). `client init|show|update|list --client C [--set JSON]`; `C` = a folder or a slug under
+`$VSTUDIO_CLIENTS` (default `$VSTUDIO_HOME/clients`, `~/.config/vstudio/clients`). `client.yaml`: `name, style,
+platforms, tags, glossary [{wrong, right, source, batch, job}], fillers {extra, keep}, brand {accent, highlight,
+ink, ground}, cover_style frame|collage|face|text, cleanup_profile, confirm_policy, language, asr_prompt, delivery
+{cleanup_days 30, per_day, times}, notes, crm {history [{stage, at}], revenue [{at, amount}], posts, price_next}`.
+`effective` = persona-derived defaults <- client.yaml. `update` also takes `glossary_add`, `glossary_remove`,
+`tags_add`. A batch with `client:` gets, at plan time, the client's platforms / cleanup profile / confirm policy /
+asr prompt as defaults (the spec wins), its glossary appended to `subtitles.term_fixes` (in the stage keys) and
+`client.persona.yaml` (persona + brand, fillers, tags, term fixes) which every `run` activates
+(`VSTUDIO_PERSONA`). Planned batches are registered in `$VSTUDIO_HOME/batches.json` (+ the client's
+`batches.json`) for `metrics --client / --all` and `cleanup-sources`.
+
+**plan-segments** (`segplan.py`). `--source F [--transcript T] [--client C] [--count N] [--min S --max S]
+[--platforms a,b] [--provider auto|claude|openai|none] [--model M] [--out DIR]` -> `segments.draft.yaml` (a
+segments.yaml: `source:` + `transcript:` header, rows `{id, start, end, title, chapter, hook {start, end, text},
+hook_candidates, notes, tags, why, risk, score}`) + `plan.json`. The transcript comes from `--transcript` or
+`vstudio.asr` and is stored in the shared per-source cache (`transcripts.py`, keyed by the source's content hash),
+which the batch `asr` stage reads - one whisper run per recording. Sentences from pauses / punctuation; edges on
+word boundaries (`cleanup.snap_range`). Providers: `none` (rule-based: TextTiling topic shifts + long pauses ->
+chapters; windows of whole sentences in [min, max] scored on tf-idf keyword density, self-containedness - no opening
+connective / back-reference, complete ending, no topic shift inside, not followed by its own conclusion - filler
+ratio and speech share; extractive titles / hooks / notes), `claude` (anthropic SDK, claude-opus-5-5, only with
+ANTHROPIC_API_KEY; `auto` picks it), `openai` (named explicitly, OPENAI_API_KEY, gpt-4.1). The LLM gets numbered
+sentences and answers sentence-index ranges; too few / overlapping / invalid picks are filled from the rule-based
+ranking; titles are checked against `publish.title_max` of every target platform (小红书 counts latin as 0.5) and
+shortened when over; hook text is always the transcript of the hook range. Measured on a 72-min lecture against a
+hand-made 24-segment plan (count 24, 45-160 s): openai gpt-4.1 covered 71 % of the hand segments by at least half,
+time recall 0.73 / precision 0.67, 2 of 24 ranges identical, $0.09, 27 s; the rule-based planner 0.48 / 0.56
+(random placement of the same lengths: 0.46 / 0.54), titles noisy - use it offline, review every row.
+
+**Review edits** (`edits.py`). `job edit --batch B --job J --op caption --cue I --text T | trim --start A --end B |
+hook --pick K | cover --t S --text T | copy --title --body --tags a,b | undo` -> `{ok, faithful, reason, rerun,
+pending, glossary_added, undone, adopted, value, warnings}`. Each edit changes the job params (kept in the `edits`
+table, re-applied by a later `plan`) and reports the stages whose input key changes (`rerun`; `pending`
+accumulates until `job rerun`). Caption: accepted only when `proofread.faithful` passes against the cue, the ASR
+text under it or the verify re-hearing (sound-alike swaps only); stored as `caption_overrides [{i, from, to}]`,
+applied at export (no proofread / LLM re-run); the fixed spans go to the client glossary (undo removes them). Trim:
+source seconds snapped to word edges. Hook: `hook_candidates` / `hooks` index, -1 = none. Cover: output seconds ->
+source (`cover_shot`, longform-split) or a frame + text card (other recipes); text `a|b` = two lines. Copy: title
+length checked per platform; the published `post.md` files are rewritten in place, stage keys keep the planned
+copy (`_copy_orig`), only QC re-runs. A reviewed job whose keys drifted since its run (engine update, learned
+policy) has those outputs adopted (`adopted`), so an edit never silently re-cuts. `job rerun --batch B --job J
+[--json-events]` re-runs exactly the stale stages and puts the job back for review; the batch state is left as it
+was. longform-split keeps the caption-free vertical masters in `jobs/<id>/export.masters/` (keyed by everything they
+depend on) and re-exports with `make_vertical.py --reuse-masters`: on the 72-min lecture batch a caption edit of
+one job re-burned 4 platform exports in 57 s (the first export took 175 s).
+
+**Deliver** (`deliver.py`). `deliver --batch B [--client C] [--zip] [--cleanup-days N] [--out DIR]` packages first
+when needed, then `<batch>/delivery/<client>-<batch>-<date>/`: one folder per platform (小红书, 抖音, ...;
+`NN_<title>.mp4` + `_封面.jpg`), `文案.md` (title / body / tags per post + the AI-content label reminder),
+`排期表.csv`, `交付说明.md` (counts, duration, platforms, QC notes, cleanup date), `manifest.json` (sha256 + bytes of
+every file, the package confirmation code, a delivery code; `deliver.verify_delivery`) and the zip. Recorded in the
+store with the cleanup due date (default the client's `delivery.cleanup_days`, 30; 0 = never). `cleanup-sources
+[--batch B | --client C | --all] [--yes]` deletes the sources of deliveries past due (dry run without `--yes`),
+never one a registered batch that is not delivered / due still uses.
+
+**Metrics + timing** (`metrics.py`). `timing --batch B --job J --event start|stop|add --what review [--seconds S]`
+-> the `timing` table (review seconds = the stop events' active seconds, else stop - start). `metrics --batch B |
+--client C | --all [--csv]` -> `{scope, summary {jobs, done, approved, review_s_total, review_s_median, rework_rate,
+red_rate, cost_per_clip, deliveries, delivered_clips, turnaround_h, ...}, jobs [...], batches [...]}`; `--csv` adds
+`columns`, `rows`, `csv` - the weekly pilot sheet (周, 线索数, 沟通数, 样片数, 确认试点数, 交付数, 回传数据数, 付费数, 收入(¥),
+交付条数, 人审秒数中位数/条, 返工率, 质检红灯率, 每条成本($), 内容号播放中位数, 内容号收藏率, 内容号涨粉, 工作室号有效线索; funnel
+columns from client.yaml `crm`, content columns left blank; W1 = the week of `$VSTUDIO_WEEK0`, default
+2026-10-06). Without `--json`, `--csv` prints the CSV.
+
 ## 7. JSON API (desk app, scripts)
 
 Every command a UI needs has a JSON form; paths are absolute; with `--json` stdout carries only the JSON document
@@ -342,7 +432,15 @@ Every command a UI needs has a JSON form; paths are absolute; with `--json` stdo
 | `job ID --json [--no-words]` | `{job, recipe, stages, events, cleanup {reply, parts [{part, ranges, stats, edits [{id, t0, t1, kind, text, action, reason, cut}]}], row_cuts, edges, hook_edge}, transcript [{range, text, words [{w, t, te, cut}]}], captions {cues, changes, rejected, warnings, low_confidence, fillers_left, filler_edges}, verify, qc {status, reasons, warnings, checks, suggestions}, media {final, exports, length_fit, sheet, snippet}}` - `cut` is the effective state under the job's current cleanup reply |
 | `package --json` | `{dir, code, items, jobs, manifest, manifest_data, verify}` |
 | `verify-manifest MANIFEST` | `{ok, code, stored, items, reason}` (exit 1 on a mismatch) |
-| `recipes --json` | `[{name, label, description, inputs: [{key, label, kind file|dir|text|rects|rect, required, accept, help}], row_keys, stages: [{name, deps, shared, resource}]}]` |
+| `recipes --json` | `{recipes: [{name, label, description, inputs: [{key, label, kind file|dir|text|rects|rect, required, accept, help}], row_keys, stages: [{name, deps, shared, resource}]}], capabilities: [plan-segments, client, job-edit, job-rerun, deliver, metrics, timing, ...]}` |
+| `plan-segments ... --json` | `{provider, model, duration, draft, transcript, segments: [{id, start, end, title, chapter, hook {start, end, text}, hook_candidates, notes, tags, why, risk, score}], chapters, words: [{w, t, te}], cost_usd, warnings}` (exit 5: provider unavailable) |
+| `client init/show/update --client C [--set JSON] --json` | `{ok, dir, path, config, effective, batches}` |
+| `job edit ... --json` | `{ok, faithful, reason, rerun, pending, glossary_added, undone, adopted, value, warnings}` (exit 1 when refused) |
+| `job rerun --job J [--json / --json-events]` | `{ok, job, state, qc, stages, seconds}` / the `run` events + `rerun-done` |
+| `job show ID --json` (or `job ID`) | as `job` below, plus `edit {range, hook, hook_pick, hook_candidates, cover, copy, caption_overrides, history, pending, review_s}` |
+| `deliver ... --json` | `{ok, dir, zip, items, jobs, duration_s, code, package_code, manifest, manifest_data, cleanup_on}` |
+| `metrics ... --json [--csv]` | `{scope, summary, jobs, batches, deliveries? , columns?, rows?, csv?}` |
+| `timing ... --json` | `{ok, job, event, what, seconds, total_s, review_s}` |
 | `status --json`, `estimate --json` | as before |
 
 In Python: `from vstudio.batch import verify_manifest` (also `vstudio.batch.package.verify_manifest`) and

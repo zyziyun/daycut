@@ -9,6 +9,9 @@
     python -m vstudio.batch review --apply decisions.json
     python -m vstudio.batch package --per-day 2        # publish folders + schedule.csv + confirmation code
     python -m vstudio.batch clean                      # drop regenerable intermediates of finished jobs
+    python -m vstudio.batch plan-segments --source rec.mp4 --client acme   # draft segments.yaml from the transcript
+    python -m vstudio.batch job edit --job ep02 --op caption --cue 7 --text "..."; job rerun --job ep02
+    python -m vstudio.batch deliver --zip; metrics --all --csv
 
 Modules: spec (spec / job rows / variants), planner (file | claude stub), recipes (registry, Stage, Recipe,
 Ctx), stages (built-in recipes longform-slices, talkinghead-clips), lfsplit (recipe longform-split: the
@@ -17,6 +20,10 @@ resource classes, resume, retries, circuit breaker, pilot), estimate (bench tabl
 review (HTML grid, decisions), package (publish folders, schedule, manifest hash), hygiene (clean, du).
 api (JSON views for UIs: recipes, review items, job detail, verify_manifest), lengthfit (max_len variants, length
 suggestions).
+v0.2 (desk): clients (client.yaml over the persona), segplan (plan-segments: rule-based / claude / openai),
+transcripts (one transcript per source, shared with the asr stage), edits (job edit / job rerun), deliver (client
+delivery package, source cleanup), metrics (timing, metrics, weekly CSV), podcast + thfolder (recipes
+podcast-clips, talkinghead-folder).
 Docs: references/BATCH.md, workflows/batch/WORKFLOW.md.
 """
 

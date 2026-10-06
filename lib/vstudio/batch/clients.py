@@ -12,7 +12,7 @@ client.yaml keys (all optional except ``name``):
   client's tag set), glossary [{wrong, right, source?, batch?, job?}] (ASR term fixes; accepted caption fixes
   append here), fillers {extra: [..], keep: [..]} (extra 口头禅 to cut / words never cut), brand {accent,
   highlight, ink, ground} (#RRGGBB), cover_style frame | collage | face | text, cleanup_profile gentle |
-  standard | tight, confirm_policy true | false (answer low-risk cleanup questions automatically), language,
+  standard | tight (``strict`` = tight), confirm_policy true | false (answer low-risk cleanup questions automatically), language,
   asr_prompt, delivery {cleanup_days (30), per_day, times}, notes, crm {history: [{stage, at}], revenue:
   [{at, amount}]} (optional funnel data for ``metrics --csv``).
 
@@ -261,8 +261,8 @@ def persona_overlay(eff):
     plats = eff.get("platforms") or []
     ov = dict(
         subtitles=dict(term_fixes={g["wrong"]: g["right"] for g in eff.get("glossary") or []}),
-        cleanup=dict(profile=eff.get("cleanup_profile") if eff.get("cleanup_profile") in
-                     ("gentle", "standard", "tight") else "standard",
+        cleanup=dict(profile={"strict": "tight"}.get(eff.get("cleanup_profile"), eff.get("cleanup_profile"))
+                     if eff.get("cleanup_profile") in ("gentle", "standard", "tight", "strict") else "standard",
                      fillers_extra=list((eff.get("fillers") or {}).get("extra") or []),
                      never_cut=list((eff.get("fillers") or {}).get("keep") or []),
                      policy=bool(eff.get("confirm_policy", True))),
@@ -390,8 +390,9 @@ def apply_to_spec(spec, client_ref):
     d = spec.setdefault("defaults", {})
     if "platforms" not in ud and eff.get("platforms"):
         d["platforms"] = list(eff["platforms"])
-    if "cleanup_profile" not in ud and eff.get("cleanup_profile") in ("gentle", "standard", "tight", "off"):
-        d["cleanup_profile"] = eff["cleanup_profile"]
+    prof = {"strict": "tight"}.get(eff.get("cleanup_profile"), eff.get("cleanup_profile"))   # desk name -> engine
+    if "cleanup_profile" not in ud and prof in ("gentle", "standard", "tight", "off"):
+        d["cleanup_profile"] = prof
     if "cleanup_policy" not in ud and eff.get("confirm_policy") is False:
         d["cleanup_policy"] = False
     asr = spec.setdefault("asr", {})
