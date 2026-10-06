@@ -18,8 +18,11 @@ platforms:
   xiaohongshu: {lang: zh, variant: bilingual, cover: "3x4", uploader: manual}
   douyin:      {lang: zh, variant: bilingual, cover: "9x16", uploader: manual}   # sau sets 内容由AI生成 itself
   bilibili:    {lang: zh, variant: bilingual, cover: "16x10", uploader: manual}  # sau + tid: <分区 id> if wanted
-  tiktok:      {lang: en, variant: en, cover: "9x16", uploader: manual}
+  tiktok:      {lang: en, variant: en, cover: "9x16", uploader: manual}          # no API adapter (see PUBLISHING.md)
   youtube:     {lang: en, variant: en, cover: "9x16", uploader: manual}          # youtube uploader = Shorts only
+  # API uploaders: api_audited: false (default) = the API project has NOT passed the platform audit -> the post
+  # goes up private (YouTube locks unaudited uploads to private anyway). Set true only after the audit passed
+  # (or env VSTUDIO_YOUTUBE_API_AUDITED=1). Optional privacy: public | unlisted | private (default public).
   reddit_aivideo: {lang: en, variant: en, cover: "9x16", uploader: manual, title_suffix: "AI short, Ep. 1"}
 
 episodes:

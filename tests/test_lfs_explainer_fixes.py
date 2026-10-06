@@ -183,20 +183,29 @@ def test_vertical_split_screen_fills_frame_and_text_is_readable(tmp_path, target
     W, H = L["W"], L["H"]
     y0 = bx["screen"][1]
     assert bx["band"][3] - bx["band"][1] <= 0.17 * (L["content"][3] - L["content"][1])     # slim title band
-    # the screen covers everything from the band to the caption box (no black band above the captions)
-    assert y0 + st["draw_h"] >= L["content"][3]
-    assert st["draw_h"] / H >= 0.6, st
-    # text: measured 8 px lines drawn >= min_text_px, or the zoom is at its cap
+    # the screen fills everything from the band down to the caption band, and never reaches into it: captions
+    # sit in their own lower band, not over the page text (no scrim needed)
+    assert bx["screen"][3] == L["content"][3] <= L["caption"][1]
+    gap = (bx["screen"][3] - y0) - st["draw_h"]           # a region too short at the zoom cap is centred
+    assert gap <= 0.1 * (bx["screen"][3] - y0) and abs(st["draw_y"] - gap / 2) <= 2, st
+    assert st["draw_h"] / H >= 0.45, st
+    # no upscale beyond 2x of the source (720p text only blurs further); readable text or the zoom at its cap
+    assert st["scale"] <= o["max_upscale"] + 1e-3 and st["max_zoom"] == pytest.approx(2.0)
     assert st["line_px"] == pytest.approx(8, abs=1.5)
-    assert st["text_px"] >= o["min_text_px"] - 0.5 or st["scale"] >= o["max_scale"] - 1e-3, st
-    # the reading start (first text line) is inside the visible part, not under the captions
+    assert st["text_px"] >= o["min_text_px"] - 0.5 or st["scale"] >= st["max_zoom"] - 1e-3, st
+    assert st["text_small"] == (st["text_px"] < o["min_text_px"] - 0.5)
+    # the reading start (first text line) is inside the visible part
     canvas = np.zeros((H, W, 3), np.uint8)
-    tile = V.warp(fr, rects[0], (W, st["draw_h"]))
-    dim = V.scrim(L, bx["screen"], st["draw_h"])
-    canvas[y0:y0 + st["draw_h"]] = (tile * dim[:, None, None]).astype(np.uint8)
+    tile = V.warp(fr, rects[0], (W, st["draw_h"]), o["sharpen"])
+    y0 += st["draw_y"]
+    canvas[y0:y0 + st["draw_h"]] = tile
     cv2.imwrite(str(tmp_path / f"snap_{prof.name}_{prof.orientation}.png"), canvas)
     rows = np.where((canvas[y0:L["content"][3], :, 0] < 80).mean(axis=1) > 0.05)[0]
     assert len(rows) > 0 and rows[0] < 0.4 * (L["content"][3] - y0)
+    # the first demo round's layout is still available: screen under the captions, dimmed there
+    fb = V.boxes(L, "split", "title", screen_to="frame")
+    assert fb["screen"][3] == H
+    dim = V.scrim(L, fb["screen"], H - fb["screen"][1])
     assert dim[0] == 1.0 and dim[-1] < 0.6
 
 

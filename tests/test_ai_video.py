@@ -369,3 +369,106 @@ def test_youtube_shorts_guard_and_secrets_outside_repo(tmp_path, monkeypatch):
     monkeypatch.setenv("VSTUDIO_SECRETS", str(ROOT / "secrets"))
     with pytest.raises(PK.UploadRefused, match="inside the repository"):
         PK.secrets_dir()
+
+
+# ------------------------------------------------------------------------------------------- API audit gate
+def test_api_audited_setting_defaults_private(series, monkeypatch, tmp_path):
+    monkeypatch.delenv("VSTUDIO_YOUTUBE_API_AUDITED", raising=False)
+    yt = PK.build_post(series, 1, "youtube")
+    assert yt["api_audited"] is False and yt["privacy"] == "private" and yt["privacy_requested"] == "public"
+    assert any("not audited" in w for w in yt["warnings"]) and any("scheduled" in w for w in yt["warnings"])
+    assert "privacy" not in PK.build_post(series, 1, "douyin")             # browser uploader: no API rule
+    (tmp_path / "v.mp4").write_bytes(b"x" * 10)
+    code_unaudited = PK.confirm_code(yt, str(tmp_path / "v.mp4"), None)
+    plan = PK.plan_text(yt, str(tmp_path / "v.mp4"), None, code_unaudited)
+    assert "NOT AUDITED" in plan and "(private)" in plan
+    series["platforms"]["youtube"]["api_audited"] = True
+    ok = PK.build_post(series, 1, "youtube")
+    assert ok["privacy"] == "public" and not any("audited" in w for w in ok["warnings"])
+    assert PK.confirm_code(ok, str(tmp_path / "v.mp4"), None) != code_unaudited   # flipping it needs a new plan
+    monkeypatch.setenv("VSTUDIO_YOUTUBE_API_AUDITED", "0")                  # env wins over the series file
+    assert PK.build_post(series, 1, "youtube")["privacy"] == "private"
+    monkeypatch.setenv("VSTUDIO_YOUTUBE_API_AUDITED", "1")
+    series["platforms"]["youtube"]["api_audited"] = False
+    assert PK.build_post(series, 1, "youtube")["api_audited"] is True
+    level, warn = PK.api_privacy("tiktok", False)
+    assert level == "SELF_ONLY" and "SELF_ONLY" in warn and "5 users" in warn
+    assert PK.api_privacy("tiktok", True, "PUBLIC_TO_EVERYONE") == ("PUBLIC_TO_EVERYONE", None)
+    assert PK.api_privacy("youtube", False, "private") == ("private", None)
+    with pytest.raises(SystemExit):
+        PK.api_privacy("youtube", True, "friends")
+
+
+class FakeYT:
+    """Mock googleapiclient YouTube resource: records the insert, reports `returns` as the privacy."""
+    def __init__(self, returns):
+        self.returns, self.inserted = returns, None
+
+    def videos(self):
+        return self
+
+    def thumbnails(self):
+        return self
+
+    def insert(self, part, body, media_body):
+        self.inserted = body
+        return _Exec({"id": "abc123", "status": {"privacyStatus": self.returns}})
+
+    def list(self, part, id):
+        return _Exec({"items": [{"id": id, "status": {"privacyStatus": self.returns}}]})
+
+    def set(self, videoId, media_body):
+        return _Exec({})
+
+
+class _Exec:
+    def __init__(self, r):
+        self.r = r
+
+    def execute(self):
+        return self.r
+
+
+def test_youtube_publish_verifies_returned_privacy(series, monkeypatch):
+    monkeypatch.delenv("VSTUDIO_YOUTUBE_API_AUDITED", raising=False)
+    series["episodes"][0]["publish_at"] = None
+    media = lambda *a, **k: None  # noqa: E731
+    post = PK.build_post(series, 1, "youtube")                              # unaudited -> private, as planned
+    yt, msgs = FakeYT("private"), []
+    r = PK.youtube_publish(yt, post, "v.mp4", None, out=msgs.append, media=media)
+    assert yt.inserted["status"]["privacyStatus"] == "private"
+    assert r["status"] == "private" and not r["locked"] and any("Studio" in m for m in msgs)
+    series["platforms"]["youtube"]["api_audited"] = True                    # claims audited, but YouTube locks it
+    post = PK.build_post(series, 1, "youtube")
+    yt = FakeYT("private")
+    r = PK.youtube_publish(yt, post, "v.mp4", None, out=lambda *a: None, media=media)
+    assert yt.inserted["status"]["privacyStatus"] == "public" and r["locked"] and r["status"] == "locked"
+    r = PK.youtube_publish(FakeYT("public"), post, "v.mp4", None, out=lambda *a: None, media=media)
+    assert r["status"] == "published" and not r["locked"]
+
+
+def test_upload_warns_before_and_logs_locked(series, tmp_path, monkeypatch):
+    monkeypatch.delenv("VSTUDIO_YOUTUBE_API_AUDITED", raising=False)
+    series["episodes"][0]["publish_at"] = None
+    pd = tmp_path / "out" / "ep01" / "youtube"
+    pd.mkdir(parents=True)
+    (pd / "video.mp4").write_bytes(b"v" * 64)
+    (pd / "post.json").write_text(json.dumps(PK.build_post(series, 1, "youtube"), ensure_ascii=False))
+    order, calls = [], []
+
+    def fake(post, video, cover, out=print):
+        calls.append(post["privacy"])
+        order.append("UPLOAD")
+        return {"status": "locked", "privacy": "private", "locked": True, "url": "https://example.invalid/y"}
+    ups = {"manual": fake, "youtube": fake}
+    code = PK.upload(series, 1, "youtube", confirm=None, uploaders=ups, out=lambda *a: None)["code"]
+    with pytest.raises(PK.UploadRefused, match="does not match"):           # confirm gate still first
+        PK.upload(series, 1, "youtube", confirm="deadbeef", uploaders=ups, out=order.append)
+    assert calls == []
+    PK.upload(series, 1, "youtube", confirm=code, uploaders=ups, out=order.append)
+    assert calls == ["private"]
+    assert order[0].startswith("WARNING youtube: API client not audited") and order[1] == "UPLOAD"
+    assert "locked" in order[2]
+    assert json.loads((tmp_path / "publish_log.json").read_text())["1"]["youtube"]["status"] == "locked"
+    PK.upload(series, 1, "youtube", confirm=code, uploaders=ups, out=lambda *a: None)
+    assert calls == ["private"]                                             # locked counts as uploaded

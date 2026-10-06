@@ -43,8 +43,18 @@ def extra_cover_sizes(profiles, base=("16x9", "3x4")):
     return out
 
 
+def _fit(text, size, maxw):
+    """Bold CJK font at ``size``, shrunk only when ``text`` would run past ``maxw`` px."""
+    f = _lfc.font(size, True)
+    if f.getlength(text) <= maxw:
+        return f
+    from vstudio import draw
+    return draw.fit_font(text, "cjk-bold", size, maxw, min_size=max(12, size // 3))
+
+
 def episode_cover(cfg, ep, shot, N, size=(1080, 1440)):
-    """Portrait episode cover: '<series> · n/N' eyebrow, big1 / big2 / sub, framed screenshot bottom-right.
+    """Portrait episode cover: '<series> · n/N' eyebrow (ep["eyebrow"] overrides), big1 / big2 / sub (shrunk to
+    fit the width when too long), framed screenshot bottom-right.
     1080x1440 is the original layout; taller canvases (9:16) keep the text block and push the shot down."""
     P = _lfc.palette(cfg)
     W, H = size
@@ -53,14 +63,18 @@ def episode_cover(cfg, ep, shot, N, size=(1080, 1440)):
     d = ImageDraw.Draw(im)
     y0 = int((H - 1440 * k) * 0.45)          # 0 at 3:4; centres the 3:4 block on taller covers
     series = cfg.get("episodes.series", "")
-    d.text((int(84 * k), y0 + int(130 * k)), f"{series} · {ep['n']}/{N}" if series else f"{ep['n']}/{N}",
-           font=_lfc.font(int(40 * k), True), fill=P["accent"])
+    eyebrow = ep.get("eyebrow") or (f"{series} · {ep['n']}/{N}" if series else f"{ep['n']}/{N}")
+    d.text((int(84 * k), y0 + int(130 * k)), eyebrow, font=_fit(eyebrow, int(40 * k), W - int(168 * k)),
+           fill=P["accent"])
     if ep.get("big1"):
-        d.text((int(80 * k), y0 + int(300 * k)), ep["big1"], font=_lfc.font(int(108 * k), True), fill=P["ink"])
+        d.text((int(80 * k), y0 + int(300 * k)), ep["big1"], font=_fit(ep["big1"], int(108 * k), W - int(160 * k)),
+               fill=P["ink"])
     if ep.get("big2"):
-        d.text((int(80 * k), y0 + int(440 * k)), ep["big2"], font=_lfc.font(int(132 * k), True), fill=P["accent"])
+        d.text((int(80 * k), y0 + int(440 * k)), ep["big2"], font=_fit(ep["big2"], int(132 * k), W - int(160 * k)),
+               fill=P["accent"])
     if ep.get("sub"):
-        d.text((int(84 * k), y0 + int(660 * k)), ep["sub"], font=_lfc.font(int(46 * k), True), fill=(225, 225, 228))
+        d.text((int(84 * k), y0 + int(660 * k)), ep["sub"], font=_fit(ep["sub"], int(46 * k), W - int(168 * k)),
+               fill=(225, 225, 228))
     fr = cover.framed(shot, int(900 * k), -3, P["accent"])
     im.paste(fr, (W - fr.width + int(120 * k), H - fr.height + int(60 * k)), fr)
     return im

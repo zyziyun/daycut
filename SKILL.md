@@ -34,6 +34,7 @@ Identify the **main material** and the **deliverable**, then open that workflow'
 | Square slides for a vertical video | `workflows/slides` |
 | Writing the script before recording, pronunciation drills | `workflows/preproduction` |
 | Script / idea → AI-generated video (可灵 Kling, Seedance/即梦, MiniMax/海螺): shot list, prompts, credit plan, take review, assembly; AI series → 投稿 packages + per-post confirmed upload | `workflows/ai-video` |
+| Many videos at once (10s–100s): one long recording → N vertical slices, a folder of 口播 clips → cleaned shorts; pilot, resumable runs, QC gates, exception-only review page, publish packages | `workflows/batch` (`python -m vstudio.batch`, references/BATCH.md) |
 | A topic → published short, end to end (script → drill → slides → record → clean up → edit → cover → export → post) | `references/SOP_SHORT_VIDEO.md` |
 
 ### What the creator typically says → workflow
@@ -52,6 +53,7 @@ Identify the **main material** and the **deliverable**, then open that workflow'
 | 幻灯片, slides | `slides` |
 | 写稿, 口播稿, script, 发音练习, 跟读, shadowing | `preproduction` |
 | AI生成视频, 可灵, 即梦, Seedance, 海螺, 分镜prompt, 定妆照, 积分, 投稿, 多平台发布, 连载, 系列 | `ai-video` |
+| 批量, 一次做几十/几百条, 批量切片, 矩阵, batch, 审片 | `batch` |
 | 从选题到发布, 完整流程, SOP, end to end | `references/SOP_SHORT_VIDEO.md` |
 | 一个视频发多个平台, 抖音/Shorts/B站版本 | any workflow → `python -m vstudio.export` |
 

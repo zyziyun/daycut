@@ -14,6 +14,10 @@ Rules
   - Credentials never live in the repo or the project: YouTube OAuth files in $VSTUDIO_SECRETS
     (default ~/.config/video-studio/secrets); browser-cookie uploaders (social-auto-upload) keep their own
     login state in their own folder ($SAU_DIR). Neither is vendored here.
+  - Official upload APIs lock unaudited API clients to private (YouTube Data API projects created after
+    2020-07-28; TikTok Content Posting API: SELF_ONLY). Per platform `api_audited` (series.yaml, or env
+    VSTUDIO_<PLATFORM>_API_AUDITED=1) defaults to false: the post then defaults to private, the plan and the
+    upload warn, and the returned status is checked afterwards (a silent lock is reported as `locked`).
   - Every post carries the AI-generated disclosure. Where the uploader cannot set the platform's AI label,
     the CHECKLIST says so and the plan prints a reminder to tick it by hand.
 Sources (video per language variant, covers per ratio) should already be exported with `python -m vstudio.export`.
@@ -49,6 +53,19 @@ AI_LABEL = {
     ("youtube", "youtube"): ("auto", "status.containsSyntheticMedia = true"),
     ("sau", "douyin"): ("auto", "--declaration 内容由AI生成"),
 }
+# Upload APIs that silently restrict clients which have not passed the platform's API audit. [S: platform API docs]
+API_AUDIT = {
+    "youtube": "YouTube Data API: uploads from API projects created after 2020-07-28 that have not passed the "
+               "YouTube API Services audit are locked to private (no error); new projects get ~100 uploads/day",
+    "tiktok": "TikTok Content Posting API: unaudited clients can only post SELF_ONLY, the posting account must be "
+              "private, max 5 users per 24 h",
+}
+# (uploader, platform) pairs that publish through an official API and are therefore subject to API_AUDIT.
+API_UPLOADERS = {("youtube", "youtube")}
+PRIVACY = {"youtube": ("public", "unlisted", "private"),
+           "tiktok": ("PUBLIC_TO_EVERYONE", "MUTUAL_FOLLOW_FRIENDS", "FOLLOWER_OF_CREATOR", "SELF_ONLY")}
+PRIVATE = {"youtube": "private", "tiktok": "SELF_ONLY"}
+UPLOADED = ("published", "scheduled", "private", "locked")    # anything that already put the video on the platform
 
 
 def base_platform(name):
@@ -92,6 +109,32 @@ def load_log(cfg):
 def save_log(cfg, log):
     with open(_p(cfg, cfg["log"]), "w", encoding="utf-8") as f:
         json.dump(log, f, ensure_ascii=False, indent=1)
+
+
+def api_audited(pc, platform):
+    """Has this platform's API client passed the platform audit? env VSTUDIO_<PLATFORM>_API_AUDITED wins, then
+    `api_audited` in the series platform entry; default False (assume the restricted, unaudited mode)."""
+    env = os.environ.get(f"VSTUDIO_{base_platform(platform).upper()}_API_AUDITED", "").strip().lower()
+    if env:
+        return env in ("1", "true", "yes", "on")
+    return bool((pc or {}).get("api_audited", False))
+
+
+def api_privacy(platform, audited, requested=None):
+    """-> (privacy to request, warning or None). Unaudited clients get the platform's private level up front,
+    so the upload does what the plan says instead of being silently downgraded."""
+    b = base_platform(platform)
+    levels = PRIVACY.get(b)
+    if not levels:
+        return requested, None
+    want = requested or levels[0]
+    if want not in levels:
+        raise SystemExit(f"{platform}: privacy {want!r} not one of {', '.join(levels)}")
+    if audited or want == PRIVATE[b]:
+        return want, None
+    return PRIVATE[b], (f"{b} API not audited (api_audited: false): uploading as {PRIVATE[b]}, not {want}. "
+                        f"{API_AUDIT[b]}. Publish it from the official app/Studio, or set api_audited: true "
+                        f"once the audit has passed.")
 
 
 # ------------------------------------------------------------------------------------------- copy
@@ -149,11 +192,22 @@ def build_post(cfg, n, platform, log=None):
     up = pc.get("uploader", "manual")
     how, note = AI_LABEL.get((up, b), ("manual", "tick the platform's AI-generated / 内容由AI生成 label by hand"))
     ai = bool(s.get("ai_generated", True))
+    api = {}
+    if (up, b) in API_UPLOADERS:
+        audited = api_audited(pc, platform)
+        privacy, warn = api_privacy(platform, audited, pc.get("privacy"))
+        if warn:
+            warnings.append(warn)
+            if (e.get("publish_at") or {}).get(lang):
+                warnings.append(f"{b}: scheduled release of an unaudited upload is not expected to go public "
+                                f"either; schedule it in the platform UI")
+        api = {"api_audited": audited, "privacy": privacy,
+               "privacy_requested": pc.get("privacy") or PRIVACY[b][0]}
     return {"platform": platform, "episode": int(n), "slug": e.get("slug", f"ep{n}"), "lang": lang,
             "title": title if tmax else "", "body": body, "tags": tags,
             "publish_at": (e.get("publish_at") or {}).get(lang), "collection": name,
             "ai_generated": ai, "ai_label": {"how": how if ai else "n/a", "note": note if ai else ""},
-            "uploader": up, "warnings": warnings, **({k: pc[k] for k in ("tid", "account") if k in pc})}
+            "uploader": up, "warnings": warnings, **api, **({k: pc[k] for k in ("tid", "account") if k in pc})}
 
 
 def fit_cover(src, dst, ratio):
@@ -179,7 +233,9 @@ def checklist(post, video, cover):
     lines = [f"# {post['platform']} - ep {post['episode']} ({post['slug']})", "",
              f"- video: `{os.path.basename(video)}`", f"- cover: `{os.path.basename(cover) if cover else '(none)'}`",
              f"- title: {post['title'] or '(platform has no title)'}",
-             f"- schedule: {post['publish_at'] or 'immediately'}", f"- collection / 合集: {post['collection'] or '-'}",
+             f"- schedule: {post['publish_at'] or 'immediately'}"
+             + (f" ({post['privacy']}; api_audited: {post['api_audited']})" if "privacy" in post else ""),
+             f"- collection / 合集: {post['collection'] or '-'}",
              f"- AI label: {post['ai_label']['how']} - {post['ai_label']['note']}",
              f"- upload page: {UPLOAD_PAGES.get(base_platform(post['platform']), '-')}"]
     if post["warnings"]:
@@ -252,7 +308,7 @@ def load_package(cfg, n, platform):
 
 def confirm_code(post, video, cover):
     keys = ("platform", "episode", "title", "body", "tags", "publish_at", "ai_generated", "ai_label", "uploader",
-            "collection", "account", "tid")
+            "collection", "account", "tid", "api_audited", "privacy")
     blob = json.dumps({k: post.get(k) for k in keys}, ensure_ascii=False, sort_keys=True)
     blob += _sha1_file(video) + (_sha1_file(cover) if cover else "")
     return hashlib.sha1(blob.encode()).hexdigest()[:8]
@@ -267,8 +323,10 @@ def plan_text(post, video, cover, code):
              f"  title : {post['title'] or '(none)'}",
              f"  body  : {body[0] if body else ''}" + (f"  (+{len(body) - 1} lines)" if len(body) > 1 else ""),
              f"  tags  : {' '.join(post['tags']) or '-'}",
-             f"  when  : {post['publish_at'] or 'IMMEDIATELY (public)'}",
+             f"  when  : {post['publish_at'] or 'IMMEDIATELY'} ({post.get('privacy') or 'public'})",
              f"  AI    : {post['ai_label']['how']} - {post['ai_label']['note']}"]
+    if post.get("api_audited") is False:
+        lines += [f"  api   : NOT AUDITED - {API_AUDIT[base_platform(post['platform'])]}"]
     lines += [f"  warn  : {w}" for w in post.get("warnings", [])]
     lines += [f"To publish exactly this, run with:  --confirm {code}"]
     return "\n".join(lines)
@@ -291,7 +349,7 @@ def upload(cfg, n, platform, confirm=None, uploaders=None, out=print):
         raise UploadRefused(f"episode {n} status={e.get('status')!r}; set it to ready after fixing")
     log = load_log(cfg)
     prev = (log.get(str(n)) or {}).get(platform) or {}
-    if prev.get("status") in ("published", "scheduled"):
+    if prev.get("status") in UPLOADED:
         out(f"{platform}: ep {n} already {prev['status']}; skipped")
         return prev
     if confirm != code:
@@ -299,7 +357,14 @@ def upload(cfg, n, platform, confirm=None, uploaders=None, out=print):
                             "another post). Re-run `plan` and review it again.")
     ups = uploaders or UPLOADERS
     fn = ups.get(post["uploader"]) or ups["manual"]
+    if post.get("api_audited") is False:
+        out(f"WARNING {platform}: API client not audited - this upload will be {post['privacy']} "
+            f"(not {post['privacy_requested']}). {API_AUDIT[base_platform(platform)]}.")
     res = fn(post, video, cover, out=out)
+    if res.get("locked"):
+        out(f"WARNING {platform}: the platform returned privacy {res.get('privacy')!r} - the upload was locked "
+            f"(API audit; set api_audited: false until it passes). Publish it from the official app/Studio; "
+            f"logged as 'locked'.")
     log.setdefault(str(n), {})[platform] = {**res, "at": datetime.datetime.now().isoformat(timespec="seconds"),
                                             "code": code}
     save_log(cfg, log)
@@ -334,6 +399,10 @@ def youtube_shorts_guard(video):
 
 def youtube_uploader(post, video, cover, out=print):
     youtube_shorts_guard(video)
+    return youtube_publish(_youtube_client(), post, video, cover, out=out)
+
+
+def _youtube_client():
     d = secrets_dir()
     client = os.path.join(d, "youtube_client_secret.json")
     if not os.path.exists(client):
@@ -342,7 +411,6 @@ def youtube_uploader(post, video, cover, out=print):
     from google.oauth2.credentials import Credentials
     from google_auth_oauthlib.flow import InstalledAppFlow
     from googleapiclient.discovery import build as gbuild
-    from googleapiclient.http import MediaFileUpload
     scopes = ["https://www.googleapis.com/auth/youtube"]
     tok = os.path.join(d, "youtube_token.json")
     creds = Credentials.from_authorized_user_file(tok, scopes) if os.path.exists(tok) else None
@@ -353,23 +421,51 @@ def youtube_uploader(post, video, cover, out=print):
             creds = InstalledAppFlow.from_client_secrets_file(client, scopes).run_local_server(port=0)
         with open(tok, "w") as f:
             f.write(creds.to_json())
-    yt = gbuild("youtube", "v3", credentials=creds)
+    return gbuild("youtube", "v3", credentials=creds)
+
+
+def youtube_publish(yt, post, video, cover, out=print, media=None):
+    """Insert + verify. Unaudited projects are locked to private without an error, so the privacy the API
+    reports back (insert response, then videos.list) is compared with what was asked for."""
+    if media is None:
+        from googleapiclient.http import MediaFileUpload as media
     body = post["body"] if "#shorts" in post["body"].lower() else post["body"] + " #Shorts"
-    status = {"privacyStatus": "public", "selfDeclaredMadeForKids": False,
+    audited = post["api_audited"] if "api_audited" in post else api_audited({}, post["platform"])  # old packages
+    privacy = post.get("privacy") or api_privacy(post["platform"], audited)[0]
+    status = {"privacyStatus": privacy, "selfDeclaredMadeForKids": False,
               "containsSyntheticMedia": bool(post.get("ai_generated"))}
     when = _schedule(post.get("publish_at"))
     if when:
         status.update(privacyStatus="private", publishAt=when.astimezone(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
     res = yt.videos().insert(part="snippet,status", body={"snippet": {
         "title": post["title"], "description": body, "tags": post["tags"], "categoryId": post.get("category", "23")},
-        "status": status}, media_body=MediaFileUpload(video, chunksize=-1, resumable=True)).execute()
+        "status": status}, media_body=media(video, chunksize=-1, resumable=True)).execute()
     vid = res["id"]
     if cover:
         try:
-            yt.thumbnails().set(videoId=vid, media_body=MediaFileUpload(cover)).execute()
+            yt.thumbnails().set(videoId=vid, media_body=media(cover)).execute()
         except Exception as ex:          # custom thumbnails need a verified channel
             out(f"youtube: thumbnail not set ({ex.__class__.__name__})")
-    return {"status": "scheduled" if when else "published", "url": f"https://youtube.com/shorts/{vid}"}
+    got = (res.get("status") or {}).get("privacyStatus")
+    try:
+        items = yt.videos().list(part="status", id=vid).execute().get("items") or []
+        if items:
+            got = (items[0].get("status") or {}).get("privacyStatus") or got
+    except Exception as ex:              # verification is best effort; the insert already succeeded
+        out(f"youtube: could not re-read the status ({ex.__class__.__name__}); using the insert response")
+    url = f"https://youtube.com/shorts/{vid}"
+    if when:
+        st, want = "scheduled", "private"
+    elif privacy == "public":
+        st, want = "published", "public"
+    else:
+        st, want = "private", privacy
+    locked = got is not None and got != want
+    if locked:                           # upload() prints the warning and logs it as locked
+        st = "locked"
+    elif not audited:
+        out(f"youtube: uploaded as {got or privacy} (unaudited API). Make it public in YouTube Studio / the app: {url}")
+    return {"status": st, "url": url, "privacy": got or privacy, "locked": locked}
 
 
 def _schedule(publish_at):

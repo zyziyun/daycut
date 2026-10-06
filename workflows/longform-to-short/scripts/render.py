@@ -17,6 +17,10 @@ encoder priming at every join: ~25 ms per segment, so audio drifted behind the p
 With explicit platform targets (config targets / platform) the first horizontal target's profile sets the
 canvas (when render.size is not given) and the loudness / true-peak target (vstudio.platform).
 
+render.audio_only (default false; set by the batch `longform-split` recipe): only the audio track is rendered
+(same per-item PCM grid, fades, pitch and loudness) -> <out>/final.mp4 without a video stream; make_vertical.py
+re-composes every picture from the source anyway, so the 16:9 picture is not needed for vertical-only jobs.
+
 Usage: python3 render.py work/config.py [--from N]   (--from: reuse already-rendered segments < N)
 """
 import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
@@ -41,6 +45,7 @@ BG = cfg.get("render.pad_color", "0x141414")
 FPS = cfg.get("render.fps", 24)
 VID = ["-c:v", "libx264", "-preset", "medium", "-crf", str(cfg.get("render.crf", 19)), "-pix_fmt", "yuv420p"]
 SR = 48000
+AUDIO_ONLY = bool(cfg.get("render.audio_only"))
 os.makedirs("seg", exist_ok=True)
 
 timeline = _lfc.load_json("timeline.json")
@@ -77,6 +82,9 @@ for n, it in enumerate(timeline):
         sting = ["-i", "card_sting.wav"] if os.path.exists("card_sting.wav") else \
             ["-f", "lavfi", "-t", str(it["dur"]), "-i", f"anullsrc=r={SR}:cl=stereo"]
         v, a = outputs(n, "0:v:0", "1:a:0")
+        if AUDIO_ONLY:
+            media.run(["ffmpeg", "-y", *sting, "-af", exact_af(n), *outputs(n, None, "0:a:0")[1]])
+            continue
         media.run(["ffmpeg", "-y", "-loop", "1", "-t", str(it["dur"]), "-i", it["png"], *sting,
                   "-vf", f"scale={W}:{H},setsar=1,fps={FPS},{HOLD}", *v, "-af", exact_af(n), *a])
         continue
@@ -96,6 +104,11 @@ for n, it in enumerate(timeline):
         af = f"aresample=48000,{media.atempo_chain(sp)},asetpts=PTS-STARTPTS"
     af += ("," + ",".join(fades)) if fades else ""
     af += "," + exact_af(n)
+
+    if AUDIO_ONLY:                               # the item's audio exactly as below, no picture
+        media.run(["ffmpeg", "-y", "-ss", str(t0), "-to", str(t1), "-i", SRC, "-af", af,
+                   *outputs(n, None, "0:a:0")[1]])
+        continue
 
     if it["kind"] == "freeze":
         still = f"seg/still_{n:03d}.png"
@@ -132,16 +145,20 @@ for n, it in enumerate(timeline):
     if n % 8 == 0:
         print(f"[{n + 1}/{len(timeline)}]", flush=True)
 
-with open("concat.txt", "w") as f:
-    f.writelines(f"file '{p}'\n" for p in files)
-media.run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", "concat.txt", "-an", "-c", "copy", "joined_v.mp4"])
 _lfc.concat_wavs([p[:-4] + ".wav" for p in files], "joined.wav")      # PCM: sample-exact joins
-media.run(["ffmpeg", "-y", "-i", "joined_v.mp4", "-i", "joined.wav", "-map", "0:v:0", "-map", "1:a:0",
-           "-c", "copy", "joined.mkv"])
+if AUDIO_ONLY:
+    joined = "joined.wav"
+else:
+    with open("concat.txt", "w") as f:
+        f.writelines(f"file '{p}'\n" for p in files)
+    media.run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", "concat.txt", "-an", "-c", "copy", "joined_v.mp4"])
+    media.run(["ffmpeg", "-y", "-i", "joined_v.mp4", "-i", "joined.wav", "-map", "0:v:0", "-map", "1:a:0",
+               "-c", "copy", "joined.mkv"])
+    joined = "joined.mkv"
 final = os.path.join(cfg.out, "final.mp4")
 # two-pass linear loudnorm to persona audio.loudness_lufs (-14) or the target profile, 48 kHz stereo, video copied;
 # the only AAC encode of the cut
 loud = dict(lufs=PROF.loudness["lufs"], tp=PROF.loudness["tp"]) if PROF else {}
-m = audio.loudnorm_2pass("joined.mkv", final, **loud)
+m = audio.loudnorm_2pass(joined, final, **loud)
 print(f"loudnorm: measured {m['input_i']:.1f} LUFS -> target")
 print("done:", final)

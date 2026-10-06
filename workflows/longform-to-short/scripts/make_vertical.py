@@ -7,7 +7,8 @@ For every vertical target canvas (config targets / platform, e.g. ["xiaohongshu:
      hook / 记笔记 panels are re-drawn for the canvas, audio is taken from <out>/final.mp4 (same timeline);
   2. per episode (config.episodes, else the whole cut) and per target, `vstudio.export.export_one`: captions
      from work/cues.json re-laid into the profile's caption box (bigger font, <= max chars per line, long cues
-     split), loudness to the profile target, length / title / description checks, cover fitted to the
+     split; no caption starts / ends on a filler, ``vstudio.proofread.fix_filler_edges``; none while a hook's
+     lines are on screen - vertical.hook_captions: hide (default) | show), loudness to the profile target, length / title / description checks, cover fitted to the
      profile's cover size, post stub -> <out>/vertical/ep<N>/<platform>-<orientation>.mp4 (+ .cover.jpg,
      .post.md, .crop.json) and <out>/vertical/manifest.json (sizes, loudness, warnings; merged across runs, so
      a second `--targets youtube-shorts:vertical` run adds to the 小红书 entries instead of replacing them).
@@ -19,7 +20,11 @@ crop of the shared page), speaker, pad-blur. See _vertical.py for the tracking d
 
 Privacy: the screen crop never leaves the item's crop (geometry crop span: shared page minus browser
 chrome / bookmark bar, or the code-zoom box); the speaker crop never leaves vertical.speaker.region;
-vertical.exclude rects (participant tiles, name tags) are painted out of the source first.
+vertical.exclude rects (participant tiles, name tags) are painted out of the source first. Episode covers take
+their screenshot from <out>/final.mp4 (the 16:9 render); with render.audio_only (no picture there) or
+vertical.cover_from_source they take it from the SOURCE instead, through the same guards: the frame at that
+moment, exclude rects painted out, cut to the timeline item's crop. cards.number [i, n] overrides the
+"i / n" on the chapter card (batch jobs: the job's place in the series).
 
 Usage: python3 make_vertical.py work/config.py [--targets xiaohongshu:vertical,xiaohongshu:full]
        [--mode split|screen|speaker|pad-blur] [--episodes 1,2] [--master-only] [--preset veryfast]
@@ -196,7 +201,8 @@ def render_master(group):
         if n <= 0:
             continue
         if it["kind"] == "card":
-            card = overlays.chapter_card(chap[k][0], n_cards, it["title"], size=(W, H), theme=T, ground=PAL["bg"])
+            ci, cn = cfg.get("cards.number") or (chap[k][0], n_cards)
+            card = overlays.chapter_card(ci, cn, it["title"], size=(W, H), theme=T, ground=PAL["bg"])
             img = V.pil_bgr(card)
             for _ in range(n):
                 pe.stdin.write(img.tobytes())
@@ -242,6 +248,18 @@ def render_master(group):
             hook_ov = (np.asarray(hb), (W - hb.width) // 2, L["content"][1] + 24)
         panel_y = (bx["screen"][1] if "screen" in bx and len(bx) > 1 else L["content"][1]) + 16
         last = None
+        pops = (rec.get("screen") or {}).get("popups") or []
+        keep_clean = {p["clean"] for p in pops if p.get("masked") and not p.get("future")}
+        clean = {}
+        for p in pops:                                  # popups open from the clip start: decode the clean page
+            if p.get("masked") and p.get("future"):     # (the frame after they close) before the loop
+                ts = t0 + p["clean"] / FPS * it["speed"]
+                g = V.frames(V.decode_cmd(src, ts, min(t1, ts + 0.5), it["speed"], FPS), SW if src == SRC else region[2],
+                             SH if src == SRC else region[3])
+                f_ = next(g, None)
+                g.close()
+                if f_ is not None:
+                    clean[p["clean"]] = V.paint_out(f_, EXCLUDE).copy()
         gen = V.frames(V.decode_cmd(src, t0, t1, it["speed"], FPS), SW if src == SRC else region[2],
                        SH if src == SRC else region[3])
         for i in range(n):
@@ -249,6 +267,10 @@ def render_master(group):
             fr = last if fr is None else V.paint_out(fr, EXCLUDE)
             if fr is None:
                 fr = still if still is not None else np.zeros((SH, SW, 3), np.uint8)
+            if i in keep_clean:
+                clean[i] = fr.copy()
+            if pops:                                    # transient editor popups: the page as it was before
+                fr = V.mask_popups(fr, i, pops, clean)
             last = fr
             img = base.copy()
             scr = still if still is not None else fr
@@ -259,11 +281,11 @@ def render_master(group):
                 else:
                     r = srects[min(i, len(srects) - 1)]
                     privacy_hits += V.overlaps(r, EXCLUDE)
-                    dh = st["draw_h"]
-                    tile = V.warp(scr, r, (x1 - x0, dh))
+                    dh, dy = st["draw_h"], st.get("draw_y", 0)
+                    tile = V.warp(scr, r, (x1 - x0, dh), SCREEN_O.get("sharpen", 0.0))
                     if dim is not None:
                         tile = (tile * dim[:, None, None]).astype(np.uint8)
-                    img[y0:y0 + dh, x0:x1] = tile
+                    img[y0 + dy:y0 + dy + dh, x0:x1] = tile
             if "speaker" in bx:
                 x0, y0, x1, y1 = bx["speaker"]
                 r = prects[min(i, len(prects) - 1)]
@@ -293,16 +315,46 @@ def render_master(group):
 
 
 # ------------------------------------------------------------------------------------------- exports
+def source_shot(t_final, png):
+    """Cover screenshot straight from the source at final time t_final (the clip item playing then, else the next
+    one): exclude rects painted out, cut to that item's crop - nothing outside the screen region can show."""
+    from PIL import Image
+    clips = [it for it in timeline if it["kind"] != "card" and it.get("demo_slice") is None and it.get("crop")]
+    if not clips:
+        sys.exit("no source clip with a crop for the cover screenshot")
+    it = next((c for c in clips if c["final_t0"] <= t_final < c["final_t0"] + (c["t1"] - c["t0"]) / c["speed"]), None) \
+        or next((c for c in clips if c["final_t0"] >= t_final), clips[-1])
+    ts = it["still_at"] if it["kind"] == "freeze" else \
+        min(it["t1"] - 0.05, it["t0"] + max(0.0, t_final - it["final_t0"]) * it["speed"])
+    media.grab_frame(SRC, ts, png)
+    fr = V.paint_out(cv2.imread(png), EXCLUDE)
+    cw, ch, cx, cy = [int(v) for v in it["crop"]]
+    return Image.fromarray(cv2.cvtColor(fr[cy:cy + ch, cx:cx + cw], cv2.COLOR_BGR2RGB))
+
+
 def episode_covers(ep, N, sizes, ddir):
     t_shot = _lfc.map_src(timeline, ep["shot_src"], "fwd") if ep.get("shot_src") is not None else \
         ep["a"] + min(60.0, ((ep["b"] or total) - ep["a"]) / 2)
-    shot = MC.shot_at(cfg, t_shot, "vertical/ep_shot.png")
+    if cfg.get("render.audio_only") or VC.get("cover_from_source"):
+        shot = source_shot(t_shot, "vertical/ep_shot.png")
+    else:
+        shot = MC.shot_at(cfg, t_shot, "vertical/ep_shot.png")
     paths = []
     for name, size in sizes.items():
         p = os.path.join(ddir, f"cover_{name}.png")
         MC.episode_cover(cfg, ep, shot, N, size).save(p)
         paths.append(p)
     return paths
+
+
+def hook_windows():
+    """Final-time windows [(a, b)] of the hook items that show their lines (title band or hook box)."""
+    out = []
+    for it in timeline:
+        if it.get("hook") and it["kind"] != "card" and ((it.get("hook_lines") or cfg.get("hook.lines"))):
+            a = float(it["final_t0"])
+            out.append((a, a + (float(it["t1"]) - float(it["t0"])) / float(it["speed"])))
+    return out
 
 
 def main():
@@ -327,9 +379,19 @@ def main():
     manifest = dict(targets=[p.key for p in vprofs], masters={f"{w}x{h}": m[0] for (w, h), m in masters.items()},
                     episodes=[], warnings=[])
     cap_profs = {p.key: p for p in vprofs}       # vstudio.platform.fit_text_size fits the caption box height itself
-    relaid = {p.key: V.relayout_cues(cues, cap_profs[p.key]) for p in vprofs}
+    from vstudio import platform as PF
+    from vstudio import proofread as PRF
+    hooks = hook_windows()
+    if hooks and VC.get("hook_captions", "hide") == "hide":   # the hook's lines are on screen: no second copy
+        cues = [c for c in cues if not any(a - 0.05 <= (c.start + c.end) / 2 < b for a, b in hooks)]
+    relaid, edge_log = {}, {}
+    for p in vprofs:
+        rc = [c.to_dict() for c in V.relayout_cues(cues, cap_profs[p.key])]
+        rc, edge_log[p.key] = PRF.fix_filler_edges(rc, fits=lambda t, _p=cap_profs[p.key]: PF.fit_text_size(_p, t)["fits"])
+        relaid[p.key] = [Cue.from_dict(c) for c in rc]
     for p in vprofs:
         _lfc.dump_json([c.to_dict() for c in relaid[p.key]], f"vertical/cues.{p.name}-{p.orientation}.json")
+        _lfc.dump_json(edge_log[p.key], f"vertical/filler_edges.{p.name}-{p.orientation}.json")
     for ep in eps:
         if pick and ep["n"] not in pick:
             continue

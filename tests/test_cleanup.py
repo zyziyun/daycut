@@ -472,9 +472,12 @@ def test_write_sidecar_for_a_derived_cut(zh, tmp_path):
                       .read_text(encoding="utf-8"))["tag"] == tag
     got = [dict(w=w["w"], t=w["t"], te=w["te"]) for w in S["words"]]       # a perfect re-ASR of the cut
     assert cleanup.verify(out, got=got, write=False)["ok"]
-    lost = [w for w in got if w["w"] != "例子。"]
+    lost = [w for w in got if cleanup.load_words([w])[0]["n"] not in ("很", "好")]   # right after the joint
     rep = cleanup.verify(out, got=lost, write=False)
-    assert not rep["ok"] and "例子" in rep["missing"][0]["text"]
+    assert not rep["ok"] and rep["missing"][0]["text"] == "很好" and rep["missing"][0]["joint_dist"] < 0.1
+    far = [w for w in got if w["w"] != "例子。"]                            # missing far from any joint: ASR variance
+    rep = cleanup.verify(out, got=far, write=False)
+    assert rep["ok"] and any("例子" in x["text"] for x in rep["asr_variance"])
 
 
 # ------------------------------------------------------------------ apply / verify (ffmpeg)
@@ -603,3 +606,28 @@ def test_cli_audio_only(tmp_path):
     got = tmp_path / "got.json"
     got.write_text(json.dumps(fake_asr_from(s["truth"])(out)), encoding="utf-8")
     assert run("verify", out, "--transcript", str(got)).returncode == 0
+
+
+def test_subword_pieces_merge_so_er_is_not_cut_from_english_words():
+    """Whisper splits 'engineer' into ' engine' + 'er' (no leading space): the piece must not be read as the
+    hesitation 'er'. A spaced ' er' after a pause stays a hesitation."""
+    segs = [dict(start=0.0, end=3.0, text="", words=[
+        dict(word="非常", start=0.0, end=0.4), dict(word=" engine", start=0.45, end=0.8),
+        dict(word="er", start=0.8, end=0.95), dict(word="导向", start=1.0, end=1.4),
+        dict(word=" er", start=2.0, end=2.2), dict(word="对", start=2.6, end=2.8)])]
+    W = cleanup.load_words(dict(segments=segs))
+    assert [w["w"] for w in W] == ["非常", "engineer", "导向", "er", "对"]
+    E = cleanup.detect(W, profile="standard")
+    cut_text = {e["text"] for e in E if e["kind"] == "filler"}
+    assert "engineer" not in cut_text
+
+
+def test_subword_pieces_merge_so_er_is_not_cut_from_english_words():
+    """Whisper splits 'engineer' into ' engine' + 'er' (no leading space): the piece must not be read as the
+    hesitation 'er'. A spaced ' er' after a pause stays a separate word."""
+    segs = [dict(start=0.0, end=3.0, text="", words=[
+        dict(word="非常", start=0.0, end=0.4), dict(word=" engine", start=0.45, end=0.8),
+        dict(word="er", start=0.8, end=0.95), dict(word="导向", start=1.0, end=1.4),
+        dict(word=" er", start=2.0, end=2.2), dict(word="对", start=2.6, end=2.8)])]
+    W = cleanup.load_words(dict(segments=segs))
+    assert [w["w"] for w in W] == ["非常", "engineer", "导向", "er", "对"]

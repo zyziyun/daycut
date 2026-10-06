@@ -44,7 +44,10 @@ Only edits with confidence >= ``auto_min`` (profile) are ``auto``; the creator a
 
 Word-safe cutting: every word edit is cut from the silence after the previous kept word to the silence
 before the next kept word (edges = quiet-run edges +- ``pad``, else the quietest frame between the two
-words), so a cut never lands inside a kept word. ``apply`` snaps kept spans OUTWARD to the frame grid,
+words), so a cut never lands inside a kept word. When one edge of a short word cut sits in running speech (no
+silence there) the syllables are counted from the other edge (``syllable_edges``: energy nuclei vs the removed
+words' syllables) and the cut grows to the valley after the last removed syllable: whisper's word times drift
+0.1-0.2 s in fluent speech, and stopping one valley short leaves a syllable the re-ASR hears (错的[话]). ``apply`` snaps kept spans OUTWARD to the frame grid,
 cuts video with ``cut.cut_segments`` (frame-exact) and builds the audio itself: sample-exact PCM, an
 equal-power micro crossfade (``crossfade`` s, length-neutral) at every join, encoded ONCE -> A/V can't drift.
 
@@ -203,11 +206,29 @@ def load_words(transcript, sentence_gap=0.7):
             si = w.get("seg", si)
         else:
             txt, a, b = w[0], w[1], w[2]
-        txt = str(txt).strip()
+        raw_txt = str(txt)
+        txt = raw_txt.strip()
         if not norm(txt) or a is None or b is None:
             continue
-        out.append(dict(w=txt, n=norm(txt), t=round(float(a), 3), te=round(max(float(a), float(b)), 3), seg=si))
+        out.append(dict(w=txt, n=norm(txt), t=round(float(a), 3), te=round(max(float(a), float(b)), 3), seg=si,
+                        _cont=bool(txt) and raw_txt[:1] not in (" ", "\t") and bool(re.match(r"[A-Za-z]", txt))))
     out.sort(key=lambda w: (w["t"], w["te"]))
+    # Whisper marks a new latin word with a leading space; a latin piece WITHOUT one right after a latin word is
+    # the same word split by the tokenizer ("engine"+"er", "caption"+"er"). Merge it, so a sub-word piece that
+    # looks like a hesitation ("er") is never cut out of the middle of an English word.
+    spaced = any(not w["_cont"] and re.match(r"[A-Za-z]", w["w"]) for w in out)
+    merged = []
+    for w in out:
+        p = merged[-1] if merged else None
+        if spaced and w.pop("_cont") and p is not None and re.search(r"[A-Za-z]$", p["w"]) and \
+                w["t"] - p["te"] < 0.15 and p["seg"] == w["seg"]:
+            p["w"] += w["w"]
+            p["n"] = norm(p["w"])
+            p["te"] = max(p["te"], w["te"])
+            continue
+        w.pop("_cont", None)
+        merged.append(w)
+    out = merged
     for k, w in enumerate(out):
         nxt = out[k + 1] if k + 1 < len(out) else None
         w["i"] = k
@@ -465,6 +486,35 @@ def _filler_rows(R, cx):
         if conf is not None:
             out.append(dict(kind=kind, i=a["i"], j=b["i"], conf=conf, reason=why, text=_join(R[k:k + n])))
         k += n
+    return out
+
+
+# stacked connectors (caption fillers): an abandoned connector right before another one (因为|而且, 然后|但是),
+# a filler connector glued to 的话 (然后的话 / 就是的话 / 那的话), and 的话 right after 另外 (另外的话 -> 另外)
+CONNECT_FIRST = {"因为", "所以", "但是", "而且", "然后", "那", "那么", "就是", "或者", "不过", "所以说", "然后呢"}
+CONNECT_NEXT = {"而且", "然后", "但是", "所以", "不过", "并且", "或者"}
+DEHUA_AFTER = {"然后", "就是", "那", "那么", "所以"}
+DEHUA_TOPIC = {"另外"}
+STACKED_CONF = 0.86
+
+
+def _stacked_rows(R, cx):
+    """Connector stacks that read as noise in captions and carry no meaning in speech (auto at the standard
+    profile, confirm at gentle). Each row removes the redundant part only."""
+    out = []
+    for k in range(len(R) - 1):
+        a, b = R[k], R[k + 1]
+        if b["t"] - a["te"] > 0.4 or a["n"] in cx.never or b["n"] in cx.never:
+            continue
+        if a["n"] in CONNECT_FIRST and b["n"] in CONNECT_NEXT and a["n"] != b["n"] and not a["end"]:
+            out.append(dict(kind="restart", i=a["i"], j=a["i"], conf=STACKED_CONF, text=a["w"],
+                            reason=f"abandoned connector: '{a['w']}' then '{b['w']}' (keep the second)"))
+        elif a["n"] in DEHUA_AFTER and b["n"] == "的话":
+            out.append(dict(kind="filler", i=a["i"], j=b["i"], conf=STACKED_CONF, text=_join([a, b]),
+                            reason=f"'{a['w']}的话': stacked discourse filler"))
+        elif a["n"] in DEHUA_TOPIC and b["n"] == "的话":
+            out.append(dict(kind="filler", i=b["i"], j=b["i"], conf=STACKED_CONF, text=b["w"],
+                            reason=f"'{a['w']}的话': 的话 adds nothing, keep '{a['w']}'"))
     return out
 
 
@@ -773,11 +823,18 @@ def detect(words, audio=None, ranges=None, profile=None, overrides=None, dropped
     for lo, hi in ranges:
         R = [w for w in W if lo <= _mid(w) <= hi]
         cx = _Ctx(W, en, st, lo, hi)
-        found = _filler_rows(R, cx) + _repeat_rows(R, cx)
+        stacked = _stacked_rows(R, cx)
+        found = [r for r in _filler_rows(R, cx)
+                 if not any(x["i"] <= r["i"] and r["j"] <= x["j"] for x in stacked)] + stacked + _repeat_rows(R, cx)
         taken = {x for r in found if r["kind"] in ("repeat", "stammer") for x in range(r["i"], r["j"] + 1)}
         found += _restart_rows(R, cx, taken) + _retake_rows(R, cx) + _merged_rows(R, cx)
         for r in found:
             r["t0"], r["t1"] = _block_edges(cx, r["i"], r["j"], r.get("cut_to"))
+            if en is not None and r.get("cut_to") is None and not r.get("patch"):
+                a, b, why = syllable_edges(W, en, r["t0"], r["t1"], W[r["i"]:r["j"] + 1])
+                if why:
+                    r["t0"], r["t1"] = round(max(lo, a), 3), round(min(hi, b), 3)
+                    r["reason"] += f"; {why}"
             if en is None:
                 r["conf"] = max(0.0, r["conf"] - 0.1)
                 r["reason"] += " (no audio: edges from whisper times)"
@@ -1015,6 +1072,119 @@ def safe_edge(words, t, en=None, side="end", pad=None):
     return t
 
 
+def _hidden_onset(en, a, b, pad, dip_db=6.0):
+    """A kept word's real onset when whisper's start ``b`` is late (the removed word before it swallowed the
+    gap, e.g. 'prom' 300.44-300.76 + '或者' 300.76 while 或者 sounds from 300.59): the end of the last quiet
+    run in [a, b] (-pad), else the deepest dip there if it is near silence (<= thr + dip_db) and >= 40 ms
+    before ``b``. Returns ``b`` when nothing qualifies."""
+    if b - a < 0.05:
+        return b
+    runs = en.quiet_in(a, b)
+    if runs:
+        return round(max(runs[-1][0], min(b, runs[-1][1] - pad)), 3)
+    i0, i1 = max(0, en.idx(a)), min(len(en.sm) - 1, en.idx(b))
+    if i1 <= i0:
+        return b
+    k = i0 + int(np.argmin(en.sm[i0:i1 + 1]))
+    t = en.t(k) + en.win / 2
+    if en.sm[k] <= en.thr + dip_db and t <= b - 0.04:
+        return round(t, 3)
+    return b
+
+
+SYLLABLE = dict(min_prom=4.0, above=4.0, max_shift=0.35, solid=0.03, max_syllables=6)
+
+
+def nuclei(en, a, b, min_prom=None, above=None):
+    """Syllable nuclei of the speech in [a, b] from the smoothed RMS dB of ``en`` (calibrated ``Energy``):
+    (peak times, valley times between consecutive peaks). A peak is a local maximum >= thr + ``above`` dB
+    outside a breath; two peaks whose dip is less than ``min_prom`` dB below the lower one are one syllable
+    (the louder stays). Mandarin is one syllable per character, so counting nuclei tells which side of a
+    valley a character really sits on when whisper's word times drift (they often run 0.1-0.2 s early)."""
+    mp = SYLLABLE["min_prom"] if min_prom is None else min_prom
+    ab = SYLLABLE["above"] if above is None else above
+    if en is None or en.thr is None:
+        return [], []
+    s = getattr(en, "_syl", None)
+    if s is None:                                   # 50 ms smoothing: one bump per syllable, not per phone
+        s = en._syl = np.convolve(en.db, np.ones(5) / 5, mode="same") if len(en.db) >= 5 else en.sm
+    i0, i1 = max(1, en.idx(a)), min(len(s) - 2, en.idx(b))
+    if i1 - i0 < 2:
+        return [], []
+    br = en.breaths or []
+    pk = [k for k in range(i0, i1 + 1) if s[k] >= s[k - 1] and s[k] > s[k + 1] and s[k] >= en.thr + ab
+          and not any(x <= en.t(k) + en.win / 2 <= y for x, y in br)]
+    changed = True
+    while changed and len(pk) > 1:
+        changed = False
+        for n in range(len(pk) - 1):
+            p, q = pk[n], pk[n + 1]
+            v = p + int(np.argmin(s[p:q + 1]))
+            if min(s[p], s[q]) - s[v] < mp:
+                pk.pop(n + 1 if s[p] >= s[q] else n)
+                changed = True
+                break
+    valleys = [p + int(np.argmin(s[p:q + 1])) for p, q in zip(pk, pk[1:])]
+    c = en.win / 2
+    return [round(en.t(k) + c, 3) for k in pk], [round(en.t(k) + c, 3) for k in valleys]
+
+
+def _solid(en, t, w=None):
+    w = SYLLABLE["solid"] if w is None else w
+    return bool(en.quiet_in(t - w, t + w, min_len=0.01))
+
+
+def syllable_edges(words, en, a, b, removed, max_shift=None):
+    """Re-place the edges of a word cut [a, b] that removes ``removed`` (word dicts) by syllable count, so no
+    syllable of a removed word survives next to the cut (re-ASR heard 都是错的[话] where 然后的话 was cut:
+    whisper ended 的话 0.15 s early and the cut stopped one valley short) and no syllable of a kept word goes.
+
+    Only an edge inside running speech moves, and only when the OTHER edge is solid (in a quiet run) so the
+    syllables can be counted from it, and only to cut MORE: when the cut holds fewer nuclei than the removed words
+    have syllables (``cut.syllables``), the moving edge goes to the nearest energy valley (``nuclei``) within
+    ``max_shift`` s where the counts match, and the kept neighbour keeps at least one nucleus. A cut is never
+    shrunk (a removed word must not come back) and long removals (> ``max_syllables``, where counting nuclei is
+    unreliable) are left alone. Returns (a, b, why)."""
+    if en is None or en.thr is None or not removed:
+        return a, b, ""
+    ms = SYLLABLE["max_shift"] if max_shift is None else max_shift
+    W = _words(words)
+    n = sum(cut.syllables(w["w"]) for w in removed)
+    if n > SYLLABLE["max_syllables"]:
+        return a, b, ""
+    i0, i1 = removed[0]["i"], removed[-1]["i"]
+    prv = W[i0 - 1] if i0 >= 1 and W[i0 - 1]["i"] == i0 - 1 else None
+    nxt = W[i1 + 1] if i1 + 1 < len(W) and W[i1 + 1]["i"] == i1 + 1 else None
+    pk, vl = nuclei(en, a - ms - 0.15, b + ms + 0.15)
+    if not pk:
+        return a, b, ""
+
+    def cnt(x, y):
+        return sum(x < t < y for t in pk)
+    sa, sb = _solid(en, a), _solid(en, b)
+    if sa and not sb and nxt is not None:
+        c = cnt(a, b)
+        if c < n:
+            lim = max(nxt["te"], b)
+            cands = [v for v in vl if b < v <= b + ms and v <= lim and cnt(a, v) == n
+                     and cnt(v, nxt["te"] + 0.25) >= 1]
+            if cands:
+                v = min(cands, key=lambda v: abs(v - b))
+                return a, v, (f"end {b:.2f} -> {v:.2f}s: {n} syllable(s) removed, {c} were inside the cut "
+                              "(syllable count)")
+    elif sb and not sa and prv is not None:
+        c = cnt(a, b)
+        if c < n:
+            lo = min(prv["t"], a)
+            cands = [v for v in vl if a - ms <= v < a and v >= lo and cnt(v, b) == n
+                     and cnt(prv["t"] - 0.25, v) >= 1]
+            if cands:
+                v = min(cands, key=lambda v: abs(v - a))
+                return v, b, (f"start {a:.2f} -> {v:.2f}s: {n} syllable(s) removed, {c} were inside the cut "
+                              "(syllable count)")
+    return a, b, ""
+
+
 def snap_cut(words, energy, a, b, pad=None):
     """A manual (editor) cut [a, b] -> word-safe (a', b'), or None when nothing is left (< 30 ms).
 
@@ -1037,6 +1207,11 @@ def snap_cut(words, energy, a, b, pad=None):
     hi = safe_edge(W, nxt[0]["t"], en, "start", pad) if nxt else float("inf")
     a2 = max(min(a, first), lo)
     b2 = min(max(b, inside[-1]["te"]) if inside else b, hi)
+    if en is not None and en.thr is not None and inside and nxt and b2 >= nxt[0]["t"] - 0.05:
+        L = inside[-1]
+        b2 = min(b2, _hidden_onset(en, max(L["t"] + 0.25 * (L["te"] - L["t"]), b2 - 0.5), b2, pad))
+    if en is not None and en.thr is not None and inside:
+        a2, b2, _ = syllable_edges(W, en, a2, b2, inside)
     return (round(a2, 3), round(b2, 3)) if b2 - a2 >= 0.03 else None
 
 
@@ -1491,7 +1666,8 @@ def apply(edl, approve=(), keep=(), all_confirm=False, reply=None, extra_cuts=()
                 if abs(w["t"] - e["patch"][0]) < 0.002:
                     w["t"] = e["patch"][1]
     expected = [w for w in W if not any(a <= _mid(w) <= b for a, b in cut_spans)]
-    write_sidecar(out, src, secs, expected, E.get("language"), fps=F, tag=tag, path=side, edl=edl_path,
+    removed = [dict(w=w["w"], t=w["t"]) for w in W if any(a <= _mid(w) <= b for a, b in cut_spans)]
+    write_sidecar(out, src, secs, expected, E.get("language"), fps=F, tag=tag, path=side, edl=edl_path, removed=removed,
                   applied=ids, approve=sorted(approve), keep_ids=sorted(keep), all_confirm=bool(all_confirm),
                   extra_cuts=[list(c) for c in extra_cuts or ()], crossfade=xf)
     print(f"cleanup: {len(ids)} edits applied, {sum(b - a for a, b in E['ranges']):.1f}s -> {tm.duration:.1f}s -> {out}")
@@ -1499,60 +1675,248 @@ def apply(edl, approve=(), keep=(), all_confirm=False, reply=None, extra_cuts=()
 
 
 # ------------------------------------------------------------------ verify
-def _units(words):
-    out = []
-    for w in words:
-        for m in re.finditer(r"[a-z0-9]+|[^a-z0-9]", norm(w["w"])):
-            out.append((m.group(0), w["t"]))
-    return out
+# Discourse particles whisper routinely drops when it re-hears a cut ("另外的话一个点" -> "另外一个点"): never
+# content, so verify does not count them as lost (they are still fillers for nothing else).
+VERIFY_SOFT = {"的话", "嘛", "呢", "吧", "啦", "了吧", "然后的话", "就是说", "然后呢", "对吧", "是吧"}
+LATIN_WEIGHT = 0.5           # one latin letter counts as half a CJK character; a whole lost latin word >= 2
 
 
-def content_check(expected, got, fillers=None, min_chars=2):
-    """Missing / changed content between the words that SHOULD remain and a fresh ASR of the cut.
-    Fillers are ignored on both sides; a lone CJK character (usually ASR noise) is not flagged; a
-    1-2 unit same-length swap counts as a homophone. Returns [{"kind", "text", "got", "t"}] (t = the
-    expected word's time). Port of talkinghead ``filler_policy.content_check``."""
-    fl = {norm(f) for f in (fillers if fillers is not None else _all_fillers())}
-    E = [(u, t) for u, t in _units(load_words(expected)) if u not in fl]
-    G = [u for u, _ in _units(load_words(got)) if u not in fl]
-    sm = difflib.SequenceMatcher(None, [u for u, _ in E], G, autojunk=False)
+def _verify_fillers(fillers=None):
+    return {norm(f) for f in (fillers if fillers is not None else _all_fillers())} | VERIFY_SOFT
+
+
+# traditional -> simplified for the verify comparison (whisper sometimes answers a zh cut in traditional
+# characters: 實際上 for 实际上 must not read as a lost word). Common characters only; no dependency.
+_T2S_TRAD = ("萬與專業東絲兩嚴喪個豐臨為麗舉義烏樂喬習鄉書買亂爭於虧雲亞產畝親億僅從侖倉儀們價眾優夥會傘偉傳傷倫偽體餘傭俠侶偵側僑儂倆儉債傾償儲兌兒黨蘭關興養獸內岡冊寫軍農馮衝決況凍淨涼減湊幾鳳憑凱擊劃劉則剛創刪別"
+             "劑劍劇勸辦務動勵勁勞勢勻匯區醫華協單賣盧衛卻廠廳曆歷厲壓厭廁廂廈廚縣參雙發變敘疊葉號嘆籲後嚇呂嗎噸聽啟吳嘔員嗆嗚詠鹹響啞嘩喲嘮喚嘖嗇噴嘍噓囑嚕囂園圍國圖圓聖場壞塊堅壇壩墳墜壟壘墾墊塹墮牆壯聲殼壺處備復"
+             "夠頭誇夾奪奮獎奧妝婦媽婁嬌娛嬰嬸孫學寧寶實寵審憲宮寬賓寢對尋導壽將爾塵嘗堯尷屍盡層屆屬屢嶼歲豈崗島嶺嶽峽崢巒鞏幣帥師帳簾幟帶幀幫幹並廣莊慶廬庫應廟龐廢開異棄張彌彎彈強歸當錄彙彥徹徑禦憶懺憂懷態慫悵憐總"
+             "戀懇惡惱悅懸憫驚懼慘懲憊愜慚慣憤願懾懶戲戰戶紮撲執擴掃揚擾撫拋摳搶護報擔擬攏揀擁攔擰撥擇掛摯撻挾撓擋掙擠揮撈損撿換搗據擄擲撣摻攬攙擱摟攪攜攝擺搖攤撐攆擷攢敵斂數齋鬥斬斷無舊時曠曇晝顯晉曬曉暈暉暫曖術樸"
+             "機殺雜權條來楊傑極構樞棗槍楓櫃檸柵標棧棟欄樹棲樣檔橋樺槳樁夢檢橢樓欖檻檳橫櫻櫥簷歡歐殲殘殯毆毀畢斃氈氣氫漢湯洶溝沒瀝淪滄滬濘淚瀘瀉潑澤潔灑窪淺漿澆濁測濟瀏渾濃濤澇漣渦滌潤澗漲澀澱淵漬漸漁滲溫遊灣濕潰濺"
+             "滯滿濾濫濱灘瀟潛瀾瀕滅燈靈災燦爐燉點煉熾爍爛燭煙煩燒燙燼熱煥愛爺牽犧狀猶狽獨狹獅猙獄獵豬貓獻瑪環現璽琺瓏瑣瓊電畫暢療瘋癢癡癱癮皺盞鹽監蓋盜盤矚睜瞞矯礦碼磚硯礎碩確鹼礙禮禍禪離禿種積稱穩穀窮竊竅窯竄窩窺"
+             "豎競篤筆籠築篩箏籌簽簡籃籬類糞糧緊糾紀約紅纖紋納紐純紗紙級紛紡細練組紳紹終絆經綁絨結繞給絡絕絞統絹繡繼績緒續綺繩維綿繃綢綜綻綠綴緬纜緝緞線緩締編緣縛縫纏縮繆繚繕罌網羅罰罷羈翹聞聯聰聳聶職肅腸膚腎腫脹脅"
+             "膽勝朧膠脈髒臍腦膿腳脫臉臘膩騰艦艙艱豔藝節蕪蘆葦蒼蘋莖繭荊薦莢蕩榮葷熒蔭藥蒞萊蓮獲瑩鶯蘿螢營縈蕭薩蔥蔣藍驀藹蘊蘚虜慮虛蟲雖蝦蝕蟻螞蠶蠱蠻蟄蛻蝸蠟蠅蟬蠍銜補襯襖襪襲裝褲見觀規覓視覽覺覬觸譽計訂認譏討讓訓"
+             "議訊記講諱訝許訛論訟諷設訪訣證評識詐訴診詞詔譯試詩詰誠話誕詭詢該詳詫誡誣語誤誘誨說誦請諸諾讀誹課誰調諒談誼謀諜謊諧謂諭諮諺諦謎謝謠謙謹謬譜譴貝貞負貢財責賢敗賬貨質販貪貧貶購貯貫貳賤貼貴貸貿費賀賊賈賄賃"
+             "賂資賦賭贖賞賜賠賴贅賽贈贏趙趕趨躍跡踐蹤軀車軌轉輪軟轟軸輕載較輔輛輩輝輸轅輾輿轄辭辯邊遼達遷過邁運還這進遠違連遲選遜遞邏遺遙鄧郵鄰鬱鄭醞醬釋裡鑒針釘釣鈣鈍鈔鍾鋼鑰欽鉤鈕錢鉗缽鑽鐵鈴鉛鐺銅鋁銘鏟銀鑄鋪鏈"
+             "銷鎖鋤鍋銹鋒鋅銳錯錨錫鑼錘錐錦錠鍵鋸鍛鍍鎂鎮鑷鎳鏡鐮鑲長門閃閉問闖閑間悶閘鬧閣閱闊隊陽陰陣階際陸陳險隨隱隸難雛霧靜韓韻頁頂頃項順須頑顧頓頒頌預領頗頸頻穎顆題顏額顛顫風飄飛飢飯飲飾飽餃餅餓館饅馬馳駁驢駛"
+             "駐駕驕騎騙驗鬆魚鮮鳥雞鳴鴨鵝麥黃齊齒齡龍龜麼係範讚贊籤鬍鬚檯臺颱嚮剋綫迴裏著甦錶乾")
+_T2S_SIMP = ("万与专业东丝两严丧个丰临为丽举义乌乐乔习乡书买乱争于亏云亚产亩亲亿仅从仑仓仪们价众优伙会伞伟传伤伦伪体余佣侠侣侦侧侨侬俩俭债倾偿储兑儿党兰关兴养兽内冈册写军农冯冲决况冻净凉减凑几凤凭凯击划刘则刚创删别"
+             "剂剑剧劝办务动励劲劳势匀汇区医华协单卖卢卫却厂厅历历厉压厌厕厢厦厨县参双发变叙叠叶号叹吁后吓吕吗吨听启吴呕员呛呜咏咸响哑哗哟唠唤啧啬喷喽嘘嘱噜嚣园围国图圆圣场坏块坚坛坝坟坠垄垒垦垫堑堕墙壮声壳壶处备复"
+             "够头夸夹夺奋奖奥妆妇妈娄娇娱婴婶孙学宁宝实宠审宪宫宽宾寝对寻导寿将尔尘尝尧尴尸尽层届属屡屿岁岂岗岛岭岳峡峥峦巩币帅师帐帘帜带帧帮干并广庄庆庐库应庙庞废开异弃张弥弯弹强归当录汇彦彻径御忆忏忧怀态怂怅怜总"
+             "恋恳恶恼悦悬悯惊惧惨惩惫惬惭惯愤愿慑懒戏战户扎扑执扩扫扬扰抚抛抠抢护报担拟拢拣拥拦拧拨择挂挚挞挟挠挡挣挤挥捞损捡换捣据掳掷掸掺揽搀搁搂搅携摄摆摇摊撑撵撷攒敌敛数斋斗斩断无旧时旷昙昼显晋晒晓晕晖暂暧术朴"
+             "机杀杂权条来杨杰极构枢枣枪枫柜柠栅标栈栋栏树栖样档桥桦桨桩梦检椭楼榄槛槟横樱橱檐欢欧歼残殡殴毁毕毙毡气氢汉汤汹沟没沥沦沧沪泞泪泸泻泼泽洁洒洼浅浆浇浊测济浏浑浓涛涝涟涡涤润涧涨涩淀渊渍渐渔渗温游湾湿溃溅"
+             "滞满滤滥滨滩潇潜澜濒灭灯灵灾灿炉炖点炼炽烁烂烛烟烦烧烫烬热焕爱爷牵牺状犹狈独狭狮狰狱猎猪猫献玛环现玺珐珑琐琼电画畅疗疯痒痴瘫瘾皱盏盐监盖盗盘瞩睁瞒矫矿码砖砚础硕确碱碍礼祸禅离秃种积称稳谷穷窃窍窑窜窝窥"
+             "竖竞笃笔笼筑筛筝筹签简篮篱类粪粮紧纠纪约红纤纹纳纽纯纱纸级纷纺细练组绅绍终绊经绑绒结绕给络绝绞统绢绣继绩绪续绮绳维绵绷绸综绽绿缀缅缆缉缎线缓缔编缘缚缝缠缩缪缭缮罂网罗罚罢羁翘闻联聪耸聂职肃肠肤肾肿胀胁"
+             "胆胜胧胶脉脏脐脑脓脚脱脸腊腻腾舰舱艰艳艺节芜芦苇苍苹茎茧荆荐荚荡荣荤荧荫药莅莱莲获莹莺萝萤营萦萧萨葱蒋蓝蓦蔼蕴藓虏虑虚虫虽虾蚀蚁蚂蚕蛊蛮蛰蜕蜗蜡蝇蝉蝎衔补衬袄袜袭装裤见观规觅视览觉觊触誉计订认讥讨让训"
+             "议讯记讲讳讶许讹论讼讽设访诀证评识诈诉诊词诏译试诗诘诚话诞诡询该详诧诫诬语误诱诲说诵请诸诺读诽课谁调谅谈谊谋谍谎谐谓谕谘谚谛谜谢谣谦谨谬谱谴贝贞负贡财责贤败账货质贩贪贫贬购贮贯贰贱贴贵贷贸费贺贼贾贿赁"
+             "赂资赋赌赎赏赐赔赖赘赛赠赢赵赶趋跃迹践踪躯车轨转轮软轰轴轻载较辅辆辈辉输辕辗舆辖辞辩边辽达迁过迈运还这进远违连迟选逊递逻遗遥邓邮邻郁郑酝酱释里鉴针钉钓钙钝钞钟钢钥钦钩钮钱钳钵钻铁铃铅铛铜铝铭铲银铸铺链"
+             "销锁锄锅锈锋锌锐错锚锡锣锤锥锦锭键锯锻镀镁镇镊镍镜镰镶长门闪闭问闯闲间闷闸闹阁阅阔队阳阴阵阶际陆陈险随隐隶难雏雾静韩韵页顶顷项顺须顽顾顿颁颂预领颇颈频颖颗题颜额颠颤风飘飞饥饭饮饰饱饺饼饿馆馒马驰驳驴驶"
+             "驻驾骄骑骗验松鱼鲜鸟鸡鸣鸭鹅麦黄齐齿龄龙龟么系范赞赞签胡须台台台向克线回里着苏表干")
+T2S = dict(zip(_T2S_TRAD, _T2S_SIMP))
+
+
+def _units(words, fillers=None):
+    """Words -> a normalised mixed zh/en character stream [(char, t, word_index, soft)].
+
+    Lowercased, stripped of spaces / punctuation and split into single characters, so whisper's sub-word latin
+    pieces ('q' 'uer' 'ies') and a whole word ('queries') give the same stream and case / spacing /
+    punctuation never matter. ``soft`` marks the characters of fillers / soft particles (whole words, also
+    2-3 word runs such as 然后 + 的话 when whisper splits them): they still align, but losing them is no loss."""
+    fl = _verify_fillers() if fillers is None else fillers
+    soft = set()
+    k = 0
+    while k < len(words):
+        for n in (3, 2, 1):
+            if k + n <= len(words) and "".join(w["n"] for w in words[k:k + n]) in fl:
+                soft.update(range(k, k + n))
+                k += n - 1
+                break
+        k += 1
+    return [(T2S.get(ch, ch), w["t"], k, k in soft) for k, w in enumerate(words) for ch in w["n"]]
+
+
+def _lat(c):
+    return bool(re.match(r"[a-z0-9]", c))
+
+
+def _weight(chars):
+    return sum(LATIN_WEIGHT if _lat(c) else 1.0 for c in chars)
+
+
+def _lost_weight(E, idx):
+    """Weight of the lost units E[idx] (sorted positions): CJK 1 each; a latin word lost WHOLE (the full run
+    between non-latin units, sub-word pieces included) LATIN_WEIGHT per letter, at least 2; a latin word of which
+    a part was heard ('ass|ption' heard as 'assum') counts 0 - a re-ASR spelling variant, not lost content."""
+    w, k = 0.0, 0
+    while k < len(idx):
+        a = idx[k]
+        if not _lat(E[a][0]):
+            w += 1.0
+            k += 1
+            continue
+        b = a
+        while k + 1 < len(idx) and idx[k + 1] == b + 1 and _lat(E[b + 1][0]):
+            k += 1
+            b += 1
+        n = b - a + 1
+        whole = (a == 0 or not _lat(E[a - 1][0])) and (b + 1 == len(E) or not _lat(E[b + 1][0]))
+        w += max(2.0, LATIN_WEIGHT * n) if whole else 0.0      # rest of the word was heard: a spelling variant
+        k += 1
+    return w
+
+
+def _span_text(words, idx):
+    """The original words behind units (latin sub-word pieces glued back: 'q uer ies' -> 'queries')."""
+    s, prev_lat = "", False
+    for k in sorted(set(idx)):
+        n = words[k]["n"]
+        lat = bool(re.fullmatch(r"[a-z0-9]+", n))
+        sub = lat and prev_lat and k - 1 in idx and not words[k]["w"].startswith(" ")
+        s += ("" if (sub or not s or not (lat and prev_lat)) else " ") + n
+        prev_lat = lat
+    return s
+
+
+def content_check(expected, got, fillers=None, min_chars=2, ignore=None, details=None, ignore_window=2.0):
+    """Content lost between the words that SHOULD remain and a fresh ASR of the cut.
+
+    Compared on a normalised mixed zh/en character stream (``_units``): fillers and soft particles
+    (``VERIFY_SOFT``) are ignored on both sides, latin sub-word pieces merge, case / spaces / punctuation
+    don't count, CJK aligns character by character. Tolerance: a span is flagged only when it weighs >=
+    ``min_chars`` (CJK chars; latin letters x ``LATIN_WEIGHT``, a whole lost latin word >= 2) and the re-ASR heard (almost) nothing in its
+    place - a replacement of comparable weight is an ASR variant (homophone 比例/比的, spelling
+    trunking/chunking), reported in ``details["variants"]`` but not lost. ignore: [(text, t)] words removed
+    on purpose (filler / repeat / row cuts) at output time t - a flagged span whose text is one of them within
+    ``ignore_window`` s is moved to ``details["ignored"]``. Returns [{"kind", "text", "got", "t"}]."""
+    fl = _verify_fillers(fillers)
+    EW, GW = load_words(expected), load_words(got)
+    E, G = _units(EW, fl), _units(GW, fl)
+    sm = difflib.SequenceMatcher(None, [u[0] for u in E], [u[0] for u in G], autojunk=False)
+    ign = [(norm(t), float(tt)) for t, tt in ignore or () if norm(t)]
+    det = details if details is not None else {}
+    det.setdefault("variants", [])
+    det.setdefault("ignored", [])
     flags = []
     for op, i1, i2, j1, j2 in sm.get_opcodes():
         if op not in ("delete", "replace"):
             continue
-        miss = [u for u, _ in E[i1:i2]]
-        heavy = sum(2 if re.match(r"[a-z0-9]", u) else len(u) for u in miss)
-        if heavy < min_chars:
+        pos = [k for k in range(i1, i2) if not E[k][3]]
+        if not pos:
             continue
-        if op == "replace" and abs((i2 - i1) - (j2 - j1)) <= 1 and (i2 - i1) <= 2:
+        hard = [E[k] for k in pos]
+        wE, wG = _lost_weight(E, pos), _weight([u[0] for u in G[j1:j2]])
+        text = _span_text(EW, [u[2] for u in hard])
+        gtxt = "".join(u[0] for u in G[j1:j2])
+        t = round(hard[0][1], 2)
+        if wE < min_chars:
             continue
-        flags.append(dict(kind="missing" if op == "delete" else "changed",
-                          text=" ".join(miss) if any(re.match(r"[a-z0-9]", u) for u in miss) else "".join(miss),
-                          got="".join(G[j1:j2]), t=round(E[i1][1], 2)))
+        if op == "replace" and wG >= 0.5 * wE:
+            det["variants"].append(dict(text=text, got=gtxt, t=t))
+            continue
+        nt = norm(text)
+        if any(nt and nt in it and abs(t - tt) <= ignore_window for it, tt in ign):
+            det["ignored"].append(dict(text=text, got=gtxt, t=t, why="removed on purpose by a cleanup edit"))
+            continue
+        te = max(EW[u[2]]["te"] for u in hard)
+        flags.append(dict(kind="missing" if op == "delete" else "changed", text=text, got=gtxt, t=t, te=round(te, 2)))
     return flags
 
 
-def verify(target, got=None, transcriber=None, language=None, prompt=None, raise_on_fail=False, write=True):
+def _recheck(out, S, fl, hear, pad=1.5):
+    """Re-hear only the window of one flagged span (whisper on a whole file sometimes skips a passage, e.g. a body
+    that repeats the cold open it just heard). True when the window's own ASR has the words after all."""
+    t0, t1 = fl.get("t_out"), fl.get("te_out")
+    if t0 is None:
+        return False
+    t1 = t0 + 1.0 if t1 is None else t1
+    a, b = max(0.0, t0 - pad), t1 + pad
+    exp = [dict(w=w["w"], t=w["t"] - a, te=w["te"] - a) for w in load_words(S.get("words") or [])
+           if a <= w["t"] and w["te"] <= b]
+    if not exp:
+        return False
+    tmp = tempfile.mkdtemp(prefix="vstudio_verify_")
+    try:
+        wav = write_wav(os.path.join(tmp, "win.wav"), decode_audio(out, sr=16000, channels=1, start=a, dur=b - a),
+                        16000)
+        left = content_check(exp, hear(wav))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    inside = [f for f in left if f["t"] <= t1 - a + 0.3 and f["te"] >= t0 - a - 0.3]
+    if not inside:
+        return True
+    # a long passage the whole-file pass skipped: the window hearing must bring back >= 85 % of it (whisper still
+    # drops a 是个 / 一个 in fast speech); a short span must come back whole
+    span = norm("".join(w["w"] for w in exp if t0 - a - 0.05 <= w["t"] and w["te"] <= t1 - a + 0.05))
+    lost = sum(len(norm(f.get("text", ""))) for f in inside)
+    return len(span) >= 7 and lost <= 0.15 * len(span)
+
+
+JOINT_TOL = 0.6      # s: a flagged word must touch a cut joint (within this) to count as lost
+
+
+def _cut_joints(items):
+    """Source-time positions where the timeline jumps (end of a clip whose successor does not start there)."""
+    clips = [it for it in items or [] if it.get("kind", "clip") == "clip" and "src0" in it and "src1" in it]
+    out = []
+    for x, y in zip(clips, clips[1:]):
+        if abs(float(y["src0"]) - float(x["src1"])) > 1e-3:
+            out += [float(x["src1"]), float(y["src0"])]
+    if clips:
+        out += [float(clips[0]["src0"]), float(clips[-1]["src1"])]
+    return out
+
+
+def verify(target, got=None, transcriber=None, language=None, prompt=None, raise_on_fail=False, write=True,
+           recheck=None):
     """Re-ASR a cleaned output and check nothing but the cut edits went missing.
 
     target: the output path (its ``<out>.cleanup.json`` sidecar is read) or an ``apply`` result.
     got: transcript of the output (any shape) - else ``transcriber(path)`` - else ``asr.transcribe``.
     Returns dict(ok, missing=[{kind, text, got, t_src, t_out}], leftovers=[{text, t_out, why}]) and writes
-    ``<out>.verify.json``. raise_on_fail -> RuntimeError listing the lost words."""
+    ``<out>.verify.json``. raise_on_fail -> RuntimeError listing the lost words.
+    recheck: re-hear the window around each flagged span alone (``transcriber`` else ``asr.transcribe``) and drop
+    the flag when the words are there (listed under ``rechecked``); default on when the real ASR is used."""
     out = target["out"] if isinstance(target, dict) else target
     side = os.path.splitext(out)[0] + ".cleanup.json"
     with open(side, encoding="utf-8") as f:
         S = json.load(f)
+    if recheck is None:
+        recheck = got is None and transcriber is None
+    lang = language or S.get("language")
+    hear = transcriber or (lambda p: asr.transcribe(p, language=lang, prompt=prompt))
     if got is None:
-        got = transcriber(out) if transcriber else asr.transcribe(out, language=language or S.get("language"),
-                                                                  prompt=prompt)
+        got = hear(out)
     G = load_words(got)
     tm = cut.TimeMap(S["timemap"])
-    flags = content_check(S["expected"], G)
+    det = {}
+    flags = content_check(S["expected"], G, ignore=[(r["w"], r["t"]) for r in S.get("removed") or []], details=det)
     for fl in flags:
         fl["t_src"] = fl.pop("t")
         t = tm.to_final(fl["t_src"], "nearest")
         fl["t_out"] = None if t is None else round(t, 2)
+        fl["te_src"] = fl.pop("te")
+        te = tm.to_final(fl["te_src"], "nearest")
+        fl["te_out"] = None if te is None else round(te, 2)
+    rechecked = []
+    if recheck and flags and os.path.exists(out):
+        keep = []
+        for fl in flags:
+            try:
+                ok = _recheck(out, S, fl, hear)
+            except Exception as e:  # noqa: BLE001  (a failed re-check keeps the flag)
+                fl["recheck_error"] = str(e)[:200]
+                ok = False
+            (rechecked if ok else keep).append(fl)
+        flags = keep
+    # Editing can only lose a word at a cut joint: a flag far from every joint is ASR variance, not a loss.
+    joints = S["joints"] if "joints" in S else _cut_joints(S["timemap"])   # explicit joints (derived renders) win
+    far = []
+    if joints is not None and (joints or "joints" in S):
+        keep = []
+        for fl in flags:
+            a, b = fl["t_src"], fl.get("te_src", fl["t_src"])
+            d = min((max(0.0, j - b, a - j) for j in joints), default=float("inf"))
+            (keep if d <= JOINT_TOL else far).append(dict(fl, joint_dist=round(d, 2)))
+        flags = keep
     left = []
     for k, w in enumerate(G):
         if w["n"] in HESITATION:
@@ -1561,7 +1925,8 @@ def verify(target, got=None, transcriber=None, language=None, prompt=None, raise
                 not (len(w["n"]) == 1 and w["n"] in cut.REDUP_ZH):
             left.append(dict(text=w["w"] * 2, t_out=w["t"], why="immediate repeat still in the cut"))
     rep = dict(ok=not flags, out=out, missing=flags, leftovers=left, expected_words=len(S["expected"]),
-               got_words=len(G))
+               got_words=len(G), variants=det["variants"], ignored=det["ignored"], rechecked=rechecked,
+               asr_variance=far)
     if write:
         with open(os.path.splitext(out)[0] + ".verify.json", "w", encoding="utf-8") as f:
             json.dump(rep, f, ensure_ascii=False, indent=1)

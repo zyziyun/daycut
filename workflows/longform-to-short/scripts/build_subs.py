@@ -2,7 +2,8 @@
 """Step 7a: subtitles for the cut, mapped through timeline.json.
 
 Each whisper segment overlapping a timeline item is retimed by that item's speed and
-final offset (cards skipped; the hook clip gets its own subs naturally). Segments clipped by
+final offset (cards skipped; the hook clip gets its own subs naturally). A piece shorter than 0.25 s (a word
+kept between two cuts) joins the neighbouring caption instead of being dropped: it is still said. Segments clipped by
 a split or cut keep the words whose midpoint is inside the item (a word straddling a zoom / pitch split is
 assigned to one piece, never dropped). Filler-only lines are dropped.
 
@@ -54,7 +55,7 @@ def words_in(words, t0, t1):
     return [wd for wd in words if t0 <= (wd["start"] + wd["end"]) / 2 < t1]
 
 
-events = []
+events, short = [], []
 for it in timeline:
     if it["kind"] == "card":
         continue
@@ -74,7 +75,8 @@ for it in timeline:
             continue
         a = f0 + (max(s0, t0) - t0) / sp
         b = f0 + (min(s1, t1) - t0) / sp
-        if b - a < 0.25:
+        if b - a < 0.25:                 # too short to read alone (a word left between two cuts): it is still
+            short.append((a, b, txt))    # SAID, so it joins the caption next to it below
             continue
         n = MAX_LINE * 2
         chunks = [txt] if len(txt) <= n else [txt[i:i + n] for i in range(0, len(txt), n)]
@@ -82,6 +84,21 @@ for it in timeline:
         events += [(a + i * step, a + (i + 1) * step, c) for i, c in enumerate(chunks)]
 
 events.sort()
+OPENERS = ("另外", "然后", "所以", "但是", "而且", "因为", "就是", "那么", "还有", "或者", "如果")
+for a, b, txt in sorted(short):           # captions match the audio: a short piece joins its neighbour (an
+    prev = max((k for k, e in enumerate(events) if e[1] <= a + 0.05), key=lambda k: events[k][1], default=None)
+    nxt = min((k for k, e in enumerate(events) if e[0] >= b - 0.05), key=lambda k: events[k][0], default=None)
+    gp = a - events[prev][1] if prev is not None else 1e9       # opener like 另外 joins the words after it)
+    gn = events[nxt][0] - b if nxt is not None else 1e9
+    if min(gp, gn) > 1.0:
+        events.append((a, max(b, a + 0.25), txt))
+    elif nxt is not None and (gn < gp or txt.strip().startswith(OPENERS) and gn <= 0.5):
+        e = events[nxt]
+        events[nxt] = (a, e[1], txt + e[2])
+    else:
+        e = events[prev]
+        events[prev] = (e[0], b, e[2] + txt)
+    events.sort()
 for i in range(1, len(events)):
     pa, pb, pt = events[i - 1]
     if events[i][0] < pb:

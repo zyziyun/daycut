@@ -5,14 +5,21 @@ configured screen region (geometry crop spans = shared page without browser chro
 the configured speaker region can ever reach the frame; ``vertical.exclude`` rects are painted out of the
 source before any crop as a second guard (participant tiles, name tags).
 
-Layouts (per timeline item; content area = safe-box top .. caption-box top of the target canvas):
+Layouts (per timeline item; content area = safe-box top .. caption-box top of the target canvas; by default
+the screen stops above the caption box, so captions sit in their own lower band and never over the page text -
+``vertical.split.screen_to: frame`` restores the screen running under the captions behind a scrim):
   split     speaker band on top (face-tracked crop of the speaker cam tile, vstudio.reframe face mode) and
             the screen below. No speaker region / no face found -> a title band (series + current chapter)
             instead: a camera-less screen share never shows the participant tiles.
   screen    the whole content area is a crop of the screen that follows the content: frame-difference
-            activity (typing, highlights, newly revealed blocks; cursor-sized changes ignored), code-zoom
-            windows (zoom_windows.json) and the first text block of a new page; camera = vstudio.reframe.follow
-            (vstudio.filters.OneEuro + dead zone + eased, speed-limited pan; page switches cut, never pan).
+            activity (pointer moves, selections, typing, newly revealed blocks; the largest change inside the main
+            text block wins), code-zoom windows (zoom_windows.json) and the first text block of a new page;
+            scrolls (phase correlation) and transient editor popups / context menus (a box that appears and then
+            vanishes, the page under it unchanged) hold the camera, and popups are masked with the page as it was
+            just before (``popups: mask | hold | off``); camera = vstudio.reframe.follow (One Euro + a small dead
+            zone + eased, speed-limited pan; page switches cut, never pan). The zoom never upscales the source
+            beyond ``max_upscale`` (2.0: more only blurs a 720p share) - a smaller text line shows a tighter
+            region at that scale instead; the upscale is Lanczos + a light unsharp mask (``sharpen``).
   speaker   the whole content area is the speaker crop.
   pad-blur  the whole screen region fitted to the width over a blurred, dimmed copy.
 """
@@ -30,14 +37,15 @@ from vstudio import platform as PF
 from vstudio import reframe as R
 
 MODES = ("split", "screen", "speaker", "pad-blur")
-SCREEN_DEFAULTS = dict(min_scale=1.6, max_scale=3.0, sample_hz=4.0, change_luma=24, min_change_px=60,
+SCREEN_DEFAULTS = dict(min_scale=1.6, max_scale=3.0, sample_hz=4.0, change_luma=24, min_change_px=12,
                        analysis_w=480, page_change=0.45, follow="content", ink=40, headroom=0.12,
-                       min_text_px=28)
-# split / screen layout: a slim title band and the screen running down to the frame bottom (under the caption
-# box and the platform UI, dimmed there by a scrim) instead of stopping above the captions; screen_to="caption"
-# restores the pre-demo-round layout (screen box ends above the caption box, band 24 %).
-SPLIT_DEFAULTS = dict(speaker_frac=0.40, band_frac=0.16, gap=10, screen_to="frame", scrim=0.5)
-CAMERA = dict(R.DEFAULTS, dead_zone=0.10, settle=0.02, gain=2.5, max_speed=0.55, max_accel=1.0,
+                       min_text_px=28, max_upscale=2.0, sharpen=0.6, popups="mask", popup_min_frac=0.02,
+                       popup_max_s=20.0, scroll_min_px=2.0)
+# split / screen layout: a slim title band on top, the screen in all the space down to the caption box, the
+# captions in their own lower band (no dark fade over the page). screen_to="frame" runs the screen on under the
+# captions and the platform UI, dimmed there by a scrim (the first demo round's layout).
+SPLIT_DEFAULTS = dict(speaker_frac=0.40, band_frac=0.16, gap=10, screen_to="caption", scrim=0.5)
+CAMERA = dict(R.DEFAULTS, dead_zone=0.04, settle=0.01, gain=2.5, max_speed=0.55, max_accel=1.0,
               min_cutoff=0.4, beta=0.4)
 
 
@@ -57,7 +65,7 @@ def layout(profiles, gap=10):
     return dict(W=W, H=H, safe=safe, caption=cap, content=content, gap=gap)
 
 
-def boxes(L, mode, band, speaker_frac=0.40, band_frac=0.16, screen_to="frame"):
+def boxes(L, mode, band, speaker_frac=0.40, band_frac=0.16, screen_to="caption"):
     """{'screen': box, 'speaker': box, 'band': box} (x0, y0, x1, y1) for one item.
     screen_to "frame": the screen box of split / screen layouts runs to the canvas bottom (the part under the
     caption box is scrimmed, see ``visible_h``); "caption": it stops at the content bottom (above the captions)."""
@@ -154,6 +162,13 @@ def main_block(ink, o=SCREEN_DEFAULTS):
     return float(a), float(b)
 
 
+def max_zoom(o=SCREEN_DEFAULTS):
+    """The largest source -> canvas scale: max_scale, never above max_upscale (upscaling a screen recording
+    further only blurs it; a tighter region at this scale reads better)."""
+    up = o.get("max_upscale")
+    return min(o["max_scale"], float(up)) if up else o["max_scale"]
+
+
 def screen_size(region, box, content_w=None, o=SCREEN_DEFAULTS, need_scale=None):
     """Source crop (cw, ch, draw_h) for the screen box inside region: as tight as the content column allows,
     scale (box_w / cw) at least max(min_scale, need_scale) (the readable-text scale) and at most max_scale,
@@ -164,13 +179,14 @@ def screen_size(region, box, content_w=None, o=SCREEN_DEFAULTS, need_scale=None)
     rw, rh = rx1 - rx0, ry1 - ry0
     bw, bh = box[2] - box[0], box[3] - box[1]
     a = bw / bh
-    lo = min(max(o["min_scale"], need_scale or 0.0), o["max_scale"])
+    top = max_zoom(o)
+    lo = min(max(o["min_scale"], need_scale or 0.0), top)
     want = (content_w * 1.08) if content_w else rw
-    want = min(max(want, bw / o["max_scale"]), bw / lo)
+    want = min(max(want, bw / top), bw / lo)
     cw = min(want, rw, rh * a)
-    if cw >= min(bw / o["max_scale"], rw) - 1e-6:
+    if cw >= min(bw / top, rw) - 1e-6:
         return cw, cw / a, bh
-    cw = min(bw / o["max_scale"], rw)             # region too short for this box: cap the zoom, shorten
+    cw = min(bw / top, rw)                        # region too short for this box: cap the zoom, shorten
     ch = min(rh, cw / a)
     return cw, ch, min(bh, even(ch * bw / cw))
 
@@ -195,13 +211,97 @@ def text_line_px(gray, x0=0, x1=None, ink=40):
     return float(np.median(runs)) if len(runs) >= 3 else None
 
 
+def detect_popups(stack, o=SCREEN_DEFAULTS, hz=4.0):
+    """Transient editor popups / context menus in analysis frames ``stack`` (T, h, w int16 grey): a box that
+    appears (possibly fading in over two samples), hides the page text under it (not a selection tint: the text
+    edges under a highlight stay) and shows items of its own, and vanishes within ``popup_max_s`` with the page
+    under it back as it was. One still showing when the window ends is reported ``open`` (never masked).
+    -> [dict(j0 first sample showing it, j1 first sample without it, box (x0, y0, x1, y1) analysis px, frac
+    [, open])]; the clean page is sample j0 - 1."""
+    T = len(stack)
+    if T < 3:
+        return []
+    ah, aw = stack.shape[1:]
+    thr, ink = o["change_luma"], o["ink"]
+    horizon = max(1, int(round(o["popup_max_s"] * hz)))
+
+    def differs(a_, b_, x, y, w, h):
+        return float(np.mean(np.abs(stack[a_, y:y + h, x:x + w] - stack[b_, y:y + h, x:x + w]) > thr))
+
+    def extent(r, j1, x, y, w, h):
+        """Full box: everything that differs from the clean page r while it shows (it grows / animates in), the
+        components touching the first box."""
+        um = (np.abs(stack[r + 1:j1] - stack[r][None]) > thr).any(axis=0).astype(np.uint8)
+        um = cv2.dilate(um, np.ones((9, 9), np.uint8))
+        nu, _, su, _ = cv2.connectedComponentsWithStats(um, connectivity=8)
+        X0, Y0, X1, Y1 = x, y, x + w, y + h
+        for q in range(1, nu):
+            qx, qy, qw, qh = (int(v) for v in su[q, :4])
+            if qx < x + w and x < qx + qw and qy < y + h and y < qy + qh:
+                X0, Y0, X1, Y1 = min(X0, qx), min(Y0, qy), max(X1, qx + qw), max(Y1, qy + qh)
+        return (X0, Y0, X1, Y1)
+
+    def inside(bx, j):
+        return any(p["box"][0] <= bx[0] + bx[2] / 2 <= p["box"][2] and p["box"][1] <= bx[1] + bx[3] / 2 <= p["box"][3]
+                   and p["j0"] <= j < p["j1"] for p in out)
+    out, j = [], 1
+    while j < T - 1:
+        d = np.abs(stack[j] - stack[j - 1]) > thr
+        frac = float(d.mean())
+        if frac < o["popup_min_frac"] * 0.25 or frac > o["page_change"]:
+            j += 1
+            continue
+        m = cv2.dilate(d.astype(np.uint8), np.ones((7, 7), np.uint8))
+        n, _, st, _ = cv2.connectedComponentsWithStats(m, connectivity=8)
+        nxt = j + 1
+        for i in range(1, n):
+            x, y, w, h = (int(v) for v in st[i, :4])
+            if w * h < o["popup_min_frac"] * aw * ah or w < 0.04 * aw or h < 0.04 * ah or w * h > 0.8 * aw * ah:
+                continue
+            if inside((x, y, w, h), j):
+                continue                                   # the popup already found, still animating
+            r = j - 1                                      # the clean page: one more sample back when it faded in
+            if j >= 2 and differs(j - 1, j - 2, x, y, w, h) > 0.01:
+                r = j - 2
+            ref, cur = stack[r, y:y + h, x:x + w], stack[j, y:y + h, x:x + w]
+            if float(np.mean(np.abs(cur - ref) > thr)) < 0.08:
+                continue
+            ir = np.abs(ref - np.median(ref)) > ink           # page text under the box
+            ic = np.abs(cur - np.median(cur)) > ink
+            if ir.sum() > 0 and (ir & ic).sum() / ir.sum() > 0.6:
+                continue                                   # the text is still there: a highlight, not a popup
+            gone = next((j2 for j2 in range(j + 1, min(T, j + horizon + 1))
+                         if min(differs(j2, r, x, y, w, h), differs(j2, j - 1, x, y, w, h)) < 0.03), None)
+            if gone is None:
+                # still there at the end: a popup only if it hid page text AND shows items of its own (typing
+                # into empty space hides nothing). Cut off by the end of the clip within popup_max_s -> masked
+                # to the end like any transient one; open longer than popup_max_s -> ``open``: left visible
+                # (it may be what is being shown) and reported for QC
+                if float(ir.mean()) > 0.02 and float(ic.mean()) > 0.02:
+                    ends = j + horizon >= T
+                    j1 = T if ends else j + horizon + 1
+                    bx_ = extent(r, j1, x, y, w, h) if ends else (x, y, x + w, y + h)
+                    out.append(dict(j0=r + 1, j1=j1, box=bx_, open=not ends, to_end=ends,
+                                    frac=round((bx_[2] - bx_[0]) * (bx_[3] - bx_[1]) / float(aw * ah), 4)))
+                continue
+            bx_ = extent(r, gone, x, y, w, h)
+            out.append(dict(j0=r + 1, j1=gone, box=bx_,
+                            frac=round((bx_[2] - bx_[0]) * (bx_[3] - bx_[1]) / float(aw * ah), 4)))
+            nxt = max(nxt, gone + 1)
+        j = nxt
+    return out
+
+
 def analyse_screen(src, t0, t1, speed, fps, n, region, box, zoom_center=None, still=None, o=SCREEN_DEFAULTS,
                    vis_h=None):
     """Per-frame crop rects [x, y, cw, ch] (source px) for the screen box of one timeline item, plus stats
-    (stats["draw_h"]: canvas height the crop is drawn at, from the box top). vis_h: height of the box part
-    above the captions; reading start / activity are kept inside that part of the crop.
+    (stats["draw_h"]: canvas height the crop is drawn at, stats["draw_y"]: its offset below the box top - a region
+    too short for the box at the zoom cap is centred in it; stats["popups"]: masked / held
+    transient popups with the source rect and frame range ``make_vertical`` paints the clean page into).
+    vis_h: height of the box part above the captions; reading start / activity are kept inside that part.
     The zoom is chosen so a text line is >= o["min_text_px"] tall on the canvas (line height measured on a
-    full-resolution frame), within min_scale..max_scale."""
+    full-resolution frame), within min_scale..max_zoom (max_scale capped by max_upscale): text that would need
+    more is shown at the cap (stats["text_small"])."""
     rx0, ry0, rx1, ry1 = [int(v) for v in region]
     rw, rh = rx1 - rx0, ry1 - ry0
     k = min(1.0, o["analysis_w"] / rw)
@@ -249,12 +349,30 @@ def analyse_screen(src, t0, t1, speed, fps, n, region, box, zoom_center=None, st
         left = min(max(bx0 - margin, ax - 0.9 * cw), ax - 0.1 * cw)
         return left + cw / 2
 
-    pts, cuts = {}, []
+    step = fps / hz
+    popups = []
+    if (o.get("popups") or "off") != "off" and still is None:
+        popups = detect_popups(stack, o, hz)
+        # a popup already open when the clip starts (it opened before the cut) and closing inside it: found
+        # running backwards; its clean page is the first sample after it closes
+        Tn = len(stack)
+        for pp in detect_popups(stack[::-1].copy(), o, hz):
+            if not pp.get("to_end"):
+                continue
+            c = Tn - pp["j0"]                          # forward index of the clean sample after it closes
+            if c <= 0 or any(q["j0"] < c for q in popups):
+                continue                               # only when it closes before anything else opens
+            popups.append(dict(j0=0, j1=c, box=pp["box"], frac=pp["frac"], clean_after=c))
+    held = set()
+    for pp in popups:                                  # the popup and its vanishing: never a camera target
+        if not pp.get("open"):                         # (one that stays open may be what is shown: follow)
+            held |= set(range(pp["j0"], pp["j1"] + 1))
+    pts, cuts, n_scroll, n_act = {}, [], 0, 0
     tx, ty = x_for(bx0), reading_start(ink[0])
     if zoom_center is not None:
         tx, ty = zoom_center
-    step = fps / hz
     a0, a1 = int(cx0), max(int(cx0) + 1, int(cx1))
+    win = cv2.createHanningWindow((aw, ah), cv2.CV_32F)
     for j in range(len(smp)):
         if j > 0:
             d = np.abs(stack[j] - stack[j - 1]) > o["change_luma"]
@@ -262,12 +380,28 @@ def analyse_screen(src, t0, t1, speed, fps, n, region, box, zoom_center=None, st
             if frac > o["page_change"]:
                 cuts.append(int(round(j * step)))
                 ty, tx = reading_start(ink[j]), x_for(bx0)
-            elif zoom_center is None:
-                dm = d[:, a0:a1]                       # activity inside the main block only
-                if dm.sum() >= o["min_change_px"]:
-                    ys, xs = np.nonzero(dm)
-                    ty = ys.mean() / k + ry0
-                    tx = x_for(rx0 + (xs.mean() + a0) / k)
+            elif zoom_center is None and j not in held:
+                (sx, sy), resp = cv2.phaseCorrelate(stack[j - 1].astype(np.float32), stack[j].astype(np.float32), win)
+                if frac > 0.02 and resp > 0.25 and abs(sy) >= o["scroll_min_px"] and abs(sx) < 1.0:
+                    ty -= sy / k                       # scroll: stay on the text that was being read
+                    n_scroll += 1
+                else:
+                    dm = d[:, a0:a1].astype(np.uint8)  # activity inside the main block: pointer, selection, typing
+                    nc, lab, st, cen = cv2.connectedComponentsWithStats(dm, connectivity=8)
+                    keep = [i for i in range(1, nc) if st[i, cv2.CC_STAT_AREA] >= o["min_change_px"]]
+                    # where something NEW is marked (a highlight / text / the pointer arriving: darker on a light
+                    # page), not where the old mark went away
+                    sd = (stack[j] - stack[j - 1])[:, a0:a1]
+                    pol = -1.0 if float(bg[j].item()) > 128 else 1.0
+                    new = [i for i in keep if pol * float(sd[lab == i].mean()) > 0]
+                    keep = new or keep
+                    if keep:
+                        wts = np.array([st[i, cv2.CC_STAT_AREA] for i in keep], float)
+                        cy = float(np.average([cen[i][1] for i in keep], weights=wts))
+                        cxx = float(np.average([cen[i][0] for i in keep], weights=wts))
+                        ty = cy / k + ry0
+                        tx = x_for(rx0 + (cxx + a0) / k)
+                        n_act += 1
         pts[int(round(j * step))] = (tx, ty)
     # per-frame targets -> crop top-left, followed per shot by the virtual camera
     idx = sorted(pts)
@@ -279,11 +413,46 @@ def analyse_screen(src, t0, t1, speed, fps, n, region, box, zoom_center=None, st
         px += R.follow(list(xs[a:b]), fps, cw, CAMERA)
         py += R.follow(list(ys[a:b]), fps, ch, CAMERA)
     rects = [[min(max(x, rx0), rx1 - cw), min(max(y, ry0), ry1 - ch), cw, ch] for x, y in zip(px, py)]
+    pop = []
+    for pp in popups:
+        x0, y0, x1, y1 = pp["box"]
+        if pp.get("clean_after") is not None:          # open from the clip start: the clean page comes after it
+            pad = 10
+            sr = [max(rx0, int(rx0 + x0 / k) - pad), max(ry0, int(ry0 + y0 / k) - pad),
+                  min(rx1, int(np.ceil(rx0 + x1 / k)) + pad), min(ry1, int(np.ceil(ry0 + y1 / k)) + pad)]
+            cf = min(n - 1, int(round((pp["clean_after"] + 1) * step)))   # one sample on: past any fade-out
+            pop.append(dict(clean=cf, f0=0, f1=cf, rect=sr, future=True, open=False,
+                            cover=round(min(1.0, (sr[2] - sr[0]) * (sr[3] - sr[1]) / float(cw * ch)), 3),
+                            dur=round(cf / fps, 2), masked=o.get("popups") == "mask"))
+            continue
+        pad = 10                                       # popup shadows reach past the detected box
+        sr = [max(rx0, int(rx0 + x0 / k) - pad), max(ry0, int(ry0 + y0 / k) - pad),
+              min(rx1, int(np.ceil(rx0 + x1 / k)) + pad), min(ry1, int(np.ceil(ry0 + y1 / k)) + pad)]
+        f0, f1 = max(0, int(round((pp["j0"] - 1) * step))), min(n, int(round(pp["j1"] * step)))
+        cover = (sr[2] - sr[0]) * (sr[3] - sr[1]) / float(cw * ch)
+        pop.append(dict(clean=f0, f0=f0 + 1, f1=f1, rect=sr, cover=round(min(1.0, cover), 3),
+                        dur=round((f1 - f0) / fps, 2), open=bool(pp.get("open")),
+                        masked=o.get("popups") == "mask" and not pp.get("open")))
+    text_px = line_px and line_px * (box[2] - box[0]) / cw
     stats = dict(scale=round((box[2] - box[0]) / cw, 3), content_w=round(content_w, 1), cuts=len(bounds) - 2,
-                 fixed_x=bool(fixed_x), draw_h=int(draw_h), line_px=line_px and round(line_px, 1),
-                 text_px=line_px and round(line_px * (box[2] - box[0]) / cw, 1),
+                 fixed_x=bool(fixed_x), draw_h=int(draw_h), draw_y=even(max(0, (box[3] - box[1]) - int(draw_h)) // 2), line_px=line_px and round(line_px, 1),
+                 text_px=text_px and round(text_px, 1),
+                 text_small=bool(text_px and o.get("min_text_px") and text_px < o["min_text_px"] - 0.5),
+                 max_zoom=round(max_zoom(o), 3), popups=pop, scrolls=n_scroll, activity=n_act,
                  **R.path_stats(rects, fps, bounds[1:-1]))
     return rects, stats
+
+
+def mask_popups(fr, i, popups, clean):
+    """Paint the clean page (``clean[p["clean"]]``: the frame just before the popup, or for one open from the clip
+    start (``future``) the first frame after it closes, decoded ahead by the caller) over every popup showing at
+    frame ``i``. ``clean``: {frame index: frame} kept by the caller."""
+    for p in popups or ():
+        if p.get("masked") and p["f0"] <= i < p["f1"] and p["clean"] in clean:
+            x0, y0, x1, y1 = p["rect"]
+            fr = fr.copy() if not fr.flags.writeable else fr
+            fr[y0:y1, x0:x1] = clean[p["clean"]][y0:y1, x0:x1]
+    return fr
 
 
 # ----------------------------------------------------------------------------------- speaker tracking
@@ -337,14 +506,19 @@ def plan_speaker(src, t0, t1, speed, fps, region, box, tmp, detector, zoom=1.0, 
 
 
 # ----------------------------------------------------------------------------------- drawing
-def warp(fr, rect, size):
-    """Crop rect [x, y, w, h] (sub-pixel) of fr scaled to size (w, h)."""
+def warp(fr, rect, size, sharpen=0.0):
+    """Crop rect [x, y, w, h] (sub-pixel) of fr scaled to size (w, h). Upscales use Lanczos and, with
+    ``sharpen`` > 0, a light unsharp mask (text edges of an upscaled screen recording stay crisp)."""
     x, y, cw, ch = rect
     tw, th = size
     s = tw / cw
     M = np.float32([[s, 0, -x * s], [0, th / ch, -y * th / ch]])
-    return cv2.warpAffine(fr, M, (tw, th), flags=cv2.INTER_CUBIC if s > 1 else cv2.INTER_AREA,
-                          borderMode=cv2.BORDER_REPLICATE)
+    out = cv2.warpAffine(fr, M, (tw, th), flags=cv2.INTER_LANCZOS4 if s > 1 else cv2.INTER_AREA,
+                         borderMode=cv2.BORDER_REPLICATE)
+    if sharpen and s > 1.2:
+        blur = cv2.GaussianBlur(out, (0, 0), 0.6 * s)
+        out = cv2.addWeighted(out, 1.0 + sharpen, blur, -sharpen, 0)
+    return out
 
 
 def pad_blur(fr, region, size, dim=0.6):
