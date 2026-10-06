@@ -129,8 +129,10 @@ against the long-form targets → `out/platform_checks.json` + `WARN` lines (see
 python3 $S/make_vertical.py work/config.py    # out/vertical/ep{N}/<platform>-<orientation>.mp4 + manifest
 python3 $S/scan_popups.py out/vertical/ep1/xiaohongshu-vertical.mp4 --plan work/vertical/1080x1440/plan.json
                                               # editor popups still visible (2 fps; exit 1 + times when found)
+                                              # + menus / toolbars left open (static overlays; --no-static)
 ```
-make_vertical runs the same 2 fps scan on every master (plan.json `visible_popups`).
+make_vertical runs the same 2 fps scans on every master (plan.json `visible_popups`, `static_overlays`: a
+floating card - faint border, drop shadow - that stays open over whole items, which the popup scan misses).
 
 **9. Verify before handing off**
 ```bash
