@@ -789,7 +789,7 @@ def screen_summary(plan, timeline, fps):
                 text_px_min=min(tp) if tp else None, text_small=any(it["screen"].get("text_small") for it in items),
                 moving=sum((it["screen"].get("p95_speed") or 0) > 0.002 for it in items), items=len(items),
                 scrolls=sum(it["screen"].get("scrolls") or 0 for it in items), popups=pops,
-                visible=visible_popups(plan))
+                visible=visible_popups(plan), static=static_overlays(plan))
 
 
 def visible_popups(plan):
@@ -798,6 +798,19 @@ def visible_popups(plan):
     if "visible_popups" not in plan:
         return None
     return [dict(t=x["t"], dur=x["dur"], cover=x.get("cover"), box=x.get("box")) for x in plan["visible_popups"]]
+
+
+def static_overlays(plan):
+    """Persistent UI panels the output scan (make_vertical: ``_vertical.scan_static_overlays``, the rendered master
+    at 2 fps) saw inside the screen crop - an editor's block / selection menu or a toolbar left open over whole
+    items, which the popup scan (a box appearing AND vanishing inside one item) misses:
+    [dict(t, dur, box canvas px, cover, evidence, hug, items)] in output seconds, or None when the plan predates
+    the scan. evidence: shadow (a floating card with a drop shadow), pinned (the page changes around it, it
+    stays), appeared / vanished (it comes / goes over an unchanged page); hug: the crop edge cutting it."""
+    if "static_overlays" not in plan:
+        return None
+    return [dict(t=x["t"], dur=x["dur"], box=x.get("box"), cover=x.get("cover"), evidence=x.get("evidence") or [],
+                 hug=x.get("hug"), items=x.get("items") or []) for x in plan["static_overlays"]]
 
 
 def run_verify_split(ctx):
@@ -823,19 +836,36 @@ def screen_checks(job, spec, export_out):
     """Screen-crop QC: editor popups the rendered master still shows (make_vertical's 2 fps output scan, every
     screen item, popups covering >= qc.popup_scan_cover (0.02) for > qc.popup_s (1 s): warn with the timestamps);
     editor popups the analysis left visible (not masked: one that stays open, or ``popups: hold / off``)
-    covering > qc.popup_cover (0.05) of the crop for > qc.popup_s (1 s) -> warn; text lines drawn smaller than
-    qc.text_px_min -> warn."""
+    covering > qc.popup_cover (0.05) of the crop for > qc.popup_s (1 s) -> warn; persistent UI panels (a menu /
+    toolbar left open over whole items: the static overlay scan) shown >= qc.overlay_s (1 s) -> warn
+    ``screen-overlay-static`` with times + boxes (one already reported as a visible popup is not repeated);
+    text lines drawn smaller than qc.text_px_min -> warn."""
     from .qc import _c
-    q = dict(dict(popup_cover=0.05, popup_s=1.0, text_px_min=14.0, popup_scan_cover=0.02), **((spec.get("qc") or {})))
+    q = dict(dict(popup_cover=0.05, popup_s=1.0, text_px_min=14.0, popup_scan_cover=0.02, overlay_s=1.0),
+             **((spec.get("qc") or {})))
     out = []
     for canvas, pl in (((export_out or {}).get("privacy") or {}).get("plans") or {}).items():
         sc = pl.get("screen") or {}
         vis = sc.get("visible")
+        bad = []
         if vis is not None:                            # what the rendered master really shows (2 fps scan)
             bad = [x for x in vis if x["dur"] > q["popup_s"] and (x.get("cover") or 0) >= q["popup_scan_cover"]]
             out.append(_c("screen-popup-visible", not bad, [[x["t"], x["dur"], x.get("cover")] for x in bad],
                           "editor popup still visible in the output: " +
                           ", ".join(f"{x['t']:.1f}-{x['t'] + x['dur']:.1f}s" for x in bad), severity="warn", target=canvas))
+        sto = sc.get("static")
+        if sto is not None:                            # toolbars / menus left open (static overlay scan)
+            def _seen(x):                              # already reported as a visible popup (same time, same box)
+                return any(p["t"] < x["t"] + x["dur"] and x["t"] < p["t"] + p["dur"] and p.get("box") and x.get("box")
+                           and _boxes_meet(p["box"], x["box"]) for p in bad)
+            st = [x for x in sto if x["dur"] >= q["overlay_s"] and not _seen(x)]
+            out.append(_c("screen-overlay-static", not st,
+                          [dict(t=x["t"], dur=x["dur"], box=x.get("box"), evidence=x.get("evidence"), hug=x.get("hug"))
+                           for x in st],
+                          "UI toolbar / menu left open over the screen: " +
+                          ", ".join(f"{x['t']:.1f}-{x['t'] + x['dur']:.1f}s at {x.get('box')}"
+                                    + (f" (cut by the {x['hug']} edge)" if x.get("hug") else "") for x in st),
+                          severity="warn", target=canvas))
         big = [x for x in sc.get("popups") or [] if x["cover"] > q["popup_cover"] and x["dur"] > q["popup_s"]]
         shown = [x for x in big if not x.get("masked")]
         out.append(_c("screen-popup", not shown, [[x["t"], x["dur"], x["cover"], x["masked"]] for x in big],
@@ -845,6 +875,10 @@ def screen_checks(job, spec, export_out):
         out.append(_c("screen-text", tp is None or tp >= q["text_px_min"], tp,
                       f"text lines only {tp}px tall at the {sc.get('scale')}x zoom cap", severity="warn", target=canvas))
     return out
+
+
+def _boxes_meet(a, b):
+    return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
 
 
 def privacy_checks(job, export_out):
