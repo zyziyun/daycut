@@ -7,17 +7,20 @@ implementation runs: always in mock mode, and in real mode for the parts the des
 timing, deliver from the publish package, metrics). Operations that need media processing (plan-segments,
 job edit, job rerun) report ``engine lacks <cap>`` in real mode without the command.
 
-Engine command contract (what the adapter sends / expects; all with --json):
+Engine command contract (python -m vstudio.batch ..., all with --json; matches the engine's v0.2 CLI):
   plan-segments --source F --count N --min S --max S --provider claude|openai|none [--client DIR]
                 [--platforms a,b] --out DIR
-      -> {draft, duration, provider, segments: [{id,start,end,title,chapter,hook{start,end,text},
-          hook_candidates?[], notes[], tags[], why, risk, score}], words: [{w,t,te}]}
-  client init|show --client DIR / client update --client DIR --set JSON   -> {config, effective}
+      -> {provider, duration, draft, segments: [{id,start,end,title,chapter,hook{start,end,text},
+          hook_candidates[], notes[], tags[], why, risk, score}], words: [{w,t,te}]}
+  client init|show|update --client DIR [--set JSON]       (update: glossary_add; crm mirrored here)
+      -> {dir, slug, config, effective, batches}
   job edit --batch B --job J --op caption --cue I --text T | trim --start A --end B | hook --pick K
-           | cover --t S --text T | copy --title T --body B --tags a,b     -> {ok, faithful, reason, rerun[]}
-  job rerun --batch B --job J --json-events                               (streams like run --json-events)
-  deliver --batch B --client DIR [--zip] [--cleanup-days N]               -> {dir, zip, items, manifest}
-  metrics --batch B | --client DIR | --all [--csv]                        -> metrics JSON (or CSV text)
+           | cover --t S --text T | copy --title T --body B --tags a,b | undo
+      -> {ok, faithful, reason, rerun[], pending[], glossary_added[], undone?}
+  job show (``job ID --json``) -> ... + edit{range, hook_pick, hook_candidates, cover, copy, history, pending}
+  job rerun --batch B --job J                              (streamed like run; only the stale stages)
+  deliver --batch B [--client DIR] [--zip] [--cleanup-days N] -> {dir, zip, items, jobs, manifest_data}
+  metrics --batch B | --client DIR | --all [--csv]         -> {scope, summary, jobs?, batches?, rows?, csv?}
   timing --batch B --job J --event start|stop --what review [--seconds S]
 """
 import datetime as dt
