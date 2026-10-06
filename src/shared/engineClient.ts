@@ -34,6 +34,7 @@ import type {
   PlanState,
   WeeklyDoc,
 } from './v02';
+import type { AskContext, ChatTurn, ExportJob } from './chatEdit';
 import type { AskResult, CalendarDoc, CalendarPost, ClipsDoc, EditOp, EffectDef, EngineMsg, InboxDoc, IntakeJob, IntakePlan, OutputDoc } from './v04';
 
 export class EngineError extends Error {
@@ -298,14 +299,37 @@ export class EngineClient {
   output(item: string, clip: string) {
     return this.req<OutputDoc>('GET', `/api/outputs/${bid(item)}/${clipId(clip)}`);
   }
-  editOutput(item: string, clip: string, ops: EditOp[]) {
-    return this.req<{ ok: boolean; step?: { id: string; describe: EngineMsg[] }; warnings?: EngineMsg[] }>('POST', `/api/outputs/${bid(item)}/${clipId(clip)}/edit`, { ops });
+  /** turn: the chat card these ops come from (marked applied in the clip's transcript) */
+  editOutput(item: string, clip: string, ops: EditOp[], turn?: string | null) {
+    return this.req<{ ok: boolean; step?: { id: string; describe: EngineMsg[] }; warnings?: EngineMsg[] }>('POST', `/api/outputs/${bid(item)}/${clipId(clip)}/edit`, turn ? { ops, turn } : { ops });
   }
-  askOutput(item: string, clip: string, prompt: string) {
-    return this.req<AskResult>('POST', `/api/outputs/${bid(item)}/${clipId(clip)}/ask`, { prompt: prompt.slice(0, 500) });
+  /** context: what she points at (timeline selection, caption cues, the open effect) */
+  askOutput(item: string, clip: string, prompt: string, context?: AskContext | null) {
+    return this.req<AskResult & { turn?: string | null; context?: AskContext | null; cost_usd?: number | null; seconds?: number | null }>(
+      'POST',
+      `/api/outputs/${bid(item)}/${clipId(clip)}/ask`,
+      context ? { prompt: prompt.slice(0, 500), context } : { prompt: prompt.slice(0, 500) },
+    );
   }
-  renderOutput(item: string, clip: string, opts: { quality?: 'preview' | 'final'; targets?: string } = {}) {
-    return this.req<{ ok: boolean; targets: { target: string; file: string; cover?: string; cached?: boolean }[]; simulated?: boolean }>(
+  /** cancel ONE earlier step; the later ones stay (refused with revert-conflict when a later step builds on it) */
+  revertOutput(item: string, clip: string, step: string) {
+    return this.req<{ ok: boolean; reverted: string }>('POST', `/api/outputs/${bid(item)}/${clipId(clip)}/revert`, { step });
+  }
+  addChatTurn(item: string, clip: string, turn: Partial<ChatTurn>) {
+    return this.req<{ ok: boolean; turn: ChatTurn }>('POST', `/api/outputs/${bid(item)}/${clipId(clip)}/chat`, { add: turn });
+  }
+  updateChatTurn(item: string, clip: string, turn: string, patch: Partial<ChatTurn>) {
+    return this.req<{ ok: boolean; turn: ChatTurn }>('POST', `/api/outputs/${bid(item)}/${clipId(clip)}/chat`, { turn, set: patch });
+  }
+  /** final renders in the background; progress arrives as output-render events */
+  exportOutput(item: string, clip: string, targets: string[]) {
+    return this.req<ExportJob>('POST', `/api/outputs/${bid(item)}/${clipId(clip)}/export`, { targets });
+  }
+  stopExport(item: string, clip: string, job: string) {
+    return this.req<{ ok: boolean }>('POST', `/api/outputs/${bid(item)}/${clipId(clip)}/export-stop`, { job });
+  }
+  renderOutput(item: string, clip: string, opts: { quality?: 'preview' | 'final'; targets?: string; with_ops?: EditOp[] } = {}) {
+    return this.req<{ ok: boolean; targets: { target: string; file: string; cover?: string; cached?: boolean; duration?: number }[]; simulated?: boolean; compare?: boolean }>(
       'POST',
       `/api/outputs/${bid(item)}/${clipId(clip)}/render`,
       opts,

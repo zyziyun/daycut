@@ -42,6 +42,11 @@ export interface PlayerProps {
   initialAspect?: string;
   extra?: ReactNode;
   testId?: string;
+  /** before / after on the player itself: the "before" overlays left of a draggable divider, this player's own
+   * (the "after") on the right; never a modal */
+  compare?: { effects: EffectInstance[]; captions?: CaptionCue[]; labels: [string, string] } | null;
+  /** a label pinned top-left of the frame (e.g. "Original" while C is held) */
+  badge?: string | null;
 }
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -61,6 +66,7 @@ export const Player = forwardRef<PlayerApi, PlayerProps>(function Player(p, ref)
   const [sel, setSelS] = useState<{ a: number; b: number } | null>(null);
   const [loop, setLoop] = useState(false);
   const [caps, setCaps] = useState(false);
+  const [split, setSplit] = useState(50);
   const [safe, setSafe] = useState(false);
   const [full, setFull] = useState(false);
   const [err, setErr] = useState(false);
@@ -274,7 +280,23 @@ export const Player = forwardRef<PlayerApi, PlayerProps>(function Player(p, ref)
   const areas = safeAreas(file?.aspect ?? '', file?.safe_box, file?.caption_box, file?.w, file?.h);
   const cue = caps ? (p.captions ?? []).find((c) => !c.removed && cur >= c.start && cur <= c.end) : undefined;
   const style = p.captionStyle ?? {};
-  const liveFx = (p.effects ?? []).filter((x) => cur >= x.start && cur <= x.end && typeof x.params?.text === 'string' && x.params.text);
+  const fxAt = (list: EffectInstance[] | undefined) => (list ?? []).filter((x) => cur >= x.start && cur <= x.end && typeof x.params?.text === 'string' && x.params.text);
+  const liveFx = fxAt(p.effects);
+  const cueAt = (list: CaptionCue[] | undefined) => (caps ? (list ?? []).find((c) => !c.removed && cur >= c.start && cur <= c.end) : undefined);
+  const overlays = (c: CaptionCue | undefined, fx: EffectInstance[], tag: string) => (
+    <>
+      {c && (
+        <div className={`capov ${style.position ?? 'bottom'}`} style={{ color: style.color ?? '#fff', fontSize: style.size ? `calc(clamp(14px, 2.4vh, 26px) * ${style.size})` : undefined }} data-testid={`caption-overlay${tag}`}>
+          {highlight(c.text, p.keywords ?? [], style.highlight)}
+        </div>
+      )}
+      {fx.map((x) => (
+        <div key={x.id} className="capov middle fxov" style={{ color: String(x.params?.color ?? '#FFD60A'), fontSize: `calc(clamp(22px, 4vh, 44px) * ${Math.max(0.6, Math.min(2, Number(x.params?.size ?? 0.11) / 0.11))})` }} data-testid={`fx-overlay${tag}`}>
+          {String(x.params?.text ?? '')}
+        </div>
+      ))}
+    </>
+  );
 
   return (
     <div ref={box} className={`pl ${full ? 'full' : ''}`} tabIndex={-1} data-testid={p.testId ?? 'player'} data-full={full ? '1' : '0'}>
@@ -319,16 +341,38 @@ export const Player = forwardRef<PlayerApi, PlayerProps>(function Player(p, ref)
                 <div className="safe cap" style={{ left: pct2(areas.cap.l), top: pct2(areas.cap.t), right: pct2(areas.cap.r), bottom: pct2(areas.cap.b) }} />
               </>
             )}
-            {cue && (
-              <div className={`capov ${style.position ?? 'bottom'}`} style={{ color: style.color ?? '#fff', fontSize: style.size ? `calc(clamp(14px, 2.4vh, 26px) * ${style.size})` : undefined }} data-testid="caption-overlay">
-                {highlight(cue.text, p.keywords ?? [], style.highlight)}
-              </div>
+            {p.compare ? (
+              <>
+                <div className="ovl" style={{ clipPath: `inset(0 ${100 - split}% 0 0)` }}>{overlays(cueAt(p.compare.captions ?? p.captions), fxAt(p.compare.effects), '-before')}</div>
+                <div className="ovl" style={{ clipPath: `inset(0 0 0 ${split}%)` }}>{overlays(cue, liveFx, '')}</div>
+                <div
+                  className="wipe"
+                  style={{ left: `${split}%` }}
+                  onClick={(e) => e.stopPropagation()}
+                  onDoubleClick={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    const fr = (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect();
+                    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+                    const mv = (ev: PointerEvent) => setSplit(clamp(((ev.clientX - fr.left) / fr.width) * 100, 4, 96));
+                    const up = () => {
+                      window.removeEventListener('pointermove', mv);
+                      window.removeEventListener('pointerup', up);
+                    };
+                    window.addEventListener('pointermove', mv);
+                    window.addEventListener('pointerup', up);
+                  }}
+                  data-testid="compare-wipe"
+                >
+                  <span className="l">{p.compare.labels[0]}</span>
+                  <i />
+                  <span className="r">{p.compare.labels[1]}</span>
+                </div>
+              </>
+            ) : (
+              overlays(cue, liveFx, '')
             )}
-            {liveFx.map((x) => (
-              <div key={x.id} className="capov middle" style={{ color: String(x.params?.color ?? '#FFD60A'), fontSize: 'clamp(22px, 4vh, 44px)' }} data-testid="fx-overlay">
-                {String(x.params?.text ?? '')}
-              </div>
-            ))}
+            {p.badge && <span className="pbadge" data-testid="player-badge">{p.badge}</span>}
           </div>
         ) : (
           <div className="muted" style={{ padding: 48 }}>{t('player.noVideo')}</div>

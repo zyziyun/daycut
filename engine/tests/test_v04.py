@@ -280,6 +280,39 @@ class ChatEditTest(Fixture):
             with self.assertRaises(BadRequest):
                 self.o.ask(self.item, self.C, "x", context=bad)
 
+    def test_export_job_reports_progress_and_can_stop(self):
+        from desk_engine.common import EventBus
+        bus = EventBus()
+        q = bus.subscribe()
+        o = OU.Outputs(os.path.join(self.root, "desk"), self.h, bus=bus)
+        with mock.patch.dict(os.environ, {"DESK_EXPORT_STEP": "0.01"}):
+            job = o.export(self.item, self.C, ["primary", "douyin:vertical"])["job"]
+            evs, t0 = [], time.time()
+            while time.time() - t0 < 10 and not any(x.get("event") == "render-done" for x in evs):
+                try:
+                    evs.append(q.get(timeout=1))
+                except Exception:  # noqa: BLE001
+                    pass
+        mine = [x for x in evs if x.get("type") == "output-render" and x.get("job") == job]
+        self.assertEqual([x["target"] for x in mine if x["event"] == "target-done"], ["primary", "douyin:vertical"])
+        self.assertEqual([x["stage"] for x in mine if x["event"] == "stage-done"][:4], ["canvas", "timeline", "audio", "final"])
+        self.assertTrue(o.show(self.item, self.C)["renders"])
+        with mock.patch.dict(os.environ, {"DESK_EXPORT_STEP": "2"}):
+            job = o.export(self.item, self.C, ["primary"])["job"]
+            o.export_stop(job)
+            t0 = time.time()
+            got = []
+            while time.time() - t0 < 5 and not got:
+                try:
+                    x = q.get(timeout=1)
+                    if x.get("job") == job and x.get("event") == "stopped":
+                        got.append(x)
+                except Exception:  # noqa: BLE001
+                    pass
+        self.assertTrue(got)
+        with self.assertRaises(BadRequest):
+            o.export(self.item, self.C, ["../x"])
+
     def test_compare_render_applies_nothing(self):
         r = self.o.render(self.item, self.C, with_ops=[dict(op="speed", value=1.5)])
         self.assertTrue(r["compare"] and r["simulated"])

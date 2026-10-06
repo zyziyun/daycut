@@ -31,7 +31,7 @@ import { UiProvider } from './v4/ui';
 
 function NavLink({ to, on, icon, label, count, testId }: { to: Route; on: boolean; icon: React.ReactNode; label: string; count?: React.ReactNode; testId: string }) {
   return (
-    <a href={href(to)} className={`nav ${on ? 'on' : ''}`} data-testid={testId} aria-current={on ? 'page' : undefined}>
+    <a href={href(to)} className={`nav ${on ? 'on' : ''}`} data-testid={testId} aria-current={on ? 'page' : undefined} title={label}>
       {icon}
       <span className="label">{label}</span>
       {count}
@@ -85,7 +85,7 @@ function Shell({ onSettings }: { onSettings: (s: SettingsMsg) => void }) {
   );
   if (r.name === 'focus') return <Focus key={r.id} id={r.id} />;
   return (
-    <div className="v4 app">
+    <div className={`v4 app ${r.name === 'clip' ? 'rail' : ''}`}>
       <nav className="side" aria-label={t('nav.workspaceHint')}>
         <button className="ws" onClick={() => go({ name: 'clients' })} data-tip={t('nav.workspaceHint')} data-testid="workspace">
           <span className="av" />

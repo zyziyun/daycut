@@ -18,9 +18,16 @@ export interface TimelineProps {
   onSelectFx: (id: string | null) => void;
   onMoveFx: (fx: EffectInstance, start: number, end: number) => void;
   onTrim: (start: number, end: number) => void;
+  /** chat cards on the timeline: amber = a draft change, teal = applied; a click opens the card */
+  markers?: { id: string; a: number; b: number; tone: 'draft' | 'applied'; turn?: string; kind: string }[];
+  onMarker?: (turn: string) => void;
+  /** the zoom buttons (hidden in the compact strip of the chat editor) */
+  zoom?: boolean;
+  /** always fit the whole clip (the compact strip) */
+  fit?: boolean;
 }
 
-export function Timeline({ doc, time, selection, selectedFx, onSeek, onSelect, onSelectFx, onMoveFx, onTrim }: TimelineProps) {
+export function Timeline({ doc, time, selection, selectedFx, onSeek, onSelect, onSelectFx, onMoveFx, onTrim, markers, onMarker, zoom = true, fit = false }: TimelineProps) {
   const view = useRef<HTMLDivElement | null>(null);
   const box = useRef<HTMLDivElement | null>(null);
   const [vw, setVw] = useState(800);
@@ -39,7 +46,7 @@ export function Timeline({ doc, time, selection, selectedFx, onSeek, onSelect, o
     setVw(el.clientWidth);
     return () => ro.disconnect();
   }, []);
-  const w = pps ? Math.max(vw, Math.round(D * pps)) : vw;
+  const w = pps && !fit ? Math.max(vw, Math.round(D * pps)) : vw;
   const x = (s: number) => toX(s, D, w);
   const tAt = (clientX: number) => toT(clientX - (box.current?.getBoundingClientRect().left ?? 0), D, w);
   // keep the playhead in view while playing / stepping
@@ -98,7 +105,7 @@ export function Timeline({ doc, time, selection, selectedFx, onSeek, onSelect, o
 
   return (
     <div className="tline" data-testid="timeline">
-      <div className="tlzoom">
+      {zoom && <div className="tlzoom">
         <button className="btn ghost icon sm" onClick={() => setPps((p) => (p ? Math.max(10, p / 2) : Math.max(10, (vw / D) * 2)))} aria-label={t('editor.zoomOut')} data-tip={t('editor.zoomOut')} disabled={!pps}>
           <ZoomOut className="ico" />
         </button>
@@ -108,7 +115,7 @@ export function Timeline({ doc, time, selection, selectedFx, onSeek, onSelect, o
         <button className="btn ghost icon sm" onClick={() => setPps((p) => Math.min(400, (p ?? vw / D) * 2))} aria-label={t('editor.zoomIn')} data-tip={t('editor.zoomIn')}>
           <ZoomIn className="ico" />
         </button>
-      </div>
+      </div>}
       <div className="tlview" ref={view}>
       <div className="rows" ref={box} style={{ width: w }}>
         <div className="tlane" onPointerDown={(e) => e.button === 0 && onSeek(tAt(e.clientX))}>
@@ -131,7 +138,7 @@ export function Timeline({ doc, time, selection, selectedFx, onSeek, onSelect, o
           data-testid="tl-words"
         >
           {!doc.words.length && <span className="lbl">{t('editor.tl.words')}</span>}
-          {doc.words.map((wd, i) => {
+          {(w / D < 40 ? chunks(doc.words, D, w) : doc.words).map((wd, i) => {
             const left = x(wd.t);
             const width = Math.max(2, x(wd.te) - left);
             const sel = selection && wd.t >= selection.a - 0.01 && wd.te <= selection.b + 0.01;
@@ -150,7 +157,7 @@ export function Timeline({ doc, time, selection, selectedFx, onSeek, onSelect, o
             return (
               <div
                 key={e.id}
-                className={`fxb ${selectedFx === e.id ? 'on' : ''}`}
+                className={`fxb ${selectedFx === e.id ? 'on' : ''} ${e.id.startsWith('preview') ? 'draft' : ''}`}
                 style={{ left, width, top: 2 + e.row * 24 }}
                 onPointerDown={(ev) => {
                   ev.stopPropagation();
@@ -189,6 +196,19 @@ export function Timeline({ doc, time, selection, selectedFx, onSeek, onSelect, o
         {doc.cuts.map((c) => (
           <div key={c.index} className="cutz" style={{ left: x(c.start), width: Math.max(2, x(c.end) - x(c.start)) }} />
         ))}
+        {(markers ?? []).filter((m) => m.tone === 'draft' || m.kind === 'cut').map((m) => (
+          <div
+            key={m.id}
+            className={`tmk ${m.tone} ${m.kind}`}
+            style={{ left: x(m.a), width: Math.max(3, x(m.b) - x(m.a)) }}
+            onPointerDown={(e) => {
+              if (!m.turn || !onMarker) return;
+              e.stopPropagation();
+              onMarker(m.turn);
+            }}
+            data-testid={`tl-marker-${m.tone}`}
+          />
+        ))}
         {selection && <div className="selz" style={{ left: x(selection.a), width: Math.max(2, x(selection.b) - x(selection.a)) }} data-testid="tl-selection" />}
         <div className="trimh" style={{ left: x(trimA) }} onPointerDown={(e) => (e.stopPropagation(), setDrag({ kind: 'trim', edge: 'l', cur: trimA }))} data-testid="trim-in" />
         <div className="trimh" style={{ left: x(trimB) }} onPointerDown={(e) => (e.stopPropagation(), setDrag({ kind: 'trim', edge: 'r', cur: trimB }))} data-testid="trim-out" />
@@ -197,6 +217,19 @@ export function Timeline({ doc, time, selection, selectedFx, onSeek, onSelect, o
       </div>
     </div>
   );
+}
+
+/** Fitted to a narrow strip, single words are too small to read: neighbouring words merge into phrases of at least
+ * ~56 px (each still starts at its first word, so a click seeks there). */
+function chunks(words: { w: string; t: number; te: number }[], D: number, w: number) {
+  const min = (56 / w) * D;
+  const out: { w: string; t: number; te: number }[] = [];
+  for (const x of words) {
+    const last = out[out.length - 1];
+    if (last && (x.te - last.t < min || last.w.length < 2) && x.t - last.te < 0.6) out[out.length - 1] = { w: last.w + x.w, t: last.t, te: x.te };
+    else out.push({ ...x });
+  }
+  return out;
 }
 
 /** Frame thumbnails drawn from a hidden video (seek, draw, next). */

@@ -373,6 +373,10 @@ def apply_op(state, o, base):
                 clean[k] = v
             elif k == "keywords" and isinstance(v, list):
                 clean[k] = [str(x)[:30] for x in v[:20]]
+            elif k == "stroke" and isinstance(v, (int, float)) and not isinstance(v, bool):
+                clean[k] = min(8.0, max(0.0, float(v)))
+            elif k == "box" and isinstance(v, bool):
+                clean[k] = v
         state["captions"]["style"].update(clean)
         return _m("op-caption-style", "caption style", "字幕样式"), (dict(warning="style-added-only")
                                                                   if mode != "pipeline" else None)
@@ -482,6 +486,7 @@ class Outputs:
         self._ext = False             # the engine also has revert / chat / ai --context / render --with-ops
         self._lock = threading.Lock()
         self._lists = {}
+        self._jobs = {}
 
     # ---------------------------------------------------------- capability
     def real(self):
@@ -735,6 +740,91 @@ class Outputs:
         self._publish(item_id, clip_id)
         return dict(ok=True, step={k: v for k, v in step.items() if k != "before"}, values=values, warnings=warnings)
 
+    # ---------------------------------------------------------- export (final renders with progress events)
+    def export(self, item_id, clip_id, targets):
+        """Render the final versions for ``targets`` in the background; progress goes out as ``output-render``
+        events {job, event target-start | stage-done | target-done | render-done | stopped | failed, target, stage,
+        progress}. Engine: ``output render --quality final --targets ... --json-events``; the desk implementation
+        simulates the stages (it cannot re-encode)."""
+        need(isinstance(targets, list) and 0 < len(targets) <= 12 and
+             all(isinstance(x, str) and (x == "primary" or TARGET_RE.match(x)) for x in targets),
+             "targets: primary | platform[:orientation] list")
+        e, c = self._clip(item_id, clip_id)
+        job = hashlib.sha1(f"{item_id}{clip_id}{time.time()}".encode()).hexdigest()[:10]
+        stop = threading.Event()
+        self._jobs[job] = dict(stop=stop, proc=None, item=item_id, clip=clip_id)
+        threading.Thread(target=self._export_run, args=(job, e, c, item_id, clip_id, list(targets), stop),
+                         daemon=True).start()
+        return dict(ok=True, job=job, targets=targets)
+
+    def export_stop(self, job):
+        need(isinstance(job, str) and re.match(r"^[0-9a-f]{10}$", job), "job: an export id")
+        j = self._jobs.get(job)
+        if not j:
+            raise KeyError(f"no export {job}")
+        j["stop"].set()
+        if j.get("proc") is not None:
+            try:
+                j["proc"].terminate()
+            except OSError:
+                pass
+        return dict(ok=True, job=job)
+
+    def _export_run(self, job, e, c, item_id, clip_id, targets, stop):
+        def emit(ev):
+            if self.bus:
+                self.bus.publish("output-render", item=item_id, clip=clip_id, job=job,
+                                 **{k: v for k, v in ev.items() if k in ("event", "target", "stage", "progress", "file",
+                                                                       "duration", "cached", "error", "simulated")})
+        try:
+            oid = self._output_id(e, c)
+            if oid:
+                r = self.runner.sibling("vstudio.project")
+                cmd = [r.python, "-m", "vstudio.project", "output", "render", "--project", e["dir"], "--output", oid,
+                       "--quality", "final", "--targets", ",".join(targets), "--json-events", "--json"]
+                p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, env=r.env,
+                                     stdin=subprocess.DEVNULL)
+                self._jobs[job]["proc"] = p
+                for line in p.stdout:
+                    try:
+                        ev = json.loads(line)
+                    except ValueError:
+                        continue
+                    if isinstance(ev, dict) and ev.get("event"):
+                        if ev.get("file"):
+                            self.history.allow_media([ev["file"]])
+                        emit(ev)
+                p.wait()
+                if stop.is_set():
+                    emit(dict(event="stopped"))
+                elif p.returncode != 0:
+                    emit(dict(event="failed", error=f"render exited {p.returncode}"))
+            else:
+                step = float(os.environ.get("DESK_EXPORT_STEP") or 0.5)
+                done = []
+                for tg in targets:
+                    emit(dict(event="target-start", target=tg))
+                    for k, stage in enumerate(("canvas", "timeline", "audio", "final")):
+                        for _ in range(max(1, int(step / 0.05))):
+                            if stop.is_set():
+                                emit(dict(event="stopped"))
+                                return
+                            time.sleep(min(step, 0.05))
+                        emit(dict(event="stage-done", target=tg, stage=stage, progress=round((k + 1) / 4, 2)))
+                    f = c["files"][0]["path"] if c["files"] else None
+                    done.append(dict(target=tg, quality="final", file=f))
+                    emit(dict(event="target-done", target=tg, file=f, simulated=True))
+                with self._lock:
+                    st = self._desk(e, clip_id)
+                    st["renders"] = [dict(r_, key=len(st["steps"])) for r_ in done if r_["file"]]
+                    self._save(e, clip_id, st)
+                emit(dict(event="render-done", simulated=True))
+            self._publish(item_id, clip_id)
+        except Exception as ex:  # noqa: BLE001
+            emit(dict(event="failed", error=str(ex)[:300]))
+        finally:
+            self._jobs.pop(job, None)
+
     # ---------------------------------------------------------- one earlier step, later ones kept
     def revert(self, item_id, clip_id, step_id):
         """Cancel ONE earlier step (engine ``output revert --step``): recorded as a new undoable step; refused with
@@ -935,6 +1025,9 @@ class Outputs:
             r["warnings"] = [note] + r.get("warnings", [])
             p = (note.get("params") or {})
             r["failed"] = dict(provider=p.get("provider"), code=_failure_code(p.get("error")))
+        if not oid and not note and not r.get("proposals"):     # the desk rules did not get it and no model can
+            r["warnings"] = [_m("no-model", "no AI model is connected: only simple requests are understood",
+                                "没有连上 AI 模型，只听得懂简单的说法")] + r.get("warnings", [])
         r.update(context=context, cost_usd=0.0, seconds=round(time.time() - t0, 2))
         r["turn"] = self._record_ask(e, clip_id, prompt, context, r)
         return r
@@ -1190,6 +1283,29 @@ def propose(doc, prompt, context=None):
         add(dict(op="effect_add", effect="punch-in", start=round(t, 3), end=round(min(dur or t + 3, t + 3), 3)),
             _m("op-effect-add", f"add Punch-in zoom at {t:.1f}s", f"在 {t:.1f} 秒加推镜放大", effect="punch-in",
                start=round(t, 3), end=round(t + 3, 3)), _m("why-zoom", "stress this line", "强调这句话"))
+    m = re.search(r"(\d+(?:\.\d+)?)\s*(?:倍速?|x\b|×)", p, re.I)               # the engine's literal phrases
+    if m and 0.5 <= float(m.group(1)) <= 2.5:
+        v = float(m.group(1))
+        add(dict(op="speed", value=v), _m("op-speed", f"speed {v:g}x", f"{v:g} 倍速", value=v),
+            _m("why-style", "as asked", "按你说的调整"))
+    m = re.search(r"(?:去掉|剪掉|删掉|cut)\s*(?:开头|前|the first)\s*(\d+(?:\.\d+)?)\s*(?:秒|s)", p, re.I)
+    if m and dur and float(m.group(1)) < dur - 1:
+        a = float(m.group(1))
+        add(dict(op="trim", start=a, end=round(dur, 3)), _m("op-trim", f"start at {a:g}s", f"去掉开头 {a:g} 秒",
+                                                              start=a, end=round(dur, 3)),
+            _m("why-style", "as asked", "按你说的调整"))
+    if re.search(r"进度条|progress bar", p, re.I):
+        add(dict(op="effect_add", effect="progress-bar-pil", start=0, end=round(dur, 3)),
+            _m("op-effect-add", "add a progress bar", "加进度条", effect="progress-bar-pil", start=0, end=round(dur, 3)),
+            _m("why-style", "as asked", "按你说的调整"))
+    if re.search(r"淡出|fade out", p, re.I):
+        add(dict(op="effect_add", effect="end-fade", start=max(0, round(dur - 1.5, 3)), end=round(dur, 3)),
+            _m("op-effect-add", "fade out at the end", "结尾淡出", effect="end-fade", start=max(0, round(dur - 1.5, 3)),
+               end=round(dur, 3)), _m("why-style", "as asked", "按你说的调整"))
+    m = re.search(r"(-\d+(?:\.\d+)?)\s*LUFS", p, re.I)
+    if m:
+        add(dict(op="loudness", lufs=float(m.group(1))), _m("op-loudness", "louder", "调整响度", lufs=float(m.group(1))),
+            _m("why-style", "as asked", "按你说的调整"))
     if not props and not warnings:
         warnings.append(_m("not-understood", "try: start at “…”, tighter, pop “…”, new cover, Douyin version",
                            "这句我还没看懂。可以试试：从「…」开始 / 再紧凑一点 / 把「…」弹出来 / 换个封面 / 出抖音版"))

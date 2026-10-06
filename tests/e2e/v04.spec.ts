@@ -113,12 +113,14 @@ test('a fuye-like folder: large player, full screen with F / Esc, frame stepping
   await expect(page.getByTestId('player-overlay')).toHaveCount(0);
 });
 
-test('second-pass edit: trim, pop word, 让 AI 改, render, undo; 转成项目 happens on the first edit', async () => {
+test('second-pass edit: trim, pop word (精确编辑 drawer), 让 AI 改 (chat), render, undo; 转成项目 happens on the first edit', async () => {
   const before = fs.statSync(path.join(fuye, 'final', 'A_换圈子.mp4')).mtimeMs;
   await page.getByTestId('clip-card').click({ button: 'right' });
   await page.getByTestId('menu-edit').click();
   await expect(page.getByTestId('editor')).toBeVisible();
   await expect(page.getByTestId('timeline').locator('.w')).toHaveCount(6);
+  await expect(page.getByTestId('chat-panel')).toBeVisible(); // chat-first: the AI column is the default
+  await page.getByTestId('toggle-precise').click(); // today's tabs live in the optional drawer
   await page.getByTestId('etab-captions').click();
   await expect(page.getByTestId('caps-note')).toContainText(/burned|烧进/); // flattened: explained, no dead controls
   await page.getByTestId('etab-trim').click();
@@ -137,16 +139,15 @@ test('second-pass edit: trim, pop word, 让 AI 改, render, undo; 转成项目 h
   await expect(page.getByTestId('fx-block')).toHaveCount(1);
   await expect(page.getByTestId('edit-step')).toHaveCount(2);
 
-  if (!(await page.getByTestId('ai-panel').count())) await page.getByTestId('toggle-ai').click();
-  await page.getByTestId('ai-input').fill('再紧凑一点');
-  await page.getByTestId('ai-input').press('Enter');
-  const prop = page.getByTestId('ai-proposal').first();
+  await page.getByTestId('chat-input').fill('再紧凑一点');
+  await page.getByTestId('chat-input').press('Enter');
+  const prop = page.getByTestId('change-card');
   await expect(prop).toBeVisible({ timeout: 15000 });
-  await prop.getByTestId('ai-compare').click(); // before / after preview, nothing applied yet
+  await prop.getByTestId('change-compare').click(); // before / after preview, nothing applied yet
   await expect(page.getByTestId('edit-step')).toHaveCount(2);
-  await prop.getByTestId('ai-apply').click();
+  await prop.getByTestId('change-apply').click();
   await expect(page.getByTestId('edit-step')).toHaveCount(3);
-  await prop.getByTestId('ai-undo').click();
+  await page.getByTestId('applied-undo').click(); // the newest card: a plain undo
   await expect(page.getByTestId('edit-step')).toHaveCount(2);
 
   await page.getByTestId('render').click();

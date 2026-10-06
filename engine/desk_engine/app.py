@@ -55,7 +55,8 @@ v0.4 (outputs.py, intake.py, inbox.py; engine command when available, desk imple
   POST /api/outputs/<item>/<clip>/edit     {ops: [op...]} (one undo step);  /ask {prompt} -> proposals;
                                            /render {quality?, targets?, with_ops?};  /undo | /redo {steps?}
                                            /revert {step} (one earlier step, later ones kept); /chat {add} |
-                                           {turn, set} (the clip's chat transcript; show returns it as chat)
+                                           {turn, set} (the clip's chat transcript; show returns it as chat);
+                                           /export {targets} -> {job} + output-render events; /export-stop {job}
   GET  /api/effects                        effects catalogue (zh labels, params, preview kind)
   POST /api/intake {prompt, inputs[]}      -> {id}; GET /api/intake/<id>; POST .../revise {prompt}; POST .../apply
                                            {plan?, run?}; GET /api/intake/recent
@@ -453,6 +454,10 @@ class Api:
                 if verb == "render":
                     return self.outputs.render(parts[1], clip, b.get("quality") or "preview", b.get("targets") or "primary",
                                                with_ops=b.get("with_ops"))
+                if verb == "export":
+                    return self.outputs.export(parts[1], clip, b.get("targets"))
+                if verb == "export-stop":
+                    return self.outputs.export_stop(b.get("job"))
                 if verb == "revert":
                     return self.outputs.revert(parts[1], clip, b.get("step"))
                 if verb == "chat":
