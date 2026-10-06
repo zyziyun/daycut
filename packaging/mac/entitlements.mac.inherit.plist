@@ -4,7 +4,8 @@
   Every nested executable / library: Electron helpers and the bundled runtime (python3.12, ffmpeg, *.so, *.dylib).
   allow-jit                         V8 in the renderer/GPU helpers (MAP_JIT).
   allow-unsigned-executable-memory  numba/llvmlite (used by mlx-whisper word timestamps) JIT-compiles into plain
-                                    mmap'd pages without MAP_JIT; without it, transcription with word timing crashes.
+                                    mmap'd pages without MAP_JIT; without it the python process is SIGKILLed on the
+                                    first @numba.jit call (verified on macOS 26 with a hardened-runtime build).
   Library validation stays ON: every dylib/.so in the bundle is re-signed with the same Developer ID. If a future
   dependency dlopen()s a library that is not part of the bundle (error "mapping process and mapped file (non-platform)
   have different Team IDs"), add com.apple.security.cs.disable-library-validation here.
