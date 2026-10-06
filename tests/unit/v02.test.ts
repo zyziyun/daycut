@@ -135,7 +135,7 @@ describe('segment helpers', () => {
   it('weekly columns match gtm/05_weekly_metrics.csv', () => {
     const f = path.resolve(import.meta.dirname, '../../../video-studio-app/gtm/05_weekly_metrics.csv');
     if (!fs.existsSync(f)) return;
-    expect(fs.readFileSync(f, 'utf8').replace(/^﻿/, '').split('\n')[0].split(',')).toEqual([...WEEKLY_COLUMNS]);
+    expect(fs.readFileSync(f, 'utf8').replace(/^\uFEFF/, '').split('\n')[0].split(',')).toEqual([...WEEKLY_COLUMNS]);
   });
 });
 

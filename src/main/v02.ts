@@ -90,7 +90,7 @@ export function startCleanupLoop(client: () => EngineClient | null): () => void 
   const run = async () => {
     const c = client();
     if (!c || stopped) return;
-    let due: { batch: string; paths: string[] }[] = [];
+    let due: { batch: string; paths: string[] }[];
     try {
       due = await c.cleanupDue();
     } catch {
