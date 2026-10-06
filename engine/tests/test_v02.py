@@ -16,7 +16,7 @@ import _isolate  # noqa: E402,F401  (VSTUDIO_HOME / DESK_DATA_DIR -> a temp fold
 
 from desk_engine import metrics as M  # noqa: E402
 from desk_engine import planning as P  # noqa: E402
-from desk_engine.app import Api, validate_edit, validate_plan_batch  # noqa: E402
+from desk_engine.app import Api, validate_deliver, validate_edit, validate_plan_batch  # noqa: E402
 from desk_engine.caps import Capabilities, parse_help, parse_recipes_doc  # noqa: E402
 from desk_engine.common import BadRequest, EventBus, Registry  # noqa: E402
 from desk_engine.mock import MockEngine  # noqa: E402
@@ -147,6 +147,13 @@ class RealDispatchTest(unittest.TestCase):
         call = next(c for c in self.runner.calls if c[0] == "deliver")
         self.assertIn("--zip", call)
         self.assertEqual(call[call.index("--cleanup-days") + 1], "30")
+        # 0 = never delete the sources: passed through to the engine (it was dropped -> the 30-day default)
+        self.assertEqual(validate_deliver(dict(cleanup_days=0))["cleanup_days"], 0)
+        self.st.deliver(self.bid, dict(zip=True, cleanup_days=0))
+        call = [c for c in self.runner.calls if c[0] == "deliver"][-1]
+        self.assertEqual(call[call.index("--cleanup-days") + 1], "0")
+        self.st.deliver(self.bid, dict(zip=True))
+        self.assertNotIn("--cleanup-days", [c for c in self.runner.calls if c[0] == "deliver"][-1])
         self.assertEqual(self.st.metrics()["source"], "engine")
         self.st.timing(self.bid, dict(job="s001", event="stop", what="review", active_s=12.5))
         wait(lambda: any(c[0] == "timing" for c in self.runner.calls))

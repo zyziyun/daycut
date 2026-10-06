@@ -566,14 +566,15 @@ class Studio:
         client = body.get("client") or self.batch_client(bid)
         st = self.e.status(bid)
         cname = (self._read_client(client).get("name") or client) if client else "客户"
-        days = int(body["cleanup_days"]) if body.get("cleanup_days") else None
+        # None = the client's / engine default; 0 = never delete the sources (passed through, not dropped)
+        days = int(body["cleanup_days"]) if body.get("cleanup_days") is not None else None
         if self.has("deliver"):
             args = ["deliver", "--batch", self.e.dir_of(bid), "--json"]
             if client:
                 args += ["--client", self.client_dir(client)]
             if body.get("zip", True):
                 args.append("--zip")
-            if days:
+            if days is not None:
                 args += ["--cleanup-days", str(days)]
             r = self.runner.json(args, timeout=3600)
             if not isinstance(r.get("manifest"), dict):

@@ -251,8 +251,8 @@ def validate_deliver(b):
     if "zip" in b:
         need(isinstance(b["zip"], bool), "zip must be a boolean")
         out["zip"] = b["zip"]
-    if b.get("cleanup_days") is not None:
-        out["cleanup_days"] = int(_num(b["cleanup_days"], 1, 365, "cleanup_days"))
+    if b.get("cleanup_days") is not None:              # 0 = never delete the sources (engine --cleanup-days 0)
+        out["cleanup_days"] = int(_num(b["cleanup_days"], 0, 365, "cleanup_days"))
     return out
 
 
