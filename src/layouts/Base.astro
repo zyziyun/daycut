@@ -1,0 +1,84 @@
+---
+import '../styles/global.css';
+import { SITE } from '../config';
+import { t, prefix, altPath, type Lang } from '../i18n';
+
+interface Props {
+  lang: Lang;
+  page?: '' | 'privacy' | 'terms';
+  title?: string;
+  description?: string;
+}
+const { lang, page = '', title, description } = Astro.props;
+const c = t(lang);
+const home = prefix(lang) + '/';
+const pageTitle = title ? `${title} · ${SITE.name}` : c.meta.title;
+const desc = description ?? c.meta.description;
+const site = SITE.url.replace(/\/$/, '');
+const zhUrl = `${site}${altPath('en', page)}`;
+const enUrl = `${site}${altPath('zh', page)}`;
+const canonical = lang === 'zh' ? zhUrl : enUrl;
+const nav = [
+  ['how', c.nav.how],
+  ['proof', c.nav.proof],
+  ['partner', c.nav.partner],
+  ['pricing', c.nav.pricing],
+  ['desktop', c.nav.desktop],
+  ['faq', c.nav.faq],
+] as const;
+---
+<!doctype html>
+<html lang={c.htmlLang}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{pageTitle}</title>
+    <meta name="description" content={desc} />
+    <link rel="canonical" href={canonical} />
+    <link rel="alternate" hreflang="zh-CN" href={zhUrl} />
+    <link rel="alternate" hreflang="en" href={enUrl} />
+    <link rel="alternate" hreflang="x-default" href={zhUrl} />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <meta name="theme-color" content="#FAF6EE" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={desc} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={`${site}/img/og.jpg`} />
+    <meta name="twitter:card" content="summary_large_image" />
+    {page !== '' && <meta name="robots" content="noindex" />}
+  </head>
+  <body>
+    <a class="skip" href="#main">{c.nav.skip}</a>
+    <header class="site-header">
+      <div class="wrap header-row">
+        <a class="logo" href={home} aria-label={SITE.name}>
+          <svg aria-hidden="true" viewBox="0 0 64 64" width="28" height="28"><rect width="64" height="64" rx="16" fill="#FF2442"/><rect x="10" y="40" width="44" height="10" rx="3" fill="#FFD60A"/><path d="M26 16v22l18-11z" fill="#fff"/></svg>
+          <span>{SITE.name}</span>
+        </a>
+        <nav class="main-nav" aria-label="primary">
+          {nav.map(([id, label]) => <a href={`${home}#${id}`}>{label}</a>)}
+        </nav>
+        <div class="header-actions">
+          <a class="lang" href={altPath(lang, page)} hreflang={lang === 'zh' ? 'en' : 'zh-CN'} aria-label={c.nav.switchAria}>{c.nav.switchLabel}</a>
+          <a class="btn btn-sm" href={`${home}#apply`}>{c.nav.cta}</a>
+        </div>
+      </div>
+    </header>
+    <main id="main">
+      <slot />
+    </main>
+    <footer class="site-footer">
+      <div class="wrap footer-row">
+        <p>© 2026 {SITE.name}</p>
+        <nav aria-label="footer">
+          <a href={`${prefix(lang)}/privacy`}>{c.footer.privacy}</a>
+          <a href={`${prefix(lang)}/terms`}>{c.footer.terms}</a>
+          <a href={`mailto:${SITE.contactEmail}`}>{SITE.contactEmail}</a>
+          <a href={SITE.githubUrl} rel="noopener">GitHub</a>
+        </nav>
+        <p class="muted small">{c.footer.note}</p>
+      </div>
+    </footer>
+  </body>
+</html>

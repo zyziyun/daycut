@@ -1,0 +1,16 @@
+{
+  "name": "video-studio-site",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "ASTRO_TELEMETRY_DISABLED=1 astro dev",
+    "build": "ASTRO_TELEMETRY_DISABLED=1 astro build",
+    "preview": "ASTRO_TELEMETRY_DISABLED=1 astro preview",
+    "images": "./scripts/optimize-images.sh",
+    "check:copy": "node scripts/check-copy.mjs"
+  },
+  "dependencies": {
+    "astro": "^7.3.5"
+  }
+}
