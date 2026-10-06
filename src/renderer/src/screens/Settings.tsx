@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { SettingsMsg } from '../../../shared/deskApi';
 import { AssetsCard } from '../components/assets';
+import { WatchFoldersField } from '../components/HistoryList';
 import { KeysCard } from '../components/KeysCard';
 import { ErrorBox, Field } from '../components/ui';
 import { t } from '../i18n';
@@ -98,6 +99,9 @@ export function Settings({ onChange }: { onChange: (s: SettingsMsg) => void }) {
                 if (n !== s.cleanupDays) void save({ cleanupDays: n });
               }}
             />
+          </Field>
+          <Field label={t('history.watching')} hint={t('history.watchHint')}>
+            <WatchFoldersField />
           </Field>
           <Field label={t('settings.persona')} hint={t('settings.personaHint')}>
             <div className="row">

@@ -120,6 +120,86 @@ class HistoryTest(unittest.TestCase):
         self.h.unhide_all()
         self.assertEqual(len(self.h.list()["items"]), 1)
 
+    def test_plain_work_folders_detail_and_adopt(self):
+        w = os.path.join(self.root, "demos")
+        th = os.path.join(w, "01-talkinghead")
+        for f in ("final/xhs_3x4.mp4", "final/cover_3x4.jpg", "final/post.md", "final/contact_sheet.jpg"):
+            os.makedirs(os.path.dirname(os.path.join(th, f)), exist_ok=True)
+            with open(os.path.join(th, f), "w", encoding="utf-8") as fh:
+                fh.write("标题\n正文 #标签" if f.endswith(".md") else "x")
+        with open(os.path.join(th, "REPORT.md"), "w", encoding="utf-8") as fh:
+            fh.write("# 01-talkinghead: 口播精剪\n\nbody")
+        fuye = os.path.join(w, "fuye")                          # in progress: work/ scripts + a sheet, no outputs
+        os.makedirs(os.path.join(fuye, "work", "clips", "A"))
+        open(os.path.join(fuye, "work", "compose.py"), "w").close()
+        open(os.path.join(fuye, "sheet.jpg"), "w").close()
+        os.makedirs(os.path.join(w, "not-work", "misc"))
+        open(os.path.join(w, "not-work", "misc", "readme.txt"), "w").close()
+        make_batch(os.path.join(w, "batch-rag"), name="rag")
+        self.h.set_watch([w])
+        items = self.h.list()["items"]
+        by = {i["name"]: i for i in items}
+        self.assertEqual(sorted(by), ["01-talkinghead: 口播精剪", "fuye", "rag"])
+        t = by["01-talkinghead: 口播精剪"]
+        self.assertEqual((t["kind"], t["type"], t["status"], t["counts"]["total"], t["openable"]),
+                         ("work", "talkinghead", "done", 1, False))
+        self.assertEqual((by["fuye"]["type"], by["fuye"]["status"]), ("slices", "in-progress"))
+        self.assertEqual(by["rag"]["type"], "batch")
+        self.assertEqual([i["name"] for i in self.h.list(type_="talkinghead")["items"]], [t["name"]])
+        det = self.h.item(t["id"])["detail"]
+        self.assertEqual(det["outputs"], [os.path.join(th, "final", "xhs_3x4.mp4")])
+        self.assertEqual(det["covers"], [os.path.join(th, "final", "cover_3x4.jpg")])
+        self.assertIn("正文", det["posts"][0]["text"])
+        self.assertEqual(det["notes"][0]["path"], os.path.join(th, "REPORT.md"))
+        self.assertIn(os.path.join(th, "final"), self.h.roots())
+        before = sorted(os.listdir(th))
+        r = self.h.adopt(t["id"])
+        self.assertEqual((r["type"], r["recipe"]), ("talkinghead", "talkinghead"))
+        self.assertEqual(sorted(os.listdir(th)), sorted(before + [".vstudio"]))
+        self.assertTrue(os.path.exists(os.path.join(th, ".vstudio", "work.json")))
+        again = {i["name"]: i for i in self.h.list()["items"]}[t["name"]]
+        self.assertEqual(again["status"], "adopted")
+        with self.assertRaises(Exception):
+            self.h.adopt(by["rag"]["id"])
+
+    def test_live_status_external_runner(self):
+        """A run outside the app (terminal / Claude Code) writes heartbeats: running -> stale -> interrupted;
+        a checkpoint -> needs you."""
+        import socket
+        import time
+        w = os.path.join(self.root, "demos")
+        job = os.path.join(w, "fuye")
+        os.makedirs(os.path.join(job, "work"))
+        open(os.path.join(job, "work", "compose.py"), "w").close()
+        with open(os.path.join(job, "work", "render.log"), "w") as f:
+            f.write("\n".join(f"line {i}" for i in range(100)))
+        self.h.set_watch([w])
+        status = os.path.join(job, ".vstudio", "status.json")
+        os.makedirs(os.path.dirname(status))
+
+        def beat(**kw):
+            rec = dict(status="running", stage="render", progress=0.4, message="clip B", eta=120, started=time.time() - 60,
+                       heartbeat=time.time(), pid=999999, host=socket.gethostname(), updated_by="workflow")
+            rec.update(kw)
+            with open(status, "w") as f:
+                json.dump(rec, f)
+        beat()
+        r = self.h.list()
+        row = r["items"][0]
+        self.assertEqual(r["running"], 1)
+        self.assertEqual((row["live"]["state"], row["live"]["stage"], row["live"]["progress"]), ("running", "render", 0.4))
+        beat(heartbeat=time.time() - C.LIVE_STALE_S - 5)                  # the external process died
+        r = self.h.list()
+        self.assertEqual((r["running"], r["items"][0]["live"]["state"]), (0, "interrupted"))
+        beat(heartbeat=time.time() - C.LIVE_STALE_S - 5, pid=os.getpid())  # still alive: still running
+        self.assertEqual(self.h.list()["items"][0]["live"]["state"], "running")
+        beat(status="waiting", needs_you=True, message="checkpoint: hooks", heartbeat=time.time() - 86400)
+        live = self.h.list()["items"][0]["live"]
+        self.assertEqual((live["state"], live["needs_you"]), ("waiting", True))
+        det = self.h.item(self.h.list()["items"][0]["id"])
+        self.assertTrue(det["log"]["text"].endswith("line 99"))
+        self.assertEqual(len(det["log"]["text"].splitlines()), 40)
+
     def test_readonly(self):
         b = make_batch(os.path.join(self.root, "w", "batch-ro"), name="ro")
         before = os.path.getmtime(os.path.join(b, "batch.db"))

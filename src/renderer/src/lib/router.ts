@@ -10,6 +10,8 @@ export type Route =
   | { name: 'client'; slug: string }
   | { name: 'metrics' }
   | { name: 'welcome' }
+  | { name: 'work' }
+  | { name: 'workItem'; id: string }
   | { name: 'deliver'; batch: string }
   | { name: 'board'; batch: string }
   | { name: 'review'; batch: string }
@@ -22,6 +24,7 @@ export function parseRoute(hash: string): Route {
   if (p[0] === 'settings') return { name: 'settings' };
   if (p[0] === 'metrics') return { name: 'metrics' };
   if (p[0] === 'welcome') return { name: 'welcome' };
+  if (p[0] === 'work') return p[1] && /^[0-9a-f]{12}$/.test(p[1]) ? { name: 'workItem', id: p[1] } : { name: 'work' };
   if (p[0] === 'clients') return p[1] ? { name: 'client', slug: p[1] } : { name: 'clients' };
   if (p[0] === 'b' && p[1]) {
     if (p[2] === 'job' && p[3]) return { name: 'job', batch: p[1], job: p[3] };
@@ -41,7 +44,10 @@ export function href(r: Route): string {
     case 'clients':
     case 'metrics':
     case 'welcome':
+    case 'work':
       return `#/${r.name}`;
+    case 'workItem':
+      return `#/work/${r.id}`;
     case 'client':
       return `#/clients/${encodeURIComponent(r.slug)}`;
     case 'job':

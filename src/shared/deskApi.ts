@@ -124,6 +124,8 @@ export interface DeskApi {
     check(): Promise<UpdateStateMsg>;
     install(): Promise<void>;
   };
-  on(event: 'publish:state' | 'publish:fillStep' | 'engine:status' | 'assets:progress' | 'update:state', cb: (data: unknown) => void): () => void;
+  on(event: 'publish:state' | 'publish:fillStep' | 'engine:status' | 'assets:progress' | 'update:state' | 'history:changed', cb: (data: unknown) => void): () => void;
+  /** watch these folders for live job changes ('history:changed' events); -> the folders watched */
+  watchHistory(roots: string[]): Promise<string[]>;
   mediaUrl(path: string): string;
 }

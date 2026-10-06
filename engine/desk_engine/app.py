@@ -46,6 +46,8 @@ History (history.py; read-only discovery of past work: desk + engine registries,
   GET  /api/history/config | POST {watch[]}   watched folders (default ~/Desktop/video-studio-demos)
   POST /api/history/open {dir}             put a found batch / project in the desk list -> {id, dir}
   POST /api/history/hide {dir}             remove from the list (never deletes files); POST /api/history/unhide
+  GET  /api/history/item/<id>              one entry; work folders + detail {outputs, covers, sheets, posts, notes}
+  POST /api/history/item/<id>/adopt        {recipe?: guess|name, title?} plain work folder -> .vstudio/work.json
 """
 import hmac
 import json
@@ -431,10 +433,25 @@ class Api:
             if parts == ["history"] and method == "GET":
                 st, kind = q("status"), q("kind")
                 need(st is None or re.match(r"^[a-z-]{1,20}$", st), "bad status")
-                need(kind in (None, "batch", "project"), "kind: batch|project")
-                qq = q("q")
+                qq, ty, cl = q("q"), q("type"), q("client")
                 need(qq is None or len(qq) <= 200, "q: max 200 chars")
-                return h.list(q=qq, status=st, kind=kind)
+                need(kind in (None, "batch", "project", "work"), "kind: batch|project|work")
+                need(ty is None or re.match(r"^[a-z-]{1,20}$", ty), "bad type")
+                need(cl is None or len(cl) <= 200, "bad client")
+                return h.list(q=qq, status=st, kind=kind, type_=ty, client=cl)
+            if len(parts) >= 3 and parts[1] == "item":
+                need(ID_RE.match(parts[2]), "bad item id")
+                if len(parts) == 3 and method == "GET":
+                    return h.item(parts[2])
+                if parts[3:] == ["adopt"] and method == "POST":
+                    b = body if isinstance(body, dict) else {}
+                    rec = b.get("recipe") or "guess"
+                    need(isinstance(rec, str) and re.match(r"^[a-z][a-z0-9-]{0,40}$", rec), "bad recipe")
+                    title = b.get("title")
+                    need(title is None or (isinstance(title, str) and len(title) <= 200), "title: max 200 chars")
+                    r = h.adopt(parts[2], recipe=rec, title=title)
+                    self.bus.publish("batches")
+                    return r
             if parts == ["history", "config"]:
                 if method == "GET":
                     return h.config()

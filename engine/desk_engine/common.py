@@ -88,6 +88,46 @@ def need(cond, msg):
         raise BadRequest(msg)
 
 
+# ------------------------------------------------------------------ live status (.vstudio/status.json)
+# Mirrors vstudio.batch.livestatus (written by the batch runner, project runs, `vstudio.project touch` and the skill's
+# long stages, inside or outside the desk). A running record whose heartbeat is old and whose process is gone is
+# "interrupted" - never running forever.
+LIVE_STALE_S = 600
+LIVE_HARD_S = 7200
+
+
+def _pid_alive(pid):
+    try:
+        os.kill(int(pid), 0)
+        return True
+    except PermissionError:
+        return True
+    except (OSError, TypeError, ValueError):
+        return False
+
+
+def live_status(d, now=None):
+    rec = read_json(os.path.join(d, ".vstudio", "status.json"), None)
+    if not isinstance(rec, dict) or rec.get("status") not in ("running", "waiting", "done", "failed"):
+        return None
+    import socket
+    now = now or time.time()
+    try:
+        age = max(0.0, now - float(rec.get("heartbeat") or 0))
+    except (TypeError, ValueError):
+        age = float("inf")
+    state = rec["status"]
+    if state == "running":
+        gone = rec.get("host") != socket.gethostname() or not _pid_alive(rec.get("pid"))
+        if age > LIVE_HARD_S or (age > LIVE_STALE_S and gone):
+            state = "interrupted"
+    out = {k: rec.get(k) for k in ("status", "stage", "progress", "message", "eta", "started", "heartbeat",
+                                   "finished", "updated_by")}
+    out.update(state=state, age=round(age, 1) if age != float("inf") else None, needs_you=bool(rec.get("needs_you"))
+               and state == "waiting")
+    return out
+
+
 class EventBus:
     """Fan-out of engine events to every SSE subscriber (bounded queues; slow readers drop events)."""
 

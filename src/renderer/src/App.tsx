@@ -3,7 +3,9 @@ import type { SettingsMsg } from '../../shared/deskApi';
 import { AssetsBanner, UpdateBadge } from './components/assets';
 import { setLang, t } from './i18n';
 import { EngineProvider, useEngine } from './lib/engine';
+import { HistoryProvider, useHistory } from './lib/history';
 import { href, useRoute, type Route } from './lib/router';
+import { AllWork } from './screens/AllWork';
 import { Batches } from './screens/Batches';
 import { Board } from './screens/Board';
 import { ClientDetail } from './screens/ClientDetail';
@@ -16,6 +18,7 @@ import { NewBatch } from './screens/NewBatch';
 import { Publish } from './screens/Publish';
 import { Review } from './screens/Review';
 import { Settings } from './screens/Settings';
+import { WorkItem } from './screens/WorkItem';
 import { applyTheme } from './theme/tokens';
 
 function lastBatch(r: Route): string | null {
@@ -25,6 +28,9 @@ function lastBatch(r: Route): string | null {
 function Shell({ onSettings }: { onSettings: (s: SettingsMsg) => void }) {
   const r = useRoute();
   const { info, error, connected } = useEngine();
+  const { live } = useHistory();
+  const running = live.filter((i) => i.live?.state === 'running' || i.live?.state === 'waiting').length;
+  const needsYou = live.some((i) => i.live?.needs_you);
   const b = lastBatch(r);
   useEffect(() => {
     if ('batch' in r) sessionStorage.setItem('lastBatch', r.batch);
@@ -41,6 +47,14 @@ function Shell({ onSettings }: { onSettings: (s: SettingsMsg) => void }) {
           video-studio desk
           <small>{t('app.tagline')}</small>
         </div>
+        <a href={href({ name: 'work' })} className={r.name === 'work' || r.name === 'workItem' ? 'on' : ''} data-testid="nav-all-work">
+          {t('nav.allWork')}
+          {running > 0 && (
+            <span className={`badge ${needsYou ? 'danger' : 'accent'}`} style={{ marginLeft: 6 }} data-testid="running-badge" title={t('history.running')}>
+              {running}
+            </span>
+          )}
+        </a>
         {nav({ name: 'clients' }, t('nav.clients'), r.name === 'clients' || r.name === 'client')}
         {nav({ name: 'batches' }, t('nav.batches'), r.name === 'batches' || r.name === 'new')}
         {nav({ name: 'board', batch: b ?? '' }, t('nav.board'), r.name === 'board' || r.name === 'job', !b)}
@@ -75,6 +89,10 @@ function Shell({ onSettings }: { onSettings: (s: SettingsMsg) => void }) {
           </div>
         ) : r.name === 'batches' ? (
           <Batches />
+        ) : r.name === 'work' ? (
+          <AllWork />
+        ) : r.name === 'workItem' ? (
+          <WorkItem key={r.id} id={r.id} />
         ) : r.name === 'new' ? (
           <NewBatch />
         ) : r.name === 'board' ? (
@@ -130,7 +148,13 @@ export function App() {
   if (!ready) return null;
   return (
     <EngineProvider>
-      {settings && !settings.firstRunDone ? <FirstRun settings={settings} onDone={apply} /> : <Shell onSettings={apply} />}
+      {settings && !settings.firstRunDone ? (
+        <FirstRun settings={settings} onDone={apply} />
+      ) : (
+        <HistoryProvider>
+          <Shell onSettings={apply} />
+        </HistoryProvider>
+      )}
     </EngineProvider>
   );
 }

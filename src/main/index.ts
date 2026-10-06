@@ -21,6 +21,7 @@ import { PublishStore } from './publish/store';
 import { findBundledRuntime, runtimeEnv, type BundledRuntime } from './runtime';
 import { buildCsp, isAppUrl, isSafeExternal } from './security';
 import { SettingsStore } from './settings';
+import { HistoryWatcher } from './historyWatch';
 import { checkForUpdates, initUpdater, installUpdate } from './updater';
 import { registerV02Ipc, startCleanupLoop, v02EngineEnv } from './v02';
 
@@ -246,6 +247,7 @@ function sendAssets() {
 
 // ---------------------------------------------------------------- media roots (from the engine)
 let rootsCache = { at: 0, roots: [] as string[] };
+let historyWatcher: HistoryWatcher | null = null;
 async function mediaRoots(): Promise<string[]> {
   if (!client) return [];
   if (Date.now() - rootsCache.at < 5000) return rootsCache.roots;
@@ -519,6 +521,11 @@ function registerIpc() {
   handle('assets:cancel', async (p) => assets.cancel(p?.id));
   handle('update:check', async () => checkForUpdates());
   handle('update:install', async () => installUpdate());
+  handle('history:watch', async (p) => {
+    historyWatcher ??= new HistoryWatcher(() => win?.webContents.send('history:changed', { at: Date.now() }));
+    rootsCache = { at: 0, roots: [] }; // new thumbnails / outputs become viewable at once
+    return historyWatcher.set(p.roots);
+  });
   registerV02Ipc(handle, { userData: app.getPath('userData'), settings: () => settings, win: () => win, client: () => client, settingsMsg });
 }
 

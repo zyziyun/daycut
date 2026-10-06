@@ -85,6 +85,7 @@ export const ipcSchemas = {
   'assets:cancel': z.strictObject({ id: z.string().regex(/^[a-z0-9-]{1,40}$/).optional() }).optional(),
   'update:check': z.undefined(),
   'update:install': z.undefined(),
+  'history:watch': z.strictObject({ roots: z.array(absPath).max(20) }),
 } as const;
 
 export type IpcChannel = keyof typeof ipcSchemas;

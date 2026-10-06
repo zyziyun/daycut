@@ -361,8 +361,27 @@ export function median(xs: number[]): number | null {
 }
 
 // ---------------------------------------------------------------- history (past work, auto-discovered)
+/** .vstudio/status.json of a job / batch / project folder, as the engine reads it (stale running -> interrupted). */
+export interface LiveStatus {
+  state: 'running' | 'waiting' | 'done' | 'failed' | 'interrupted';
+  status: string;
+  stage?: string | null;
+  progress?: number | null;
+  message?: string | null;
+  eta?: number | null;
+  started?: number | null;
+  heartbeat?: number | null;
+  finished?: number | null;
+  age?: number | null;
+  needs_you: boolean;
+  updated_by?: string | null;
+}
+export const WORK_TYPES = ['talkinghead', 'slices', 'explainer', 'photo-story', 'vlog', 'podcast', 'aigc', 'script', 'batch', 'promo', 'slides', 'other'] as const;
 export interface HistoryItem {
-  kind: 'batch' | 'project';
+  kind: 'batch' | 'project' | 'work';
+  type?: string;
+  live?: LiveStatus | null;
+  adopted?: boolean;
   id: string;
   dir: string;
   name: string;
@@ -384,6 +403,19 @@ export interface HistoryDoc {
   items: HistoryItem[];
   watch: string[];
   at: number;
+  running?: number;
+}
+export interface HistoryDetail extends HistoryItem {
+  log?: { path: string; text: string } | null;
+  detail?: {
+    outputs: string[];
+    covers: string[];
+    sheets: string[];
+    posts: { path: string; text: string }[];
+    notes: { path: string; text: string }[];
+    sources: string[];
+    record: Record<string, unknown> | null;
+  };
 }
 export interface HistoryConfig {
   watch: string[];

@@ -22,7 +22,9 @@ import sqlite3
 import threading
 import time
 
-from .common import batch_id, is_temp_path, need, prune_json_registry, read_json, write_json
+from . import works as WK
+from .common import (batch_id, is_temp_path, keep_entry, live_status, need, prune_json_registry, read_json,
+                     write_json)
 
 DEFAULT_WATCH = ["~/Desktop/video-studio-demos"]
 SKIP_DIRS = {"node_modules", ".git", "jobs", "cache", "delivery", "package", "review", "__pycache__", "state"}
@@ -156,6 +158,9 @@ def scan_folder(root, depth=2):
         if os.path.exists(os.path.join(d, "batch.db")):
             found.append(("batch", d))
             return
+        if level > 0 and WK.looks_like_work(d):          # a plain folder made with the skill
+            found.append(("work", d))
+            return
         if level >= depth:
             return
         try:
@@ -176,6 +181,49 @@ def scan_folder(root, depth=2):
     return found
 
 
+def log_tail(d, lines=40, max_bytes=16384):
+    """The last lines of the newest *.log in the folder or its work/ (a terminal / agent run's progress)."""
+    cands = []
+    for sub in ("", "work", "state"):
+        for p in glob.glob(os.path.join(d, sub, "*.log")):
+            try:
+                cands.append((os.path.getmtime(p), p))
+            except OSError:
+                pass
+    if not cands:
+        return None
+    _, p = max(cands)
+    try:
+        with open(p, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            f.seek(max(0, f.tell() - max_bytes))
+            text = f.read().decode("utf-8", "replace")
+    except OSError:
+        return None
+    return dict(path=p, text="\n".join(text.splitlines()[-lines:]))
+
+
+def _prune_projects(path):
+    """projects.json: keep recipe projects (project.yaml) and adopted work folders (.vstudio/work.json)."""
+    rows = read_json(path, None)
+    if not isinstance(rows, list):
+        return []
+
+    def ok(r):
+        d = r.get("dir") or ""
+        live = os.path.exists(os.path.join(d, ".vstudio", "work.json") if r.get("kind") == "work"
+                              else os.path.join(d, "project.yaml"))
+        return live and keep_entry(d, path)
+    keep = [r for r in rows if isinstance(r, dict) and ok(r)]
+    gone = [r for r in rows if r not in keep]
+    if gone:
+        try:
+            write_json(path, keep)
+        except OSError:
+            pass
+    return gone
+
+
 class History:
     def __init__(self, data_dir, registry, engine=None):
         self.path = os.path.join(data_dir, "history.json")
@@ -183,6 +231,7 @@ class History:
         self.engine = engine
         self._lock = threading.Lock()
         self._thumbs = set()
+        self._media = set()
 
     # ---------------------------------------------------------- config (watched folders, hidden)
     def _cfg(self):
@@ -254,11 +303,9 @@ class History:
             if hasattr(H, "prune"):
                 removed["engine_projects"] = len(H.prune())
             else:
-                removed["engine_projects"] = len(prune_json_registry(os.path.join(home, "projects.json"),
-                                                                     "project.yaml"))
+                removed["engine_projects"] = len(_prune_projects(os.path.join(home, "projects.json")))
         except ImportError:
-            removed["engine_projects"] = len(prune_json_registry(os.path.join(home, "projects.json"),
-                                                                 "project.yaml"))
+            removed["engine_projects"] = len(_prune_projects(os.path.join(home, "projects.json")))
         return removed
 
     # ---------------------------------------------------------- listing
@@ -281,14 +328,14 @@ class History:
             pass
         for r in read_json(os.path.join(home, "projects.json"), []) or []:
             if isinstance(r, dict) and r.get("dir"):
-                out.append(("project", r["dir"], "engine", dict(name=r.get("name"), recipe=r.get("recipe"),
+                out.append(("work" if r.get("kind") == "work" else "project", r["dir"], "engine", dict(name=r.get("name"), recipe=r.get("recipe"),
                                                                client=r.get("client"), series=r.get("series"))))
         for w in self.watch():
             for kind, d in scan_folder(w):
                 out.append((kind, d, "watch", {}))
         return out, series
 
-    def list(self, q=None, status=None, kind=None):
+    def list(self, q=None, status=None, kind=None, type_=None, client=None):
         self.prune()
         hidden = set(self._cfg().get("hidden") or [])
         cands, series = self._candidates()
@@ -305,20 +352,31 @@ class History:
             seen.add(rp)
             if rp in hidden or is_temp_path(d) and not is_temp_path(self.path):
                 continue
-            marker = "project.yaml" if kind_ == "project" else "batch.db"
-            if not os.path.exists(os.path.join(d, marker)):
-                if kind_ == "batch" and os.path.exists(os.path.join(d, "project.yaml")):
-                    kind_ = "project"
-                else:
+            if kind_ == "work":
+                if not os.path.isdir(d) or not (WK.looks_like_work(d) or os.path.exists(WK.record_path(d))):
                     continue
-            info = summarize_project(d) if kind_ == "project" else summarize_batch(d)
+            else:
+                marker = "project.yaml" if kind_ == "project" else "batch.db"
+                if not os.path.exists(os.path.join(d, marker)):
+                    if kind_ == "batch" and os.path.exists(os.path.join(d, "project.yaml")):
+                        kind_ = "project"
+                    else:
+                        continue
+            info = (summarize_project(d) if kind_ == "project" else WK.summarize(d) if kind_ == "work"
+                    else summarize_batch(d))
+            if kind_ == "batch":
+                info["type"] = "batch"
+            elif kind_ == "project":
+                info["type"] = WK.recipe_type(info.get("recipe"))
             for k, v in extra.items():
                 if v and not info.get(k):
                     info[k] = v
             store_dir = os.path.join(d, "state") if kind_ == "project" else d
             bid = batch_id(store_dir)
-            row = dict(info, kind=kind_, dir=d, real=rp, sources=[src], id=bid,
-                       opened=bid in reg_ids, openable=os.path.exists(os.path.join(store_dir, "batch.db")),
+            live = live_status(d) or (live_status(store_dir) if store_dir != d else None)
+            row = dict(info, kind=kind_, dir=d, real=rp, sources=[src], id=bid, live=live,
+                       opened=bid in reg_ids,
+                       openable=kind_ != "work" and os.path.exists(os.path.join(store_dir, "batch.db")),
                        series=info.get("series") or series.get(rp))
             rows.append(row)
         if q:
@@ -329,11 +387,20 @@ class History:
             rows = [r for r in rows if r.get("status") == status]
         if kind:
             rows = [r for r in rows if r["kind"] == kind]
+        if type_:
+            rows = [r for r in rows if r.get("type") == type_]
+        if client:
+            rows = [r for r in rows if (r.get("client") or "") == client]
+        for r in rows:                              # a live heartbeat is the freshest date
+            hb = (r.get("live") or {}).get("heartbeat")
+            if hb and hb > (r.get("updated") or 0):
+                r["updated"] = hb
         rows.sort(key=lambda r: -(r.get("updated") or r.get("created") or 0))
+        running = sum(1 for r in rows if (r.get("live") or {}).get("state") in ("running", "waiting"))
         for r in rows:
             r.pop("real", None)
         self._thumbs = {r["thumb"] for r in rows if r.get("thumb")}
-        return dict(items=rows[:MAX_ENTRIES], watch=self.watch(), at=time.time())
+        return dict(items=rows[:MAX_ENTRIES], watch=self.watch(), at=time.time(), running=running)
 
     def open(self, path):
         """Put a found batch (or a project's state batch) in the desk registry -> {id, dir} for the board."""
@@ -349,6 +416,29 @@ class History:
         ent = self.reg.add(store_dir, name)
         return dict(id=ent["id"], dir=store_dir, name=name)
 
+    def find(self, item_id):
+        for r in self.list()["items"]:
+            if r["id"] == item_id:
+                return r
+        raise KeyError(f"no history item {item_id}")
+
+    def item(self, item_id):
+        """One entry + (work folders) its outputs, covers, sheets, post copy and notes for the work page."""
+        r = self.find(item_id)
+        r["log"] = log_tail(r["dir"])
+        if r["kind"] == "work":
+            r = dict(r, detail=WK.detail(r["dir"]))
+            det = r["detail"]
+            self._media |= {os.path.dirname(p) for p in det["outputs"] + det["covers"] + det["sheets"]}
+        return r
+
+    def adopt(self, item_id, recipe="guess", title=None):
+        r = self.find(item_id)
+        need(r["kind"] == "work", "only a plain work folder can be adopted (batches / projects already are)")
+        out = WK.adopt(r["dir"], recipe=recipe, title=title, home=vstudio_home())
+        return dict(out, id=item_id)
+
     def roots(self):
         """``jobs/`` folders of the last listed entries with a thumbnail (the media protocol allow-list)."""
-        return sorted({os.path.dirname(os.path.dirname(os.path.dirname(t))) for t in self._thumbs})
+        return sorted({os.path.dirname(os.path.dirname(os.path.dirname(t))) if os.sep + "jobs" + os.sep in t
+                       else os.path.dirname(t) for t in self._thumbs} | self._media)

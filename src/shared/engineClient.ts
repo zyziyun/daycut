@@ -26,6 +26,7 @@ import type {
   EditBody,
   EditResult,
   HistoryConfig,
+  HistoryDetail,
   HistoryDoc,
   MetricsDoc,
   PlanBatchBody,
@@ -228,11 +229,13 @@ export class EngineClient {
   setWeekly(week: string, values: Record<string, number | string | null>) {
     return this.req<WeeklyDoc>('POST', '/api/metrics/weekly', { week, values });
   }
-  history(f: { q?: string; status?: string; kind?: 'batch' | 'project' } = {}) {
+  history(f: { q?: string; status?: string; kind?: 'batch' | 'project' | 'work'; type?: string; client?: string } = {}) {
     const q = new URLSearchParams();
     if (f.q) q.set('q', f.q.slice(0, 200));
     if (f.status) q.set('status', f.status);
     if (f.kind) q.set('kind', f.kind);
+    if (f.type) q.set('type', f.type);
+    if (f.client) q.set('client', f.client.slice(0, 200));
     const qs = q.toString();
     return this.req<HistoryDoc>('GET', `/api/history${qs ? `?${qs}` : ''}`);
   }
@@ -247,6 +250,12 @@ export class EngineClient {
   }
   hideHistory(dir: string) {
     return this.req<{ ok: boolean; deleted: false }>('POST', '/api/history/hide', { dir });
+  }
+  historyItem(id: string) {
+    return this.req<HistoryDetail>('GET', `/api/history/item/${bid(id)}`);
+  }
+  adoptHistory(id: string, body: { recipe?: string; title?: string } = {}) {
+    return this.req<{ ok: boolean; dir: string; type: string; recipe: string | null }>('POST', `/api/history/item/${bid(id)}/adopt`, body);
   }
   unhideHistory() {
     return this.req<HistoryConfig>('POST', '/api/history/unhide', {});
