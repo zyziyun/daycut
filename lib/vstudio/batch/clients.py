@@ -13,7 +13,7 @@ client.yaml keys (all optional except ``name``):
   append here), fillers {extra: [..], keep: [..]} (extra 口头禅 to cut / words never cut), brand {accent,
   highlight, ink, ground} (#RRGGBB), cover_style frame | collage | face | text, cleanup_profile gentle |
   standard | tight (``strict`` = tight), confirm_policy true | false (answer low-risk cleanup questions automatically), language,
-  asr_prompt, delivery {cleanup_days (30), per_day, times}, notes, crm {history: [{stage, at}], revenue:
+  asr_prompt, delivery {cleanup_days (0 = never), per_day, times}, notes, crm {history: [{stage, at}], revenue:
   [{at, amount}]} (optional funnel data for ``metrics --csv``).
 
 ``effective(cfg)``: persona-derived defaults <- client.yaml. A batch whose spec names a client
@@ -37,7 +37,7 @@ PLAT = re.compile(r"^[a-z][a-z-]{1,30}(:[a-z]{3,12})?$")
 SLUG = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,59}$")
 KNOWN = {"name", "slug", "style", "platforms", "tags", "glossary", "fillers", "brand", "cover_style", "cleanup_profile",
          "confirm_policy", "language", "asr_prompt", "delivery", "notes", "crm", "created", "llm"}
-DEFAULT_CLEANUP_DAYS = 30
+DEFAULT_CLEANUP_DAYS = 0          # never delete source recordings unless a client sets it
 
 
 class ClientError(ValueError):

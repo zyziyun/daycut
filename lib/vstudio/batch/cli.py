@@ -20,7 +20,8 @@ v0.2 (desk; all with --json):
   client init|show|update|list --client C [--set JSON]  client.yaml layered over the persona (effective config)
   job show ID | job edit --job J --op caption|trim|hook|cover|copy|undo ... | job rerun --job J [--json-events]
   deliver [--client C] [--zip] [--cleanup-days N] [--out DIR]   client delivery package + manifest hash
-  cleanup-sources [--batch B | --client C | --all] [--yes]      delete sources of deliveries past cleanup date
+  cleanup-sources [--batch B | --client C | --all] [--confirm-delete CODE]   list (dry run + code) / delete exactly
+                                                                that list; sources outside the batch folder: report only
   metrics --batch B | --client C | --all [--csv]        metrics JSON / weekly CSV
   timing --job J --event start|stop|add --what review [--seconds S]   review timing -> batch store
 --json: one JSON document on stdout (paths absolute); run --json-events: one JSON event per line on stdout
@@ -426,17 +427,27 @@ def cmd_cleanup_sources(a):
         dirs = [b["dir"] for b in CL.batches()]
     else:
         dirs = [_batch(a)]
-    r = DV.cleanup_sources(dirs, yes=a.yes)
+    if getattr(a, "yes", False):
+        return _fail(a, ValueError("--yes is gone: run the dry run, check the list, then --confirm-delete <code>"))
+    try:
+        r = DV.cleanup_sources(dirs, confirm=a.confirm_delete)
+    except ValueError as e:
+        return _fail(a, e)
     if a.json:
         _out(r)
         return 0
-    lst = r.get("deleted") if a.yes else r.get("would_delete")
+    lst = r.get("would_delete") if r["dry_run"] else r.get("deleted")
     for x in lst:
-        print(f"  {'deleted' if a.yes else 'would delete'} {x['path']} ({human(x['bytes'])})")
+        print(f"  {'would delete' if r['dry_run'] else 'deleted'} {x['path']} ({human(x['bytes'])})")
+    for x in r["outside"]:
+        print(f"  NOT deleted (outside the batch folder) {x['path']}")
     for x in r["kept"]:
         print(f"  kept {x['path']}: {x['why']}")
-    print(f"[cleanup-sources] {'freed' if a.yes else 'would free'} {human(r['freed'])}"
-          + ("" if a.yes else " (dry run: add --yes)"))
+    if r["dry_run"]:
+        print(f"[cleanup-sources] would free {human(r['freed'])}"
+              + (f"; to delete exactly these files: --confirm-delete {r['confirm_code']}" if r["confirm_code"] else ""))
+    else:
+        print(f"[cleanup-sources] freed {human(r['freed'])}")
     return 0
 
 
@@ -627,10 +638,12 @@ def main(argv=None):
     p.add_argument("--cleanup-days", type=int, help="delete the sources N days after delivery (0 = never)")
     p.add_argument("--out", help="delivery root (default <batch>/delivery)")
     p.add_argument("--json", action="store_true")
-    p = add("cleanup-sources", cmd_cleanup_sources, "delete source files of deliveries past their cleanup date")
+    p = add("cleanup-sources", cmd_cleanup_sources, "list (dry run) / delete, with the dry run's code, source files "
+                                                     "of deliveries past their cleanup date")
     p.add_argument("--client")
     p.add_argument("--all", action="store_true")
-    p.add_argument("--yes", action="store_true", help="really delete (default: dry run)")
+    p.add_argument("--confirm-delete", metavar="CODE", help="delete exactly the files of the dry run with this code")
+    p.add_argument("--yes", action="store_true", help=argparse.SUPPRESS)
     p.add_argument("--json", action="store_true")
     p = add("metrics", cmd_metrics, "metrics: --batch / --client / --all, JSON or the weekly CSV")
     p.add_argument("--client")

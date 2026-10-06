@@ -107,7 +107,7 @@ python3 -m vstudio.batch deliver --batch batch-course-slices --zip   # client pa
                                                                      # 排期表.csv, 交付说明.md, manifest hash
 python3 -m vstudio.batch metrics --batch batch-course-slices          # review s / clip, rework, red rate, cost
 python3 -m vstudio.batch metrics --all --csv > weekly_metrics.csv    # the weekly pilot sheet
-python3 -m vstudio.batch cleanup-sources --all                       # dry run; --yes deletes sources past due
+python3 -m vstudio.batch cleanup-sources --all                       # dry run: exact list + a code (never deletes)
 ```
 Or only the publish folders:
 ```bash
@@ -124,5 +124,7 @@ Read the confirmation code and item count back to the creator; nothing is upload
 - QC green is necessary, not sufficient: always look at the pilot and the sampled greens.
 - Media stays local; `asr.backend: openai` sends audio to OpenAI, `plan-segments --provider claude|openai` (and the
   `claude` planner) sends transcript text to Anthropic / OpenAI.
-- `cleanup-sources --yes` deletes the creator's source recordings for good (past the delivery's cleanup date, never
-  one another batch still needs): run the dry run first and say what will go.
+- Source cleanup is off by default (`cleanup_days` 0 = never; always 0 for the creator's own workspace, client `self`).
+  `cleanup-sources --confirm-delete <code>` deletes exactly the files its dry run listed (past the delivery's cleanup
+  date, inside the batch / project folder, not needed by another batch); sources outside the batch folder - the
+  creator's own recordings - are only reported, never deleted. Show the list and get the creator's yes first.

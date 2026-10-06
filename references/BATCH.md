@@ -360,7 +360,7 @@ up (pitch kept) up to `max_speed`; the other platforms keep the full cut. The ma
 `$VSTUDIO_CLIENTS` (default `$VSTUDIO_HOME/clients`, `~/.config/vstudio/clients`). `client.yaml`: `name, style,
 platforms, tags, glossary [{wrong, right, source, batch, job}], fillers {extra, keep}, brand {accent, highlight,
 ink, ground}, cover_style frame|collage|face|text, cleanup_profile, confirm_policy, language, asr_prompt, delivery
-{cleanup_days 30, per_day, times}, notes, crm {history [{stage, at}], revenue [{at, amount}], posts, price_next}`.
+{cleanup_days 0 = never, per_day, times}, notes, crm {history [{stage, at}], revenue [{at, amount}], posts, price_next}`.
 `effective` = persona-derived defaults <- client.yaml. `update` also takes `glossary_add`, `glossary_remove`,
 `tags_add`. A batch with `client:` gets, at plan time, the client's platforms / cleanup profile / confirm policy /
 asr prompt as defaults (the spec wins), its glossary appended to `subtitles.term_fixes` (in the stage keys) and
@@ -410,9 +410,11 @@ when needed, then `<batch>/delivery/<client>-<batch>-<date>/`: one folder per pl
 `NN_<title>.mp4` + `_封面.jpg`), `文案.md` (title / body / tags per post + the AI-content label reminder),
 `排期表.csv`, `交付说明.md` (counts, duration, platforms, QC notes, cleanup date), `manifest.json` (sha256 + bytes of
 every file, the package confirmation code, a delivery code; `deliver.verify_delivery`) and the zip. Recorded in the
-store with the cleanup due date (default the client's `delivery.cleanup_days`, 30; 0 = never). `cleanup-sources
-[--batch B | --client C | --all] [--yes]` deletes the sources of deliveries past due (dry run without `--yes`),
-never one a registered batch that is not delivered / due still uses.
+store with the cleanup due date (default the client's `delivery.cleanup_days`, else 0 = never; always 0 for the own
+workspace: no client / client `self`). `cleanup-sources [--batch B | --client C | --all]` is a dry run: the exact files
+of deliveries past due + `confirm_code` (hash of that list); `--confirm-delete CODE` deletes exactly those (a stale
+code deletes nothing). Never deleted: a file a registered batch that is not delivered / due still uses, and any source
+outside the batch / project folder (reported in `outside`).
 
 **Metrics + timing** (`metrics.py`). `timing --batch B --job J --event start|stop|add --what review [--seconds S]`
 -> the `timing` table (review seconds = the stop events' active seconds, else stop - start). `metrics --batch B |

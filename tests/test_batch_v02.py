@@ -68,7 +68,7 @@ def test_client_init_show_update_layered_over_persona(tmp_path):
     eff = v["effective"]
     assert eff["name"] == "Acme 讲师" and eff["platforms"] == ["douyin"] and eff["cleanup_profile"] == "tight"
     assert eff["brand"]["accent"] == "#112233" and eff["brand"]["highlight"]      # persona brand underneath
-    assert eff["delivery"]["cleanup_days"] == 30 and eff["confirm_policy"] is True
+    assert eff["delivery"]["cleanup_days"] == 0 and eff["confirm_policy"] is True     # 0 = never delete sources
     with pytest.raises(CL.ClientError):
         CL.init(cdir, dict(name="x"))
     v = CL.update(cdir, dict(glossary_add=[dict(wrong="rag", right="RAG")], tags_add=["LLM"], style="干净"))
@@ -370,11 +370,14 @@ def _approve_all(bdir):
 
 
 def test_deliver_package_manifest_and_source_cleanup(tmp_path):
-    src = tmp_path / "raw.mp4"
+    inside = tmp_path / "batch-v2" / "src"                  # a source copied into the batch folder
+    inside.mkdir(parents=True)
+    src = inside / "raw.mp4"
     src.write_bytes(b"0" * 1000)
     cdir = str(tmp_path / "acme")
     CL.init(cdir, dict(name="Acme 讲师", delivery={"cleanup_days": 7}))
     bdir, _ = mkbatch(tmp_path, client=cdir, inputs={"source": str(src)})
+    assert os.path.realpath(bdir) == os.path.realpath(str(tmp_path / "batch-v2"))
     _approve_all(bdir)
     ED.edit(bdir, "ep02", "copy", title="改过的标题", body="改过的正文")
     r = DV.deliver(bdir, make_zip=True, today=__import__("datetime").date(2026, 10, 7))
@@ -390,19 +393,61 @@ def test_deliver_package_manifest_and_source_cleanup(tmp_path):
     with open(os.path.join(d, "文案.md"), "a", encoding="utf-8") as f:
         f.write("tampered")
     assert DV.verify_delivery(os.path.join(d, "manifest.json"))["bad"] == ["文案.md"]
-    # cleanup: not due yet -> nothing; due -> dry run lists, --yes deletes
+    # cleanup: not due yet -> nothing; due -> the dry run lists the exact files + a code; only that code deletes
     assert DV.cleanup_sources([bdir])["would_delete"] == []
     later = time.time() + 8 * 86400
     dry = DV.cleanup_sources([bdir], now=later)
-    assert [x["path"] for x in dry["would_delete"]] == [str(src)] and src.exists()
+    assert [x["path"] for x in dry["would_delete"]] == [str(src)] and src.exists() and dry["confirm_code"]
+    with pytest.raises(ValueError):
+        DV.cleanup_sources([bdir], now=later, yes=True)                  # no blanket "yes"
+    with pytest.raises(ValueError):
+        DV.cleanup_sources([bdir], now=later, confirm="000000000000")    # a wrong / stale code deletes nothing
+    assert src.exists()
     # another batch still using the same source (not delivered) protects it
     other = tmp_path / "other"
     other.mkdir()
     mkbatch(other, run=False, inputs={"source": str(src)}, name="v3")
-    assert DV.cleanup_sources([bdir], now=later, yes=True)["kept"][0]["path"] == str(src) and src.exists()
+    kept = DV.cleanup_sources([bdir], now=later)
+    assert kept["kept"][0]["path"] == str(src) and kept["would_delete"] == [] and kept["confirm_code"] is None
     shutil.rmtree(str(other))
-    done = DV.cleanup_sources([bdir], now=later, yes=True)
+    dry = DV.cleanup_sources([bdir], now=later)
+    done = DV.cleanup_sources([bdir], now=later, confirm=dry["confirm_code"])
     assert done["deleted"][0]["path"] == str(src) and not src.exists()
+
+
+def test_source_cleanup_never_touches_sources_outside_the_batch(tmp_path):
+    rec = tmp_path / "my recordings" / "lecture.mp4"          # the creator's own recording, next to the batch
+    rec.parent.mkdir()
+    rec.write_bytes(b"0" * 500)
+    cdir = str(tmp_path / "acme")
+    CL.init(cdir, dict(name="Acme", delivery={"cleanup_days": 3}))
+    bdir, _ = mkbatch(tmp_path, client=cdir, inputs={"source": str(rec)})
+    _approve_all(bdir)
+    assert DV.deliver(bdir)["cleanup_days"] == 3
+    later = time.time() + 4 * 86400
+    dry = DV.cleanup_sources([bdir], now=later)
+    assert dry["would_delete"] == [] and dry["confirm_code"] is None
+    assert [x["path"] for x in dry["outside"]] == [str(rec)] and "never deleted" in dry["outside"][0]["why"]
+    r = cli("cleanup-sources", "--batch", bdir, "--yes", "--json")
+    assert r.returncode == 1 and "--confirm-delete" in r.stdout and rec.exists()
+    r = cli("cleanup-sources", "--batch", bdir, "--json")
+    assert r.returncode == 0 and json.loads(r.stdout)["dry_run"] is True and rec.exists()
+
+
+def test_deliver_defaults_never_delete_and_own_workspace(tmp_path):
+    src = tmp_path / "raw.mp4"
+    src.write_bytes(b"0")
+    bdir, _ = mkbatch(tmp_path, inputs={"source": str(src)})        # no client: the creator's own workspace
+    _approve_all(bdir)
+    r = DV.deliver(bdir, cleanup_days=30)
+    assert r["cleanup_days"] == 0 and r["cleanup_on"] is None and "own workspace" in r["cleanup_note"]
+    me = str(tmp_path / "clients" / "self")
+    CL.init(me, dict(name="自己的账号", delivery={"cleanup_days": 7}))
+    assert DV.deliver(bdir, client=me, cleanup_days=5)["cleanup_days"] == 0
+    other = str(tmp_path / "clients" / "acme")
+    CL.init(other, dict(name="Acme"))                              # a client that never set cleanup_days
+    assert DV.deliver(bdir, client=other)["cleanup_days"] == 0
+    assert CL.effective(CL.load(other))["delivery"]["cleanup_days"] == 0
 
 
 # --------------------------------------------------------------------------- metrics / timing
