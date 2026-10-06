@@ -100,12 +100,14 @@ def job_detail(batch_dir, jid, words=True):
     reply = p.get("cleanup_reply") or ""
     cl, cm, pr, vf, qc, ex, pv = (out(s) for s in ("cleanup", "compose", "proofread", "verify", "qc", "export",
                                                    "preview"))
-    parts = []
+    parts, patched = [], []
     for part in ("body", "hook"):
         E = read_json(cl.get(part)) if cl.get(part) else None
         if E:
             parts.append(dict(part=part, ranges=E.get("ranges"), stats=E.get("stats"),
                               edits=_cut_state(E.get("edits"), reply)))
+            cut_ids = {e["id"] for e in parts[-1]["edits"] if e["cut"]}
+            patched += [e for e in E.get("edits") or [] if e["id"] in cut_ids and e.get("patch")]
     he = cl.get("hook_edge")
     transcript = None
     tr_path = out("asr").get("transcript")
@@ -117,6 +119,8 @@ def job_detail(batch_dir, jid, words=True):
             W = [dict(w=str(w.get("word", "")), t=float(w["start"]), te=float(w["end"])) for w in raw]
         else:
             W = [dict(w=w["w"], t=w["t"], te=w["te"]) for w in C.load_words(tr)]
+        if patched:                                   # a filler-merged cut keeps the word it trimmed (its caption too)
+            W = C.patch_onsets(W, patched, {e["id"] for e in patched})
         cuts = [(e["t0"], e["t1"]) for pt in parts for e in pt["edits"] if e["cut"]]
         cuts += [(float(c[0]), float(c[1])) for c in cl.get("cuts") or []]
         spans = [tuple(cl.get("edges") or p.get("range") or (0, 0))]

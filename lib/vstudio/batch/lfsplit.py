@@ -478,17 +478,47 @@ def run_cleanup_split(ctx):
     return out
 
 
-def _keep_pieces(p, edl):
+def _keep_pieces(p, edl, with_ids=False):
+    """Kept source pieces of the job's EDL under its cleanup reply (``with_ids``: also the ids of the edits cut)."""
     from vstudio import cleanup as C
     E = read_json(edl)
     if p.get("cleanup_profile") == "off":
-        return [tuple(r) for r in E["ranges"]]
+        pieces = [tuple(r) for r in E["ranges"]]
+        return (pieces, []) if with_ids else pieces
     reply = p.get("cleanup_reply")
     r = C.parse_reply(reply) if reply else dict(approve=set(), keep=set(), all_confirm=False)
     ids = {e["id"] for e in E["edits"]}
-    return C.keep_segments(E["edits"], E["ranges"], set(r["approve"]) & ids, set(r["keep"]) & ids,
-                           bool(r["all_confirm"]), min_piece=(E.get("settings") or {}).get("min_piece"),
-                           words=E.get("words"))
+    ap, kp, al = set(r["approve"]) & ids, set(r["keep"]) & ids, bool(r["all_confirm"])
+    pieces = C.keep_segments(E["edits"], E["ranges"], ap, kp, al, min_piece=(E.get("settings") or {}).get("min_piece"),
+                             words=E.get("words"))
+    return (pieces, C.applied_ids(E["edits"], ap, kp, al)) if with_ids else pieces
+
+
+def cut_transcript(path, edl, ids):
+    """The workflow transcript (``audio16k.json``, whisper segments) as the job's cut leaves it, for build_subs and
+    the verify sidecar: words a ``filler-merged`` edit only trimmed in front keep their caption, with the onset
+    moved past the cut (``vstudio.cleanup.patch_onsets``). The captions then hold exactly the words whose audio
+    survives (a fully cut word's midpoint is inside the cut). Rewrites ``path`` in place; -> number patched."""
+    from vstudio import cleanup as C
+    E = read_json(edl) or {}
+    if not ids or not any(e.get("patch") for e in E.get("edits") or []):
+        return 0
+    data = read_json(path)
+    n = 0
+    for sg in (data or {}).get("segments") or []:
+        ws = sg.get("words") or []
+        if not ws:
+            continue
+        new = C.patch_onsets(ws, E["edits"], ids)
+        for a, b in zip(ws, new):
+            if abs(float(a["start"]) - float(b["start"])) > 1e-6:
+                n += 1
+        if abs(float(sg["start"]) - float(ws[0]["start"])) < 1e-6:     # the segment opened on a patched word
+            sg["start"] = float(new[0]["start"])
+        sg["words"] = new
+    if n:
+        write_json(path, data)
+    return n
 
 
 def _out_time(timeline, t):
@@ -560,7 +590,8 @@ def run_compose_split(ctx):
     write_json(os.path.join(work, "config.json"), cfg)
     _link(geo["crop_spans"], os.path.join(work, "crop_spans.json"))
     whisper_json(tr, os.path.join(work, "audio16k.json"))
-    pieces = _keep_pieces(p, cl["body"])
+    pieces, applied = _keep_pieces(p, cl["body"], with_ids=True)
+    cut_transcript(os.path.join(work, "audio16k.json"), cl["body"], applied)
     if not pieces:
         raise ValueError("nothing left to keep after cleanup")
     chapter = p.get("chapter")
