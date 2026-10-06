@@ -633,13 +633,17 @@ def run_export_split(ctx):
     _link(os.path.join(c["work"], "crop_spans.json"), os.path.join(work, "crop_spans.json"))
     pr = (ctx.inputs.get("proofread") or {}).get("cues")
     cues = (read_json(pr, {}) or {}).get("cues", []) if pr else read_json(os.path.join(c["work"], "cues.json"), [])
+    timeline = read_json(os.path.join(c["work"], "timeline.json"))
+    edits_rep = None
     if p.get("caption_overrides"):                         # review caption edits (`job edit --op caption`)
         from .edits import apply_caption_overrides
-        cues, _, missed = apply_caption_overrides(cues, p["caption_overrides"])
+        cues, applied, missed = apply_caption_overrides(
+            cues, p["caption_overrides"], asr_cues=read_json(os.path.join(c["work"], "cues.json"), []),
+            to_out=lambda t: _out_time(timeline, t))
         for m in missed:
-            ctx.log(f"caption edit not applied (cue changed since): #{m.get('i')} {m.get('from')!r}")
+            ctx.log(f"caption edit not applied (cue changed since): #{m.get('i')} {m.get('from')!r} -> {m.get('to')!r}")
+        edits_rep = ST.overrides_report(applied, missed)
     write_json(os.path.join(work, "cues.json"), cues)      # proofread captions (make_vertical reads a bare list)
-    timeline = read_json(os.path.join(c["work"], "timeline.json"))
     hook_text = spoken_hook_lines(timeline, cues)          # the hook band says what the audio says (proofread)
     write_json(os.path.join(work, "timeline.json"), timeline)
     _link(c["final"], os.path.join(out, "final.mp4"))
@@ -685,9 +689,12 @@ def run_export_split(ctx):
     man = write_json(ctx.path("manifest.json"), dict(exports=entries, warnings=warnings, plans=plans, length_fit=fit,
                                                      hook_lines=hook_text))
     files = [x["file"] for x in exports] + [x["cover"] for x in exports if x["cover"]]
-    return dict(manifest=man, files=files, exports=exports, warnings=warnings, length_fit=fit,
-                privacy=dict(exclude=p.get("_exclude") or [], overlap_frames=overlap, modes=sorted(m for m in modes if m),
-                             plans=plans))
+    res = dict(manifest=man, files=files, exports=exports, warnings=warnings, length_fit=fit,
+               privacy=dict(exclude=p.get("_exclude") or [], overlap_frames=overlap, modes=sorted(m for m in modes if m),
+                            plans=plans))
+    if edits_rep:
+        res["caption_overrides"] = edits_rep
+    return res
 
 
 # --------------------------------------------------------------------------- vertical master reuse

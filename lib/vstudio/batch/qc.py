@@ -211,6 +211,11 @@ def run_gates(job, spec, ins, extra=()):
                 checks.append(_c("export-warning", False, None, w, severity="warn", target=label))
     if not man.get("exports"):
         checks.append(_c("exports", False, 0, "no exports"))
+    miss = (((ins.get("export") or {}).get("caption_overrides") or {}).get("missed")) or []
+    if miss:                                          # a creator caption edit that could not be placed: say so
+        checks.append(_c("caption-edit-missed", False, len(miss), "caption edit(s) not applied (the cue changed): " +
+                         "; ".join(f"#{m.get('i')} {m.get('from')!r} -> {m.get('to')!r}" for m in miss[:3]),
+                         severity="warn"))
     checks += list(extra or ())
     red = [c for c in checks if c["ok"] is False and c["severity"] == "red"]
     warn = [c for c in checks if c["ok"] is False and c["severity"] == "warn"]

@@ -141,14 +141,22 @@ def job_detail(batch_dir, jid, words=True):
     cues = (read_json(pr.get("cues"), {}) or {}).get("cues") if pr.get("cues") else \
         ((read_json(cm.get("cues"), {}) or {}).get("cues") if cm.get("cues") else None)
     vr = read_json(vf.get("report"), {}) if vf.get("report") else {}
+    ov_missed = []
     if cues and p.get("caption_overrides"):            # review caption edits, as they will be burned
-        cues, _, _ = ED.apply_caption_overrides(cues, p["caption_overrides"])
+        asr_cues = (read_json(cm.get("cues"), {}) or {}).get("cues") if cm.get("cues") else None
+        tl = read_json(cm.get("timeline")) if cm.get("timeline") else None
+        to_out = None
+        if tl:
+            from .lfsplit import _out_time
+            to_out = lambda t: _out_time(tl, t)  # noqa: E731
+        cues, _, ov_missed = ED.apply_caption_overrides(cues, p["caption_overrides"], asr_cues=asr_cues, to_out=to_out)
     if cues:
         cues = [dict(c, i=k) for k, c in enumerate(cues)]
     from .metrics import review_seconds
     edit = dict(range=p.get("range"), hook=p.get("hook"), hook_pick=p.get("hook_pick"),
                 hook_candidates=ED.hook_candidates(p), cover=p.get("cover") if isinstance(p.get("cover"), dict) else None,
-                copy=ED.effective_copy(p), caption_overrides=p.get("caption_overrides") or [], history=hist,
+                copy=ED.effective_copy(p), caption_overrides=p.get("caption_overrides") or [],
+                caption_overrides_missed=ov_missed, history=hist,
                 pending=pending, review_s=review_seconds(timing))
     return dict(
         job={k: j[k] for k in ("id", "item", "variant", "state", "qc", "qc_reasons", "review", "review_reason",
