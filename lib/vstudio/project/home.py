@@ -27,8 +27,26 @@ def projects():
     return [p for p in (read_json(registry_path(), []) or []) if isinstance(p, dict) and p.get("dir")]
 
 
+def prune():
+    """Rewrite projects.json without missing / temp-dir projects (test junk). -> the removed entries."""
+    from vstudio.batch.clients import keep_entry
+    path = registry_path()
+    rows = projects()
+    keep = [p for p in rows if keep_entry(p["dir"], path, "project.yaml")]
+    gone = [p for p in rows if p not in keep]
+    if gone:
+        try:
+            write_json(path, keep)
+        except OSError:
+            pass
+    return gone
+
+
 def register(pdir, name=None, recipe=None, series=None, client=None):
+    from vstudio.batch.clients import is_temp_path
     pdir = os.path.abspath(pdir)
+    if is_temp_path(pdir) and not is_temp_path(registry_path()):
+        return dict(dir=pdir, name=name, recipe=recipe, series=series, client=client, registered=False)
     rows = [p for p in projects() if os.path.abspath(p["dir"]) != pdir]
     old = next((p for p in projects() if os.path.abspath(p["dir"]) == pdir), {})
     rows.append(dict(dir=pdir, name=name, recipe=recipe, series=series, client=client,

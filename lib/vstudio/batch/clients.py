@@ -369,12 +369,54 @@ def _reg_path(cdir=None):
     return os.path.join(cdir, "batches.json") if cdir else os.path.join(home(), "batches.json")
 
 
+def _temp_roots():
+    import tempfile
+    roots = {tempfile.gettempdir(), "/tmp", "/private/tmp", "/var/tmp", "/private/var/tmp"}
+    return {os.path.realpath(r) for r in roots} | {os.path.abspath(r) for r in roots}
+
+
+def is_temp_path(path):
+    """A folder under the system temp dirs (``/tmp``, ``/var/folders/*/T``): test / scratch runs, not real work."""
+    p = os.path.abspath(path or "")
+    rp = os.path.realpath(p)
+    if re.match(r"^(/private)?/var/folders/[^/]+/[^/]+/T(/|$)", p) or re.match(r"^/private/var/folders/[^/]+/[^/]+/T(/|$)", rp):
+        return True
+    return any(x == r or x.startswith(r.rstrip(os.sep) + os.sep) for r in _temp_roots() for x in (p, rp))
+
+
+def keep_entry(entry_dir, registry_path, marker=None):
+    """Registry hygiene: drop entries whose folder is gone (or lacks ``marker``) and, in a registry that is not
+    itself in a temp dir (the real ``~/.config/vstudio``), entries pointing into temp dirs (test junk)."""
+    d = entry_dir or ""
+    if not d or not os.path.isdir(d) or (marker and not os.path.exists(os.path.join(d, marker))):
+        return False
+    return is_temp_path(registry_path) or not is_temp_path(d)
+
+
+def prune_batches(cdir=None):
+    """Rewrite the batch registry without missing / temp-dir entries. -> list of the removed entries."""
+    path = _reg_path(cdir)
+    reg = read_json(path, None)
+    if not isinstance(reg, list):
+        return []
+    keep = [r for r in reg if isinstance(r, dict) and keep_entry(r.get("dir"), path)]
+    gone = [r for r in reg if r not in keep]
+    if gone:
+        try:
+            write_json(path, keep)
+        except OSError:
+            pass
+    return gone
+
+
 def register_batch(batch_dir, name=None, cdir=None):
     """Remember a batch folder for the client (and in the global list ``metrics --all`` reads)."""
     batch_dir = os.path.abspath(batch_dir)
     for path in ([_reg_path(cdir)] if cdir else []) + [_reg_path()]:
+        if is_temp_path(batch_dir) and not is_temp_path(path):
+            continue                                  # a scratch / test batch never enters the real registry
         try:
-            reg = [r for r in read_json(path, []) or [] if os.path.isdir(r.get("dir") or "")]   # prune deleted ones
+            reg = [r for r in read_json(path, []) or [] if isinstance(r, dict) and keep_entry(r.get("dir"), path)]
             if not any(r.get("dir") == batch_dir for r in reg):
                 reg.append(dict(dir=batch_dir, name=name, client=cdir, at=time.time()))
             else:
@@ -388,8 +430,9 @@ def register_batch(batch_dir, name=None, cdir=None):
 
 def batches(cdir=None):
     """Registered batch folders that still exist: [{dir, name, client, at}]."""
-    reg = read_json(_reg_path(cdir), []) or []
-    return [r for r in reg if os.path.exists(os.path.join(r.get("dir") or "", "batch.db"))]
+    path = _reg_path(cdir)
+    reg = read_json(path, []) or []
+    return [r for r in reg if isinstance(r, dict) and keep_entry(r.get("dir"), path, "batch.db")]
 
 
 # --------------------------------------------------------------------------- spec integration

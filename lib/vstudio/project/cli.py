@@ -242,6 +242,7 @@ def cmd_list(a):
     from . import home as H
     from .core import Project
     rows = []
+    H.prune()                                   # missing folders / temp-dir test junk
     for r in H.live_projects():
         try:
             s = Project(r["dir"]).status(brief=True)
@@ -249,7 +250,12 @@ def cmd_list(a):
                              progress=s["progress"]))
         except Exception as e:  # noqa: BLE001
             rows.append(dict(r, state="error", error=str(e)))
-    _out(a, dict(projects=rows), "\n".join(f"{r['state']:10s} {r['dir']}" for r in rows) or "no projects")
+    try:
+        series = [dict(id=x.get("id"), name=x.get("name"), recipe=x.get("recipe"), client=x.get("client"),
+                       projects=x.get("projects") or []) for x in H.list_series()]
+    except Exception:  # noqa: BLE001  (a broken series.yaml must not hide the projects)
+        series = []
+    _out(a, dict(projects=rows, series=series), "\n".join(f"{r['state']:10s} {r['dir']}" for r in rows) or "no projects")
     return 0
 
 
