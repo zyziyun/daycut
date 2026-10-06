@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
-"""QC: editor popups / context menus still VISIBLE in a rendered vertical video (master or export).
+"""QC: editor popups / context menus still VISIBLE in a rendered vertical video (master or export), and
+persistent UI panels (a block / selection menu or toolbar left open over whole items: static overlays).
 
 make_vertical.py runs the same scan on every master it renders (plan.json ``visible_popups``); this script
 re-checks any rendered file, e.g. an export made before the scan existed. The video is sampled at 2 fps, each
 screen item of plan.json is cut out (记笔记 panels / hook boxes painted flat: plan ``overlays``, or for an older
 plan the widest box a config panel can take), pans are stabilised and ``_vertical.detect_popups`` runs forward
-and backward. Prints one line per popup longer than --min-s; exit 1 when there is one.
+and backward. Prints one line per popup longer than --min-s; exit 1 when there is one. The static overlay scan
+(``_vertical.scan_static_overlays``, plan.json ``static_overlays``: a card-shaped panel with a drop shadow, pinned
+while the page changes, or appearing over an unchanged page) runs too unless --no-static; each one found also
+exits 1.
 
 Usage: python3 scan_popups.py VIDEO --plan work/vertical/1080x1440/plan.json [--timeline work/timeline.json]
-       [--config work/config.json] [--fps 24] [--hz 2] [--min-s 1.0] [--min-cover 0.02] [--json out.json]
+       [--config work/config.json] [--fps 24] [--hz 2] [--min-s 1.0] [--min-cover 0.02] [--no-static]
+       [--json out.json]
 """
 import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
 import argparse
@@ -28,6 +33,7 @@ def main(argv=None):
     ap.add_argument("--hz", type=float, default=2.0)
     ap.add_argument("--min-s", type=float, default=1.0)
     ap.add_argument("--min-cover", type=float, default=0.02)
+    ap.add_argument("--no-static", action="store_true", help="skip the static overlay (toolbar / menu) scan")
     ap.add_argument("--json")
     a = ap.parse_args(argv)
     plan = json.load(open(a.plan, encoding="utf-8"))
@@ -43,17 +49,26 @@ def main(argv=None):
     L = plan.get("layout") or {}
     exported = tuple(plan.get("canvas") or ()) and os.path.basename(a.video) != "master.mp4"
     cap = L.get("caption", [0, None])[1] if (exported or sp["screen_to"] != "caption") else None
-    found = V.scan_popups(a.video, V.output_segments(plan, tl, a.fps, vc.get("split")), ov, caption_top=cap,
+    segs = V.output_segments(plan, tl, a.fps, vc.get("split"))
+    found = V.scan_popups(a.video, segs, ov, caption_top=cap,
                           o=dict(V.SCREEN_DEFAULTS, **(vc.get("screen") or {})), scan=dict(hz=a.hz))
     bad = [x for x in found if x["dur"] > a.min_s and (x.get("cover") or 0) >= a.min_cover]
     for x in bad:
         print(f"popup visible {x['t']:.1f}-{x['t'] + x['dur']:.1f}s ({x['dur']:.1f}s, item {x['item']}, box {x['box']})")
     if not bad:
         print("no visible popup")
+    static = [] if a.no_static else V.scan_static_overlays(a.video, segs, ov, caption_top=cap, scan=dict(hz=a.hz))
+    for x in static:
+        cut = f", cut by the {x['hug']} edge" if x.get("hug") else ""
+        print(f"static overlay {x['t']:.1f}-{x['t'] + x['dur']:.1f}s ({x['dur']:.1f}s, items {x['items']}, "
+              f"box {x['box']}, {'+'.join(x['evidence'])}{cut})")
+    if not a.no_static and not static:
+        print("no static overlay")
     if a.json:
         with open(a.json, "w", encoding="utf-8") as f:
-            json.dump(dict(video=a.video, popups=found, flagged=bad), f, ensure_ascii=False, indent=1)
-    return 1 if bad else 0
+            json.dump(dict(video=a.video, popups=found, flagged=bad, static_overlays=static), f, ensure_ascii=False,
+                      indent=1)
+    return 1 if (bad or static) else 0
 
 
 if __name__ == "__main__":

@@ -320,16 +320,39 @@ def render_master(group):
         sys.exit(f"vertical master encode failed:\n{err[-1500:]}")
     plan = dict(canvas=[W, H], targets=[p.key for p in group], layout=L, band=band, **binfo,
                 exclude=EXCLUDE, privacy_overlap_frames=int(privacy_hits), items=report, overlays=ov_rects)
-    if (SCREEN_O.get("popups") or "off") != "off":     # QC: popups still visible in what was rendered (2 fps)
-        try:
-            plan["visible_popups"] = V.scan_popups(master, V.output_segments(plan, timeline, FPS, SPLIT), ov_rects,
-                                                   caption_top=None if SPLIT["screen_to"] == "caption" else L["caption"][1],
-                                                   o=SCREEN_O, scan=cfg.get("vertical.popup_scan") or None)
-        except Exception as e:  # noqa: BLE001  (a QC scan never fails the render)
-            plan["visible_popups_error"] = f"{type(e).__name__}: {e}"
+    output_scans(master, plan)
     _lfc.dump_json(plan, os.path.join(d, "plan.json"))
     print(f"{master}  band={band} {binfo}  privacy_overlap_frames={privacy_hits}")
     return master, plan
+
+
+def output_scans(master, plan, only_missing=False):
+    """QC scans of a rendered master, into plan: editor popups still visible (``visible_popups``, 2 fps) and
+    persistent UI panels - a menu / toolbar left open over whole items (``static_overlays``). A scan error is
+    recorded (``*_error``), never fails the render. only_missing: a reused master, scans its plan lacks."""
+    L = plan.get("layout") or {}
+    segs = V.output_segments(plan, timeline, FPS, SPLIT)
+    cap = None if SPLIT["screen_to"] == "caption" else (L.get("caption") or [0, None])[1]
+    ov = plan.get("overlays") or []
+    scans = []
+    if (SCREEN_O.get("popups") or "off") != "off":     # QC: popups still visible in what was rendered (2 fps)
+        scans.append(("visible_popups", lambda: V.scan_popups(master, segs, ov, caption_top=cap, o=SCREEN_O,
+                                                              scan=cfg.get("vertical.popup_scan") or None)))
+    osc = cfg.get("vertical.overlay_scan")
+    if osc is not False:                               # QC: toolbars / menus that stay open (static overlays)
+        scans.append(("static_overlays", lambda: V.scan_static_overlays(master, segs, ov, caption_top=cap,
+                                                                        scan=osc if isinstance(osc, dict) else None)))
+    done = False
+    for key, fn in scans:
+        if only_missing and key in plan:
+            continue
+        try:
+            plan[key] = fn()
+            plan.pop(f"{key}_error", None)
+        except Exception as e:  # noqa: BLE001  (a QC scan never fails the render)
+            plan[f"{key}_error"] = f"{type(e).__name__}: {e}"
+        done = True
+    return done
 
 
 def reuse_master(group):
@@ -342,7 +365,10 @@ def reuse_master(group):
     if not (os.path.exists(master) and os.path.exists(plan)):
         return None
     print(f"{master}  reused (--reuse-masters)")
-    return master, _lfc.load_json(plan)
+    pl = _lfc.load_json(plan)
+    if output_scans(master, pl, only_missing=True):    # a master from before a QC scan existed: scan it now
+        _lfc.dump_json(pl, plan)
+    return master, pl
 
 
 # ------------------------------------------------------------------------------------------- exports
