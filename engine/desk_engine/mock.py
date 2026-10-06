@@ -12,7 +12,7 @@ import sys
 import threading
 import time
 
-from .common import BadRequest, batch_id, need, sha1_json, write_json
+from .common import safe_name, BadRequest, batch_id, need, sha1_json, write_json
 from .planning import fake_transcript
 from .real import verify_manifest
 
@@ -154,7 +154,7 @@ class MockEngine:
     def create_batch(self, body):
         name = body["name"]
         need(not any(b["name"] == name for b in self.batches.values()), f"a batch named {name} exists")
-        d = body.get("out_dir") or os.path.join(self.data_dir, "mock", f"batch-{name}")
+        d = body.get("out_dir") or os.path.join(self.data_dir, "mock", f"batch-{safe_name(name)}")
         n = 6 if body["recipe"] == "longform-slices" else 4
         rows = _read_rows(body["segments"]) if body.get("segments") else None
         b = self._new(name, body["recipe"], body.get("platforms") or ["xiaohongshu:full"], n, d, body.get("budget"),

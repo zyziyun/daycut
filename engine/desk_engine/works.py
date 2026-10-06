@@ -170,7 +170,7 @@ def summarize(d):
                 client=(rec or {}).get("client"), type=typ, created=created, updated=newest or None,
                 counts=dict(total=len(found["outputs"]), green=0, red=0, approved=0, done=len(found["outputs"]),
                             failed=0),
-                status="adopted" if rec else ("done" if found["outputs"] else "in-progress"), thumb=thumb,
+                status="done" if found["outputs"] else "in-progress", thumb=thumb,
                 deliveries=0, adopted=bool(rec))
 
 
@@ -220,3 +220,183 @@ def adopt(d, recipe="guess", title=None, client=None, home=None):
                          created=now, kind="work"))
         write_json(reg, rows)
     return dict(ok=True, dir=d, record=record_path(d), **rec)
+
+
+# ------------------------------------------------------------------ clips: one card per output (not per file)
+ASPECT_SUFFIX = re.compile(r"(?:[_.-](?:9x16|916|3x4|34|16x9|169|1x1|vertical|horizontal|full|portrait|landscape))+$", re.I)
+CLIP_ID_RE = re.compile(r"^[\w一-鿿][\w一-鿿 .()+-]{0,119}$")
+
+
+def clip_key(rel):
+    """``final/A_换圈子_9x16.mp4`` -> ``A_换圈子``; versions of one clip share a key."""
+    stem = os.path.splitext(os.path.basename(rel))[0]
+    stem = re.sub(r"[_.-]?(cover|封面)(\.feed)?$", "", stem, flags=re.I)
+    return ASPECT_SUFFIX.sub("", stem) or stem
+
+
+def aspect_of(w, h):
+    if not w or not h:
+        return None
+    r = w / h
+    for name, v in (("9:16", 9 / 16), ("3:4", 3 / 4), ("1:1", 1.0), ("4:3", 4 / 3), ("16:9", 16 / 9)):
+        if abs(r - v) < 0.04:
+            return name
+    return f"{w}:{h}"
+
+
+def aspect_from_name(rel):
+    n = os.path.basename(rel).lower()
+    if re.search(r"9x16|916|vertical|full|portrait", n):
+        return "9:16" if "xiaohongshu-vertical" not in n else "3:4"
+    if re.search(r"3x4|34\b", n):
+        return "3:4"
+    if re.search(r"16x9|169|horizontal|landscape", n):
+        return "16:9"
+    return None
+
+
+def parse_posts(text):
+    """post.md with ``## <file> · 封面 <cover>`` sections -> {clip key: {title, body, tags, file, cover}}."""
+    out = {}
+    parts = re.split(r"^##\s+", text or "", flags=re.M)
+    for part in parts[1:]:
+        head, _, rest = part.partition("\n")
+        m = re.match(r"\s*([^\s·|]+\.(?:mp4|mov|m4v))", head)
+        if not m:
+            continue
+        cover = re.search(r"([^\s·|]+\.(?:jpg|jpeg|png|webp))", head)
+        lines = [ln.rstrip() for ln in rest.strip().splitlines()]
+        title = next((ln.strip() for ln in lines if ln.strip()), "")
+        tags = []
+        body = []
+        for ln in lines[1:]:
+            if re.fullmatch(r"\s*(#\S+\s*)+", ln or "x"):
+                tags += [t.lstrip("#") for t in ln.split()]
+            else:
+                body.append(ln)
+        out[clip_key(m.group(1))] = dict(title=title, body="\n".join(body).strip(), tags=tags, file=m.group(1),
+                                         cover=cover.group(1) if cover else None)
+    return out
+
+
+def parse_picks(text):
+    """PICKS.md: the pick table (id -> title) and the 'creator should confirm' bullets (id -> [text])."""
+    titles, confirm = {}, []
+    for ln in (text or "").splitlines():
+        m = re.match(r"^\|\s*([A-Z0-9]{1,3})\b[^|]*\|[^|]*\|[^|]*\|\s*([^|]+?)\s*\|", ln)
+        if m and not set(m.group(2)) <= set("-: "):
+            titles[m.group(1)] = re.sub(r"\s*\(\d+\)\s*$", "", m.group(2)).strip()
+    sec = re.search(r"^##[^\n]*(creator should confirm|需要你确认|请确认)[^\n]*\n(.*?)(?=^##\s|\Z)", text or "",
+                    flags=re.M | re.S | re.I)
+    if sec:
+        for ln in sec.group(2).splitlines():
+            m = re.match(r"^\s*[-*]\s+(?:\*\*([A-Z0-9]{1,3})\*\*\s*)?(.+)$", ln)
+            if m and not re.match(r"^\s*skipped\b", m.group(2), re.I):
+                confirm.append(dict(clip=m.group(1), text=m.group(2).strip()))
+    return dict(titles=titles, confirm=confirm)
+
+
+def _clip_state(cdir):
+    """work/clips/<X>/: done (an export exists) | running (a log written in the last 10 min) | queued."""
+    exp = [p for sub in ("exports", "exports916", "out", "final") for p in _files(cdir, sub, VIDEO)]
+    newest = 0.0
+    for dp, _dns, fns in os.walk(cdir):
+        for fn in fns:
+            if fn.endswith((".log", ".mov", ".mp4", ".json")):
+                try:
+                    newest = max(newest, os.path.getmtime(os.path.join(dp, fn)))
+                except OSError:
+                    pass
+        break
+    if exp:
+        return "done", [os.path.join(cdir, p) for p in exp]
+    if newest and time.time() - newest < 600:
+        return "running", []
+    return "queued", []
+
+
+def clips(d, probe=None):
+    """Every output of a plain work folder as one clip: versions (aspect), cover, post copy, in-progress clips from
+    ``work/clips/*`` (B2). -> [{id, title, state, files [{path, aspect, w, h}], cover, post, duration, source}]"""
+    found = scan(d)
+    posts = {}
+    for rel in found["posts"]:
+        try:
+            with open(os.path.join(d, rel), encoding="utf-8", errors="replace") as f:
+                posts.update(parse_posts(f.read(200000)))
+        except OSError:
+            pass
+    picks = {}
+    if os.path.exists(os.path.join(d, "PICKS.md")):
+        try:
+            with open(os.path.join(d, "PICKS.md"), encoding="utf-8", errors="replace") as f:
+                picks = parse_picks(f.read(200000))["titles"]
+        except OSError:
+            pass
+    groups = {}
+    for rel in found["outputs"]:
+        groups.setdefault(clip_key(rel), []).append(rel)
+    covers = {}
+    for rel in found["covers"]:
+        covers.setdefault(clip_key(rel), rel)
+    keys = list(groups)
+    if posts:                                   # post.md names the real clips; other files are extras
+        keys = [k for k in posts if k in groups] + [k for k in groups if k not in posts]
+    out = []
+    for k in keys:
+        files = []
+        for rel in sorted(groups[k], key=lambda r: (len(r), r)):
+            p = os.path.join(d, rel)
+            info = (probe or (lambda _p: {}))(p) or {}
+            asp = aspect_of(info.get("w"), info.get("h")) or aspect_from_name(rel) or "原尺寸"
+            if any(f["aspect"] == asp for f in files):
+                continue
+            files.append(dict(path=p, aspect=asp, w=info.get("w"), h=info.get("h"), fps=info.get("fps"),
+                              duration=info.get("duration")))
+        post = posts.get(k)
+        cov = (post or {}).get("cover")
+        cover = os.path.join(d, os.path.dirname(groups[k][0]), cov) if cov and \
+            os.path.exists(os.path.join(d, os.path.dirname(groups[k][0]), cov)) else \
+            (os.path.join(d, covers[k]) if k in covers else None)
+        letter = re.match(r"^([A-Z0-9]{1,3})[_ -]", k)
+        title = (post or {}).get("title") or (picks.get(letter.group(1)) if letter else None) or \
+            re.sub(r"^[A-Z0-9]{1,3}[_-]", "", k).replace("_", " ")
+        out.append(dict(id=k, title=title, state="done", files=files, cover=cover, post=post,
+                        duration=next((f["duration"] for f in files if f.get("duration")), None),
+                        extra=bool(posts) and k not in posts, letter=letter.group(1) if letter else None))
+    done_letters = {c["letter"] for c in out if c.get("letter")}
+    cdir = os.path.join(d, "work", "clips")
+    if os.path.isdir(cdir):
+        for name in sorted(os.listdir(cdir)):
+            p = os.path.join(cdir, name)
+            if not os.path.isdir(p) or name.startswith(".") or name in done_letters:
+                continue
+            state, exp = _clip_state(p)
+            files = []
+            for e in exp:
+                info = (probe or (lambda _p: {}))(e) or {}
+                asp = aspect_of(info.get("w"), info.get("h")) or aspect_from_name(e) or "原尺寸"
+                if not any(f["aspect"] == asp for f in files):
+                    files.append(dict(path=e, aspect=asp, w=info.get("w"), h=info.get("h"), fps=info.get("fps"),
+                                      duration=info.get("duration")))
+            cov = next((os.path.join(p, c) for c in ("cover_3x4.jpg", "cover.jpg") if os.path.exists(os.path.join(p, c))),
+                       None)
+            out.append(dict(id=name, title=picks.get(name) or name, state=state, files=files, cover=cov, post=None,
+                            duration=next((f["duration"] for f in files if f.get("duration")), None), extra=False,
+                            letter=name, workdir=p))
+    order = lambda c: (c.get("extra", False), c.get("letter") or "~", c["id"])  # noqa: E731
+    return sorted(out, key=order)
+
+
+def confirmations(d):
+    """The 'creator should confirm' bullets of PICKS.md / NOTES.md (the 需要你 card of a work folder)."""
+    out = []
+    for n in ("PICKS.md", "NOTES.md"):
+        p = os.path.join(d, n)
+        if os.path.exists(p):
+            try:
+                with open(p, encoding="utf-8", errors="replace") as f:
+                    out += [dict(c, source=n) for c in parse_picks(f.read(200000))["confirm"]]
+            except OSError:
+                pass
+    return out

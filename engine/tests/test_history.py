@@ -158,7 +158,8 @@ class HistoryTest(unittest.TestCase):
         self.assertEqual(sorted(os.listdir(th)), sorted(before + [".vstudio"]))
         self.assertTrue(os.path.exists(os.path.join(th, ".vstudio", "work.json")))
         again = {i["name"]: i for i in self.h.list()["items"]}[t["name"]]
-        self.assertEqual(again["status"], "adopted")
+        self.assertEqual(again["status"], "done")          # B3: adopting never hides the real state
+        self.assertTrue(again["adopted"])
         with self.assertRaises(Exception):
             self.h.adopt(by["rag"]["id"])
 

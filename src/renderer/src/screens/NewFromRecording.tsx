@@ -14,7 +14,7 @@ import { ClientSelect, defaultName, EstimateView, initialClient } from './NewBat
 
 type Step = 'source' | 'plan' | 'segments' | 'estimate' | 'pilot';
 const STEPS: Step[] = ['source', 'plan', 'segments', 'estimate', 'pilot'];
-const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const NAME_RE = /^[\p{L}\p{N}][\p{L}\p{N} .()（）·_-]{0,63}$/u;
 
 interface PlanRow {
   file: string;

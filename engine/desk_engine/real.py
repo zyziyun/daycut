@@ -13,7 +13,7 @@ import sys
 import threading
 import time
 
-from .common import BadRequest, batch_id, need, read_json, sha1_json, write_json
+from .common import safe_name, BadRequest, batch_id, need, read_json, sha1_json, write_json
 
 EXIT_STATUS = {0: "ok", 1: "done-with-failures", 2: "over-budget", 3: "paused", 4: "pilot-waits", 6: "busy"}
 
@@ -136,7 +136,7 @@ class RealEngine:
             spec["planner"] = body["planner"]
         if body.get("client_dir"):                 # only sent when the engine has the `client` command
             spec["client"] = body["client_dir"]
-        spec_path = os.path.join(self.data_dir, "specs", f"{name}.json")
+        spec_path = os.path.join(self.data_dir, "specs", f"{safe_name(name)}.json")
         write_json(spec_path, spec)
         base = os.path.dirname(body.get("source") or body.get("folder").rstrip(os.sep))
         bdir = body.get("out_dir") or os.path.join(base, f"batch-{name}")

@@ -60,15 +60,19 @@ class CliError(RuntimeError):
 class CliRunner:
     """Runs ``python -m vstudio.batch <args>`` and returns the JSON document printed on stdout."""
 
-    def __init__(self, python, env, timeout=600):
-        self.python, self.env, self.timeout = python, env, timeout
+    def __init__(self, python, env, timeout=600, module="vstudio.batch"):
+        self.python, self.env, self.timeout, self.module = python, env, timeout, module
+
+    def sibling(self, module):
+        """The same Python + env for another engine module (vstudio.project, vstudio.intake)."""
+        return CliRunner(self.python, self.env, self.timeout, module)
 
     def _run(self, args, timeout=None, cwd=None):
         try:
-            p = subprocess.run([self.python, "-m", "vstudio.batch", *args], capture_output=True, text=True,
+            p = subprocess.run([self.python, "-m", self.module, *args], capture_output=True, text=True,
                                env=self.env, timeout=timeout or self.timeout, cwd=cwd, stdin=subprocess.DEVNULL)
         except (OSError, subprocess.SubprocessError) as e:
-            raise CliError(f"vstudio.batch {args[0]}: {e}") from e
+            raise CliError(f"{self.module} {args[0]}: {e}") from e
         return p
 
     def text(self, args, timeout=30):
@@ -89,7 +93,7 @@ class CliRunner:
                 doc = None
         if doc is None:
             tail = (p.stderr or "").strip().splitlines()[-3:]
-            raise CliError(f"vstudio.batch {args[0]} exited {p.returncode}: {' | '.join(tail) or 'no JSON output'}")
+            raise CliError(f"{self.module} {args[0]} exited {p.returncode}: {' | '.join(tail) or 'no JSON output'}")
         if isinstance(doc, dict) and doc.get("ok") is False and p.returncode != 0:
             raise CliError(str(doc.get("error") or doc.get("reason") or f"{args[0]} failed"))
         return doc

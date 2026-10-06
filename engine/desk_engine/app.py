@@ -49,6 +49,16 @@ History (history.py; read-only discovery of past work: desk + engine registries,
   POST /api/history/hide {dir}             remove from the list (never deletes files); POST /api/history/unhide
   GET  /api/history/item/<id>              one entry; work folders + detail {outputs, covers, sheets, posts, notes}
   POST /api/history/item/<id>/adopt        {recipe?: guess|name, title?} plain work folder -> .vstudio/work.json
+v0.4 (outputs.py, intake.py, inbox.py; engine command when available, desk implementation otherwise)
+  GET  /api/outputs/<item>                 one clip per output {clips [{id, title, state, files, cover, post}], confirm}
+  GET  /api/outputs/<item>/<clip>          player + editor document (words, captions, effects, caps, ops, version)
+  POST /api/outputs/<item>/<clip>/edit     {ops: [op...]} | op;  /ask {prompt} -> proposals;  /render {platforms?};
+                                           /undo {n?}
+  GET  /api/effects                        effects catalogue (zh labels, params, preview kind)
+  POST /api/intake {prompt, inputs[]}      -> {id}; GET /api/intake/<id>; POST .../revise {prompt}; POST .../apply
+                                           {plan?, run?}; GET /api/intake/recent
+  GET  /api/inbox                          every decision waiting for the creator; POST /api/inbox/answer {keys,
+                                           answer?}; POST /api/inbox/undo {keys}
 """
 import hmac
 import json
@@ -90,7 +100,7 @@ def _abs_path(v, name, must_exist=True, kind=None):
 
 def validate_create(b):
     need(isinstance(b, dict), "body must be an object")
-    need(isinstance(b.get("name"), str) and NAME_RE.match(b["name"]), "name: letters, digits, . _ - (max 64)")
+    need(isinstance(b.get("name"), str) and NAME_RE.match(b["name"]), "name: letters (any language), digits, space . _ - (max 64)")
     need(b.get("recipe") in ("longform-slices", "talkinghead-clips") or
          (isinstance(b.get("recipe"), str) and NAME_RE.match(b["recipe"])), "recipe required")
     out = dict(name=b["name"], recipe=b["recipe"])
@@ -185,7 +195,7 @@ def validate_plan(b):
 
 def validate_plan_batch(b):
     need(isinstance(b, dict), "body must be an object")
-    need(isinstance(b.get("name"), str) and NAME_RE.match(b["name"]), "name: letters, digits, . _ - (max 64)")
+    need(isinstance(b.get("name"), str) and NAME_RE.match(b["name"]), "name: letters (any language), digits, space . _ - (max 64)")
     segs = b.get("segments")
     need(isinstance(segs, list) and 0 < len(segs) <= 200, "segments: 1-200 accepted segments")
     rows = []
@@ -394,6 +404,13 @@ class Api:
         from .common import Registry
         from .history import History
         self.history = History(engine.data_dir, getattr(engine, "reg", None) or Registry(engine.data_dir), engine)
+        from .inbox import Inbox
+        from .intake import Intake
+        from .outputs import Outputs, probe
+        runner = getattr(studio, "runner", None)
+        self.outputs = Outputs(engine.data_dir, self.history, runner if engine.mode == "real" else None, bus)
+        self.intake = Intake(engine.data_dir, bus, runner, engine.mode, probe=probe)
+        self.inbox = Inbox(engine.data_dir, self.history, runner, engine.mode, bus)
         self.port = None
 
     def roots(self):
@@ -401,7 +418,67 @@ class Api:
         for p in self.studio.plans.values():
             out.append(os.path.dirname(p["request"]["source"]))
         out += self.history.roots()
+        for j in list(self.intake.jobs.values()):
+            for p in j.get("inputs") or []:
+                out.append(p if os.path.isdir(p) else os.path.dirname(p))
+            for p in j.get("applied") or []:
+                out.append(p["dir"])
         return sorted(set(out))
+
+    def route_v04(self, method, parts, query, body):
+        """v0.4: outputs (player + second-pass editor), intake (composer -> plan card), inbox. None = not mine."""
+        from urllib.parse import unquote
+        b = body if isinstance(body, dict) else {}
+        if parts[:1] == ["effects"] and method == "GET":
+            return self.outputs.effects()
+        if parts[:1] == ["outputs"] and len(parts) >= 2:
+            need(ID_RE.match(parts[1]), "bad item id")
+            if len(parts) == 2 and method == "GET":
+                return self.outputs.clips(parts[1])
+            clip = unquote(parts[2])
+            if len(parts) == 3 and method == "GET":
+                return self.outputs.show(parts[1], clip)
+            if len(parts) == 4 and method == "POST":
+                verb = parts[3]
+                if verb == "edit":
+                    ops = b.get("ops") if "ops" in b else [b]
+                    return self.outputs.edit(parts[1], clip, ops)
+                if verb == "ask":
+                    return self.outputs.ask(parts[1], clip, b.get("prompt"))
+                if verb == "render":
+                    return self.outputs.render(parts[1], clip, b.get("platforms"))
+                if verb == "undo":
+                    n = b.get("n")
+                    need(n is None or (isinstance(n, int) and not isinstance(n, bool) and 0 < n < 1e6), "n: edit number")
+                    return self.outputs.undo(parts[1], clip, n)
+        if parts[:1] == ["intake"]:
+            if parts == ["intake"] and method == "POST":
+                prompt = b.get("prompt") or ""
+                need(isinstance(prompt, str) and len(prompt) <= 2000, "prompt: max 2000 chars")
+                inputs = b.get("inputs") or []
+                need(isinstance(inputs, list) and len(inputs) <= 200, "inputs: up to 200 files / folders")
+                inputs = [_abs_path(p, "inputs[]") for p in inputs]
+                need(prompt.strip() or inputs, "say what to make or add files")
+                return self.intake.start(prompt.strip(), inputs)
+            if parts == ["intake", "recent"] and method == "GET":
+                return self.intake.recent()
+            need(len(parts) >= 2 and PID_RE.match(parts[1]), "bad plan id")
+            if len(parts) == 2 and method == "GET":
+                return self.intake.get(parts[1])
+            if parts[2:] == ["revise"] and method == "POST":
+                need(isinstance(b.get("prompt"), str) and 0 < len(b["prompt"].strip()) <= 500, "prompt: 1-500 chars")
+                return self.intake.revise(parts[1], b["prompt"].strip())
+            if parts[2:] == ["apply"] and method == "POST":
+                need(b.get("run") in (None, True, False), "run must be a boolean")
+                return self.intake.apply(parts[1], b.get("plan"), run=b.get("run", True) is not False)
+        if parts[:1] == ["inbox"]:
+            if parts == ["inbox"] and method == "GET":
+                return self.inbox.list()
+            if parts == ["inbox", "answer"] and method == "POST":
+                return self.inbox.answer(b.get("keys"), b.get("answer"))
+            if parts == ["inbox", "undo"] and method == "POST":
+                return self.inbox.undo(b.get("keys"))
+        return None
 
     def route_v02(self, method, parts, query, body):
         s = self.studio
@@ -529,6 +606,9 @@ class Api:
         if method == "GET" and parts == ["roots"]:
             return self.roots()
         if parts[:1] != ["batches"]:
+            r = self.route_v04(method, parts, query, body)
+            if r is not None:
+                return r
             return self.route_v02(method, parts, query, body)
         if len(parts) == 1:
             if method == "GET":

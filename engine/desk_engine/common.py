@@ -75,7 +75,17 @@ def prune_json_registry(path, marker=None):
 
 
 
-NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+# Display names may be Chinese (B5): any letters / digits / CJK plus space . _ - ( ); folders use safe_name().
+NAME_RE = re.compile(r"^[^\W_][\w .()（）·-]{0,63}$")
+
+
+def safe_name(name):
+    """A display name -> a folder / file-safe ASCII slug (a short hash keeps Chinese names unique)."""
+    import hashlib
+    s = re.sub(r"[^A-Za-z0-9._-]+", "-", name).strip("-.")
+    if s == name:
+        return s
+    return f"{s[:40]}-{hashlib.sha1(name.encode()).hexdigest()[:8]}".lstrip("-")
 JOB_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 

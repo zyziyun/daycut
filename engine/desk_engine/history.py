@@ -400,6 +400,7 @@ class History:
         for r in rows:
             r.pop("real", None)
         self._thumbs = {r["thumb"] for r in rows if r.get("thumb")}
+        self._last = (time.time(), [dict(r) for r in rows[:MAX_ENTRIES]])
         return dict(items=rows[:MAX_ENTRIES], watch=self.watch(), at=time.time(), running=running)
 
     def open(self, path):
@@ -416,11 +417,20 @@ class History:
         ent = self.reg.add(store_dir, name)
         return dict(id=ent["id"], dir=store_dir, name=name)
 
-    def find(self, item_id):
-        for r in self.list()["items"]:
+    def find(self, item_id, max_age=3.0):
+        """One entry; the listing is reused for a few seconds (the output editor looks entries up per request)."""
+        cached = getattr(self, "_last", None)
+        rows = cached[1] if cached and time.time() - cached[0] < max_age else None
+        if rows is None or not any(r["id"] == item_id for r in rows):
+            rows = self.list()["items"]
+        for r in rows:
             if r["id"] == item_id:
-                return r
+                return dict(r)
         raise KeyError(f"no history item {item_id}")
+
+    def allow_media(self, paths):
+        """Folders of files the UI was handed (clips, covers) become viewable through the media protocol."""
+        self._media |= {os.path.dirname(p) for p in paths if isinstance(p, str) and os.path.isabs(p)}
 
     def item(self, item_id):
         """One entry + (work folders) its outputs, covers, sheets, post copy and notes for the work page."""
