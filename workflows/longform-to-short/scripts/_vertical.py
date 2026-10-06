@@ -613,6 +613,277 @@ def scan_popups(video, segments, overlays=(), caption_top=None, o=SCREEN_DEFAULT
     return sorted(out, key=lambda x: x["t"])
 
 
+# ----------------------------------------------------------------------------------- static overlay scan
+# Persistent UI chrome inside the screen crop - an editor's selection / block menu, a formatting toolbar, a
+# floating panel - that stays open over whole items: ``detect_popups`` only sees a box that APPEARS (and vanishes)
+# inside one screen segment, so a menu already open when an item starts and still open when it ends reads as page.
+# This scan looks for the panel itself in every sample: a card (four thin, faint border lines, a near-uniform
+# page-coloured fill, not touching the crop edge - or cut by exactly one side edge), tracked over time, and kept
+# when there is evidence that it floats above the page rather than being part of it:
+#   shadow   a drop-shadow halo just outside its left / right borders (menus, popovers, toolbars; page boxes such
+#            as an input field, a table cell or a code block have a crisp border and nothing outside it)
+#   pinned   the page around it changes (scroll, page switch) while the card itself stays pixel-stable
+#   appeared / vanished   the card comes / goes between two samples while the page around it stays the same
+# A static slide (a bordered box that is always there, no shadow, the page around it unchanged) is never flagged.
+OVERLAY_DEFAULTS = dict(hz=2.0, edge_s=0.25, max_w=1080, lo=2.5, hi=60.0, tol=12, min_w=0.12, min_h=0.04,
+                        min_cov=0.75, min_fill=0.7,
+                        min_halo=1.5, max_area=0.35, min_s=1.0, change_luma=12, ring=24, max_segs=600)
+
+
+def find_cards(gray, o=None):
+    """Card-shaped panels in one grey frame (h, w) of the screen crop. -> [dict(box (x0, y0, x1, y1) px,
+    cov (top, bottom, left, right) border coverage, fill (share of page-coloured pixels inside), halo (outer
+    shadow on the free vertical sides, luma), hug None | 'left' | 'right' (cut by that crop edge))], nested
+    cards folded into the outermost one."""
+    o = dict(OVERLAY_DEFAULTS, **(o or {}))
+    g = np.asarray(gray, np.float32)
+    H, W = g.shape
+    if H < 16 or W < 16:
+        return []
+    bg = float(np.median(g))
+    d = (bg - g) if bg >= 128 else (g - bg)          # light page: borders are darker; dark page: lighter
+    on = (d >= o["lo"]) & (d <= o["hi"])               # faint (a panel border, a shadow), not a text stroke
+    clean = np.abs(d) < o["lo"]
+    up, dn, lf, rt = (np.zeros_like(clean) for _ in range(4))
+    up[2:], dn[:-2], lf[:, 2:], rt[:, :-2] = clean[:-2], clean[2:], clean[:, :-2], clean[:, 2:]
+    k5h, k5v = np.ones((1, 5), np.uint8), np.ones((5, 1), np.uint8)
+    th = cv2.morphologyEx((on & (up | dn)).astype(np.uint8), cv2.MORPH_CLOSE, k5h)      # thin horizontal lines
+    tv = cv2.morphologyEx((on & (lf | rt)).astype(np.uint8), cv2.MORPH_CLOSE, k5v)      # thin vertical lines
+    hcs = np.zeros((H, W + 1), np.int32)
+    hcs[:, 1:] = np.cumsum(cv2.dilate(th, np.ones((3, 1), np.uint8)), axis=1)
+    vcs = np.zeros((H + 1, W), np.int32)
+    vcs[1:] = np.cumsum(cv2.dilate(tv, np.ones((1, 3), np.uint8)), axis=0)
+    min_w, min_h = max(48, int(o["min_w"] * W)), max(24, int(o["min_h"] * H))
+    pad = np.zeros((H, W + 2), np.int8)
+    pad[:, 1:-1] = th
+    dd = np.diff(pad, axis=1)
+    sy, sx = np.nonzero(dd == 1)
+    _, ex = np.nonzero(dd == -1)
+    keep = (ex - sx) >= min_w // 2
+    sy, sx, ex = sy[keep], sx[keep], ex[keep]
+    if len(sy) > o["max_segs"]:                        # a page full of rules / tables: the longest lines only
+        top = np.argsort(sx - ex)[:o["max_segs"]]
+        top.sort()
+        sy, sx, ex = sy[top], sx[top], ex[top]
+    tol = int(o["tol"])
+
+    def covh(y, a, b):
+        return float(hcs[y, b] - hcs[y, a]) / (b - a) if b > a else 0.0
+
+    def best_v(xc, y0, y1):
+        xs = np.arange(max(0, xc - tol), min(W, xc + tol + 1))
+        if y1 <= y0 or not len(xs):
+            return 0.0, xc
+        c = (vcs[y1, xs] - vcs[y0, xs]) / float(y1 - y0)
+        i = int(np.argmax(c))
+        return float(c[i]), int(xs[i])
+
+    cands = []
+    for i in range(len(sy)):
+        yt, ta, tb = int(sy[i]), int(sx[i]), int(ex[i])
+        m = (sy > yt + min_h) & (np.minimum(ex, tb) - np.maximum(sx, ta) >= 0.5 * np.maximum(ex - sx, tb - ta))
+        for j in np.nonzero(m)[0]:
+            yb, x0, x1 = int(sy[j]), min(ta, int(sx[j])), max(tb, int(ex[j]))
+            if x1 - x0 < min_w or (x1 - x0) * (yb - yt) > o["max_area"] * W * H:
+                continue
+            r = max(3, int(0.08 * min(x1 - x0, yb - yt)))  # rounded corners: sides measured off the corners
+            cl, xl = best_v(x0, yt + r, yb - r)
+            cr, xr = best_v(x1 - 1, yt + r, yb - r)
+            hug = "left" if x0 <= 2 else ("right" if x1 >= W - 2 else None)
+            if hug == "left":
+                xl, cl = 0, 1.0
+            elif hug == "right":
+                xr, cr = W - 1, 1.0
+            ct, cb = covh(yt, xl + r, xr - r), covh(yb, xl + r, xr - r)
+            if min(ct, cb, cl, cr) < o["min_cov"]:
+                continue
+            cands.append(dict(box=(xl, yt, xr + 1, yb + 1), cov=(round(ct, 2), round(cb, 2), round(cl, 2),
+                                                                 round(cr, 2)), hug=hug, r=r))
+    out = []
+    for c in sorted(cands, key=lambda c: -(c["box"][2] - c["box"][0]) * (c["box"][3] - c["box"][1])):
+        x0, y0, x1, y1 = c["box"]
+        if any(k["box"][0] - 4 <= x0 and k["box"][1] - 4 <= y0 and x1 <= k["box"][2] + 4 and y1 <= k["box"][3] + 4
+               for k in out):
+            continue                                   # a row / field inside a card already kept
+        inner = clean[y0 + 4:y1 - 4, x0 + 4:x1 - 4]
+        fill = float(inner.mean()) if inner.size else 0.0
+        if fill < o["min_fill"]:
+            continue                                   # a filled block (code, highlight), not a panel
+        ys = slice(y0 + c["r"], y1 - c["r"])
+        halos = []
+        for side, x, step in (("left", x0, -1), ("right", x1 - 1, 1)):
+            if c["hug"] == side:
+                continue
+            offs = np.arange(-6, 15)
+            cols = np.clip(x + step * offs, 0, W - 1)
+            prof = np.median(d[ys][:, cols], axis=0)
+            pk = int(np.argmax(prof[:13]))             # the border itself: within 6 px of the found side
+            band = prof[pk + 2:pk + 9]
+            ok = (x + step * (offs[pk] + 8) >= 0) and (x + step * (offs[pk] + 8) < W)
+            halos.append(float(np.clip(band, 0, 12).mean()) if ok and len(band) else 0.0)
+        out.append(dict(box=c["box"], cov=c["cov"], fill=round(fill, 2), hug=c["hug"],
+                        halo=round(min(halos), 2) if halos else 0.0))
+    return out
+
+
+def _iou(a, b):
+    ix = max(0, min(a[2], b[2]) - max(a[0], b[0]))
+    iy = max(0, min(a[3], b[3]) - max(a[1], b[1]))
+    u = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - ix * iy
+    return ix * iy / float(u) if u > 0 else 0.0
+
+
+def _ring_diff(a, b, box, s, ring, thr):
+    """(inside, around) shares of changed pixels between two small samples for a full-scale box: the card
+    (inset 4 px) and a ring ``ring`` px wide around it (from 4 px out: its shadow is not page)."""
+    h, w = a.shape
+    x0, y0, x1, y1 = [v * s for v in box]
+    ch = np.abs(a.astype(np.int16) - b.astype(np.int16)) > thr
+    ix0, iy0, ix1, iy1 = int(x0 + 4 * s), int(y0 + 4 * s), int(x1 - 4 * s), int(y1 - 4 * s)
+    inner = ch[max(0, iy0):max(0, iy1), max(0, ix0):max(0, ix1)]
+    ox0, oy0 = max(0, int(x0 - ring * s)), max(0, int(y0 - ring * s))
+    ox1, oy1 = min(w, int(x1 + ring * s)), min(h, int(y1 + ring * s))
+    gx0, gy0, gx1, gy1 = int(x0 - 4 * s), int(y0 - 4 * s), int(x1 + 4 * s), int(y1 + 4 * s)
+    m = np.zeros_like(ch)
+    m[oy0:oy1, ox0:ox1] = True
+    m[max(0, gy0):max(0, gy1), max(0, gx0):max(0, gx1)] = False
+    return (float(inner.mean()) if inner.size else 0.0), (float(ch[m].mean()) if m.any() else 0.0)
+
+
+def static_overlays(samples, hz=2.0, o=None):
+    """Persistent floating panels in a sequence of screen-crop samples ``[dict(t, key, g)]`` (g: grey crop at
+    analysis scale; key: the crop geometry - a card is only followed between samples of the same key).
+    -> [dict(t, dur, box crop px, idx (first, last), halo, hug, evidence [shadow | pinned | appeared |
+    vanished], items)] for the cards seen >= ``min_s`` with at least one piece of evidence."""
+    o = dict(OVERLAY_DEFAULTS, **(o or {}))
+    s = 0.25                                           # temporal checks on quarter-size copies
+    small, cards, prev = [], [], None
+    for smp in samples:
+        g = np.asarray(smp["g"])
+        sm = cv2.resize(g, (max(4, int(g.shape[1] * s)), max(4, int(g.shape[0] * s))), interpolation=cv2.INTER_AREA)
+        if prev is not None and prev[0] == smp["key"] and prev[1].shape == sm.shape and \
+                not (np.abs(sm.astype(np.int16) - prev[1].astype(np.int16)) > 6).any():
+            cs = prev[2]                               # nothing moved: same cards (static pages are the norm)
+        else:
+            cs = find_cards(g, o)
+        small.append(sm)
+        cards.append(cs)
+        prev = (smp["key"], sm, cs)
+    tracks = []
+    for i, cs in enumerate(cards):
+        for c in cs:
+            best = None
+            for tr in tracks:
+                j = tr["idx"][-1]
+                if i - j > 2 or j == i or samples[j]["key"] != samples[i]["key"]:
+                    continue
+                v = _iou(tr["boxes"][-1], c["box"])
+                if v >= 0.6 and (best is None or v > best[0]):
+                    best = (v, tr)
+            if best:
+                tr = best[1]
+                tr["idx"].append(i)
+                tr["boxes"].append(c["box"])
+                tr["halo"].append(c["halo"])
+                tr["hug"].append(c["hug"])
+            else:
+                tracks.append(dict(idx=[i], boxes=[c["box"]], halo=[c["halo"]], hug=[c["hug"]]))
+    thr, ring, step = o["change_luma"], o["ring"], 1.5 / hz
+    out = []
+    for tr in tracks:
+        a, b = tr["idx"][0], tr["idx"][-1]
+        dur = samples[b]["t"] - samples[a]["t"] + 1.0 / hz
+        if dur < o["min_s"] - 1e-6:
+            continue
+        box = tuple(int(np.median([bx[k] for bx in tr["boxes"]])) for k in range(4))
+        halo = float(np.median(tr["halo"]))
+        ev = []
+        if halo >= o["min_halo"]:
+            ev.append("shadow")
+        for i in tr["idx"][1:]:
+            inside, around = _ring_diff(small[a], small[i], box, s, ring, thr)
+            if inside <= 0.03 and around >= 0.05:
+                ev.append("pinned")
+                break
+        for edge, nb in (("appeared", a - 1), ("vanished", b + 1)):
+            if 0 <= nb < len(samples) and samples[nb]["key"] == samples[a]["key"] and \
+                    abs(samples[nb]["t"] - samples[a if edge == "appeared" else b]["t"]) <= step:
+                inside, around = _ring_diff(small[nb], small[a if edge == "appeared" else b], box, s, ring, thr)
+                if inside >= 0.1 and around <= 0.02:
+                    ev.append(edge)
+        if not ev:
+            continue
+        hugs = [h for h in tr["hug"] if h]
+        out.append(dict(t=round(samples[a]["t"], 2), dur=round(dur, 2), box=box, idx=(a, b), halo=round(halo, 2),
+                        hug=max(set(hugs), key=hugs.count) if hugs else None, evidence=ev,
+                        items=sorted({samples[i].get("item") for i in tr["idx"]} - {None})))
+    merged = []                                        # one panel, several tracks (its outline found differently
+    for p in sorted(out, key=lambda x: -x["dur"]):     # frame to frame, a field inside it): fold them together
+        x0, y0, x1, y1 = p["box"]
+        area = max(1, (x1 - x0) * (y1 - y0))
+        for q in merged:
+            qx0, qy0, qx1, qy1 = q["box"]
+            ix = max(0, min(x1, qx1) - max(x0, qx0)) * max(0, min(y1, qy1) - max(y0, qy0))
+            if samples[p["idx"][0]]["key"] == samples[q["idx"][0]]["key"] and ix >= 0.6 * area and \
+                    p["t"] <= q["t"] + q["dur"] + 1.0 / hz and q["t"] <= p["t"] + p["dur"] + 1.0 / hz:
+                end = max(q["t"] + q["dur"], p["t"] + p["dur"])
+                q["t"] = min(q["t"], p["t"])
+                q["dur"] = round(end - q["t"], 2)
+                q["idx"] = (min(q["idx"][0], p["idx"][0]), max(q["idx"][1], p["idx"][1]))
+                q["evidence"] += [e for e in p["evidence"] if e not in q["evidence"]]
+                q["items"] = sorted(set(q["items"]) | set(p["items"]))
+                break
+        else:
+            merged.append(dict(p))
+    return sorted(merged, key=lambda x: x["t"])
+
+
+def scan_static_overlays(video, segments, overlays=(), caption_top=None, scan=None):
+    """Persistent UI panels (an editor's block / selection menu, a toolbar) still VISIBLE in a rendered video:
+    sampled at ``scan.hz`` (2 fps) at up to ``max_w`` px wide (their borders are faint: full scale), every screen
+    segment [(t0, t1, box, item)] cut out (overlay rects - 记笔记 panels, hook boxes - and the caption band painted
+    with the page colour), then ``static_overlays``. Segments with the same box are followed across cuts (a menu
+    left open spans items). -> [dict(t, dur, item, items, box canvas px, cover, evidence, halo, hug)] in output
+    seconds; QC warns on each (``screen-overlay-static``)."""
+    o = dict(OVERLAY_DEFAULTS, **(scan or {}))
+    hz = float(o["hz"])
+    info = media.probe(video)
+    W, H = int(info["w"]), int(info["h"])
+    k = min(1.0, o["max_w"] / float(W))
+    aw, ah = even(W * k), even(H * k)
+    cmd = [media.ffmpeg_bin(), "-v", "error", "-i", os.fspath(video), "-map", "0:v:0",
+           "-vf", f"fps={hz},scale={aw}:{ah}:flags=area", "-f", "rawvideo", "-pix_fmt", "gray", "-"]
+    segs = sorted(segments, key=lambda x: x[0])
+    samples = []
+    for j, fr in enumerate(frames(cmd, aw, ah, 1)):
+        t = j / hz
+        seg = next((sg for sg in segs if sg[0] + o["edge_s"] <= t <= sg[1] - o["edge_s"]), None)
+        if seg is None:
+            continue
+        t0, t1, box, item = seg
+        x0, y0, x1, y1 = [int(round(v * k)) for v in box]
+        if caption_top is not None:
+            y1 = min(y1, int(caption_top * k))
+        if x1 - x0 < 32 or y1 - y0 < 32:
+            continue
+        g = fr[y0:y1, x0:x1].copy()
+        bgv = int(np.median(g))
+        for ov in overlays or ():
+            if ov["a"] <= t < ov["b"]:
+                rx0, ry0, rx1, ry1 = [int(round(v * k)) for v in ov["rect"]]
+                g[max(0, ry0 - y0):max(0, ry1 - y0), max(0, rx0 - x0):max(0, rx1 - x0)] = bgv
+        samples.append(dict(t=t, key=(x0, y0, x1, y1), g=g, item=item))
+    out = []
+    for p in static_overlays(samples, hz, o):
+        x0, y0, x1, y1 = samples[p["idx"][0]]["key"]
+        bx0, by0, bx1, by1 = p["box"]
+        out.append(dict(t=p["t"], dur=p["dur"], item=samples[p["idx"][0]]["item"], items=p["items"],
+                        box=[int((x0 + bx0) / k), int((y0 + by0) / k), int((x0 + bx1) / k), int((y0 + by1) / k)],
+                        cover=round((bx1 - bx0) * (by1 - by0) / float((x1 - x0) * (y1 - y0)), 4),
+                        evidence=p["evidence"], halo=p["halo"], hug=p["hug"]))
+    return out
+
+
 # ----------------------------------------------------------------------------------- speaker tracking
 def make_detector(kind="mediapipe", color=None, upscale_to=640):
     """reframe-compatible detector(bgr) -> [(x0, y0, x1, y1, talk)]. 'mediapipe' upscales small cam tiles

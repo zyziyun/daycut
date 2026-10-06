@@ -625,20 +625,23 @@ def _cue_time(c, k):
     return c["start"] + (c["end"] - c["start"]) * min(1.0, k / n)
 
 
-def fix_filler_edges(cues, fits=None, max_chars=24, max_gap=0.35, max_dur=7.0):
+def fix_filler_edges(cues, fits=None, max_chars=24, max_gap=0.35, max_dur=7.0, locked=None):
     """No caption ends on a filler that leads into the next words (就是 / 然后 / 那个 / 嗯 ...) and none starts
     on a particle that closes the words before (的话 / 嘛 / 吧 ...) - both read as a broken line. At every such
     boundary between two cues that follow each other (gap <= max_gap) the cues merge when the result fits
     (``fits(text)``, default <= max_chars characters and <= max_dur s), else the filler moves across the
     boundary to the cue it belongs to (when that cue still fits). The words and their order never change; a
-    filler opening a cue (然后我们...) or a particle closing one (...的话) is where it belongs. Returns (cues, log)."""
+    filler opening a cue (然后我们...) or a particle closing one (...的话) is where it belongs. ``locked``: indices
+    of cues the creator fixed by hand - never merged or changed. Returns (cues, log)."""
     fits = fits or (lambda t: len(t.replace(" ", "")) <= max_chars)
     C = [dict(c) for c in cues]
+    lk = [k in set(locked or ()) for k in range(len(C))]
     log = []
     k = 0
     while k < len(C) - 1:
         a, b = C[k], C[k + 1]
-        if b["start"] - a["end"] > max_gap or (a.get("meta") or {}).get("kind") != (b.get("meta") or {}).get("kind"):
+        if b["start"] - a["end"] > max_gap or (a.get("meta") or {}).get("kind") != (b.get("meta") or {}).get("kind") \
+                or lk[k] or lk[k + 1]:
             k += 1
             continue
         ea, sb = _edge(a["text"], "end"), _edge(b["text"], "start")
@@ -652,6 +655,7 @@ def fix_filler_edges(cues, fits=None, max_chars=24, max_gap=0.35, max_dur=7.0):
         if fits(merged) and b["end"] - a["start"] <= max_dur:
             C[k] = dict(a, text=merged, end=b["end"])
             del C[k + 1]
+            del lk[k + 1]
             log.append(dict(action="merge", at=round(a["end"], 2), text=merged, filler=ea or sb))
             continue
         if sb and fits(a["text"] + sb):
@@ -810,18 +814,28 @@ def flag_guesses(changes, glossary=None, context=None, min_score=GUESS_MIN):
 
 
 def proofread(cues, term_fixes=None, provider="auto", model=None, context=None, heard=None, words=None,
-              low_conf=0.5, call=None, prices=None, chunk=120, glossary=None, propagate=True, passes=2):
+              low_conf=0.5, call=None, prices=None, chunk=120, glossary=None, propagate=True, passes=2, cache=None,
+              locked=None):
     """cues: [{start, end, text}] (or ``subs.Cue``). Returns dict(cues, changes, rejected, low_confidence,
-    fillers_left, provider, model, usage, cost_usd). Never changes timing or the number of cues.
+    fillers_left, provider, model, usage, cost_usd, cache). Never changes timing or the number of cues.
 
     Order: (1) ``term_fixes`` (the creator's list; a fix that deletes spoken words is applied but logged in
     ``warnings``), (2) ``glossary`` fixes (``build_glossary``: one per source, the same on every job), (3) the
     LLM per-cue pass with the glossary in its context, every fix through ``_valid`` (``faithful``), (4) an
-    accepted LLM fix of a term is applied to the job's other cues holding the same span (``llm-propagated``)."""
+    accepted LLM fix of a term is applied to the job's other cues holding the same span (``llm-propagated``).
+
+    ``cache`` (a ``CueCache`` or a directory): the LLM result of every cue is stored under its normalized ASR text
+    + ``context_hash`` (prompt, provider / model, glossary, term fixes, topic); a cue seen before is NOT sent again
+    - only new / changed cue texts go to the LLM, so a re-cut never re-rolls the corrections of unchanged cues.
+    ``locked``: cue indices the creator fixed by hand (``job edit --op caption``): never touched here."""
     C = [_cue_dict(c) for c in cues]
+    locked = {int(i) for i in locked or ()}
+    raw = [c["text"] for c in C]
     changes, rejected, warnings = [], [], []
     term_fixes = ascii_boundaries(term_fixes)
     for i, c in enumerate(C):
+        if i in locked:
+            continue
         new = asr.apply_term_fixes(c["text"], term_fixes or None)
         if new != c["text"]:
             bad = faithful(c["text"], new)
@@ -843,6 +857,8 @@ def proofread(cues, term_fixes=None, provider="auto", model=None, context=None, 
     keep_terms += [f["to"] for f in (glossary or {}).get("fixes") or []]
     keep_terms = sorted({t.strip() for t in keep_terms if len(t.strip()) >= 2}, key=len, reverse=True)
     for i, c in enumerate(C):
+        if i in locked:
+            continue
         new = apply_glossary(c["text"], gfix)
         if new != c["text"]:
             bad = faithful(c["text"], new)
@@ -863,11 +879,32 @@ def proofread(cues, term_fixes=None, provider="auto", model=None, context=None, 
         ctx["confusions"] = [(f["from"], f["to"]) for f in gfix]
         ctx["glossary"] = list(ctx.get("glossary") or []) + list((glossary or {}).get("terms") or [])
     accepted = []
+    cstat = dict(hits=0, sent=0, stored=0)
     if prov != "none" and C:
         fn = call or _call_llm(prov)
-        for rnd, k0 in [(r, k) for r in range(max(1, int(passes))) for k in range(0, len(C), chunk)]:   # recall
-            part = C[k0:k0 + chunk]
-            plow = [dict(x, i=x["i"] - k0) for x in low if k0 <= x["i"] < k0 + len(part)]
+        cc = CueCache(cache) if isinstance(cache, str) else cache
+        ch = context_hash(prov, mdl, glossary, term_fixes, context, passes) if cc is not None else None
+        pre = {i: c["text"] for i, c in enumerate(C)}
+        todo = []
+        for i, c in enumerate(C):
+            if i in locked:
+                continue
+            hit = cc.get(cue_key(raw[i], ch)) if cc is not None else None
+            if hit and hit.get("pre") == c["text"]:
+                c["text"] = hit["text"]
+                for x in hit.get("changes") or []:
+                    x = dict(x, i=i, start=c["start"], end=c["end"], cached=True)
+                    changes.append(x)
+                    accepted += [(o, n) for o, n in (x.get("diff") or []) if o and n]
+                cstat["hits"] += 1
+            else:
+                todo.append(i)
+        cstat["sent"] = len(todo)
+        failed = set()
+        for rnd, k0 in [(r, k) for r in range(max(1, int(passes))) for k in range(0, len(todo), chunk)]:   # recall
+            idx = todo[k0:k0 + chunk]
+            part = [C[i] for i in idx]
+            plow = [dict(x, i=idx.index(x["i"])) for x in low if x["i"] in idx]
             parsed = None
             for attempt in range(2):                      # one retry on a broken reply, then glossary-only
                 try:
@@ -881,16 +918,18 @@ def proofread(cues, term_fixes=None, provider="auto", model=None, context=None, 
                                          message=f"chunk {k0}: {type(e).__name__}: {str(e)[:160]} (attempt {attempt + 1})"))
             if parsed is None:
                 warnings.append(dict(source="provider", message=f"chunk {k0}: gave up, glossary/term fixes only"))
+                failed |= set(idx)
                 continue
             for fx in parsed:
                 try:
-                    i = int(fx.get("i")) + k0
+                    j = int(fx.get("i"))
                 except (TypeError, ValueError):
                     rejected.append(dict(fx, reason="no caption index"))
                     continue
-                if not (k0 <= i < k0 + len(part)):
+                if not (0 <= j < len(idx)):
                     rejected.append(dict(fx, reason="caption index out of range"))
                     continue
+                i = idx[j]
                 c = C[i]
                 if rnd and str(fx.get("to") or "") and str(fx.get("to")) in c["text"] and \
                         _locate(c["text"], str(fx.get("from") or "")) is None:
@@ -913,13 +952,21 @@ def proofread(cues, term_fixes=None, provider="auto", model=None, context=None, 
                 accepted += [(o, n) for o, n in spans if o and n]
                 changes.append(dict(i=i, start=c["start"], end=c["end"], before=before, after=c["text"], source="llm",
                                     why=str(fx.get("why") or ""), span=[fx["from"], fx["to"]], diff=spans))
+        if cc is not None:
+            for i in todo:
+                if i in failed:
+                    continue                          # a failed call is never remembered as "no change"
+                mine = [{k: v for k, v in x.items() if k not in ("i", "start", "end")} for x in changes
+                        if x["i"] == i and x["source"] == "llm"]
+                cc.put(cue_key(raw[i], ch), dict(pre=pre[i], text=C[i]["text"], changes=mine))
+                cstat["stored"] += 1
     if propagate:
         for o, n in dict.fromkeys(accepted):
             if not _term_like(o):
                 continue
             pat = _pattern(o)
             for i, c in enumerate(C):
-                m = pat.search(c["text"])
+                m = pat.search(c["text"]) if i not in locked else None
                 if not m:
                     continue
                 bad = _valid(c["text"], {"from": o, "to": n})
@@ -935,9 +982,60 @@ def proofread(cues, term_fixes=None, provider="auto", model=None, context=None, 
     return dict(cues=C, changes=changes, rejected=rejected, warnings=warnings, low_confidence=low,
                 fillers_left=caption_fillers(C), provider=prov, model=mdl if prov != "none" else None, usage=usage,
                 cost_usd=cost_usd(mdl, usage, prices, prov) if prov not in ("none",) else 0.0,
-                glossary=dict(fixes=len(gfix), terms=len((glossary or {}).get("terms") or [])))
+                glossary=dict(fixes=len(gfix), terms=len((glossary or {}).get("terms") or [])), cache=cstat,
+                locked=sorted(locked))
+
+
+# ------------------------------------------------------------------ per-cue cache (no re-roll on a re-cut)
+def norm_cue(text):
+    """The cache form of a cue text: whitespace collapsed, case kept (RAG vs rag is a real difference)."""
+    return re.sub(r"\s+", " ", str(text or "")).strip()
+
+
+def context_hash(provider, model, glossary=None, term_fixes=None, context=None, passes=2):
+    """Everything besides the cue text that shapes the LLM's answer for a cue: the prompt, provider / model, the
+    source glossary, the term fixes, the topic and the creator's term list (not the notes / re-hearing hints)."""
+    import hashlib
+    ctx = context or {}
+    d = [SYSTEM, provider, model, sorted((f.get("from"), f.get("to")) for f in (glossary or {}).get("fixes") or []),
+         sorted(str(t) for t in (glossary or {}).get("terms") or []), [list(f) if isinstance(f, (list, tuple)) else f
+                                                                        for f in term_fixes or []],
+         ctx.get("topic"), [str(g) for g in ctx.get("glossary") or []], int(passes), 1]
+    return hashlib.sha1(json.dumps(d, ensure_ascii=False, sort_keys=True, default=str).encode()).hexdigest()
+
+
+def cue_key(text, ctx_hash):
+    import hashlib
+    return hashlib.sha1(f"{norm_cue(text)}\0{ctx_hash}".encode()).hexdigest()
+
+
+class CueCache:
+    """Proofread results per cue on disk: ``<root>/<key[:2]>/<key>.json`` = {pre, text, changes}. One small file
+    per cue (atomic writes): jobs proofreading in parallel never clobber each other."""
+
+    def __init__(self, root):
+        self.root = root
+
+    def _path(self, key):
+        return os.path.join(self.root, key[:2], key + ".json")
+
+    def get(self, key):
+        try:
+            with open(self._path(key), encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            return None
+
+    def put(self, key, value):
+        p = self._path(key)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        tmp = f"{p}.{os.getpid()}.tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(value, f, ensure_ascii=False)
+        os.replace(tmp, p)
 
 
 __all__ = ["proofread", "resolve_provider", "low_confidence", "caption_fillers", "words_of", "SYSTEM",
            "GLOSSARY_SYSTEM", "build_glossary", "apply_glossary", "check_glossary_fix", "faithful", "faithful_swap",
-           "diff_spans", "tokens", "fix_filler_edges", "flag_guesses", "guess_check", "sound_alike", "pinyin_of"]
+           "diff_spans", "tokens", "fix_filler_edges", "flag_guesses", "guess_check", "sound_alike", "pinyin_of",
+           "CueCache", "cue_key", "context_hash", "norm_cue"]

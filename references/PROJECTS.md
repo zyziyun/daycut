@@ -133,7 +133,9 @@ checkpoint), `pause`, `run-end` + `checkpoint {job, checkpoint, checkpoint_kind,
 | `preview --dir P [--item I] [--stage S]` | `{items: [{id, state, previews [{stage, kind, path, checkpoint?}]}]}` |
 | `export --dir P [--out D] [--all] [--items a,b]` | `{ok, dir, manifest, files, items, skipped, entries [{item, platform, orientation, kind, file, sha256, cover, post}]}` |
 | `context --dir P [--write]` / `refresh --dir P` | section 5 |
-| `list` | `{projects: [{dir, name, recipe, series, state, items, pending, progress}]}` (the parallel lanes) |
+| `list` | `{projects: [{dir, name, recipe, series, state, items, pending, progress}] + adopted work folders [{kind: "work", type, state: "adopted", outputs}], series: [{id, name, recipe, client, projects}]}` (missing / temp-dir entries are pruned first) |
+| `touch DIR [--status running\|waiting\|done\|failed] [--stage S] [--progress 0..1] [--message M] [--eta S] [--needs-you] [--recipe R] [--title T] [--outputs a,b]` | the `adopt` record + `status`: registers the folder and writes `DIR/.vstudio/status.json` `{status, stage, progress, message, eta, needs_you, started, heartbeat, pid, host}` (`vstudio.batch.livestatus`; the batch runner and `run` write it too - a project's batch into the project folder; ASR / cleanup / export / AIGC polling heartbeat inside a registered folder). Readers: `livestatus.read(dir)` -> `state` running / waiting / done / failed / interrupted (a running record with no heartbeat for 10 min whose process is gone, or for 2 h) |
+| `adopt DIR [--recipe guess\|NAME] [--title T] [--client C]` | `{ok, dir, record, kind: "work", title, recipe, type, outputs, covers, posts, sheets, notes, sources, created, updated}`: a plain folder made with the skill (final/, REPORT.md, post.md, work/ ...) gets `DIR/.vstudio/work.json` and a registry row; nothing else in DIR is written. Scripts: `vstudio.project.works.touch(dir, recipe, title, outputs)` |
 | `series new\|show\|list\|update`, `inbox [answer]`, `calendar ...` | section 6 |
 
 Exit codes: 0 done, 1 failed items, 2 refused (budget), 3 paused (circuit breaker), 4 pilot waits for review, 5 bad

@@ -127,6 +127,7 @@ In memory (no files, no render - the workflow keeps its own assembly):
 | `word_limits(words, t0, t1)` | how far a range may grow before it reaches a neighbour word |
 | `safe_edge(words, t, en, side="start"/"end")` | move one edge out of a word (word clamp). `"end"` = keep up to `t`: grows over the word it cuts short, never over a word starting at or after `t` |
 | `snap_range(words, t0, t1, en)` | hand-written keep range → word-safe edges |
+| `patch_onsets(words, edits, ids)` | words as the cut leaves them: a cut `filler-merged` edit (``patch`` = [onset, cut end]) moves the word it trimmed to start at the cut end, so it stays expected / captioned (`apply`, longform-split compose) |
 | `snap_cut(words, en, a, b)`, `snap_cuts(words, en, cuts, ranges)` | manual (editor) cut → word-safe `(a, b)` (the words whose midpoint is inside go; never into the previous word's sounding end or the next kept word's onset) / a list → `[[a, b, "edit: why"]]`, only those touching `ranges` |
 | `norm_ranges(ranges)`, `join_words(words)`, `saved_seconds(edits, ranges)` | sorted + merged spans (`[]` when empty); transcript-style text of words (no space next to CJK); seconds actually removed = the merged union of the edits (the review sheet's 省 Xs) |
 | `word_tail(en, t, limit)`, `extend_end(words, en, h0, h1, fade, speed)` | a word's real sounding end; extend a hook / clip end over the last word's tail plus its fade, never into the next word (the fade shrinks instead) |

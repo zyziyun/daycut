@@ -27,12 +27,41 @@ def projects():
     return [p for p in (read_json(registry_path(), []) or []) if isinstance(p, dict) and p.get("dir")]
 
 
-def register(pdir, name=None, recipe=None, series=None, client=None):
+def prune():
+    """Rewrite projects.json without missing / temp-dir projects (test junk). -> the removed entries."""
+    from vstudio.batch.clients import keep_entry
+    path = registry_path()
+    rows = projects()
+    keep = [p for p in rows if keep_entry(p["dir"], path) and _live(p)]
+    gone = [p for p in rows if p not in keep]
+    if gone:
+        try:
+            write_json(path, keep)
+        except OSError:
+            pass
+    return gone
+
+
+def _live(p):
+    """A registered project folder still holds its project.yaml, or (``kind: work``) its work record."""
+    d = p.get("dir") or ""
+    if p.get("kind") == "work":
+        return os.path.exists(os.path.join(d, ".vstudio", "work.json"))
+    return os.path.exists(os.path.join(d, "project.yaml"))
+
+
+def register(pdir, name=None, recipe=None, series=None, client=None, kind=None):
+    from vstudio.batch.clients import is_temp_path
     pdir = os.path.abspath(pdir)
+    if is_temp_path(pdir) and not is_temp_path(registry_path()):
+        return dict(dir=pdir, name=name, recipe=recipe, series=series, client=client, registered=False)
     rows = [p for p in projects() if os.path.abspath(p["dir"]) != pdir]
     old = next((p for p in projects() if os.path.abspath(p["dir"]) == pdir), {})
-    rows.append(dict(dir=pdir, name=name, recipe=recipe, series=series, client=client,
-                     created=old.get("created") or time.strftime("%Y-%m-%dT%H:%M:%S")))
+    row = dict(dir=pdir, name=name, recipe=recipe, series=series, client=client,
+               created=old.get("created") or time.strftime("%Y-%m-%dT%H:%M:%S"))
+    if kind:
+        row["kind"] = kind
+    rows.append(row)
     write_json(registry_path(), rows)
     return rows[-1]
 
@@ -43,7 +72,12 @@ def unregister(pdir):
 
 
 def live_projects():
-    return [p for p in projects() if os.path.exists(os.path.join(p["dir"], "project.yaml"))]
+    """Recipe projects (project.yaml) still on disk; work records (``kind: work``) are in ``live_works``."""
+    return [p for p in projects() if p.get("kind") != "work" and _live(p)]
+
+
+def live_works():
+    return [p for p in projects() if p.get("kind") == "work" and _live(p)]
 
 
 # --------------------------------------------------------------------------- series

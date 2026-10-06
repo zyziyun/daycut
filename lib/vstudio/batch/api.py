@@ -76,11 +76,21 @@ def _cut_state(edits, reply):
     return out
 
 
+def _screen_scans(export_out):
+    """What the output scans of each rendered vertical master saw inside the screen crop, per canvas ("1080x1440"):
+    {canvas: dict(visible_popups [dict(t, dur, cover, box)], static_overlays [dict(t, dur, box, cover, evidence,
+    hug, items)])} - a list is None when that master predates the scan; {} for jobs without a screen crop."""
+    plans = (((export_out or {}).get("privacy") or {}).get("plans")) or {}
+    return {c: dict(visible_popups=(pl.get("screen") or {}).get("visible"),
+                    static_overlays=(pl.get("screen") or {}).get("static")) for c, pl in plans.items()}
+
+
 def job_detail(batch_dir, jid, words=True):
     """Everything about one job: row, stages, last events, the transcript of its source range (each word with
     ``cut``: removed by an applied cleanup edit / row cut under the current reply), the cleanup edits with their
     effective state, captions (final cues + proofread changes / rejected / low-confidence words), verify, QC
-    (checks, suggestions) and exports. Raises KeyError for an unknown job."""
+    (checks, suggestions, ``screen``: the screen-crop output scans per canvas) and exports. Raises KeyError for
+    an unknown job."""
     st = Store(batch_dir)
     try:
         j = st.job(jid)
@@ -100,12 +110,14 @@ def job_detail(batch_dir, jid, words=True):
     reply = p.get("cleanup_reply") or ""
     cl, cm, pr, vf, qc, ex, pv = (out(s) for s in ("cleanup", "compose", "proofread", "verify", "qc", "export",
                                                    "preview"))
-    parts = []
+    parts, patched = [], []
     for part in ("body", "hook"):
         E = read_json(cl.get(part)) if cl.get(part) else None
         if E:
             parts.append(dict(part=part, ranges=E.get("ranges"), stats=E.get("stats"),
                               edits=_cut_state(E.get("edits"), reply)))
+            cut_ids = {e["id"] for e in parts[-1]["edits"] if e["cut"]}
+            patched += [e for e in E.get("edits") or [] if e["id"] in cut_ids and e.get("patch")]
     he = cl.get("hook_edge")
     transcript = None
     tr_path = out("asr").get("transcript")
@@ -117,6 +129,8 @@ def job_detail(batch_dir, jid, words=True):
             W = [dict(w=str(w.get("word", "")), t=float(w["start"]), te=float(w["end"])) for w in raw]
         else:
             W = [dict(w=w["w"], t=w["t"], te=w["te"]) for w in C.load_words(tr)]
+        if patched:                                   # a filler-merged cut keeps the word it trimmed (its caption too)
+            W = C.patch_onsets(W, patched, {e["id"] for e in patched})
         cuts = [(e["t0"], e["t1"]) for pt in parts for e in pt["edits"] if e["cut"]]
         cuts += [(float(c[0]), float(c[1])) for c in cl.get("cuts") or []]
         spans = [tuple(cl.get("edges") or p.get("range") or (0, 0))]
@@ -137,14 +151,22 @@ def job_detail(batch_dir, jid, words=True):
     cues = (read_json(pr.get("cues"), {}) or {}).get("cues") if pr.get("cues") else \
         ((read_json(cm.get("cues"), {}) or {}).get("cues") if cm.get("cues") else None)
     vr = read_json(vf.get("report"), {}) if vf.get("report") else {}
+    ov_missed = []
     if cues and p.get("caption_overrides"):            # review caption edits, as they will be burned
-        cues, _, _ = ED.apply_caption_overrides(cues, p["caption_overrides"])
+        asr_cues = (read_json(cm.get("cues"), {}) or {}).get("cues") if cm.get("cues") else None
+        tl = read_json(cm.get("timeline")) if cm.get("timeline") else None
+        to_out = None
+        if tl:
+            from .lfsplit import _out_time
+            to_out = lambda t: _out_time(tl, t)  # noqa: E731
+        cues, _, ov_missed = ED.apply_caption_overrides(cues, p["caption_overrides"], asr_cues=asr_cues, to_out=to_out)
     if cues:
         cues = [dict(c, i=k) for k, c in enumerate(cues)]
     from .metrics import review_seconds
     edit = dict(range=p.get("range"), hook=p.get("hook"), hook_pick=p.get("hook_pick"),
                 hook_candidates=ED.hook_candidates(p), cover=p.get("cover") if isinstance(p.get("cover"), dict) else None,
-                copy=ED.effective_copy(p), caption_overrides=p.get("caption_overrides") or [], history=hist,
+                copy=ED.effective_copy(p), caption_overrides=p.get("caption_overrides") or [],
+                caption_overrides_missed=ov_missed, history=hist,
                 pending=pending, review_s=review_seconds(timing))
     return dict(
         job={k: j[k] for k in ("id", "item", "variant", "state", "qc", "qc_reasons", "review", "review_reason",
@@ -163,7 +185,8 @@ def job_detail(batch_dir, jid, words=True):
         verify={k: dict(ok=v.get("ok"), missing=v.get("missing"), variants=v.get("variants"))
                 for k, v in (vr or {}).items() if isinstance(v, dict)},
         qc=dict(status=qc.get("status"), reasons=qc.get("reasons") or [], warnings=qc.get("warnings") or [],
-                checks=qc.get("checks") or [], suggestions=qc.get("suggestions") or []),
+                checks=qc.get("checks") or [], suggestions=qc.get("suggestions") or [],
+                screen=_screen_scans(ex)),
         media=dict(final=cm.get("final") or cm.get("master"), duration=cm.get("duration"), sheet=pv.get("sheet"),
                    snippet=pv.get("snippet"), exports=ex.get("exports") or [], length_fit=ex.get("length_fit") or []),
         edit=edit)

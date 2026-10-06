@@ -246,13 +246,23 @@ class Runner:
             raise BatchBusy(f"another `run` is active on {self.dir}")
         lockf.write(str(os.getpid()))
         lockf.flush()
+        from . import livestatus as LS
         from .clients import activate
+        pulse = LS.Pulse(LS.owner_dir(self.dir), self._live_fields, by="batch")
         try:
-            with activate(self.dir):              # the client's persona overlay (brand, fillers, term fixes)
-                return self._run()
+            with activate(self.dir), pulse:       # the client's persona overlay; live status heartbeat (desk app)
+                res = self._run()
+                pulse.final = _final_status(res)
+                return res
         finally:
             fcntl.flock(lockf, fcntl.LOCK_UN)
             lockf.close()
+
+    def _live_fields(self):
+        stages = sorted({f"{v[0]}:{v[1].name}" for v in list(getattr(self, "inflight", {}).values())})
+        prog = (self.n_done / self.n_total) if self.n_total else None
+        return dict(stage=", ".join(stages[:4]) or None, progress=prog,
+                    message=f"{len(self.finished)}/{self.jobs_total} jobs" if self.jobs_total else None)
 
     def _result(self, status, code, **kw):
         self.emit("run-end", status=status, exit_code=code, finished=self.finished, pause_reason=self.pause_reason)
@@ -564,6 +574,20 @@ class Runner:
             reds = sum(f["qc"] == "red" and f["state"] != "failed" for f in self.finished)
             if reds / n > float(self.br["max_red_rate"]):
                 self.pause(f"QC red rate {reds}/{n} > {float(self.br['max_red_rate']):.0%}")
+
+
+def _final_status(res):
+    """Runner result -> the live status written when ``run`` returns."""
+    st = (res or {}).get("status")
+    if st in ("pilot-review",):
+        return dict(status="waiting", needs_you=True, message="pilot finished: review it, then confirm the pilot")
+    if st == "paused":
+        return dict(status="waiting", needs_you=True, message=f"paused: {res.get('pause_reason') or res.get('reason')}")
+    if st == "over-budget":
+        return dict(status="failed", message="refused: over budget")
+    if st == "done-with-failures":
+        return dict(status="failed", progress=1.0, message=f"done, {len(res.get('finished') or [])} jobs; some failed")
+    return dict(status="done", message=f"{st}: {len(res.get('finished') or [])} jobs")
 
 
 def runner_active(batch_dir):

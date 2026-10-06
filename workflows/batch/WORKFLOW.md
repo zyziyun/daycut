@@ -94,12 +94,17 @@ B=batch-course-slices
 python3 -m vstudio.batch job edit --batch $B --job ep02 --op caption --cue 7 --text "..."   # must match the audio
 python3 -m vstudio.batch job edit --batch $B --job ep02 --op hook --pick 1                  # -1: no cold open
 python3 -m vstudio.batch job edit --batch $B --job ep02 --op trim --start 315.2 --end 360   # word-snapped
+python3 -m vstudio.batch job edit --batch $B --job ep02 --op cut --start 482.3 --end 484.5 --why "aside"  # inner cut
+python3 -m vstudio.batch job edit --batch $B --job ep02 --op notes --set "要点一|要点二"     # notes panel only
 python3 -m vstudio.batch job edit --batch $B --job ep02 --op cover --t 12.5 --text "上半句|下半句"
 python3 -m vstudio.batch job edit --batch $B --job ep02 --op copy --title "..." --tags RAG,LLM   # posts rewritten
 python3 -m vstudio.batch job rerun --batch $B --job ep02     # caption edit: re-burn + export only (~1 min / 4 platforms)
 ```
-A caption change that adds or drops a spoken word is refused with the reason. `job edit --op undo` reverts the last
-edit. The desk times each review (`timing --job ep02 --event start|stop --what review`).
+A caption change that adds or drops a spoken word is refused with the reason - unless a re-hearing of the cue's
+audio says the new text (checked automatically; `--reasr` makes the re-hearing decide); the JSON refusal has
+`reason_code` and `heard`. `job edit --op undo` reverts the last edit. `review --accept-policy --jobs ep02,ep04`
+cuts the policy approvals of those jobs only (never learned as the creator's answers). Proofread keeps its LLM
+corrections per cue text (`<batch>/cache/proofread-cues`): a re-cut only re-asks the cues whose words changed. The desk times each review (`timing --job ep02 --event start|stop --what review`).
 
 **6. Deliver / package + clean.**
 ```bash
@@ -107,7 +112,7 @@ python3 -m vstudio.batch deliver --batch batch-course-slices --zip   # client pa
                                                                      # 排期表.csv, 交付说明.md, manifest hash
 python3 -m vstudio.batch metrics --batch batch-course-slices          # review s / clip, rework, red rate, cost
 python3 -m vstudio.batch metrics --all --csv > weekly_metrics.csv    # the weekly pilot sheet
-python3 -m vstudio.batch cleanup-sources --all                       # dry run; --yes deletes sources past due
+python3 -m vstudio.batch cleanup-sources --all                       # dry run: exact list + a code (never deletes)
 ```
 Or only the publish folders:
 ```bash
@@ -124,5 +129,7 @@ Read the confirmation code and item count back to the creator; nothing is upload
 - QC green is necessary, not sufficient: always look at the pilot and the sampled greens.
 - Media stays local; `asr.backend: openai` sends audio to OpenAI, `plan-segments --provider claude|openai` (and the
   `claude` planner) sends transcript text to Anthropic / OpenAI.
-- `cleanup-sources --yes` deletes the creator's source recordings for good (past the delivery's cleanup date, never
-  one another batch still needs): run the dry run first and say what will go.
+- Source cleanup is off by default (`cleanup_days` 0 = never; always 0 for the creator's own workspace, client `self`).
+  `cleanup-sources --confirm-delete <code>` deletes exactly the files its dry run listed (past the delivery's cleanup
+  date, inside the batch / project folder, not needed by another batch); sources outside the batch folder - the
+  creator's own recordings - are only reported, never deleted. Show the list and get the creator's yes first.

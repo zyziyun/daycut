@@ -13,8 +13,10 @@ reply -> stored in the job's params and the job goes back to ``planned`` (``run`
 Bulk answers in the same file: ``"confirm_kinds": ["filler-merged", "filler/lead"]`` (or ``{"ep03": [...], "*":
 [...]}``) approves every open question of those classes (``vstudio.cleanup.edit_class``; a bare kind matches all
 its sub-classes); ``"accept_policy": true`` also cuts the edits the confirm policy approved after the job was
-rendered. Every reply is learned (``vstudio.cleanup.learn``, per persona, outside the repo) so the policy asks less
-next time. The page shows the CURRENT policy's view (re-evaluated from each job's EDL), caption fixes that are
+rendered; ``"jobs": ["ep02", "ep04"]`` (``review --accept-policy --jobs ep02,ep04``) limits both bulk answers to
+those jobs. Every creator reply is learned (``vstudio.cleanup.learn``, per persona, outside the repo) so the policy
+asks less next time - only the answers new in that reply, never the policy approvals ``accept_policy`` cuts (they
+are the policy's, not the creator's). The page shows the CURRENT policy's view (re-evaluated from each job's EDL), caption fixes that are
 guesses (``vstudio.proofread.flag_guesses``) in yellow.
 """
 import html
@@ -374,6 +376,7 @@ def _bulk_replies(store, d, replies, out):
     """``confirm_kinds`` / ``accept_policy`` -> extra "确认 ids" appended to the jobs' cleanup replies (in place).
     Returns {job: cleanup_view} for learning."""
     kinds, accept = d.get("confirm_kinds") or [], bool(d.get("accept_policy"))
+    only = _job_list(d.get("jobs"))
     views = {}
     if not kinds and not accept and not replies:
         return views
@@ -381,13 +384,16 @@ def _bulk_replies(store, d, replies, out):
     pol = C.load_policy()
     for j in store.jobs(REVIEW_STATES):
         jid = j["id"]
+        if only is not None and jid not in only and jid not in replies:
+            continue
         ks = (list(kinds.get(jid) or []) + list(kinds.get("*") or [])) if isinstance(kinds, dict) else list(kinds)
         if not ks and not accept and jid not in replies:
             continue
         v = cleanup_view(store.stage_rows(jid), j["params"] or {}, pol)
         views[jid] = v
-        ids = [e["id"] for e in v["confirm"] if kind_matches(e, ks)]
-        pend = list((v.get("policy") or {}).get("pending") or []) if accept else []
+        bulk_here = only is None or jid in only               # --jobs limits the bulk answers, never a reply
+        ids = [e["id"] for e in v["confirm"] if kind_matches(e, ks)] if bulk_here else []
+        pend = list((v.get("policy") or {}).get("pending") or []) if accept and bulk_here else []
         add = sorted(set(ids) | set(pend))
         v["policy_ids"] = set(pend) - set(ids)
         if not add:
@@ -401,9 +407,18 @@ def _bulk_replies(store, d, replies, out):
     return views
 
 
-def _learn(store, job, reply, view, implicit=True):
-    """Store the creator's answers of one job for the policy (``vstudio.cleanup.learn``). Policy approvals the
-    creator merely accepted are not evidence. -> number of answers stored."""
+def _job_list(v):
+    """``jobs`` of a decisions file / ``review --jobs``: "a,b" or a list -> set, None = every job."""
+    if v is None or v == "" or v == []:
+        return None
+    items = v if isinstance(v, (list, tuple, set)) else str(v).split(",")
+    return {str(x).strip() for x in items if str(x).strip()}
+
+
+def _learn(store, job, reply, view, implicit=True, prev=None):
+    """Store the creator's answers of one job for the policy (``vstudio.cleanup.learn``). Only what is NEW in this
+    reply against the job's previous one (``prev``) counts - an answer is learned once, not on every later reply -
+    and policy approvals the creator merely accepted (``accept_policy``) are not evidence. -> answers stored."""
     from vstudio import cleanup as C
     if view is None:
         view = cleanup_view(store.stage_rows(job["id"]), job["params"] or {})
@@ -411,13 +426,20 @@ def _learn(store, job, reply, view, implicit=True):
     if not eds:
         return 0
     r = C.parse_reply(reply or "")
-    approve = set(r["approve"]) - set(view.get("policy_ids") or ())
-    try:
-        C.learn(eds, approve, r["keep"], r["all_confirm"], implicit=implicit)
+    old = C.parse_reply(prev) if prev else dict(approve=set(), keep=set(), all_confirm=False)
+    approve = set(r["approve"]) - set(old["approve"]) - set(view.get("policy_ids") or ())
+    keep = set(r["keep"]) - set(old["keep"])
+    allc = bool(r["all_confirm"]) and not old["all_confirm"]
+    if not approve and not keep and not allc:
+        return 0
+    seen = set(old["approve"]) | set(old["keep"])
+    eds = [e for e in eds if e["id"] not in seen]    # answered before: learned then
+    try:                                              # the implicit keeps of a job count with its first reply only
+        C.learn(eds, approve, keep, allc, implicit=implicit and not prev)
     except OSError:
         return 0
     asked = {e["id"] for e in eds if (e.get("base_action") or e["action"]) == "confirm"}
-    return len((approve | set(r["keep"])) & asked)
+    return len((approve | keep) & asked)
 
 
 def apply_decisions(batch_dir, decisions):
@@ -440,13 +462,14 @@ def apply_decisions(batch_dir, decisions):
                 out["skipped"].append((jid, "unknown job"))
                 continue
             p = dict(j["params"] or {})
-            if (p.get("cleanup_reply") or "") == (reply or ""):
+            prev = p.get("cleanup_reply") or ""
+            if prev == (reply or ""):
                 continue
             p["cleanup_reply"] = reply
             store.set_job(jid, params=p, state="planned", review=None, review_reason=None, qc=None, qc_reasons=None)
             store.log("review", f"cleanup reply: {reply}", jid)
             out["replied"].append(jid)
-            out["learned"] += _learn(store, j, reply, views.get(jid), implicit=jid in explicit)
+            out["learned"] += _learn(store, j, reply, views.get(jid), implicit=jid in explicit, prev=prev)
         for jid, dec in (d.get("decisions") or {}).items():
             j = store.job(jid)
             if not j:

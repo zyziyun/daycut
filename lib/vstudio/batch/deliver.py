@@ -1,7 +1,8 @@
 """``deliver``: the client delivery package built from a batch's approved jobs, + source cleanup after N days.
 
     python -m vstudio.batch deliver --batch B [--client acme] [--zip] [--cleanup-days 30] [--out DIR] [--json]
-    python -m vstudio.batch cleanup-sources [--batch B | --client acme | --all] [--yes]   # dry run without --yes
+    python -m vstudio.batch cleanup-sources [--batch B | --client acme | --all]           # always a dry run first
+    python -m vstudio.batch cleanup-sources ... --confirm-delete CODE   # deletes exactly the files the dry run listed
 
 Layout (``<batch>/delivery/<client>-<batch>-<YYYYMMDD>/``)::
 
@@ -16,8 +17,12 @@ Layout (``<batch>/delivery/<client>-<batch>-<YYYYMMDD>/``)::
 It packages first when needed (``package``: approved jobs not yet in the publish folders, or a stale manifest).
 Files are hard links where possible (no extra space). The delivery is recorded in the batch store (``metrics``
 counts it) with the cleanup due date: ``--cleanup-days`` (default the client's ``delivery.cleanup_days``, else
-30; 0 = never). ``cleanup-sources`` deletes the source recordings of deliveries past due - never a file another
-registered batch still needs (one not delivered, or not due yet); without ``--yes`` it only lists them.
+0 = never). The creator's own workspace (client ``self``, or no client) never schedules a cleanup, whatever is passed.
+
+Source cleanup never happens on its own: ``cleanup-sources`` lists the source files of deliveries past due with a
+confirmation code (a hash of the exact file list); only ``--confirm-delete <code>`` deletes, and only those files.
+Never deleted: a file another registered batch still needs (not delivered / not due), and any source outside the
+batch / project folder (the creator's own recordings) - those are only reported (``outside``).
 """
 import csv
 import datetime as dt
@@ -37,7 +42,15 @@ PLATFORM_NAMES = {"xiaohongshu": "小红书", "douyin": "抖音", "tiktok": "Tik
 AI_REMINDER = ("【AI 标识提醒】这批视频用了 AI 辅助剪辑 / 字幕 / 文案。发布时请按平台要求声明 AI 生成内容"
                "（小红书「笔记含 AI 合成内容」、抖音「内容由 AI 生成」、YouTube「Altered or synthetic content」），"
                "避免限流或下架。")
-DEFAULT_CLEANUP_DAYS = 30
+DEFAULT_CLEANUP_DAYS = 0          # never, unless the client config sets delivery.cleanup_days
+SELF_CLIENTS = {"self", "me", "own", "自己", "自己的账号"}
+
+
+def is_self_client(cdir, ccfg=None):
+    """The creator's own workspace: no client, client folder ``self`` (or a config with ``own: true``)."""
+    if not cdir:
+        return True
+    return os.path.basename(os.path.normpath(cdir)).lower() in SELF_CLIENTS or bool((ccfg or {}).get("own"))
 
 
 def platform_label(key, keys):
@@ -110,9 +123,14 @@ def deliver(batch_dir, client=None, make_zip=False, cleanup_days=None, out=None,
         cdir = CL.resolve(client, spec.get("_dir")) if client else CL.batch_client_dir(spec)
         ccfg = CL.load(cdir) if cdir and os.path.exists(CL.yaml_path(cdir)) else {}
         cname = ccfg.get("name") or (os.path.basename(cdir) if cdir else "客户")
-        if cleanup_days is None:
-            cleanup_days = int(((CL.effective(ccfg) if ccfg else {}).get("delivery") or {}).get("cleanup_days",
-                                                                                               DEFAULT_CLEANUP_DAYS))
+        cleanup_note = None
+        if is_self_client(cdir, ccfg):
+            if cleanup_days:
+                cleanup_note = "own workspace: source cleanup is never scheduled"
+            cleanup_days = 0
+        elif cleanup_days is None:
+            cleanup_days = int(((CL.effective(ccfg) if ccfg else {}).get("delivery") or {}).get("cleanup_days")
+                               or DEFAULT_CLEANUP_DAYS)
         pk = store.meta("package") or {}
         pdir = pk["dir"]
         man = read_json(os.path.join(pdir, "manifest.json"), {}) or {}
@@ -212,7 +230,7 @@ def deliver(batch_dir, client=None, make_zip=False, cleanup_days=None, out=None,
     return dict(ok=True, delivery=n, dir=ddir, zip=zpath, items=len(posts), jobs=len(job_ids),
                 duration_s=round(total_s, 1), code=code, package_code=man.get("confirmation_code"),
                 manifest=mpath, manifest_data=dman, cleanup_days=int(cleanup_days or 0),
-                cleanup_on=due.isoformat() if due else None, client=cname)
+                cleanup_on=due.isoformat() if due else None, cleanup_note=cleanup_note, client=cname)
 
 
 def _sources(spec, jobs):
@@ -242,13 +260,38 @@ def verify_delivery(manifest):
 
 
 # --------------------------------------------------------------------------- source cleanup
-def cleanup_sources(batch_dirs, yes=False, now=None):
-    """Delete (``yes``) or list the source files of deliveries past their cleanup date. A source still used by
-    a registered batch that is not delivered / not due is kept. -> dict(deleted|would_delete, kept, freed)."""
+def _inside(path, folders):
+    rp = os.path.realpath(path)
+    return any(rp == f or rp.startswith(f.rstrip(os.sep) + os.sep) for f in folders)
+
+
+def _owner_folders(batch_dir):
+    """The batch folder, and the project folder when the batch is a project's ``state/``."""
+    b = os.path.realpath(batch_dir)
+    out = [b]
+    if os.path.basename(b) == "state" and os.path.exists(os.path.join(os.path.dirname(b), "project.yaml")):
+        out.append(os.path.dirname(b))
+    return out
+
+
+def cleanup_code(files):
+    """Confirmation code of an exact deletion list ([{path, bytes}])."""
+    return sha1_json(sorted((f["path"], int(f.get("bytes") or 0)) for f in files))[:12]
+
+
+def cleanup_sources(batch_dirs, confirm=None, now=None, yes=None):
+    """List (default) or delete (``confirm`` = the code of the dry run's list) the source files of deliveries
+    past their cleanup date. Kept: files another registered batch still uses; reported, never deleted: sources
+    outside the batch / project folder. -> dict(dry_run, would_delete | deleted, outside, kept, freed,
+    confirm_code)."""
+    if yes is not None:
+        raise ValueError("deleting sources needs the confirmation code of the dry run: cleanup-sources "
+                         "--confirm-delete <code> (``yes`` is no longer accepted)")
     from . import clients as CL
     now = now or time.time()
-    due, busy = {}, set()
+    due, busy, owners_dirs = {}, set(), {}
     every = {os.path.abspath(b["dir"]) for b in CL.batches()} | {os.path.abspath(d) for d in batch_dirs}
+    asked = {os.path.abspath(x) for x in batch_dirs}
     for b in every:
         try:
             st = Store(b)
@@ -259,36 +302,48 @@ def cleanup_sources(batch_dirs, yes=False, now=None):
             srcs = {x for x in _sources(st.spec, st.jobs()) if x}
             ripe = [d for d in dels if d["cleanup_due"] and d["cleanup_due"] <= now and not d["cleaned"]]
             done_before = [d for d in dels if d["cleaned"]]
-            if b in {os.path.abspath(x) for x in batch_dirs} and ripe:
+            if b in asked and ripe:
+                owners_dirs[b] = _owner_folders(b)
                 for s in srcs:
                     due.setdefault(s, []).append((b, [d["n"] for d in ripe]))
             elif not ripe and not done_before:
                 busy |= srcs                            # still in production / not due: keep its sources
         finally:
             st.close()
-    act, kept, freed, pending = [], [], 0, set()
+    act, kept, outside, pending = [], [], [], set()
     for s, owners in sorted(due.items()):
         if s in busy:
             kept.append(dict(path=s, why="another batch still uses it"))
             pending |= {b for b, _ in owners}
             continue
+        if not any(_inside(s, owners_dirs[b]) for b, _ in owners):
+            outside.append(dict(path=s, exists=os.path.exists(s),
+                                why="outside the batch / project folder: never deleted (yours to keep or remove)"))
+            pending |= {b for b, _ in owners}
+            continue
         if not os.path.exists(s):
             act.append(dict(path=s, bytes=0, missing=True))
             continue
-        n = os.path.getsize(s)
-        if yes:
-            os.remove(s)
-        freed += n
-        act.append(dict(path=s, bytes=n))
-    if yes:                                           # a delivery is cleaned once none of its sources is left
-        marked = {(b, n) for owners in due.values() for b, ns in owners for n in ns if b not in pending}
-        for b in {b for b, _ in marked}:
-            st = Store(b)
-            try:
-                for (bb, n) in marked:
-                    if bb == b:
-                        st.set_delivery(n, cleaned=now)
-                st.log("cleanup", f"source cleanup: {len(act)} file(s), {freed} bytes")
-            finally:
-                st.close()
-    return dict(ok=True, dry_run=not yes, **{"deleted" if yes else "would_delete": act}, kept=kept, freed=freed)
+        act.append(dict(path=s, bytes=os.path.getsize(s)))
+    code = cleanup_code(act)
+    freed = sum(x["bytes"] for x in act)
+    base = dict(ok=True, outside=outside, kept=kept, confirm_code=code if act else None)
+    if confirm is None:
+        return dict(base, dry_run=True, would_delete=act, freed=freed)
+    if confirm != code:
+        raise ValueError(f"confirmation code {confirm!r} does not match the current list ({code}): run the dry run "
+                         "again and check the files")
+    for x in act:
+        if not x.get("missing"):
+            os.remove(x["path"])
+    marked = {(b, n) for owners in due.values() for b, ns in owners for n in ns if b not in pending}
+    for b in {b for b, _ in marked}:                  # a delivery is cleaned once none of its sources is left
+        st = Store(b)
+        try:
+            for (bb, n) in marked:
+                if bb == b:
+                    st.set_delivery(n, cleaned=now)
+            st.log("cleanup", f"source cleanup (confirmed {code}): {len(act)} file(s), {freed} bytes")
+        finally:
+            st.close()
+    return dict(base, dry_run=False, deleted=act, freed=freed)

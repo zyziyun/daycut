@@ -358,3 +358,45 @@ def test_qc_warns_on_visible_popups_with_timestamps():
     chk = [c for c in out if c["name"] == "screen-popup-visible"][0]
     assert not chk["ok"] and "29.5-45.0s" in chk["reason"] and "3.0" not in chk["reason"]
     assert LS.screen_summary(dict(items=[]), [], 24)["visible"] is None     # plans before the scan: no check
+
+
+# --------------------------------------------------------------------------- review --accept-policy --jobs
+def test_accept_policy_for_named_jobs_only_and_never_learned(tmp_path, policy_file):
+    """Field test: accept-policy was batch-wide and the per-job workaround (an explicit 确认 reply) was learned as
+    creator answers (51 fake ones). ``jobs`` limits it; the accepted policy cuts are the policy's, not learned."""
+    from vstudio.batch import review
+    from vstudio.batch.store import Store
+    b = _batch(tmp_path)
+    r = review.apply_decisions(b, {"accept_policy": True, "jobs": ["ep01"]})
+    assert r["bulk"] == {"ep01": [1]} and r["replied"] == ["ep01"] and r["learned"] == 0
+    assert not policy_file.exists() or not (C.load_policy().get("stats") or {})
+    st = Store(b)
+    try:
+        assert C.parse_reply(st.job("ep01")["params"]["cleanup_reply"])["approve"] == {1}
+        assert not st.job("ep02")["params"].get("cleanup_reply") and st.job("ep02")["state"] == "done"
+    finally:
+        st.close()
+    # an explicit reply on a job outside --jobs is still applied (and learned: the creator said it)
+    r = review.apply_decisions(b, {"accept_policy": True, "jobs": "ep01", "cleanup": {"ep02": "保留 2"}})
+    assert "ep02" in r["replied"] and "ep02" not in r["bulk"] and r["learned"] == 1
+
+
+def test_a_reply_is_learned_once_not_again_with_every_later_reply(tmp_path, policy_file):
+    from vstudio.batch import review
+    b = _batch(tmp_path)
+    review.apply_decisions(b, {"cleanup": {"ep02": "保留 2"}})
+    s1 = C.load_policy()["stats"]["filler/connector"]
+    r = review.apply_decisions(b, {"cleanup": {"ep02": "保留 2 确认 3"}})
+    assert r["learned"] == 1                                                 # only 确认 3 is new
+    assert C.load_policy()["stats"]["filler/connector"] == s1
+
+
+def test_cli_review_accept_policy_jobs_json(tmp_path, policy_file):
+    import subprocess
+    b = _batch(tmp_path)
+    env = dict(os.environ, PYTHONPATH=os.pathsep.join([str(ROOT / "lib"), os.environ.get("PYTHONPATH", "")]))
+    r = subprocess.run([sys.executable, "-m", "vstudio.batch", "review", "--batch", b, "--accept-policy", "--jobs",
+                        "ep02", "--json"], capture_output=True, text=True, env=env)
+    assert r.returncode == 0, r.stderr
+    d = json.loads(r.stdout)
+    assert d["ok"] and d["bulk"] == {"ep02": [1]} and d["jobs"] == ["ep02"] and d["learned"] == 0

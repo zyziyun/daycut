@@ -348,6 +348,8 @@ def transcribe(path, language=None, prompt=None, word_timestamps=True, model=Non
     start, end}]), words (flat [{"w", "t", "te"}], stripped). Zero-length repeated words (whisper's
     tail hallucination, talkinghead ``strict_pass``) are dropped before indexing.
     """
+    from .batch.livestatus import heartbeat
+    heartbeat("asr", message=os.path.basename(str(path)))          # desk 进行中 lane (no-op outside a job folder)
     if language is None:
         try:
             from .config import persona
