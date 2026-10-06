@@ -379,3 +379,136 @@ def test_cli_json_contract(tmp_path, synth):
     assert len(json.loads(r.stdout)["effects"]) == len(FX.SPECS)
     r = _cli("show", "--project", w, "--output", "nope.mp4", "--json")
     assert r.returncode == 5 and json.loads(r.stdout)["code"] == "unknown-output"
+
+
+# --------------------------------------------------------------------------- selective revert, chat, context, compare
+@media
+def test_revert_one_step_keeps_the_later_ones(tmp_path, synth):
+    w, oid = _work(tmp_path, synth)
+    s1 = O.edit(w, oid, dict(op="speed", value=1.1))["step"]["id"]
+    r2 = O.edit(w, oid, dict(op="effect_add", effect="stamp", start=1.0, params=dict(text="亲测")))
+    s2, fx = r2["step"]["id"], r2["state"]["effects"][0]["id"]
+    O.edit(w, oid, dict(op="export_add", target="douyin"))
+    r = O.revert(w, oid, s1)                                   # the OLDEST card only
+    assert r["reverted"] == s1 and r["state"]["speed"] == 1.0
+    assert len(r["state"]["effects"]) == 1 and r["state"]["exports"][0]["target"] == "douyin:vertical"
+    hist = r["history"]["steps"]
+    assert len(hist) == 4 and hist[0]["reverted"] is True and hist[-1]["revert_of"] == s1
+    assert hist[-1]["describe"][0]["code"] == "op-revert"
+    with pytest.raises(O.OutputError) as ei:
+        O.revert(w, oid, s1)
+    assert ei.value.info["code"] == "already-reverted"
+    with pytest.raises(O.OutputError) as ei:
+        O.revert(w, oid, "s99-nope")
+    assert ei.value.info["code"] == "unknown-step"
+    # the revert is a step: undo brings the speed back, redo cancels it again
+    assert O.undo(w, oid)["state"]["speed"] == 1.1
+    assert O.redo(w, oid)["state"]["speed"] == 1.0
+    # reverting the revert step re-activates its target
+    rv = O.show(w, oid)["history"]["steps"][-1]["id"]
+    assert O.revert(w, oid, rv)["state"]["speed"] == 1.1
+    # a later step that builds on the reverted one: refused with the blocking steps, nothing written
+    O.edit(w, oid, dict(op="effect_update", id=fx, params=dict(text="必看")))
+    n = O.show(w, oid)["history"]["undo"]
+    with pytest.raises(O.OutputError) as ei:
+        O.revert(w, oid, s2)
+    assert ei.value.info["code"] == "revert-conflict" and ei.value.info["params"]["n"] == 1
+    assert O.show(w, oid)["history"]["undo"] == n
+    # ids stay unique when a reverted effect_add comes back
+    w2, oid2 = _work(tmp_path / "b", synth)
+    a = O.edit(w2, oid2, dict(op="effect_add", effect="badge", start=1.0, params=dict(text="A")))["step"]["id"]
+    O.revert(w2, oid2, a)
+    O.edit(w2, oid2, dict(op="effect_add", effect="badge", start=2.0, params=dict(text="B")))
+    rv = O.show(w2, oid2)["history"]["steps"][1]["id"]
+    ids = [e["id"] for e in O.revert(w2, oid2, rv)["state"]["effects"]]
+    assert len(ids) == 2 and len(set(ids)) == 2
+
+
+@media
+def test_ai_context_and_chat_transcript(tmp_path, synth, monkeypatch):
+    w, oid = _work(tmp_path, synth)
+    monkeypatch.setenv("VSTUDIO_LLM_OUTPUT_EDIT_PROVIDER", "claude-code")
+    seen = {}
+
+    def fake_complete(task, system, prompt, schema=None, provider=None, model=None, **kw):
+        seen["prompt"] = prompt
+        return dict(text="", json=dict(summary="cut it", ops=[dict(op="cut", start=2.1, end=2.6)]), usage={},
+                    cost_usd=0.01, provider="claude-code", model="m")
+    monkeypatch.setattr(llm, "complete", fake_complete)
+    fx = O.edit(w, oid, dict(op="effect_add", effect="pop-words", start=1.0, params=dict(text="重点")))
+    fid = fx["state"]["effects"][0]["id"]
+    r = O.ai(w, oid, "剪掉这段", context=dict(range=[2.1, 2.6], effect=fid))
+    assert r["context"] == dict(range=[2.1, 2.6], effect=fid)
+    assert '"focus"' in seen["prompt"] and "pointing at" in seen["prompt"] and fid in seen["prompt"]
+    assert r["turn"] and r["cost_usd"] == 0.01 and r["seconds"] >= 0
+    for bad, code in ((dict(range=[3, 1]), "bad-context"), (dict(range=[0, 999]), "bad-context"),
+                      ("x", "bad-context"), (dict(effect="fx99"), "unknown-effect-instance")):
+        with pytest.raises(O.OutputError) as ei:
+            O.ai(w, oid, "x", context=bad)
+        assert ei.value.info["code"] == code
+    turns = O.chat(w, oid)["turns"]
+    assert len(turns) == 1 and turns[0]["status"] == "draft" and turns[0]["context"]["range"] == [2.1, 2.6]
+    assert turns[0]["proposed"][0]["op"]["op"] == "cut" and turns[0]["provider"] == "claude-code"
+    # applying the card marks the turn; reverting its step marks it reverted; all of it survives a reload
+    e = O.edit(w, oid, [p["op"] for p in r["proposed"]], by="ai", turn=r["turn"])
+    t = O.chat(w, oid)["turns"][0]
+    assert t["status"] == "applied" and t["applied_step"] == e["step"]["id"]
+    O.revert(w, oid, e["step"]["id"])
+    t = O.show(w, oid)["chat"][0]
+    assert t["status"] == "reverted" and t["reverted_by"]
+    with pytest.raises(O.OutputError) as ei:
+        O.edit(w, oid, dict(op="speed", value=1.1), turn="t9-none")
+    assert ei.value.info["code"] == "unknown-turn"
+    # the desk's own cards (slash commands, no model) go into the same transcript
+    a = O.chat_add(w, oid, dict(role="user", text="/trim", card="trim", status="note", junk="dropped"))["turn"]
+    assert "junk" not in a
+    assert O.chat_update(w, oid, a["id"], dict(status="discarded"))["turn"]["status"] == "discarded"
+    with pytest.raises(O.OutputError) as ei:
+        O.chat_update(w, oid, a["id"], dict(status="bogus"))
+    assert ei.value.info["code"] == "bad-param"
+    assert [x["id"] for x in O.chat(w, oid)["turns"]] == [r["turn"], a["id"]]
+    # no model: the selection makes "cut this" literal
+    monkeypatch.delenv("VSTUDIO_LLM_OUTPUT_EDIT_PROVIDER")
+    monkeypatch.setattr(llm, "route", lambda *a, **k: llm.Route("none", None, {}, "test"))
+    r = O.ai(w, oid, "剪掉这段", context=dict(range=[1.0, 1.6]), record=False)
+    assert [p["normalized"]["op"] for p in r["proposed"]] == ["cut"] and "turn" not in r
+    assert len(O.chat(w, oid)["turns"]) == 2
+
+
+@media
+def test_compare_render_does_not_apply(tmp_path, synth):
+    w, oid = _work(tmp_path, synth)
+    r = R.render(w, oid, with_ops=[dict(op="speed", value=1.5)])
+    t = r["targets"][0]
+    assert r["compare"] and t["compare"] and t["file"].endswith("primary.compare.mp4") and os.path.exists(t["file"])
+    assert t["duration"] < synth["dur"] * 0.8
+    s = O.show(w, oid)
+    assert s["history"]["undo"] == 0 and s["state"]["speed"] == 1.0 and s["renders"] == []
+    with pytest.raises(O.OutputError) as ei:
+        R.render(w, oid, quality="final", with_ops=[dict(op="speed", value=1.5)])
+    assert ei.value.info["code"] == "bad-param"
+    with pytest.raises(O.OutputError) as ei:
+        R.render(w, oid, with_ops=[dict(op="speed", value=9)])
+    assert ei.value.info["code"] == "bad-param"
+
+
+@media
+def test_cli_revert_chat_context(tmp_path, synth):
+    w, oid = _work(tmp_path, synth)
+    a = json.loads(_cli("edit", "--project", w, "--output", oid, "--ops", json.dumps(dict(op="speed", value=1.2)),
+                        "--json").stdout)["step"]["id"]
+    _cli("edit", "--project", w, "--output", oid, "--ops", json.dumps(dict(op="export_add", target="douyin")), "--json")
+    r = _cli("revert", "--project", w, "--output", oid, "--step", a, "--json")
+    s = json.loads(r.stdout)
+    assert r.returncode == 0 and s["state"]["speed"] == 1.0 and s["state"]["exports"], r.stderr
+    r = _cli("ai", "--project", w, "--output", oid, "--instruction", "1.1倍速", "--context",
+             json.dumps(dict(range=[0.5, 1.5])), "--json", env=dict(VSTUDIO_LLM_OUTPUT_EDIT_PROVIDER="none"))
+    j = json.loads(r.stdout)
+    assert r.returncode == 0 and j["context"]["range"] == [0.5, 1.5] and j["turn"], r.stdout + r.stderr
+    r = _cli("chat", "--project", w, "--output", oid, "--json")
+    assert [t["id"] for t in json.loads(r.stdout)["turns"]] == [j["turn"]]
+    r = _cli("chat", "--project", w, "--output", oid, "--turn", j["turn"], "--set", json.dumps(dict(status="discarded")),
+             "--json")
+    assert json.loads(r.stdout)["turn"]["status"] == "discarded"
+    r = _cli("revert", "--project", w, "--output", oid, "--json")
+    assert r.returncode == 5 and json.loads(r.stdout)["code"] == "bad-param"

@@ -21,7 +21,8 @@ Times in ops are seconds on the ORIGINAL output timeline (``time_base: "edited"`
 converted when the op is recorded); positions are fractions of the canvas. Every message has a stable ``code`` +
 ``params`` with English ``message`` and ``message_zh`` (the desk localises by code).
 
-    list_outputs(dir) / show(dir, out) / edit(dir, out, ops) / undo / redo / ai(dir, out, instruction, apply)
+    list_outputs(dir) / show(dir, out) / edit(dir, out, ops, turn) / undo / redo / revert(dir, out, step) /
+    ai(dir, out, instruction, apply, context) / chat / chat_add / chat_update (chat.json transcript)
     render: vstudio.project.outrender.render(dir, out, quality="preview" | "final", targets=[...])
 """
 import copy
@@ -393,16 +394,36 @@ class Doc:
 
     def state(self, steps=None):
         st = empty_state()
-        for s in (self.d["steps"] if steps is None else steps):
+        for s in active_steps(self.d["steps"] if steps is None else steps):
             for op in s["ops"]:
                 st = fold(st, op)
         if st["captions"]["enabled"] is None:
             st["captions"]["enabled"] = bool(self.rec.get("captions_on"))
+        # ids stay unique across reverted steps too (a revert can itself be undone)
+        st["seq"] = max([st["seq"]] + [o.get("seq", 0) for s in self.d["steps"] for o in s["ops"]])
         return st
 
 
 def _stamp():
     return time.strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def reverted_ids(steps):
+    """Ids of steps cancelled by a (not itself cancelled) ``revert`` step. Walked newest first, so reverting a
+    revert step brings its target back."""
+    dead = set()
+    for s in reversed(steps):
+        if s["id"] in dead:
+            continue
+        if s.get("revert_of"):
+            dead.add(s["revert_of"])
+    return dead
+
+
+def active_steps(steps):
+    """The steps whose ops make the current state: everything except revert markers and what they cancel."""
+    dead = reverted_ids(steps)
+    return [s for s in steps if s["id"] not in dead and not s.get("revert_of")]
 
 
 # --------------------------------------------------------------------------- fold (pure: normalized op -> state)
@@ -464,6 +485,8 @@ def fold(st, op):
             dict(target=op["target"], layout=op.get("layout") or "auto")]
     elif k == "export_remove":
         st["exports"] = [x for x in st["exports"] if x["target"] != op["target"]]
+    elif k == "revert":
+        pass                                     # a marker: Doc.state() skips the step it cancels
     elif k == "reset":
         seq = st["seq"]
         st = empty_state()
@@ -1060,6 +1083,8 @@ def describe(op):
     if k == "caption_add":
         return msg("op-caption-add", f"add {len(op['cues'])} caption(s)", f"新增 {len(op['cues'])} 条字幕",
                    n=len(op["cues"]))
+    if k == "revert":
+        return msg("op-revert", f"revert step {op['step']}", "撤销了其中一步", step=op["step"])
     if k == "title":
         return msg("op-title", "set the title band" if op.get("title") else "remove the title band",
                    "设置标题条" if op.get("title") else "去掉标题条", text=(op.get("title") or {}).get("text"))
@@ -1096,13 +1121,19 @@ def apply_ops(doc, ops, by="user", note=None, dry=False):
     return step, values, warns
 
 
-def edit(d, output, ops, by="user", note=None):
+def edit(d, output, ops, by="user", note=None, turn=None):
+    """Apply ops as one undo step. ``turn``: the chat turn (``ai`` proposal) these ops come from; it is marked
+    applied with the new step id, so the transcript knows which card made which step."""
     rec, doc = _load(d, output)
     if isinstance(ops, dict):
         ops = [ops]
     if not ops:
         raise _err("no-ops", "nothing to apply", "没有操作")
+    if turn is not None and not _find_turn(doc, turn):
+        raise _err("unknown-turn", f"no chat turn {turn!r}", f"没有这条对话 {turn!r}", turn=turn)
     step, values, warns = apply_ops(doc, ops, by=by, note=note)
+    if turn is not None:
+        chat_update(d, output, turn, dict(status="applied", applied_step=step["id"], applied_ops=len(ops)), _doc=doc)
     out = show_doc(rec, doc)
     out.update(ok=True, step=step, values=values, warnings=warns + out.get("warnings", []))
     return out
@@ -1132,6 +1163,150 @@ def redo(d, output):
     return out
 
 
+def _ids_made(op):
+    if op["op"] == "effect_add":
+        return {op["id"]}
+    if op["op"] == "caption_add":
+        return {c["id"] for c in op.get("cues") or []}
+    return set()
+
+
+def _ids_used(op):
+    if op["op"] in ("effect_update", "effect_remove"):
+        return {op.get("id")}
+    if op["op"] in ("caption_text", "caption_remove"):
+        return {op.get("cue")}
+    return set()
+
+
+def revert(d, output, step_id, note=None, by="user"):
+    """Cancel ONE earlier step without touching the steps after it: a new step ``{op: revert, step}`` is recorded
+    (undo / redo it like any step) and the state is re-folded without the cancelled step. Refused with
+    ``revert-conflict`` when a later step builds on it (edits an effect / caption it added, removes a cut by index
+    after it changed the cut list, or a later reset makes it moot): then only 「回到这一步」 (undo N) is honest."""
+    rec, doc = _load(d, output)
+    steps = doc.d["steps"]
+    k = next((i for i, x in enumerate(steps) if x["id"] == step_id), None)
+    if k is None:
+        raise _err("unknown-step", f"no step {step_id!r} in the history", f"历史里没有这一步 {step_id!r}",
+                   step=step_id)
+    target = steps[k]
+    dead = reverted_ids(steps)
+    if step_id in dead:
+        raise _err("already-reverted", "that step is already reverted", "这一步已经撤销过了", step=step_id)
+    later = [x for x in steps[k + 1:] if x["id"] not in dead and not x.get("revert_of")]
+    made = set().union(*[_ids_made(o) for o in target["ops"]]) if target["ops"] else set()
+    cuts = any(o["op"] in ("cut", "cut_remove") for o in target["ops"])
+    blockers = []
+    for x in later:
+        for o in x["ops"]:
+            if (_ids_used(o) & made) or (cuts and o["op"] == "cut_remove") or o["op"] == "reset":
+                blockers.append(x["id"])
+                break
+    if blockers:
+        raise _err("revert-conflict", f"later step(s) {', '.join(blockers)} build on {step_id}: undo back to it "
+                   "instead", f"后面有 {len(blockers)} 步依赖这一步，只能「回到这一步」", step=step_id,
+                   steps=blockers, n=len(blockers))
+    op = dict(op="revert", step=step_id)
+    d_ = describe(op)
+    d_["params"]["what"] = [m.get("message") for m in (target.get("describe") or [])][:3]
+    st = dict(id=f"s{len(steps) + 1}-{sha1_json([op, time.time()], 6)}", at=_stamp(), by=by, note=note, ops=[op],
+              describe=[d_], revert_of=step_id)
+    steps.append(st)
+    doc.d["redo"] = []
+    doc.save()
+    _chat_mark_reverted(doc, step_id, st["id"])
+    out = show_doc(rec, doc)
+    out.update(ok=True, step=st, reverted=step_id)
+    return out
+
+
+# --------------------------------------------------------------------------- chat transcript (per output)
+CHAT_VERSION = 1
+TURN_STATUS = ("draft", "applied", "discarded", "reverted", "note")
+
+
+def _chat_path(doc):
+    return os.path.join(doc.dir, "chat.json")
+
+
+def _chat_load(doc):
+    c = read_json(_chat_path(doc), None)
+    if not isinstance(c, dict) or c.get("version") != CHAT_VERSION or not isinstance(c.get("turns"), list):
+        c = dict(version=CHAT_VERSION, output=doc.rec["id"], turns=[])
+    return c
+
+
+def _chat_save(doc, c):
+    os.makedirs(doc.dir, exist_ok=True)
+    c["updated"] = _stamp()
+    write_json(_chat_path(doc), c)
+
+
+def _find_turn(doc, turn_id):
+    return next((x for x in _chat_load(doc)["turns"] if x.get("id") == turn_id), None)
+
+
+def _clean_turn(t):
+    """Only JSON-safe, bounded fields go into the transcript (it is the creator's history, not a log dump)."""
+    keep = ("text", "context", "proposed", "dropped", "summary", "provider", "model", "cost_usd", "seconds",
+            "warnings", "status", "applied_step", "applied_ops", "reverted_by", "role", "card", "reply")
+    out = {k: t[k] for k in keep if k in t}
+    if isinstance(out.get("text"), str):
+        out["text"] = out["text"][:2000]
+    if "status" in out and out["status"] not in TURN_STATUS:
+        raise _err("bad-param", f"status: {' | '.join(TURN_STATUS)}", "状态不对", name="status", value=out["status"])
+    return out
+
+
+def chat(d, output):
+    """The output's chat transcript: {ok, turns [{id, at, role, text, context, proposed, dropped, summary, provider,
+    model, cost_usd, status draft|applied|discarded|reverted|note, applied_step, reverted_by}]}."""
+    rec, doc = _load(d, output)
+    return dict(ok=True, output=rec["id"], turns=_chat_load(doc)["turns"], path=_chat_path(doc))
+
+
+def chat_add(d, output, turn, _doc=None):
+    """Append one turn (the desk records its own cards: slash-command cards, notes). -> {ok, turn}."""
+    if not isinstance(turn, dict):
+        raise _err("bad-param", "a turn is an object", "对话需要是对象", name="turn")
+    doc = _doc or _load(d, output)[1]
+    c = _chat_load(doc)
+    t = dict(_clean_turn(turn), id=f"t{len(c['turns']) + 1}-{sha1_json([turn, time.time()], 4)}", at=_stamp())
+    t.setdefault("role", "user")
+    t.setdefault("status", "note")
+    c["turns"].append(t)
+    c["turns"] = c["turns"][-500:]
+    _chat_save(doc, c)
+    return dict(ok=True, turn=t)
+
+
+def chat_update(d, output, turn_id, patch, _doc=None):
+    """Patch one turn (status, applied_step, ...). -> {ok, turn}."""
+    if not isinstance(patch, dict):
+        raise _err("bad-param", "the patch is an object", "需要对象", name="set")
+    doc = _doc or _load(d, output)[1]
+    c = _chat_load(doc)
+    for t in c["turns"]:
+        if t.get("id") == turn_id:
+            t.update(_clean_turn(patch))
+            t["updated"] = _stamp()
+            _chat_save(doc, c)
+            return dict(ok=True, turn=t)
+    raise _err("unknown-turn", f"no chat turn {turn_id!r}", f"没有这条对话 {turn_id!r}", turn=turn_id)
+
+
+def _chat_mark_reverted(doc, step_id, by_step):
+    c = _chat_load(doc)
+    hit = False
+    for t in c["turns"]:
+        if t.get("applied_step") == step_id:
+            t.update(status="reverted", reverted_by=by_step, updated=_stamp())
+            hit = True
+    if hit:
+        _chat_save(doc, c)
+
+
 def show(d, output):
     rec, doc = _load(d, output)
     out = show_doc(rec, doc)
@@ -1141,6 +1316,7 @@ def show(d, output):
 
 def show_doc(rec, doc):
     st = doc.state()
+    dead = reverted_ids(doc.d["steps"])
     caps, notes = capabilities(rec, doc.d if rec["mode"] == "flattened" else None)
     tl = Timeline(st, rec["info"]["duration"])
     from . import outrender as R
@@ -1164,8 +1340,10 @@ def show_doc(rec, doc):
                                                                                       st["captions"]["added"]) else [],
                effects=effects, timeline=tl.as_dict(),
                history=dict(steps=[dict(id=s["id"], at=s["at"], by=s.get("by"), note=s.get("note"),
-                                        describe=s.get("describe") or [describe(o) for o in s["ops"]])
+                                        describe=s.get("describe") or [describe(o) for o in s["ops"]],
+                                        reverted=s["id"] in dead, revert_of=s.get("revert_of"))
                                    for s in doc.d["steps"]], undo=len(doc.d["steps"]), redo=len(doc.d["redo"])),
+               chat=_chat_load(doc)["turns"],
                renders=renders, warnings=list(doc.d.get("warnings") or []),
                paths=dict(doc=doc.path, dir=doc.dir, renders=os.path.join(doc.dir, "renders")))
     return out
@@ -1229,9 +1407,60 @@ def _ai_context(rec, doc, st, use_asr=True):
                 ops=OP_DOC, effects=fx, transcript=lines)
 
 
-def _rule_ops(text, dur):
-    """Offline fallback (no model configured): a few literal phrases -> ops."""
+def check_context(ctx, rec, st):
+    """``ai --context``: what the creator is pointing at -> a clean dict {range [a, b], cues [..], effect} (seconds on
+    the original timeline). Refusals: ``bad-context`` (shape / range), ``unknown-effect-instance``."""
+    if ctx in (None, "", {}):
+        return None
+    if not isinstance(ctx, dict):
+        raise _err("bad-context", "context is an object {range, cues, effect}", "上下文需要 {range, cues, effect}")
+    out = {}
+    dur = rec["info"]["duration"]
+    if ctx.get("range") is not None:
+        r = ctx["range"]
+        if not (isinstance(r, (list, tuple)) and len(r) == 2 and all(isinstance(x, (int, float)) and
+                                                                   not isinstance(x, bool) for x in r)):
+            raise _err("bad-context", "range is [start, end] in seconds", "range 需要 [开始, 结束] 秒", name="range")
+        a, b = float(r[0]), float(r[1])
+        if not (0 <= a < b <= dur + 0.5):
+            raise _err("bad-context", f"range {a:g}-{b:g}s is outside the clip (0-{dur:.1f}s)",
+                       f"选区 {a:g}-{b:g} 秒超出片长", name="range", start=a, end=b, duration=round(dur, 2))
+        out["range"] = [round(a, 3), round(min(b, dur), 3)]
+    if ctx.get("cues") is not None:
+        cs = ctx["cues"]
+        if not (isinstance(cs, list) and len(cs) <= 50 and all(isinstance(x, (str, int)) for x in cs)):
+            raise _err("bad-context", "cues is a list of cue ids", "cues 需要字幕 id 列表", name="cues")
+        out["cues"] = [str(x) for x in cs]
+    if ctx.get("effect") is not None:
+        fid = ctx["effect"]
+        if not any(e["id"] == fid for e in st["effects"]):
+            raise _err("unknown-effect-instance", f"no effect {fid!r} on this output", f"没有这个效果 {fid!r}",
+                       id=fid)
+        out["effect"] = fid
+    return out or None
+
+
+def _focus(rec, st, ctx):
+    """The context spelled out for the model: the selected words / cues / the effect instance."""
+    f = dict(ctx)
+    if ctx.get("cues"):
+        rows = {r["id"]: r for r in _cue_rows(rec, st)}
+        f["cue_rows"] = [dict(id=c, start=rows[c]["start"], end=rows[c]["end"], text=rows[c]["text"])
+                         for c in ctx["cues"] if c in rows]
+    if ctx.get("effect"):
+        f["effect_instance"] = next(e for e in st["effects"] if e["id"] == ctx["effect"])
+    return f
+
+
+def _rule_ops(text, dur, ctx=None):
+    """Offline fallback (no model configured): a few literal phrases -> ops (``ctx``: the selection they refer to)."""
     ops = []
+    rng = (ctx or {}).get("range")
+    if rng and re.search(r"剪掉|删掉|去掉|cut|remove|delete", text, re.I) and \
+            re.search(r"这段|这里|这部分|选中|this|it\b|selection|here", text, re.I):
+        ops.append(dict(op="cut", start=rng[0], end=rng[1]))
+    if rng and re.search(r"推镜|放大|zoom", text, re.I):
+        ops.append(dict(op="effect_add", effect="punch-in", start=rng[0], end=rng[1]))
     m = re.search(r"(\d+(?:\.\d+)?)\s*(?:倍速?|x\b|×)", text, re.I)
     if m:
         ops.append(dict(op="speed", value=float(m.group(1))))
@@ -1262,25 +1491,35 @@ def _rule_ops(text, dur):
     return out
 
 
-def ai(d, output, instruction, apply=False, provider=None, model=None, use_asr=True):
+def ai(d, output, instruction, apply=False, provider=None, model=None, use_asr=True, context=None, record=True):
     """Natural language -> validated ops (task ``output_edit`` of vstudio.llm). Every proposed op is checked by the
     same validator as ``edit``; unknown ops / effects / params are dropped with a reason, never invented.
     -> {ok, proposed [{op, describe}], dropped [{op, error}], summary, provider, model, cost_usd, applied?}."""
     from vstudio import llm
     rec, doc = _load(d, output)
     st = doc.state()
+    focus = check_context(context, rec, st)
     ctx = _ai_context(rec, doc, st, use_asr=use_asr)
+    if focus:
+        ctx["focus"] = _focus(rec, st, focus)
     route = llm.route("output_edit", provider, model)
+    t0 = time.time()
     warns, raw_ops, summary, cost, used = [], [], None, 0.0, dict(provider=route.provider, model=route.model)
     if route.provider == "none":
-        raw_ops = _rule_ops(instruction, rec["info"]["duration"])
+        raw_ops = _rule_ops(instruction, rec["info"]["duration"], focus)
         used = dict(provider="rules", model=None)
         warns.append(msg("no-model", "no model is configured for task output_edit: only literal phrases were "
                          "understood (persona llm.tasks.output_edit or llm.default)",
                          "没有配置 output_edit 模型，只理解了字面指令"))
     else:
         import json as _json
-        prompt = (f"Instruction from the creator:\n{instruction}\n\nContext (JSON):\n"
+        point = ""
+        if focus:
+            point = ("\n\nThe creator is pointing at `focus` in the context (a selected range of the timeline, caption "
+                     "cues and / or one effect instance). Words like this / here / it / 这段 / 这里 / 这个 mean the "
+                     "focus: change only that part (an effect in focus: effect_update that id) unless the "
+                     "instruction clearly says otherwise.")
+        prompt = (f"Instruction from the creator:\n{instruction}{point}\n\nContext (JSON):\n"
                   + _json.dumps(ctx, ensure_ascii=False, default=str))
         schema = {"type": "object", "properties": {"ops": {"type": "array", "items": {"type": "object"}},
                                                    "summary": {"type": "string"}}, "required": ["ops"]}
@@ -1313,10 +1552,22 @@ def ai(d, output, instruction, apply=False, provider=None, model=None, use_asr=T
         cur = fold(cur, n)
         proposed.append(dict(op=clean, normalized=n, describe=describe(n), why=op.get("why") or op.get("reason"),
                              warnings=w))
-    out = dict(ok=True, instruction=instruction, proposed=proposed, ops=[p["op"] for p in proposed], dropped=dropped,
-               summary=summary, warnings=warns, cost_usd=cost, **used)
+    out = dict(ok=True, instruction=instruction, context=focus, proposed=proposed, ops=[p["op"] for p in proposed],
+               dropped=dropped, summary=summary, warnings=warns, cost_usd=cost, seconds=round(time.time() - t0, 2),
+               **used)
+    turn = None
+    if record:
+        turn = chat_add(d, output, dict(role="ai", text=instruction, context=focus, summary=summary,
+                                        proposed=[dict(op=p["normalized"], describe=p["describe"], why=p["why"])
+                                                  for p in proposed],
+                                        dropped=[dict(error=x["error"]) for x in dropped], warnings=warns,
+                                        provider=used.get("provider"), model=used.get("model"), cost_usd=cost,
+                                        seconds=out["seconds"], status="draft" if proposed else "note"),
+                        _doc=doc)["turn"]
+        out["turn"] = turn["id"]
     if apply and proposed:
-        res = edit(d, output, [p["op"] for p in proposed], by="ai", note=instruction)
+        res = edit(d, output, [p["op"] for p in proposed], by="ai", note=instruction,
+                   turn=turn["id"] if turn else None)
         out.update(applied=True, step=res["step"], show=res)
     else:
         out["applied"] = False

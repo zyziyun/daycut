@@ -20,7 +20,9 @@ caption_placements, relayout, relayout_layouts, burned_captions, audio`) and `ca
 
 ```
 <project>/state/outputs/<slug>/      or   <work>/.vstudio/outputs/<slug>/
-  edit.json          {version, output, mode, source_sig, steps [{id, at, by user|ai, note, ops, describe}], redo, burned}
+  edit.json          {version, output, mode, source_sig, steps [{id, at, by user|ai, note, ops, describe, revert_of?}], redo, burned}
+  chat.json          {version, output, turns [{id, at, role user|ai, text, context, proposed, dropped, summary, provider,
+                      model, cost_usd, seconds, status draft|applied|discarded|reverted|note, applied_step, reverted_by}]}
   transcript.json    word timings of the output (cut snapping, ai context), keyed by the file signature
   cache/<stage>-<key>.mp4|wav|jpg      stage results (4 kept per stage)
   renders/<target>.<preview|final>.mp4, <target>.cover.jpg, manifest.json {renders {target.quality: {file, key, at}}}
@@ -58,6 +60,24 @@ goes through the same validator as `edit`; invented effects / ops / params, out-
 forbid are dropped with their error. Without `--apply` nothing changes (the desk shows `proposed` for confirmation,
 then calls `edit --ops` with `ops`, or `ai --apply`). No model configured: a literal-phrase fallback (speed, head /
 tail trim, platform exports, LUFS, progress bar, fade) with warning `no-model`.
+
+**Selective revert** (`output revert --step <id>`): cancels ONE earlier step and keeps every step after it. It is
+recorded as a new step `{op: revert, step}` (`revert_of` on the step; undo / redo it like any step; reverting a
+revert brings its target back); the state is folded without the cancelled step (`history.steps[].reverted`).
+Refused with `revert-conflict {steps, n}` when a later step builds on it (edits / removes an effect or added caption
+it created, removes a cut by index after it changed the cut list, or a later `reset`): the honest alternative is
+undo back to it. Also `unknown-step`, `already-reverted`.
+
+**Context** (`ai --context '{"range": [12, 18], "cues": ["c4"], "effect": "fx2"}'`): what the creator points at
+(timeline selection, caption cues, one effect instance). Validated (`bad-context`, `unknown-effect-instance`), passed
+to the model as `focus` (cue text and the effect instance spelled out) with "this / here / 这段 mean the focus";
+the literal fallback understands "剪掉这段 / cut this" and "zoom" on the range. Echoed as `context`.
+
+**Chat transcript** (`chat.json`, `output chat`): every `ai` call records a turn (`--no-record` to skip) with its
+proposals, provider, model, cost and seconds, status `draft`; `edit --turn ID` marks it `applied` with the step
+id; `revert` of that step marks it `reverted`. The desk adds its own turns (slash-command cards) with
+`chat --add JSON` and patches status with `chat --turn ID --set JSON`. `show` returns `chat` so the conversation
+is rebuilt after a reopen.
 
 ## 4. Effects (`output effects --json [--no-thumbs]`)
 
@@ -107,8 +127,10 @@ descriptions) is `{code, params, message (English), message_zh}`: the desk local
 | `output list --project P` | `{ok, dir, kind project|work, outputs [{id, file, title, item, platform, orientation, edited, steps, mode, edit_dir}]}` |
 | `output show --project P --output O` | `{ok, output {id, file, mode, canvas, fps, duration, platform, master}, caps, caps_notes, state, captions [{id, start, end, text, original, edited, removed, added}], effects [{id, effect, start, end, params, label, edited [a, b]}], timeline {segments, joins, speed, duration}, history {steps [{id, at, by, note, describe}], undo, redo}, renders [{target, quality, file, fresh}], warnings, paths}` |
 | `output edit ... --ops JSON` | the `show` document + `{step, values [per op], warnings}` |
-| `output ai ... --instruction T [--apply]` | `{ok, proposed [{op, normalized, describe, why, warnings}], ops, dropped [{op, error}], summary, provider, model, cost_usd, warnings, applied, step?}` |
-| `output render ...` | `{ok, output, mode, quality, targets [{target, file, cover, canvas, layout, duration, key, cached, stages [{stage, key, cached, seconds}], warnings}], seconds}`; `--json-events`: `target-start`, `stage-done`, `target-done`, `render-done` lines |
+| `output ai ... --instruction T [--context JSON] [--apply]` | `{ok, context, proposed [{op, normalized, describe, why, warnings}], ops, dropped [{op, error}], summary, provider, model, cost_usd, seconds, warnings, turn, applied, step?}` |
+| `output render ...` | `{ok, output, mode, quality, targets [{target, file, cover, canvas, layout, duration, key, cached, stages [{stage, key, cached, seconds}], warnings}], seconds}`; `--json-events`: `target-start`, `stage-done`, `target-done`, `render-done` lines; `--with-ops JSON`: a before / after preview of ops that are not applied, into `renders/<target>.compare.mp4` (`compare: true`; edit.json and the manifest untouched) |
+| `output revert ... --step ID` | the `show` document + `{step, reverted}` |
+| `output chat ...` [`--add JSON` / `--turn ID --set JSON`] | `{ok, turns}` / `{ok, turn}` |
 | `output undo|redo ...` | the `show` document + `undone` / `redone` step |
 | `output effects` | `{ok, effects [...], n}` |
 
@@ -116,7 +138,9 @@ Errors: exit 5 + `{ok: false, error, code, params, message, message_zh}`. Codes:
 `unknown-output`, `unknown-op`, `bad-op`, `no-ops`, `unknown-effect`, `unknown-effect-instance`,
 `duplicate-effect`, `bad-param`, `bad-time`, `too-short`, `cut-no-word`, `unknown-cut`, `no-audio`, `no-words`,
 `transcribe-failed`, `captions-not-ours`, `unknown-cue`, `empty-text`, `not-faithful`, `placement-pipeline`,
-`unknown-target`, `nothing-to-undo`, `nothing-to-redo`, `llm-failed`, `llm-bad-json`, `render-failed`.
+`unknown-target`, `nothing-to-undo`, `nothing-to-redo`, `unknown-step`, `already-reverted`, `revert-conflict`,
+`bad-context`, `unknown-turn`, `llm-failed`, `llm-bad-json`, `render-failed`.
 Warnings / notes: `flattened`, `captions-add-only`, `relayout-crops-burned`, `no-master`, `master-mismatch`,
 `source-changed`, `placement-auto`, `style-added-only`, `band-pipeline`, `effect-cut-away`, `param-adjusted`,
-`unknown-param`, `no-model`, `length`. Op descriptions: `op-<op>` (e.g. `op-effect-add {effect, start, end}`).
+`unknown-param`, `no-model`, `length`. Op descriptions: `op-<op>` (e.g. `op-effect-add {effect, start, end}`,
+`op-revert {step, what}`).

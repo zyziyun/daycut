@@ -661,15 +661,30 @@ def render_status(rec, doc, st):
     return out
 
 
-def render(d, output, quality="preview", targets=None, on_event=None):
+def render(d, output, quality="preview", targets=None, on_event=None, with_ops=None):
     """Render the output's current edit (preview or final) for ``targets`` (default primary; "all" = primary +
     every export). -> {ok, output, quality, targets [{target, file, cover, canvas, duration, key, cached, stages
-    [{stage, key, cached, seconds}], warnings}], seconds}."""
+    [{stage, key, cached, seconds}], warnings}], seconds}.
+
+    ``with_ops``: a before / after preview of ops that are NOT applied (cuts, speed: what the player cannot fake):
+    the ops are validated like ``edit`` against the current state, rendered at preview quality into
+    ``renders/<target>.compare.mp4``; edit.json and the render manifest are not touched."""
     if quality not in QUALITIES:
         raise OUT.OutputError("bad-param", f"quality: {' | '.join(QUALITIES)}", "质量只能是 preview / final",
                               name="quality", value=quality)
     rec, doc = OUT._load(d, output)
     st = doc.state()
+    compare = with_ops is not None
+    if compare:
+        if quality != "preview":
+            raise OUT.OutputError("bad-param", "--with-ops renders a preview only", "对比预览只能是 preview 质量",
+                                  name="quality", value=quality)
+        ops = [with_ops] if isinstance(with_ops, dict) else with_ops
+        if not isinstance(ops, list) or not ops:
+            raise OUT.OutputError("no-ops", "--with-ops needs a JSON op or list of ops", "需要 --with-ops 操作")
+        step, _, _ = OUT.apply_ops(doc, ops, dry=True)
+        for n in step["ops"]:
+            st = OUT.fold(st, n)
     tgs = targets_of(rec, st, targets or ["primary"])
     status = Status(rec, doc)
     t_all = time.time()
@@ -720,10 +735,10 @@ def render(d, output, quality="preview", targets=None, on_event=None):
             rdir = os.path.join(doc.dir, "renders")
             os.makedirs(rdir, exist_ok=True)
             name = tg["target"].replace(":", "-")
-            dst = os.path.join(rdir, f"{name}.{quality}.mp4")
+            dst = os.path.join(rdir, f"{name}.{'compare' if compare else quality}.mp4")
             _link(fpath, dst)
             cdst = None
-            if cpath:
+            if cpath and not compare:
                 cdst = os.path.join(rdir, f"{name}.cover.jpg")
                 _link(cpath, cdst)
             info = _media().probe(dst)
@@ -740,6 +755,10 @@ def render(d, output, quality="preview", targets=None, on_event=None):
                        cached=all(s["cached"] for s in stages), stages=[{k: v for k, v in s.items() if k != "file"}
                                                                         for s in stages], warnings=warns)
             results.append(res)
+            if compare:
+                res["compare"] = True
+                emit(dict(event="target-done", **{k: v for k, v in res.items() if k != "stages"}))
+                continue
             man = read_json(manifest_path(doc), {}) or {}
             man.setdefault("renders", {})[f"{tg['target']}.{quality}"] = dict(file=dst, cover=cdst, key=res["key"],
                                                                              at=OUT._stamp(),
@@ -756,7 +775,7 @@ def render(d, output, quality="preview", targets=None, on_event=None):
     finally:
         status.end(ok)
     return dict(ok=True, output=rec["id"], mode=rec["mode"], quality=quality, targets=results,
-                seconds=round(time.time() - t_all, 2), edit_dir=doc.dir)
+                seconds=round(time.time() - t_all, 2), edit_dir=doc.dir, compare=compare)
 
 
 def _link(src, dst):

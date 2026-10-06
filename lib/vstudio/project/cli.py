@@ -19,7 +19,7 @@ references/PROJECTS.md.
                                                       post.md, ...) -> DIR/.vstudio/work.json + registry (works.py)
   touch DIR [--status running|waiting|done|failed] [--stage S] [--progress 0..1] [--message M] [--eta S]
       [--needs-you] [--recipe R] [--title T] [--outputs a,b]   register a job folder + its live status (heartbeat)
-  output list | show | edit | render | undo | redo | ai | effects  --project P --output O   second-pass edit of
+  output list | show | edit | render | undo | redo | revert | ai | chat | effects  --project P --output O   2nd-pass edit of
       one finished output (references/OUTPUT_EDIT.md): edit --ops JSON | --op NAME --param k=v | --op ai
       --instruction T [--apply]; render [--quality preview|final] [--targets primary,douyin:vertical|all]
   series new --id S --recipe R [--name N] [--set JSON] [--cadence JSON] | show --id S | list | update --id S --set JSON
@@ -315,13 +315,30 @@ def cmd_output(a):
     if act == "redo":
         _out(a, O.redo(proj, a.output))
         return 0
+    if act == "revert":
+        if not a.step:
+            raise O.OutputError("bad-param", "--step is required (show --json: history.steps[].id)", "需要 --step",
+                                name="step")
+        _out(a, O.revert(proj, a.output, a.step, note=a.note))
+        return 0
+    if act == "chat":
+        if a.add:
+            _out(a, O.chat_add(proj, a.output, json.loads(a.add)))
+        elif a.turn:
+            _out(a, O.chat_update(proj, a.output, a.turn, json.loads(a.set or "{}")))
+        else:
+            r = O.chat(proj, a.output)
+            _out(a, r, "\n".join(f"{t['id']}  {t.get('status', '')}  {t.get('text', '')}" for t in r["turns"])
+                 or "no chat yet")
+        return 0
     if act == "render":
         from . import outrender as R
         emit, stream = (None, None)
         if a.json_events:
             from vstudio.batch.cli import json_event_sink
             emit, stream = json_event_sink()
-        r = R.render(proj, a.output, quality=a.quality, targets=_csv(a.targets) or ["primary"], on_event=emit)
+        r = R.render(proj, a.output, quality=a.quality, targets=_csv(a.targets) or ["primary"], on_event=emit,
+                     with_ops=json.loads(a.with_ops) if a.with_ops else None)
         if emit:
             emit(dict(event="render-done", **r))
             stream.flush()
@@ -333,7 +350,8 @@ def cmd_output(a):
         if not a.instruction:
             raise O.OutputError("bad-param", "--instruction is required", "需要 --instruction", name="instruction")
         _out(a, O.ai(proj, a.output, a.instruction, apply=a.apply, provider=a.provider, model=a.model,
-                     use_asr=not a.no_asr))
+                     use_asr=not a.no_asr, context=json.loads(a.context) if a.context else None,
+                     record=not a.no_record))
         return 0
     # edit
     if a.ops:
@@ -345,7 +363,7 @@ def cmd_output(a):
         ops = dict(_params(a), op=a.op)
     else:
         raise O.OutputError("no-ops", "edit needs --ops JSON, --ops-file F or --op NAME", "需要 --ops 或 --op")
-    _out(a, O.edit(proj, a.output, ops, note=a.note))
+    _out(a, O.edit(proj, a.output, ops, note=a.note, turn=a.turn))
     return 0
 
 
@@ -491,7 +509,8 @@ def build_parser():
     p.add_argument("--client")
     p.add_argument("--outputs", help="comma list (default: videos in final/ exports/ out/)")
     p = add("output", cmd_output, "second-pass edit of a finished output (references/OUTPUT_EDIT.md)")
-    p.add_argument("action", choices=["list", "show", "edit", "render", "undo", "redo", "ai", "effects"])
+    p.add_argument("action", choices=["list", "show", "edit", "render", "undo", "redo", "revert", "ai", "chat",
+                                      "effects"])
     p.add_argument("--project", help="project folder or adopted work folder (default --dir / cwd)")
     p.add_argument("--output", help="output id (output list), or its file path")
     p.add_argument("--ops", help="JSON op or list of ops")
@@ -505,6 +524,13 @@ def build_parser():
     p.add_argument("--provider")
     p.add_argument("--model")
     p.add_argument("--no-asr", action="store_true", help="ai: do not transcribe a flattened output for context")
+    p.add_argument("--context", help='ai: what the creator points at, JSON {"range": [a, b], "cues": [..], '
+                   '"effect": "fx2"}')
+    p.add_argument("--no-record", action="store_true", help="ai: do not add the turn to the chat transcript")
+    p.add_argument("--step", help="revert: the history step id to cancel (later steps stay)")
+    p.add_argument("--turn", help="edit: the chat turn the ops come from (marked applied); chat: the turn to patch")
+    p.add_argument("--add", help="chat: append a turn (JSON)")
+    p.add_argument("--with-ops", help="render: preview these ops without applying them (before / after compare)")
     p.add_argument("--quality", choices=["preview", "final"], default="preview")
     p.add_argument("--targets", help="render: primary (default), platform:orientation list, or all")
     p.add_argument("--json-events", action="store_true")
