@@ -55,8 +55,14 @@ class RealEngine:
     # ------------------------------------------------------------------ info
     def health(self):
         import vstudio
+        try:
+            from vstudio import media
+            ffmpeg = media.ffmpeg_bin()
+        except Exception as e:  # noqa: BLE001  (missing ffmpeg must not break health)
+            ffmpeg = f"unavailable: {e}"
         return dict(mode=self.mode, engine_path=self.engine_path,
-                    vstudio=getattr(vstudio, "__file__", None), python=self.python)
+                    vstudio=getattr(vstudio, "__file__", None), python=self.python, ffmpeg=ffmpeg,
+                    h264_encoder=os.environ.get("DESK_H264_ENCODER") or "libx264")
 
     def recipes(self):
         from vstudio.batch import recipes as R

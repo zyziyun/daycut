@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { SettingsMsg } from '../../../shared/deskApi';
+import { AssetsCard } from '../components/assets';
 import { ErrorBox, Field } from '../components/ui';
 import { t } from '../i18n';
 import { useEngine } from '../lib/engine';
@@ -50,6 +51,11 @@ export function Settings({ onChange }: { onChange: (s: SettingsMsg) => void }) {
           <div className="muted small mono">
             {t('settings.resolved')}: {s.resolved?.enginePath ?? t('settings.notFound')} · {s.resolved?.python} · {s.resolved?.dataDir}
           </div>
+          {s.resolved?.runtime && (
+            <div className="muted small mono" data-testid="runtime-info">
+              {t('settings.runtime')}: {s.resolved.runtime}
+            </div>
+          )}
           <Field label={t('settings.enginePath')} hint={t('settings.enginePathHint')}>
             <div className="row">
               <input className="input" style={{ flex: 1 }} value={enginePath} onChange={(e) => setEnginePath(e.target.value)} placeholder="/Users/…/video-studio" />
@@ -70,6 +76,7 @@ export function Settings({ onChange }: { onChange: (s: SettingsMsg) => void }) {
             </button>
           </div>
         </div>
+        <AssetsCard />
         <div className="card col">
           <b>{t('settings.ui')}</b>
           <Field label={t('settings.lang')}>

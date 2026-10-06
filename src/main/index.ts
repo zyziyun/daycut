@@ -9,14 +9,18 @@ import { hostAllowed, type Adapter } from '../shared/publish/adapterSchema';
 import { resolveInside } from '../shared/publish/gating';
 import { parsePostCopy } from '../shared/publish/postCopy';
 import type { EngineInfo } from '../shared/types';
+import type { AssetManifest } from '../shared/assets';
+import { AssetManager } from './assets';
 import { defaultEnginePath, EngineProcess, findPython } from './engine';
 import { isAllowedMediaPath, pathFromMediaUrl } from './media';
 import { loadAdapters } from './publish/adapters';
 import { PublishBrowser } from './publish/browser';
 import { assistedFill } from './publish/fill';
 import { PublishStore } from './publish/store';
+import { findBundledRuntime, runtimeEnv, type BundledRuntime } from './runtime';
 import { buildCsp, isAppUrl, isSafeExternal } from './security';
 import { SettingsStore } from './settings';
+import { checkForUpdates, initUpdater, installUpdate } from './updater';
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
@@ -39,17 +43,42 @@ let settings: SettingsStore;
 let pstore: PublishStore;
 let adapters: { adapters: Adapter[]; errors: { file: string; error: string }[] } = { adapters: [], errors: [] };
 let enginePromise: Promise<EngineInfo> | null = null;
+let runtime: BundledRuntime | null = null;
+let assets: AssetManager;
 
 function dataDir() {
   return path.join(app.getPath('userData'), 'engine-data');
 }
 
+function assetsDir() {
+  return path.join(app.getPath('userData'), 'assets');
+}
+
+/** Settings override everything; then env vars; then the runtime bundled in the app; then a dev checkout. */
 function resolvedConfig() {
   const s = settings.get();
+  const python = s.python || process.env.DESK_PYTHON || runtime?.python || findPython();
+  const bundled = Boolean(runtime && python === runtime.python);
   return {
-    enginePath: defaultEnginePath(app.getAppPath(), s.enginePath),
-    python: findPython(s.python),
+    enginePath: defaultEnginePath(app.getAppPath(), s.enginePath, bundled ? runtime!.vstudio : undefined),
+    python,
     dataDir: dataDir(),
+    runtime: bundled ? `bundled · Python ${runtime!.manifest.python} · video-studio@${runtime!.manifest.vstudioCommit.slice(0, 7)}` : 'system',
+  };
+}
+
+function engineEnv(bundled: boolean) {
+  if (!bundled || !runtime) return { env: assets.env() };
+  const r = runtimeEnv(runtime, path.join(RES, 'engine', 'runtime_shim'));
+  return {
+    ...r,
+    isolatePython: true,
+    env: {
+      ...r.env,
+      VSTUDIO_CACHE: path.join(assetsDir(), 'vstudio-cache'),
+      HF_HOME: path.join(assetsDir(), 'hf'),
+      ...assets.env(),
+    },
   };
 }
 
@@ -63,7 +92,9 @@ function startEngine(): Promise<EngineInfo> {
     dataDir: cfg.dataDir,
     allowedOrigins: [APP_ORIGIN],
     mock: process.env.DESK_ENGINE_MOCK === '1',
+    ...engineEnv(cfg.runtime !== 'system'),
   });
+  assets.markEngineStarted();
   enginePromise = engine.start().then((info) => {
     client = new EngineClient(info.baseUrl, info.token);
     rootsCache = { at: 0, roots: [] };
@@ -328,6 +359,25 @@ function registerIpc() {
     return { ...parsePostCopy(md, item.title), video: video ?? '' };
   });
   handle('publish:postedLog', async (p) => pstore.posted(p.batchId));
+
+  // ---------------- first-run assets
+  handle('assets:status', async () => ({ ...assets.status(), bundled: resolvedConfig().runtime !== 'system' }));
+  handle('assets:install', async (p) => {
+    void assets.install(p.ids).catch((e) => console.error('[assets]', e));
+    return assets.status();
+  });
+  handle('assets:cancel', async () => assets.cancel());
+  handle('update:check', async () => checkForUpdates());
+  handle('update:install', async () => installUpdate());
+}
+
+function loadAssetManifest(): AssetManifest {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(RES, 'packaging', 'assets.json'), 'utf8')) as AssetManifest;
+  } catch (e) {
+    console.warn('[assets] no manifest:', (e as Error).message);
+    return { groups: [] };
+  }
 }
 
 // ---------------------------------------------------------------- lifecycle
@@ -345,6 +395,8 @@ if (!app.requestSingleInstanceLock()) {
   });
   app.whenReady().then(() => {
     settings = new SettingsStore(app.getPath('userData'));
+    runtime = findBundledRuntime(RES, app.isPackaged);
+    assets = new AssetManager({ manifest: loadAssetManifest(), dir: assetsDir(), onChange: (s) => win?.webContents.send('assets:progress', s) });
     pstore = new PublishStore(path.join(app.getPath('userData'), 'publish'));
     adapters = loadAdapters([path.join(RES, 'adapters'), path.join(app.getPath('userData'), 'adapters')]);
     for (const e of adapters.errors) console.warn(`[adapters] ${e.file}: ${e.error}`);
@@ -353,6 +405,7 @@ if (!app.requestSingleInstanceLock()) {
     registerIpc();
     void startEngine().catch((e) => console.error('[engine]', e.message));
     createWindow();
+    initUpdater((u) => win?.webContents.send('update:state', u));
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });

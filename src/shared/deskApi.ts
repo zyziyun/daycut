@@ -1,4 +1,5 @@
 // The API the preload exposes as window.desk.
+import type { AssetsStatusMsg } from './assets';
 import type { Adapter } from './publish/adapterSchema';
 import type { Confirmation } from './publish/gating';
 import type { EngineInfo } from './types';
@@ -42,7 +43,7 @@ export interface SettingsMsg {
   lang: 'zh' | 'en';
   theme: 'studio-dark' | 'notebook-light';
   accounts: Record<string, string[]>;
-  resolved?: { enginePath?: string; python: string; dataDir: string };
+  resolved?: { enginePath?: string; python: string; dataDir: string; runtime?: string };
 }
 
 export interface FillRequestMsg {
@@ -52,6 +53,13 @@ export interface FillRequestMsg {
   platform: string;
   adapterId: string;
   account: string;
+}
+
+export interface UpdateStateMsg {
+  state: 'disabled' | 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'none' | 'error';
+  version?: string;
+  percent?: number;
+  error?: string;
 }
 
 export interface DeskApi {
@@ -79,6 +87,15 @@ export interface DeskApi {
     caption(batchId: string, job: string, platform: string): Promise<{ title: string; description: string; tags: string[]; video: string }>;
     postedLog(batchId?: string): Promise<PostedEntryMsg[]>;
   };
-  on(event: 'publish:state' | 'publish:fillStep' | 'engine:status', cb: (data: unknown) => void): () => void;
+  assets: {
+    status(): Promise<AssetsStatusMsg & { bundled: boolean }>;
+    install(ids?: string[]): Promise<AssetsStatusMsg>;
+    cancel(): Promise<void>;
+  };
+  update: {
+    check(): Promise<UpdateStateMsg>;
+    install(): Promise<void>;
+  };
+  on(event: 'publish:state' | 'publish:fillStep' | 'engine:status' | 'assets:progress' | 'update:state', cb: (data: unknown) => void): () => void;
   mediaUrl(path: string): string;
 }

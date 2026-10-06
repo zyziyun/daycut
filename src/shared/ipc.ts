@@ -62,6 +62,11 @@ export const ipcSchemas = {
   }),
   'publish:caption': z.strictObject({ batchId, job: jobId, platform: packageKey }),
   'publish:postedLog': z.strictObject({ batchId: batchId.optional() }),
+  'assets:status': z.undefined(),
+  'assets:install': z.strictObject({ ids: z.array(z.string().regex(/^[a-z0-9-]{1,40}$/)).max(20).optional() }),
+  'assets:cancel': z.undefined(),
+  'update:check': z.undefined(),
+  'update:install': z.undefined(),
 } as const;
 
 export type IpcChannel = keyof typeof ipcSchemas;

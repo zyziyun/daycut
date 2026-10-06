@@ -3,7 +3,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { DeskApi } from '../shared/deskApi';
 
-const EVENTS = new Set(['publish:state', 'publish:fillStep', 'engine:status']);
+const EVENTS = new Set(['publish:state', 'publish:fillStep', 'engine:status', 'assets:progress', 'update:state']);
 
 const call = (channel: string, payload?: unknown) => ipcRenderer.invoke(channel, payload);
 
@@ -37,6 +37,15 @@ const api: DeskApi = {
     const fn = (_e: unknown, data: unknown) => cb(data);
     ipcRenderer.on(event, fn);
     return () => ipcRenderer.removeListener(event, fn);
+  },
+  assets: {
+    status: () => call('assets:status'),
+    install: (ids) => call('assets:install', { ids }),
+    cancel: () => call('assets:cancel'),
+  },
+  update: {
+    check: () => call('update:check'),
+    install: () => call('update:install'),
   },
   mediaUrl: (p) => `vsmedia://local/${encodeURIComponent(p)}`,
 };

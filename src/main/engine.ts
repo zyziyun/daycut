@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
 import type { EngineInfo, EngineMode } from '../shared/types';
+import { prependPath } from './runtime';
 
 export interface EngineConfig {
   engineDir: string; // folder holding server.py
@@ -16,6 +17,13 @@ export interface EngineConfig {
   dataDir: string;
   allowedOrigins: string[];
   mock?: boolean;
+  /** extra variables (bundled runtime, downloaded assets) */
+  env?: Record<string, string>;
+  /** folders put in front of PATH / PYTHONPATH */
+  path?: string[];
+  pythonPath?: string[];
+  /** bundled runtime: ignore PYTHONPATH / PYTHONHOME inherited from the user's shell */
+  isolatePython?: boolean;
 }
 
 export function newToken(): string {
@@ -38,11 +46,11 @@ export function findPython(preferred?: string): string {
   for (const p of [preferred ?? '', ...pythonCandidates()]) {
     if (p && fs.existsSync(p)) return p;
   }
-  return 'python3';
+  return process.platform === 'win32' ? 'python' : 'python3';
 }
 
-export function defaultEnginePath(appPath: string, preferred?: string): string | undefined {
-  for (const p of [preferred, process.env.VSTUDIO_ENGINE_PATH, path.resolve(appPath, '..', 'video-studio')]) {
+export function defaultEnginePath(appPath: string, preferred?: string, bundled?: string): string | undefined {
+  for (const p of [preferred, process.env.VSTUDIO_ENGINE_PATH, bundled, path.resolve(appPath, '..', 'video-studio')]) {
     if (p && fs.existsSync(path.join(p, 'lib', 'vstudio'))) return p;
   }
   return undefined;
@@ -62,20 +70,28 @@ export class EngineProcess {
 
   start(timeoutMs = 30000): Promise<EngineInfo> {
     const token = newToken();
-    const env: NodeJS.ProcessEnv = {
+    let env: NodeJS.ProcessEnv = {
       ...process.env,
+      ...this.cfg.env,
       DESK_TOKEN: token,
       DESK_ALLOWED_ORIGINS: this.cfg.allowedOrigins.join(','),
       DESK_DATA_DIR: this.cfg.dataDir,
       PYTHONUNBUFFERED: '1',
-      // Finder-launched apps get a minimal PATH; ffmpeg usually lives in Homebrew
-      PATH: ['/opt/homebrew/bin', '/usr/local/bin', process.env.PATH ?? ''].join(':'),
     };
+    if (this.cfg.isolatePython) {
+      delete env.PYTHONPATH;
+      delete env.PYTHONHOME;
+    }
+    // Finder-launched apps get a minimal PATH; a system ffmpeg usually lives in Homebrew
+    const extraPath = process.platform === 'darwin' ? ['/opt/homebrew/bin', '/usr/local/bin'] : [];
+    env = prependPath(env, [...(this.cfg.path ?? []), ...extraPath]);
+    const pyPath = [...(this.cfg.pythonPath ?? [])];
     if (this.cfg.enginePath) {
       env.VSTUDIO_ENGINE_PATH = this.cfg.enginePath;
-      const lib = path.join(this.cfg.enginePath, 'lib');
-      env.PYTHONPATH = env.PYTHONPATH ? `${lib}${path.delimiter}${env.PYTHONPATH}` : lib;
+      pyPath.push(path.join(this.cfg.enginePath, 'lib'));
     }
+    if (env.PYTHONPATH) pyPath.push(env.PYTHONPATH);
+    if (pyPath.length) env.PYTHONPATH = pyPath.join(path.delimiter);
     if (this.cfg.mock) env.DESK_ENGINE_MOCK = '1';
     const child = spawn(this.cfg.python, [path.join(this.cfg.engineDir, 'server.py')], {
       env,

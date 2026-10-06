@@ -8,6 +8,7 @@ import hashlib
 import os
 import shutil
 import subprocess
+import sys
 import threading
 import time
 
@@ -108,7 +109,8 @@ class MockEngine:
 
     # ------------------------------------------------------------------ info
     def health(self):
-        return dict(mode=self.mode, engine_path=None, vstudio=None)
+        return dict(mode=self.mode, engine_path=None, vstudio=None, python=sys.executable,
+                    h264_encoder=os.environ.get("DESK_H264_ENCODER") or None)
 
     def recipes(self):
         return RECIPES

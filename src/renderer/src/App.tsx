@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { SettingsMsg } from '../../shared/deskApi';
+import { AssetsBanner, UpdateBadge } from './components/assets';
 import { setLang, t } from './i18n';
 import { EngineProvider, useEngine } from './lib/engine';
 import { href, useRoute, type Route } from './lib/router';
@@ -40,6 +41,7 @@ function Shell({ onSettings }: { onSettings: (s: SettingsMsg) => void }) {
         {nav({ name: 'review', batch: b ?? '' }, t('nav.review'), r.name === 'review', !b)}
         {nav({ name: 'publish', batch: b ?? '' }, t('nav.publish'), r.name === 'publish', !b)}
         <div className="grow" />
+        <UpdateBadge />
         {nav({ name: 'settings' }, t('nav.settings'), r.name === 'settings')}
         <div className="engine" data-testid="engine-status">
           {error ? (
@@ -54,6 +56,7 @@ function Shell({ onSettings }: { onSettings: (s: SettingsMsg) => void }) {
         </div>
       </nav>
       <main className="main">
+        <AssetsBanner />
         {error && r.name !== 'settings' ? (
           <div className="page">
             <div className="notice">
