@@ -13,7 +13,12 @@ references/PROJECTS.md.
                                                       list pending payloads / record an answer
   set --dir P [--item I] (--param k=v ... | --set JSON)   edit params in project.yaml, then refresh
   export --dir P [--out D] [--all] [--items a,b]      final files + manifest.json (sha256)
-  list                                                registered projects (lanes) with their state
+  list                                                registered projects (lanes) with their state + adopted work
+                                                      folders (kind work) + series
+  adopt DIR [--recipe guess|NAME] [--title T] [--client C]   a plain folder made with the skill (final/, REPORT.md,
+                                                      post.md, ...) -> DIR/.vstudio/work.json + registry (works.py)
+  touch DIR [--status running|waiting|done|failed] [--stage S] [--progress 0..1] [--message M] [--eta S]
+      [--needs-you] [--recipe R] [--title T] [--outputs a,b]   register a job folder + its live status (heartbeat)
   series new --id S --recipe R [--name N] [--set JSON] [--cadence JSON] | show --id S | list | update --id S --set JSON
   inbox [--json] | inbox answer (--project P --id X [--item I] | --id X / --kind K [--projects a,b]) (--answer JSON | --default)
   calendar account add --id A --platform P [--times 12:00,19:00] [--per-day N] [--days 0,1,2,3,4]
@@ -250,12 +255,33 @@ def cmd_list(a):
                              progress=s["progress"]))
         except Exception as e:  # noqa: BLE001
             rows.append(dict(r, state="error", error=str(e)))
+    from . import works as W
+    for r in H.live_works():
+        rec = W.show(r["dir"]) or {}
+        rows.append(dict(r, kind="work", state="adopted", type=rec.get("type"), items=len(rec.get("outputs") or []),
+                         outputs=rec.get("outputs") or [], pending=0, progress=None))
     try:
         series = [dict(id=x.get("id"), name=x.get("name"), recipe=x.get("recipe"), client=x.get("client"),
                        projects=x.get("projects") or []) for x in H.list_series()]
     except Exception:  # noqa: BLE001  (a broken series.yaml must not hide the projects)
         series = []
     _out(a, dict(projects=rows, series=series), "\n".join(f"{r['state']:10s} {r['dir']}" for r in rows) or "no projects")
+    return 0
+
+
+def cmd_adopt(a):
+    from . import works as W
+    r = W.adopt(a.path, recipe=a.recipe or "guess", title=a.title, client=a.client)
+    _out(a, r, f"adopted {r['dir']} as {r['type']} ({r['recipe'] or 'no recipe'}), {len(r['outputs'])} output(s)")
+    return 0
+
+
+def cmd_touch(a):
+    from . import works as W
+    r = W.touch(a.path, recipe=a.recipe, title=a.title, client=a.client,
+                outputs=[x for x in (a.outputs or "").split(",") if x] or None, status=a.status, stage=a.stage,
+                progress=a.progress, message=a.message, eta=a.eta, needs_you=True if a.needs_you else None)
+    _out(a, r, f"{r['dir']}: {a.status or 'registered'}{' · ' + a.stage if a.stage else ''}")
     return 0
 
 
@@ -382,7 +408,24 @@ def build_parser():
     p.add_argument("--out")
     p.add_argument("--all", action="store_true", help="also unapproved / unfinished items")
     p.add_argument("--items")
-    add("list", cmd_list, "registered projects", d=False)
+    add("list", cmd_list, "registered projects (+ adopted work folders, series)", d=False)
+    p = add("adopt", cmd_adopt, "an existing folder made with the skill -> work record + registry", d=False)
+    p.add_argument("path")
+    p.add_argument("--recipe", help="guess (default) or a recipe / type name")
+    p.add_argument("--title")
+    p.add_argument("--client")
+    p = add("touch", cmd_touch, "register a job folder + report its live status (desk 进行中 lane)", d=False)
+    p.add_argument("path")
+    p.add_argument("--status", choices=["running", "waiting", "done", "failed"])
+    p.add_argument("--stage")
+    p.add_argument("--progress", type=float, help="0..1")
+    p.add_argument("--message")
+    p.add_argument("--eta", type=float, help="seconds left")
+    p.add_argument("--needs-you", action="store_true", help="waiting on the creator (a checkpoint / question)")
+    p.add_argument("--recipe")
+    p.add_argument("--title")
+    p.add_argument("--client")
+    p.add_argument("--outputs", help="comma list (default: videos in final/ exports/ out/)")
     p = add("series", cmd_series, "series presets", d=False)
     p.add_argument("action", choices=["new", "show", "list", "update"])
     p.add_argument("--id")

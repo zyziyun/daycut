@@ -19,3 +19,9 @@ payload / answer helpers), core (Project: new / plan / run / checkpoint / status
 refresh), home (projects registry, series), inbox, calendar, adapters/ (thin per-workflow stage adapters around the
 existing workflow scripts and lib APIs). Docs: references/PROJECTS.md.
 """
+
+
+def touch(d, recipe=None, title=None, outputs=None, **kw):
+    """Register a job folder for the desk app and report its live status (see works.touch)."""
+    from .works import touch as _touch
+    return _touch(d, recipe=recipe, title=title, outputs=outputs, **kw)

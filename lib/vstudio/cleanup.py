@@ -2343,6 +2343,8 @@ def main(argv=None):
     v.add_argument("--lang")
     v.add_argument("--prompt")
     args = ap.parse_args(argv)
+    from .batch.livestatus import heartbeat
+    heartbeat("cleanup", message=f"{args.cmd} {getattr(args, 'media', '') or ''}".strip())
     if args.cmd == "analyze":
         edl = analyze(args.media, transcript=args.transcript, ranges=parse_ranges(args.ranges) or None,
                       language=args.lang, profile=args.profile, prompt=args.prompt, out=args.out,

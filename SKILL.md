@@ -66,6 +66,7 @@ When the request is ambiguous, ask one question: what is the material, and where
 - **Persona first**: speeds, loudness, brand colours, title rules, tags and voice rules come from `persona()` (`lib/vstudio/config.py`). Never hard-code a creator's taste.
 - **Verify by looking and listening**: snapshot frames at the busiest moment of each section and mid-transition; ASR the cut to confirm no clipped syllables; check loudness of the final file.
 - **Delivery defaults**: H.264 High, bt709 tags, AAC 192k/48k, `+faststart`, two-pass loudnorm to `persona.audio.loudness_lufs` (−14).
+- **Register every job and report its status** so the desk app lists it (全部项目) and shows it live (进行中) without an import: at the start `python -m vstudio.project new` when a recipe fits, else `python -m vstudio.project touch <work folder> --status running --stage plan`; at each long step `touch <folder> --stage <s> --progress 0.4 --message ...`; at a question for the creator `--status waiting --needs-you`; at the end `touch <folder> --status done` (or `adopt <folder>` for an old folder). Scripts: `vstudio.project.touch(dir, recipe, title, outputs, status=..., stage=...)`. Only `<folder>/.vstudio/` is written; ASR / cleanup / export / AIGC polling heartbeat on their own inside a registered folder.
 - **Public-safe**: fonts and models only through `vstudio.config.font()/model()`; no absolute personal paths in configs you commit.
 
 ## 3. Find a capability fast

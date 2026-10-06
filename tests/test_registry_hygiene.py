@@ -14,7 +14,7 @@ def test_is_temp_path():
     assert CL.is_temp_path("/var/folders/1s/abc/T/tmpx/batch-fake")
     assert CL.is_temp_path("/private/var/folders/1s/abc/T/x")
     assert CL.is_temp_path("/tmp/x")
-    assert not CL.is_temp_path(os.path.expanduser("~/Desktop/video-studio-demos/batch-rag"))
+    assert not CL.is_temp_path("/Volumes/work/videos/batch-rag")
 
 
 def _real_home(monkeypatch, tmp_path):

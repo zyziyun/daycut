@@ -238,6 +238,9 @@ def test_cover_pick_and_platform_sizes(tmp_path, synth):
                        params=dict(platforms=["xiaohongshu", "douyin"], every=2))
     r = p.run()
     assert r["exit_code"] == 7 and r["pending"][0]["id"] == "pick"
+    from vstudio.batch import livestatus as LS
+    live = LS.read(p.dir)                                  # desk 进行中 lane: the project waits for the creator
+    assert (live["state"], live["needs_you"]) == ("waiting", True) and "pick" in live["message"]
     pay = p.pending()[0]
     assert len(pay["options"]) >= 3 and all(os.path.exists(o["image"]) for o in pay["options"])
     res = p.answer("pick", dict(pick=2, title=["让 AI 给你做", "数学讲解视频"], highlight=["数学"]))

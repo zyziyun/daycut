@@ -90,6 +90,19 @@ class ProjectRunner(Runner):
         self._progress()
 
 
+def _live_end(pdir, code, pend, failed):
+    """The project's live status after a run (desk app 进行中 lane): needs-you at a checkpoint, done, failed."""
+    from vstudio.batch import livestatus as LS
+    if code == EXIT["waiting"] or code in (EXIT["paused"], EXIT["pilot"]):
+        ids = sorted({p.get("id") for p in pend if p.get("id")})
+        LS.write(pdir, "waiting", needs_you=True, by="project",
+                 message=("checkpoint: " + ", ".join(ids)) if ids else "waits for you (pilot review / paused)")
+    elif code == EXIT["failed"]:
+        LS.write(pdir, "failed", by="project", message=f"{len(failed)} item(s) failed")
+    elif code == EXIT["done"]:
+        LS.write(pdir, "done", by="project", message="done")
+
+
 def run_state(state_dir, **kw):
     r = ProjectRunner(state_dir, **kw)
     try:
@@ -527,6 +540,7 @@ class Project:
                    pending=[_brief_pending(p) for p in pend], items=[dict(id=i["id"], state=i["state"],
                                                                          waiting=i["waiting"]) for i in s["items"]])
         emit(dict(event="project-end", ts=now(), status=out["status"], exit_code=code, pending=out["pending"]))
+        _live_end(self.dir, code, pend, failed)
         return out
 
     # ------------------------------------------------------------- checkpoints

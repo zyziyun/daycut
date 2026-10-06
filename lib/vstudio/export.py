@@ -509,8 +509,10 @@ def export(master, targets, out_dir="exports", cues=None, covers=None, post=None
     if per:
         kw = dict(kw, cover_targets=dict(per, **(kw.get("cover_targets") or {})))
     entries = []
-    for prof in profs:
+    from .batch.livestatus import heartbeat
+    for i, prof in enumerate(profs):
         print(f"[export] {prof.key} {prof.w}x{prof.h}", file=sys.stderr)
+        heartbeat("export", progress=i / max(1, len(profs)), message=prof.key, force=True)
         entries.append(export_one(master, prof, out_dir, cues=cues, covers=covers, post=post, **kw))
     man = dict(master=os.path.abspath(master), master_info={k: media.probe(master)[k] for k in
                                                             ("w", "h", "fps", "duration", "has_audio")},

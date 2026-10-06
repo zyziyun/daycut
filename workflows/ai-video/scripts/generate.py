@@ -123,6 +123,11 @@ def collect(cfg, provider=None, out=print, wait=True):
     d = takes_dir(cfg)
     for tid, info in list(st["pending"].items()):
         u = info["unit"]
+        try:
+            from vstudio.batch.livestatus import heartbeat
+            heartbeat("generate", message=f"{u} ({tid})")
+        except ImportError:
+            pass
         r = prov.wait(tid) if wait else prov.poll(tid)
         if r["status"] == "pending":
             out(f"{u}: still pending ({tid})")
