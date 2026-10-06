@@ -552,6 +552,30 @@ def _classify(e):
 # ------------------------------------------------------------------ public
 def complete(task, system, prompt, schema=None, provider=None, model=None, max_tokens=16000, timeout=600,
              config=None, effort=None, temperature=None, retries=2, repair=True, prices=None, **opts):
+    """``complete`` with a provider fallback chain: a route entry may list ``fallback: [codex, ...]`` (persona /
+    client ``llm.tasks.<task>`` or ``llm.default``); when the routed provider fails (auth expired, CLI missing,
+    outage), the next one is tried. An explicit ``provider=`` argument disables the chain."""
+    kw = dict(schema=schema, model=model, max_tokens=max_tokens, timeout=timeout, config=config, effort=effort,
+              temperature=temperature, retries=retries, repair=repair, prices=prices, **opts)
+    chain = [] if provider else list(route(task, None, None, config).opts.get("fallback") or [])
+    try:
+        return _complete(task, system, prompt, provider=provider, **kw)
+    except LLMError as first:
+        errors = [str(first)]
+        for fb in chain:
+            name = fb.get("provider") if isinstance(fb, dict) else fb
+            try:
+                out = _complete(task, system, prompt, provider=name,
+                                **dict(kw, model=fb.get("model") if isinstance(fb, dict) else None))
+                out["fallback_from"] = errors
+                return out
+            except LLMError as e:
+                errors.append(f"{name}: {e}")
+        raise
+
+
+def _complete(task, system, prompt, schema=None, provider=None, model=None, max_tokens=16000, timeout=600,
+              config=None, effort=None, temperature=None, retries=2, repair=True, prices=None, **opts):
     """One LLM call. Returns dict(text, json, usage {input, output}, cost_usd, provider, model, route, attempts).
 
     task: routing key (segment_plan | proofread | glossary | copy | script | ...); schema: None (text), True (any
@@ -562,6 +586,7 @@ def complete(task, system, prompt, schema=None, provider=None, model=None, max_t
     """
     r = route(task, provider, model, config)
     o = dict(r.opts)
+    o.pop("fallback", None)
     o.update({k: v for k, v in opts.items() if v is not None})
     if effort is not None:
         o["effort"] = effort
