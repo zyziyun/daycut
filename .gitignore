@@ -6,3 +6,5 @@ playwright-report/
 __pycache__/
 *.pyc
 .DS_Store
+build/runtime/
+build/.cache/

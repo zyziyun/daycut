@@ -1,0 +1,91 @@
+{
+  "$comment": "Pins for the bundled engine runtime. Edit versions here, then run `node scripts/runtime/lock.mjs` to refresh checksums, packaging/requirements/*.txt and packaging/ffmpeg/*.txt. Built by scripts/runtime/bundle.mjs.",
+  "targets": {
+    "darwin-arm64": {
+      "pbs": "aarch64-apple-darwin",
+      "conda": "osx-arm64",
+      "uvPlatform": "aarch64-apple-darwin",
+      "macosMin": "14.0",
+      "h264": "h264_videotoolbox"
+    },
+    "darwin-x64": {
+      "pbs": "x86_64-apple-darwin",
+      "conda": "osx-64",
+      "uvPlatform": "x86_64-apple-darwin",
+      "macosMin": "12.0",
+      "h264": "h264_videotoolbox"
+    },
+    "win32-x64": {
+      "pbs": "x86_64-pc-windows-msvc",
+      "conda": "win-64",
+      "uvPlatform": "x86_64-pc-windows-msvc",
+      "h264": "h264_mf"
+    }
+  },
+  "python": {
+    "version": "3.12.15",
+    "release": "20261003",
+    "flavor": "install_only_stripped",
+    "sha256": {
+      "darwin-arm64": "ad8d0c637c0a36b967b310e2c07254f4d2ca8cabaa7699e55ed6290aceb481a2",
+      "darwin-x64": "562c30864ece2cb1d3e0ad66a1acd498611a47e5a10ce81b99158bef1ccbd355",
+      "win32-x64": "6fba7f2ae506facf41d457ea8293c7497910a675c69a4e954875169410a50402"
+    }
+  },
+  "vstudio": {
+    "repo": "https://github.com/zyziyun/video-studio.git",
+    "commit": "ab8aee4a3e65ce4b9adf64395f3cd3f442b756f8",
+    "include": [
+      "lib",
+      "workflows",
+      "references",
+      "SKILL.md",
+      "LICENSE",
+      "persona.example.yaml",
+      "requirements.txt",
+      "pyproject.toml"
+    ],
+    "exclude": [
+      "tests",
+      "__pycache__",
+      ".pytest_cache"
+    ],
+    "$comment": "Fetched at build time as a tarball of this exact commit (codeload.github.com); include = top-level entries copied, exclude = directory names dropped anywhere."
+  },
+  "pip": {
+    "$comment": "Added to the pinned repo's requirements.txt per target. torch is overridden away (mlx-whisper only needs it to convert checkpoints).",
+    "extra": {
+      "darwin-arm64": [
+        "mediapipe==0.10.35",
+        "mlx>=0.30",
+        "mlx-whisper"
+      ],
+      "darwin-x64": [
+        "mediapipe==0.10.21",
+        "faster-whisper"
+      ],
+      "win32-x64": [
+        "mediapipe==0.10.35",
+        "faster-whisper"
+      ]
+    },
+    "overrides": [
+      "torch; python_version < \"0\""
+    ]
+  },
+  "micromamba": {
+    "version": "2.9.0-0",
+    "sha256": {
+      "darwin-arm64": "ec2a072f028e1a7cf20f3e2e74d5a8127cf5a5f27636375b5359811565f4e5be",
+      "darwin-x64": "1e71054bb3ac9a076e21f7ec48acfef536f9b3f1408f371a942784bf5ef83d8a",
+      "win32-x64": "a6d804394b2418991c4e29562853eaace2f2ce9d9da661a98e74e02e8dbb44b0"
+    }
+  },
+  "ffmpeg": {
+    "$comment": "conda-forge LGPL build (configure --disable-gpl --enable-version3, shared libs). No libx264/libx265: H.264 comes from VideoToolbox (mac), Media Foundation (Windows) or OpenH264.",
+    "spec": "ffmpeg=8.1.2=lgpl_*",
+    "channel": "conda-forge",
+    "source": "https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz",
+    "recipe": "https://github.com/conda-forge/ffmpeg-feedstock"
+  }
+}
