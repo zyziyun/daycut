@@ -1,0 +1,157 @@
+# Recipe manifest (vstudio.project): the desk app drives this workflow generically from it.
+# Schema: lib/vstudio/project/manifest.schema.json - docs: references/PROJECTS.md
+id: preproduction
+version: 1
+workflow: preproduction
+labels: {zh: 脚本创作, en: Script writing}
+description:
+  zh: 选题 / 草稿 → 口播脚本（平台字数与时长、lint：AI 腔 / 赘词 / 口播节奏）→ 定稿 → 可选发音练习音频
+  en: topic / draft -> spoken script (platform length, lint for AI tells / padding / pace) -> locked SCRIPT.md -> optional pronunciation drill
+category: write
+inputs:
+  - key: topic
+    kind: text
+    labels: {zh: 选题, en: Topic}
+    required: false
+    scope: item
+    help: {zh: 一行一个选题（选题池 → N 篇脚本）, en: one topic per line (a topic pool -> N scripts)}
+  - key: script
+    kind: script
+    labels: {zh: 已有草稿, en: Existing draft}
+    required: false
+    multiple: true
+    accept: [.md, .txt]
+    scope: item
+items:
+  sources: [single, files, list, csv]
+  from_input: script
+  per_item: [title, platforms]
+  shared: [format, lang, strict, drill, drill_engine]
+params:
+  type: object
+  properties:
+    platforms:
+      type: array
+      items: {type: string}
+      default: [douyin]
+      title: Target platforms (the first one sets the length target)
+      x-zh: 目标平台（第一个决定字数 / 时长目标）
+    format:
+      enum: [short, long-short, mid]
+      default: short
+      title: Length class when no platform is given
+      x-zh: 体裁（未指定平台时的长度目标）
+    lang:
+      enum: [auto, en, zh]
+      default: auto
+      title: Script language
+      x-zh: 脚本语言
+    strict:
+      type: boolean
+      default: false
+      title: Lint errors block the lock
+      x-zh: lint 有错误时不允许定稿
+    drill:
+      type: boolean
+      default: false
+      title: Pronunciation drill after the lock
+      x-zh: 定稿后生成发音练习
+    drill_engine:
+      enum: [auto, kokoro, edge, openai]
+      default: auto
+      title: Drill TTS engine
+      x-zh: 练习音频 TTS 引擎
+    drill_dry_run:
+      type: boolean
+      default: false
+      title: Drill card only (no TTS)
+      x-zh: 只生成练习卡片（不合成语音）
+    title:
+      type: string
+      default: ""
+      title: Working title
+      x-zh: 标题
+      x-scope: item
+stages:
+  - id: draft
+    labels: {zh: 草稿, en: Draft}
+    resource: io
+    fn: vstudio.project.adapters.preproduction:draft
+    keys: []
+    produces: ["{item_dir}/SCRIPT.md (seeded from the draft / topic; never overwritten)"]
+    preview: {kind: markdown, path: "{item_dir}/SCRIPT.md"}
+  - id: lint
+    labels: {zh: 脚本检查, en: Lint}
+    resource: cpu
+    fn: vstudio.project.adapters.preproduction:lint
+    deps: [draft]
+    keys: [platforms, format, lang]
+    watch: ["{item_dir}/SCRIPT.md"]
+    produces: ["{item_dir}/lint.json (errors, warnings, length vs target)"]
+    preview: {kind: json, path: "{item_dir}/lint.json"}
+  - id: drill
+    labels: {zh: 发音练习, en: Pronunciation drill}
+    resource: cpu
+    when: {drill: true}
+    deps: [lint]
+    keys: [drill_engine, drill_dry_run]
+    watch: ["{item_dir}/SCRIPT.md", "{item_dir}/drill_words.json"]
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/make_drill.py", "{item_dir}/drill_words.json",
+             "-o", "{item_dir}/pronunciation_drill", "--script", "{item_dir}/SCRIPT.md",
+             "--engine", "{drill_engine}", {if: drill_dry_run, args: ["--dry-run"]}]
+      files: ["{item_dir}/pronunciation_drill.md"]
+      optional_files: ["{item_dir}/pronunciation_drill.m4a", "{item_dir}/pronunciation_drill.wav"]
+    produces: ["{item_dir}/pronunciation_drill.{m4a,wav,md}"]
+    preview: {kind: audio, path: "{item_dir}/pronunciation_drill.m4a"}
+checkpoints:
+  - id: lock
+    kind: script-lock
+    scope: item
+    after: lint
+    labels: {zh: 脚本定稿, en: Lock the script}
+    help:
+      zh: 看 lint 结果，改好后定稿；定稿后录制时不再改稿。可直接在答案里给出新稿（content）。
+      en: Read the lint, fix, then lock; the script is frozen for recording. An answer may carry the new text (content).
+    payload: vstudio.project.adapters.preproduction:lock_payload
+    apply: vstudio.project.adapters.preproduction:lock_apply
+    answer:
+      type: object
+      properties:
+        lock: {type: boolean}
+        content: {type: string}
+      required: [lock]
+    auto: default
+    reask: true
+  - id: drill_words
+    kind: author
+    scope: item
+    after: lint
+    blocks: [drill]
+    when: {drill: true}
+    labels: {zh: 练习词表, en: Drill word list}
+    help: {zh: 从定稿里挑 5-10 个难读词（word / sentence / ipa / pitfall）, en: 5-10 hard words from the locked script}
+    author:
+      file: "{item_dir}/drill_words.json"
+      template: workflows/preproduction/examples/drill_words.example.json
+      format: "JSON list [{word, sentence, ipa, pitfall, bad, good}]"
+      doc: workflows/preproduction/WORKFLOW.md
+    payload: vstudio.project.adapters.common:author_payload
+    apply: vstudio.project.adapters.common:author_apply
+    answer:
+      type: object
+      properties:
+        done: {type: boolean}
+        content: {type: string}
+    auto: never
+outputs:
+  platforms: [douyin, xiaohongshu, tiktok, youtube, youtube-shorts, bilibili]
+  collect: vstudio.project.adapters.common:collect_files
+  files: ["{item_dir}/SCRIPT.md", "{item_dir}/lint.json", "{item_dir}/pronunciation_drill.*"]
+agent:
+  workflow_md: workflows/preproduction/WORKFLOW.md
+  notes: Write in the persona voice (voice.<lang>.*); read references/script_craft.md. Edit items/<item>/SCRIPT.md, then refresh.
+  edit_files: ["{item_dir}/SCRIPT.md"]
+gaps:
+  - Drafting / AI rewrite is the agent's job (no LLM call here); the lint is a floor, not the judge.
+capabilities: [lint, platform-length, drill]

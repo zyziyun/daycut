@@ -1,0 +1,264 @@
+# Recipe manifest (vstudio.project). Schema: lib/vstudio/project/manifest.schema.json - docs: references/PROJECTS.md
+# Engine: the vstudio.batch speech pipeline (pipeline: fast = talkinghead-clips) or the talkinghead V track per
+# clip (pipeline: vtrack = talkinghead-folder: scripts/vertical/* unchanged, STYLE presets, face track).
+id: talkinghead
+version: 1
+workflow: talkinghead
+labels: {zh: 口播精剪, en: Talking-head edit}
+description:
+  zh: 口播素材（一条或一夹）→ 去气口 / filler / 重复 → hook 冷开场 → 字幕 → 封面 → 各平台导出与文案
+  en: talking-head clips (one or a folder) -> pauses / fillers / repeats removed -> cold-open hook -> captions -> cover -> per-platform exports and post copy
+category: edit
+inputs:
+  - key: video
+    kind: video
+    labels: {zh: 口播素材, en: Talking-head clip}
+    required: true
+    multiple: true
+    accept: [.mp4, .mov, .m4v, .mkv, .webm]
+    scope: item
+    help: {zh: 一条一个条目；整夹导入 = 批量, en: one item per clip; a folder = a batch}
+items:
+  sources: [single, files, folder, csv, variants]
+  from_input: video
+  per_item: [title, body, tags, range, cleanup_reply, hook, cover]
+  shared: [pipeline, edit_style, platforms, speed, hook_speed, cleanup_profile, layout, language, keywords]
+  variants: [platform, hook, language]
+  share_cache: [probe, extract, asr, glossary]
+engine:
+  batch_recipe: {param: pipeline, map: {fast: talkinghead-clips, vtrack: talkinghead-folder}}
+  expand: batch
+  batch_inputs: {clips: "video[]"}
+  spec: {qc: {sample_pct: 0}}
+params:
+  type: object
+  properties:
+    pipeline:
+      enum: [fast, vtrack]
+      default: fast
+      title: Engine (fast = clean + captions; vtrack = V-track styles, face track, progress bar)
+      x-zh: 引擎（fast 快速精剪；vtrack 竖屏风格引擎：进度条 / 面板 / 弹字 / 跟脸）
+    edit_style:
+      enum: [notes, refined, mixed]
+      default: mixed
+      title: Editing style (vtrack)
+      x-zh: 剪辑风格（记笔记 / 精剪 / 混合）
+      x-spec: talkinghead.style
+      x-map:
+        notes: {zoom: false, pops: false, stamps: false, circles: false, cards: false, sfx: false, progress: classic, callouts: true, panels: true, hook_badge: true}
+        refined: {zoom: true, pops: true, stamps: true, circles: true, cards: true, sfx: true, progress: refined, callouts: false, panels: false, hook_badge: false}
+        mixed: {zoom: true, pops: true, stamps: true, circles: false, cards: true, sfx: true, progress: refined, callouts: false, panels: true, hook_badge: false}
+    platforms:
+      type: array
+      items: {type: string}
+      default: ["xiaohongshu:full"]
+      title: Platforms
+      x-zh: 发布平台
+    speed:
+      type: number
+      minimum: 0.8
+      maximum: 1.6
+      default: 1.1
+      title: Body speed (pitch kept; zh intelligible up to 1.4)
+      x-zh: 正文语速
+    hook_speed:
+      type: number
+      minimum: 0.8
+      maximum: 1.8
+      default: 1.3
+      title: Hook speed
+      x-zh: hook 语速
+    cleanup_profile:
+      enum: [gentle, standard, tight, "off"]
+      default: standard
+      title: Pause / filler cleanup
+      x-zh: 去气口力度
+    layout:
+      enum: [face, center, pad-blur, letterbox]
+      default: pad-blur
+      title: Reframe when the aspect changes
+      x-zh: 画幅转换方式
+    captions:
+      type: boolean
+      default: true
+      title: Burn captions
+      x-zh: 烧录字幕
+    language:
+      enum: [zh, en]
+      default: zh
+      title: Speech language
+      x-zh: 语言
+      x-spec: asr.language
+    asr_prompt:
+      type: string
+      default: ""
+      title: ASR prompt (terms)
+      x-zh: 识别提示词（术语）
+      x-spec: asr.prompt
+    keywords:
+      type: array
+      items: {type: string}
+      default: []
+      title: Highlighted keywords (vtrack)
+      x-zh: 高亮关键词
+      x-spec: talkinghead.keywords
+    preset:
+      enum: [ultrafast, veryfast, fast, medium, slow]
+      default: medium
+      title: x264 preset of the exports
+      x-zh: 导出编码速度
+    hook_count:
+      type: integer
+      minimum: 0
+      maximum: 12
+      default: 6
+      title: Hook candidates shown
+      x-zh: hook 候选条数
+    hook_default:
+      type: integer
+      minimum: -1
+      default: -1
+      title: Default hook pick (-1 = no hook)
+      x-zh: 默认 hook（-1 = 不加）
+    cover_candidates:
+      type: integer
+      minimum: 2
+      maximum: 12
+      default: 6
+      title: Cover candidates
+      x-zh: 封面候选帧数
+    title:
+      type: string
+      default: ""
+      title: Post title
+      x-zh: 标题
+      x-scope: item
+    body:
+      type: string
+      default: ""
+      title: Post body
+      x-zh: 正文
+      x-scope: item
+    tags:
+      type: array
+      items: {type: string}
+      default: []
+      title: Tags
+      x-zh: 标签
+      x-scope: item
+stages:
+  - {id: probe, resource: io, from_batch: true, produces: [probe.json (shared per source)]}
+  - {id: extract, resource: io, from_batch: true, produces: [16 kHz wav (fast)]}
+  - {id: asr, resource: asr, from_batch: true, produces: [transcript.json (shared per source)],
+     preview: {kind: json, path: "out:transcript"}}
+  - id: hooks
+    labels: {zh: hook 候选, en: Hook candidates}
+    resource: cpu
+    fn: vstudio.project.adapters.common:hook_candidates
+    deps: [asr]
+    when: {pipeline: fast}
+    keys: [hook_count, range]
+    produces: [hooks.json]
+    preview: {kind: json, path: "out:candidates"}
+  - {id: cleanup, resource: cpu, from_batch: true, produces: [EDL, review sheet, confirm.json],
+     preview: {kind: markdown, path: "{stage_dir}/body_review.md"}}
+  - {id: apply, resource: cpu-render, from_batch: true, produces: [cut body / hook]}
+  - {id: face, resource: face, from_batch: true, produces: [face.npy (vtrack)]}
+  - {id: compose, resource: cpu-render, from_batch: true, produces: [master.mp4, cues.json, post.json],
+     preview: {kind: video, path: "out:master"}}
+  - id: cover_frames
+    labels: {zh: 封面候选, en: Cover candidates}
+    resource: cpu
+    fn: vstudio.project.adapters.common:cover_frames
+    deps: [compose]
+    keys: [cover_candidates, title]
+    produces: [cand_<k>.jpg, sheet.jpg]
+    preview: {kind: image, path: "out:sheet"}
+  - {id: verify, resource: asr, from_batch: true, produces: [heard.json]}
+  - {id: glossary, resource: cpu, from_batch: true, produces: [glossary.json (shared)]}
+  - {id: proofread, resource: cpu, from_batch: true, produces: [proofread.json, cues.json]}
+  - {id: export, resource: cpu-render, from_batch: true, produces: ["exports/<platform>-<orientation>.mp4 + cover + post.md"],
+     preview: {kind: video, path: "out:files"}}
+  - {id: qc, resource: cpu, from_batch: true, produces: [qc.json], preview: {kind: json, path: "out:report"}}
+  - {id: preview, resource: cpu-render, from_batch: true, produces: [sheet.jpg, snippet.mp4],
+     preview: {kind: image, path: "out:sheet"}}
+checkpoints:
+  - id: hook
+    kind: hook-pick
+    scope: item
+    after: hooks
+    blocks: [cleanup]
+    when: {pipeline: fast}
+    labels: {zh: 选 hook, en: Pick the hook}
+    help: {zh: 从逐字稿里排好的候选里选冷开场（-1 不加）, en: "Pick the cold open from the ranked transcript sentences (-1: none)"}
+    payload: vstudio.project.adapters.common:hook_payload
+    apply: vstudio.project.adapters.common:hook_apply
+    answer:
+      type: object
+      properties:
+        pick: {type: integer, minimum: -1}
+        start: {type: number}
+        end: {type: number}
+        text: {type: string}
+    auto: default
+  - id: filler
+    kind: filler-confirm
+    scope: item
+    after: cleanup
+    labels: {zh: 确认去 filler, en: Confirm filler cuts}
+    help: {zh: "AUTO 已删；CONFIRM 行需要你的确认（可按类型批量）", en: "AUTO rows are cut; CONFIRM rows need a yes (bulk by kind)"}
+    payload: vstudio.project.adapters.common:filler_payload
+    apply: vstudio.project.adapters.common:filler_apply
+    answer:
+      type: object
+      properties:
+        approve: {type: array, items: {type: integer}}
+        keep: {type: array, items: {type: integer}}
+        kinds: {type: array, items: {type: string}}
+        all: {type: boolean}
+    auto: default
+    batch_by: kind
+  - id: cover
+    kind: cover-pick
+    scope: item
+    after: cover_frames
+    blocks: [export]
+    labels: {zh: 选封面, en: Pick the cover}
+    payload: vstudio.project.adapters.common:cover_payload
+    apply: vstudio.project.adapters.common:cover_apply
+    answer:
+      type: object
+      properties:
+        pick: {type: integer, minimum: 0}
+        t: {type: number, minimum: 0}
+        text: {type: string}
+    auto: default
+  - id: publish
+    kind: publish
+    scope: item
+    after: preview
+    needs: [export, qc]
+    labels: {zh: 审片发布, en: Review and publish}
+    payload: vstudio.project.adapters.common:publish_payload
+    apply: vstudio.project.adapters.common:publish_apply
+    answer:
+      type: object
+      properties:
+        approve: {type: boolean}
+        reason: {type: string}
+      required: [approve]
+    auto: default
+outputs:
+  platforms: ["xiaohongshu:full", "xiaohongshu:vertical", douyin, tiktok, youtube-shorts, youtube, bilibili]
+  collect: vstudio.project.adapters.common:collect_batch_exports
+agent:
+  workflow_md: workflows/talkinghead/WORKFLOW.md
+  notes: >-
+    Captions / trim / hook / cover / copy edits of a finished item: python -m vstudio.batch job edit --batch <project>/state
+    --job <item> --op caption|trim|hook|cover|copy, then job rerun (only the affected stages). Style / speed / platforms:
+    edit project.yaml params, then refresh.
+gaps:
+  - "vtrack: the hook checkpoint is off (talkinghead-folder writes HOOKS = []); panels / pops / B-roll anchors are config-only (scripts/vertical/compose.py config) - an agent edits them."
+  - Per-frame retouch (retouch_video.py) and drop_pass (废话 sentences) are not stages yet (manual commands in WORKFLOW.md).
+  - H track (horizontal 剪映 export) is not a recipe engine; use polish / promo-recut or the manual H steps.
+capabilities: [cleanup, filler-confirm, hook, captions, proofread, cover, export, qc, preview, batch-folder]

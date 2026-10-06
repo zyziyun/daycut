@@ -1,0 +1,759 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://github.com/video-studio/vstudio/project/manifest.schema.json",
+ "title": "video-studio recipe manifest (workflows/<name>/recipe.yaml)",
+ "type": "object",
+ "required": [
+  "id",
+  "version",
+  "workflow",
+  "labels",
+  "description",
+  "category",
+  "inputs",
+  "items",
+  "params",
+  "stages",
+  "checkpoints",
+  "outputs",
+  "agent"
+ ],
+ "additionalProperties": false,
+ "$defs": {
+  "label": {
+   "type": "object",
+   "required": [
+    "zh",
+    "en"
+   ],
+   "additionalProperties": false,
+   "properties": {
+    "zh": {
+     "type": "string",
+     "minLength": 1
+    },
+    "en": {
+     "type": "string",
+     "minLength": 1
+    }
+   }
+  },
+  "ident": {
+   "type": "string",
+   "pattern": "^[a-z][a-z0-9_]*$"
+  },
+  "ref": {
+   "type": "string",
+   "pattern": "^[A-Za-z_][A-Za-z0-9_.]*:[A-Za-z_][A-Za-z0-9_]*$"
+  },
+  "when": {
+   "description": "enabled only when every listed param equals (or is in) the given value(s)",
+   "type": "object",
+   "additionalProperties": {}
+  },
+  "preview": {
+   "type": "object",
+   "required": [
+    "kind"
+   ],
+   "additionalProperties": false,
+   "properties": {
+    "kind": {
+     "enum": [
+      "image",
+      "images",
+      "video",
+      "audio",
+      "text",
+      "markdown",
+      "json",
+      "html",
+      "sheet"
+     ]
+    },
+    "path": {
+     "type": "string",
+     "description": "template ({item_dir}, {stage_dir}, ...) or an output key: out:<key>"
+    },
+    "label": {
+     "$ref": "#/$defs/label"
+    }
+   }
+  },
+  "arg": {
+   "oneOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "number"
+    },
+    {
+     "type": "object",
+     "required": [
+      "if",
+      "args"
+     ],
+     "additionalProperties": false,
+     "properties": {
+      "if": {
+       "type": "string"
+      },
+      "args": {
+       "type": "array",
+       "items": {
+        "type": [
+         "string",
+         "number"
+        ]
+       }
+      }
+     }
+    }
+   ]
+  },
+  "run": {
+   "description": "a subprocess the generic script adapter runs (workflow scripts stay unchanged)",
+   "type": "object",
+   "required": [
+    "argv"
+   ],
+   "additionalProperties": false,
+   "properties": {
+    "argv": {
+     "type": "array",
+     "minItems": 1,
+     "items": {
+      "$ref": "#/$defs/arg"
+     }
+    },
+    "cwd": {
+     "type": "string"
+    },
+    "env": {
+     "type": "object",
+     "additionalProperties": {
+      "type": "string"
+     }
+    },
+    "timeout": {
+     "type": "number"
+    },
+    "ok_codes": {
+     "type": "array",
+     "items": {
+      "type": "integer"
+     }
+    },
+    "patch": {
+     "type": "object",
+     "required": [
+      "file",
+      "set"
+     ],
+     "additionalProperties": false,
+     "properties": {
+      "file": {
+       "type": "string"
+      },
+      "set": {
+       "type": "object"
+      },
+      "seed": {
+       "type": "string"
+      }
+     }
+    },
+    "files": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "outputs that must exist afterwards"
+    },
+    "optional_files": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    },
+    "stdout": {
+     "type": "string",
+     "description": "write stdout to this file (template)"
+    }
+   }
+  },
+  "stage": {
+   "type": "object",
+   "required": [
+    "id",
+    "resource",
+    "produces"
+   ],
+   "additionalProperties": false,
+   "properties": {
+    "id": {
+     "$ref": "#/$defs/ident"
+    },
+    "labels": {
+     "$ref": "#/$defs/label"
+    },
+    "resource": {
+     "type": "string",
+     "pattern": "^(io|cpu|cpu-render|asr|browser|face|api:[a-z0-9_-]+|dynamic)$"
+    },
+    "from_batch": {
+     "type": "boolean",
+     "description": "the stage comes from the engine's vstudio.batch recipe"
+    },
+    "fn": {
+     "$ref": "#/$defs/ref"
+    },
+    "run": {
+     "$ref": "#/$defs/run"
+    },
+    "deps": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/ident"
+     }
+    },
+    "extra_deps": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/ident"
+     },
+     "description": "added to a from_batch stage's own deps"
+    },
+    "keys": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "params that change this stage's output (default: all user params)"
+    },
+    "watch": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "files whose content hash is part of the stage key (agent / editor edits re-run it)"
+    },
+    "when": {
+     "$ref": "#/$defs/when"
+    },
+    "shared": {
+     "type": "boolean"
+    },
+    "paid": {
+     "type": "boolean"
+    },
+    "cost": {
+     "$ref": "#/$defs/ref",
+     "description": "module:fn (job, spec) -> USD estimate"
+    },
+    "units": {
+     "type": "string",
+     "enum": [
+      "duration",
+      "one",
+      "platforms"
+     ]
+    },
+    "produces": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    },
+    "preview": {
+     "$ref": "#/$defs/preview"
+    },
+    "only": {
+     "$ref": "#/$defs/when",
+     "description": "from_batch annotation used only for these engine params"
+    }
+   },
+   "allOf": [
+    {
+     "if": {
+      "properties": {
+       "from_batch": {
+        "const": true
+       }
+      },
+      "required": [
+       "from_batch"
+      ]
+     },
+     "then": {
+      "not": {
+       "anyOf": [
+        {
+         "required": [
+          "fn"
+         ]
+        },
+        {
+         "required": [
+          "run"
+         ]
+        }
+       ]
+      }
+     },
+     "else": {
+      "oneOf": [
+       {
+        "required": [
+         "fn"
+        ]
+       },
+       {
+        "required": [
+         "run"
+        ]
+       }
+      ]
+     }
+    }
+   ]
+  },
+  "checkpoint": {
+   "type": "object",
+   "required": [
+    "id",
+    "kind",
+    "scope",
+    "after",
+    "labels",
+    "answer"
+   ],
+   "additionalProperties": false,
+   "properties": {
+    "id": {
+     "$ref": "#/$defs/ident"
+    },
+    "kind": {
+     "enum": [
+      "filler-confirm",
+      "hook-pick",
+      "segment-approval",
+      "script-lock",
+      "storyboard-approval",
+      "budget-approval",
+      "take-selection",
+      "cover-pick",
+      "privacy-masks",
+      "consent",
+      "publish",
+      "author",
+      "music-pick",
+      "voice-pick",
+      "media-selection",
+      "review"
+     ]
+    },
+    "scope": {
+     "enum": [
+      "item",
+      "project"
+     ]
+    },
+    "after": {
+     "$ref": "#/$defs/ident"
+    },
+    "blocks": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/ident"
+     }
+    },
+    "labels": {
+     "$ref": "#/$defs/label"
+    },
+    "help": {
+     "$ref": "#/$defs/label"
+    },
+    "payload": {
+     "$ref": "#/$defs/ref"
+    },
+    "apply": {
+     "$ref": "#/$defs/ref"
+    },
+    "answer": {
+     "type": "object",
+     "description": "JSON Schema of the answer the app sends"
+    },
+    "default": {},
+    "auto": {
+     "enum": [
+      "never",
+      "skip-if-empty",
+      "default"
+     ],
+     "description": "never: a human must answer; default: --auto may answer with the default"
+    },
+    "reask": {
+     "type": "boolean",
+     "description": "ask again when the payload options change upstream"
+    },
+    "batch_by": {
+     "type": "string",
+     "description": "inbox bulk grouping key in the payload options (e.g. kind)"
+    },
+    "aggregate": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "project scope: numeric payload fields summed over the items"
+    },
+    "author": {
+     "type": "object",
+     "required": [
+      "file"
+     ],
+     "additionalProperties": false,
+     "properties": {
+      "file": {
+       "type": "string"
+      },
+      "template": {
+       "type": "string"
+      },
+      "format": {
+       "type": "string"
+      },
+      "doc": {
+       "type": "string"
+      }
+     }
+    },
+    "when": {
+     "$ref": "#/$defs/when"
+    },
+    "needs": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/ident"
+     },
+     "description": "extra stages whose outputs the payload reads (gate deps)"
+    }
+   }
+  }
+ },
+ "properties": {
+  "id": {
+   "type": "string",
+   "pattern": "^[a-z][a-z0-9-]*$"
+  },
+  "version": {
+   "type": "integer",
+   "minimum": 1
+  },
+  "workflow": {
+   "type": "string"
+  },
+  "labels": {
+   "$ref": "#/$defs/label"
+  },
+  "description": {
+   "$ref": "#/$defs/label"
+  },
+  "category": {
+   "enum": [
+    "edit",
+    "slice",
+    "generate",
+    "write",
+    "package",
+    "batch"
+   ]
+  },
+  "inputs": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "required": [
+     "key",
+     "kind",
+     "labels",
+     "required"
+    ],
+    "additionalProperties": false,
+    "properties": {
+     "key": {
+      "$ref": "#/$defs/ident"
+     },
+     "kind": {
+      "enum": [
+       "video",
+       "folder",
+       "photos",
+       "audio",
+       "text",
+       "script",
+       "file",
+       "url-free"
+      ]
+     },
+     "labels": {
+      "$ref": "#/$defs/label"
+     },
+     "required": {
+      "type": "boolean"
+     },
+     "multiple": {
+      "type": "boolean"
+     },
+     "accept": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "scope": {
+      "enum": [
+       "item",
+       "project"
+      ]
+     },
+     "help": {
+      "$ref": "#/$defs/label"
+     }
+    }
+   }
+  },
+  "items": {
+   "type": "object",
+   "required": [
+    "sources",
+    "per_item",
+    "shared"
+   ],
+   "additionalProperties": false,
+   "properties": {
+    "sources": {
+     "type": "array",
+     "minItems": 1,
+     "items": {
+      "enum": [
+       "single",
+       "files",
+       "folder",
+       "list",
+       "csv",
+       "episodes",
+       "variants"
+      ]
+     }
+    },
+    "from_input": {
+     "type": "string",
+     "description": "the input whose files / lines form the items"
+    },
+    "per_item": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    },
+    "shared": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    },
+    "variants": {
+     "type": "array",
+     "items": {
+      "enum": [
+       "hook",
+       "platform",
+       "language"
+      ]
+     }
+    },
+    "share_cache": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "shared (cached once per key) stages reused across items"
+    }
+   }
+  },
+  "params": {
+   "type": "object",
+   "required": [
+    "type",
+    "properties"
+   ],
+   "properties": {
+    "type": {
+     "const": "object"
+    },
+    "properties": {
+     "type": "object",
+     "additionalProperties": {
+      "type": "object",
+      "required": [
+       "title",
+       "x-zh"
+      ],
+      "properties": {
+       "type": {},
+       "title": {
+        "type": "string"
+       },
+       "x-zh": {
+        "type": "string"
+       },
+       "default": {},
+       "x-scope": {
+        "enum": [
+         "item",
+         "project"
+        ]
+       },
+       "x-spec": {
+        "type": "string"
+       },
+       "x-config": {
+        "type": "string"
+       },
+       "x-map": {
+        "type": "object",
+        "description": "value -> what goes into the x-spec section (presets)"
+       }
+      }
+     }
+    }
+   }
+  },
+  "engine": {
+   "type": "object",
+   "additionalProperties": false,
+   "properties": {
+    "batch_recipe": {
+     "oneOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "object",
+       "required": [
+        "param",
+        "map"
+       ],
+       "additionalProperties": false,
+       "properties": {
+        "param": {
+         "type": "string"
+        },
+        "map": {
+         "type": "object",
+         "additionalProperties": {
+          "type": "string"
+         }
+        }
+       }
+      }
+     ]
+    },
+    "expand": {
+     "enum": [
+      "generic",
+      "batch"
+     ]
+    },
+    "batch_inputs": {
+     "type": "object",
+     "additionalProperties": {
+      "type": "string"
+     },
+     "description": "vstudio.batch spec inputs.<key> <- manifest input (\"video[]\" = every item's file)"
+    },
+    "spec": {
+     "type": "object",
+     "description": "fixed vstudio.batch spec sections (qc, proofread, ...)"
+    }
+   }
+  },
+  "stages": {
+   "type": "array",
+   "minItems": 1,
+   "items": {
+    "$ref": "#/$defs/stage"
+   }
+  },
+  "checkpoints": {
+   "type": "array",
+   "items": {
+    "$ref": "#/$defs/checkpoint"
+   }
+  },
+  "outputs": {
+   "type": "object",
+   "required": [
+    "platforms",
+    "collect"
+   ],
+   "additionalProperties": false,
+   "properties": {
+    "platforms": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    },
+    "collect": {
+     "$ref": "#/$defs/ref"
+    },
+    "files": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    },
+    "per_platform": {
+     "type": "object"
+    }
+   }
+  },
+  "agent": {
+   "type": "object",
+   "required": [
+    "workflow_md"
+   ],
+   "additionalProperties": false,
+   "properties": {
+    "workflow_md": {
+     "type": "string"
+    },
+    "notes": {
+     "type": "string"
+    },
+    "edit_files": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    }
+   }
+  },
+  "gaps": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   }
+  },
+  "capabilities": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   }
+  }
+ }
+}

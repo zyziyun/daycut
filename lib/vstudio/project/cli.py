@@ -1,0 +1,426 @@
+"""python -m vstudio.project - every workflow as a recipe; projects of N items (N=1 = one video). See
+references/PROJECTS.md.
+
+  recipes [--json] [--schema]                         all recipe manifests + capabilities (--schema: the JSON Schema)
+  new --recipe R --dir P [--name N] [--input key=path ...] [--folder D [--glob G]] [--list F] [--csv F]
+      [--episodes N] [--param k=v ...] [--set JSON] [--series S] [--client C] [--variants JSON] [--auto a,b]
+      [--spec JSON]                                   create a project (items from files / lines / rows / episodes)
+  show | status | preview [--item I] [--stage S] | context [--write] | refresh   --dir P [--json]
+  run | resume --dir P [--pilot N] [--confirm-pilot] [--items a,b] [--auto ids|all] [--concurrency k=n]
+      [--json | --json-events]                        run until done or a checkpoint needs you (exit 7)
+  checkpoint --dir P [--id X] [--item I | --items a,b] [--answer JSON | --answer-file F | --default] [--run]
+                                                      list pending payloads / record an answer
+  set --dir P [--item I] (--param k=v ... | --set JSON)   edit params in project.yaml, then refresh
+  export --dir P [--out D] [--all] [--items a,b]      final files + manifest.json (sha256)
+  list                                                registered projects (lanes) with their state
+  series new --id S --recipe R [--name N] [--set JSON] [--cadence JSON] | show --id S | list | update --id S --set JSON
+  inbox [--json] | inbox answer (--project P --id X [--item I] | --id X / --kind K [--projects a,b]) (--answer JSON | --default)
+  calendar account add --id A --platform P [--times 12:00,19:00] [--per-day N] [--days 0,1,2,3,4]
+  calendar plan --project P [--accounts a,b] [--start ISO] | calendar set --post ID --state S [--at ISO] [--url U]
+  calendar list [--start ISO] [--end ISO] [--account A] | calendar add --account A --at ISO [--title T]
+--json: one JSON document on stdout; --json-events: one JSON event per line on stdout (logs -> stderr).
+Exit codes: 0 ok, 1 failed items, 2 refused (budget), 3 paused, 4 pilot waits, 5 bad input, 6 busy, 7 needs you.
+"""
+import argparse
+import json
+import os
+import sys
+
+
+def _out(a, obj, text=None):
+    if getattr(a, "json", False) or text is None:
+        print(json.dumps(obj, ensure_ascii=False, indent=1, default=str))
+    else:
+        print(text)
+
+
+def _kv(pairs):
+    out = {}
+    for p in pairs or []:
+        if "=" not in p:
+            raise SystemExit(f"expected key=value, got {p!r}")
+        k, v = p.split("=", 1)
+        try:
+            v = json.loads(v)
+        except ValueError:
+            pass
+        out.setdefault(k, [])
+        out[k].append(v)
+    return out
+
+
+def _params(a):
+    p = {}
+    for k, vs in _kv(getattr(a, "param", None)).items():
+        p[k] = vs[0] if len(vs) == 1 else vs
+    if getattr(a, "set", None):
+        p.update(json.loads(a.set))
+    return p
+
+
+def _dir(a):
+    from .core import find
+    return find(a.dir)
+
+
+def _csv(v):
+    return [x.strip() for x in v.split(",") if x.strip()] if v else None
+
+
+# --------------------------------------------------------------------------- commands
+def cmd_recipes(a):
+    from . import manifests as M
+    if a.schema:
+        print(json.dumps(M.schema(), indent=1))
+        return 0
+    from .core import public_manifest
+    from . import build as B
+    rs = []
+    for m in M.all_manifests().values():
+        d = public_manifest(m)
+        graphs = {}
+        for b in B.variants(m):
+            from vstudio.batch import recipes as RC
+            from . import registry  # noqa: F401
+            r = RC.get(B.recipe_name(m, b))
+            graphs[b or "default"] = [dict(id=s.name, deps=list(s.deps), shared=s.shared, paid=s.paid,
+                                           resource=s.resource if isinstance(s.resource, str) else "dynamic",
+                                           gate=s.name.startswith(M.GATE_PREFIX)) for s in r.order()]
+        d["graph"] = graphs
+        rs.append(d)
+    caps = ["projects", "items", "variants", "checkpoints", "inbox", "series", "calendar", "pilot", "resume",
+            "json-events", "agent-context", "refresh", "export", "batch-store", "job-edit", "deliver", "metrics"]
+    obj = dict(recipes=rs, capabilities=caps, schema=M.SCHEMA_PATH)
+    _out(a, obj, "\n".join(f"{m['id']:18s} {m['labels']['zh']} / {m['labels']['en']}  checkpoints: "
+                           + ", ".join(c["id"] for c in m["checkpoints"]) for m in rs))
+    return 0
+
+
+def cmd_new(a):
+    from .core import Project
+    inputs = _kv(a.input)
+    p = Project.create(a.dir, recipe=a.recipe, name=a.name, inputs=inputs, params=_params(a), series=a.series,
+                       client=a.client, variants=json.loads(a.variants) if a.variants else None,
+                       auto=_csv(a.auto), spec=json.loads(a.spec) if a.spec else None, episodes=a.episodes,
+                       csv_path=a.csv, list_path=a.list, folder=a.folder, glob=a.glob,
+                       items=json.loads(a.items_json) if a.items_json else None)
+    s = p.status(brief=True)
+    _out(a, dict(ok=True, dir=p.dir, recipe=p.data["recipe"], items=[i["id"] for i in s["items"]],
+                 state=s["state"], context=os.path.join(p.dir, "AGENTS.md")),
+         f"project {p.dir}: {len(s['items'])} item(s) of {p.data['recipe']}")
+    return 0
+
+
+def cmd_show(a):
+    from .core import Project
+    _out(a, Project(_dir(a)).show())
+    return 0
+
+
+def cmd_status(a):
+    from .core import Project
+    s = Project(_dir(a)).status(brief=a.brief)
+    lines = [f"{s['name']} ({s['recipe']}): {s['state']}  {s['progress']['done']}/{s['progress']['total']} stages"]
+    for i in s["items"]:
+        lines.append(f"  {i['id']:20s} {i['state']:11s} {i['progress']['done']}/{i['progress']['total']}"
+                     + (f"  waiting: {', '.join(i['waiting'])}" if i["waiting"] else ""))
+    _out(a, s, "\n".join(lines))
+    return 0
+
+
+def cmd_preview(a):
+    from .core import Project
+    _out(a, Project(_dir(a)).preview(item=a.item, stage=a.stage))
+    return 0
+
+
+def cmd_context(a):
+    from .core import Project
+    p = Project(_dir(a))
+    c = p.context()
+    if a.write:
+        c["written"] = p.write_agent_files()
+    _out(a, c)
+    return 0
+
+
+def cmd_refresh(a):
+    from .core import Project
+    _out(a, Project(_dir(a)).refresh())
+    return 0
+
+
+def cmd_run(a, resume=False):
+    from vstudio.batch.cli import json_event_sink
+    from vstudio.batch.run import parse_limits
+    from .core import Project
+    emit, stream = json_event_sink() if a.json_events else (None, None)
+    p = Project(_dir(a))
+    auto = _csv(a.auto) or []
+    r = p.run(pilot=a.pilot, confirm_pilot=a.confirm_pilot, resume=resume or a.resume, only=_csv(a.items),
+              limits=parse_limits(a.concurrency), on_event=emit, auto=auto, echo=not (a.json or emit))
+    if emit:
+        stream.flush()
+    else:
+        txt = f"{r['status']} (exit {r['exit_code']})" + "".join(
+            f"\n  needs you: {x['item']} {x['id']} ({x['kind']})" for x in r["pending"])
+        _out(a, r, txt)
+    return r["exit_code"]
+
+
+def cmd_checkpoint(a):
+    from .core import Project
+    p = Project(_dir(a))
+    value = None
+    if a.answer is not None:
+        value = json.loads(a.answer)
+    elif a.answer_file:
+        with open(a.answer_file, encoding="utf-8") as f:
+            value = json.load(f)
+    if value is None and not a.default:
+        pend = p.pending(cid=a.id, item=a.item)
+        _out(a, dict(pending=pend, n=len(pend)),
+             "\n".join(f"{x['item']}: {x['id']} ({x['kind']}) {len(x.get('options') or [])} option(s)" for x in pend)
+             or "nothing pending")
+        return 0
+    if not a.id:
+        raise SystemExit("--id is required to answer")
+    items = _csv(a.items) or ([a.item] if a.item else None)
+    if a.default:
+        pend = p.pending(cid=a.id)
+        if items:
+            pend = [x for x in pend if x["item"] in items]
+        res = []
+        for x in pend:
+            if x.get("default") is None:
+                continue
+            res.append(p.answer(a.id, x["default"], items=None if x["scope"] == "project" else [x["item"]]))
+        out = dict(ok=True, answered=[r["answered"] for r in res])
+        if a.run:
+            out["run"] = p.run()
+        _out(a, out)
+        return 0
+    _out(a, p.answer(a.id, value, items=items, run=a.run))
+    return 0
+
+
+def cmd_set(a):
+    from .core import Project
+    p = Project(_dir(a))
+    vals = _params(a)
+    props = p.manifest["params"]["properties"]
+    unknown = [k for k in vals if k not in props and not a.item]
+    if unknown:
+        raise SystemExit(f"unknown params {unknown}")
+    if a.item:
+        it = next((i for i in p.data["items"] if i["id"] == a.item), None)
+        if not it:
+            raise SystemExit(f"unknown item {a.item}")
+        it.setdefault("params", {}).update(vals)
+    else:
+        p.data["params"].update(vals)
+    p.save()
+    _out(a, p.refresh())
+    return 0
+
+
+def cmd_export(a):
+    from .core import Project
+    _out(a, Project(_dir(a)).export(out_dir=a.out, include_unapproved=a.all, items=_csv(a.items)))
+    return 0
+
+
+def cmd_list(a):
+    from . import home as H
+    from .core import Project
+    rows = []
+    for r in H.live_projects():
+        try:
+            s = Project(r["dir"]).status(brief=True)
+            rows.append(dict(r, state=s["state"], items=len(s["items"]), pending=s.get("pending", 0),
+                             progress=s["progress"]))
+        except Exception as e:  # noqa: BLE001
+            rows.append(dict(r, state="error", error=str(e)))
+    _out(a, dict(projects=rows), "\n".join(f"{r['state']:10s} {r['dir']}" for r in rows) or "no projects")
+    return 0
+
+
+def cmd_series(a):
+    from . import home as H
+    if a.action == "new":
+        s = H.new_series(a.id, a.recipe, name=a.name, params=json.loads(a.set) if a.set else None,
+                         cadence=json.loads(a.cadence) if a.cadence else None, accounts=_csv(a.accounts),
+                         client=a.client)
+    elif a.action == "show":
+        s = H.series_view(a.id)
+    elif a.action == "update":
+        s = H.update_series(a.id, json.loads(a.set or "{}"))
+    else:
+        s = dict(series=H.list_series())
+    _out(a, s)
+    return 0
+
+
+def cmd_inbox(a):
+    from . import inbox as I
+    if a.action == "answer":
+        value = json.loads(a.answer) if a.answer else None
+        if a.project and not a.default:
+            r = I.answer(a.project, a.id, value, items=_csv(a.items) or ([a.item] if a.item else None), run=a.run)
+        else:
+            r = I.answer_bulk(cid=a.id, kind=a.kind, value=value, use_default=a.default, projects=_csv(a.projects)
+                              or ([a.project] if a.project else None), items=_csv(a.items), run=a.run)
+        _out(a, r)
+        return 0
+    r = I.inbox()
+    _out(a, r, "\n".join(f"{e['project_name'] or e['project']}  {e['item']}  {e['id']} ({e['kind']})"
+                         for e in r["entries"]) or "inbox empty")
+    return 0
+
+
+def cmd_calendar(a):
+    from . import pubcal as C
+    if a.action == "account":
+        r = C.add_account(a.id, a.platform, name=a.name, times=_csv(a.times), per_day=a.per_day,
+                          days=[int(x) for x in _csv(a.days)] if a.days else None)
+    elif a.action == "plan":
+        r = C.plan(a.project, accounts=_csv(a.accounts), start=a.start)
+    elif a.action == "set":
+        r = C.set_state(a.post, a.state, at=a.at, url=a.url)
+    elif a.action == "add":
+        r = C.add_post(a.account, a.at, project=a.project, title=a.title)
+    else:
+        r = C.listing(start=a.start, end=a.end, account=a.account)
+    _out(a, r)
+    return 0
+
+
+# --------------------------------------------------------------------------- parser
+def build_parser():
+    ap = argparse.ArgumentParser(prog="python -m vstudio.project", description=__doc__.split("\n")[0],
+                                 formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    def add(name, fn, help_, d=True):
+        p = sub.add_parser(name, help=help_)
+        if d:
+            p.add_argument("--dir", help="project folder (default: cwd or a parent with project.yaml)")
+        p.add_argument("--json", action="store_true")
+        p.set_defaults(fn=fn)
+        return p
+    p = add("recipes", cmd_recipes, "list recipe manifests", d=False)
+    p.add_argument("--schema", action="store_true")
+    p = add("new", cmd_new, "create a project", d=False)
+    p.add_argument("--dir", required=True)
+    p.add_argument("--recipe")
+    p.add_argument("--name")
+    p.add_argument("--input", action="append", help="key=path (repeat for several files)")
+    p.add_argument("--folder", help="every matching file of this folder is an item")
+    p.add_argument("--glob")
+    p.add_argument("--list", help="text file: one item per line (topics / titles)")
+    p.add_argument("--csv", help="rows: id + input / param columns")
+    p.add_argument("--episodes", type=int)
+    p.add_argument("--items-json", help="explicit items [{id, inputs, params}]")
+    p.add_argument("--param", action="append")
+    p.add_argument("--set", help="params as JSON")
+    p.add_argument("--series")
+    p.add_argument("--client")
+    p.add_argument("--variants", help='JSON, e.g. {"by": ["platform"]}')
+    p.add_argument("--auto", help="checkpoints run may answer with their default (comma list or all)")
+    p.add_argument("--spec", help="extra vstudio.batch spec sections (JSON)")
+    add("show", cmd_show, "manifest + project.yaml + status")
+    p = add("status", cmd_status, "items and stages")
+    p.add_argument("--brief", action="store_true")
+    p = add("preview", cmd_preview, "preview artifacts")
+    p.add_argument("--item")
+    p.add_argument("--stage")
+    p = add("context", cmd_context, "agent hook: compact state + playbook + commands")
+    p.add_argument("--write", action="store_true", help="also (re)write AGENTS.md / CLAUDE.md in the project")
+    add("refresh", cmd_refresh, "re-read project.yaml + item files, re-plan")
+    for name, res in (("run", False), ("resume", True)):
+        p = add(name, (lambda a, r=res: cmd_run(a, resume=r)), "run until done or a checkpoint")
+        p.add_argument("--pilot", type=int)
+        p.add_argument("--confirm-pilot", action="store_true")
+        p.add_argument("--resume", action="store_true")
+        p.add_argument("--items")
+        p.add_argument("--auto")
+        p.add_argument("--concurrency")
+        p.add_argument("--json-events", action="store_true")
+    p = add("checkpoint", cmd_checkpoint, "pending checkpoints / answer one")
+    p.add_argument("--id")
+    p.add_argument("--item")
+    p.add_argument("--items")
+    p.add_argument("--answer")
+    p.add_argument("--answer-file")
+    p.add_argument("--default", action="store_true", help="answer with each payload's default")
+    p.add_argument("--run", action="store_true", help="continue the run after answering")
+    p = add("set", cmd_set, "edit params")
+    p.add_argument("--item")
+    p.add_argument("--param", action="append")
+    p.add_argument("--set")
+    p = add("export", cmd_export, "collect final files")
+    p.add_argument("--out")
+    p.add_argument("--all", action="store_true", help="also unapproved / unfinished items")
+    p.add_argument("--items")
+    add("list", cmd_list, "registered projects", d=False)
+    p = add("series", cmd_series, "series presets", d=False)
+    p.add_argument("action", choices=["new", "show", "list", "update"])
+    p.add_argument("--id")
+    p.add_argument("--recipe")
+    p.add_argument("--name")
+    p.add_argument("--set")
+    p.add_argument("--cadence")
+    p.add_argument("--accounts")
+    p.add_argument("--client")
+    p = add("inbox", cmd_inbox, "pending checkpoints across projects", d=False)
+    p.add_argument("action", nargs="?", choices=["list", "answer"], default="list")
+    p.add_argument("--project")
+    p.add_argument("--projects")
+    p.add_argument("--id")
+    p.add_argument("--kind")
+    p.add_argument("--item")
+    p.add_argument("--items")
+    p.add_argument("--answer")
+    p.add_argument("--default", action="store_true")
+    p.add_argument("--run", action="store_true")
+    p = add("calendar", cmd_calendar, "publish calendar", d=False)
+    p.add_argument("action", choices=["account", "plan", "set", "list", "add"])
+    p.add_argument("sub", nargs="?", help="account: add")
+    p.add_argument("--id")
+    p.add_argument("--platform")
+    p.add_argument("--name")
+    p.add_argument("--times")
+    p.add_argument("--per-day", type=int)
+    p.add_argument("--days")
+    p.add_argument("--project")
+    p.add_argument("--accounts")
+    p.add_argument("--account")
+    p.add_argument("--start")
+    p.add_argument("--end")
+    p.add_argument("--post")
+    p.add_argument("--state")
+    p.add_argument("--at")
+    p.add_argument("--url")
+    p.add_argument("--title")
+    return ap
+
+
+def main(argv=None):
+    a = build_parser().parse_args(argv)
+    from vstudio.batch.run import BatchBusy
+    from .core import ProjectError
+    from .home import SeriesError
+    from .manifests import ManifestError
+    from .pubcal import CalendarError
+    try:
+        return a.fn(a)
+    except BatchBusy as e:
+        _out(a, dict(ok=False, error=str(e)), f"busy: {e}")
+        return 6
+    except (ProjectError, SeriesError, ManifestError, CalendarError, KeyError, FileNotFoundError, ValueError) as e:
+        msg = str(e.args[0]) if isinstance(e, KeyError) and e.args else str(e)
+        if getattr(a, "json", False) or getattr(a, "json_events", False):
+            print(json.dumps(dict(ok=False, error=msg, type=type(e).__name__), ensure_ascii=False))
+        else:
+            print(f"error: {msg}", file=sys.stderr)
+        return 5

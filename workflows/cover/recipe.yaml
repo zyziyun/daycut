@@ -1,0 +1,189 @@
+# Recipe manifest (vstudio.project). Schema: lib/vstudio/project/manifest.schema.json - docs: references/PROJECTS.md
+id: cover
+version: 1
+workflow: cover
+labels: {zh: 封面, en: Covers}
+description:
+  zh: 成片 / 人像照片 → 候选帧 → 选封面帧与文字 → 各平台尺寸的封面（分栏封面 C；拼贴 A / 人像四宫格 B 走 HTML 模板）
+  en: finished video / face photo -> candidate frames -> pick frame + copy -> covers at every platform size (split cover C; collage A / face quadrants B via the HTML templates)
+category: package
+inputs:
+  - key: video
+    kind: video
+    labels: {zh: 成片, en: Finished video}
+    required: false
+    multiple: true
+    accept: [.mp4, .mov, .m4v, .webm]
+    scope: item
+  - key: photo
+    kind: photos
+    labels: {zh: 人像照片, en: Face photo}
+    required: false
+    multiple: true
+    accept: [.jpg, .jpeg, .png, .heic, .webp]
+    scope: item
+  - key: thumbnail
+    kind: photos
+    labels: {zh: 内容截图（可选）, en: Content thumbnail (optional)}
+    required: false
+    accept: [.jpg, .jpeg, .png, .webp]
+    scope: project
+items:
+  sources: [single, files, folder, csv]
+  from_input: video
+  per_item: [title, cover_title, cover_highlight, cover_quote]
+  shared: [pattern, platforms, retouch, every, chips, stamp, corner_tag]
+params:
+  type: object
+  properties:
+    pattern:
+      enum: [split, collage, face]
+      default: split
+      title: Pattern (split = C, collage = A, face = B)
+      x-zh: 版式（分栏 C / 拼贴 A / 人像四宫格 B）
+    platforms:
+      type: array
+      items: {type: string}
+      default: [xiaohongshu, douyin]
+      title: Platforms (one cover per platform size)
+      x-zh: 平台（每个平台一张对应尺寸的封面）
+    every:
+      type: number
+      minimum: 0.5
+      maximum: 60
+      default: 3
+      title: Candidate frame every N seconds
+      x-zh: 每隔几秒取一张候选帧
+    max_frames:
+      type: integer
+      minimum: 4
+      maximum: 48
+      default: 12
+      title: Max candidate frames
+      x-zh: 候选帧上限
+    retouch:
+      type: boolean
+      default: false
+      title: Retouch the face (slim / eyes / makeup)
+      x-zh: 人像修图
+    title:
+      type: string
+      default: ""
+      title: Video title (default cover text)
+      x-zh: 标题（默认封面文字）
+      x-scope: item
+    cover_title:
+      type: array
+      items: {type: string}
+      default: []
+      title: Cover title lines
+      x-zh: 封面标题（分行）
+      x-scope: item
+    cover_highlight:
+      type: array
+      items: {type: string}
+      default: []
+      title: Highlighted words
+      x-zh: 高亮词
+      x-scope: item
+    cover_quote:
+      type: string
+      default: ""
+      title: Quote line (split cover)
+      x-zh: 引语（分栏封面）
+      x-scope: item
+    chips:
+      type: array
+      items: {type: string}
+      default: []
+      title: Chips
+      x-zh: 标签胶囊
+    stamp:
+      type: string
+      default: ""
+      title: Stamp (e.g. 亲测)
+      x-zh: 印章文字
+    corner_tag:
+      type: string
+      default: ""
+      title: Corner tag (e.g. 记笔记 ↓)
+      x-zh: 角标
+stages:
+  - id: frames
+    labels: {zh: 候选帧, en: Candidate frames}
+    resource: cpu
+    fn: vstudio.project.adapters.cover:frames
+    keys: [every, max_frames]
+    units: duration
+    produces: ["{item_dir}/cover_src/contact_sheet.jpg", "{item_dir}/cover_src/cand_<t>.png", "candidates.json"]
+    preview: {kind: image, path: "{item_dir}/cover_src/contact_sheet.jpg"}
+  - id: render
+    labels: {zh: 渲染封面, en: Render covers}
+    resource: cpu
+    fn: vstudio.project.adapters.cover:render
+    deps: [frames]
+    when: {pattern: split}
+    keys: [pattern, platforms, retouch, title, cover_title, cover_highlight, cover_quote, chips, stamp, corner_tag, cover_photo]
+    produces: ["{item_dir}/split_cover.json", "{item_dir}/covers/cover.<platform>-<orientation>.jpg (+ .feed.jpg)"]
+    preview: {kind: images, path: "{item_dir}/covers/*.jpg"}
+  - id: render_html
+    labels: {zh: 渲染 HTML 封面, en: Render HTML cover}
+    resource: browser
+    deps: [frames]
+    when: {pattern: [collage, face]}
+    watch: ["{item_dir}/work/cover.html"]
+    keys: [pattern, platforms]
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/render_cover.py", "{item_dir}/work/cover.html",
+             "-o", "{item_dir}/covers/cover.png", {if: platforms, args: ["--platform", "{platform}"]}]
+      files: ["{item_dir}/covers"]
+    produces: ["{item_dir}/covers/cover.png (+ per platform)"]
+    preview: {kind: images, path: "{item_dir}/covers/*.png"}
+checkpoints:
+  - id: pick
+    kind: cover-pick
+    scope: item
+    after: frames
+    labels: {zh: 选封面, en: Pick the cover}
+    help: {zh: "选一张候选帧（说话中、眼睛看镜头），写封面标题", en: "Pick a frame (mid-word, eyes on camera) and the title lines"}
+    payload: vstudio.project.adapters.cover:pick_payload
+    apply: vstudio.project.adapters.cover:pick_apply
+    answer:
+      type: object
+      properties:
+        pick: {type: integer, minimum: 0}
+        title: {type: array, items: {type: string}}
+        highlight: {type: array, items: {type: string}}
+        quote: {type: string}
+      required: [pick]
+    auto: default
+  - id: html
+    kind: author
+    scope: item
+    after: frames
+    blocks: [render_html]
+    when: {pattern: [collage, face]}
+    labels: {zh: 编辑封面 HTML, en: Edit the cover HTML}
+    author:
+      file: "{item_dir}/work/cover.html"
+      template: workflows/cover/templates/cover_collage.template.html
+      format: HTML (tag, badges, headline, pills; cells from extract_frames.py collage)
+      doc: workflows/cover/WORKFLOW.md
+    payload: vstudio.project.adapters.common:author_payload
+    apply: vstudio.project.adapters.common:author_apply
+    answer:
+      type: object
+      properties: {done: {type: boolean}, content: {type: string}}
+    auto: never
+outputs:
+  platforms: [xiaohongshu, xiaohongshu:horizontal, douyin, tiktok, youtube-shorts, youtube, bilibili]
+  collect: vstudio.project.adapters.cover:collect
+  files: ["{item_dir}/covers/*"]
+agent:
+  workflow_md: workflows/cover/WORKFLOW.md
+  notes: The headline should be the script's hook sentence. Pattern B (face quadrants) needs a matte (matte.py) and 4 slides; author the HTML, then refresh.
+  edit_files: ["{item_dir}/split_cover.json", "{item_dir}/work/cover.html"]
+gaps:
+  - Pattern A/B cells (extract_frames.py collage / face + matte.py) and the HTML copy are authored by the agent; only the split cover (C) is generated end to end.
+  - The face template for B is not seeded automatically (the collage template is); copy cover_face_quadrants.template.html over work/cover.html.
+capabilities: [cover, platform-sizes, feed-crop-preview, retouch]
