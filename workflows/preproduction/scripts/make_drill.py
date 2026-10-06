@@ -81,7 +81,8 @@ def main():
     ap.add_argument("words", help="JSON or TXT word list")
     ap.add_argument("-o", "--out", default="pronunciation_drill", help="output stem (writes .wav .m4a .md)")
     ap.add_argument("--script", help="locked script; warns about words/sentences not in it")
-    ap.add_argument("--engine", choices=["auto", "kokoro", "edge", "openai"], default="auto")
+    ap.add_argument("--engine", choices=["auto", "kokoro", "edge", "openai", "openai-compatible", "elevenlabs"],
+                    default="auto", help="openai-compatible = your own TTS server (VSTUDIO_TTS_BASE_URL)")
     ap.add_argument("--voice", help="voice id (default: persona voice.en.tts.<engine>_voice, then tts.<engine>_voice, then engine default)")
     ap.add_argument("--model", help="kokoro HF repo or openai TTS model (default: vstudio.tts.DEFAULT_MODEL)")
     ap.add_argument("--slow", type=float, default=0.65, help="word speed (0.65 = every phoneme audible)")

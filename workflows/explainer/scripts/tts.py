@@ -5,7 +5,8 @@ Usage:  python3 tts.py [--project .] [--voice cedar] [--model gpt-4o-mini-tts] [
 Reads   <project>/SCRIPT.md  (sections "## Line N — ...", indented 4-space block = spoken text,
                               optional "**Delivery:** ..." line = per-line direction)
 Writes  <project>/audio/vo/lineNN.wav  (48 kHz mono)
-Needs   OPENAI_API_KEY in the environment. Takes are cached by text+voice+direction
+Needs   OPENAI_API_KEY in the environment (default engine), or --engine openai-compatible (your own TTS server,
+        VSTUDIO_TTS_BASE_URL) / elevenlabs / kokoro / edge (see references/PROVIDERS.md). Takes are cached by text+voice+direction
         ($VSTUDIO_CACHE/tts), so re-running only pays for changed lines; --fresh forces new takes.
 Check   every take is transcribed (vstudio.asr) and aligned to its script line sentence by sentence with
         numbers normalised on both sides (vo_check.py): a take that dropped a sentence is re-generated
@@ -26,6 +27,9 @@ BASE = ("Calm, curious, unhurried teacher thinking out loud at a whiteboard, lik
 ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
 ap.add_argument("lines", nargs="*", help="only these line numbers")
 ap.add_argument("--project", "-C", default=".", help="project dir (default: current dir)")
+ap.add_argument("--engine", default="openai", choices=["openai", "openai-compatible", "elevenlabs", "kokoro", "edge"],
+                help="openai (default, per-line delivery direction) | openai-compatible (your own /v1/audio/speech "
+                     "server: VSTUDIO_TTS_BASE_URL) | elevenlabs | kokoro | edge (no direction)")
 ap.add_argument("--voice", default="cedar")
 ap.add_argument("--model", default="gpt-4o-mini-tts")
 ap.add_argument("--speed", type=float, default=1.0)
@@ -33,7 +37,7 @@ ap.add_argument("--direction", default=BASE, help="global voice direction")
 ap.add_argument("--fresh", action="store_true", help="ignore the TTS cache (new take)")
 ap.add_argument("--no-check", dest="check", action="store_false", help="skip the per-take ASR sentence check")
 ap.add_argument("--retries", type=int, default=2, help="new takes when the check finds a dropped sentence")
-ap.add_argument("--asr-backend", default="auto", choices=["auto", "mlx", "faster", "openai"])
+ap.add_argument("--asr-backend", default="auto", choices=["auto", "mlx", "faster", "openai", "openai-compatible"])
 a = ap.parse_args()
 failed = []
 
@@ -50,7 +54,9 @@ for b in blocks:
     out = str(root / f"audio/vo/line{n:02d}.wav")
     fresh = a.fresh
     for attempt in range(1 + max(0, a.retries)):
-        tts.synth(text, engine="openai", voice=a.voice, speed=a.speed, instructions=instr, model=a.model,
+        tts.synth(text, engine=a.engine, voice=a.voice if a.engine == "openai" or a.voice != "cedar" else None,
+                  speed=a.speed, instructions=instr if a.engine in ("openai", "openai-compatible") else None,
+                  model=a.model if a.engine == "openai" or a.model != "gpt-4o-mini-tts" else None,
                   out=out, cache=not fresh)
         print(f"line {n:02d}: {media.duration(out):6.1f}s  {len(text.split())} words", flush=True)
         if not a.check:
