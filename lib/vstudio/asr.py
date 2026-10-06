@@ -206,13 +206,17 @@ def file_hash(path, chunk=1 << 20):
 
 def _cache_path(path):
     """Sidecar ``<path>.asr.json``; when the media's folder is not writable (read-only source drive,
-    another user's Downloads) fall back to ``$VSTUDIO_CACHE`` or ``~/.cache/vstudio/asr/``."""
+    another user's Downloads) fall back to ``<cache>/asr/`` (``config.cache_dir``: ``$VSTUDIO_CACHE``, default
+    ~/.cache/video-studio; a file left in the legacy ~/.cache/vstudio/asr/ is still used)."""
+    from .config import cache_dir, cache_dirs
     side = path + ".asr.json"
     if os.access(os.path.dirname(os.path.abspath(side)) or ".", os.W_OK) or os.path.exists(side):
         return side
-    root = os.environ.get("VSTUDIO_CACHE") or os.path.join(os.path.expanduser("~"), ".cache", "vstudio")
-    os.makedirs(os.path.join(root, "asr"), exist_ok=True)
-    return os.path.join(root, "asr", hashlib.sha1(os.path.abspath(path).encode()).hexdigest()[:16] + ".asr.json")
+    name = hashlib.sha1(os.path.abspath(path).encode()).hexdigest()[:16] + ".asr.json"
+    for d in cache_dirs("asr"):
+        if os.path.exists(os.path.join(d, name)):
+            return os.path.join(d, name)
+    return os.path.join(cache_dir("asr"), name)
 
 
 # ------------------------------------------------------------------ public

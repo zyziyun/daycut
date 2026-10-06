@@ -2,7 +2,8 @@
 
 Benchmark table: seconds and output bytes per work unit (unit = seconds of media a stage processes, or 1 per
 job for fixed-cost stages), per stage. Lookup order: this batch's ``bench`` table (measured here) -> the
-machine table ``$VSTUDIO_CACHE/batch_bench.json`` (default ``~/.cache/vstudio/``, measured by earlier batches on
+machine table ``$VSTUDIO_CACHE/batch_bench.json`` (default ``~/.cache/video-studio/``; an older
+``~/.cache/vstudio/batch_bench.json`` is still read, measured by earlier batches on
 this machine; env VSTUDIO_BATCH_BENCH overrides the path) -> the built-in guesses below (``measured: false`` in the output). Every non-cached stage run
 updates both (exponential moving average), so the second batch on a machine is estimated from real timings.
 
@@ -34,12 +35,19 @@ EMA = 0.3
 def machine_bench_path():
     if os.environ.get("VSTUDIO_BATCH_BENCH"):
         return os.environ["VSTUDIO_BATCH_BENCH"]
-    root = os.environ.get("VSTUDIO_CACHE") or os.path.join(os.path.expanduser("~"), ".cache", "vstudio")
-    return os.path.join(root, "batch_bench.json")
+    from vstudio.config import cache_dir
+    return os.path.join(cache_dir(), "batch_bench.json")
 
 
 def machine_bench():
-    return read_json(machine_bench_path(), {}) or {}
+    d = read_json(machine_bench_path(), None)
+    if d is None and not os.environ.get("VSTUDIO_BATCH_BENCH"):
+        from vstudio.config import cache_dirs
+        for root in cache_dirs()[1:]:                 # the table an older build kept in ~/.cache/vstudio
+            d = read_json(os.path.join(root, "batch_bench.json"), None)
+            if d is not None:
+                break
+    return d or {}
 
 
 def bench_table(store):

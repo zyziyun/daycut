@@ -17,6 +17,9 @@ from functools import lru_cache
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 CACHE = os.environ.get("VSTUDIO_CACHE", os.path.expanduser("~/.cache/video-studio"))
+# Older builds wrote some caches (ASR fallback sidecars, the batch bench table) to ~/.cache/vstudio. ONE root now:
+# everything is written under CACHE; the legacy folder is still READ (cache_dirs) so nothing is recomputed.
+LEGACY_CACHE = os.path.expanduser("~/.cache/vstudio")
 FONT_DIR = os.path.join(CACHE, "fonts")
 MODEL_DIR = os.path.join(CACHE, "models")
 
@@ -36,6 +39,26 @@ MODELS = {
     "selfie_segmenter": "selfie_segmenter.tflite",   # MediaPipe, Apache-2.0
     "selfie_multiclass": "selfie_multiclass_256x256.tflite",  # MediaPipe, Apache-2.0 (model card 2023-05-10)
 }
+
+
+def cache_dir(*parts, create=True):
+    """``<cache root>/<parts>`` (``$VSTUDIO_CACHE``, default ~/.cache/video-studio) - where caches are written."""
+    root = os.environ.get("VSTUDIO_CACHE") or CACHE
+    d = os.path.join(root, *parts)
+    if create:
+        os.makedirs(d, exist_ok=True)
+    return d
+
+
+def cache_dirs(*parts):
+    """Where to READ a cache: the current root first, then the legacy ~/.cache/vstudio (unless $VSTUDIO_CACHE
+    is set, which pins one root)."""
+    out = [cache_dir(*parts, create=False)]
+    if not os.environ.get("VSTUDIO_CACHE"):
+        old = os.path.join(LEGACY_CACHE, *parts)
+        if os.path.isdir(old) and old not in out:
+            out.append(old)
+    return out
 
 
 class MissingAsset(FileNotFoundError):
