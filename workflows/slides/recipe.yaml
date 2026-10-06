@@ -1,0 +1,119 @@
+# Recipe manifest (vstudio.project). Schema: lib/vstudio/project/manifest.schema.json - docs: references/PROJECTS.md
+id: slides
+version: 1
+workflow: slides
+labels: {zh: "幻灯片", en: "Slides"}
+description:
+  zh: 定稿脚本 → 幻灯片计划（HTML 预设）→ 方形 / 全屏 PNG（+ 至多 3 段动画图解）→ 放到口播的 B-roll 或剪辑软件
+  en: a locked script -> slide plan (HTML presets) -> square / full-frame PNGs (+ up to 3 animated diagrams) -> talking-head B-roll or an NLE
+category: package
+inputs:
+  - key: script
+    kind: script
+    labels: {zh: "定稿脚本", en: "Locked script"}
+    required: false
+    multiple: true
+    accept: [.md]
+    scope: item
+items:
+  sources: [single, files, episodes]
+  from_input: script
+  per_item: [animate]
+  shared: [platforms, layout, accent]
+params:
+  type: object
+  properties:
+    platforms:
+      type: array
+      items: {type: string}
+      default: []
+      title: Platform canvas (empty = 1080x1080 square)
+      x-zh: 平台画布（空 = 1080 方形）
+    layout:
+      enum: [split, full]
+      default: split
+      title: Split (square, top half) / full frame
+      x-zh: 半屏方形 / 全屏
+    accent:
+      type: string
+      default: ""
+      title: Accent colour (default persona slides.accent)
+      x-zh: 强调色
+    animate:
+      type: array
+      items: {type: string}
+      default: []
+      maxItems: 3
+      title: "Animated slides KEY:SECONDS (max 3)"
+      x-zh: 动画页（最多 3 页，KEY:秒数）
+      x-scope: item
+stages:
+  - id: prepare
+    resource: io
+    fn: vstudio.project.adapters.common:prepare
+    keys: []
+    produces: ["{item_dir}/work/slides.html (seeded from the template)"]
+  - id: render
+    resource: browser
+    deps: [prepare]
+    keys: [platforms, layout, accent]
+    watch: ["{item_dir}/work/slides.html"]
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/render_slides.py", "{item_dir}/work/slides.html", "{item_dir}/slides",
+             {if: platform, args: ["--platform", "{platform}"]}, "--layout", "{layout}",
+             {if: accent, args: ["--accent", "{accent}"]}]
+      files: ["{item_dir}/slides"]
+    produces: ["slides/slide_<key>.png"]
+    preview: {kind: images, path: "{item_dir}/slides/*.png"}
+  - id: record
+    resource: browser
+    deps: [render]
+    keys: [animate, platforms, layout]
+    when: {animate: {nonempty: true}}
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/record_slides.py", "{item_dir}/work/slides.html", "{item_dir}/slides",
+             "{animate*}", {if: platform, args: ["--platform", "{platform}"]}, "--layout", "{layout}"]
+      files: []
+    produces: ["slides/slide_<key>.mp4 (only the animate keys)"]
+checkpoints:
+  - id: deck
+    kind: author
+    scope: item
+    after: prepare
+    blocks: [render]
+    labels: {zh: "写幻灯片", en: "Write the deck"}
+    help: {zh: "每 6-12 秒旁白一页；用模板预设（s-title / s-punch / s-bars ...）", en: "One slide per 6-12 s of narration; reuse the presets"}
+    author:
+      file: "{item_dir}/work/slides.html"
+      template: workflows/slides/templates/slides_vertical.template.html
+      format: "HTML: one <section class=\"slide <preset>\" data-key=\"NN_name\"> per slide"
+      doc: workflows/slides/WORKFLOW.md
+    payload: vstudio.project.adapters.common:author_payload
+    apply: vstudio.project.adapters.common:author_apply
+    answer:
+      type: object
+      properties: {done: {type: boolean}, content: {type: string}}
+    auto: never
+  - id: review
+    kind: publish
+    scope: item
+    after: render
+    labels: {zh: "检查幻灯片", en: "Check the slides"}
+    payload: vstudio.project.adapters.common:publish_payload
+    apply: vstudio.project.adapters.common:publish_apply
+    answer:
+      type: object
+      properties: {approve: {type: boolean}, reason: {type: string}}
+      required: [approve]
+    auto: default
+outputs:
+  platforms: [xiaohongshu, douyin, youtube-shorts, youtube]
+  collect: vstudio.project.adapters.common:collect_files
+  files: ["{item_dir}/slides/*.png", "{item_dir}/slides/*.mp4"]
+agent:
+  workflow_md: workflows/slides/WORKFLOW.md
+  notes: The hook slide = the script's hook sentence = the cover headline. Edit items/<item>/work/slides.html, then refresh.
+  edit_files: ["{item_dir}/work/slides.html"]
+gaps:
+  - The deck (slide plan + HTML) is agent-authored from the script; record_slides.py needs Playwright, render needs Chrome.
+capabilities: [slides, animated-diagrams, platform-canvas]

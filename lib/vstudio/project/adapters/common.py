@@ -32,9 +32,28 @@ def _author_path(env_or_ctx, cp):
     return M.fmt(cp["author"]["file"], static_tctx(m, env_or_ctx.params, env_or_ctx.job))
 
 
+def dir_sha(path):
+    """Hash of a folder's listing (names, sizes, mtimes) - an authored folder (scene compositions)."""
+    rows = []
+    for root, _, files in os.walk(path):
+        for f in sorted(files):
+            p = os.path.join(root, f)
+            st = os.stat(p)
+            rows.append([os.path.relpath(p, path), st.st_size, int(st.st_mtime)])
+    return sha1_json(sorted(rows))[:16] if rows else None
+
+
 def author_payload(env, cp):
     a = cp["author"]
     path = _author_path(env, cp)
+    if os.path.isdir(path):
+        sha = dir_sha(path)
+        files = sorted(os.listdir(path))
+        return dict(file=path, exists=bool(sha), is_dir=True, files=files, format=a.get("format"),
+                    doc=os.path.join(M.ROOT, a["doc"]) if a.get("doc") else None, content=None,
+                    options=[dict(file=path, sha=sha)], digest=sha or "missing",
+                    default=dict(done=True) if sha else None,
+                    previews=[dict(kind=_kind_of(f), path=os.path.join(path, f)) for f in files[:24]])
     exists = os.path.exists(path) and os.path.getsize(path) > 0
     text = None
     if exists and os.path.getsize(path) < 200_000:
@@ -57,9 +76,33 @@ def author_apply(a):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             f.write(v["content"])
+    if os.path.isdir(path):
+        if not dir_sha(path):
+            raise ValueError(f"{a.cp['id']}: {path} is empty - author it first")
+        return dict(params={}, digest=dir_sha(path))
     if not os.path.exists(path):
         raise ValueError(f"{a.cp['id']}: {path} does not exist yet - write it (or answer with content)")
     return dict(params={}, digest=file_sha(path))
+
+
+# --------------------------------------------------------------------------- anchors
+def prepare(env):
+    """First stage of script recipes: the item workspace exists, author templates are seeded (at plan time);
+    links the item's inputs into ``inputs/`` so the workflow configs can use short relative paths."""
+    d = env.item_path("inputs")
+    os.makedirs(d, exist_ok=True)
+    linked = []
+    for k, v in (env.params.get("_inputs") or {}).items():
+        for src in (v if isinstance(v, list) else [v]):
+            if isinstance(src, str) and os.path.isfile(src):
+                dst = os.path.join(d, os.path.basename(src))
+                if not os.path.exists(dst):
+                    try:
+                        os.symlink(src, dst)
+                    except OSError:
+                        shutil.copy2(src, dst)
+                linked.append(dst)
+    return dict(item_dir=env.item_dir, inputs=linked, files=[])
 
 
 # --------------------------------------------------------------------------- publish
@@ -92,6 +135,15 @@ def publish_payload(env, cp):
                                          warnings=qc.get("warnings") or []),
                 copy=dict(title=p.get("title"), body=p.get("body"), tags=p.get("tags")),
                 default=dict(approve=True) if qc.get("status") != "red" else None, previews=previews)
+
+
+def approve_apply(a):
+    """A yes / no review that blocks on no (privacy check, layout check): a rejection never matches the payload,
+    so the item stays waiting until a later yes."""
+    v = a.value or {}
+    if v.get("approve"):
+        return dict(params={})
+    return dict(params={}, digest="rejected", reason=v.get("reason"))
 
 
 def publish_apply(a):
@@ -136,6 +188,24 @@ def filler_payload(env, cp):
                 skip=not opts, skip_reason="no CONFIRM edits (only AUTO cuts)")
 
 
+def edl_filler_payload(env, cp):
+    """The CONFIRM rows of a vstudio.cleanup EDL a workflow script wrote (the ``*cleanup.json`` file among the
+    ``after`` stage's outputs: tight_cut.py --suggest, find_disfluencies.py, polish.py ...)."""
+    out = env.inputs.get(cp["after"]) or {}
+    edl = next((f for f in out.get("files") or [] if str(f).endswith("cleanup.json")), None)
+    E = read_json(edl, {}) if edl else {}
+    opts = [dict(id=int(e["id"]), kind=e.get("kind"), part="body", text=e.get("text", ""), t0=e.get("t0"),
+                 t1=e.get("t1"), before=e.get("before", ""), after=e.get("after", ""), reason=e.get("reason", ""),
+                 confidence=e.get("confidence")) for e in (E or {}).get("edits") or [] if e.get("action") == "confirm"]
+    kinds = {}
+    for o in opts:
+        kinds.setdefault(o["kind"] or "?", []).append(o["id"])
+    sheets = [f for f in out.get("files") or [] if str(f).endswith("review.md")]
+    return dict(options=opts, kinds=kinds, edl=edl, default=dict(approve=[], keep=[]),
+                previews=[dict(kind="markdown", path=f) for f in sheets], skip=not opts,
+                skip_reason="no CONFIRM edits")
+
+
 def reply_from(value, options):
     """{approve, keep, kinds, all} -> the vstudio.cleanup reply text ("确认 3,5 / 保留 7", "全部确认")."""
     v = value or {}
@@ -159,6 +229,12 @@ def reply_from(value, options):
 
 def filler_apply(a):
     return dict(params=dict(cleanup_reply=reply_from(a.value, a.payload.get("options")) or None))
+
+
+def cut_reply_apply(a):
+    """Same answer, stored as ``cut_reply`` (the workflows whose config has its own reply key: promo cut.reply,
+    vlog / photo-story cleanup.reply)."""
+    return dict(params=dict(cut_reply=reply_from(a.value, a.payload.get("options")) or ""))
 
 
 # --------------------------------------------------------------------------- hooks (cold open candidates)
@@ -253,8 +329,13 @@ def cover_frames(env):
     """Candidate cover frames of the composed (caption-free) master: face-ranked when a face model is there
     (``vstudio.cover.score_frames``), else evenly spaced; + a contact sheet."""
     from vstudio import media
-    comp = env.inputs.get("compose") or {}
-    video = comp.get("master") or comp.get("final") or env.params.get("source")
+    video = None
+    for dep in ["compose"] + [d for d in env.inputs if d != "compose"]:
+        o = env.inputs.get(dep) or {}
+        video = o.get("master") or o.get("final") or o.get("video")
+        if video:
+            break
+    video = video or env.params.get("source")
     if not video or not os.path.exists(video):
         raise RuntimeError("cover frames: no composed master")
     dur = media.duration(video)
@@ -354,6 +435,24 @@ def collect_files(project, job, rows):
 def _glob(p):
     import glob as G
     return [x for x in G.glob(p) if os.path.isfile(x)] if any(c in p for c in "*?[") else ([p] if os.path.isfile(p) else [])
+
+
+def collect_vstudio_exports(project, job, rows):
+    """``python -m vstudio.export`` folders of the item (``exports/manifest.json`` anywhere under the item dir)
+    + the manifest's ``outputs.files``."""
+    import glob as G
+    out = []
+    for man in sorted(G.glob(os.path.join(job["params"]["_item_dir"], "**", "manifest.json"), recursive=True)):
+        d = read_json(man, {}) or {}
+        base = os.path.dirname(man)
+        for e in d.get("exports") or []:
+            if not e.get("file"):
+                continue
+            j = lambda x: x and (x if os.path.isabs(x) else os.path.join(base, x))  # noqa: E731
+            out.append(dict(platform=e.get("platform"), orientation=e.get("orientation"), kind="video",
+                            file=j(e["file"]), cover=j(e.get("cover")), post=j(e.get("post")),
+                            duration=e.get("duration")))
+    return out + collect_files(project, job, rows)
 
 
 def collect_all(project, job, rows):

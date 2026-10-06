@@ -1,0 +1,208 @@
+# Recipe manifest (vstudio.project). Schema: lib/vstudio/project/manifest.schema.json - docs: references/PROJECTS.md
+# Engine: vstudio.batch podcast-clips (this workflow's build_clips.py per clip, unchanged).
+id: call-clips
+version: 1
+workflow: call-clips
+labels: {zh: "播客 / 对话剪辑", en: "Podcast / call clips"}
+description:
+  zh: 一期播客 / 通话 / 访谈录像 → AI 选段 → 审核 → 每段竖屏 / 三人布局，嘉宾遮脸（贴纸）与名字打码（覆盖率检查）、字幕、hook
+  en: a podcast / call / interview recording -> AI segment plan -> review -> vertical or trio clips with guest face stickers and name masks (coverage-checked), captions, hooks
+category: slice
+inputs:
+  - key: source
+    kind: video
+    labels: {zh: "录像", en: "Recording"}
+    required: true
+    accept: [.mp4, .mov, .m4v, .mkv, .webm]
+    scope: project
+  - key: transcript
+    kind: file
+    labels: {zh: "已有逐字稿（可选）", en: "Existing transcript (optional)"}
+    required: false
+    accept: [.json]
+    scope: project
+  - key: segments
+    kind: file
+    labels: {zh: "已有选段表（可选）", en: "Existing segment list (optional)"}
+    required: false
+    accept: [.yaml, .yml, .csv, .json]
+    scope: project
+items:
+  sources: [segments, csv]
+  planner: vstudio.project.adapters.longform:plan_items
+  per_item: [range, windows, title, hook, hooks, notes, tags, cleanup_reply]
+  shared: [host_region, guests, no_mask, renderer, name_mask, platforms]
+  variants: [platform, hook]
+  share_cache: [probe, extract, asr, glossary]
+engine:
+  batch_recipe: podcast-clips
+  expand: batch
+  batch_inputs: {source: source, transcript: transcript}
+  spec: {qc: {sample_pct: 0}}
+params:
+  type: object
+  properties:
+    host_region:
+      type: string
+      default: ""
+      title: Host tile x,y,w,h (the creator)
+      x-zh: 主持人画面区域 x,y,w,h
+      x-spec: call.host_region
+    guests:
+      type: array
+      default: []
+      title: "Guest tiles [{name, region: x,y,w,h, sticker, label}]"
+      x-zh: 嘉宾画面（名字、区域、贴纸）
+      x-spec: call.guests
+    no_mask:
+      type: boolean
+      default: false
+      title: No face masks (consent to show faces)
+      x-zh: 不遮脸（已获同意露脸）
+      x-spec: call.no_mask
+    renderer:
+      enum: [render_vertical.py, render_trio.py]
+      default: render_vertical.py
+      title: Layout (vertical / trio)
+      x-zh: 版式（竖屏 / 三人）
+      x-spec: call.renderer
+    name_mask:
+      enum: [blur, cover, "off"]
+      default: blur
+      title: Name labels
+      x-zh: 名字打码
+      x-spec: call.name_mask
+    cut_profile:
+      enum: [classic, word, gentle, standard, tight]
+      default: classic
+      title: Pause / filler cut profile
+      x-zh: 剪口癖力度
+      x-spec: call.cut_profile
+    auto_trim:
+      type: boolean
+      default: true
+      title: Auto-trim fillers / restarts
+      x-zh: 自动修剪
+      x-spec: call.auto_trim
+    platforms:
+      type: array
+      items: {type: string}
+      default: ["xiaohongshu:full", douyin]
+      title: Platforms
+      x-zh: 发布平台
+    planner:
+      type: string
+      default: auto
+      title: Segment planner
+      x-zh: 选段规划
+    count:
+      type: integer
+      minimum: 1
+      maximum: 50
+      default: 5
+      title: Clips to propose
+      x-zh: 切片条数
+    min_s:
+      type: number
+      default: 30
+      title: Min clip seconds
+      x-zh: 最短秒数
+    max_s:
+      type: number
+      default: 90
+      title: Max clip seconds
+      x-zh: 最长秒数
+    language:
+      enum: [zh, en]
+      default: zh
+      title: Speech language
+      x-zh: 语言
+      x-spec: asr.language
+    preset:
+      enum: [ultrafast, veryfast, fast, medium, slow]
+      default: medium
+      title: x264 preset
+      x-zh: 导出编码速度
+stages:
+  - {id: probe, resource: io, from_batch: true, produces: [source probe (shared)]}
+  - {id: extract, resource: io, from_batch: true, produces: [16 kHz wav (shared)]}
+  - {id: asr, resource: asr, from_batch: true, produces: [transcript (shared)]}
+  - {id: compose, resource: face, from_batch: true, produces: [clips.json -> build_clips.py --only <id> --clean-master],
+     preview: {kind: video, path: "out:master"}}
+  - {id: coverage, resource: cpu, from_batch: true, produces: [coverage.json (verify_coverage.py per guest)],
+     preview: {kind: json, path: "out:report"}}
+  - {id: verify, resource: asr, from_batch: true, produces: [(off)]}
+  - {id: glossary, resource: cpu, from_batch: true, produces: [glossary.json (shared)]}
+  - {id: proofread, resource: cpu, from_batch: true, produces: [proofread captions]}
+  - {id: export, resource: cpu-render, from_batch: true, produces: ["<platform>-<orientation>.mp4 + cover + post"]}
+  - {id: qc, resource: cpu, from_batch: true, produces: [qc.json (face-mask-coverage gate)]}
+  - {id: preview, resource: cpu-render, from_batch: true, produces: [sheet.jpg, snippet.mp4],
+     preview: {kind: image, path: "out:sheet"}}
+checkpoints:
+  - id: segments
+    kind: segment-approval
+    scope: project
+    after: probe
+    labels: {zh: "审核选段", en: "Approve the clips"}
+    payload: vstudio.project.adapters.longform:segments_payload
+    apply: vstudio.project.adapters.longform:segments_apply
+    answer:
+      type: object
+      properties:
+        approve: {oneOf: [{const: all}, {type: array, items: {type: string}}]}
+        drop: {type: array, items: {type: string}}
+        edits: {type: object}
+    auto: default
+  - id: consent
+    kind: consent
+    scope: project
+    after: probe
+    blocks: [export]
+    labels: {zh: "嘉宾同意", en: "Guest consent"}
+    help: {zh: "嘉宾是否同意发布（露脸 / 遮脸）？由你确认", en: "Did the guests agree to publication (faces shown / masked)? Your call"}
+    answer:
+      type: object
+      properties: {consent: {type: boolean, const: true}, who: {type: string}, note: {type: string}}
+      required: [consent]
+    auto: never
+  - id: masks
+    kind: privacy-masks
+    scope: item
+    after: coverage
+    blocks: [export]
+    labels: {zh: "遮脸检查", en: "Face-mask check"}
+    help: {zh: "贴纸必须每帧 100% 盖住嘉宾的脸", en: "The sticker must cover the guest's face in every frame"}
+    payload: vstudio.project.adapters.longform:masks_payload
+    apply: vstudio.project.adapters.longform:masks_apply
+    answer:
+      type: object
+      properties:
+        ok: {type: boolean}
+        no_mask: {type: boolean}
+        guests: {type: array}
+      required: [ok]
+    auto: default
+  - id: publish
+    kind: publish
+    scope: item
+    after: preview
+    needs: [export, qc]
+    labels: {zh: "审片发布", en: "Review and publish"}
+    payload: vstudio.project.adapters.common:publish_payload
+    apply: vstudio.project.adapters.common:publish_apply
+    answer:
+      type: object
+      properties: {approve: {type: boolean}, reason: {type: string}}
+      required: [approve]
+    auto: default
+outputs:
+  platforms: ["xiaohongshu:full", douyin, tiktok, youtube-shorts, "bilibili:vertical"]
+  collect: vstudio.project.adapters.common:collect_batch_exports
+agent:
+  workflow_md: workflows/call-clips/WORKFLOW.md
+  notes: "Tile rects come from a frame of the recording (host = the creator). Clip rows (windows, hooks, panels) live in project.yaml items; the call section is built from the params (+ project.yaml spec.call)."
+gaps:
+  - Tile measurement / creator identification has no CLI (the wizard asks for host_region and guests from a frame).
+  - The filler review of build_clips (cleanup_edl + cleanup_reply) is not a checkpoint yet (auto_trim + cut_profile only).
+  - Landscape YouTube cut with EN translation (two-pass --subs-only) is agent-driven.
+capabilities: [segment-planning, face-stickers, name-mask, coverage-check, trio-layout, captions, hooks, export, qc]

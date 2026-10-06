@@ -1,0 +1,277 @@
+# Recipe manifest (vstudio.project). Schema: lib/vstudio/project/manifest.schema.json - docs: references/PROJECTS.md
+# The 16:9 course master + N episodes of workflows/longform-to-short: every script runs unchanged on a derived
+# config (work/run.json = the authored work/config.json + the project's params).
+id: longform-course
+version: 1
+workflow: longform-to-short
+labels: {zh: "剪成课程", en: "Recording to course"}
+description:
+  zh: 一条长录像 → 转写与分块 → 选保留块与章节 → 去口癖 → 章节卡 / 面板 / 字幕 / 放大 → 16:9 正片 + 分集 + 封面 + 发布包（可选竖屏版）
+  en: one long recording -> transcript + blocks -> keep ranges and chapters -> filler cleanup -> chapter cards / panels / captions / zoom -> 16:9 course + episodes + covers + publish pack (optional vertical)
+category: slice
+inputs:
+  - key: source
+    kind: video
+    labels: {zh: "长录像", en: "Long recording"}
+    required: true
+    multiple: true
+    accept: [.mp4, .mov, .m4v, .mkv, .webm]
+    scope: item
+items:
+  sources: [single, files]
+  from_input: source
+  per_item: [title]
+  shared: [language, platforms, vertical, speed_lecture]
+params:
+  type: object
+  properties:
+    language:
+      enum: [zh, en]
+      default: zh
+      title: Speech language
+      x-zh: 语言
+    platforms:
+      type: array
+      items: {type: string}
+      default: [youtube, "xiaohongshu:vertical"]
+      title: Targets (horizontal course + vertical episodes)
+      x-zh: 发布平台
+    vertical:
+      type: boolean
+      default: false
+      title: Also vertical slices of the episodes
+      x-zh: 同时出竖屏分集
+    asr_backend:
+      enum: [auto, mlx, faster, openai, openai-compatible]
+      default: auto
+      title: ASR backend
+      x-zh: 识别后端
+    title:
+      type: string
+      default: ""
+      title: Course title
+      x-zh: 课程名
+      x-scope: item
+stages:
+  - id: prepare
+    resource: io
+    fn: vstudio.project.adapters.common:prepare
+    keys: []
+    produces: ["{item_dir}/inputs/<source>"]
+  - id: analyze
+    resource: cpu
+    deps: [prepare]
+    keys: [language, platforms]
+    run:
+      patch: {from: "{item_dir}/work/config.json", file: "{item_dir}/work/run.json",
+              set: {src: "{input.source}", language: "{language}", targets: "{platforms}", cleanup.reply: "{cleanup_reply_map}"}}
+      argv: ["{python}", "{workflow_dir}/scripts/analyze.py", "{item_dir}/work/run.json"]
+      files: ["{item_dir}/work/audio16k.wav"]
+    produces: [work/audio16k.wav, work/geo/*.png, work/sounded.json]
+    preview: {kind: images, path: "{item_dir}/work/geo/*.png"}
+  - id: transcribe
+    resource: asr
+    deps: [analyze]
+    keys: [language, asr_backend]
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/transcribe.py", "{item_dir}/work/run.json", "--language", "{language}",
+             "--backend", "{asr_backend}"]
+      files: ["{item_dir}/work/audio16k.json"]
+    produces: [work/audio16k.json]
+  - id: geometry
+    resource: cpu
+    deps: [analyze]
+    keys: []
+    watch: ["{item_dir}/work/config.json"]
+    run:
+      patch: {from: "{item_dir}/work/config.json", file: "{item_dir}/work/run.json",
+              set: {src: "{input.source}", language: "{language}", targets: "{platforms}", cleanup.reply: "{cleanup_reply_map}"}}
+      argv: ["{python}", "{workflow_dir}/scripts/geometry.py", "{item_dir}/work/run.json"]
+      files: ["{item_dir}/work/geometry.json"]
+    produces: [work/geometry.json, work/crop_spans.json]
+  - id: blocks
+    resource: cpu
+    deps: [transcribe, geometry]
+    keys: []
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/make_blocks.py", "{item_dir}/work/run.json"]
+      files: ["{item_dir}/work/blocks.txt"]
+    produces: [work/blocks.txt (numbered speaker-tagged blocks)]
+    preview: {kind: text, path: "{item_dir}/work/blocks.txt"}
+  - id: keep_list
+    resource: cpu
+    deps: [blocks]
+    watch: ["{item_dir}/work/config.json"]
+    run:
+      patch: {from: "{item_dir}/work/config.json", file: "{item_dir}/work/run.json",
+              set: {src: "{input.source}", language: "{language}", targets: "{platforms}", cleanup.reply: "{cleanup_reply_map}"}}
+      argv: ["{python}", "{workflow_dir}/scripts/build_keep_list.py", "{item_dir}/work/run.json"]
+      files: ["{item_dir}/work/keep_list.json"]
+    produces: [work/keep_list.json, work/cleanup_review.ep<N>.md, work/hook_edges.json]
+    preview: {kind: markdown, path: "{item_dir}/work/cleanup_review.ep*.md"}
+  - id: timeline
+    resource: cpu
+    deps: [keep_list]
+    watch: ["{item_dir}/work/config.json"]
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/build_timeline.py", "{item_dir}/work/run.json"]
+      files: ["{item_dir}/work/timeline.json"]
+    produces: [work/timeline.json]
+  - id: assets
+    resource: cpu
+    deps: [timeline]
+    watch: ["{item_dir}/work/config.json"]
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/make_assets.py", "{item_dir}/work/run.json"]
+      files: ["{item_dir}/work/cards"]
+    produces: [work/cards/card_NN.png, work/hook_overlay.png]
+    preview: {kind: images, path: "{item_dir}/work/cards/*.png"}
+  - id: panels
+    resource: cpu
+    deps: [timeline]
+    watch: ["{item_dir}/work/config.json"]
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/make_panels.py", "{item_dir}/work/run.json"]
+      files: []
+    produces: [work/panels/*.png, work/panels.json]
+  - id: audio_assets
+    resource: cpu
+    deps: [timeline]
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/make_audio_assets.py", "{item_dir}/work/run.json"]
+      files: []
+    produces: [work/card_sting.wav]
+  - id: render
+    resource: cpu-render
+    deps: [assets, panels, audio_assets]
+    watch: ["{item_dir}/work/config.json"]
+    units: duration
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/render.py", "{item_dir}/work/run.json"]
+      files: ["{item_dir}/out/final.mp4"]
+    produces: [out/final.mp4]
+    preview: {kind: video, path: "{item_dir}/out/final.mp4"}
+  - id: subs
+    resource: cpu
+    deps: [render]
+    watch: ["{item_dir}/work/config.json"]
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/build_subs.py", "{item_dir}/work/run.json"]
+      files: ["{item_dir}/work/subs.srt"]
+    produces: [work/subs.srt, work/cues.json]
+  - id: burn
+    resource: cpu-render
+    deps: [subs]
+    units: duration
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/burn_final.py", "{item_dir}/work/run.json"]
+      files: ["{item_dir}/out/final_subbed.mp4"]
+    produces: [out/final_subbed.mp4]
+  - id: cover
+    resource: cpu
+    deps: [render]
+    watch: ["{item_dir}/work/config.json"]
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/make_cover.py", "{item_dir}/work/run.json"]
+      files: []
+      optional_files: ["{item_dir}/out/cover_16x9.png", "{item_dir}/out/cover_3x4.png"]
+    produces: [out/cover_16x9.png, out/cover_3x4.png]
+    preview: {kind: images, path: "{item_dir}/out/cover_*.png"}
+  - id: episodes
+    resource: cpu-render
+    deps: [burn, cover]
+    watch: ["{item_dir}/work/config.json"]
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/make_episodes.py", "{item_dir}/work/run.json"]
+      files: []
+      optional_files: ["{item_dir}/out/发布包.md", "{item_dir}/out/platform_checks.json"]
+    produces: [out/episodes/ep<N>.mp4, out/发布包.md, out/platform_checks.json]
+  - id: vertical
+    resource: cpu-render
+    deps: [episodes]
+    when: {vertical: true}
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/make_vertical.py", "{item_dir}/work/run.json"]
+      files: []
+    produces: [out/vertical/ep<N>/<platform>-<orientation>.mp4]
+  - id: qa
+    resource: cpu
+    deps: [burn]
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/qa.py", "{item_dir}/work/run.json"]
+      files: []
+    produces: [work/qa/mosaic_NN.jpg]
+    preview: {kind: images, path: "{item_dir}/work/qa/mosaic_*.jpg"}
+checkpoints:
+  - id: keep
+    kind: author
+    scope: item
+    after: blocks
+    labels: {zh: "选保留块与章节", en: "Keep ranges and chapters"}
+    help:
+      zh: 读 work/blocks.txt，在 work/config.json 写 keep.ranges / keep.chapters / share / hook / cuts（可交给 Agent）
+      en: Read work/blocks.txt; write keep.ranges / keep.chapters / share / hook / cuts in work/config.json (or ask the agent)
+    author:
+      file: "{item_dir}/work/config.json"
+      template: lib/vstudio/project/templates/longform_course.config.json
+      format: longform-to-short CONFIG keys as JSON
+      doc: workflows/longform-to-short/WORKFLOW.md
+    payload: vstudio.project.adapters.common:author_payload
+    apply: vstudio.project.adapters.common:author_apply
+    answer:
+      type: object
+      properties: {done: {type: boolean}, content: {type: string}}
+    auto: never
+  - id: filler
+    kind: filler-confirm
+    scope: item
+    after: keep_list
+    labels: {zh: "确认去 filler", en: "Confirm filler cuts"}
+    help: {zh: "按集回复审阅单：{\"1\": \"确认 3,5 / 保留 7\"}", en: "Reply per episode: {\"1\": \"确认 3,5 / 保留 7\"}"}
+    payload: vstudio.project.adapters.course:filler_payload
+    apply: vstudio.project.adapters.course:filler_apply
+    answer:
+      type: object
+      properties:
+        reply: {type: object, additionalProperties: {type: string}}
+      required: [reply]
+    auto: default
+  - id: privacy
+    kind: privacy-masks
+    scope: item
+    after: qa
+    labels: {zh: "隐私检查", en: "Privacy check"}
+    help: {zh: "看 QA 拼图有没有泄露参会者 / 私人信息", en: "Check the QA mosaics for leaked participants / private data"}
+    payload: vstudio.project.adapters.course:mosaic_payload
+    apply: vstudio.project.adapters.common:approve_apply
+    answer:
+      type: object
+      properties: {approve: {type: boolean}, reason: {type: string}}
+      required: [approve]
+    auto: never
+  - id: publish
+    kind: publish
+    scope: item
+    after: episodes
+    needs: [cover, burn]
+    labels: {zh: "审片发布", en: "Review and publish"}
+    payload: vstudio.project.adapters.common:publish_payload
+    apply: vstudio.project.adapters.common:publish_apply
+    answer:
+      type: object
+      properties: {approve: {type: boolean}, reason: {type: string}}
+      required: [approve]
+    auto: default
+outputs:
+  platforms: [youtube, bilibili, "xiaohongshu:vertical", "xiaohongshu:full", douyin]
+  collect: vstudio.project.adapters.common:collect_files
+  files: ["{item_dir}/out/final_subbed.mp4", "{item_dir}/out/final.mp4", "{item_dir}/out/cover_*.png",
+          "{item_dir}/out/episodes/*", "{item_dir}/out/发布包.md", "{item_dir}/out/vertical/*/*"]
+agent:
+  workflow_md: workflows/longform-to-short/WORKFLOW.md
+  notes: Edit items/<item>/work/config.json (never work/run.json, it is regenerated); then refresh. Every stage after blocks re-runs from the config.
+  edit_files: ["{item_dir}/work/config.json"]
+gaps:
+  - Speaker aliases (speaker_timeline.py), transient_scan.py / zoom_targets.py and the demo re-record are not stages; the agent runs them per WORKFLOW.md and writes the results into work/config.json.
+  - The privacy check is a human look at the QA mosaics (no automatic leak detector).
+capabilities: [course, episodes, chapter-cards, notes-panels, zoom, captions, cover, publish-pack, vertical]

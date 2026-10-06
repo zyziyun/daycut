@@ -4,7 +4,7 @@
 id: talkinghead
 version: 1
 workflow: talkinghead
-labels: {zh: 口播精剪, en: Talking-head edit}
+labels: {zh: "口播精剪", en: "Talking-head edit"}
 description:
   zh: 口播素材（一条或一夹）→ 去气口 / filler / 重复 → hook 冷开场 → 字幕 → 封面 → 各平台导出与文案
   en: talking-head clips (one or a folder) -> pauses / fillers / repeats removed -> cold-open hook -> captions -> cover -> per-platform exports and post copy
@@ -12,12 +12,12 @@ category: edit
 inputs:
   - key: video
     kind: video
-    labels: {zh: 口播素材, en: Talking-head clip}
+    labels: {zh: "口播素材", en: "Talking-head clip"}
     required: true
     multiple: true
     accept: [.mp4, .mov, .m4v, .mkv, .webm]
     scope: item
-    help: {zh: 一条一个条目；整夹导入 = 批量, en: one item per clip; a folder = a batch}
+    help: {zh: "一条一个条目；整夹导入 = 批量", en: "one item per clip; a folder = a batch"}
 items:
   sources: [single, files, folder, csv, variants]
   from_input: video
@@ -152,7 +152,7 @@ stages:
   - {id: asr, resource: asr, from_batch: true, produces: [transcript.json (shared per source)],
      preview: {kind: json, path: "out:transcript"}}
   - id: hooks
-    labels: {zh: hook 候选, en: Hook candidates}
+    labels: {zh: "hook 候选", en: "Hook candidates"}
     resource: cpu
     fn: vstudio.project.adapters.common:hook_candidates
     deps: [asr]
@@ -167,7 +167,7 @@ stages:
   - {id: compose, resource: cpu-render, from_batch: true, produces: [master.mp4, cues.json, post.json],
      preview: {kind: video, path: "out:master"}}
   - id: cover_frames
-    labels: {zh: 封面候选, en: Cover candidates}
+    labels: {zh: "封面候选", en: "Cover candidates"}
     resource: cpu
     fn: vstudio.project.adapters.common:cover_frames
     deps: [compose]
@@ -189,8 +189,8 @@ checkpoints:
     after: hooks
     blocks: [cleanup]
     when: {pipeline: fast}
-    labels: {zh: 选 hook, en: Pick the hook}
-    help: {zh: 从逐字稿里排好的候选里选冷开场（-1 不加）, en: "Pick the cold open from the ranked transcript sentences (-1: none)"}
+    labels: {zh: "选 hook", en: "Pick the hook"}
+    help: {zh: "从逐字稿里排好的候选里选冷开场（-1 不加）", en: "Pick the cold open from the ranked transcript sentences (-1: none)"}
     payload: vstudio.project.adapters.common:hook_payload
     apply: vstudio.project.adapters.common:hook_apply
     answer:
@@ -205,7 +205,7 @@ checkpoints:
     kind: filler-confirm
     scope: item
     after: cleanup
-    labels: {zh: 确认去 filler, en: Confirm filler cuts}
+    labels: {zh: "确认去 filler", en: "Confirm filler cuts"}
     help: {zh: "AUTO 已删；CONFIRM 行需要你的确认（可按类型批量）", en: "AUTO rows are cut; CONFIRM rows need a yes (bulk by kind)"}
     payload: vstudio.project.adapters.common:filler_payload
     apply: vstudio.project.adapters.common:filler_apply
@@ -223,7 +223,7 @@ checkpoints:
     scope: item
     after: cover_frames
     blocks: [export]
-    labels: {zh: 选封面, en: Pick the cover}
+    labels: {zh: "选封面", en: "Pick the cover"}
     payload: vstudio.project.adapters.common:cover_payload
     apply: vstudio.project.adapters.common:cover_apply
     answer:
@@ -238,7 +238,7 @@ checkpoints:
     scope: item
     after: preview
     needs: [export, qc]
-    labels: {zh: 审片发布, en: Review and publish}
+    labels: {zh: "审片发布", en: "Review and publish"}
     payload: vstudio.project.adapters.common:publish_payload
     apply: vstudio.project.adapters.common:publish_apply
     answer:

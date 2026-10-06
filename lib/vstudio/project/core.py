@@ -217,8 +217,8 @@ class Project:
             for v in inputs.pop(fi):
                 stem = os.path.splitext(os.path.basename(v))[0] if known[fi]["kind"] in FILE_KINDS else v[:24]
                 rows.append(dict(id=slug(stem) if known[fi]["kind"] in FILE_KINDS else None, inputs={fi: v}))
-        if not rows:
-            rows = [dict(id="main")]
+        if not rows and not m["items"].get("planner"):
+            rows = [dict(id="main")]                     # a single video: N = 1
         seen = set()
         for k, r in enumerate(rows):
             rid = slug(r.get("id") or f"{k + 1:03d}")
@@ -231,7 +231,7 @@ class Project:
             r["params"] = dict(r.get("params") or {})
         proj_inputs = {k: (v if len(v) != 1 else v[0]) for k, v in inputs.items()}
         for i in m["inputs"]:
-            if i["required"] and i["key"] not in proj_inputs and not all(i["key"] in r["inputs"] for r in rows):
+            if i["required"] and i["key"] not in proj_inputs and not (rows and all(i["key"] in r["inputs"] for r in rows)):
                 raise ProjectError(f"{recipe}: input {i['key']} ({i['labels']['en']}) is required")
         unknown = [k for k in (params or {}) if k not in m["params"]["properties"]]
         if unknown:
@@ -249,7 +249,8 @@ class Project:
         p = cls(pdir)
         p.validate_params()
         H.register(pdir, data["name"], recipe, data["series"], data["client"])
-        p.plan()
+        if rows:
+            p.plan()
         if write_agent_files:
             p.write_agent_files()
         return p
@@ -374,6 +375,9 @@ class Project:
     def plan(self):
         from vstudio.batch.plan import plan_batch
         self.reload()                                   # project.yaml is the truth (the app / agent edit it)
+        if not self.data["items"]:
+            return dict(batch_dir=self.state_dir, jobs=[], created=[], updated=[], unchanged=[], dropped=[],
+                        note="no items yet: `plan-items` (planner recipes) or add items to project.yaml")
         os.makedirs(self.state_dir, exist_ok=True)
         spec_path = os.path.join(self.state_dir, "spec.yaml")
         with open(spec_path, "w", encoding="utf-8") as f:
@@ -438,6 +442,30 @@ class Project:
         return dict(ok=True, dir=self.dir, plan={k: r[k] for k in ("created", "updated", "unchanged", "dropped")},
                     stale=self.stale(), pending=self.pending(), state=self.status(brief=True)["state"])
 
+    # ------------------------------------------------------------- items planner
+    def plan_items(self, replace=False, **kw):
+        """Recipes whose items come from a plan (segments of a long recording): run the manifest's
+        ``items.planner`` -> draft items in project.yaml (approved at the ``segments`` checkpoint)."""
+        ref = self.manifest["items"].get("planner")
+        if not ref:
+            raise ProjectError(f"{self.manifest['id']}: items are not planned (no items.planner)")
+        if self.data["items"] and not replace:
+            raise ProjectError("the project has items already (replace=True / --replace to re-plan)")
+        rows = M.resolve_ref(ref)(self, **kw) or []
+        seen, out = set(), []
+        for k, r in enumerate(rows):
+            rid = slug(r.get("id") or f"s{k + 1:03d}")
+            while rid in seen:
+                rid += "x"
+            seen.add(rid)
+            out.append(dict(id=rid, inputs=dict(r.get("inputs") or {}), params=dict(r.get("params") or {})))
+        if not out:
+            raise ProjectError("the planner proposed no items")
+        self.data["items"] = out
+        self.save()
+        r = self.plan()
+        return dict(ok=True, items=[x["id"] for x in out], plan={k: r.get(k) for k in ("created", "updated", "dropped")})
+
     # ------------------------------------------------------------- run
     def auto_policy(self, extra=None):
         pol = set(self.data.get("auto") or [])
@@ -455,6 +483,8 @@ class Project:
     def run(self, pilot=None, confirm_pilot=False, resume=False, only=None, limits=None, on_event=None, auto=None,
             max_rounds=8, echo=False):
         emit = on_event or (lambda ev: None)
+        if not self.data["items"] and self.manifest["items"].get("planner"):
+            self.plan_items()
         self.plan()
         pol = self.auto_policy(auto)
         rounds, res = 0, None
@@ -564,6 +594,13 @@ class Project:
                         self.data["overrides"].setdefault(t, {}).update(res["params"])
                 if res.get("project_params"):
                     self.data["params"].update(res["project_params"])
+                for iid, patch in (res.get("items_patch") or {}).items():
+                    if patch is None:
+                        self.data["items"] = [i for i in self.data["items"] if i["id"] != iid]
+                        continue
+                    it = next((i for i in self.data["items"] if i["id"] == iid), None)
+                    if it is not None:
+                        it.setdefault("params", {}).update(patch)
                 answered.append(t)
         finally:
             if st:

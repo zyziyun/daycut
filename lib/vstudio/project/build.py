@@ -127,7 +127,10 @@ class Env:
 def when_ok(when, params):
     for k, v in (when or {}).items():
         pv = (params or {}).get(k)
-        if isinstance(v, list):
+        if isinstance(v, dict) and "nonempty" in v:   # {param: {nonempty: true}}: set and not empty
+            if bool(pv) != bool(v["nonempty"]):
+                return False
+        elif isinstance(v, list):
             if pv not in v:
                 return False
         elif pv != v:
@@ -166,13 +169,14 @@ def patch_config(env, patch):
     back. Keys whose value renders to None are left alone."""
     t = env.tctx()
     path = M.fmt(patch["file"], t)
+    src = M.fmt(patch["from"], t) if patch.get("from") else path
     if not os.path.exists(path) and patch.get("seed"):
         seed = M.fmt(patch["seed"], t)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         shutil.copy(seed if os.path.isabs(seed) else os.path.join(M.ROOT, seed), path)
     yml = path.endswith((".yaml", ".yml"))
-    if os.path.exists(path):
-        with open(path, encoding="utf-8") as f:
+    if os.path.exists(src):
+        with open(src, encoding="utf-8") as f:
             import yaml
             data = (yaml.safe_load(f) if yml else json.load(f)) or {}
     else:
@@ -299,7 +303,8 @@ def run_gate(env, cp):
     if pay.get("skip") or (cp.get("auto") == "skip-if-empty" and not pay.get("options")):
         return dict(state="skipped", reason=pay.get("skip_reason") or "nothing to decide", payload=path, files=files)
     ans = answer_of(env.params, cp["id"])
-    if ans is not None and (not cp.get("reask", True) or not ans.get("digest") or ans["digest"] == pay["digest"]):
+    reask = cp.get("reask", cp["kind"] != "author")      # authored files: edits re-run the watchers, no re-ask
+    if ans is not None and (not reask or not ans.get("digest") or ans["digest"] == pay["digest"]):
         return dict(state="answered", answer=ans["value"], payload=path, files=files)
     raise CheckpointPending(cp["id"], env.job, path)
 
@@ -398,7 +403,12 @@ def seed_author_files(m, params, job_id):
         dst = M.fmt(a["file"], t)
         if not os.path.exists(dst):
             os.makedirs(os.path.dirname(dst), exist_ok=True)
-            shutil.copy(os.path.join(M.ROOT, a["template"]), dst)
+            given = (params.get("_inputs") or {}).get("script")
+            given = given[0] if isinstance(given, list) and given else given
+            if given and dst.endswith(".md") and os.path.isfile(str(given)):
+                shutil.copy(given, dst)              # the item's own draft seeds its script file
+            else:
+                shutil.copy(os.path.join(M.ROOT, a["template"]), dst)
 
 
 def expand_items(spec, rows):

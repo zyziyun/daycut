@@ -1,0 +1,192 @@
+# Recipe manifest (vstudio.project). Schema: lib/vstudio/project/manifest.schema.json - docs: references/PROJECTS.md
+# The batch board: any vstudio.batch recipe as a project (exception review at publish: green items auto-approve
+# with --auto publish, red ones come to the inbox). Delivery / metrics: python -m vstudio.batch deliver | metrics
+# --batch <project>/state.
+id: batch
+version: 1
+workflow: batch
+labels: {zh: "批量", en: "Batch board"}
+description:
+  zh: 任一批量配方（切片 / 课程分屏 / 播客 / 口播素材夹）→ 选段 → 试点 → 全量 → 例外审片 → 交付包与指标
+  en: any batch recipe (slices / lecture split / podcast clips / talking-head folder) -> segments -> pilot -> full run -> exception review -> delivery and metrics
+category: batch
+inputs:
+  - key: source
+    kind: video
+    labels: {zh: "长录像", en: "Long recording"}
+    required: false
+    accept: [.mp4, .mov, .m4v, .mkv, .webm]
+    scope: project
+  - key: folder
+    kind: folder
+    labels: {zh: "素材夹", en: "Clip folder"}
+    required: false
+    scope: project
+  - key: transcript
+    kind: file
+    labels: {zh: "已有逐字稿（可选）", en: "Existing transcript (optional)"}
+    required: false
+    accept: [.json]
+    scope: project
+  - key: segments
+    kind: file
+    labels: {zh: "选段表（可选）", en: "Segment list (optional)"}
+    required: false
+    accept: [.yaml, .yml, .csv, .json]
+    scope: project
+items:
+  sources: [segments, folder, csv, variants]
+  planner: vstudio.project.adapters.batchboard:plan_items
+  per_item: [range, title, hook, notes, tags, cleanup_reply, file]
+  shared: [batch_recipe, platforms, speed, cleanup_profile]
+  variants: [platform, hook]
+  share_cache: [probe, extract, asr, geometry, glossary]
+engine:
+  batch_recipe:
+    param: batch_recipe
+    map: {longform-split: longform-split, longform-slices: longform-slices, podcast-clips: podcast-clips,
+          talkinghead-clips: talkinghead-clips, talkinghead-folder: talkinghead-folder}
+  expand: batch
+  batch_inputs: {source: source, folder: folder, transcript: transcript}
+params:
+  type: object
+  properties:
+    batch_recipe:
+      enum: [longform-split, longform-slices, podcast-clips, talkinghead-clips, talkinghead-folder]
+      default: longform-split
+      title: Batch recipe
+      x-zh: 批量配方
+    platforms:
+      type: array
+      items: {type: string}
+      default: ["xiaohongshu:full", douyin]
+      title: Platforms
+      x-zh: 发布平台
+    planner:
+      type: string
+      default: auto
+      title: Segment planner
+      x-zh: 选段规划
+    count:
+      type: integer
+      minimum: 1
+      maximum: 500
+      default: 24
+      title: Segments to propose
+      x-zh: 选段条数
+    min_s:
+      type: number
+      default: 45
+      title: Min seconds
+      x-zh: 最短秒数
+    max_s:
+      type: number
+      default: 160
+      title: Max seconds
+      x-zh: 最长秒数
+    speed:
+      type: number
+      minimum: 0.8
+      maximum: 1.6
+      default: 1.0
+      title: Body speed
+      x-zh: 语速
+    cleanup_profile:
+      enum: [gentle, standard, tight, "off"]
+      default: standard
+      title: Pause / filler cleanup
+      x-zh: 去气口力度
+    sample_pct:
+      type: integer
+      minimum: 0
+      maximum: 100
+      default: 10
+      title: Green items sampled for a human look (%)
+      x-zh: 绿灯抽检比例
+      x-spec: qc.sample_pct
+    language:
+      enum: [zh, en]
+      default: zh
+      title: Speech language
+      x-zh: 语言
+      x-spec: asr.language
+    preset:
+      enum: [ultrafast, veryfast, fast, medium, slow]
+      default: medium
+      title: x264 preset
+      x-zh: 编码速度
+stages:
+  - {id: probe, resource: io, from_batch: true, produces: [source probe (shared)]}
+  - {id: extract, resource: io, from_batch: true, produces: [16 kHz wav (shared)]}
+  - {id: asr, resource: asr, from_batch: true, produces: [transcript (shared)]}
+  - {id: geometry, resource: cpu, from_batch: true, produces: [crop spans (longform-split)]}
+  - {id: cleanup, resource: cpu, from_batch: true, produces: [EDL + confirm list]}
+  - {id: apply, resource: cpu-render, from_batch: true, produces: [cut]}
+  - {id: face, resource: face, from_batch: true, produces: [face track (talkinghead-folder)]}
+  - {id: compose, resource: cpu-render, from_batch: true, produces: [master + cues]}
+  - {id: coverage, resource: cpu, from_batch: true, produces: [face-mask coverage (podcast-clips)]}
+  - {id: glossary, resource: cpu, from_batch: true, produces: [glossary (shared)]}
+  - {id: verify, resource: asr, from_batch: true, produces: [re-ASR]}
+  - {id: proofread, resource: cpu, from_batch: true, produces: [proofread captions]}
+  - {id: export, resource: cpu-render, from_batch: true, produces: [per-platform exports]}
+  - {id: qc, resource: cpu, from_batch: true, produces: [qc.json], preview: {kind: json, path: "out:report"}}
+  - {id: preview, resource: cpu-render, from_batch: true, produces: [sheet.jpg, snippet.mp4],
+     preview: {kind: image, path: "out:sheet"}}
+checkpoints:
+  - id: segments
+    kind: segment-approval
+    scope: project
+    after: probe
+    when: {batch_recipe: [longform-split, longform-slices, podcast-clips]}
+    labels: {zh: "审核选段", en: "Approve the segments"}
+    payload: vstudio.project.adapters.longform:segments_payload
+    apply: vstudio.project.adapters.longform:segments_apply
+    answer:
+      type: object
+      properties:
+        approve: {oneOf: [{const: all}, {type: array, items: {type: string}}]}
+        drop: {type: array, items: {type: string}}
+        edits: {type: object}
+    auto: default
+  - id: filler
+    kind: filler-confirm
+    scope: item
+    after: cleanup
+    labels: {zh: "确认去 filler", en: "Confirm filler cuts"}
+    payload: vstudio.project.adapters.common:filler_payload
+    apply: vstudio.project.adapters.common:filler_apply
+    answer:
+      type: object
+      properties:
+        approve: {type: array, items: {type: integer}}
+        keep: {type: array, items: {type: integer}}
+        kinds: {type: array, items: {type: string}}
+        all: {type: boolean}
+    auto: default
+    batch_by: kind
+  - id: publish
+    kind: publish
+    scope: item
+    after: preview
+    needs: [export, qc]
+    labels: {zh: "例外审片", en: "Exception review"}
+    help: {zh: "绿灯自动通过（--auto publish），红灯进收件箱", en: "Green items pass with --auto publish; red ones come to the inbox"}
+    payload: vstudio.project.adapters.common:publish_payload
+    apply: vstudio.project.adapters.common:publish_apply
+    answer:
+      type: object
+      properties: {approve: {type: boolean}, reason: {type: string}}
+      required: [approve]
+    auto: default
+outputs:
+  platforms: ["xiaohongshu:vertical", "xiaohongshu:full", douyin, youtube-shorts, tiktok]
+  collect: vstudio.project.adapters.common:collect_batch_exports
+agent:
+  workflow_md: workflows/batch/WORKFLOW.md
+  notes: >-
+    The state folder is a regular vstudio.batch batch: python -m vstudio.batch review | job edit | job rerun | deliver |
+    metrics --batch <project>/state all work on it. Spec sections (privacy, screen, call, vertical) go into
+    project.yaml spec.
+gaps:
+  - "podcast-clips needs the call: section (host_region, guests) in project.yaml spec before planning; the call-clips recipe has them as params."
+capabilities: [pilot, resume, circuit-breaker, exception-review, deliver, metrics, job-edit]

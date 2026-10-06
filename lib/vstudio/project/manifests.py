@@ -38,7 +38,7 @@ def _yaml(path):
 
 
 def manifest_paths():
-    return sorted(glob.glob(os.path.join(WORKFLOWS, "*", "recipe.yaml")))
+    return sorted(glob.glob(os.path.join(WORKFLOWS, "*", "recipe.yaml")) + glob.glob(os.path.join(WORKFLOWS, "*", "recipe.*.yaml")))
 
 
 def load(path):

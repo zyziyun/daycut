@@ -1,0 +1,175 @@
+# Recipe manifest (vstudio.project). Schema: lib/vstudio/project/manifest.schema.json - docs: references/PROJECTS.md
+id: vlog
+version: 1
+workflow: vlog
+labels: {zh: "Vlog", en: "Travel vlog"}
+description:
+  zh: 一次旅行的素材（航拍 / 手机）→ 联系表浏览 → 选段与节奏（舒缓 / 卡点）→ 调色、转场、弹字、音效 → 配乐 → 封面 → 多平台导出
+  en: a trip's footage (drone / phone) -> contact sheets -> windows and pacing (calm / beat-cut) -> grade, transitions, pops, sfx -> music -> cover -> per-platform exports
+category: edit
+inputs:
+  - key: footage
+    kind: video
+    labels: {zh: "素材", en: "Footage"}
+    required: true
+    multiple: true
+    accept: [.mp4, .mov, .m4v, .MP4, .MOV]
+    scope: project
+  - key: photos
+    kind: photos
+    labels: {zh: "照片（可选）", en: "Photos (optional)"}
+    required: false
+    multiple: true
+    scope: project
+  - key: music
+    kind: audio
+    labels: {zh: "音乐", en: "Music"}
+    required: false
+    accept: [.mp3, .wav, .m4a]
+    scope: project
+items:
+  sources: [single, episodes, variants]
+  per_item: [title, style]
+  shared: [style, platforms]
+  variants: [platform]
+params:
+  type: object
+  properties:
+    style:
+      enum: [calm, fun]
+      default: calm
+      title: Calm (crossfades) / fun (beat-cut reel)
+      x-zh: 舒缓 / 卡点快节奏
+    platforms:
+      type: array
+      items: {type: string}
+      default: ["xiaohongshu:full"]
+      title: Platforms
+      x-zh: 发布平台
+    sheet_every:
+      type: number
+      minimum: 1
+      maximum: 30
+      default: 4
+      title: Contact sheet tile every N s
+      x-zh: 联系表每隔几秒一格
+    preset:
+      enum: [ultrafast, veryfast, fast, medium, slow]
+      default: medium
+      title: x264 preset
+      x-zh: 编码速度
+    title:
+      type: string
+      default: ""
+      title: Title
+      x-zh: 标题
+      x-scope: item
+stages:
+  - id: probe
+    resource: io
+    keys: [style, platforms]
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/probe.py", "{input.footage*}", "--init", "{item_dir}/work/edit.json",
+             "--style", "{style}", {if: platform, args: ["--platform", "{platform}"]},
+             {if: input.music, args: ["--music", "{input.music}"]}]
+      stdout: "{item_dir}/work/probe.txt"
+      files: ["{item_dir}/work/edit.json", "{item_dir}/work/probe.txt"]
+    produces: [work/edit.json (starter, never overwritten), work/probe.txt]
+    preview: {kind: text, path: "{item_dir}/work/probe.txt"}
+  - id: sheets
+    resource: cpu
+    deps: [probe]
+    keys: [sheet_every]
+    run:
+      argv: [bash, "{workflow_dir}/scripts/contact_sheets.sh", "{item_dir}/work/sheets", "{sheet_every}", "{input.footage*}"]
+      files: ["{item_dir}/work/sheets"]
+    produces: [work/sheets/*_sheet.jpg]
+    preview: {kind: images, path: "{item_dir}/work/sheets/*.jpg"}
+  - id: render
+    resource: cpu-render
+    deps: [sheets]
+    fn: vstudio.project.adapters.vlog:render
+    keys: [platforms, preset]
+    watch: ["{item_dir}/work/edit.json"]
+    units: one
+    produces: [the master (edit.json out)]
+    preview: {kind: video, path: "out:master"}
+  - id: music
+    resource: cpu
+    deps: [render]
+    fn: vstudio.project.adapters.vlog:music
+    keys: [platforms]
+    produces: [out/vlog_music.mp4 (calm + a music input)]
+    preview: {kind: video, path: "out:master"}
+  - id: cover_frames
+    resource: cpu
+    deps: [music]
+    fn: vstudio.project.adapters.common:cover_frames
+    keys: [title]
+    produces: [cand_<k>.jpg]
+    preview: {kind: image, path: "out:sheet"}
+  - id: export
+    resource: cpu-render
+    deps: [cover_frames]
+    keys: [platforms, preset, cover]
+    run:
+      argv: ["{python}", "-m", "vstudio.export", "{out.music.master}", "--platforms", "{platforms_csv}", "--out",
+             "{item_dir}/exports", "--mode", "pad-blur", "--preset", "{preset}",
+             {if: cover.file, args: ["--cover", "{cover.file}"]}, {if: title, args: ["--title", "{title}"]}]
+      files: ["{item_dir}/exports/manifest.json"]
+    produces: ["exports/<platform>-<orientation>.mp4 + cover"]
+checkpoints:
+  - id: edit
+    kind: author
+    scope: item
+    after: sheets
+    blocks: [render]
+    labels: {zh: "选段与节奏", en: "Windows and pacing"}
+    help:
+      zh: 看联系表，在 work/edit.json 写 segments（舒缓）或 shots（卡点）与音乐、标题、地图
+      en: From the contact sheets, write segments (calm) or shots (fun) + music, title, map in work/edit.json
+    author:
+      file: "{item_dir}/work/edit.json"
+      format: vlog edit.json (examples/edit.example.json / edit.fun.example.json)
+      doc: workflows/vlog/WORKFLOW.md
+    payload: vstudio.project.adapters.common:author_payload
+    apply: vstudio.project.adapters.common:author_apply
+    answer:
+      type: object
+      properties: {done: {type: boolean}, content: {type: string}}
+    auto: never
+  - id: cover
+    kind: cover-pick
+    scope: item
+    after: cover_frames
+    blocks: [export]
+    labels: {zh: "选封面", en: "Pick the cover"}
+    payload: vstudio.project.adapters.common:cover_payload
+    apply: vstudio.project.adapters.common:cover_apply
+    answer:
+      type: object
+      properties: {pick: {type: integer, minimum: 0}, t: {type: number}, text: {type: string}}
+    auto: default
+  - id: publish
+    kind: publish
+    scope: item
+    after: export
+    labels: {zh: "审片发布", en: "Review and publish"}
+    payload: vstudio.project.adapters.common:publish_payload
+    apply: vstudio.project.adapters.common:publish_apply
+    answer:
+      type: object
+      properties: {approve: {type: boolean}, reason: {type: string}}
+      required: [approve]
+    auto: default
+outputs:
+  platforms: ["xiaohongshu:full", douyin, tiktok, youtube-shorts, youtube, bilibili]
+  collect: vstudio.project.adapters.common:collect_vstudio_exports
+agent:
+  workflow_md: workflows/vlog/WORKFLOW.md
+  notes: Look at work/sheets/*.jpg before writing work/edit.json; build_fun.py --dry-run plans a fun reel without rendering. Refresh after edits.
+  edit_files: ["{item_dir}/work/edit.json"]
+gaps:
+  - Window / shot selection from the contact sheets is agent / human work (no automatic picker).
+  - Music pick (fetch_music.sh, CC-BY catalog) is manual; the scrapbook cover (make_cover.py) needs Chrome and is replaced here by a frame + text cover.
+capabilities: [grade, transitions, beat-cuts, sfx, pops, music, cover, export]

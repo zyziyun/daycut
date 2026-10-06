@@ -1,0 +1,296 @@
+# Recipe manifest (vstudio.project). Schema: lib/vstudio/project/manifest.schema.json - docs: references/PROJECTS.md
+# Every item is one explainer (a topic sheet = N explainers); the scripts run unchanged with -C <item dir>.
+id: explainer
+version: 1
+workflow: explainer
+labels: {zh: "讲解视频", en: "Explainer (3b1b style)"}
+description:
+  zh: 选题 → 脚本（英文旁白 + 中文字幕）→ 分镜 → 配音（TTS）→ 双语字幕对齐 → 场景（HyperFrames）→ 渲染 → 多平台导出
+  en: topic -> script (EN narration + ZH subtitles) -> storyboard -> TTS voice -> bilingual cue alignment -> HyperFrames scenes -> render -> per-platform exports
+category: generate
+inputs:
+  - key: topic
+    kind: text
+    labels: {zh: "选题", en: "Topic"}
+    required: false
+    scope: item
+  - key: script
+    kind: script
+    labels: {zh: "已有脚本", en: "Existing SCRIPT.md"}
+    required: false
+    multiple: true
+    accept: [.md]
+    scope: item
+  - key: music
+    kind: audio
+    labels: {zh: "背景音乐（可选）", en: "Music bed (optional)"}
+    required: false
+    accept: [.wav, .mp3, .m4a]
+    scope: project
+items:
+  sources: [single, list, files, csv]
+  from_input: script
+  per_item: [title, mode]
+  shared: [platforms, voice, speed, tts_engine]
+params:
+  type: object
+  properties:
+    platforms:
+      type: array
+      items: {type: string}
+      default: [youtube, bilibili]
+      title: Platforms (the first one sets the canvas)
+      x-zh: 发布平台（第一个决定画布）
+    mode:
+      enum: [long, short]
+      default: long
+      title: Long (5-12 min) / short (60-120 s)
+      x-zh: 长片 / 短片
+    voice:
+      type: string
+      default: cedar
+      title: TTS voice
+      x-zh: 配音音色
+    tts_engine:
+      type: string
+      default: openai
+      title: TTS engine
+      x-zh: 配音引擎
+    speed:
+      type: number
+      minimum: 0.7
+      maximum: 1.4
+      default: 1.0
+      title: Voice speed
+      x-zh: 配音语速
+    quality:
+      enum: [draft, standard, high]
+      default: standard
+      title: Render quality
+      x-zh: 渲染质量
+    title:
+      type: string
+      default: ""
+      title: Title
+      x-zh: 标题
+      x-scope: item
+stages:
+  - id: prepare
+    resource: io
+    fn: vstudio.project.adapters.common:prepare
+    keys: []
+    produces: ["{item_dir}/SCRIPT.md (seeded)"]
+  - id: storyboard
+    resource: cpu
+    deps: [prepare]
+    keys: [mode, platforms]
+    watch: ["{item_dir}/SCRIPT.md"]
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/storyboard_from_script.py", "-C", "{item_dir}", "--mode", "{mode}",
+             {if: platform, args: ["--platform", "{platform}"]}, "--force", "--keep-shots"]
+      files: ["{item_dir}/STORYBOARD.md", "{item_dir}/scenes.config.json"]
+    produces: [STORYBOARD.md, scenes.config.json]
+    preview: {kind: markdown, path: "{item_dir}/STORYBOARD.md"}
+  - id: cue_draft
+    resource: cpu
+    deps: [storyboard]
+    keys: [platforms]
+    watch: ["{item_dir}/SCRIPT.md"]
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/pair_cues.py", "-C", "{item_dir}"]
+      files: ["{item_dir}/subtitles/cues.draft.txt"]
+    produces: [subtitles/cues.draft.txt]
+    preview: {kind: text, path: "{item_dir}/subtitles/cues.draft.txt"}
+  - id: voice
+    resource: "api:openai"
+    deps: [cue_draft]
+    paid: true
+    keys: [voice, speed, tts_engine]
+    watch: ["{item_dir}/SCRIPT.md"]
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/tts.py", "-C", "{item_dir}", "--voice", "{voice}", "--speed", "{speed}",
+             "--engine", "{tts_engine}"]
+      files: ["{item_dir}/audio/vo"]
+    produces: [audio/vo/lineNN.wav (TTS, checked by ASR)]
+  - id: narration
+    resource: cpu
+    deps: [voice]
+    keys: [mode]
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/concat_vo.py", "-C", "{item_dir}"]
+      files: ["{item_dir}/audio/narration.wav"]
+    produces: [audio/narration.wav, audio/vo/offsets.json]
+    preview: {kind: audio, path: "{item_dir}/audio/narration.wav"}
+  - id: transcribe
+    resource: asr
+    deps: [narration]
+    keys: []
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/transcribe.py", "-C", "{item_dir}"]
+      files: ["{item_dir}/audio/transcript.json"]
+    produces: [audio/transcript.json]
+  - id: align
+    resource: cpu
+    deps: [transcribe]
+    watch: ["{item_dir}/subtitles/cues.txt"]
+    keys: []
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/align_cues.py", "-C", "{item_dir}"]
+      files: ["{item_dir}/subtitles/cues.json"]
+      optional_files: ["{item_dir}/subtitles/en.srt", "{item_dir}/subtitles/zh.srt"]
+    produces: [subtitles/cues.json, en.srt, zh.srt]
+  - id: windows
+    resource: cpu
+    deps: [align]
+    keys: []
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/scene_windows.py", "-C", "{item_dir}"]
+      files: ["{item_dir}/audio/scenes.json"]
+    produces: [audio/scenes.json, audio/scene_cues.json]
+  - id: packets
+    resource: cpu
+    deps: [windows]
+    keys: []
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/make_packets.py", "-C", "{item_dir}"]
+      files: []
+    produces: [.hyperframes/frame-packets/<id>.md (one brief per scene for the scene authors)]
+  - id: index
+    resource: cpu
+    deps: [packets]
+    watch: ["{item_dir}/compositions"]
+    keys: []
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/make_index.py", "-C", "{item_dir}", "--patch-scenes"]
+      files: ["{item_dir}/index.html"]
+    produces: [index.html]
+    preview: {kind: html, path: "{item_dir}/index.html"}
+  - id: render
+    resource: browser
+    deps: [index]
+    keys: [quality]
+    units: one
+    run:
+      argv: [npx, hyperframes, render, -o, "{item_dir}/renders/{item}.mp4", -q, "{quality}"]
+      cwd: "{item_dir}"
+      files: ["{item_dir}/renders/{item}.mp4"]
+    produces: ["renders/<item>.mp4"]
+    preview: {kind: video, path: "{item_dir}/renders/{item}.mp4"}
+  - id: export
+    resource: cpu-render
+    deps: [render]
+    keys: [platforms]
+    run:
+      argv: ["{python}", "-m", "vstudio.export", "{item_dir}/renders/{item}.mp4", "--platforms", "{platforms_csv}",
+             "--out", "{item_dir}/exports", "--no-captions"]
+      files: ["{item_dir}/exports/manifest.json"]
+    produces: ["exports/<platform>-<orientation>.mp4 + manifest.json"]
+checkpoints:
+  - id: script
+    kind: script-lock
+    scope: item
+    after: prepare
+    labels: {zh: "脚本定稿", en: "Lock the script"}
+    help: {zh: "一行一个场景；英文旁白缩进块 + ZH 中文字幕", en: "One line = one scene: indented EN narration + ZH: subtitle"}
+    author:
+      file: "{item_dir}/SCRIPT.md"
+      template: lib/vstudio/project/templates/explainer_SCRIPT.md
+      format: explainer SCRIPT.md
+      doc: workflows/explainer/WORKFLOW.md
+    payload: vstudio.project.adapters.common:author_payload
+    apply: vstudio.project.adapters.common:author_apply
+    answer:
+      type: object
+      properties: {done: {type: boolean}, content: {type: string}}
+    reask: true
+    auto: never
+  - id: storyboard
+    kind: storyboard-approval
+    scope: item
+    after: storyboard
+    labels: {zh: "分镜确认", en: "Approve the storyboard"}
+    author:
+      file: "{item_dir}/scenes.config.json"
+      format: "scenes.config.json {scenes: [{id, transition, shots}], platform, mode}"
+      doc: workflows/explainer/WORKFLOW.md
+    payload: vstudio.project.adapters.common:author_payload
+    apply: vstudio.project.adapters.common:author_apply
+    answer:
+      type: object
+      properties: {done: {type: boolean}, content: {type: string}}
+    auto: never
+  - id: voice
+    kind: voice-pick
+    scope: item
+    after: cue_draft
+    blocks: [voice]
+    labels: {zh: "配音确认（付费 TTS）", en: "Voice (paid TTS)"}
+    help: {zh: "确认音色与语速后才会调用 TTS", en: "TTS is called only after this"}
+    payload: vstudio.project.adapters.explainer:voice_payload
+    apply: vstudio.project.adapters.explainer:voice_apply
+    answer:
+      type: object
+      properties: {voice: {type: string}, speed: {type: number}, approve: {type: boolean}}
+      required: [approve]
+    auto: default
+  - id: cues
+    kind: author
+    scope: item
+    after: transcribe
+    blocks: [align]
+    labels: {zh: "字幕配对", en: "Subtitle pairing"}
+    help: {zh: "改好 subtitles/cues.draft.txt 存为 cues.txt（EN || 中文）", en: "Fix subtitles/cues.draft.txt and save it as subtitles/cues.txt (EN || ZH)"}
+    author:
+      file: "{item_dir}/subtitles/cues.txt"
+      format: "## N per line, then EN chunk || 中文 per cue"
+      doc: workflows/explainer/WORKFLOW.md
+    payload: vstudio.project.adapters.common:author_payload
+    apply: vstudio.project.adapters.common:author_apply
+    answer:
+      type: object
+      properties: {done: {type: boolean}, content: {type: string}}
+    auto: never
+  - id: scenes
+    kind: author
+    scope: item
+    after: packets
+    blocks: [index]
+    labels: {zh: "场景制作", en: "Build the scenes"}
+    help: {zh: "按 frame packets 写 compositions/<id>.html（交给 Agent，可并行）", en: "Author compositions/<id>.html from the frame packets (the agent; parallel workers)"}
+    author:
+      file: "{item_dir}/compositions"
+      format: HyperFrames scene compositions (one HTML per scene)
+      doc: workflows/explainer/WORKFLOW.md
+    payload: vstudio.project.adapters.common:author_payload
+    apply: vstudio.project.adapters.common:author_apply
+    answer:
+      type: object
+      properties: {done: {type: boolean}}
+    auto: never
+  - id: publish
+    kind: publish
+    scope: item
+    after: export
+    labels: {zh: "审片发布", en: "Review and publish"}
+    payload: vstudio.project.adapters.common:publish_payload
+    apply: vstudio.project.adapters.common:publish_apply
+    answer:
+      type: object
+      properties: {approve: {type: boolean}, reason: {type: string}}
+      required: [approve]
+    auto: default
+outputs:
+  platforms: [youtube, bilibili, "xiaohongshu:full", douyin, youtube-shorts, tiktok]
+  collect: vstudio.project.adapters.common:collect_vstudio_exports
+  files: ["{item_dir}/subtitles/en.srt", "{item_dir}/subtitles/zh.srt"]
+agent:
+  workflow_md: workflows/explainer/WORKFLOW.md
+  notes: >-
+    Scene compositions are agent work (frame packets in .hyperframes/frame-packets/); `npx hyperframes init` the item
+    folder once and copy references/design-truth*.md to frame.md before authoring. Refresh after edits.
+  edit_files: ["{item_dir}/SCRIPT.md", "{item_dir}/scenes.config.json", "{item_dir}/subtitles/cues.txt"]
+gaps:
+  - Scene compositions (compositions/*.html) and the storyboard sketches are agent-authored; `npx hyperframes init` is not a stage.
+  - Music bed (make_bgm_bed.py + carve.mjs) and subset_cjk_font.py / make_captions.py are manual steps.
+  - Render needs Node + npx hyperframes.
+capabilities: [script, storyboard, tts, bilingual-captions, hyperframes, export]

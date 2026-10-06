@@ -1,0 +1,211 @@
+# Recipe manifest (vstudio.project). Schema: lib/vstudio/project/manifest.schema.json - docs: references/PROJECTS.md
+# Slices / course clips from one long recording; the items are the planned segments (plan-items). Engine: the
+# vstudio.batch recipes longform-split (screen-share split layout through this workflow's scripts) or
+# longform-slices (whole-frame reframe). The 16:9 course master + episodes: recipe longform-course.
+id: longform-to-short
+version: 1
+workflow: longform-to-short
+labels: {zh: "长视频切片", en: "Long recording to shorts"}
+description:
+  zh: 一条长录像（课程 / 直播 / 讲座）→ AI 选段 → 审核选段 → 每段竖屏切片（标题带、代码放大、章节卡、记笔记、字幕、封面、文案）
+  en: one long recording (course / livestream / lecture) -> AI segment plan -> segment review -> one vertical short per segment (title band, text-following screen crop, chapter card, notes, captions, cover, post)
+category: slice
+inputs:
+  - key: source
+    kind: video
+    labels: {zh: "长录像", en: "Long recording"}
+    required: true
+    accept: [.mp4, .mov, .m4v, .mkv, .webm]
+    scope: project
+  - key: transcript
+    kind: file
+    labels: {zh: "已有逐字稿（可选）", en: "Existing transcript (optional)"}
+    required: false
+    accept: [.json]
+    scope: project
+  - key: segments
+    kind: file
+    labels: {zh: "已有选段表（可选）", en: "Existing segment list (optional)"}
+    required: false
+    accept: [.yaml, .yml, .csv, .json]
+    scope: project
+items:
+  sources: [segments, csv]
+  planner: vstudio.project.adapters.longform:plan_items
+  per_item: [range, title, chapter, hook, notes, tags, cuts, body, cleanup_reply]
+  shared: [layout_mode, platforms, series_name, speed, cleanup_profile, privacy_exclude]
+  variants: [platform, hook]
+  share_cache: [probe, extract, asr, geometry, glossary]
+engine:
+  batch_recipe: {param: layout_mode, map: {split: longform-split, reframe: longform-slices}}
+  expand: batch
+  batch_inputs: {source: source, transcript: transcript}
+  spec: {qc: {sample_pct: 0}}
+params:
+  type: object
+  properties:
+    layout_mode:
+      enum: [split, reframe]
+      default: split
+      title: Layout (split = title band + screen crop; reframe = whole frame)
+      x-zh: 版式（分栏：标题带 + 屏幕裁切；整画面重构）
+    platforms:
+      type: array
+      items: {type: string}
+      default: ["xiaohongshu:vertical", douyin]
+      title: Platforms (vertical targets)
+      x-zh: 发布平台（竖屏）
+    planner:
+      type: string
+      default: auto
+      title: Segment planner (none = rule-based, or a vstudio.llm provider)
+      x-zh: 选段规划（none 规则 / 任一模型）
+    count:
+      type: integer
+      minimum: 1
+      maximum: 300
+      default: 12
+      title: Segments to propose
+      x-zh: 选段条数
+    min_s:
+      type: number
+      minimum: 10
+      default: 45
+      title: Min segment seconds
+      x-zh: 最短秒数
+    max_s:
+      type: number
+      minimum: 15
+      default: 160
+      title: Max segment seconds
+      x-zh: 最长秒数
+    series_name:
+      type: string
+      default: ""
+      title: Series name (title band, cover)
+      x-zh: 系列名（标题带、封面）
+      x-spec: vertical.series
+    speed:
+      type: number
+      minimum: 0.8
+      maximum: 1.6
+      default: 1.2
+      title: Body speed
+      x-zh: 语速
+    cleanup_profile:
+      enum: [gentle, standard, tight, "off"]
+      default: standard
+      title: Pause / filler cleanup
+      x-zh: 去气口力度
+    privacy_exclude:
+      type: array
+      default: []
+      title: Excluded regions (participant tiles) [x0, y0, x1, y1]
+      x-zh: 隐私遮挡区域
+      x-spec: privacy.exclude
+    language:
+      enum: [zh, en]
+      default: zh
+      title: Speech language
+      x-zh: 语言
+      x-spec: asr.language
+    asr_prompt:
+      type: string
+      default: ""
+      title: ASR prompt (terms)
+      x-zh: 识别提示词
+      x-spec: asr.prompt
+    preset:
+      enum: [ultrafast, veryfast, fast, medium, slow]
+      default: medium
+      title: x264 preset
+      x-zh: 导出编码速度
+stages:
+  - {id: probe, resource: io, from_batch: true, produces: [source probe (shared)]}
+  - {id: extract, resource: io, from_batch: true, produces: [16 kHz wav (shared)]}
+  - {id: asr, resource: asr, from_batch: true, produces: [ONE transcript per source (shared)]}
+  - {id: geometry, resource: cpu, from_batch: true, produces: [crop spans, frame.png (shared)],
+     preview: {kind: image, path: "out:frame"}}
+  - {id: cleanup, resource: cpu, from_batch: true, produces: [EDL, review sheet, confirm list]}
+  - {id: apply, resource: cpu-render, from_batch: true, produces: [cut (reframe mode)]}
+  - {id: compose, resource: cpu-render, from_batch: true, produces: [timeline, audio, cues]}
+  - {id: glossary, resource: cpu, from_batch: true, produces: [caption glossary (shared)]}
+  - {id: verify, resource: asr, from_batch: true, produces: [re-ASR]}
+  - {id: proofread, resource: cpu, from_batch: true, produces: [proofread captions]}
+  - {id: export, resource: cpu-render, from_batch: true, produces: ["<platform>-<orientation>.mp4 + cover + post"]}
+  - {id: qc, resource: cpu, from_batch: true, produces: [qc.json], preview: {kind: json, path: "out:report"}}
+  - {id: preview, resource: cpu-render, from_batch: true, produces: [sheet.jpg, snippet.mp4],
+     preview: {kind: image, path: "out:sheet"}}
+checkpoints:
+  - id: segments
+    kind: segment-approval
+    scope: project
+    after: probe
+    labels: {zh: "审核选段", en: "Approve the segments"}
+    help: {zh: "逐条接受 / 删除 / 改起止与标题", en: "Accept / drop / adjust each segment's range and title"}
+    payload: vstudio.project.adapters.longform:segments_payload
+    apply: vstudio.project.adapters.longform:segments_apply
+    answer:
+      type: object
+      properties:
+        approve: {oneOf: [{const: all}, {type: array, items: {type: string}}]}
+        drop: {type: array, items: {type: string}}
+        edits: {type: object}
+    auto: default
+  - id: privacy
+    kind: privacy-masks
+    scope: project
+    after: geometry
+    when: {layout_mode: split}
+    labels: {zh: "隐私遮挡确认", en: "Privacy regions"}
+    help: {zh: "在帧上框出参会者小窗等要排除的区域", en: "Mark the participant tiles (and anything private) to exclude"}
+    payload: vstudio.project.adapters.longform:privacy_payload
+    apply: vstudio.project.adapters.longform:privacy_apply
+    answer:
+      type: object
+      properties:
+        confirm: {type: boolean}
+        exclude: {type: array, items: {type: array, items: {type: ["number", "null"]}, minItems: 4, maxItems: 4}}
+    auto: never
+  - id: filler
+    kind: filler-confirm
+    scope: item
+    after: cleanup
+    labels: {zh: "确认去 filler", en: "Confirm filler cuts"}
+    payload: vstudio.project.adapters.common:filler_payload
+    apply: vstudio.project.adapters.common:filler_apply
+    answer:
+      type: object
+      properties:
+        approve: {type: array, items: {type: integer}}
+        keep: {type: array, items: {type: integer}}
+        kinds: {type: array, items: {type: string}}
+        all: {type: boolean}
+    auto: default
+    batch_by: kind
+  - id: publish
+    kind: publish
+    scope: item
+    after: preview
+    needs: [export, qc]
+    labels: {zh: "审片发布", en: "Review and publish"}
+    payload: vstudio.project.adapters.common:publish_payload
+    apply: vstudio.project.adapters.common:publish_apply
+    answer:
+      type: object
+      properties: {approve: {type: boolean}, reason: {type: string}}
+      required: [approve]
+    auto: default
+outputs:
+  platforms: ["xiaohongshu:vertical", "xiaohongshu:full", douyin, youtube-shorts, tiktok]
+  collect: vstudio.project.adapters.common:collect_batch_exports
+agent:
+  workflow_md: workflows/longform-to-short/WORKFLOW.md
+  notes: >-
+    Segments live in project.yaml items (range, title, chapter, hook, notes, cuts). Edit them, then refresh. Caption /
+    trim / hook / cover / copy edits of a finished slice: python -m vstudio.batch job edit --batch <project>/state.
+    Screen settings (screen.region, min_text_px, popups): project.yaml spec.screen.
+gaps:
+  - Speaker aliases / vertical.speaker.region (speaker layout) and screen.* knobs are spec sections (project.yaml spec), not wizard params.
+  - Demo re-record (probe_app.py / record_demo.py) and zoom windows are course-mode, agent-driven.
+capabilities: [segment-planning, privacy-exclude, screen-crop, chapter-cards, notes, hooks, captions, proofread, cover, export, qc]

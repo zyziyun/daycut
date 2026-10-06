@@ -2,7 +2,7 @@
 id: cover
 version: 1
 workflow: cover
-labels: {zh: 封面, en: Covers}
+labels: {zh: "封面", en: "Covers"}
 description:
   zh: 成片 / 人像照片 → 候选帧 → 选封面帧与文字 → 各平台尺寸的封面（分栏封面 C；拼贴 A / 人像四宫格 B 走 HTML 模板）
   en: finished video / face photo -> candidate frames -> pick frame + copy -> covers at every platform size (split cover C; collage A / face quadrants B via the HTML templates)
@@ -10,21 +10,21 @@ category: package
 inputs:
   - key: video
     kind: video
-    labels: {zh: 成片, en: Finished video}
+    labels: {zh: "成片", en: "Finished video"}
     required: false
     multiple: true
     accept: [.mp4, .mov, .m4v, .webm]
     scope: item
   - key: photo
     kind: photos
-    labels: {zh: 人像照片, en: Face photo}
+    labels: {zh: "人像照片", en: "Face photo"}
     required: false
     multiple: true
     accept: [.jpg, .jpeg, .png, .heic, .webp]
     scope: item
   - key: thumbnail
     kind: photos
-    labels: {zh: 内容截图（可选）, en: Content thumbnail (optional)}
+    labels: {zh: "内容截图（可选）", en: "Content thumbnail (optional)"}
     required: false
     accept: [.jpg, .jpeg, .png, .webp]
     scope: project
@@ -110,7 +110,7 @@ params:
       x-zh: 角标
 stages:
   - id: frames
-    labels: {zh: 候选帧, en: Candidate frames}
+    labels: {zh: "候选帧", en: "Candidate frames"}
     resource: cpu
     fn: vstudio.project.adapters.cover:frames
     keys: [every, max_frames]
@@ -118,7 +118,7 @@ stages:
     produces: ["{item_dir}/cover_src/contact_sheet.jpg", "{item_dir}/cover_src/cand_<t>.png", "candidates.json"]
     preview: {kind: image, path: "{item_dir}/cover_src/contact_sheet.jpg"}
   - id: render
-    labels: {zh: 渲染封面, en: Render covers}
+    labels: {zh: "渲染封面", en: "Render covers"}
     resource: cpu
     fn: vstudio.project.adapters.cover:render
     deps: [frames]
@@ -127,7 +127,7 @@ stages:
     produces: ["{item_dir}/split_cover.json", "{item_dir}/covers/cover.<platform>-<orientation>.jpg (+ .feed.jpg)"]
     preview: {kind: images, path: "{item_dir}/covers/*.jpg"}
   - id: render_html
-    labels: {zh: 渲染 HTML 封面, en: Render HTML cover}
+    labels: {zh: "渲染 HTML 封面", en: "Render HTML cover"}
     resource: browser
     deps: [frames]
     when: {pattern: [collage, face]}
@@ -144,7 +144,7 @@ checkpoints:
     kind: cover-pick
     scope: item
     after: frames
-    labels: {zh: 选封面, en: Pick the cover}
+    labels: {zh: "选封面", en: "Pick the cover"}
     help: {zh: "选一张候选帧（说话中、眼睛看镜头），写封面标题", en: "Pick a frame (mid-word, eyes on camera) and the title lines"}
     payload: vstudio.project.adapters.cover:pick_payload
     apply: vstudio.project.adapters.cover:pick_apply
@@ -163,7 +163,7 @@ checkpoints:
     after: frames
     blocks: [render_html]
     when: {pattern: [collage, face]}
-    labels: {zh: 编辑封面 HTML, en: Edit the cover HTML}
+    labels: {zh: "编辑封面 HTML", en: "Edit the cover HTML"}
     author:
       file: "{item_dir}/work/cover.html"
       template: workflows/cover/templates/cover_collage.template.html

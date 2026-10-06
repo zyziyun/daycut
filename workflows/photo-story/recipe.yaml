@@ -1,0 +1,190 @@
+# Recipe manifest (vstudio.project). Schema: lib/vstudio/project/manifest.schema.json - docs: references/PROJECTS.md
+# The story spec (work/spec.py, a Python module) is authored; the photostory scripts run unchanged on it.
+id: photo-story
+version: 1
+workflow: photo-story
+labels: {zh: "文艺片 / 照片故事", en: "Photo story"}
+description:
+  zh: 照片 + 短片 + 旁白脚本或音乐 → 选片与章节 → 镜头与特效 → 配音或卡点 → 双语字幕、章节卡、封面、文案
+  en: photos + clips + a narration script or a music track -> selection and chapters -> shots and effects -> voice or beat cuts -> bilingual captions, chapter cards, cover, post
+category: edit
+inputs:
+  - key: photos
+    kind: photos
+    labels: {zh: "照片", en: "Photos"}
+    required: false
+    multiple: true
+    accept: [.jpg, .jpeg, .png, .heic, .webp]
+    scope: project
+  - key: clips
+    kind: video
+    labels: {zh: "短片", en: "Clips"}
+    required: false
+    multiple: true
+    accept: [.mp4, .mov, .m4v]
+    scope: project
+  - key: music
+    kind: audio
+    labels: {zh: "音乐", en: "Music"}
+    required: false
+    accept: [.mp3, .wav, .m4a]
+    scope: project
+items:
+  sources: [single, episodes]
+  per_item: [title, mode]
+  shared: [platforms, mode, voice]
+params:
+  type: object
+  properties:
+    mode:
+      enum: [narration, music]
+      default: narration
+      title: Narration (TTS) or music (beat cuts)
+      x-zh: 旁白 / 音乐卡点
+    platforms:
+      type: array
+      items: {type: string}
+      default: ["xiaohongshu:vertical"]
+      title: Platform (canvas, safe zones, cover size)
+      x-zh: 平台
+    stills:
+      type: string
+      default: "2,10,25"
+      title: Layout still times (s)
+      x-zh: 预览静帧时间点
+    voice:
+      type: string
+      default: marin
+      title: TTS voice
+      x-zh: 配音音色
+    tts_engine:
+      enum: [openai, clone]
+      default: openai
+      title: TTS engine (clone = local Qwen3-TTS)
+      x-zh: 配音引擎
+    title:
+      type: string
+      default: ""
+      title: Title
+      x-zh: 标题
+      x-scope: item
+stages:
+  - id: prepare
+    resource: io
+    fn: vstudio.project.adapters.common:prepare
+    keys: []
+    produces: ["{item_dir}/inputs/ (links to photos, clips, music)"]
+  - id: stills
+    resource: cpu
+    deps: [prepare]
+    keys: [stills, platforms, mode]
+    watch: ["{item_dir}/work/spec.py"]
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/photostory/render.py", "{item_dir}/work/spec.py", "--stills", "{stills}",
+             "--stills-dir", "{item_dir}/work/stills", {if: platform, args: ["--platform", "{platform}"]}, "--mode", "{mode}"]
+      files: ["{item_dir}/work/stills"]
+    produces: [work/stills/*.jpg]
+    preview: {kind: images, path: "{item_dir}/work/stills/*.jpg"}
+  - id: tts
+    resource: "api:openai"
+    deps: [stills]
+    when: {mode: narration}
+    paid: true
+    keys: [voice, tts_engine]
+    watch: ["{item_dir}/work/spec.py"]
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/photostory/tts.py", "{item_dir}/work/spec.py", "--voice", "{voice}",
+             "--engine", "{tts_engine}"]
+      files: []
+    produces: [work/tts/uNN.wav, work/tts/timing.json]
+  - id: render
+    resource: cpu-render
+    deps: [tts]
+    watch: ["{item_dir}/work/spec.py"]
+    keys: [platforms, mode]
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/photostory/render.py", "{item_dir}/work/spec.py",
+             "--out", "{item_dir}/out/story.mp4", {if: platform, args: ["--platform", "{platform}"]}, "--mode", "{mode}"]
+      files: ["{item_dir}/out/story.mp4"]
+    produces: [out/story.mp4]
+    preview: {kind: video, path: "{item_dir}/out/story.mp4"}
+  - id: cover
+    resource: cpu
+    deps: [stills]
+    watch: ["{item_dir}/work/spec.py"]
+    keys: [platforms]
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/photostory/cover.py", "{item_dir}/work/spec.py", "--out",
+             "{item_dir}/out/cover.png", {if: platform, args: ["--platform", "{platform}"]}]
+      files: ["{item_dir}/out/cover.png"]
+    produces: [out/cover.png]
+    preview: {kind: image, path: "{item_dir}/out/cover.png"}
+  - id: export
+    resource: cpu
+    deps: [render]
+    keys: [platforms, mode]
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/photostory/export.py", "{item_dir}/work/spec.py", "--out", "{item_dir}/out",
+             {if: platform, args: ["--platform", "{platform}"]}, "--mode", "{mode}"]
+      files: []
+      optional_files: ["{item_dir}/out/subtitles.srt", "{item_dir}/out/post.md", "{item_dir}/out/transcript.md"]
+    produces: [out/subtitles.srt, out/cues.json, out/transcript.md, out/voice.mp3, out/post.md]
+checkpoints:
+  - id: story
+    kind: media-selection
+    scope: item
+    after: prepare
+    labels: {zh: "选片与章节", en: "Selection and chapters"}
+    help:
+      zh: 在 work/spec.py 写 SCRIPT（每段：章节、EN / 中文 字幕、镜头与特效）、SECTIONS、COVER、POST；MEDIA 指向 ../inputs
+      en: "Write SCRIPT (per unit: section, EN / ZH lines, shots + effects), SECTIONS, COVER, POST in work/spec.py; MEDIA -> ../inputs"
+    author:
+      file: "{item_dir}/work/spec.py"
+      template: workflows/photo-story/examples/demo_spec.py
+      format: photo-story spec module (Python globals)
+      doc: workflows/photo-story/WORKFLOW.md
+    payload: vstudio.project.adapters.common:author_payload
+    apply: vstudio.project.adapters.common:author_apply
+    answer:
+      type: object
+      properties: {done: {type: boolean}, content: {type: string}}
+    auto: never
+  - id: layout
+    kind: review
+    scope: item
+    after: stills
+    labels: {zh: "版式确认", en: "Layout check"}
+    help: {zh: "看静帧：字幕、标题、裁切是否合适；之后才配音 / 渲染", en: "Check the stills (captions, header, crops) before voice / render"}
+    payload: vstudio.project.adapters.common:publish_payload
+    apply: vstudio.project.adapters.common:approve_apply
+    answer:
+      type: object
+      properties: {approve: {type: boolean}, reason: {type: string}}
+      required: [approve]
+    auto: default
+  - id: publish
+    kind: publish
+    scope: item
+    after: export
+    needs: [render, cover]
+    labels: {zh: "审片发布", en: "Review and publish"}
+    payload: vstudio.project.adapters.common:publish_payload
+    apply: vstudio.project.adapters.common:publish_apply
+    answer:
+      type: object
+      properties: {approve: {type: boolean}, reason: {type: string}}
+      required: [approve]
+    auto: default
+outputs:
+  platforms: ["xiaohongshu:vertical", "xiaohongshu:full", douyin, youtube, youtube-shorts]
+  collect: vstudio.project.adapters.common:collect_files
+  files: ["{item_dir}/out/story.mp4", "{item_dir}/out/cover.png", "{item_dir}/out/subtitles.srt", "{item_dir}/out/post.md",
+          "{item_dir}/out/voice.mp3"]
+agent:
+  workflow_md: workflows/photo-story/WORKFLOW.md
+  notes: The spec is Python (work/spec.py); paths inside are relative to work/ (inputs are linked in ../inputs). Refresh after editing.
+  edit_files: ["{item_dir}/work/spec.py"]
+gaps:
+  - The story spec (selection, order, chapters, lines, shots, effects) is agent-authored; render.py --preview and the voice sample (tts.py --sample) are manual.
+  - Music pick has no catalog stage (BGM path in the spec).
+capabilities: [photo-fx, transitions, bilingual, tts, music-beats, chapter-cards, cover, post-copy]

@@ -1,0 +1,239 @@
+# Recipe manifest (vstudio.project). Schema: lib/vstudio/project/manifest.schema.json - docs: references/PROJECTS.md
+# Every script runs unchanged on a derived config (.promo.run.yaml = the authored promo.config.yaml + project params).
+id: promo-recut
+version: 1
+workflow: promo-recut
+labels: {zh: "宣传片", en: "Promo recut"}
+description:
+  zh: 一段口播 + 截图 / 精选素材 → 紧剪 → 分屏 3D 截图卡片 + 高亮、定格放大、精选插片蒙太奇、片尾 → 16:9（可加竖屏）宣传片、封面、文案
+  en: a talking-head take + screenshots / highlights -> tight cut -> split-screen 3D screenshot cards with highlights, freeze + zoom, highlight montage, end card -> 16:9 (+ vertical) promo, covers, post
+category: edit
+inputs:
+  - key: talk
+    kind: video
+    labels: {zh: "口播录像", en: "Talking-head recording"}
+    required: true
+    multiple: true
+    accept: [.mp4, .mov, .m4v]
+    scope: item
+  - key: screenshots
+    kind: photos
+    labels: {zh: "截图", en: "Screenshots"}
+    required: false
+    multiple: true
+    accept: [.png, .jpg, .jpeg, .webp]
+    scope: project
+  - key: highlights
+    kind: video
+    labels: {zh: "精选素材（可选）", en: "Highlights footage (optional)"}
+    required: false
+    accept: [.mp4, .mov, .m4v]
+    scope: project
+items:
+  sources: [single, files]
+  from_input: talk
+  per_item: [cut_reply, title]
+  shared: [language, orientation, platforms, quality]
+params:
+  type: object
+  properties:
+    language:
+      enum: [zh, en]
+      default: zh
+      title: Speech language
+      x-zh: 语言
+    orientation:
+      enum: [horizontal, vertical]
+      default: horizontal
+      title: Orientation
+      x-zh: 横屏 / 竖屏
+    platforms:
+      type: array
+      items: {type: string}
+      default: [youtube]
+      title: Platforms (the first one shapes the layout)
+      x-zh: 发布平台（第一个决定版式）
+    quality:
+      enum: [draft, looks, delivery]
+      default: delivery
+      title: Render quality
+      x-zh: 渲染质量
+    no_retouch:
+      type: boolean
+      default: false
+      title: Skip the cover retouch
+      x-zh: 封面不修图
+    title:
+      type: string
+      default: ""
+      title: Title
+      x-zh: 标题
+      x-scope: item
+stages:
+  - id: prepare
+    resource: io
+    fn: vstudio.project.adapters.common:prepare
+    keys: []
+    produces: ["{item_dir}/inputs/ (links to the talk, screenshots, highlights)"]
+  - id: suggest
+    resource: asr
+    deps: [prepare]
+    keys: [language]
+    watch: ["{item_dir}/promo.config.yaml"]
+    run:
+      patch: {from: "{item_dir}/promo.config.yaml", file: "{item_dir}/.promo.run.yaml",
+              set: {talk: "{input.talk}", highlights: "{input.highlights}", language: "{language}",
+                    orientation: "{orientation}", platform: "{platform}", cut.reply: "{cut_reply}"}}
+      argv: ["{python}", "{workflow_dir}/scripts/tight_cut.py", "{item_dir}/.promo.run.yaml", "--suggest"]
+      files: ["{item_dir}/work/cleanup.json", "{item_dir}/work/cleanup_review.md"]
+    produces: [work/audio.json, work/cleanup.json, work/cleanup_review.md]
+    preview: {kind: markdown, path: "{item_dir}/work/cleanup_review.md"}
+  - id: cut
+    resource: cpu-render
+    deps: [suggest]
+    watch: ["{item_dir}/promo.config.yaml"]
+    run:
+      patch: {from: "{item_dir}/promo.config.yaml", file: "{item_dir}/.promo.run.yaml",
+              set: {talk: "{input.talk}", highlights: "{input.highlights}", language: "{language}",
+                    orientation: "{orientation}", platform: "{platform}", cut.reply: "{cut_reply}"}}
+      argv: ["{python}", "{workflow_dir}/scripts/tight_cut.py", "{item_dir}/.promo.run.yaml"]
+      files: ["{item_dir}/work/body.mp4", "{item_dir}/work/layout.json"]
+    produces: [work/raw_graded.mp4, work/body.mp4, work/outro.mp4, work/montage.mp4, work/layout.json]
+    preview: {kind: video, path: "{item_dir}/work/body.mp4"}
+  - id: draft_subs
+    resource: cpu
+    deps: [cut]
+    keys: []
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/tight_cut.py", "{item_dir}/.promo.run.yaml", "--draft-subs"]
+      stdout: "{item_dir}/work/draft_subs.txt"
+      files: ["{item_dir}/work/draft_subs.txt"]
+    produces: [work/draft_subs.txt (paste into subtitles.body / outro)]
+    preview: {kind: text, path: "{item_dir}/work/draft_subs.txt"}
+  - id: build
+    resource: cpu
+    deps: [draft_subs]
+    watch: ["{item_dir}/promo.config.yaml"]
+    run:
+      patch: {from: "{item_dir}/promo.config.yaml", file: "{item_dir}/.promo.run.yaml",
+              set: {talk: "{input.talk}", highlights: "{input.highlights}", language: "{language}",
+                    orientation: "{orientation}", platform: "{platform}", cut.reply: "{cut_reply}"}}
+      argv: ["{python}", "{workflow_dir}/scripts/build_promo.py", "{item_dir}/.promo.run.yaml",
+             {if: platform, args: ["--platform", "{platform}"]}, "--out", "{item_dir}/promo"]
+      files: ["{item_dir}/promo/index.html"]
+    produces: [promo/index.html, promo/timeline.json, promo/cues.json, promo/assets/]
+    preview: {kind: html, path: "{item_dir}/promo/index.html"}
+  - id: render
+    resource: browser
+    deps: [build]
+    keys: [quality, platforms]
+    units: one
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/export.py", "{item_dir}/promo", "{item_dir}/out/promo.mp4",
+             "{quality}", {if: platform, args: ["--platform", "{platform}"]}]
+      files: ["{item_dir}/out/promo.mp4"]
+    produces: [out/promo.mp4 (HyperFrames render + loudnorm + faststart)]
+    preview: {kind: video, path: "{item_dir}/out/promo.mp4"}
+  - id: cover
+    resource: cpu
+    deps: [cut]
+    watch: ["{item_dir}/promo.config.yaml"]
+    keys: [no_retouch]
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/make_cover.py", "{item_dir}/.promo.run.yaml",
+             {if: no_retouch, args: ["--no-retouch"]}]
+      files: []
+      optional_files: ["{item_dir}/cover-4x3.jpg", "{item_dir}/cover-16x9.jpg", "{item_dir}/cover-3x4.jpg"]
+    produces: [cover-4x3.jpg, cover-16x9.jpg, cover-3x4.jpg]
+    preview: {kind: images, path: "{item_dir}/cover-*.jpg"}
+  - id: post
+    resource: cpu
+    deps: [build]
+    watch: ["{item_dir}/promo.config.yaml"]
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/post_copy.py", "{item_dir}/.promo.run.yaml",
+             {if: platform, args: ["--platform", "{platform}"]}]
+      files: []
+      optional_files: ["{item_dir}/post.md"]
+    produces: [post.md]
+    preview: {kind: markdown, path: "{item_dir}/post.md"}
+checkpoints:
+  - id: keep
+    kind: author
+    scope: item
+    after: prepare
+    blocks: [suggest]
+    labels: {zh: "保留片段", en: "Keep spans"}
+    help: {zh: "在 promo.config.yaml 写 cut.body / cut.outro（原片秒数）", en: "Write cut.body / cut.outro KEEP spans (raw seconds) in promo.config.yaml"}
+    author:
+      file: "{item_dir}/promo.config.yaml"
+      template: workflows/promo-recut/examples/promo.config.example.yaml
+      format: promo-recut config (YAML)
+      doc: workflows/promo-recut/WORKFLOW.md
+    payload: vstudio.project.adapters.common:author_payload
+    apply: vstudio.project.adapters.common:author_apply
+    answer:
+      type: object
+      properties: {done: {type: boolean}, content: {type: string}}
+    auto: never
+  - id: filler
+    kind: filler-confirm
+    scope: item
+    after: suggest
+    labels: {zh: "确认去 filler", en: "Confirm filler cuts"}
+    payload: vstudio.project.adapters.common:edl_filler_payload
+    apply: vstudio.project.adapters.common:cut_reply_apply
+    answer:
+      type: object
+      properties:
+        approve: {type: array, items: {type: integer}}
+        keep: {type: array, items: {type: integer}}
+        kinds: {type: array, items: {type: string}}
+        all: {type: boolean}
+    auto: default
+    batch_by: kind
+  - id: package
+    kind: author
+    scope: item
+    after: draft_subs
+    blocks: [build]
+    labels: {zh: "素材与高亮位置", en: "Cards, highlights, montage"}
+    help:
+      zh: 在 promo.config.yaml 写字幕、截图卡片与高亮行（find_rows.py）、定格、蒙太奇、章节、片尾
+      en: Write subtitles, screenshot cards + highlight rows (find_rows.py), hold, montage, chapters, end card in promo.config.yaml
+    author:
+      file: "{item_dir}/promo.config.yaml"
+      format: promo-recut config (YAML)
+      doc: workflows/promo-recut/WORKFLOW.md
+    payload: vstudio.project.adapters.common:author_payload
+    apply: vstudio.project.adapters.common:author_apply
+    answer:
+      type: object
+      properties: {done: {type: boolean}, content: {type: string}}
+    auto: never
+  - id: publish
+    kind: publish
+    scope: item
+    after: render
+    needs: [cover, post]
+    labels: {zh: "审片发布", en: "Review and publish"}
+    payload: vstudio.project.adapters.common:publish_payload
+    apply: vstudio.project.adapters.common:publish_apply
+    answer:
+      type: object
+      properties: {approve: {type: boolean}, reason: {type: string}}
+      required: [approve]
+    auto: default
+outputs:
+  platforms: [youtube, bilibili, "xiaohongshu:horizontal", douyin, tiktok, youtube-shorts]
+  collect: vstudio.project.adapters.common:collect_files
+  files: ["{item_dir}/out/promo.mp4", "{item_dir}/cover-*.jpg", "{item_dir}/post.md"]
+agent:
+  workflow_md: workflows/promo-recut/WORKFLOW.md
+  notes: Edit items/<item>/promo.config.yaml (never .promo.run.yaml); find_rows.py helps with the highlight rows. Refresh after editing.
+  edit_files: ["{item_dir}/promo.config.yaml"]
+gaps:
+  - Packaging (subtitles, cards, highlights, hold, montage, chapters, end card, cover / post copy) is authored in the config; --draft-subs and find_rows.py only assist.
+  - tight_cut.py --verify (lost words) is not a gate; render needs Node + npx hyperframes.
+  - Per-platform multi-export (python -m vstudio.export) after the render is manual.
+capabilities: [tight-cut, filler-confirm, split-screen, screenshot-cards, freeze-frame, montage, cover, post-copy]

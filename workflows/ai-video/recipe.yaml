@@ -1,0 +1,210 @@
+# Recipe manifest (vstudio.project). Schema: lib/vstudio/project/manifest.schema.json - docs: references/PROJECTS.md
+# AIGC short drama / skit: items = episodes (a season: --episodes N); the series assets hold the shared character
+# refs. Nothing is generated before the project-level budget approval (generate.py also refuses without it).
+id: ai-video
+version: 1
+workflow: ai-video
+labels: {zh: "AIGC 视频 / 短剧", en: "AI video / short drama"}
+description:
+  zh: 剧本 → 角色设定与参考图 → 分镜卡（每镜 prompt、模型、时长、预估积分）→ 预算确认 → 生成 → 选 take → 组装 → 字幕 → 多平台导出
+  en: script -> characters and reference sheets -> shot cards (prompt, model, duration, estimated credits) -> budget approval -> generation -> take selection -> assembly -> captions -> per-platform exports
+category: generate
+inputs:
+  - key: refs
+    kind: photos
+    labels: {zh: "角色 / 场景参考图", en: "Character / scene references"}
+    required: false
+    multiple: true
+    accept: [.jpg, .jpeg, .png, .webp]
+    scope: project
+  - key: premise
+    kind: text
+    labels: {zh: "剧情梗概", en: "Premise"}
+    required: false
+    scope: item
+items:
+  sources: [single, episodes, list, csv]
+  per_item: [title, premise]
+  shared: [provider, model, aspect, platforms, budget_credits]
+  share_cache: [refs]
+params:
+  type: object
+  properties:
+    platforms:
+      type: array
+      items: {type: string}
+      default: [douyin, "xiaohongshu:full", tiktok, youtube-shorts]
+      title: Platforms
+      x-zh: 发布平台
+    budget_credits:
+      type: number
+      minimum: 0
+      default: 0
+      title: Approved credits (set by the budget checkpoint)
+      x-zh: 已批准积分（预算检查点写入）
+    allow_unknown_cost:
+      type: boolean
+      default: false
+      title: Allow providers with unknown rates
+      x-zh: 允许未知计费
+    judge_asr:
+      type: boolean
+      default: false
+      title: ASR on judge sheets
+      x-zh: 评审时识别台词
+    preset:
+      enum: [ultrafast, veryfast, fast, medium, slow]
+      default: medium
+      title: x264 preset
+      x-zh: 编码速度
+    title:
+      type: string
+      default: ""
+      title: Episode title
+      x-zh: 集标题
+      x-scope: item
+stages:
+  - id: prepare
+    resource: io
+    fn: vstudio.project.adapters.common:prepare
+    keys: []
+    produces: ["{item_dir}/work/ai/project.yaml (seeded)"]
+  - id: plan
+    resource: cpu
+    deps: [prepare]
+    fn: vstudio.project.adapters.aivideo:plan
+    keys: []
+    watch: ["{item_dir}/work/ai/project.yaml"]
+    produces: [work/ai/plan.md (units, prompts, est. credits), plan.json]
+    preview: {kind: markdown, path: "out:plan"}
+  - id: generate
+    resource: "api:aigc"
+    deps: [plan]
+    paid: true
+    keys: [budget_credits, allow_unknown_cost]
+    watch: ["{item_dir}/work/ai/project.yaml"]
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/generate.py", run, "{item_dir}/work/ai/project.yaml", "--budget",
+             "{budget_credits}", "--yes", {if: allow_unknown_cost, args: ["--allow-unknown-cost"]}]
+      files: []
+    produces: [work/ai/takes/<unit>_vN.mp4, work/ai/state.json]
+  - id: judge
+    resource: cpu
+    deps: [generate]
+    fn: vstudio.project.adapters.aivideo:judge
+    keys: [judge_asr]
+    produces: [work/ai/judge/<take>.sheet.jpg]
+    preview: {kind: images, path: "{item_dir}/work/ai/judge/*.sheet.jpg"}
+  - id: timeline
+    resource: cpu
+    deps: [judge]
+    fn: vstudio.project.adapters.aivideo:timeline
+    keys: [takes_pick]
+    watch: ["{item_dir}/work/ai/timeline.yaml"]
+    produces: [work/ai/timeline.auto.yaml (or the authored timeline.yaml)]
+  - id: assemble
+    resource: cpu-render
+    deps: [timeline]
+    keys: []
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/assemble.py", "{out.timeline.timeline}"]
+      files: ["{item_dir}/work/ai/master.mp4"]
+      optional_files: ["{item_dir}/work/ai/cues.json"]
+    produces: [work/ai/master.mp4 (caption-free), work/ai/cues.json]
+    preview: {kind: video, path: "{item_dir}/work/ai/master.mp4"}
+  - id: export
+    resource: cpu-render
+    deps: [assemble]
+    keys: [platforms, preset]
+    run:
+      argv: ["{python}", "-m", "vstudio.export", "{item_dir}/work/ai/master.mp4", "--platforms", "{platforms_csv}",
+             "--cues", "{item_dir}/work/ai/cues.json", "--out", "{item_dir}/exports", "--preset", "{preset}"]
+      files: ["{item_dir}/exports/manifest.json"]
+    produces: ["exports/<platform>-<orientation>.mp4"]
+checkpoints:
+  - id: script
+    kind: script-lock
+    scope: item
+    after: prepare
+    blocks: [plan]
+    labels: {zh: "剧本与分镜卡", en: "Script and shot cards"}
+    help:
+      zh: 在 work/ai/project.yaml 写角色（look / ref）、场景、镜头（台词、动作、时长、模型）
+      en: Write characters (look / ref), scenes and shots (lines, action, duration, model) in work/ai/project.yaml
+    author:
+      file: "{item_dir}/work/ai/project.yaml"
+      template: workflows/ai-video/templates/project.yaml
+      format: ai-video project.yaml (bible + shots)
+      doc: workflows/ai-video/WORKFLOW.md
+    payload: vstudio.project.adapters.common:author_payload
+    apply: vstudio.project.adapters.common:author_apply
+    answer:
+      type: object
+      properties: {done: {type: boolean}, content: {type: string}}
+    reask: true
+    auto: never
+  - id: budget
+    kind: budget-approval
+    scope: project
+    after: plan
+    blocks: [generate]
+    aggregate: [credits]
+    labels: {zh: "预算 / 花费确认", en: "Budget approval"}
+    help:
+      zh: 看每集的预估积分（含重试余量），批准总预算后才会提交生成
+      en: Check the estimated credits per episode (with the retry allowance); generation starts only after this
+    payload: vstudio.project.adapters.aivideo:budget_payload
+    apply: vstudio.project.adapters.aivideo:budget_apply
+    answer:
+      type: object
+      properties:
+        approve: {type: boolean}
+        budget: {type: number, minimum: 0}
+        allow_unknown: {type: boolean}
+      required: [approve]
+    auto: never
+  - id: takes
+    kind: take-selection
+    scope: item
+    after: judge
+    blocks: [timeline]
+    labels: {zh: "选 take", en: "Pick the takes"}
+    help: {zh: "每个镜头选一条（看评审拼图）", en: "One take per unit (judge sheets)"}
+    payload: vstudio.project.adapters.aivideo:takes_payload
+    apply: vstudio.project.adapters.aivideo:takes_apply
+    answer:
+      type: object
+      properties:
+        picks: {type: object, additionalProperties: {type: string}}
+      required: [picks]
+    auto: default
+    batch_by: unit
+  - id: publish
+    kind: publish
+    scope: item
+    after: export
+    labels: {zh: "审片发布", en: "Review and publish"}
+    help: {zh: "平台要求标注 AI 生成内容", en: "Platforms require the AI-generated label"}
+    payload: vstudio.project.adapters.common:publish_payload
+    apply: vstudio.project.adapters.common:publish_apply
+    answer:
+      type: object
+      properties: {approve: {type: boolean}, reason: {type: string}}
+      required: [approve]
+    auto: default
+outputs:
+  platforms: [douyin, "xiaohongshu:full", tiktok, youtube-shorts]
+  collect: vstudio.project.adapters.common:collect_vstudio_exports
+agent:
+  workflow_md: workflows/ai-video/WORKFLOW.md
+  notes: >-
+    Character look sheets / scene masters are images (Kling MCP or manual) - put them in the series assets folder and
+    reference them from project.yaml. A hand-written work/ai/timeline.yaml (in/out per take) overrides the auto EDL.
+    package.py (series.yaml, upload with a confirm code) stays a manual, per-platform step.
+  edit_files: ["{item_dir}/work/ai/project.yaml", "{item_dir}/work/ai/timeline.yaml"]
+gaps:
+  - Look sheets / scene masters and manual web generation (generate.py sheets / import) are agent / human steps.
+  - Judge cards (judge.py card / verdict) are not filled automatically; take selection uses the sheets.
+  - The approved budget is the project total; each episode's generate run is capped at it (not at its own share).
+  - Covers come from workflows/cover; package.py upload is never automated.
+capabilities: [aigc, shot-cards, credit-estimate, budget-gate, take-selection, assemble, captions, export]

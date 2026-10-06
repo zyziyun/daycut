@@ -72,7 +72,7 @@ def test_every_workflow_has_a_valid_manifest():
     wfs = sorted(d for d in os.listdir(os.path.join(ROOT, "workflows"))
                  if os.path.isdir(os.path.join(ROOT, "workflows", d)))
     ms = M.reload()
-    assert sorted(m["workflow"] for m in ms.values()) == wfs, "every workflow folder exposes a recipe.yaml"
+    assert sorted({m["workflow"] for m in ms.values()}) == wfs, "every workflow folder exposes a recipe.yaml"
     import jsonschema
     schema = M.schema()
     jsonschema.Draft202012Validator.check_schema(schema)
@@ -137,6 +137,10 @@ def test_every_recipe_plans_a_project(tmp_path, synth):
     context (workflow md, commands) and status without running anything expensive."""
     kinds = dict(video=synth["video"], photos=synth["photo"], audio=synth["audio"], folder=str(synth["dir"]),
                  file=synth["truth"], script=None, text="一个选题")
+    seg = tmp_path / "segments.yaml"
+    seg.write_text(yaml.safe_dump(dict(segments=[dict(id="ep01", start=0.3, end=5.0, title="一个方法")]),
+                                  allow_unicode=True), encoding="utf-8")
+    extra = {"call-clips": dict(host_region="0,0,180,320", no_mask=True)}
     for m in M.all_manifests().values():
         inputs = {}
         for i in m["inputs"]:
@@ -148,7 +152,14 @@ def test_every_recipe_plans_a_project(tmp_path, synth):
                 p.write_text("# t\n\n## HOOK\n    You ask twice.\n", encoding="utf-8")
                 v = str(p)
             inputs[i["key"]] = [v]
-        p = Project.create(str(tmp_path / m["id"]), recipe=m["id"], inputs=inputs)
+        if m["items"].get("planner"):
+            inputs.setdefault("source", [synth["video"]])
+            inputs["segments"] = [str(seg)]
+        p = Project.create(str(tmp_path / m["id"]), recipe=m["id"], inputs=inputs, params=extra.get(m["id"]))
+        if m["items"].get("planner"):
+            assert p.status()["state"] == "new" and not p.data["items"]
+            assert p.plan_items()["items"] == ["ep01"]
+            assert p.data["items"][0]["params"]["range"] == [0.3, 5.0]
         s = p.status()
         assert s["state"] == "planned" and s["items"], m["id"]
         c = p.context()

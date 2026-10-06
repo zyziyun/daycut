@@ -5,6 +5,7 @@ references/PROJECTS.md.
   new --recipe R --dir P [--name N] [--input key=path ...] [--folder D [--glob G]] [--list F] [--csv F]
       [--episodes N] [--param k=v ...] [--set JSON] [--series S] [--client C] [--variants JSON] [--auto a,b]
       [--spec JSON]                                   create a project (items from files / lines / rows / episodes)
+  plan-items --dir P [--replace] [--provider X] [--count N] [--min S --max S]   planner recipes: draft the items
   show | status | preview [--item I] [--stage S] | context [--write] | refresh   --dir P [--json]
   run | resume --dir P [--pilot N] [--confirm-pilot] [--items a,b] [--auto ids|all] [--concurrency k=n]
       [--json | --json-events]                        run until done or a checkpoint needs you (exit 7)
@@ -108,6 +109,13 @@ def cmd_new(a):
     _out(a, dict(ok=True, dir=p.dir, recipe=p.data["recipe"], items=[i["id"] for i in s["items"]],
                  state=s["state"], context=os.path.join(p.dir, "AGENTS.md")),
          f"project {p.dir}: {len(s['items'])} item(s) of {p.data['recipe']}")
+    return 0
+
+
+def cmd_plan_items(a):
+    from .core import Project
+    kw = {k: v for k, v in dict(provider=a.provider, count=a.count, min_s=a.min, max_s=a.max).items() if v is not None}
+    _out(a, Project(_dir(a)).plan_items(replace=a.replace, **kw))
     return 0
 
 
@@ -328,6 +336,12 @@ def build_parser():
     p.add_argument("--variants", help='JSON, e.g. {"by": ["platform"]}')
     p.add_argument("--auto", help="checkpoints run may answer with their default (comma list or all)")
     p.add_argument("--spec", help="extra vstudio.batch spec sections (JSON)")
+    p = add("plan-items", cmd_plan_items, "planner recipes: draft the items (segments of a recording)")
+    p.add_argument("--replace", action="store_true")
+    p.add_argument("--provider", help="segment planner: auto | none | claude | openai | ... (vstudio.llm)")
+    p.add_argument("--count", type=int)
+    p.add_argument("--min", type=float)
+    p.add_argument("--max", type=float)
     add("show", cmd_show, "manifest + project.yaml + status")
     p = add("status", cmd_status, "items and stages")
     p.add_argument("--brief", action="store_true")

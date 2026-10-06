@@ -161,6 +161,10 @@
       },
       "seed": {
        "type": "string"
+      },
+      "from": {
+       "type": "string",
+       "description": "read this (authored) file, write the patched copy to `file`"
       }
      }
     },
@@ -545,7 +549,8 @@
        "list",
        "csv",
        "episodes",
-       "variants"
+       "variants",
+       "segments"
       ]
      }
     },
@@ -581,6 +586,10 @@
       "type": "string"
      },
      "description": "shared (cached once per key) stages reused across items"
+    },
+    "planner": {
+     "$ref": "#/$defs/ref",
+     "description": "(project) -> item rows; run by `plan-items` (and by `run` when there are no items)"
     }
    }
   },

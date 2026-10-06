@@ -1,0 +1,136 @@
+# Recipe manifest (vstudio.project). Schema: lib/vstudio/project/manifest.schema.json - docs: references/PROJECTS.md
+id: polish
+version: 1
+workflow: polish
+labels: {zh: "导出收尾", en: "Publish-ready polish"}
+description:
+  zh: 任何剪辑软件导出的成片 → 首帧换封面、响度、（确认后）加速、色彩标记、faststart → 各平台文件与封面
+  en: an edit exported from any NLE -> cover over the dead first frame, loudness, (confirmed) speed-up, colour tags, faststart -> per-platform files and covers
+category: package
+inputs:
+  - key: video
+    kind: video
+    labels: {zh: "导出成片", en: "Exported edit"}
+    required: true
+    multiple: true
+    accept: [.mp4, .mov, .m4v]
+    scope: item
+  - key: cover
+    kind: photos
+    labels: {zh: "封面（可选）", en: "Cover (optional)"}
+    required: false
+    accept: [.png, .jpg, .jpeg]
+    scope: item
+  - key: cues
+    kind: file
+    labels: {zh: "字幕（多平台烧录，可选）", en: "Captions to burn per platform (optional)"}
+    required: false
+    accept: [.json, .srt]
+    scope: item
+items:
+  sources: [single, files, folder, csv]
+  from_input: video
+  per_item: [speed, cover_sec]
+  shared: [platforms, lufs, cleanup, reframe_mode]
+params:
+  type: object
+  properties:
+    platforms:
+      type: array
+      items: {type: string}
+      default: []
+      title: Platforms (empty = platform-neutral polish)
+      x-zh: 平台（空 = 通用收尾）
+    speed:
+      type: ["number", "null"]
+      minimum: 0.8
+      maximum: 1.6
+      default: null
+      title: Speed (unset = ask; 1.2 suggested for shorts)
+      x-zh: 加速（不填则询问；短视频建议 1.2）
+    lufs:
+      type: ["number", "null"]
+      minimum: -30
+      maximum: -8
+      default: null
+      title: Loudness target LUFS (default persona / platform)
+      x-zh: 响度目标
+    cover_sec:
+      type: number
+      minimum: 0
+      maximum: 3
+      default: 1.0
+      title: Seconds of picture the cover replaces
+      x-zh: 封面替换前几秒
+    cleanup:
+      enum: ["", pauses, gentle, standard, tight]
+      default: ""
+      title: Speech cleanup (off by default)
+      x-zh: 去气口（默认关）
+    reframe_mode:
+      enum: [face, center, pad-blur, letterbox]
+      default: face
+      title: Reframe when the aspect changes
+      x-zh: 画幅转换
+    preset:
+      enum: [veryfast, fast, medium, slow]
+      default: slow
+      title: x264 preset
+      x-zh: 编码速度
+stages:
+  - id: probe
+    resource: io
+    fn: vstudio.project.adapters.polish:probe
+    keys: [platforms]
+    produces: [size, duration, the speed suggestion]
+  - id: polish
+    resource: cpu-render
+    deps: [probe]
+    units: duration
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/polish.py", "{input.video}", "-o", "{item_dir}/final.mp4",
+             {if: input.cover, args: ["--cover", "{input.cover}", "--cover-sec", "{cover_sec}"]},
+             {if: speed, args: ["--speed", "{speed}"]}, {if: lufs, args: ["--lufs", "{lufs}"]},
+             {if: cleanup, args: ["--cleanup", "{cleanup}"]}, "--preset", "{preset}",
+             {if: platforms, args: ["--platform", "{platforms_csv}", "--out-dir", "{item_dir}/exports",
+                                    "--reframe-mode", "{reframe_mode}"]},
+             {if: input.cues, args: ["--cues", "{input.cues}"]}, "--keep", "{item_dir}/work/polish", "--check"]
+      files: ["{item_dir}/final.mp4"]
+    produces: [final.mp4 (+ exports/<platform>-<orientation>.mp4 + covers + manifest.json)]
+    preview: {kind: video, path: "{item_dir}/final.mp4"}
+checkpoints:
+  - id: speed
+    kind: review
+    scope: item
+    after: probe
+    labels: {zh: "确认加速", en: "Confirm the speed"}
+    help: {zh: "短视频建议 1.2×（保持音高）；中文超过 1.4× 难听清", en: "1.2x is suggested for shorts (pitch kept); dense Chinese gets hard above 1.4x"}
+    payload: vstudio.project.adapters.polish:speed_payload
+    apply: vstudio.project.adapters.polish:speed_apply
+    answer:
+      type: object
+      properties: {speed: {type: number, minimum: 0.5, maximum: 2.0}}
+      required: [speed]
+    auto: default
+  - id: publish
+    kind: publish
+    scope: item
+    after: polish
+    labels: {zh: "检查成片", en: "Check the result"}
+    payload: vstudio.project.adapters.common:publish_payload
+    apply: vstudio.project.adapters.common:publish_apply
+    answer:
+      type: object
+      properties: {approve: {type: boolean}, reason: {type: string}}
+      required: [approve]
+    auto: default
+outputs:
+  platforms: [xiaohongshu, douyin, tiktok, youtube-shorts, youtube, bilibili]
+  collect: vstudio.project.adapters.common:collect_vstudio_exports
+  files: ["{item_dir}/final.mp4"]
+agent:
+  workflow_md: workflows/polish/WORKFLOW.md
+  notes: Never polish twice (a second loudness pass costs headroom). Speed is asked, never silently applied.
+gaps:
+  - With cleanup on, CONFIRM edits are applied only with a reply (--cleanup-reply); the filler review is not a checkpoint here (use talkinghead).
+capabilities: [cover-frame, loudness, speed, bt709, faststart, multi-platform]
