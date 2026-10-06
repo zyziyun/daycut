@@ -112,7 +112,7 @@ class ClipsTest(unittest.TestCase):
         self.assertEqual(WK.aspect_of(1080, 1920), "9:16")
 
 
-class OutputsTest(unittest.TestCase):
+class Fixture(unittest.TestCase):
     def setUp(self):
         self.root = tempfile.mkdtemp()
         self.watch = os.path.join(self.root, "demos")
@@ -128,63 +128,75 @@ class OutputsTest(unittest.TestCase):
     def tearDown(self):
         self.env.stop()
 
-    def test_show_has_words_flattened_captions_and_caps(self):
+
+class OutputsTest(Fixture):
+    def test_show_has_words_flattened_caps_and_notes(self):
         doc = self.o.show(self.item, "A_换圈子")
         self.assertEqual([w["w"] for w in doc["words"]][:2], ["你在", "副业"])
-        self.assertEqual(doc["caps"]["captions"], "flattened")
-        self.assertIn("烧进画面", doc["notes"]["captions"])
+        self.assertEqual(doc["mode"], "flattened")
+        self.assertFalse(doc["caps"]["caption_text"])
+        self.assertIn("captions-add-only", [n["code"] for n in doc["caps_notes"]])
         self.assertEqual(doc["engine"], "desk")
-        self.assertTrue(doc["waveform"] == [] or len(doc["waveform"]) == 240)
+        self.assertEqual(len(doc["waveform"]), 240)
 
-    def test_edit_trim_effect_undo_render(self):
+    def test_edit_steps_undo_redo_render(self):
         r = self.o.edit(self.item, "A_换圈子", [dict(op="trim", start=1.0, end=3.3),
-                                               dict(op="effect_add", effect="pop-word", start=2.8, end=3.6,
+                                               dict(op="effect_add", effect="pop-words", start=2.8,
                                                     params=dict(text="底气"))])
-        self.assertTrue(r["ok"])
+        self.assertEqual([d["code"] for d in r["step"]["describe"]], ["op-trim", "op-effect-add"])
         doc = self.o.show(self.item, "A_换圈子")
         self.assertEqual(doc["trim"], dict(start=1.0, end=3.3))
-        self.assertEqual(doc["effects"][0]["label"], "弹字")
-        self.assertTrue(doc["dirty"])
-        self.assertEqual([o["label"][:2] for o in doc["ops"]], ["保留", "加弹"])
-        self.assertTrue(os.path.exists(WK.record_path(self.d)))           # 转成项目 happened on the first edit
-        eid = doc["effects"][0]["id"]
-        self.o.edit(self.item, "A_换圈子", [dict(op="effect_move", id=eid, start=2.0, end=2.8)])
+        fx = doc["effects"][0]
+        self.assertEqual((fx["label"]["zh"], fx["end"]), ("弹出大字", 3.3))      # default 1.2 s, clamped to the clip
+        self.assertEqual((doc["undo"], doc["redo"]), (1, 0))
+        self.assertTrue(os.path.exists(WK.record_path(self.d)))               # 转成项目 on the first edit
+        self.o.edit(self.item, "A_换圈子", [dict(op="effect_update", id=fx["id"], start=2.0, end=2.8)])
         self.assertEqual(self.o.show(self.item, "A_换圈子")["effects"][0]["start"], 2.0)
         rr = self.o.render(self.item, "A_换圈子")
         self.assertTrue(rr["simulated"])
-        self.assertFalse(self.o.show(self.item, "A_换圈子")["dirty"])
+        self.assertTrue(self.o.show(self.item, "A_换圈子")["renders"][0]["fresh"])
         self.o.undo(self.item, "A_换圈子")
-        self.assertEqual(self.o.show(self.item, "A_换圈子")["effects"][0]["start"], 2.8)
-        self.o.undo(self.item, "A_换圈子", n=1)
+        doc = self.o.show(self.item, "A_换圈子")
+        self.assertEqual(doc["effects"][0]["start"], 2.8)
+        self.assertFalse(doc["renders"][0]["fresh"])
+        self.o.undo(self.item, "A_换圈子", redo=True)
+        self.assertEqual(self.o.show(self.item, "A_换圈子")["effects"][0]["start"], 2.0)
+        self.o.undo(self.item, "A_换圈子", steps=2)
         doc = self.o.show(self.item, "A_换圈子")
         self.assertIsNone(doc["trim"])
-        self.assertEqual(doc["effects"], [])
+        self.assertEqual((doc["effects"], doc["undo"], doc["redo"]), ([], 0, 2))
 
-    def test_flattened_captions_refuse_caption_edits_and_bad_ops(self):
+    def test_refusals_keep_codes_and_steps_are_all_or_nothing(self):
+        for ops, code in (([dict(op="caption_text", cue="0", text="x")], "captions-not-ours"),
+                          ([dict(op="effect_add", effect="nope", start=0)], "unknown-effect"),
+                          ([dict(op="effect_add", effect="pop-words", start=0)], "bad-param"),
+                          ([dict(op="trim", start=1, end=1.2)], "too-short")):
+            with self.assertRaises(OU.EngineMessage) as cm:
+                self.o.edit(self.item, "A_换圈子", ops)
+            self.assertEqual(cm.exception.doc["code"], code)
+        with self.assertRaises(OU.EngineMessage):
+            self.o.edit(self.item, "A_换圈子", [dict(op="cut", start=0.5, end=1.0), dict(op="effect_remove", id="fx9")])
+        self.assertEqual(self.o.show(self.item, "A_换圈子")["cuts"], [])
         with self.assertRaises(BadRequest):
-            self.o.edit(self.item, "A_换圈子", [dict(op="caption_style", size=1.2)])
-        with self.assertRaises(BadRequest):
-            self.o.edit(self.item, "A_换圈子", [dict(op="effect_add", effect="nope", start=0, end=1)])
-        with self.assertRaises(BadRequest):
-            self.o.edit(self.item, "A_换圈子", [dict(op="trim", start=2, end=1)])
+            self.o.edit(self.item, "A_换圈子", [dict(op="rm -rf")])
         with self.assertRaises(BadRequest):
             self.o.show(self.item, "../../etc")
+        with self.assertRaises(OU.EngineMessage):
+            self.o.undo(self.item, "A_换圈子")
 
-    def test_ask_proposes_trim_pop_word_and_explains_flattened(self):
+    def test_ask_proposes_valid_ops_and_explains_flattened(self):
         r = self.o.ask(self.item, "A_换圈子", "开头太慢，从「其实」开始，把「底气」弹出来，字幕大一点")
-        labels = [p["label"] for p in r["proposals"]]
-        self.assertTrue(any("开头前移 2.4" in x for x in labels), labels)
-        pop = next(p for p in r["proposals"] if p["ops"][0]["op"] == "effect_add")
-        self.assertEqual(pop["ops"][0]["params"]["text"], "底气")
-        self.assertIn("烧进画面", r["summary_zh"])
-        for p in r["proposals"]:                               # every proposal is a valid op list
-            for op in p["ops"]:
-                OU.validate_op(op)
+        ops = [p["op"] for p in r["proposals"]]
+        self.assertEqual(ops[0], dict(op="trim", start=2.4, end=3.3))
+        self.assertEqual(ops[1]["effect"], "pop-words")
+        self.assertEqual(ops[1]["params"]["text"], "底气")
+        self.assertIn("captions-add-only", [w["code"] for w in r["warnings"]])
+        self.o.edit(self.item, "A_换圈子", [p["op"] for p in r["proposals"]])     # every proposal is accepted
 
     def test_effects_catalogue_has_zh_labels(self):
         effs = self.o.effects()["effects"]
-        self.assertTrue(all(e["label"] and e["category"] for e in effs))
-        self.assertIn("pop-word", {e["id"] for e in effs})
+        self.assertTrue(all(e["label"]["zh"] and e["label"]["en"] and e["category"] for e in effs))
+        self.assertIn("pop-words", {e["id"] for e in effs})
 
     def test_batch_clips_from_export_manifest(self):
         b = make_batch(os.path.join(self.watch, "batch-x"))
@@ -199,7 +211,19 @@ class OutputsTest(unittest.TestCase):
         self.assertEqual(cl[0]["duration"], 80.0)
 
 
-class CalendarTest(OutputsTest):
+class RenameTest(Fixture):
+    def test_rename_and_unhide_one(self):
+        self.h.rename(self.d, "副业复盘 · 4 条切片")
+        row = next(r for r in self.h.list()["items"] if r["dir"] == self.d)
+        self.assertEqual(row["name"], "副业复盘 · 4 条切片")
+        self.h.hide(self.d)
+        self.assertFalse(any(r["dir"] == self.d for r in self.h.list()["items"]))
+        self.h.unhide(self.d)
+        self.assertTrue(any(r["dir"] == self.d for r in self.h.list()["items"]))
+        self.assertTrue(os.path.exists(os.path.join(self.d, "PICKS.md")))
+
+
+class CalendarTest(Fixture):
     def test_schedule_move_confirm_remove(self):
         from desk_engine.calendar import Calendar
         WK.adopt(self.d)                                    # a finished work folder (status done)

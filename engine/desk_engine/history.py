@@ -278,6 +278,27 @@ class History:
             self.reg.remove(batch_id(d))
         return dict(ok=True, hidden=rp, deleted=False)
 
+    def unhide(self, path):
+        """Undo one "remove from list" (the undo toast)."""
+        rp = os.path.realpath(path)
+        with self._lock:
+            c = self._cfg()
+            c["hidden"] = [h for h in c.get("hidden") or [] if h != rp]
+            write_json(self.path, c)
+        return dict(ok=True, dir=rp)
+
+    def rename(self, path, name):
+        """Inline rename (any language): a display name kept by the desk; nothing in the folder changes."""
+        need(isinstance(name, str) and 0 < len(name.strip()) <= 80 and "\0" not in name, "name: 1-80 chars")
+        rp = os.path.realpath(path)
+        with self._lock:
+            c = self._cfg()
+            names = c.get("names") if isinstance(c.get("names"), dict) else {}
+            names[rp] = name.strip()
+            c["names"] = names
+            write_json(self.path, c)
+        return dict(ok=True, dir=rp, name=name.strip())
+
     def unhide_all(self):
         with self._lock:
             c = self._cfg()
@@ -337,7 +358,9 @@ class History:
 
     def list(self, q=None, status=None, kind=None, type_=None, client=None):
         self.prune()
-        hidden = set(self._cfg().get("hidden") or [])
+        cfg = self._cfg()
+        hidden = set(cfg.get("hidden") or [])
+        names = cfg.get("names") if isinstance(cfg.get("names"), dict) else {}
         cands, series = self._candidates()
         seen, rows = set(), []
         reg_ids = {b["id"] for b in self.reg.all()}
@@ -374,6 +397,8 @@ class History:
             store_dir = os.path.join(d, "state") if kind_ == "project" else d
             bid = batch_id(store_dir)
             live = live_status(d) or (live_status(store_dir) if store_dir != d else None)
+            if names.get(rp):
+                info["name"] = names[rp]
             row = dict(info, kind=kind_, dir=d, real=rp, sources=[src], id=bid, live=live,
                        opened=bid in reg_ids,
                        openable=kind_ != "work" and os.path.exists(os.path.join(store_dir, "batch.db")),

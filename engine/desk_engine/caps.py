@@ -54,7 +54,11 @@ def parse_recipes_doc(doc):
 
 
 class CliError(RuntimeError):
-    pass
+    """``doc``: the engine's JSON refusal ({ok: false, code, params, message, message_zh}) when it printed one."""
+
+    def __init__(self, msg, doc=None):
+        super().__init__(msg)
+        self.doc = doc
 
 
 class CliRunner:
@@ -95,7 +99,7 @@ class CliRunner:
             tail = (p.stderr or "").strip().splitlines()[-3:]
             raise CliError(f"{self.module} {args[0]} exited {p.returncode}: {' | '.join(tail) or 'no JSON output'}")
         if isinstance(doc, dict) and doc.get("ok") is False and p.returncode != 0:
-            raise CliError(str(doc.get("error") or doc.get("reason") or f"{args[0]} failed"))
+            raise CliError(str(doc.get("error") or doc.get("message") or doc.get("reason") or f"{args[0]} failed"), doc)
         return doc
 
 

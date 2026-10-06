@@ -279,6 +279,27 @@ def parse_posts(text):
     return out
 
 
+def parse_post_single(text):
+    """A per-clip ``<clip>_post.md`` (title line or **标题**：..., body, #tags) -> {title, body, tags}."""
+    title, body, tags = None, [], []
+    for ln in (text or "").splitlines():
+        s_ = ln.strip()
+        m = re.match(r"^\*\*(?:标题|title)\*\*\s*[:：]\s*(.+)$", s_, re.I)
+        if m:
+            title = m.group(1).strip()
+            continue
+        if re.match(r"^#\s", s_) or re.match(r"^(视频|封面|video|cover)\s*[:：]", s_, re.I):
+            continue
+        if s_ and re.fullmatch(r"(#\S+\s*)+", s_):
+            tags += [x.lstrip("#") for x in s_.split()]
+            continue
+        if title is None and s_:
+            title = s_
+            continue
+        body.append(ln)
+    return dict(title=title or "", body="\n".join(body).strip(), tags=tags)
+
+
 def parse_picks(text):
     """PICKS.md: the pick table (id -> title) and the 'creator should confirm' bullets (id -> [text])."""
     titles, confirm = {}, []
@@ -294,6 +315,13 @@ def parse_picks(text):
             if m and not re.match(r"^\s*skipped\b", m.group(2), re.I):
                 confirm.append(dict(clip=m.group(1), text=m.group(2).strip()))
     return dict(titles=titles, confirm=confirm)
+
+
+def _mtime(p):
+    try:
+        return os.path.getmtime(p)
+    except OSError:
+        return 0.0
 
 
 def _clip_state(cdir):
@@ -320,12 +348,19 @@ def clips(d, probe=None):
     ``work/clips/*`` (B2). -> [{id, title, state, files [{path, aspect, w, h}], cover, post, duration, source}]"""
     found = scan(d)
     posts = {}
-    for rel in found["posts"]:
+    mt = lambda rel: _mtime(os.path.join(d, rel))  # noqa: E731
+    for rel in sorted(found["posts"], key=mt):            # newer files win (final/v2 over final/)
         try:
             with open(os.path.join(d, rel), encoding="utf-8", errors="replace") as f:
-                posts.update(parse_posts(f.read(200000)))
+                text = f.read(200000)
         except OSError:
-            pass
+            continue
+        sections = parse_posts(text)
+        if sections:
+            posts.update(sections)
+        elif re.search(r"[_-](post|文案)$", os.path.splitext(os.path.basename(rel))[0], re.I):
+            key = clip_key(re.sub(r"[_-](post|文案)$", "", os.path.splitext(os.path.basename(rel))[0], flags=re.I) + ".mp4")
+            posts[key] = dict(parse_post_single(text), file=None, cover=None)
     picks = {}
     if os.path.exists(os.path.join(d, "PICKS.md")):
         try:
@@ -337,15 +372,15 @@ def clips(d, probe=None):
     for rel in found["outputs"]:
         groups.setdefault(clip_key(rel), []).append(rel)
     covers = {}
-    for rel in found["covers"]:
-        covers.setdefault(clip_key(rel), rel)
+    for rel in sorted(found["covers"], key=mt):
+        covers[clip_key(rel)] = rel
     keys = list(groups)
     if posts:                                   # post.md names the real clips; other files are extras
         keys = [k for k in posts if k in groups] + [k for k in groups if k not in posts]
     out = []
     for k in keys:
         files = []
-        for rel in sorted(groups[k], key=lambda r: (len(r), r)):
+        for rel in sorted(groups[k], key=lambda r: (-mt(r), len(r), r)):
             p = os.path.join(d, rel)
             info = (probe or (lambda _p: {}))(p) or {}
             asp = aspect_of(info.get("w"), info.get("h")) or aspect_from_name(rel) or "原尺寸"
@@ -353,11 +388,12 @@ def clips(d, probe=None):
                 continue
             files.append(dict(path=p, aspect=asp, w=info.get("w"), h=info.get("h"), fps=info.get("fps"),
                               duration=info.get("duration")))
+        files.sort(key=lambda f: (0 if f["aspect"] in ("3:4", "原尺寸") else 1 if f["aspect"] == "9:16" else 2))
         post = posts.get(k)
         cov = (post or {}).get("cover")
-        cover = os.path.join(d, os.path.dirname(groups[k][0]), cov) if cov and \
-            os.path.exists(os.path.join(d, os.path.dirname(groups[k][0]), cov)) else \
-            (os.path.join(d, covers[k]) if k in covers else None)
+        cover = os.path.join(d, covers[k]) if k in covers else None
+        if cov and not cover and os.path.exists(os.path.join(d, os.path.dirname(groups[k][0]), cov)):
+            cover = os.path.join(d, os.path.dirname(groups[k][0]), cov)
         letter = re.match(r"^([A-Z0-9]{1,3})[_ -]", k)
         title = (post or {}).get("title") or (picks.get(letter.group(1)) if letter else None) or \
             re.sub(r"^[A-Z0-9]{1,3}[_-]", "", k).replace("_", " ")

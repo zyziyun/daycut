@@ -52,8 +52,8 @@ History (history.py; read-only discovery of past work: desk + engine registries,
 v0.4 (outputs.py, intake.py, inbox.py; engine command when available, desk implementation otherwise)
   GET  /api/outputs/<item>                 one clip per output {clips [{id, title, state, files, cover, post}], confirm}
   GET  /api/outputs/<item>/<clip>          player + editor document (words, captions, effects, caps, ops, version)
-  POST /api/outputs/<item>/<clip>/edit     {ops: [op...]} | op;  /ask {prompt} -> proposals;  /render {platforms?};
-                                           /undo {n?}
+  POST /api/outputs/<item>/<clip>/edit     {ops: [op...]} (one undo step);  /ask {prompt} -> proposals;
+                                           /render {quality?, targets?};  /undo | /redo {steps?}
   GET  /api/effects                        effects catalogue (zh labels, params, preview kind)
   POST /api/intake {prompt, inputs[]}      -> {id}; GET /api/intake/<id>; POST .../revise {prompt}; POST .../apply
                                            {plan?, run?}; GET /api/intake/recent
@@ -445,16 +445,13 @@ class Api:
             if len(parts) == 4 and method == "POST":
                 verb = parts[3]
                 if verb == "edit":
-                    ops = b.get("ops") if "ops" in b else [b]
-                    return self.outputs.edit(parts[1], clip, ops)
+                    return self.outputs.edit(parts[1], clip, b.get("ops"))
                 if verb == "ask":
                     return self.outputs.ask(parts[1], clip, b.get("prompt"))
                 if verb == "render":
-                    return self.outputs.render(parts[1], clip, b.get("platforms"))
-                if verb == "undo":
-                    n = b.get("n")
-                    need(n is None or (isinstance(n, int) and not isinstance(n, bool) and 0 < n < 1e6), "n: edit number")
-                    return self.outputs.undo(parts[1], clip, n)
+                    return self.outputs.render(parts[1], clip, b.get("quality") or "preview", b.get("targets") or "primary")
+                if verb in ("undo", "redo"):
+                    return self.outputs.undo(parts[1], clip, b.get("steps", 1), redo=verb == "redo")
         if parts[:1] == ["intake"]:
             if parts == ["intake"] and method == "POST":
                 prompt = b.get("prompt") or ""
@@ -566,6 +563,12 @@ class Api:
                     return h.set_watch(body.get("watch"))
             if parts == ["history", "unhide"] and method == "POST":
                 return h.unhide_all()
+            if parts[1:] in (["unhide-one"], ["rename"]) and method == "POST":
+                need(isinstance(body, dict), "body must be an object")
+                d = _abs_path(body.get("dir"), "dir", must_exist=False)
+                r = h.unhide(d) if parts[1] == "unhide-one" else h.rename(d, body.get("name"))
+                self.bus.publish("batches")
+                return r
             if parts[1:] in (["open"], ["hide"]) and method == "POST":
                 need(isinstance(body, dict), "body must be an object")
                 d = _abs_path(body.get("dir"), "dir", must_exist=parts[1] == "open", kind="dir")
@@ -761,7 +764,8 @@ def make_handler(api):
                 res = api.route(method, u.path, parse_qs(u.query), body)
                 self._send(200, res)
             except BadRequest as e:
-                self._send(400, dict(error=str(e)))
+                doc = getattr(e, "doc", None)        # engine refusals keep their code for the UI's own words
+                self._send(422 if doc else 400, dict(error=str(e), **(doc or {})))
             except KeyError as e:
                 self._send(404, dict(error=str(e).strip("'\"")))
             except (FileNotFoundError, ValueError) as e:
