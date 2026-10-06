@@ -72,7 +72,11 @@ mark {
 .main-nav a { color: var(--ink); text-decoration: none; font-size: 0.94rem; }
 .main-nav a:hover { color: var(--red-ink); }
 .header-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
-.lang { color: var(--ink); font-weight: 600; text-decoration: none; padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 0.875rem; background: var(--card); }
+.lang-switch { display: inline-flex; align-items: center; gap: 2px; padding: 3px 4px; border: 1px solid var(--line); border-radius: 999px; font-size: 0.875rem; background: var(--card); white-space: nowrap; }
+.lang-switch a { color: var(--muted, #6b6459); text-decoration: none; padding: 3px 7px; border-radius: 999px; }
+.lang-switch a:hover { color: var(--ink); }
+.lang-switch a[aria-current] { color: var(--ink); font-weight: 700; }
+.lang-switch span { color: var(--line); }
 @media (min-width: 960px) {
   .main-nav { display: flex; }
   .header-actions { margin-left: 8px; }
@@ -94,6 +98,13 @@ mark {
 .btn:active { transform: translateY(2px); box-shadow: 0 1px 0 #a90e27; }
 .btn-sm { min-height: 38px; padding: 6px 16px; font-size: 0.9rem; box-shadow: none; }
 .btn-sm:hover, .btn-sm:active { box-shadow: none; }
+.logo, .btn-sm { white-space: nowrap; flex-shrink: 0; }
+@media (max-width: 420px) {
+  .header-row { gap: 10px; }
+  .header-actions { gap: 6px; }
+  .btn-sm { padding: 6px 12px; }
+  .lang-switch a { padding: 3px 5px; }
+}
 .btn-ghost { background: var(--card); color: var(--ink); border-color: var(--ink); box-shadow: 0 3px 0 var(--ink); }
 .btn-ghost:hover { box-shadow: 0 4px 0 var(--ink); }
 .btn-ghost:active { box-shadow: 0 1px 0 var(--ink); }
@@ -140,7 +151,8 @@ mark {
 .hero { padding: 40px 0 56px; overflow: hidden; }
 .hero-grid { display: grid; gap: 40px; align-items: center; }
 .eyebrow { display: inline-block; font-weight: 700; font-size: 0.9rem; background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 4px 14px; margin-bottom: 16px; }
-.hero h1 { margin-bottom: 18px; }
+.hero h1 { margin-bottom: 18px; text-wrap: balance; }
+.hero h1:lang(en) { font-size: clamp(2.1rem, 7.4vw, 3.2rem); }
 .hero h1 mark { white-space: normal; }
 .hero .ticks { margin-top: 4px; color: #3b332d; }
 .hero-visual { position: relative; aspect-ratio: 100 / 80; max-width: 380px; width: 100%; margin-inline: auto; }

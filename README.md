@@ -1,7 +1,14 @@
 # video-studio-site
 
-Product website (官网) for the video-studio AI video studio: 中文 at `/`, English at `/en/`.
-Static Astro build, zero JavaScript shipped, no cookies, no analytics, no third-party fonts (system font stack).
+Product website (官网) for the video-studio AI video studio: English (default) at `/`, `/privacy`, `/terms`;
+中文 at `/zh/`, `/zh/privacy`, `/zh/terms`. The old `/en/*` URLs are static redirect pages to the English
+equivalents (`redirects` in `astro.config.mjs`).
+Static Astro build, no cookies, no analytics, no third-party fonts (system font stack). The only JavaScript is a
+four-line inline script that keeps the current `#section` when you switch language; without it the switcher still
+opens the same page in the other language.
+
+SEO: every page has `<html lang>` (`en` / `zh-CN`), a canonical URL, and hreflang alternates `en`, `zh-CN` and
+`x-default` (= English). There is no sitemap.
 
 Not deployed. No GitHub repo created. Everything the creator must decide is listed at the bottom.
 
@@ -22,16 +29,17 @@ node scripts/screenshot.mjs   # full-page screenshots into screenshots/ (needs `
 
 ```
 src/config.ts              ← the only place for URL, contact email, FORM_ENDPOINT, download URL, GitHub URL
-src/i18n/zh.ts, en.ts      ← all copy (same shape; en.ts is type-checked against zh.ts)
+src/i18n/en.ts, zh.ts      ← all copy (same shape; en.ts is type-checked against zh.ts)
+src/i18n/index.ts          ← prefix() / pathFor(): '' for English, '/zh' for 中文
 src/components/Home.astro  ← all home sections: hero, how, proof, deliverables, partner + form, pricing,
                              desktop app, open source, FAQ, contact
 src/components/Privacy.astro, Terms.astro   ← legal drafts (both languages), marked "draft, review before publishing"
-src/layouts/Base.astro     ← header/footer, hreflang, OG tags
+src/layouts/Base.astro     ← header/footer, EN / 中文 switcher, hreflang, OG tags
 src/styles/global.css      ← Notebook Light theme (DESIGN.md §3 ②)
-src/pages/{index,privacy,terms}.astro, src/pages/en/...
+src/pages/{index,privacy,terms}.astro (English), src/pages/zh/... (中文)
 public/img/                ← optimised images (committed); sources in assets/demos/
 scripts/                   ← optimize-images.sh, check-copy.mjs, screenshot.mjs
-screenshots/               ← home desktop/mobile (zh + en) and privacy page
+screenshots/               ← home-en-*, home-zh-* (desktop + mobile) and privacy-mobile
 ```
 
 ## Config (`src/config.ts`)

@@ -1,15 +1,12 @@
 import { zh } from './zh';
 import { en } from './en';
 
-export type Lang = 'zh' | 'en';
-export const dict = { zh, en } as const;
+export type Lang = 'en' | 'zh';
+export const dict = { en, zh } as const;
 export const t = (lang: Lang) => dict[lang];
 
-/** Path prefix for a language: '' for 中文 (default), '/en' for English. */
-export const prefix = (lang: Lang) => (lang === 'en' ? '/en' : '');
+/** Path prefix for a language: '' for English (default), '/zh' for 中文. */
+export const prefix = (lang: Lang) => (lang === 'zh' ? '/zh' : '');
 
-/** Same page in the other language. `page` is '' (home), 'privacy' or 'terms'. */
-export const altPath = (lang: Lang, page: string) => {
-  const other: Lang = lang === 'en' ? 'zh' : 'en';
-  return `${prefix(other)}/${page}`.replace(/\/+$/, '') || '/';
-};
+/** URL path of `page` ('' = home, 'privacy', 'terms') in `lang`. Home is '/' or '/zh/'. */
+export const pathFor = (lang: Lang, page: string) => (page ? `${prefix(lang)}/${page}` : `${prefix(lang)}/`);

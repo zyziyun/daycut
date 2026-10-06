@@ -7,4 +7,10 @@ export default defineConfig({
   trailingSlash: 'ignore',
   build: { inlineStylesheets: 'always' },
   compressHTML: true,
+  // English moved from /en/ to /. Static output writes meta-refresh pages for these (with canonical to the target).
+  redirects: {
+    '/en': '/',
+    '/en/privacy': '/privacy',
+    '/en/terms': '/terms',
+  },
 });

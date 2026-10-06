@@ -1,7 +1,7 @@
 ---
 import '../styles/global.css';
 import { SITE } from '../config';
-import { t, prefix, altPath, type Lang } from '../i18n';
+import { t, prefix, pathFor, type Lang } from '../i18n';
 
 interface Props {
   lang: Lang;
@@ -15,8 +15,10 @@ const home = prefix(lang) + '/';
 const pageTitle = title ? `${title} · ${SITE.name}` : c.meta.title;
 const desc = description ?? c.meta.description;
 const site = SITE.url.replace(/\/$/, '');
-const zhUrl = `${site}${altPath('en', page)}`;
-const enUrl = `${site}${altPath('zh', page)}`;
+const zhPath = pathFor('zh', page);
+const enPath = pathFor('en', page);
+const zhUrl = `${site}${zhPath}`;
+const enUrl = `${site}${enPath}`;
 const canonical = lang === 'zh' ? zhUrl : enUrl;
 const nav = [
   ['how', c.nav.how],
@@ -37,7 +39,7 @@ const nav = [
     <link rel="canonical" href={canonical} />
     <link rel="alternate" hreflang="zh-CN" href={zhUrl} />
     <link rel="alternate" hreflang="en" href={enUrl} />
-    <link rel="alternate" hreflang="x-default" href={zhUrl} />
+    <link rel="alternate" hreflang="x-default" href={enUrl} />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <meta name="theme-color" content="#FAF6EE" />
     <meta property="og:type" content="website" />
@@ -60,7 +62,11 @@ const nav = [
           {nav.map(([id, label]) => <a href={`${home}#${id}`}>{label}</a>)}
         </nav>
         <div class="header-actions">
-          <a class="lang" href={altPath(lang, page)} hreflang={lang === 'zh' ? 'en' : 'zh-CN'} aria-label={c.nav.switchAria}>{c.nav.switchLabel}</a>
+          <div class="lang-switch" role="group" aria-label={c.nav.langGroup}>
+            <a href={enPath} hreflang="en" lang="en" aria-current={lang === 'en' ? 'page' : undefined} data-keep-hash>EN</a>
+            <span aria-hidden="true">/</span>
+            <a href={zhPath} hreflang="zh-CN" lang="zh-CN" aria-current={lang === 'zh' ? 'page' : undefined} data-keep-hash>中文</a>
+          </div>
           <a class="btn btn-sm" href={`${home}#apply`}>{c.nav.cta}</a>
         </div>
       </div>
@@ -80,5 +86,11 @@ const nav = [
         <p class="muted small">{c.footer.note}</p>
       </div>
     </footer>
+    <script is:inline>
+      // Language switcher keeps the current section (#hash). Without JS it still opens the same page.
+      document.querySelectorAll('a[data-keep-hash]').forEach(function (a) {
+        a.addEventListener('click', function () { if (location.hash) a.href = a.getAttribute('href') + location.hash; });
+      });
+    </script>
   </body>
 </html>

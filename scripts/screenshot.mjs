@@ -13,10 +13,10 @@ try {
 }
 const base = process.argv[2] || 'http://localhost:4321';
 const shots = [
-  ['home-desktop', '/', 1440, 900, 1],
-  ['home-mobile', '/', 390, 844, 1],
-  ['home-en-desktop', '/en/', 1440, 900, 1],
-  ['home-en-mobile', '/en/', 390, 844, 1],
+  ['home-en-desktop', '/', 1440, 900, 1],
+  ['home-en-mobile', '/', 390, 844, 1],
+  ['home-zh-desktop', '/zh/', 1440, 900, 1],
+  ['home-zh-mobile', '/zh/', 390, 844, 1],
   ['privacy-mobile', '/privacy', 390, 844, 1],
 ];
 const browser = await chromium.launch({ channel: 'chrome' });

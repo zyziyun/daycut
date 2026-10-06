@@ -16,8 +16,7 @@ export const zh = {
     desktop: '桌面版',
     faq: '常见问题',
     cta: '申请名额',
-    switchLabel: 'EN',
-    switchAria: 'Switch to English',
+    langGroup: '语言',
     skip: '跳到正文',
   },
   hero: {
