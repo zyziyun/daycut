@@ -57,6 +57,8 @@ v0.4 (outputs.py, intake.py, inbox.py; engine command when available, desk imple
   GET  /api/effects                        effects catalogue (zh labels, params, preview kind)
   POST /api/intake {prompt, inputs[]}      -> {id}; GET /api/intake/<id>; POST .../revise {prompt}; POST .../apply
                                            {plan?, run?}; GET /api/intake/recent
+  GET  /api/calendar?start=YYYY-MM-DD      {posts, queue}; POST /api/calendar {item, clip, platform, at};
+                                           POST /api/calendar/<id> {at?, state?, remove?}; POST .../confirm {start}
   GET  /api/inbox                          every decision waiting for the creator; POST /api/inbox/answer {keys,
                                            answer?}; POST /api/inbox/undo {keys}
 """
@@ -411,6 +413,8 @@ class Api:
         self.outputs = Outputs(engine.data_dir, self.history, runner if engine.mode == "real" else None, bus)
         self.intake = Intake(engine.data_dir, bus, runner, engine.mode, probe=probe)
         self.inbox = Inbox(engine.data_dir, self.history, runner, engine.mode, bus)
+        from .calendar import Calendar
+        self.calendar = Calendar(engine.data_dir, self.history, self.outputs, bus)
         self.port = None
 
     def roots(self):
@@ -471,6 +475,17 @@ class Api:
             if parts[2:] == ["apply"] and method == "POST":
                 need(b.get("run") in (None, True, False), "run must be a boolean")
                 return self.intake.apply(parts[1], b.get("plan"), run=b.get("run", True) is not False)
+        if parts[:1] == ["calendar"]:
+            if parts == ["calendar"] and method == "GET":
+                st = (query.get("start") or [None])[0]
+                return self.calendar.list(start=st)
+            if parts == ["calendar"] and method == "POST":
+                return self.calendar.add(b)
+            if parts == ["calendar", "confirm"] and method == "POST":
+                return self.calendar.confirm_week(b.get("start"))
+            if len(parts) == 2 and method == "POST":
+                need(ID_RE.match(parts[1]), "bad post id")
+                return self.calendar.update(parts[1], b)
         if parts[:1] == ["inbox"]:
             if parts == ["inbox"] and method == "GET":
                 return self.inbox.list()

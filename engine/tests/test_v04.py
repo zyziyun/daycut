@@ -117,7 +117,8 @@ class OutputsTest(unittest.TestCase):
         self.root = tempfile.mkdtemp()
         self.watch = os.path.join(self.root, "demos")
         self.d = make_fuye(self.watch)
-        self.env = mock.patch.dict(os.environ, {"DESK_HISTORY_WATCH": self.watch})
+        self.env = mock.patch.dict(os.environ, {"DESK_HISTORY_WATCH": self.watch,
+                                                "VSTUDIO_HOME": os.path.join(self.root, "home")})
         self.env.start()
         data = os.path.join(self.root, "desk")
         self.h = History(data, Registry(data))
@@ -196,6 +197,24 @@ class OutputsTest(unittest.TestCase):
         cl = OU.list_clips(dict(kind="batch", dir=b))
         self.assertEqual(cl[0]["files"][0]["aspect"], "3:4")
         self.assertEqual(cl[0]["duration"], 80.0)
+
+
+class CalendarTest(OutputsTest):
+    def test_schedule_move_confirm_remove(self):
+        from desk_engine.calendar import Calendar
+        WK.adopt(self.d)                                    # a finished work folder (status done)
+        cal = Calendar(os.path.join(self.root, "desk"), self.h, self.o)
+        q = cal.list()["queue"]
+        self.assertIn("A_换圈子", [x["clip"] for x in q])
+        post = cal.add(dict(item=self.item, clip="A_换圈子", platform="xiaohongshu", at="2026-10-07T19:00"))
+        self.assertNotIn("A_换圈子", [x["clip"] for x in cal.list()["queue"]])
+        cal.update(post["id"], dict(at="2026-10-08T21:00"))
+        self.assertEqual(cal.list(start="2026-10-05")["posts"][0]["at"], "2026-10-08T21:00")
+        self.assertEqual(cal.confirm_week("2026-10-05")["ready"], 1)
+        cal.update(post["id"], dict(remove=True))
+        self.assertEqual(cal.list()["posts"], [])
+        with self.assertRaises(BadRequest):
+            cal.add(dict(item=self.item, clip="A_换圈子", at="tomorrow"))
 
 
 class IntakeTest(unittest.TestCase):
