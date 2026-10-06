@@ -35,7 +35,8 @@ v0.2 (studio.py; engine command when available, desk implementation otherwise)
   POST /api/plans                          AI segment planning (async) -> {id}; GET /api/plans/<id>
   POST /api/plans/<id>/batch               accepted + edited segments -> segments.yaml -> batch
   POST /api/batches/<id>/client            {client}
-  POST /api/batches/<id>/jobs/<job>/edit   {op: caption|trim|hook|cover|copy, ...}; /undo; /rerun
+  POST /api/batches/<id>/jobs/<job>/edit   {op: caption (+reasr)|trim|cut {start,end,why}|notes {lines}|hook|cover|copy,
+                                           ...}; /undo; /rerun
   POST /api/batches/<id>/timing            {job, event: start|stop, what: review, active_s?}
   POST /api/batches/<id>/deliver           {client?, zip, cleanup_days?}; GET; POST .../deliver/cleanup
   GET  /api/metrics?batch=|client=         dashboard numbers; GET|POST /api/metrics/weekly (weekly_metrics.csv)
@@ -220,11 +221,24 @@ def validate_plan_batch(b):
 def validate_edit(b):
     need(isinstance(b, dict), "body must be an object")
     op = b.get("op")
-    need(op in ("caption", "trim", "hook", "cover", "copy"), "op: caption | trim | hook | cover | copy")
+    need(op in ("caption", "trim", "cut", "notes", "hook", "cover", "copy"),
+         "op: caption | trim | cut | notes | hook | cover | copy")
     if op == "caption":
         cue = b.get("cue")
         need(isinstance(cue, int) and not isinstance(cue, bool) and 0 <= cue <= 100000, "cue: caption index")
-        return op, dict(cue=cue, text=_str(b.get("text"), "text", 1, 200))
+        need(b.get("reasr") in (None, True, False), "reasr must be a boolean")
+        out = dict(cue=cue, text=_str(b.get("text"), "text", 1, 200))
+        if b.get("reasr"):
+            out["reasr"] = True
+        return op, out
+    if op == "cut":
+        a, z = _num(b.get("start"), 0, 1e6, "start"), _num(b.get("end"), 0, 1e6, "end")
+        need(z > a, "end must be after start")
+        return op, dict(start=float(a), end=float(z), why=_str(b.get("why") or "", "why", 0, 200))
+    if op == "notes":
+        lines = _strlist(b.get("lines") if b.get("lines") is not None else [], "lines", 12, 80)
+        need(all("|" not in x for x in lines), "notes lines cannot contain |")
+        return op, dict(lines=[x.strip() for x in lines if x.strip()])
     if op == "trim":
         a, z = _num(b.get("start"), 0, 1e6, "start"), _num(b.get("end"), 0, 1e6, "end")
         need(z > a, "end must be after start")

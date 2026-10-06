@@ -141,6 +141,32 @@ class RealDispatchTest(unittest.TestCase):
         call = [c for c in self.runner.calls if c[:2] == ["job", "edit"]][-1]
         self.assertEqual(call[6:], ["--op", "copy", "--title", "新标题", "--body", "b", "--tags", "a,b", "--json"])
 
+    def test_cut_notes_and_engine_decided_captions(self):
+        jd = self.st.job_detail(self.bid, "s001")["edit"]
+        a, z = jd["range"]
+        w = [x for x in jd["words"] if a < x["t"] and x["te"] < z][2:4]
+        r = self.st.edit(self.bid, "s001", "cut", dict(start=w[0]["t"] + 0.01, end=w[-1]["te"] - 0.01, why="aside"))
+        self.assertTrue(r["ok"])
+        call = [c for c in self.runner.calls if c[:2] == ["job", "edit"]][-1]
+        self.assertEqual(call[6:8], ["--op", "cut"])
+        self.assertEqual(call[call.index("--start") + 1], f"{w[0]['t']:.2f}")       # snapped to whole words
+        self.assertEqual(call[call.index("--end") + 1], f"{w[-1]['te']:.2f}")
+        self.assertEqual(call[call.index("--why") + 1], "aside")
+        self.st.edit(self.bid, "s001", "notes", dict(lines=["要点一", "要点二"]))
+        call = [c for c in self.runner.calls if c[:2] == ["job", "edit"]][-1]
+        self.assertEqual(call[6:10], ["--op", "notes", "--set", "要点一|要点二"])
+        # a caption that is not a sound-alike reaches the engine (it re-hears the audio); its refusal comes back whole
+        self.runner.docs["job edit"] = {"ok": False, "faithful": False, "reason": "the audio says 分就比较低",
+                                        "reason_code": "differs-from-audio", "heard": "它就这个分就比较低", "rerun": []}
+        r = self.st.edit(self.bid, "s001", "caption", dict(cue=0, text="完全不一样的一句话", reasr=True))
+        call = [c for c in self.runner.calls if c[:2] == ["job", "edit"]][-1]
+        self.assertIn("--reasr", call)
+        self.assertEqual((r["ok"], r["reason_code"], r["heard"]), (False, "differs-from-audio", "它就这个分就比较低"))
+        self.assertEqual(validate_edit(dict(op="notes", lines=["a", ""]))[1], dict(lines=["a"]))
+        with self.assertRaises(BadRequest):
+            validate_edit(dict(op="notes", lines=["a|b"]))
+        self.assertEqual(validate_edit(dict(op="cut", start=1, end=2))[1], dict(start=1.0, end=2.0, why=""))
+
     def test_deliver_metrics_timing_plan_client(self):
         r = self.st.deliver(self.bid, dict(zip=True, cleanup_days=30))
         self.assertEqual(r["dir"], "/x/delivery")

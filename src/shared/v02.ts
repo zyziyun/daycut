@@ -151,8 +151,10 @@ export interface PlanBatchBody {
 export type EditOp = 'caption' | 'trim' | 'hook' | 'cover' | 'copy';
 
 export type EditBody =
-  | { op: 'caption'; cue: number; text: string }
+  | { op: 'caption'; cue: number; text: string; reasr?: boolean }
   | { op: 'trim'; start: number; end: number }
+  | { op: 'cut'; start: number; end: number; why?: string }
+  | { op: 'notes'; lines: string[] }
   | { op: 'hook'; pick: number }
   | { op: 'cover'; t: number | null; text: string }
   | { op: 'copy'; title: string; body: string; tags: string[] };
@@ -177,6 +179,12 @@ export interface EditHistoryEntry {
 
 export interface JobEditInfo {
   range: [number, number] | null;
+  /** 记笔记 panel lines */
+  notes?: string[];
+  /** inner cuts of the row (source seconds) */
+  cuts?: { start: number; end: number; why: string }[];
+  /** caption edits the engine could not place after a re-proofread / re-cut */
+  caption_overrides_missed?: unknown[];
   words: Word[];
   cues: Cue[];
   hooks: HookSpan[];
@@ -195,6 +203,11 @@ export interface EditResult {
   ok: boolean;
   faithful: boolean;
   reason: string | null;
+  /** engine refusal code: empty-text | not-faithful | differs-from-audio | rehear-failed | rehear-unavailable */
+  reason_code?: string | null;
+  /** what a re-hearing of the cue window heard */
+  heard?: string | null;
+  matched?: string | null;
   ratio?: number;
   rerun: string[];
   pending?: string[];

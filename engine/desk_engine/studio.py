@@ -42,7 +42,8 @@ DEPS = {
     "export": ["compose", "proofread"], "verify": ["apply"], "qc": ["cleanup", "apply", "compose", "export", "verify"],
     "preview": ["export"],
 }
-OP_ROOTS = {"caption": ["export"], "cover": ["export"], "copy": [], "hook": ["compose"], "trim": ["cleanup"]}
+OP_ROOTS = {"caption": ["export"], "cover": ["export"], "copy": [], "hook": ["compose"], "trim": ["cleanup"],
+            "cut": ["cleanup"], "notes": ["export"]}
 CLEANUP_PROFILES = ("gentle", "standard", "strict")
 COVER_STYLES = ("frame", "collage", "face", "text")
 DEFAULT_CLIENT = dict(name="", style="", platforms=["xiaohongshu:full"], tags=[], glossary=[],
@@ -415,8 +416,12 @@ class Studio:
                          rerun=h.get("rerun") or [], glossary_added=None)
                     for h in ee.get("history") or [] if not h.get("undone")]
             ent = dict(ent, history=hist, pending=ee.get("pending") or [])
+        row_cuts = (d.get("cleanup") or {}).get("row_cuts") or p.get("cuts") or []
         d["edit"] = dict(
-            range=rng, words=words, cues=cues, hooks=[_hook(h) for h in hooks], hook_pick=p.get("hook_pick"),
+            range=rng, words=words, cues=cues, notes=[str(x) for x in (p.get("notes") or []) if x],
+            cuts=[dict(start=c[0], end=c[1], why=c[2] if len(c) > 2 else "") for c in row_cuts
+                  if isinstance(c, (list, tuple)) and len(c) >= 2],
+            caption_overrides_missed=(ee or {}).get("caption_overrides_missed") or [], hooks=[_hook(h) for h in hooks], hook_pick=p.get("hook_pick"),
             cover=dict(t=(p.get("cover") or {}).get("t"), text=(p.get("cover") or {}).get("text", ""),
                        file=next((x.get("cover") for x in exports if x.get("cover")), None)),
             copy=dict(title=p.get("title") or "", body=p.get("body") or "", tags=p.get("tags") or []),
@@ -434,6 +439,11 @@ class Studio:
         if op == "trim":
             need(e["range"], "this job has no source range to trim")
             return dict(start=e["range"][0], end=e["range"][1]), None
+        if op == "cut":
+            need(e["range"], "this job has no source range to cut in")
+            return dict(cuts=[[c["start"], c["end"], c["why"]] for c in e["cuts"]]), None
+        if op == "notes":
+            return dict(lines=list(e["notes"])), None
         if op == "hook":
             need(0 <= args["pick"] < len(e["hooks"]), f"no hook candidate {args['pick']}")
             return dict(pick=e["hook_pick"] if e["hook_pick"] is not None else 0), None
@@ -450,12 +460,22 @@ class Studio:
             return dict(ok=True, faithful=True, reason="unchanged", rerun=[], glossary_added=None, noop=True,
                         pending=e["pending"], history=e["history"])
         res = dict(ok=True, faithful=True, reason=None, rerun=downstream(OP_ROOTS[op]), glossary_added=None)
-        if op == "caption" and undo_of is None:
+        if op == "caption" and undo_of is None and not self.has("job-edit"):
+            # the engine's own check re-hears the cue window (a correct re-hearing is accepted even when it is not a
+            # sound-alike); without it, the desk's text check decides
             chk = P.faithful(cue["text"], args["text"], cue.get("heard"))
-            res.update(faithful=chk["faithful"], reason=chk["reason"], ratio=chk["ratio"])
+            res.update(faithful=chk["faithful"], reason=chk["reason"], reason_code=chk["reason"], ratio=chk["ratio"])
             if not chk["faithful"]:
                 res.update(ok=False, rerun=[])
                 return res
+        if op == "cut" and undo_of is None:
+            words = e["words"]
+            a, b = P.snap(args["start"], words, "start"), P.snap(args["end"], words, "end")
+            need(b > a, "the cut holds no whole word")
+            rng = e["range"]
+            need(rng[0] <= a and b <= rng[1], "the cut must be inside the clip range")
+            need((rng[1] - rng[0]) - (b - a) >= 3.0, "a clip must keep at least 3 s")
+            args = dict(args, start=round(a, 2), end=round(b, 2))
         if op == "trim":
             words = e["words"]
             a, b = P.snap(args["start"], words, "start"), P.snap(args["end"], words, "end")
@@ -465,7 +485,9 @@ class Studio:
             doc = self.runner.json(["job", "edit", "--batch", self.e.dir_of(bid), "--job", jid, "--op", op,
                                     *_edit_args(op, args), "--json"])
             res.update(ok=bool(doc.get("ok", True)), faithful=bool(doc.get("faithful", doc.get("ok", True))),
-                       reason=doc.get("reason"), rerun=doc.get("rerun") if doc.get("rerun") is not None else res["rerun"])
+                       reason=doc.get("reason") or doc.get("error"), reason_code=doc.get("reason_code"),
+                       heard=doc.get("heard"), matched=doc.get("matched"),
+                       rerun=doc.get("rerun") if doc.get("rerun") is not None else res["rerun"])
             ga = doc.get("glossary_added")
             res["glossary_added"] = (ga[0] if isinstance(ga, list) and ga else ga if isinstance(ga, dict) else None)
             if doc.get("pending") is not None:
@@ -792,6 +814,8 @@ def _quiet(fn, args):
 
 
 def _same(op, args, before):
+    if op == "cut":
+        return False
     if op == "trim":
         return abs(args["start"] - before["start"]) < 0.005 and abs(args["end"] - before["end"]) < 0.005
     return all(args.get(k) == before.get(k) for k in args)
@@ -807,7 +831,13 @@ def _hook(h):
 
 def _edit_args(op, a):
     if op == "caption":
-        return ["--cue", str(a["cue"]), "--text", a["text"]]
+        return ["--cue", str(a["cue"]), "--text", a["text"]] + (["--reasr"] if a.get("reasr") else [])
+    if op == "cut":
+        if "cuts" in a:                            # undo through the desk: the engine has its own `--op undo`
+            raise BadRequest("undo a cut with the engine's undo")
+        return ["--start", f"{a['start']:.2f}", "--end", f"{a['end']:.2f}"] + (["--why", a["why"]] if a.get("why") else [])
+    if op == "notes":
+        return ["--set", "|".join(a.get("lines") or [])]
     if op == "trim":
         return ["--start", f"{a['start']:.2f}", "--end", f"{a['end']:.2f}"]
     if op == "hook":

@@ -492,6 +492,13 @@ class MockEngine:
                 p["cover"] = dict(t=args.get("t"), text=args.get("text") or "")
             elif op == "copy":
                 p.update(title=args.get("title") or p.get("title"), body=args.get("body") or "", tags=args.get("tags") or [])
+            elif op == "cut":
+                if "cuts" in args:                 # undo
+                    p["cuts"] = [list(c) for c in args["cuts"]]
+                else:
+                    p.setdefault("cuts", []).append([float(args["start"]), float(args["end"]), args.get("why") or ""])
+            elif op == "notes":
+                p["notes"] = list(args.get("lines") or [])
             for s in stages:
                 if j["stages"].get(s) == "done":
                     j["stages"][s] = "stale"

@@ -161,6 +161,34 @@ test('job detail: caption fix (faithful check), hook swap, trim, undo, re-render
   await expect.poll(async () => (await api<{ job: { state: string } }>(`/api/batches/${batchId}/jobs/s001`)).job.state, { timeout: 20000 }).toBe('done');
 });
 
+test('job detail: refusal reason + re-hear, notes panel edit (overlay only), inner cut (word-snapped)', async () => {
+  await page.goto(`app://desk/index.html#/b/${batchId}/job/s002`);
+  await expect(page.getByTestId('job-editor')).toBeVisible();
+  const cue = page.getByTestId('cue-0');
+  await cue.fill((await cue.inputValue()) + '记得点赞关注收藏转发');
+  await cue.press('Enter');
+  await expect(page.getByTestId('cue-refusal-0')).toContainText(/音频里没有|not in the audio/);
+  await expect(page.getByTestId('cue-reasr-0')).toBeVisible();
+  await cue.press('Escape');
+  await page.getByTestId('edit-tab-notes').click();
+  await page.getByTestId('notes-text').fill('要点一\n要点二');
+  await page.getByTestId('notes-save').click();
+  await expect(page.getByTestId('rerun-bar')).toContainText('export');
+  await expect(page.getByTestId('rerun-bar')).not.toContainText('cleanup');
+  const jd = await api<{ edit: { range: [number, number]; words: { t: number; te: number }[]; notes: string[] } }>(`/api/batches/${batchId}/jobs/s002`);
+  expect(jd.edit.notes).toEqual(['要点一', '要点二']);
+  const inner = jd.edit.words.filter((w) => w.t > jd.edit.range[0] && w.te < jd.edit.range[1]);
+  await page.getByTestId('edit-tab-cut').click();
+  await page.getByTestId('cut-start').fill(String(inner[2].t + 0.01));
+  await page.getByTestId('cut-end').fill(String(inner[3].te - 0.01));
+  await page.getByTestId('cut-apply').click();
+  await expect(page.getByTestId('rerun-bar')).toContainText('cleanup');
+  await expect(page.getByTestId('cut-list')).toBeVisible();
+  const after = await api<{ edit: { cuts: { start: number; end: number }[] } }>(`/api/batches/${batchId}/jobs/s002`);
+  expect(after.edit.cuts[0].start).toBeCloseTo(inner[2].t, 2);
+  expect(after.edit.cuts[0].end).toBeCloseTo(inner[3].te, 2);
+});
+
 test('delivery package: folders, 文案.md, schedule, notes, zip; delivered state', async () => {
   const st = await api<{ jobs: { id: string }[] }>(`/api/batches/${batchId}`);
   for (const j of st.jobs) await api(`/api/batches/${batchId}/timing`, { job: j.id, event: 'stop', what: 'review', active_s: 12 });

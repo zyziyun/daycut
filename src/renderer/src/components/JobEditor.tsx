@@ -1,5 +1,6 @@
-// In-review edits (P0-3): caption text (only edits consistent with the audio are accepted), hook swap, trim
-// (word-snapped), cover frame + text, title / body / tags. Every edit is recorded and undoable (⌘Z); the bar
+// In-review edits (P0-3): caption text (only edits consistent with the audio are accepted - the engine re-hears
+// the cue window, refusals say why and what it heard), hook swap, trim (word-snapped), inner cut (word-snapped),
+// 记笔记 notes panel (overlay re-render only), cover frame + text, title / body / tags. Every edit is recorded and undoable (⌘Z); the bar
 // shows which stages will re-run and "re-render affected" runs only those.
 import { useEffect, useRef, useState } from 'react';
 import type { EditBody, EditResult, JobEditInfo } from '../../../shared/v02';
@@ -9,8 +10,17 @@ import { hms } from '../lib/format';
 import { EdgeEditor } from './SegmentReview';
 import { ErrorBox, Media } from './ui';
 
-type Tab = 'captions' | 'hook' | 'trim' | 'cover' | 'copy';
-const TABS: Tab[] = ['captions', 'hook', 'trim', 'cover', 'copy'];
+type Tab = 'captions' | 'hook' | 'trim' | 'cut' | 'notes' | 'cover' | 'copy';
+const TABS: Tab[] = ['captions', 'hook', 'trim', 'cut', 'notes', 'cover', 'copy'];
+
+/** A refusal in words: the engine's code (translated when known) or its own sentence, plus what was re-heard. */
+export function refusalText(r: Pick<EditResult, 'reason' | 'reason_code' | 'heard'>): string {
+  const code = r.reason_code ?? r.reason ?? 'rejected';
+  const key = `edit.reason.${code}`;
+  const base = t(key) !== key ? t(key) : (r.reason ?? t('edit.reason.rejected'));
+  const extra = r.reason && t(key) !== key && r.reason !== code ? ` (${r.reason})` : '';
+  return base + extra + (r.heard ? ` · ${t('edit.heardAudio')}: 「${r.heard}」` : '');
+}
 
 export function JobEditor({ batch, job, info, getTime, onChanged }: { batch: string; job: string; info: JobEditInfo; getTime: () => number; onChanged: () => void }) {
   const { client } = useEngine();
@@ -24,7 +34,7 @@ export function JobEditor({ batch, job, info, getTime, onChanged }: { batch: str
     setMsg(null);
     try {
       const r = await client.editJob(batch, job, body);
-      if (!r.ok) setMsg({ ok: false, text: t(`edit.reason.${r.reason ?? 'rejected'}`) });
+      if (!r.ok) setMsg({ ok: false, text: refusalText(r) });
       else {
         setMsg({ ok: true, text: r.glossary_added ? t('edit.glossaryAdded', { w: r.glossary_added.wrong, r: r.glossary_added.right }) : r.rerun.length ? t('edit.savedRerun', { s: r.rerun.join(', ') }) : t('edit.savedInstant') });
         onChanged();
@@ -112,6 +122,8 @@ export function JobEditor({ batch, job, info, getTime, onChanged }: { batch: str
       {tab === 'captions' && <Captions info={info} busy={busy} onEdit={edit} />}
       {tab === 'hook' && <Hooks info={info} onEdit={edit} />}
       {tab === 'trim' && <Trim info={info} onEdit={edit} />}
+      {tab === 'cut' && <InnerCut info={info} getTime={getTime} onEdit={edit} />}
+      {tab === 'notes' && <Notes info={info} onEdit={edit} />}
       {tab === 'cover' && <Cover info={info} getTime={getTime} onEdit={edit} />}
       {tab === 'copy' && <Copy info={info} onEdit={edit} />}
       {info.history.length > 0 && (
@@ -162,6 +174,21 @@ function Captions({ info, busy, onEdit }: { info: JobEditInfo; busy: boolean; on
         });
     }
   };
+  const reHear = async (i: number) => {
+    const v = (draft[i] ?? '').trim();
+    if (!v || inflight.current.has(i)) return;
+    inflight.current.add(i);
+    const r = await onEdit({ op: 'caption', cue: i, text: v, reasr: true }).finally(() => inflight.current.delete(i));
+    if (r) {
+      setResult((m) => ({ ...m, [i]: r }));
+      if (r.ok)
+        setDraft((d) => {
+          const n = { ...d };
+          delete n[i];
+          return n;
+        });
+    }
+  };
   return (
     <div className="col cues" style={{ gap: 4, maxHeight: 360, overflow: 'auto' }}>
       <span className="muted small">{t('edit.captionHint')}</span>
@@ -169,7 +196,7 @@ function Captions({ info, busy, onEdit }: { info: JobEditInfo; busy: boolean; on
         const r = result[c.i];
         const changed = c.text !== c.heard;
         return (
-          <div key={c.i} className="cue row">
+          <div key={c.i} className="cue row" style={{ flexWrap: 'wrap' }}>
             <span className="mono small muted" style={{ width: 70 }}>
               {hms(c.start)}
             </span>
@@ -193,9 +220,19 @@ function Captions({ info, busy, onEdit }: { info: JobEditInfo; busy: boolean; on
               onBlur={() => void commit(c.i)}
               data-testid={`cue-${c.i}`}
             />
-            <span className="small" style={{ width: 22 }} title={r && !r.ok ? t(`edit.reason.${r.reason}`) : changed ? `${t('edit.heard')}: ${c.heard}` : ''}>
+            <span className="small" style={{ width: 22 }} title={r && !r.ok ? refusalText(r) : changed ? `${t('edit.heard')}: ${c.heard}` : ''}>
               {r && !r.ok ? <span className="err">✕</span> : changed ? <span className="okc">✓</span> : ''}
             </span>
+            {r && !r.ok && (
+              <div className="small err" style={{ flexBasis: '100%', paddingLeft: 78 }} data-testid={`cue-refusal-${c.i}`}>
+                {refusalText(r)}{' '}
+                {r.reason_code !== 'rehear-unavailable' && (
+                  <button className="btn sm" disabled={busy} onClick={() => void reHear(c.i)} data-testid={`cue-reasr-${c.i}`}>
+                    {t('edit.reHear')}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         );
       })}
@@ -252,6 +289,81 @@ function Trim({ info, onEdit }: { info: JobEditInfo; onEdit: (b: EditBody) => Pr
         </button>
         <button className="btn primary sm" disabled={!dirty} onClick={() => void onEdit({ op: 'trim', start: r.start, end: r.end })} data-testid="trim-apply">
           {t('edit.applyTrim')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function InnerCut({ info, getTime, onEdit }: { info: JobEditInfo; getTime: () => number; onEdit: (b: EditBody) => Promise<EditResult | null> }) {
+  const [a, setA] = useState<number | null>(null);
+  const [b, setB] = useState<number | null>(null);
+  const [why, setWhy] = useState('');
+  if (!info.range) return <div className="muted small">{t('edit.noRange')}</div>;
+  // the player plays the clip from the start of its source range (output ≈ source - range start before cuts)
+  const fromPlayer = () => Math.round((info.range![0] + getTime()) * 100) / 100;
+  const words = a != null && b != null && b > a ? info.words.filter((w) => w.t >= a - 0.05 && w.te <= b + 0.05).map((w) => w.w).join('') : '';
+  const ok = a != null && b != null && b > a && a >= info.range[0] && b <= info.range[1];
+  return (
+    <div className="col" style={{ gap: 6 }} data-testid="cut-editor">
+      <span className="muted small">{t('edit.cutHint')}</span>
+      <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+        <label className="small">
+          {t('edit.cutStart')}{' '}
+          <input className="input mono" type="number" step={0.01} style={{ width: 100 }} value={a ?? ''} onChange={(e) => setA(e.target.value === '' ? null : Number(e.target.value))} data-testid="cut-start" />
+        </label>
+        <button className="btn sm" onClick={() => setA(fromPlayer())}>
+          {t('edit.atPlayhead')}
+        </button>
+        <label className="small">
+          {t('edit.cutEnd')}{' '}
+          <input className="input mono" type="number" step={0.01} style={{ width: 100 }} value={b ?? ''} onChange={(e) => setB(e.target.value === '' ? null : Number(e.target.value))} data-testid="cut-end" />
+        </label>
+        <button className="btn sm" onClick={() => setB(fromPlayer())}>
+          {t('edit.atPlayhead')}
+        </button>
+        <input className="input" placeholder={t('edit.cutWhy')} aria-label={t('edit.cutWhy')} value={why} maxLength={200} onChange={(e) => setWhy(e.target.value)} style={{ flex: 1, minWidth: 120 }} />
+      </div>
+      {words && <div className="small mono muted">{t('edit.cutWords')}: 「{words}」</div>}
+      <div className="row">
+        <span className="small muted">{t('edit.rangeIs', { a: hms(info.range[0]), b: hms(info.range[1]) })}</span>
+        <div style={{ flex: 1 }} />
+        <button className="btn primary sm" disabled={!ok} onClick={() => void onEdit({ op: 'cut', start: a!, end: b!, why: why.trim() || undefined }).then((r) => r?.ok && (setA(null), setB(null), setWhy('')))} data-testid="cut-apply">
+          {t('edit.applyCut')}
+        </button>
+      </div>
+      {(info.cuts ?? []).length > 0 && (
+        <ul className="small" style={{ margin: 0, paddingLeft: 18 }} data-testid="cut-list">
+          {(info.cuts ?? []).map((c, k) => (
+            <li key={k} className="mono">
+              {hms(c.start)}–{hms(c.end)} {c.why && <span className="muted">· {c.why}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function Notes({ info, onEdit }: { info: JobEditInfo; onEdit: (b: EditBody) => Promise<EditResult | null> }) {
+  const cur = (info.notes ?? []).join('\n');
+  const [text, setText] = useState(cur);
+  useEffect(() => setText(cur), [cur]);
+  const lines = text
+    .split('\n')
+    .map((x) => x.replace(/\|/g, '／').trim())
+    .filter(Boolean)
+    .slice(0, 12);
+  const dirty = lines.join('\n') !== cur;
+  return (
+    <div className="col" style={{ gap: 6 }} data-testid="notes-editor">
+      <span className="muted small">{t('edit.notesHint')}</span>
+      <textarea className="input" rows={5} aria-label={t('edit.tab.notes')} value={text} onChange={(e) => setText(e.target.value)} data-testid="notes-text" />
+      <div className="row">
+        <span className="small muted">{t('edit.notesCount', { n: lines.length })}</span>
+        <div style={{ flex: 1 }} />
+        <button className="btn primary sm" disabled={!dirty} onClick={() => void onEdit({ op: 'notes', lines: lines.map((x) => x.slice(0, 80)) })} data-testid="notes-save">
+          {t('edit.saveNotes')}
         </button>
       </div>
     </div>
