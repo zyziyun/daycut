@@ -1,6 +1,6 @@
 ---
 name: video-studio
-description: One video-editing skill for every kind of edit, for 小红书 / 抖音 / TikTok / YouTube / Shorts / B站. Talking-head 口播 (去气口, 去 filler/重复/口误, 加速, 字幕, 记笔记面板, 气泡, 进度条, 高光预告/快剪 hooks, 精剪风, 修图/美颜, 封面, 发布文案); long recordings → 切片/分集/剪成课程 (去浏览器头/书签栏, 学员变声, 竖屏切片); calls/interviews → 截取一段 + 遮脸/打码/放个小猫; promo recuts with 左右分栏/split screen, 截图卡片高亮, 定格放大, 精选插片; 文艺片/photo stories with effects; travel vlogs (calm or 卡点快节奏, 调色, 转场, 配乐); 3Blue1Brown-style explainers; covers/thumbnails, slides, scripts, pronunciation drills; one master → many platforms. Use whenever the user hands over footage, photos, screenshots or a topic and wants it edited, cut shorter, captioned, given effects, music, a cover or post copy, or wants to tweak one stage of such a video.
+description: One video-editing skill for every kind of edit, for 小红书 / 抖音 / 视频号 / TikTok / YouTube / Shorts / B站 / X / Instagram. Talking-head 口播 (去气口, 去 filler/重复/口误, 加速, 字幕, 记笔记面板, 气泡, 进度条, 高光预告/快剪 hooks, 精剪风, 修图/美颜, 封面, 发布文案); long recordings → 切片/分集/剪成课程 (去浏览器头/书签栏, 学员变声, 竖屏切片); calls/interviews → 截取一段 + 遮脸/打码/放个小猫; promo recuts with 左右分栏/split screen, 截图卡片高亮, 定格放大, 精选插片; 文艺片/photo stories with effects; travel vlogs (calm or 卡点快节奏, 调色, 转场, 配乐); 3Blue1Brown-style explainers; covers/thumbnails, slides, scripts, pronunciation drills; one master → many platforms. Use whenever the user hands over footage, photos, screenshots or a topic and wants it edited, cut shorter, captioned, given effects, music, a cover or post copy, or wants to tweak one stage of such a video.
 ---
 
 # video-studio
@@ -89,7 +89,7 @@ When the request is ambiguous, ask one question: what is the material, and where
 | Transitions | `vstudio.xfade` (24 names in HyperFrames, ffmpeg and per-frame PIL), `hf.scene_transitions`, `cut.xfade_assemble(transition=…)` |
 | Effects registry, add an effect | `python -m vstudio.effects --list / --show <id>`, `effects.find(...)`; `references/ADDING_EFFECTS.md` |
 | Reframe 16:9 ↔ 9:16 ↔ 3:4 (face-tracked) | `python -m vstudio.reframe in.mp4 out.mp4 --size 1080x1920`, `reframe.plan/render` |
-| Platform export (one master → 小红书 / 抖音 / TikTok / YouTube / Shorts / B站) | `python -m vstudio.export master.clean.mp4 --platforms xiaohongshu:vertical,douyin,youtube --cues cues.json --out exports/`; profiles: `vstudio.platform`, `references/PLATFORMS.md` |
+| Platform export (one master → 小红书 / 抖音 / 视频号 / TikTok / YouTube / Shorts / B站 / X / Instagram Reels + feed) | `python -m vstudio.export master.clean.mp4 --platforms xiaohongshu:vertical,douyin,youtube --cues cues.json --out exports/`; profiles: `vstudio.platform`, `references/PLATFORMS.md` |
 | Retouch (slim, skin, makeup; video `--preset fast` for long bodies), cover frame picking | `python -m vstudio.retouch`, talkinghead `retouch_video.py`, `references/RETOUCH.md`, `cover.score_frames`, `cover.prepare_photo` |
 | Voice clone (your own voice for narration) | `tts.synth(engine="clone", ref_wav=…, ref_text=…)` (Qwen3-TTS via mlx-audio, local); photo-story `VOICE = dict(engine="clone")`; persona `tts.clone.*` |
 | Vertical explainer (3b1b short) | `workflows/explainer` "Vertical short" (`--platform xiaohongshu:full`, portrait design truth) |
@@ -123,7 +123,7 @@ The effect catalogue (87 effects, 190 counting named variants, generated from `l
 | `platform` | profiles: canvas, safe box, caption box, keep-outs, loudness, encode, length, cover, text limits |
 | `reframe` | face-tracked / centre / pad-blur / letterbox reframe between aspects (`python -m vstudio.reframe`) |
 | `export` | one clean master → per-platform files, captions (cues.json `keepouts`, 【kw】/`hl` colour, `--no-captions`), covers (`--cover platform=path`), manifest (`python -m vstudio.export`) |
-| `publish` | title checks, chapter lines, post bodies for 小红书 / YouTube / B站; `use_persona_tags=False` / `tag_set=` (persona `publish.tag_sets`) |
+| `publish` | title checks, chapter lines, post bodies for 小红书 / YouTube / B站 / X (280 weighted) / Instagram (≤ 5 tags), `platform_post` (en/zh/bilingual copy per platform), `generate_copy`; `use_persona_tags=False` / `tag_set=` (persona `publish.tag_sets`) |
 
 Tests: `python3 -m pytest tests -q` (synthetic media, no network).
 Pre-publish repo check: `python3 scripts/check_skill.py` (frontmatter, decorative emoji, personal paths).

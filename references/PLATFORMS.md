@@ -4,8 +4,9 @@
 `platforms.<name>` (or `platforms.<name>.orientations.<o>`). `python -m vstudio.platform` prints every
 profile. `python -m vstudio.export` uses them to produce per-platform files (see the bottom of this page).
 
-Researched October 2026. Platforms change their UI and limits often, and **none of the Chinese platforms
-publish safe-zone pixels or loudness targets**. Each value below is tagged:
+Researched October 2026 (X / Instagram / 视频号 added and B站 re-checked 2026-10-06). Platforms change their UI
+and limits often, and **no platform here publishes safe-zone pixels or a loudness target** (YouTube's −14 LUFS
+is the one well-documented normalisation). Each value below is tagged:
 **[S]** sourced (official doc, or several independent guides that agree), **[3P]** one or two third-party
 guides, **[C]** convention (our own working default, measured in-app or chosen to be conservative).
 When a platform's UI changes, preview on a phone and update the persona, not the code.
@@ -22,6 +23,10 @@ When a platform's UI changes, preview on a phone and update the persona, not the
 | `youtube:horizontal` | 1920x1080 | [S] |
 | `youtube-shorts:vertical` | 1080x1920 | Shorts = square or vertical, up to 3 min (since 2024-10-15) [S] |
 | `bilibili:horizontal` / `:vertical` | 1920x1080 / 1080x1920 | [S] |
+| `wechat-channels:vertical` / `:horizontal` | 1080x1920 / 1920x1080 | 视频号: aspect 0.33-3.0 accepted, 16:9 or 9:16 recommended, ≤ 2 GB, no HDR [S: 视频号 help centre]; the old 6:7 (1080x1260) size now only matters for share cards [3P] |
+| `x:horizontal` / `:square` / `:vertical` | 1920x1080 / 1080x1080 / 1080x1920 | 16:9 recommended, 1:1 and 9:16 supported, max 1920x1200 / 1200x1920 [3P, several agree]. A bare `x` target picks the orientation closest to the master (`auto_orientation`) - no letterbox |
+| `instagram:reels` | 1080x1920 (9:16) | [S: all guides agree]; **the feed shows a centre 4:5 crop** (y 285-1635) [3P] |
+| `instagram:feed` | 1080x1350 (4:5) | tallest feed post [3P, several agree]; videos posted to feed are Reels since 2023 [S: Meta API docs] |
 
 ## Safe zones (px on the profile canvas: top / bottom / left / right, + lower-right button column)
 
@@ -35,6 +40,12 @@ When a platform's UI changes, preview on a phone and update the persona, not the
 | youtube-shorts:vertical | 180 | 390 | 60 | 120 | – | [3P] AdConvert set; others range 120-380 top, 300-390 bottom |
 | youtube / bilibili horizontal | 54 | 54-80 | 96 | 96 | – | [C] 5 % title-safe; bilibili bottom +danmaku/progress bar |
 | bilibili:vertical | 200 | 420 | 60 | 150 | – | [C] |
+| wechat-channels:vertical | 200 | 460 | 60 | 60 | – | [C] no published numbers; bottom = author / description / like row |
+| wechat-channels:horizontal | 54 | 80 | 96 | 96 | – | [C] |
+| x:horizontal / square | 54 | 90 | 96 / 60 | 96 / 60 | – | [C] player controls at the bottom; timeline video has almost no overlay |
+| x:vertical | 160 | 380 | 60 | 120 | – | [C] immersive player: post text + action row at the bottom |
+| instagram:reels | 285 | 450 | 60 | 130 | 170 w from y 1000 | top = 4:5 feed crop (285) ≥ UI 200-220 [3P]; bottom 400-450 [3P: CampaignSwift 400, Somake 450, Xyla 430]; right rail [3P] |
+| instagram:feed | 60 | 120 | 60 | 60 | – | [C] mute / tag icons only |
 
 ## Captions
 
@@ -53,6 +64,9 @@ horizontal 44-60 px, 22 CJK / 48 latin. 小红书 9:16 band centred on y ≈ 152
 | youtube | 420-1200 | 43200 (12 h) | max [S]; sweet [C] |
 | youtube-shorts | 20-60 | 180 | [S] |
 | bilibili | 180-900 | 36000 | [C] |
+| wechat-channels | 15-120 | 28800 | phone 3 s-60 min, computer (视频号助手) up to 8 h [S: 视频号 help centre via search, page ~2 y old]; sweet [C] |
+| x | 15-90 | 140 (standard) | 140 s / 512 MB [3P, all agree]; **Premium**: sources disagree (2 h vs 4 h, 8 vs 16 GB; Android 10 min) → profile tiers `premium` 7200 s / 8 GB, `premium_plus` 14400 s / 16 GB [3P, unverified: help.x.com blocked automated reads] |
+| instagram | 15-90 | 1200 | 20 min Reels since 2025 [3P, several]; **> 3 min is not recommended to non-followers** (`reach_max` 180, warned) [3P citing the IG Help Center]; min 3 s; 4 GB [3P] |
 
 ## Loudness, fps, encode
 
@@ -65,6 +79,11 @@ horizontal 44-60 px, 22 CJK / 48 latin. 小红书 9:16 band centred on y ≈ 152
   YouTube 1080p30 SDR ≈ 8 Mbps (12 at 60 fps), "no bitrate limit" [S] → CRF 18 with a 16 M cap [C].
   B站 1080p re-encodes above ~6 Mbps average / 24 Mbps peak [3P] → CRF 18, maxrate 24 M [C].
   小红书 8-12 Mbps advised [3P] → CRF 18, 16 M cap. TikTok/Douyin CRF 20, 12 M cap [C].
+  X: H.264 High, AAC-LC, 30/60 fps, ≤ ~25 Mbps [3P] → CRF 20, 12 M cap; Instagram / 视频号 CRF 20, 12 M cap [C].
+- Upload caps live in `limits.max_bytes` (X 512 MB standard, Instagram 4 GB, 视频号 2 GB); `vstudio.export` warns
+  when a file is over the cap for the account tier.
+- **X autoplays muted** in the timeline: the profile says `captions.burn: recommended`, and an X export without
+  `--cues` warns. Loudness for X / Instagram / 视频号: −14 LUFS / −1.5 dBTP [C; 3P guides cite −14 for Reels].
 
 ## Covers
 
@@ -75,7 +94,16 @@ horizontal 44-60 px, 22 CJK / 48 latin. 小红书 9:16 band centred on y ≈ 152
 | douyin / tiktok vertical | 1080x1920 | profile grid shows centre 3:4 | [3P] |
 | youtube | 1280x720, ≤ 2 MB (desktop now allows larger) | bottom-right timestamp: title-safe ends at x 1100 | [S] |
 | youtube-shorts | 1080x1920 | – | [C] |
-| bilibili horizontal | 1146x717 (16:10), min 960x600, ≤ 5 MB | – | [3P, several agree] |
+| bilibili horizontal | 1146x717 (16:10), min 960x600, ≤ 5 MB | **also cropped to 4:3 (phone home feed) and 16:9** → `crops: [4:3, 16:9]`, title-safe = the intersection | size [3P, several agree]; crops [3P: B站 creator post, updated 2023-11; it says 4:3 1200x900 is now asked for - the uploader crops one image per ratio] |
+| wechat-channels vertical | 1080x1440 (3:4) | share card 6:7 (1080x1260) → `crops: [6:7]` | [3P] |
+| x | = the video canvas (thumbnail is a frame you pick) | – | [C] |
+| instagram:reels | 1080x1920 | **4:5 feed, 3:4 profile grid (since 2025), 1:1** (older grid / some surfaces) → title-safe = centre 1080x1080 (y 420-1500) | 9:16 + 4:5 [3P, several]; grid 3:4 vs 1:1 vs 4:5 [3P disagree → check all three] |
+| instagram:feed | 1080x1350 | 3:4 grid, 1:1 | [3P] |
+
+**Crop check.** For every crop in `platform.cover_crops(p)` the export writes `<target>.cover.crop-4x5.jpg` etc. and
+`<target>.cover.crops.jpg` (all crops + the title-safe box outlined), and `export.cover_crop_check` measures the
+share of busy 48 px tiles (text / faces / detail) in each strip a crop removes: over 15 % → a warning that the
+headline is probably cut in that view.
 
 ## Title / description / tags / chapters
 
@@ -86,6 +114,19 @@ horizontal 44-60 px, 22 CJK / 48 latin. 小红书 9:16 band centred on y ≈ 152
 | TikTok | 55 [C, same as `publish`] | 4000 (2200 via API) [S] | inline, ≤ 30 [3P] | no |
 | YouTube / Shorts | 100 [S] | 5000 [S] | first 3 shown above title, > 60 → all ignored [S] | ≥ 3, first 00:00, each ≥ 10 s [S] |
 | B站 | 80 [3P] | 2000 (250 in some 分区) [3P] | ≤ 10 tags, ≤ 20 chars each [3P] | 分段章节 in the uploader [C] |
+| 视频号 | 短标题 16 [3P, unverified: the uploader shows the limit] | 1000 incl. #话题 / @ [3P] | inline #话题 [C ≤ 10] | no |
+| X | none (the post text is everything) | **280 weighted** (standard) / 25,000 (Premium) [3P]: twitter-text v3 - Latin/punctuation 1, **CJK and emoji 2**, any URL 23 [S: twitter-text config/v3.json] | 1-2 [C, common guidance] - `publish` keeps the first 2 | no |
+| Instagram | none (first caption line = hook) | 2,200 [S: Meta Content Publishing API docs] | **max 5 per post/reel since Dec 2025** (was 30) [S: Instagram @creators announcement, reported widely]; 3-5 recommended | no |
+
+Fields: B站 needs a **分区** (`category.required`; `tid` through the open platform) and the creator's own **自制 / 转载**
+choice - never pre-filled by the desk. `platform.check_text` counts X weighted (`desc_count: x`), and hashtags
+across the tag list AND the #tags already in the body.
+
+**Post language.** `vstudio.publish.platform_post` (used by `vstudio.export --post`) picks the copy per platform:
+post.json may hold `en` / `zh` blocks; English content (detected from the cues, or `--lang en`) gets English copy
+on X / Instagram / TikTok / YouTube; `--bilingual` = English then Chinese. English copy never inherits the persona's
+Chinese tags (`publish.tag_sets.en` is used if present). X copy is shortened by whole sentences to 280 weighted.
+`publish.generate_copy(platform, source)` asks the routed LLM (task `copy`) for copy within these limits.
 
 `title_max` agrees with `vstudio.publish.TITLE_MAX_DEFAULT`, and both read the same persona key
 (`platforms.<name>.title_max`).
@@ -95,6 +136,9 @@ horizontal 44-60 px, 22 CJK / 48 latin. 小红书 9:16 band centred on y ≈ 152
 ```bash
 python3 -m vstudio.export work/master.mp4 --platforms xiaohongshu:vertical,douyin,youtube \
     --out exports/ --cues work/cues.json --cover work/cover-3x4.png --cover work/cover-16x9.png --post work/post.json
+# international: x picks 16:9 / 1:1 / 9:16 from the master; Reels + a 4:5 feed cut; English copy + 2 / 5 tags
+python3 -m vstudio.export work/master.mp4 --platforms x,instagram,instagram:feed --cues work/cues.json \
+    --cover instagram=work/cover-9x16.png --post work/post.json [--lang en | --bilingual] [--account premium]
 ```
 Keep the **master caption-free** and the cues separate (`subs.Cue.to_dict` JSON or SRT). Each export then gets
 captions placed and sized for that platform's UI. Text burned into a 16:9 master gets cropped off on 3:4 / 9:16.
@@ -115,6 +159,20 @@ Outputs: `<platform>-<orientation>.mp4`, `.cover.jpg` (+ `.cover.feed.jpg`), `.c
 (sizes, durations, measured loudness, reframe hit rate, pan stats, warnings).
 
 ## Sources
+- X video specs / length / Premium tiers (conflicting): https://www.nemovideo.com/blog/twitter-video-specs-guide-2026 ,
+  https://xroadstudio.com/platform-specs/x , https://www.sendcove.app/integrations/twitter/video-specs , https://www.bulkpublish.com/blog/x-twitter-limits/
+- X weighted counting: https://raw.githubusercontent.com/twitter/twitter-text/master/config/v3.json ,
+  https://redmooncalculators.com/blog/twitter-character-counting-explained/ , https://textlimits.com/blog/x-twitter-character-limit/
+- Instagram Reels size / feed 4:5 crop / grid crops / safe zone: https://www.krumzi.com/size-guide/instagram-reel-size ,
+  https://stan.store/blog/instagram-post-size-guide-2026/ , https://campaignswift.com/blog/instagram-safe-zone-sizes ,
+  https://www.somake.ai/blog/instagram-reel-size-guide , https://www.xyla.ai/tools/social-media-sizes/ , https://www.jwtoolbox.com/blog/instagram-reel-cover-size-cheat-sheet-2026
+- Instagram length 20 min / >3 min reach / 4 GB: https://zeely.ai/blog/how-long-can-instagram-reels-be/ , https://www.socialcal.app/blog/instagram-video-length-limits-2026
+- Instagram 5-hashtag cap: https://www.socialmediatoday.com/news/instagram-implements-new-limits-on-hashtag-use/808309/ ,
+  https://later.com/blog/ultimate-guide-to-using-instagram-hashtags/
+- Instagram caption 2,200 / publishing API: https://developers.facebook.com/docs/instagram-platform/content-publishing/
+- 视频号 formats (help centre) and sizes: https://findeross.weixin.qq.com/cgi-bin/mmfindernodelivecrmwebbroker-bin/helper-center/pages/Yhdpjlq2RIkcmnQu ,
+  https://www.zhihu.com/question/424117543 , https://zhuanlan.zhihu.com/p/459415659 , https://cloud.tencent.com/developer/news/1874769
+- B站 cover crops 4:3 / 16:10 / 16:9: https://www.bilibili.com/opus/517638323328040669
 - YouTube recommended upload encoding settings: https://support.google.com/youtube/answer/1722171
 - YouTube Shorts 3-minute limit, title 100 / description 5000, chapter rules: https://www.descript.com/blog/article/how-long-can-youtube-shorts-be ,
   https://hashtagtools.io/blog/youtube-shorts-character-limits-title-description-hashtags-2026 , https://timeskip.io/blog/youtube-video-chapters

@@ -21,6 +21,43 @@ publishes **one post at a time** after a confirm step. Default = packages only.
 - 快手「小剧场」 / 微短剧 channels need an enterprise account and 备案; a personal account posts into a 合集 instead.
   B站 was given the 小剧场 category id via the uploader's `--tid` [S: as configured; check the current id].
 
+## X, Instagram, 视频号, B站: what the APIs really require (checked 2026-10)
+Default for all four = **assisted publishing**: the desk app opens the platform's own web page in its built-in
+browser (one persistent, separate login per platform/account), sets the video file and types the caption; the
+creator checks everything, picks what only she should pick, and presses Post / Share / 发表 / 投稿 herself. Then she
+marks it posted with the post URL. Nothing here ever presses the final button. Without the desk: `uploader: manual`
+prints the page + steps (`caption.txt`, `cover.jpg`, `CHECKLIST.md` are in the package).
+
+| platform | official API for posting video | what it takes | here |
+|---|---|---|---|
+| X | X API v2: chunked `POST /2/media/upload/{initialize,append,finalize}` + `GET ?command=STATUS`, then `POST /2/tweets` with `media.media_ids` | **paid**: pay-per-use credits since 2026-02 (≈ $0.015 per post, more with a link; no free posting tier for new apps); **OAuth 2.0 user context** token with `tweet.write media.write` (+ `offline.access`); app-only tokens are refused | optional `uploader: x-api` (token JSON in `$VSTUDIO_SECRETS/x_oauth2_token.json`) |
+| Instagram | Content Publishing API: `POST /{ig-user-id}/media` (`media_type=REELS`, `video_url`), poll `status_code` → `FINISHED`, `POST /{ig-user-id}/media_publish` | an **Instagram Professional** (Business/Creator) account, a **Meta app** whose `instagram_business_content_publish` (or `instagram_content_publish`) permission passed **App Review**, and the video at a **public https URL** (Meta downloads it; there is no direct file upload); 100 API posts / 24 h | optional `uploader: instagram-api` (`$VSTUDIO_SECRETS/instagram_token.json` = {access_token, ig_user_id}; `public_video_url` in the series) |
+| 视频号 | **none for publishing**: WeChat's Channels APIs cover the shop / showcase / live data, not video upload (official community replies, 2021-2025) | — (third-party "protocol" APIs imitate the WeChat client: account-ban risk, not used) | assisted fill on 视频号助手 (channels.weixin.qq.com, WeChat QR login) or `uploader: manual` |
+| B站 | 开放平台 (openhome.bilibili.com) 视频稿件投递: OAuth for the UP主's account, chunked upload, signed requests | developer **application + review** (identity / business documents), per-scope permission (`ARC_BASE` …) whitelisting, the UP主 authorises the app | assisted fill on 创作中心 (member.bilibili.com), `sau` (browser cookies) or `manual`; no open-platform adapter yet |
+
+API uploaders are opt-in per platform in the series file and still go through the confirm step:
+```yaml
+platforms:
+  x:         {lang: en, variant: en, cover: "16x9", uploader: x-api}           # default: manual
+  instagram: {lang: en, variant: en, cover: "9x16", uploader: instagram-api,
+              public_video_url: "https://cdn.example.com/{slug}/instagram.mp4", share_to_feed: true}
+```
+- The plan prints the API requirements; the confirm code covers the text, the video bytes and (Instagram) the public
+  URL. `instagram-api` refuses when that URL does not serve exactly the package's byte size.
+- Neither API uploader schedules (`publish_at` → refused: schedule in the app). Neither sets an AI label: tick
+  "AI info" / the disclosure by hand when it applies (the CHECKLIST says so).
+- Credentials only in `$VSTUDIO_SECRETS` (default `~/.config/video-studio/secrets`, refused if it points inside the
+  repo). The endpoint shapes follow the 2025-2026 developer docs; **neither uploader has been run against the live
+  API from this repo** - make the first post with an account you can clean up.
+- Copy: X = one post ≤ 280 weighted characters (CJK and emoji count 2, a URL 23), 1-2 hashtags; Instagram caption
+  ≤ 2,200, **≤ 5 hashtags** (hard cap since Dec 2025). English content → English copy (`vstudio.publish.platform_post`).
+
+Sources: https://developers.facebook.com/docs/instagram-platform/content-publishing/ ,
+https://postproxy.dev/blog/x-api-pricing-2026/ , https://www.postzen.dev/blog/twitter-api-pricing ,
+https://devcommunity.x.com/t/how-to-upload-media-to-twitter-api-v2-using-oauth-2-0/238518 ,
+https://developers.weixin.qq.com/community/minihome/doc/0000e2bec7ce686b8dcc360e35b800 ,
+https://openhome.bilibili.com/doc/4 , https://openhome.bilibili.com/agreement/developer-service
+
 ## Upload adapters
 | uploader | how | AI label | notes |
 |---|---|---|---|
@@ -28,6 +65,8 @@ publishes **one post at a time** after a confirm step. Default = packages only.
 | `youtube` | YouTube Data API v3, OAuth desktop client in `$VSTUDIO_SECRETS` | `status.containsSyntheticMedia` | custom thumbnail needs a verified channel |
 | `sau` | external [social-auto-upload](https://github.com/dreammis/social-auto-upload) CLI (MIT, browser automation with saved logins) in `$SAU_DIR` | 抖音 only (`--declaration 内容由AI生成`); others by hand | install and log in there; we do not vendor it. Collection: douyin/kuaishou/channels/weibo; schedule: douyin/kuaishou/xiaohongshu/channels/bilibili |
 | TikTok | manual (the sessions never wired the API) | tick by hand | an API adapter would be SELF_ONLY until audited - see below |
+| `x-api` | X API v2 (paid credits, OAuth 2.0 user token) | tick by hand | opt-in; see the table above |
+| `instagram-api` | Instagram Content Publishing API (Professional account, reviewed Meta app, public video URL) | tick by hand | opt-in; see the table above |
 
 ## Official upload APIs: the audit requirement
 Both official APIs restrict clients that have not passed the platform's API audit, and YouTube does it
