@@ -17,6 +17,20 @@ const api: DeskApi = {
   copyText: (text) => call('clipboard:write', { text }),
   getSettings: () => call('settings:get'),
   setSettings: (patch) => call('settings:set', patch),
+  openFiles: (kind) => call('dialog:openFiles', { kind }),
+  saveText: (defaultName, text) => call('file:saveText', { defaultName, text }),
+  firstRun: {
+    complete: (defaultPlatforms, skipped) => call('firstRun:complete', skipped === undefined ? { defaultPlatforms } : { defaultPlatforms, skipped }),
+  },
+  secrets: {
+    status: () => call('secrets:status'),
+    set: (name, value) => call('secrets:set', { name, value }),
+    clear: (name) => call('secrets:clear', { name }),
+  },
+  persona: {
+    import: (path) => call('persona:import', { path }),
+    clear: () => call('persona:clear'),
+  },
   publish: {
     adapters: () => call('publish:adapters'),
     accounts: () => call('publish:accounts'),

@@ -1,4 +1,5 @@
 // Shapes returned by the desk engine (engine/desk_engine). Kept loose where the batch engine is still moving.
+import type { JobEditInfo } from './v02';
 
 export type EngineMode = 'real' | 'mock';
 
@@ -34,6 +35,9 @@ export interface BatchSummary {
   pause_reason?: string | null;
   counts?: Record<string, number>;
   error?: string;
+  /** v0.2: client workspace slug + delivery state (desk adapter) */
+  client?: string | null;
+  delivered?: { at: number; items: number; dir: string } | null;
 }
 
 export type JobState =
@@ -200,6 +204,8 @@ export interface JobDetail {
     snippet: string | null;
     exports: { platform: string; orientation: string; file: string; cover?: string; post?: string; duration?: number }[];
   };
+  /** v0.2: everything the in-review editors need (desk adapter) */
+  edit?: JobEditInfo;
 }
 
 export interface EngineEvent {
@@ -269,6 +275,7 @@ export interface CreateBatchBody {
   platforms: string[];
   budget?: { max_usd?: number; max_hours?: number; max_storage_gb?: number };
   out_dir?: string;
+  client?: string;
 }
 
 export type StreamEvent =
@@ -276,4 +283,7 @@ export type StreamEvent =
   | { type: 'log'; batch: string; line: string; ts: number }
   | { type: 'run-start'; batch: string; cmd: string[]; ts: number }
   | { type: 'run-exit'; batch: string; code: number; status: string; ts: number }
-  | { type: 'batches'; ts: number };
+  | { type: 'batches'; ts: number }
+  | { type: 'clients'; ts: number }
+  | { type: 'plan'; plan: string; state: string; progress: string; ts: number }
+  | { type: 'job-edit'; batch: string; job: string; ts: number };

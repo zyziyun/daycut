@@ -8,9 +8,16 @@ export interface Settings {
   theme: 'studio-dark' | 'notebook-light';
   /** adapterId -> account labels (only labels; sessions live in Electron partitions, never exported). */
   accounts: Record<string, string[]>;
+  /** v0.2 first-run wizard */
+  firstRunDone?: boolean;
+  defaultPlatforms?: string[];
+  /** imported persona (copied into userData; passed to the engine as VSTUDIO_PERSONA) */
+  personaPath?: string;
+  /** days after delivery before source footage goes to the Trash (0 = never) */
+  cleanupDays?: number;
 }
 
-const DEFAULTS: Settings = { lang: 'zh', theme: 'studio-dark', accounts: {} };
+const DEFAULTS: Settings = { lang: 'zh', theme: 'studio-dark', accounts: {}, defaultPlatforms: ['xiaohongshu:full'], cleanupDays: 30 };
 
 export class SettingsStore {
   private file: string;

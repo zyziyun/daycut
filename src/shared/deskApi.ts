@@ -44,6 +44,18 @@ export interface SettingsMsg {
   theme: 'studio-dark' | 'notebook-light';
   accounts: Record<string, string[]>;
   resolved?: { enginePath?: string; python: string; dataDir: string; runtime?: string };
+  firstRunDone?: boolean;
+  defaultPlatforms?: string[];
+  personaPath?: string;
+  cleanupDays?: number;
+}
+
+export type SecretName = 'anthropic' | 'openai';
+
+export interface SecretsStatusMsg {
+  /** 'keychain': OS keychain-backed encryption (macOS Keychain / Windows DPAPI / libsecret) */
+  backend: 'keychain' | 'basic' | 'unavailable';
+  keys: Record<SecretName, boolean>;
 }
 
 export interface FillRequestMsg {
@@ -65,13 +77,27 @@ export interface UpdateStateMsg {
 export interface DeskApi {
   engineInfo(): Promise<EngineInfo>;
   restartEngine(): Promise<EngineInfo>;
-  openFile(kind: 'video' | 'segments'): Promise<string | null>;
+  openFile(kind: 'video' | 'segments' | 'persona'): Promise<string | null>;
   openFolder(): Promise<string | null>;
   openExternal(url: string): Promise<void>;
   showItem(path: string): Promise<void>;
   copyText(text: string): Promise<void>;
   getSettings(): Promise<SettingsMsg>;
-  setSettings(patch: Partial<Pick<SettingsMsg, 'enginePath' | 'python' | 'lang' | 'theme'>>): Promise<SettingsMsg>;
+  setSettings(patch: Partial<Pick<SettingsMsg, 'enginePath' | 'python' | 'lang' | 'theme' | 'defaultPlatforms' | 'cleanupDays'>>): Promise<SettingsMsg>;
+  openFiles(kind: 'video'): Promise<string[]>;
+  saveText(defaultName: string, text: string): Promise<string | null>;
+  firstRun: {
+    complete(defaultPlatforms: string[], skipped?: boolean): Promise<SettingsMsg>;
+  };
+  secrets: {
+    status(): Promise<SecretsStatusMsg>;
+    set(name: SecretName, value: string): Promise<SecretsStatusMsg>;
+    clear(name: SecretName): Promise<SecretsStatusMsg>;
+  };
+  persona: {
+    import(path: string): Promise<SettingsMsg>;
+    clear(): Promise<SettingsMsg>;
+  };
   publish: {
     adapters(): Promise<{ adapters: Adapter[]; errors: { file: string; error: string }[] }>;
     accounts(): Promise<Record<string, string[]>>;

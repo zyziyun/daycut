@@ -21,10 +21,18 @@ const httpsUrl = z
   .url()
   .refine((u) => new URL(u).protocol === 'https:', 'https only');
 
+/** Platform ids as the engine takes them: tiktok, xiaohongshu:full, youtube-shorts:vertical. */
+export const platformId = z.string().regex(/^[a-z][a-z-]{1,30}(:[a-z]{3,12})?$/);
+/** API keys: printable ASCII without spaces. The value only ever travels renderer -> main, never back. */
+const secretValue = z.string().regex(/^[\x21-\x7e]{8,400}$/, 'key: 8-400 printable characters, no spaces');
+export const SECRET_NAMES = ['anthropic', 'openai'] as const;
+const fileName = z.string().regex(/^[A-Za-z0-9\u4e00-\u9fff][A-Za-z0-9\u4e00-\u9fff ._()-]{0,79}\.(csv|md|txt)$/, 'file name');
+
 export const ipcSchemas = {
   'engine:info': z.undefined(),
   'engine:restart': z.undefined(),
-  'dialog:openFile': z.strictObject({ kind: z.enum(['video', 'segments']) }),
+  'dialog:openFile': z.strictObject({ kind: z.enum(['video', 'segments', 'persona']) }),
+  'dialog:openFiles': z.strictObject({ kind: z.enum(['video']) }),
   'dialog:openFolder': z.undefined(),
   'shell:openExternal': z.strictObject({ url: httpsUrl }),
   'shell:showItem': z.strictObject({ path: absPath }),
@@ -35,7 +43,17 @@ export const ipcSchemas = {
     python: absPath.optional(),
     lang: z.enum(['zh', 'en']).optional(),
     theme: z.enum(['studio-dark', 'notebook-light']).optional(),
+    defaultPlatforms: z.array(platformId).min(1).max(8).optional(),
+    cleanupDays: z.number().int().min(0).max(365).optional(),
   }),
+  // ---------------- v0.2: first run, keys (OS keychain via safeStorage), persona, exports
+  'firstRun:complete': z.strictObject({ defaultPlatforms: z.array(platformId).min(1).max(8), skipped: z.boolean().optional() }),
+  'secrets:status': z.undefined(),
+  'secrets:set': z.strictObject({ name: z.enum(SECRET_NAMES), value: secretValue }),
+  'secrets:clear': z.strictObject({ name: z.enum(SECRET_NAMES) }),
+  'persona:import': z.strictObject({ path: absPath.refine((p) => /\.ya?ml$/i.test(p), '.yaml / .yml only') }),
+  'persona:clear': z.undefined(),
+  'file:saveText': z.strictObject({ defaultName: fileName, text: z.string().max(5_000_000) }),
   'publish:adapters': z.undefined(),
   'publish:accounts': z.undefined(),
   'publish:addAccount': z.strictObject({ adapterId, account: accountName }),

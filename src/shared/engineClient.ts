@@ -15,6 +15,22 @@ import type {
   RunOptions,
   StreamEvent,
 } from './types';
+import type {
+  Capabilities,
+  ClientDetail,
+  ClientPatch,
+  ClientSummary,
+  Crm,
+  CrmPatch,
+  DeliveryRecord,
+  EditBody,
+  EditResult,
+  MetricsDoc,
+  PlanBatchBody,
+  PlanRequest,
+  PlanState,
+  WeeklyDoc,
+} from './v02';
 
 export class EngineError extends Error {
   constructor(
@@ -30,6 +46,17 @@ type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 const ID_RE = /^[0-9a-f]{12}$/;
 const JOB_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const CLIENT_RE = /^[a-z0-9][a-z0-9_-]{0,39}$/;
+
+function cid(slug: string): string {
+  if (!CLIENT_RE.test(slug)) throw new EngineError(400, `bad client ${slug}`);
+  return slug;
+}
+
+function pid(id: string): string {
+  if (!ID_RE.test(id)) throw new EngineError(400, `bad plan id ${id}`);
+  return id;
+}
 
 function bid(id: string): string {
   if (!ID_RE.test(id)) throw new EngineError(400, `bad batch id ${id}`);
@@ -130,6 +157,80 @@ export class EngineClient {
   }
   job(id: string, job: string) {
     return this.req<JobDetail>('GET', `/api/batches/${bid(id)}/jobs/${jid(job)}`);
+  }
+
+  // ---------------------------------------------------------------- v0.2 (PRODUCT_V02.md)
+  capabilities() {
+    return this.req<Capabilities>('GET', '/api/capabilities');
+  }
+  clients() {
+    return this.req<ClientSummary[]>('GET', '/api/clients');
+  }
+  client(slug: string) {
+    return this.req<ClientDetail>('GET', `/api/clients/${cid(slug)}`);
+  }
+  createClient(body: ClientPatch & { slug: string; name: string }) {
+    cid(body.slug);
+    return this.req<ClientDetail>('POST', '/api/clients', body);
+  }
+  updateClient(slug: string, patch: ClientPatch) {
+    return this.req<ClientDetail>('POST', `/api/clients/${cid(slug)}`, patch);
+  }
+  setCrm(slug: string, patch: CrmPatch) {
+    return this.req<Crm>('POST', `/api/clients/${cid(slug)}/crm`, patch);
+  }
+  setBatchClient(id: string, client: string | null) {
+    return this.req<{ id: string; client: string | null }>('POST', `/api/batches/${bid(id)}/client`, { client: client ? cid(client) : null });
+  }
+  startPlan(body: PlanRequest) {
+    return this.req<{ id: string }>('POST', '/api/plans', body);
+  }
+  plan(id: string) {
+    return this.req<PlanState>('GET', `/api/plans/${pid(id)}`);
+  }
+  planToBatch(id: string, body: PlanBatchBody) {
+    return this.req<{ id: string; dir: string; jobs: string[] }>('POST', `/api/plans/${pid(id)}/batch`, body);
+  }
+  editJob(id: string, job: string, body: EditBody) {
+    return this.req<EditResult>('POST', `/api/batches/${bid(id)}/jobs/${jid(job)}/edit`, body);
+  }
+  undoJob(id: string, job: string) {
+    return this.req<EditResult>('POST', `/api/batches/${bid(id)}/jobs/${jid(job)}/undo`, {});
+  }
+  rerunJob(id: string, job: string) {
+    return this.req<{ started: boolean; stages: string[] }>('POST', `/api/batches/${bid(id)}/jobs/${jid(job)}/rerun`, {});
+  }
+  timing(id: string, body: { job: string; event: 'start' | 'stop'; what: 'review'; active_s?: number }) {
+    jid(body.job);
+    return this.req<{ ok: boolean; job_s: number }>('POST', `/api/batches/${bid(id)}/timing`, body);
+  }
+  deliver(id: string, body: { client?: string; zip?: boolean; cleanup_days?: number | null }) {
+    return this.req<DeliveryRecord>('POST', `/api/batches/${bid(id)}/deliver`, body);
+  }
+  delivery(id: string) {
+    return this.req<{ delivery: DeliveryRecord | null }>('GET', `/api/batches/${bid(id)}/deliver`);
+  }
+  setCleanup(id: string, body: { enabled: boolean; days?: number | null }) {
+    return this.req<DeliveryRecord>('POST', `/api/batches/${bid(id)}/deliver/cleanup`, body);
+  }
+  metrics(scope: { batch?: string; client?: string } = {}) {
+    const q = new URLSearchParams();
+    if (scope.batch) q.set('batch', bid(scope.batch));
+    if (scope.client) q.set('client', cid(scope.client));
+    const qs = q.toString();
+    return this.req<MetricsDoc>('GET', `/api/metrics${qs ? `?${qs}` : ''}`);
+  }
+  weekly() {
+    return this.req<WeeklyDoc>('GET', '/api/metrics/weekly');
+  }
+  setWeekly(week: string, values: Record<string, number | string | null>) {
+    return this.req<WeeklyDoc>('POST', '/api/metrics/weekly', { week, values });
+  }
+  cleanupDue() {
+    return this.req<{ batch: string; paths: string[] }[]>('GET', '/api/cleanup/due');
+  }
+  cleanupDone(batch: string, paths: string[]) {
+    return this.req<{ ok: boolean }>('POST', '/api/cleanup/done', { batch: bid(batch), paths });
   }
 
   /** Server-sent events over fetch (EventSource cannot send the Authorization header). Resolves when the
