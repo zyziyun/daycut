@@ -56,7 +56,7 @@ test('first-run wizard: keys card, models, default platforms, finish', async () 
   await page.getByTestId('fr-next').click(); // welcome -> keys
   await expect(page.getByTestId('keys-card')).toBeVisible();
   const keyStatus = await page.evaluate(() => window.desk.secrets.status());
-  expect(Object.keys(keyStatus.keys).sort()).toEqual(['anthropic', 'openai']);
+  expect(Object.keys(keyStatus.keys).sort()).toEqual(['anthropic', 'deepseek', 'glm', 'kimi', 'openai', 'openrouter', 'qwen']);
   await page.getByTestId('fr-next').click(); // -> models
   await page.getByTestId('fr-next').click(); // -> platforms
   await page.getByRole('button', { name: /TikTok/ }).click();

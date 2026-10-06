@@ -14,6 +14,7 @@ import { Empty, Mosaic, Sk, StatusPill, Thumb } from './kit';
 import { PlanCard } from './PlanCard';
 import { inboxTitle } from './Inbox';
 import { useUi } from './ui';
+import { ProviderChip } from './AiChip';
 
 const IDEAS: [MessageKey, MessageKey][] = [
   ['home.idea1', 'home.idea1Prompt'],
@@ -219,6 +220,7 @@ export function Home() {
                   <Folder className="ico" />
                   {t('home.addFolder')}
                 </button>
+                <ProviderChip task="plan" testId="composer-provider-chip" />
                 <span className="muted clamp1">{t('home.publishTo', { p: platforms.map(platformName).filter((x, i, a) => a.indexOf(x) === i).join(' · ') })}</span>
                 <span className="sp" />
                 <button className="btn primary lg" disabled={busy || (!prompt.trim() && !files.length)} onClick={() => void submit()} data-tip="⌘↵" data-testid="make-plan">

@@ -5,17 +5,18 @@ import type { SecretName, SecretsStatusMsg } from '../../../shared/deskApi';
 import { t } from '../i18n';
 import { ErrorBox } from './ui';
 
-const NAMES: SecretName[] = ['anthropic', 'openai'];
+const NAMES = ['anthropic', 'openai'] as const satisfies readonly SecretName[];
+type N = (typeof NAMES)[number];
 
 export function KeysCard({ onChange }: { onChange?: () => void }) {
   const [st, setSt] = useState<SecretsStatusMsg | null>(null);
-  const [val, setVal] = useState<Record<SecretName, string>>({ anthropic: '', openai: '' });
+  const [val, setVal] = useState<Record<N, string>>({ anthropic: '', openai: '' });
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => {
     void window.desk.secrets.status().then(setSt);
   }, []);
   const clean = (e: unknown) => (e as Error).message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
-  async function save(n: SecretName) {
+  async function save(n: N) {
     setErr(null);
     try {
       setSt(await window.desk.secrets.set(n, val[n].trim()));
@@ -25,7 +26,7 @@ export function KeysCard({ onChange }: { onChange?: () => void }) {
       setErr(clean(e));
     }
   }
-  async function clear(n: SecretName) {
+  async function clear(n: N) {
     setErr(null);
     try {
       setSt(await window.desk.secrets.clear(n));

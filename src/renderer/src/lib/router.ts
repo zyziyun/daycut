@@ -15,6 +15,7 @@ export type Route =
   | { name: 'calendar' }
   | { name: 'new'; mode?: 'recording' }
   | { name: 'settings' }
+  | { name: 'aiAccounts'; focus?: string }
   | { name: 'clients' }
   | { name: 'client'; slug: string }
   | { name: 'metrics' }
@@ -47,7 +48,7 @@ export function parseRoute(hash: string): Route {
   }
   if (p[0] === 'publish') return { name: 'calendar' };
   if (p[0] === 'new') return p[1] === 'recording' ? { name: 'new', mode: 'recording' } : { name: 'new' };
-  if (p[0] === 'settings') return { name: 'settings' };
+  if (p[0] === 'settings') return p[1] === 'ai' ? { name: 'aiAccounts', focus: p[2] } : { name: 'settings' };
   if (p[0] === 'metrics') return { name: 'metrics' };
   if (p[0] === 'welcome') return { name: 'welcome' };
   if (p[0] === 'clients') return p[1] ? { name: 'client', slug: p[1] } : { name: 'clients' };
@@ -74,6 +75,8 @@ export function href(r: Route): string {
       return `#/${r.name}`;
     case 'calendar':
       return '#/publish';
+    case 'aiAccounts':
+      return r.focus ? `#/settings/ai/${encodeURIComponent(r.focus)}` : '#/settings/ai';
     case 'new':
       return r.mode ? `#/new/${r.mode}` : '#/new';
     case 'project':

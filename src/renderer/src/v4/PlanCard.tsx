@@ -10,6 +10,7 @@ import { go, href } from '../lib/router';
 import { platformName } from './Home';
 import { More, Sk } from './kit';
 import { useUi } from './ui';
+import { AnsweredBy, FallbackNote } from './AiChip';
 
 export function planFacts(plan: IntakePlan) {
   const projects = plan.projects ?? [];
@@ -107,6 +108,10 @@ export function PlanCard({ job, jobId, onRevise, onReset, onStarted }: { job: In
       <p className="lead" lang="zh-CN" data-testid="plan-summary">
         {plan.summary_zh}
       </p>
+      {plan.planner?.provider && (
+        <AnsweredBy provider={plan.planner.fallback ? 'rules' : plan.planner.provider} fallback={plan.planner.provider_fallback} kind="planned" testId="plan-answered-by" />
+      )}
+      {plan.planner?.fallback && plan.planner.failure && (plan.planner.routed ?? plan.planner.provider) && <FallbackNote rulesFrom={plan.planner.routed ?? plan.planner.provider} />}
       {rows.length > 0 && (
         <div className="outs" data-testid="plan-rows">
           {rows.slice(0, 4).map(({ r }, i) => {

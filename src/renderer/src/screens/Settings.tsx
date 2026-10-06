@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import type { SettingsMsg } from '../../../shared/deskApi';
 import { AssetsCard } from '../components/assets';
 import { WatchFoldersField } from '../components/WatchFolders';
-import { KeysCard } from '../components/KeysCard';
 import { ErrorBox, Field } from '../components/ui';
 import { LANGS, LOCALES, t } from '../i18n';
 import { useEngine } from '../lib/engine';
@@ -122,7 +121,15 @@ export function Settings({ onChange }: { onChange: (s: SettingsMsg) => void }) {
           </div>
         </div>
         <AssetsCard />
-        <KeysCard />
+        <div className="card col" data-testid="settings-ai">
+          <b>{t('aiacc.title')}</b>
+          <span className="muted small">{t('aiacc.openHint')}</span>
+          <div className="row">
+            <a className="btn primary" href="#/settings/ai" data-testid="open-ai-accounts">
+              {t('aiacc.open')}
+            </a>
+          </div>
+        </div>
         <div className="card col" data-testid="defaults-card">
           <b>{t('settings.defaults')}</b>
           <Field label={t('settings.defaultPlatforms')}>

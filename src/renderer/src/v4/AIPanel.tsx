@@ -2,17 +2,20 @@
 // applied card is undoable (it remembers the first edit number it added).
 import { useEffect, useRef, useState } from 'react';
 import { ArrowUp, Check, GitCompare, Undo2 } from 'lucide-react';
-import type { EditOp, EngineMsg, Proposal } from '../../../shared/v04';
+import type { AskResult, EditOp, EngineMsg, Proposal } from '../../../shared/v04';
 import { t, type MessageKey } from '../i18n';
 import { emsg, errText } from './msg';
 import { useEngine } from '../lib/engine';
 import { useUi } from './ui';
+import { AnsweredBy, FallbackNote, ProviderChip } from './AiChip';
 
 interface Msg {
   id: number;
   me?: boolean;
   text: string;
   proposals?: (Proposal & { applied?: number | null; undone?: boolean })[];
+  /** which AI answered (and whether it was a fallback) */
+  by?: Pick<AskResult, 'provider' | 'fallback' | 'failed'>;
 }
 
 let seq = 0;
@@ -67,7 +70,10 @@ export function AIPanel({
       const r = await client.askOutput(item, clip, prompt);
       const notes = (r.warnings ?? []).map((w: EngineMsg) => emsg(w)).filter(Boolean);
       const text = [r.proposals.length ? t('ai.proposed', { n: r.proposals.length }) : '', r.summary ?? '', ...notes].filter(Boolean).join('\n');
-      setMsgs((m) => [...m, { id: ++seq, text: text || t('ai.nothing'), proposals: r.proposals.map((p) => ({ ...p, applied: null })) }]);
+      setMsgs((m) => [
+        ...m,
+        { id: ++seq, text: text || t('ai.nothing'), proposals: r.proposals.map((p) => ({ ...p, applied: null })), by: { provider: r.provider, fallback: r.fallback, failed: r.failed } },
+      ]);
     } catch (e) {
       setMsgs((m) => [...m, { id: ++seq, text: errText(e) }]);
     } finally {
@@ -114,7 +120,8 @@ export function AIPanel({
   return (
     <aside className="agent" data-testid={testId}>
       <div className="hd">
-        <b>{t('ai.title')}</b>
+        <b style={{ whiteSpace: 'nowrap', flex: 'none' }}>{t('ai.title')}</b>
+        <ProviderChip task="edit" testId="ai-provider-chip" />
         <span className="sp" />
         {running ? (
           <span className="st run">
@@ -133,6 +140,8 @@ export function AIPanel({
         {msgs.map((m) => (
           <div key={m.id} className="col" style={{ gap: 8 }}>
             <div className={`msg ${m.me ? 'me' : ''}`}>{m.text}</div>
+            {m.by?.provider && <AnsweredBy provider={m.by.provider} fallback={m.by.fallback} testId="ai-answered-by" />}
+            {m.by?.failed?.provider && !m.by.fallback && <FallbackNote rulesFrom={m.by.failed.provider} />}
             {m.proposals?.map((p) => (
               <div key={p.id} className="change" data-testid="ai-proposal">
                 <div className="row">

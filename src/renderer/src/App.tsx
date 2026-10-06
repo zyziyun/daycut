@@ -18,6 +18,7 @@ import { NewBatch } from './screens/NewBatch';
 import { Publish } from './screens/Publish';
 import { Review } from './screens/Review';
 import { Settings } from './screens/Settings';
+import { AIAccounts } from './v4/AIAccounts';
 import { applyTheme, type AccentName, type ThemeName } from './theme/tokens';
 import { CalendarScreen } from './v4/Calendar';
 import { Focus } from './v4/Focus';
@@ -96,7 +97,7 @@ function Shell({ onSettings }: { onSettings: (s: SettingsMsg) => void }) {
         {nav({ name: 'calendar' }, 'nav.publishTop', r.name === 'calendar' || r.name === 'publish' || r.name === 'metrics', <Calendar className="ico" />, 'nav-publish')}
         <div className="grow" />
         <UpdateBadge />
-        {nav({ name: 'settings' }, 'nav.settings', r.name === 'settings' || r.name === 'clients' || r.name === 'client', <SettingsIcon className="ico" />, 'nav-settings')}
+        {nav({ name: 'settings' }, 'nav.settings', r.name === 'settings' || r.name === 'aiAccounts' || r.name === 'clients' || r.name === 'client', <SettingsIcon className="ico" />, 'nav-settings')}
         <div className="eng" data-testid="engine-status">
           {error ? (
             <>
@@ -115,7 +116,7 @@ function Shell({ onSettings }: { onSettings: (s: SettingsMsg) => void }) {
       </nav>
       <main className="main">
         <AssetsBanner />
-        {error && r.name !== 'settings' ? (
+        {error && r.name !== 'settings' && r.name !== 'aiAccounts' ? (
           <div className="pg">
             <div className="banner">
               <i className="dot error" />
@@ -170,6 +171,8 @@ function Screen({ r, onSettings }: { r: Route; onSettings: (s: SettingsMsg) => v
       return <Metrics />;
     case 'welcome':
       return <WelcomeAgain onDone={onSettings} />;
+    case 'aiAccounts':
+      return <AIAccounts focus={r.focus} />;
     default:
       return <Settings onChange={onSettings} />;
   }

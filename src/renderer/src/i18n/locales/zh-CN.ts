@@ -1,5 +1,6 @@
 // 简体中文。Record<MessageKey, string>: a key missing here is a type error.
 import { legacyZh } from '../legacy/zh';
+import { aiaccZh } from './aiacc';
 import { legacyZhV02 } from '../legacy/v02';
 import { publishPlatformsZh } from './publishPlatforms';
 import type { MessageKey, v04En } from './en';
@@ -566,4 +567,4 @@ const v04Zh: Record<keyof typeof v04En, string> = {
   'editor.zoomFit': '全部',
 };
 
-export const zhCN: Record<MessageKey, string> = { ...legacyZh, ...legacyZhV02, ...v04Zh, ...publishPlatformsZh };
+export const zhCN: Record<MessageKey, string> = { ...legacyZh, ...legacyZhV02, ...v04Zh, ...aiaccZh, ...publishPlatformsZh };
