@@ -9,8 +9,14 @@ npm run dev          # Vite + Electron; engine sidecar starts automatically
 npm run test         # vitest (unit) + python unittest (engine/tests)
 npm run test:e2e     # builds, then Playwright Electron smoke + CDP fill fixture
 npm run lint         # eslint + tsc
-npm run build:mac    # unsigned .app in dist/
+npm run build:mac    # .app in dist/ (uses build/runtime if present)
+npm run runtime      # bundled engine runtime for this machine -> build/runtime/<platform>-<arch>
+npm run dist:mac:unsigned && npm run test:packaged   # DMG with the bundled engine + packaged-app check
 ```
+
+Distribution (signed/notarized DMG, Windows installer, auto-update, store plans): [docs/RELEASING.md](docs/RELEASING.md).
+Installed builds run the engine from the bundled runtime (`resources/runtime`: Python, LGPL ffmpeg, video-studio at a
+pinned commit) and download fonts/models on first run; Settings → Python / video-studio repo still override it.
 
 Engine: `engine/server.py` (stdlib HTTP, 127.0.0.1, random port, per-launch token). It finds the engine repo via
 Settings → `VSTUDIO_ENGINE_PATH` → `../video-studio`, and Python via Settings → `DESK_PYTHON` → miniconda/Homebrew.
