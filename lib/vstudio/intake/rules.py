@@ -449,7 +449,7 @@ def rule_projects(intent, analysis, ctx):
                 docs = [f for f in docs if rmap[f["id"]] in ("doc", "slides")] or docs
             if rid == "preproduction":
                 docs = [f for f in docs if rmap[f["id"]] in ("notes", "doc")] or docs
-            n = cnt or (5 if rid == "explainer" else None)
+            n = cnt
             rows = []
             if docs:
                 used |= {f["id"] for f in docs}

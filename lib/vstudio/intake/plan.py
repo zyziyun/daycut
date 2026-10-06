@@ -832,7 +832,7 @@ def revise(plan, instruction, provider=None, model=None, call=None, client=None,
     if js is not None:
         for rp in js.get("projects") or []:
             if isinstance(rp, dict):
-                p = normalize_project(rp, len(projects), analysis, _only_explicit(follow), ctx, warn)
+                p = normalize_project(rp, len(projects), analysis, _only_explicit(follow, instruction), ctx, warn)
                 if p:
                     projects.append(p)
         if js.get("projects") == [] and R.negations(instruction):
@@ -845,7 +845,7 @@ def revise(plan, instruction, provider=None, model=None, call=None, client=None,
             x = dict(x)
             pr = dict(x.get("params") or {})
             x["params"] = pr
-            p = normalize_project(x, len(projects), analysis, _only_explicit(follow), ctx, warn)
+            p = normalize_project(x, len(projects), analysis, _only_explicit(follow, instruction), ctx, warn)
             if p:
                 p["name"] = x.get("name") or p["name"]
                 projects.append(p)
@@ -873,11 +873,12 @@ def revise(plan, instruction, provider=None, model=None, call=None, client=None,
     return plan
 
 
-def _only_explicit(follow):
-    """For a revision only the follow-up's own explicit values override what the plan already has."""
+def _only_explicit(follow, instruction=""):
+    """For a revision only the follow-up's own explicit values override what the plan already has; platforms only
+    when the follow-up restricts them ("只要小红书"), not when it adds one ("也发抖音": the model / rules merge)."""
     keep = {k: follow.get(k) for k in ("platforms", "speed", "language", "cleanup", "max_s", "style", "mask", "hook",
                                        "orientation", "narration")}
-    keep["platforms"] = follow.get("platforms") or []
+    keep["platforms"] = (follow.get("platforms") or []) if re.search(r"只(要|发|做|保留|留)", instruction or "") else []
     return dict(keep, count=follow.get("count"))
 
 
