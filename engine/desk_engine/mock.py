@@ -124,7 +124,7 @@ class MockEngine:
     # ------------------------------------------------------------------ info
     def health(self):
         return dict(mode=self.mode, engine_path=None, vstudio=None, python=sys.executable,
-                    h264_encoder=os.environ.get("DESK_H264_ENCODER") or None)
+                    h264_encoder=os.environ.get("VSTUDIO_H264_ENCODER") or os.environ.get("DESK_H264_ENCODER") or None)
 
     def recipes(self):
         return RECIPES

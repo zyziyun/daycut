@@ -70,7 +70,7 @@ function resolvedConfig() {
 
 function engineEnv(bundled: boolean) {
   if (!bundled || !runtime) return { env: assets.env() };
-  const r = runtimeEnv(runtime, path.join(RES, 'engine', 'runtime_shim'));
+  const r = runtimeEnv(runtime);
   return {
     ...r,
     isolatePython: true,

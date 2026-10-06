@@ -36,16 +36,23 @@ export function findBundledRuntime(resourcesDir: string, isPackaged: boolean, en
   }
 }
 
-/** Extra environment for an engine that runs on the bundled runtime. */
-export function runtimeEnv(rt: BundledRuntime, shimDir: string, env = process.env) {
+/**
+ * Extra environment for an engine that runs on the bundled runtime. The engine (video-studio >= eedca6c) owns the
+ * H.264 encoder choice and the ffmpeg location: VSTUDIO_H264_ENCODER picks the encoder for every encode (with a
+ * libx264 fallback when the encoder does not work on this machine) and VSTUDIO_FFMPEG / VSTUDIO_FFPROBE point it
+ * at the bundled LGPL binaries. DESK_H264_ENCODER is still honoured as an override.
+ */
+export function runtimeEnv(rt: BundledRuntime, env = process.env) {
+  const exe = rt.manifest.target.startsWith('win32') ? '.exe' : '';
   return {
     env: {
       PYTHONNOUSERSITE: '1', // never mix in the user's own site-packages
       PYTHONDONTWRITEBYTECODE: '1', // the app bundle is read-only (and signed)
-      DESK_H264_ENCODER: env.DESK_H264_ENCODER ?? rt.manifest.h264Encoder,
+      VSTUDIO_H264_ENCODER: env.VSTUDIO_H264_ENCODER || env.DESK_H264_ENCODER || rt.manifest.h264Encoder,
+      VSTUDIO_FFMPEG: path.join(rt.ffmpegBin, `ffmpeg${exe}`),
+      VSTUDIO_FFPROBE: path.join(rt.ffmpegBin, `ffprobe${exe}`),
     },
     path: [rt.ffmpegBin],
-    pythonPath: [shimDir], // sitecustomize: libx264 -> platform encoder
   };
 }
 

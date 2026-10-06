@@ -50,7 +50,8 @@ async function health(app: ElectronApplication) {
 test.skip(!fs.existsSync(appExecutable()), `no packaged app at ${appExecutable()}`);
 
 test('mock engine runs on the bundled Python', async () => {
-  const app = await launch({ DESK_ENGINE_MOCK: '1', DESK_MOCK_STEP: '0.02' });
+  // the v0.2 first-run wizard would cover the main window; this test is about the engine + assets banner
+  const app = await launch({ DESK_ENGINE_MOCK: '1', DESK_MOCK_STEP: '0.02', DESK_SKIP_FIRST_RUN: '1' });
   try {
     const res = resourcesDir(appExecutable());
     const h = await health(app);
@@ -79,6 +80,10 @@ test('real engine starts from the bundle (vstudio, Python and ffmpeg inside the 
     expect(inside(h.health.vstudio)).toBe(true);
     expect(inside(h.health.ffmpeg)).toBe(true);
     expect(h.health.h264_encoder).toBe(process.platform === 'darwin' ? 'h264_videotoolbox' : 'h264_mf');
+    // the engine's own encoder setting (no desk shim): its 0.1 s probe encode ran through the bundled LGPL ffmpeg
+    // (VSTUDIO_FFMPEG); on macOS VideoToolbox must work, else every export silently falls back to libx264 (absent)
+    if (process.platform === 'darwin') expect(h.health.h264_effective).toBe('h264_videotoolbox');
+    expect(fs.existsSync(path.join(res, 'engine', 'runtime_shim'))).toBe(false);
     const page = await app.firstWindow();
     const recipes = await page.evaluate(async () => {
       const info = await window.desk.engineInfo();

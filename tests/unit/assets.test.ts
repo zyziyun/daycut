@@ -115,9 +115,19 @@ describe('bundled runtime', () => {
     const rt = findBundledRuntime(root, true, {})!;
     expect(rt.python).toBe(path.join(root, 'runtime', 'python', 'bin', 'python3'));
     expect(findBundledRuntime('/nowhere', false, { DESK_RUNTIME_DIR: path.join(root, 'runtime') })?.root).toBe(path.join(root, 'runtime'));
-    const e = runtimeEnv(rt, '/shim', {});
-    expect(e.env).toMatchObject({ DESK_H264_ENCODER: 'h264_videotoolbox', PYTHONNOUSERSITE: '1', PYTHONDONTWRITEBYTECODE: '1' });
-    expect(runtimeEnv(rt, '/shim', { DESK_H264_ENCODER: 'libx264' }).env.DESK_H264_ENCODER).toBe('libx264');
+    const e = runtimeEnv(rt, {});
+    expect(e.env).toMatchObject({
+      VSTUDIO_H264_ENCODER: 'h264_videotoolbox',
+      VSTUDIO_FFMPEG: path.join(rt.ffmpegBin, 'ffmpeg'),
+      VSTUDIO_FFPROBE: path.join(rt.ffmpegBin, 'ffprobe'),
+      PYTHONNOUSERSITE: '1',
+      PYTHONDONTWRITEBYTECODE: '1',
+    });
+    expect(e).not.toHaveProperty('pythonPath'); // the engine owns the encoder now: no sitecustomize shim
+    expect(runtimeEnv(rt, { DESK_H264_ENCODER: 'libx264' }).env.VSTUDIO_H264_ENCODER).toBe('libx264');
+    expect(runtimeEnv(rt, { VSTUDIO_H264_ENCODER: 'h264_mf', DESK_H264_ENCODER: 'libx264' }).env.VSTUDIO_H264_ENCODER).toBe('h264_mf');
+    const win = { ...rt, manifest: { ...rt.manifest, target: 'win32-x64' } };
+    expect(runtimeEnv(win, {}).env.VSTUDIO_FFMPEG).toBe(path.join(rt.ffmpegBin, 'ffmpeg.exe'));
     expect(e.path).toEqual([rt.ffmpegBin]);
   });
 

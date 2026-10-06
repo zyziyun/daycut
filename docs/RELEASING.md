@@ -20,8 +20,10 @@ Every installer contains the whole engine, so users need nothing preinstalled:
   libraries it loads (`packaging/ffmpeg/<target>.txt`, md5-pinned conda explicit lists).
 - `resources/runtime/vstudio` — the video-studio repo at the commit pinned in `packaging/runtime.lock.json`, fetched
   as a tarball at build time.
-- `resources/engine/runtime_shim/sitecustomize.py` — rewrites the engine's hard-coded `-c:v libx264` to
-  `h264_videotoolbox` (macOS) / `h264_mf` (Windows) until the engine has an encoder setting (requests below).
+- H.264: the LGPL ffmpeg has no libx264, so the sidecar sets `VSTUDIO_H264_ENCODER` (`h264_videotoolbox` on macOS,
+  `h264_mf` on Windows; from the runtime manifest, `DESK_H264_ENCODER` overrides) and `VSTUDIO_FFMPEG` /
+  `VSTUDIO_FFPROBE` (the bundled binaries). The engine (video-studio >= eedca6c) maps every encode to that encoder and
+  falls back to libx264 when a probe encode fails. The desk-side `runtime_shim/sitecustomize.py` is gone.
 
 On first launch the app offers a one-time download (banner + Settings → Models, fonts and tools) of the assets pinned
 with sha256 in `packaging/assets.json`, into the app data folder (`~/Library/Application Support/video-studio desk/assets`,
@@ -203,11 +205,8 @@ with *Apple Distribution* + *Mac Installer Distribution* certificates and a prov
 
 ## Engine requests (video-studio repo — not changed from here)
 
-1. **Encoder setting**: replace the hard-coded `-c:v libx264` (media.to_sdr, cut.cut_segments + `CHUNK_ARGS`,
-   export, batch/lengthfit, batch/stages, longform-to-short and other workflow scripts) with one helper, e.g.
-   `media.h264_args(crf, preset)` reading `VSTUDIO_H264_ENCODER` (`libx264` | `h264_videotoolbox` | `h264_mf` |
-   `libopenh264`) with sensible quality mapping. The desk's `runtime_shim/sitecustomize.py` can then be deleted.
-2. **ffmpeg location**: honour `VSTUDIO_FFMPEG` / `VSTUDIO_FFPROBE` before `shutil.which`.
+1. ~~**Encoder setting**~~ and 2. ~~**ffmpeg location**~~: done in video-studio eedca6c (`vstudio.h264`,
+   `VSTUDIO_H264_ENCODER`, `VSTUDIO_FFMPEG` / `VSTUDIO_FFPROBE`); the desk pins aa43742 and dropped its shim.
 3. **Release tags**: tag versions (e.g. `v0.2.0`) so the desk pins a tag instead of a bare commit; keep
    `requirements.txt` the source of truth and add the platform extras (mlx-whisper / faster-whisper) there with markers
    (`mlx-whisper; sys_platform == "darwin" and platform_machine == "arm64"`).

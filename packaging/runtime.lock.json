@@ -34,7 +34,7 @@
   },
   "vstudio": {
     "repo": "https://github.com/zyziyun/video-studio.git",
-    "commit": "ab8aee4a3e65ce4b9adf64395f3cd3f442b756f8",
+    "commit": "aa43742cd51af92549386860c6294dc7280e0753",
     "include": [
       "lib",
       "workflows",

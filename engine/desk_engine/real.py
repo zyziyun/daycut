@@ -63,9 +63,15 @@ class RealEngine:
             ffmpeg = media.ffmpeg_bin()
         except Exception as e:  # noqa: BLE001  (missing ffmpeg must not break health)
             ffmpeg = f"unavailable: {e}"
+        try:                     # the engine's one encoder setting (VSTUDIO_H264_ENCODER / persona), video-studio >= eedca6c
+            from vstudio import h264
+            enc, eff = h264.encoder(), h264.effective_encoder()
+        except Exception:  # noqa: BLE001  (older engine: only the desk-side variable existed)
+            enc = os.environ.get("VSTUDIO_H264_ENCODER") or os.environ.get("DESK_H264_ENCODER") or "libx264"
+            eff = None
         return dict(mode=self.mode, engine_path=self.engine_path,
                     vstudio=getattr(vstudio, "__file__", None), python=self.python, ffmpeg=ffmpeg,
-                    h264_encoder=os.environ.get("DESK_H264_ENCODER") or "libx264")
+                    h264_encoder=enc, h264_effective=eff)
 
     def recipes(self):
         from vstudio.batch import recipes as R
