@@ -5,7 +5,8 @@
   run [--batch DIR] [--pilot N] [--confirm-pilot] [--resume] [--retry-failed] [--jobs a,b]
       [--concurrency asr=1,cpu-render=2] [--json-events]   run the stage DAGs (resumable; refuses over budget)
   status [--batch DIR] [--json] [--events N]            terminal table
-  review [--batch DIR] [--apply decisions.json|JSON] [--confirm-kinds a,b] [--accept-policy] [--approve-green] [--json]
+  review [--batch DIR] [--apply decisions.json|JSON] [--confirm-kinds a,b] [--accept-policy] [--jobs a,b]
+         [--approve-green] [--json]
                                                         HTML grid + decisions sheet / ingest (+ bulk answers)
   job ID [--batch DIR] [--json] [--no-words]            one job: transcript + cleanup edits, captions, QC, exports
   package [--batch DIR] [--per-day N] [--start YYYY-MM-DD] [--times 12:00,19:00] [--json]   publish folders
@@ -18,7 +19,7 @@ v0.2 (desk; all with --json):
   plan-segments --source F [--transcript T] [--client C] [--count N] [--min S --max S] [--platforms a,b]
       [--provider auto|claude|openai|ollama|claude-code|...|none] [--out DIR]      transcript -> candidate segments -> segments.draft.yaml
   client init|show|update|list --client C [--set JSON]  client.yaml layered over the persona (effective config)
-  job show ID | job edit --job J --op caption|trim|hook|cover|copy|undo ... | job rerun --job J [--json-events]
+  job show ID | job edit --job J --op caption|trim|cut|notes|hook|cover|copy|undo ... | job rerun --job J [--json-events]
   deliver [--client C] [--zip] [--cleanup-days N] [--out DIR]   client delivery package + manifest hash
   cleanup-sources [--batch B | --client C | --all] [--yes]      delete sources of deliveries past cleanup date
   metrics --batch B | --client C | --all [--csv]        metrics JSON / weekly CSV
@@ -218,10 +219,14 @@ def cmd_review(a):
                 dec["confirm_kinds"] = [k.strip() for k in a.confirm_kinds.split(",") if k.strip()]
             if a.accept_policy:
                 dec["accept_policy"] = True
+        if a.jobs:
+            dec = dict(review.read_json(dec) if isinstance(dec, str) else dec)
+            dec["jobs"] = [j.strip() for j in a.jobs.split(",") if j.strip()]
         r = review.apply_decisions(b, dec)
         if a.json:
             _out(dict(ok=True, approved=r["approved"], rejected=r["rejected"], replied=r["replied"],
-                      bulk=r["bulk"], learned=r["learned"], skipped=[dict(job=j, why=w) for j, w in r["skipped"]]))
+                      bulk=r["bulk"], learned=r["learned"], skipped=[dict(job=j, why=w) for j, w in r["skipped"]],
+                      jobs=sorted(dec["jobs"]) if isinstance(dec, dict) and dec.get("jobs") else None))
             return 0
         print(f"[review] approved {len(r['approved'])}, rejected -> needs-replan {len(r['rejected'])}, "
               f"cleanup replies {len(r['replied'])} (re-run: `run`)" +
@@ -307,8 +312,10 @@ def _fail(a, e, code=1):
 
 def cmd_job_edit(a):
     from . import edits as ED
-    args = {k: getattr(a, k) for k in ("cue", "text", "start", "end", "pick", "t", "title", "body", "tags")
+    args = {k: getattr(a, k) for k in ("cue", "text", "start", "end", "pick", "t", "title", "body", "tags", "why", "set")
             if getattr(a, k, None) is not None}
+    if getattr(a, "reasr", False):
+        args["reasr"] = True
     try:
         r = ED.edit(_batch(a), a.job, a.op, **args)
     except (KeyError, ValueError) as e:
@@ -317,7 +324,8 @@ def cmd_job_edit(a):
         _out(r)
         return 0 if r["ok"] else 1
     if not r["ok"]:
-        print(f"[job edit] refused: {r.get('reason')}")
+        print(f"[job edit] refused ({r.get('reason_code') or 'refused'}): {r.get('reason')}"
+              + (f"\n  heard: {r['heard']}" if r.get("heard") else ""))
         return 1
     print(f"[job edit] {a.job} {a.op} ok; stale: {', '.join(r['rerun']) or 'nothing'}; pending: "
           f"{', '.join(r['pending']) or 'nothing'}" + (f"; glossary +{len(r['glossary_added'])}"
@@ -563,7 +571,9 @@ def main(argv=None):
     p = add("review", cmd_review, "HTML review page / apply decisions")
     p.add_argument("--apply", help="decisions.json downloaded from the review page (or the JSON itself)")
     p.add_argument("--confirm-kinds", help="bulk: cut every open question of these classes, e.g. filler-merged,filler/lead")
-    p.add_argument("--accept-policy", action="store_true", help="also cut the policy approvals not rendered yet")
+    p.add_argument("--accept-policy", action="store_true",
+                   help="also cut the policy approvals not rendered yet (never learned as creator answers)")
+    p.add_argument("--jobs", help="limit --accept-policy / --confirm-kinds to these job ids (comma list)")
     p.add_argument("--approve-green", action="store_true", help="approve every green job not sampled for review")
     p.add_argument("--json", action="store_true", help="print the result / review items (absolute paths) as JSON")
     p = sub.add_parser("job", help="one job: show (transcript, edits, captions, QC, exports) | edit | rerun")
@@ -574,14 +584,19 @@ def main(argv=None):
     q.add_argument("--json", action="store_true")
     q.add_argument("--no-words", action="store_true", help="skip the per-word transcript")
     q.set_defaults(fn=cmd_job)
-    q = jsub.add_parser("edit", help="in-review edit: caption | trim | hook | cover | copy | undo")
+    q = jsub.add_parser("edit", help="in-review edit: caption | trim | cut | notes | hook | cover | copy | undo")
     q.add_argument("--batch")
     q.add_argument("--job", required=True)
-    q.add_argument("--op", required=True, choices=["caption", "trim", "hook", "cover", "copy", "undo"])
+    q.add_argument("--op", required=True, choices=["caption", "trim", "cut", "notes", "hook", "cover", "copy", "undo"])
     q.add_argument("--cue", type=int, help="caption: cue index (job show --json captions.cues[].i)")
     q.add_argument("--text", help="caption: the corrected caption; cover: the cover text (a|b = two lines)")
-    q.add_argument("--start", type=float, help="trim: new start (source seconds, snapped to a word edge)")
-    q.add_argument("--end", type=float, help="trim: new end (source seconds)")
+    q.add_argument("--reasr", action="store_true",
+                   help="caption: re-hear the cue's audio and accept the text when it matches what is heard")
+    q.add_argument("--start", type=float, help="trim: new start / cut: start of the inner cut (source seconds, "
+                                               "snapped to a word edge)")
+    q.add_argument("--end", type=float, help="trim: new end / cut: end of the inner cut (source seconds)")
+    q.add_argument("--why", help="cut: why (kept with the cut, shown in job show)")
+    q.add_argument("--set", help='notes: the 记笔记 panel lines, "a|b|c" ("" clears the panel)')
     q.add_argument("--pick", type=int, help="hook: candidate index (-1 = no cold open)")
     q.add_argument("--t", type=float, help="cover: frame time in the output video (seconds)")
     q.add_argument("--title")
