@@ -633,13 +633,14 @@ def call_fn(task, provider=None, schema=True, config=None, **kw):
 
 
 # ------------------------------------------------------------------ availability
-def _probe_url(url, timeout=0.6):
+def _probe_url(url, timeout=0.6, strict=True):
+    """(answered, body) of a GET; strict: only a 2xx counts (an unrelated web server's 404 does not)."""
     try:
         with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "vstudio"}),
                                     timeout=timeout) as r:
-            return r.status < 500, r.read(200000)
+            return 200 <= r.status < 300, r.read(200000)
     except urllib.error.HTTPError as e:
-        return e.code < 500, b""
+        return (not strict and e.code < 500), b""
     except Exception:  # noqa: BLE001
         return False, b""
 
@@ -711,6 +712,9 @@ def check(provider, opts=None, probe=True):
         pass
     if not up:
         return dict(provider=p, kind="local", ready=False, detail=f"{base}: no server answering")
+    if not models:
+        return dict(provider=p, kind="local", ready=False,
+                    detail=f"{base}: something answers but lists no models (not an OpenAI-compatible LLM server?)")
     return dict(provider=p, kind="local", ready=True, detail=f"{base}: up" +
                 (f", models: {', '.join(models[:6])}" + (" ..." if len(models) > 6 else "") if models else ""),
                 models=models)

@@ -133,8 +133,8 @@ def providers(probe=True):
         up = False
         if probe:
             from .llm import _probe_url
-            up = _probe_url(sc["base_url"].rstrip("/") + "/models")[0] or \
-                _probe_url(sc["base_url"].rstrip("/") + "/audio/voices")[0]
+            up = _probe_url(sc["base_url"].rstrip("/") + "/models", strict=False)[0] or \
+                _probe_url(sc["base_url"].rstrip("/") + "/audio/voices", strict=False)[0]
         rows.append(dict(provider="openai-compatible", kind="local", ready=up,
                          detail=f"{sc['base_url']}: " + ("up" if up else "no server answering" if probe else "not probed")))
     else:
