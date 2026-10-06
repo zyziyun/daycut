@@ -19,6 +19,9 @@ references/PROJECTS.md.
                                                       post.md, ...) -> DIR/.vstudio/work.json + registry (works.py)
   touch DIR [--status running|waiting|done|failed] [--stage S] [--progress 0..1] [--message M] [--eta S]
       [--needs-you] [--recipe R] [--title T] [--outputs a,b]   register a job folder + its live status (heartbeat)
+  output list | show | edit | render | undo | redo | ai | effects  --project P --output O   second-pass edit of
+      one finished output (references/OUTPUT_EDIT.md): edit --ops JSON | --op NAME --param k=v | --op ai
+      --instruction T [--apply]; render [--quality preview|final] [--targets primary,douyin:vertical|all]
   series new --id S --recipe R [--name N] [--set JSON] [--cadence JSON] | show --id S | list | update --id S --set JSON
   inbox [--json] | inbox answer (--project P --id X [--item I] | --id X / --kind K [--projects a,b]) (--answer JSON | --default)
   calendar account add --id A --platform P [--times 12:00,19:00] [--per-day N] [--days 0,1,2,3,4]
@@ -285,6 +288,67 @@ def cmd_touch(a):
     return 0
 
 
+def cmd_output(a):
+    from . import outfx as FX
+    from . import outputs as O
+    act = a.action
+    if act == "effects":
+        rows = FX.catalogue(thumbs=not a.no_thumbs)
+        _out(a, dict(ok=True, effects=rows, n=len(rows)),
+             "\n".join(f"{r['id']:18s} {r['label']['zh']} / {r['label']['en']}  ({r['stage']})" for r in rows))
+        return 0
+    proj = a.project or a.dir or os.getcwd()
+    if act == "list":
+        r = O.list_outputs(proj)
+        _out(a, r, "\n".join(f"{x['id']}  {'edited ' + str(x['steps']) if x['edited'] else ''}" for x in r["outputs"])
+             or "no outputs")
+        return 0
+    if not a.output:
+        raise O.OutputError("bad-param", "--output is required (output list --json shows the ids)",
+                            "需要 --output", name="output")
+    if act == "show":
+        _out(a, O.show(proj, a.output))
+        return 0
+    if act == "undo":
+        _out(a, O.undo(proj, a.output))
+        return 0
+    if act == "redo":
+        _out(a, O.redo(proj, a.output))
+        return 0
+    if act == "render":
+        from . import outrender as R
+        emit, stream = (None, None)
+        if a.json_events:
+            from vstudio.batch.cli import json_event_sink
+            emit, stream = json_event_sink()
+        r = R.render(proj, a.output, quality=a.quality, targets=_csv(a.targets) or ["primary"], on_event=emit)
+        if emit:
+            emit(dict(event="render-done", **r))
+            stream.flush()
+        else:
+            _out(a, r, "\n".join(f"{t['target']}: {t['file']}{' (cached)' if t['cached'] else ''}"
+                                  for t in r["targets"]))
+        return 0
+    if act == "ai" or (act == "edit" and a.op == "ai"):
+        if not a.instruction:
+            raise O.OutputError("bad-param", "--instruction is required", "需要 --instruction", name="instruction")
+        _out(a, O.ai(proj, a.output, a.instruction, apply=a.apply, provider=a.provider, model=a.model,
+                     use_asr=not a.no_asr))
+        return 0
+    # edit
+    if a.ops:
+        ops = json.loads(a.ops)
+    elif a.ops_file:
+        with open(a.ops_file, encoding="utf-8") as f:
+            ops = json.load(f)
+    elif a.op:
+        ops = dict(_params(a), op=a.op)
+    else:
+        raise O.OutputError("no-ops", "edit needs --ops JSON, --ops-file F or --op NAME", "需要 --ops 或 --op")
+    _out(a, O.edit(proj, a.output, ops, note=a.note))
+    return 0
+
+
 def cmd_series(a):
     from . import home as H
     if a.action == "new":
@@ -426,6 +490,25 @@ def build_parser():
     p.add_argument("--title")
     p.add_argument("--client")
     p.add_argument("--outputs", help="comma list (default: videos in final/ exports/ out/)")
+    p = add("output", cmd_output, "second-pass edit of a finished output (references/OUTPUT_EDIT.md)")
+    p.add_argument("action", choices=["list", "show", "edit", "render", "undo", "redo", "ai", "effects"])
+    p.add_argument("--project", help="project folder or adopted work folder (default --dir / cwd)")
+    p.add_argument("--output", help="output id (output list), or its file path")
+    p.add_argument("--ops", help="JSON op or list of ops")
+    p.add_argument("--ops-file")
+    p.add_argument("--op", help="one op name (with --param k=v / --set JSON); ai = natural language")
+    p.add_argument("--param", action="append")
+    p.add_argument("--set")
+    p.add_argument("--note")
+    p.add_argument("--instruction", help="ai: what to change, in plain language")
+    p.add_argument("--apply", action="store_true", help="ai: apply the proposed ops (default: propose only)")
+    p.add_argument("--provider")
+    p.add_argument("--model")
+    p.add_argument("--no-asr", action="store_true", help="ai: do not transcribe a flattened output for context")
+    p.add_argument("--quality", choices=["preview", "final"], default="preview")
+    p.add_argument("--targets", help="render: primary (default), platform:orientation list, or all")
+    p.add_argument("--json-events", action="store_true")
+    p.add_argument("--no-thumbs", action="store_true", help="effects: skip the preview thumbnails")
     p = add("series", cmd_series, "series presets", d=False)
     p.add_argument("action", choices=["new", "show", "list", "update"])
     p.add_argument("--id")
@@ -475,8 +558,15 @@ def main(argv=None):
     from .home import SeriesError
     from .manifests import ManifestError
     from .pubcal import CalendarError
+    from .outputs import OutputError
     try:
         return a.fn(a)
+    except OutputError as e:
+        if getattr(a, "json", False) or getattr(a, "json_events", False):
+            print(json.dumps(dict(ok=False, error=e.info["message"], **e.info), ensure_ascii=False, default=str))
+        else:
+            print(f"error: {e.info['message']}", file=sys.stderr)
+        return 5
     except BatchBusy as e:
         _out(a, dict(ok=False, error=str(e)), f"busy: {e}")
         return 6
