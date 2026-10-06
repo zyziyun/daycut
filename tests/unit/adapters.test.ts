@@ -12,7 +12,7 @@ describe('adapter JSON schema', () => {
   it('every shipped adapter is valid', () => {
     const r = loadAdapters([dir]);
     expect(r.errors).toEqual([]);
-    expect(r.adapters.map((a) => a.id).sort()).toEqual(['douyin', 'tiktok', 'xiaohongshu', 'youtube-studio']);
+    expect(r.adapters.map((a) => a.id).sort()).toEqual(['bilibili', 'douyin', 'instagram', 'tiktok', 'wechat-channels', 'x-web', 'xiaohongshu', 'youtube-studio']);
   });
 
   it('TikTok + YouTube are fillable (unverified), 小红书 + 抖音 are TODO placeholders', () => {
@@ -53,7 +53,9 @@ describe('adapter JSON schema', () => {
     const { adapters } = loadAdapters([dir]);
     expect(adapterFor('youtube-shorts-vertical', adapters)?.id).toBe('youtube-studio');
     expect(adapterFor('youtube-horizontal', adapters)?.id).toBe('youtube-studio');
-    expect(adapterFor('bilibili-horizontal', adapters)).toBeUndefined();
+    expect(adapterFor('bilibili-horizontal', adapters)?.id).toBe('bilibili');
+    expect(adapterFor('tiktok-horizontal', adapters)?.id).toBe('tiktok');
+    expect(adapterFor('unknown-vertical', adapters)).toBeUndefined();
   });
 
   it('reports invalid files instead of half-using them', () => {

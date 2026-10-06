@@ -9,10 +9,24 @@ import { useEngine, useLoad } from '../lib/engine';
 import { useHistory } from '../lib/history';
 import { go, href } from '../lib/router';
 import { platformName } from './Home';
+import { PlatformIcon, SCHEDULE_PLATFORMS } from './PlatformIcon';
 import { Empty, Seg, Thumb } from './kit';
 import { errText } from './msg';
 import { nextSlots } from './Project';
 import { useUi } from './ui';
+
+/** Default post time per platform when a clip is dropped on a day (a convention, editable per post). */
+export const SLOT_TIME: Record<string, string> = { x: '09:00', instagram: '18:00', 'wechat-channels': '12:00' };
+const slotTime = (pf: string) => SLOT_TIME[pf] ?? '19:00';
+
+function loadSchedTo(): string {
+  try {
+    const v = localStorage.getItem('pub.schedTo');
+    return v && SCHEDULE_PLATFORMS.includes(v) ? v : 'xiaohongshu';
+  } catch {
+    return 'xiaohongshu';
+  }
+}
 
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
@@ -34,6 +48,15 @@ export function CalendarScreen() {
   const days = useMemo(() => Array.from({ length: view === 'week' ? 7 : 35 }, (_, k) => new Date(start.getTime() + k * 86400000)), [start, view]);
   const { data, reload } = useLoad((c) => c.calendar(), []);
   const [over, setOver] = useState<string | null>(null);
+  const [schedTo, setSchedToState] = useState<string>(loadSchedTo);
+  const setSchedTo = (v: string) => {
+    setSchedToState(v);
+    try {
+      localStorage.setItem('pub.schedTo', v);
+    } catch {
+      /* private mode */
+    }
+  };
   const today = iso(new Date());
   const posts = data?.posts ?? [];
   const weekPosts = posts.filter((p) => p.at.slice(0, 10) >= iso(days[0]) && p.at.slice(0, 10) <= iso(days[days.length - 1]));
@@ -41,7 +64,7 @@ export function CalendarScreen() {
   const schedule = async (item: string, clip: string, day: string) => {
     if (!client) return;
     try {
-      const p = await client.schedule({ item, clip, at: `${day}T19:00`, platform: 'xiaohongshu' });
+      const p = await client.schedule({ item, clip, at: `${day}T${slotTime(schedTo)}`, platform: schedTo });
       reload();
       ui.toast(t('pub.scheduled', { date: fmtDate(p.at) }), {
         undo: async () => {
@@ -78,11 +101,11 @@ export function CalendarScreen() {
   };
   const aiFill = async () => {
     if (!client || !data) return;
-    const free = nextSlots(Math.min(7, data.queue.length), posts.map((p) => p.at), '19:00', new Date(Date.now() - 86400000));
+    const free = nextSlots(Math.min(7, data.queue.length), posts.filter((p) => p.platform.split(':')[0] === schedTo).map((p) => p.at), slotTime(schedTo), new Date(Date.now() - 86400000));
     const made: string[] = [];
     for (let k = 0; k < free.length; k++) {
       const q = data.queue[k];
-      const p = await client.schedule({ item: q.item, clip: q.clip, at: free[k], platform: 'xiaohongshu' });
+      const p = await client.schedule({ item: q.item, clip: q.clip, at: free[k], platform: schedTo });
       made.push(p.id);
     }
     reload();
@@ -147,6 +170,17 @@ export function CalendarScreen() {
             <div className="sech">
               <h2>{t('pub.queue')}</h2>
               <span className="n muted num">{data?.queue.length ?? ''}</span>
+            </div>
+            <div className="col" style={{ gap: 6, margin: '4px 0 10px' }} data-testid="pub-platforms" title={t('pub.schedToHint')}>
+              <span className="muted small">{t('pub.schedTo')}</span>
+              <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
+                {SCHEDULE_PLATFORMS.map((pf) => (
+                  <button key={pf} className={`chip ${schedTo === pf ? 'on' : ''}`} onClick={() => setSchedTo(pf)} aria-pressed={schedTo === pf} data-pf={pf} style={{ height: 26, padding: '0 9px' }}>
+                    <PlatformIcon id={pf} size={14} />
+                    {platformName(pf)}
+                  </button>
+                ))}
+              </div>
             </div>
             {data && !data.queue.length && <p className="muted">{t('pub.queueEmpty')}</p>}
             {(data?.queue ?? []).slice(0, 30).map((q) => (
@@ -220,7 +254,7 @@ export function CalendarScreen() {
                       {mine.map((p) =>
                         view === 'month' ? (
                           <div key={p.id} className="clamp1 muted" onContextMenu={postMenu(p)} onClick={postMenu(p)} style={{ fontSize: 12, cursor: 'pointer' }}>
-                            <i className={`dot ${p.state === 'planned' ? 'run' : 'done'}`} /> {fmtTime(p.at)} {p.title}
+                            <i className={`dot ${p.state === 'planned' ? 'run' : 'done'}`} /> <PlatformIcon id={p.platform} size={12} /> {fmtTime(p.at)} {p.title}
                           </div>
                         ) : (
                           <div
@@ -235,7 +269,8 @@ export function CalendarScreen() {
                           >
                             <Thumb src={p.cover} />
                             <div className="meta">
-                              <span className="num clamp1">
+                              <span className="num clamp1" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                <PlatformIcon id={p.platform} size={13} />
                                 {platformName(p.platform)} {fmtTime(p.at)}
                               </span>
                               <span style={{ color: p.state === 'ready' ? 'var(--ok)' : undefined }}>{tk(`pub.state.${p.state}`)}</span>

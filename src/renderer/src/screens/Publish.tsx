@@ -4,6 +4,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { FillResult, FillStepMsg, PostedEntryMsg, PublishStateMsg } from '../../../shared/deskApi';
 import { adapterFor, type Adapter } from '../../../shared/publish/adapterSchema';
+import { checkCopy, type CopyCheck, type PostCopy } from '../../../shared/publish/postCopy';
+import { PlatformIcon } from '../v4/PlatformIcon';
 import type { Confirmation } from '../../../shared/publish/gating';
 import type { ManifestItem } from '../../../shared/types';
 import { ErrorBox, Field, Modal } from '../components/ui';
@@ -32,6 +34,7 @@ export function Publish({ batch }: { batch: string }) {
   const [perDay, setPerDay] = useState(1);
   const [start, setStart] = useState('');
   const [times, setTimes] = useState('12:00,19:00');
+  const [copy, setCopy] = useState<PostCopy | null>(null);
 
   const m = man.data?.manifest ?? null;
   const verify = man.data?.verify;
@@ -39,6 +42,19 @@ export function Publish({ batch }: { batch: string }) {
   const confirmed = !!m && !!verify?.ok && confs.some((c) => c.code === m.confirmation_code);
   const items = useMemo(() => (m && adapter ? m.items.filter((i) => adapterFor(i.platform, [adapter])) : []), [m, adapter]);
   const item = items.find((i) => itemKey(i) === sel) ?? null;
+  useEffect(() => {
+    setCopy(null);
+    if (!item) return;
+    let live = true;
+    void window.desk.publish
+      .caption(batch, item.job, item.platform)
+      .then((c) => live && setCopy({ title: c.title, description: c.description, tags: c.tags }))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [batch, item]);
+  const checks: CopyCheck[] = adapter && copy ? checkCopy(adapter.fields, copy) : [];
   const postedKeys = new Set(posted.filter((p) => m && p.code === m.confirmation_code).map((p) => itemKey(p)));
 
   const refreshLocal = useCallback(async () => {
@@ -177,7 +193,8 @@ export function Publish({ batch }: { batch: string }) {
             )}
             <div className="tabs">
               {adapters.map((a) => (
-                <button key={a.id} className={`tab ${a.id === adapterId ? 'on' : ''}`} onClick={() => setAdapterId(a.id)}>
+                <button key={a.id} className={`tab ${a.id === adapterId ? 'on' : ''}`} onClick={() => setAdapterId(a.id)} data-adapter={a.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <PlatformIcon id={a.packagePlatforms[0]} size={14} title={a.name} />
                   {lang === 'zh-CN' ? a.nameZh : a.name}
                   {a.status !== 'verified' && <span className="muted"> · {t(`adapter.${a.status}`)}</span>}
                 </button>
@@ -188,6 +205,16 @@ export function Publish({ batch }: { batch: string }) {
                 <div className="notice accent small">
                   <b>{t('pub.disclosure')}</b> {lang === 'zh-CN' ? adapter.disclosure.zh : adapter.disclosure.en}
                 </div>
+                {adapter.guide && (
+                  <div className="notice small" data-testid="pub-guide">
+                    <b>{t('pub.guide')}</b> {lang === 'zh-CN' ? adapter.guide.zh : adapter.guide.en}
+                  </div>
+                )}
+                {adapter.herChoices && (
+                  <div className="muted small" data-testid="pub-her-choices">
+                    <b>{t('pub.herChoices')}:</b> {(lang === 'zh-CN' ? adapter.herChoices.zh : adapter.herChoices.en).join(' · ')}
+                  </div>
+                )}
                 {adapter.status === 'todo' && <div className="notice small">{t('pub.adapterTodo')}</div>}
                 {adapter.status === 'unverified' && <div className="muted small">{t('pub.adapterUnverified')}</div>}
                 <div className="row">
@@ -253,6 +280,21 @@ export function Publish({ batch }: { batch: string }) {
                     {t('pub.showFile')}
                   </button>
                 </div>
+                {copy && (
+                  <div className="col small" data-testid="pub-checks">
+                    <b>{t('pub.checks')}</b>
+                    {checks.length === 0 && <span className="okc">{t('pub.check.ok')}</span>}
+                    {checks.map((c, k) => (
+                      <span key={k} className={c.hard ? 'err' : 'muted'} data-code={c.code}>
+                        {c.code === 'hashtags-over'
+                          ? t(c.hard ? 'pub.check.hashtags-hard' : 'pub.check.hashtags-over', { n: c.n, max: c.max, platform: adapter.name })
+                          : adapter.fields.description?.count === 'x-weighted' && c.field === 'description'
+                            ? t('pub.check.text-over-x', { n: c.n, max: c.max })
+                            : t('pub.check.text-over', { field: tk(`fill.${c.field}`), n: c.n, max: c.max })}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 {steps.length > 0 && (
                   <table className="t small">
                     <tbody>

@@ -1,0 +1,36 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>fake shadow-DOM upload page</title></head>
+<body>
+<!-- Mimics a creator page rendered inside a micro-frontend's open shadow root (视频号助手 style) with B站-style
+     fields: title input, rich-text description, a tag input that makes a chip per Enter, a cover input, a 分区
+     select the app must never touch, and a submit button that must never be clicked. -->
+<div id="host"></div>
+<script>
+  window.__clicked = false;
+  window.__tags = [];
+  const root = document.getElementById('host').attachShadow({ mode: 'open' });
+  root.innerHTML = `
+    <input type="file" accept="video/mp4,video/*" id="file">
+    <div class="video-title"><input placeholder="请输入稿件标题"></div>
+    <div class="video-desc"><div class="ql-editor" contenteditable="true"></div></div>
+    <div class="tag-input-wrp"><input placeholder="按回车键Enter创建标签"></div>
+    <div class="cover-upload"><input type="file" accept="image/*" id="cover"></div>
+    <select id="zone"><option value="">请选择分区</option><option value="36">知识</option></select>
+    <span class="submit-add" id="submit">立即投稿</span>`;
+  root.getElementById('file').addEventListener('change', (e) => (window.__fileName = e.target.files[0] && e.target.files[0].name));
+  root.getElementById('cover').addEventListener('change', (e) => (window.__coverName = e.target.files[0] && e.target.files[0].name));
+  const tag = root.querySelector('.tag-input-wrp input');
+  tag.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && tag.value.trim()) {
+      window.__tags.push(tag.value.trim());
+      tag.value = '';
+    }
+  });
+  root.getElementById('submit').addEventListener('click', () => (window.__clicked = true));
+  window.__read = () => ({
+    file: window.__fileName, cover: window.__coverName, tags: window.__tags, clicked: window.__clicked,
+    title: root.querySelector('.video-title input').value, desc: root.querySelector('.ql-editor').innerText,
+    zone: root.getElementById('zone').value, outline: root.getElementById('submit').style.outline,
+  });
+</script>
+</body></html>

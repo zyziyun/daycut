@@ -69,7 +69,7 @@ export async function assistedFill(
   const cover = item.files.cover ? resolveInside(dir, item.files.cover, path.sep) : null;
   const postPath = item.files.post ? resolveInside(dir, item.files.post, path.sep) : null;
   const md = postPath && fs.existsSync(postPath) ? fs.readFileSync(postPath, 'utf8') : '';
-  const copy = parsePostCopy(md, item.title);
+  const copy = parsePostCopy(md, item.title, { keepFirstLine: adapter.fields.title === null });
 
   const entry = deps.browser.open(adapter, req.account, 'upload');
   const wc = entry.view.webContents;

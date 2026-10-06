@@ -1,0 +1,63 @@
+{
+  "id": "bilibili",
+  "name": "Bilibili",
+  "nameZh": "B 站",
+  "status": "unverified",
+  "lastVerified": null,
+  "packagePlatforms": ["bilibili"],
+  "uploadUrl": "https://member.bilibili.com/platform/upload/video/frame",
+  "loginUrl": "https://passport.bilibili.com/login",
+  "allowedHosts": ["bilibili.com", "*.bilibili.com", "*.hdslb.com", "*.biliapi.net", "*.bilivideo.com", "b23.tv"],
+  "fields": {
+    "file": {
+      "selectors": ["input[type=\"file\"][accept*=\"mp4\"]", ".bcc-upload input[type=\"file\"]", "input[type=\"file\"][accept*=\"video\"]"],
+      "timeoutMs": 30000
+    },
+    "title": {
+      "selectors": [".video-title input", "input[placeholder*=\"标题\"]", ".input-instance input[maxlength=\"80\"]"],
+      "kind": "input",
+      "maxLength": 80,
+      "clear": true,
+      "timeoutMs": 60000
+    },
+    "description": {
+      "selectors": [".video-desc .ql-editor[contenteditable=\"true\"]", ".archive-info-editor .ql-editor", "div.ql-editor[contenteditable=\"true\"]"],
+      "kind": "contenteditable",
+      "maxLength": 2000,
+      "clear": true,
+      "timeoutMs": 30000
+    },
+    "tags": {
+      "mode": "separate",
+      "selectors": [".tag-input-wrp input", "input[placeholder*=\"回车\"]", "input[placeholder*=\"标签\"]"],
+      "format": "{tag}",
+      "max": 10,
+      "submit": "enter"
+    },
+    "cover": {
+      "selectors": [".cover-upload input[type=\"file\"]", ".cover-main input[type=\"file\"][accept*=\"image\"]"],
+      "timeoutMs": 5000
+    }
+  },
+  "publishButton": {
+    "selectors": ["span.submit-add", ".submit-add", "button.submit-add"]
+  },
+  "disclosure": {
+    "zh": "含 AI 生成内容时，在「创作声明」里勾选「该视频使用人工智能合成技术」。分区和「自制 / 转载」由你自己选，应用不会填写。封面会被裁成 16:10、4:3（手机首页）和 16:9：标题放在中间。",
+    "en": "For AI-generated content, tick \"This video uses AI synthesis\" under 创作声明 (creator declaration). The category (分区) and 自制 / 转载 (original / repost) are yours to choose; the app never fills them. The cover is cropped to 16:10, 4:3 (phone home feed) and 16:9: keep the headline in the middle."
+  },
+  "guide": {
+    "zh": "应用放入视频、标题、简介，并逐个输入标签（回车生成）；封面文件也会放入，裁剪框由你确认。然后选分区、自制/转载，检查后点「立即投稿」。",
+    "en": "The app adds the video, title, description and the tags one by one (Enter creates each); the cover file is set too - confirm its crop box yourself. Then choose the category and 自制 / 转载, check everything and press 立即投稿 (Submit) yourself."
+  },
+  "herChoices": {
+    "zh": ["分区", "自制 / 转载", "封面裁剪（16:10 / 4:3）", "创作声明（AI 合成）", "定时发布 / 合集"],
+    "en": ["Category (分区)", "Original / repost (自制 / 转载)", "Cover crop (16:10 / 4:3)", "Creator declaration (AI synthesis)", "Schedule / collection"]
+  },
+  "notes": [
+    "UNVERIFIED selectors (written without a logged-in session, 2026-10): check them on the live 创作中心 page and set status to verified + lastVerified.",
+    "Tags: separate input, one Enter per tag (submit: enter); B站 allows <= 10 tags of <= 20 chars.",
+    "The 分区 picker and 自制 / 转载 radio are deliberately not in this adapter.",
+    "The open platform (openhome.bilibili.com) upload API needs a developer application and review; not used here."
+  ]
+}

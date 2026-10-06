@@ -39,10 +39,17 @@ export function guardedSend(raw: Send): Send {
 }
 
 /** First element matching any selector; for fields to type into, only rendered (visible) ones count - file
- * inputs are usually hidden on purpose, so they are taken as they are. */
+ * inputs are usually hidden on purpose, so they are taken as they are. Open shadow roots are searched too
+ * (视频号助手 renders its pages inside a micro-frontend's shadow DOM). */
 function findExpr(selectors: string[], visible: boolean): string {
   const vis = visible ? '&& el.getClientRects().length > 0' : '';
-  return `(() => { for (const s of ${JSON.stringify(selectors)}) { try { for (const el of document.querySelectorAll(s)) { if (el ${vis}) return el; } } catch (e) {} } return null; })()`;
+  return `(() => {
+  const roots = [document];
+  for (let i = 0; i < roots.length && i < 400; i++) {
+    for (const el of roots[i].querySelectorAll('*')) if (el.shadowRoot) roots.push(el.shadowRoot);
+  }
+  for (const s of ${JSON.stringify(selectors)}) { for (const r of roots) { try { for (const el of r.querySelectorAll(s)) { if (el ${vis}) return el; } } catch (e) {} } }
+  return null; })()`;
 }
 
 const FOCUS_FN = `function (clear) {
@@ -154,7 +161,16 @@ export async function runFill(
         await send('DOM.setFileInputFiles', { files: step.paths, objectId: id });
       } else if (step.kind === 'text') {
         await call(send, id, FOCUS_FN, [step.clear]);
-        await typeText(send, step.text, step.editable);
+        if (step.items) {
+          for (const it of step.items) {
+            await send('Input.insertText', { text: it.replace(/\s+/g, ' ') });
+            await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, text: '\r' });
+            await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+            await sleep(150);
+          }
+        } else {
+          await typeText(send, step.text, step.editable);
+        }
       } else {
         await call(send, id, HIGHLIGHT_FN);
       }

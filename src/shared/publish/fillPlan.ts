@@ -14,6 +14,8 @@ export type FillStep =
       editable: 'input' | 'contenteditable';
       clear: boolean;
       timeoutMs: number;
+      /** Type these one by one, pressing Enter after each (B站 tag chips) - instead of `text`. */
+      items?: string[];
     }
   | { kind: 'highlight'; field: 'publish'; selectors: string[]; timeoutMs: number };
 
@@ -53,14 +55,16 @@ export function planFill(a: Adapter, p: FillPayload): FillStep[] {
     if (f.tags.mode === 'append-to-description') {
       desc = desc ? `${desc}\n\n${tagText}` : tagText;
     } else if (f.tags.selectors) {
+      const list = p.copy.tags.slice(0, f.tags.max ?? p.copy.tags.length);
       steps.push({
         kind: 'text',
         field: 'tags',
         selectors: f.tags.selectors,
-        text: p.copy.tags.slice(0, f.tags.max ?? p.copy.tags.length).join(','),
+        text: list.join(','),
         editable: 'input',
         clear: false,
         timeoutMs: DEFAULT_TIMEOUT,
+        ...(f.tags.submit === 'enter' ? { items: list } : {}),
       });
     }
   }
@@ -71,7 +75,7 @@ export function planFill(a: Adapter, p: FillPayload): FillStep[] {
       kind: 'text',
       field: 'description',
       selectors: f.description.selectors,
-      text: clip(desc, f.description.maxLength),
+      text: f.description.count === 'x-weighted' ? desc : clip(desc, f.description.maxLength),
       editable: f.description.kind,
       clear: f.description.clear,
       timeoutMs: f.description.timeoutMs ?? DEFAULT_TIMEOUT,

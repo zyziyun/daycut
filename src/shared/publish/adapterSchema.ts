@@ -17,6 +17,10 @@ const textField = z.strictObject({
   /** Replace what is already there (TikTok pre-fills the caption with the file name). */
   clear: z.boolean().default(true),
   timeoutMs: z.number().int().min(0).max(120000).optional(),
+  /** How the platform counts this text: chars, or X's weighted count (CJK / emoji = 2, URL = 23). */
+  count: z.enum(['chars', 'x-weighted']).default('chars'),
+  /** Warn (never cut) above this length - e.g. X 280 for standard accounts, more for Premium. */
+  softMax: z.number().int().min(1).max(100000).optional(),
 });
 
 const tagsField = z.strictObject({
@@ -25,6 +29,10 @@ const tagsField = z.strictObject({
   selectors: selectorList.optional(),
   format: z.string().max(40).default('#{tag} '),
   max: z.number().int().min(0).max(100).optional(),
+  /** separate mode: press Enter after each tag (B站 creates a tag chip per Enter). Enter is the only key ever sent. */
+  submit: z.enum(['none', 'enter']).default('none'),
+  /** The platform refuses more hashtags than max (Instagram: 5 per post, caption + tags together). */
+  hardMax: z.boolean().default(false),
 });
 
 const hostPattern = z
@@ -41,7 +49,7 @@ export const adapterSchema = z
     status: z.enum(['verified', 'unverified', 'todo']),
     lastVerified: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
     /** vstudio platform names this adapter can post (package key "<platform>-<orientation>"). */
-    packagePlatforms: z.array(z.string().regex(/^[a-z][a-z-]{1,30}$/)).min(1),
+    packagePlatforms: z.array(z.string().regex(/^[a-z][a-z-]{0,30}$/)).min(1),
     uploadUrl: z.string().url().startsWith('https://'),
     loginUrl: z.string().url().startsWith('https://'),
     /** Hosts the embedded browser treats as this platform (popups, posted-URL check). */
@@ -59,6 +67,10 @@ export const adapterSchema = z
       zh: z.string().min(1).max(600),
       en: z.string().min(1).max(600),
     }),
+    /** What the creator clicks herself before / while the fill runs (e.g. Instagram: Create -> Post, then Next). */
+    guide: z.strictObject({ zh: z.string().min(1).max(600), en: z.string().min(1).max(600) }).nullable().default(null),
+    /** Choices the app never makes for her (B站 分区 / 自制·转载, 视频号 原创声明 ...), shown as a checklist. */
+    herChoices: z.strictObject({ zh: z.array(z.string().max(120)).max(10), en: z.array(z.string().max(120)).max(10) }).nullable().default(null),
     notes: z.array(z.string().max(400)).max(20).default([]),
   })
   .superRefine((a, ctx) => {
@@ -89,9 +101,10 @@ export function parseAdapter(json: unknown): { ok: true; adapter: Adapter } | { 
   return { ok: false, error: r.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; ') };
 }
 
-const ORIENTATIONS = ['vertical', 'full', 'horizontal'];
+const ORIENTATIONS = ['vertical', 'full', 'horizontal', 'square', 'reels', 'feed'];
 
-/** "tiktok-vertical" -> "tiktok"; "youtube-shorts-vertical" -> "youtube-shorts". */
+/** "tiktok-vertical" -> "tiktok"; "youtube-shorts-vertical" -> "youtube-shorts"; "instagram-reels" -> "instagram";
+ * "x-square" -> "x"; "wechat-channels-vertical" -> "wechat-channels". */
 export function basePlatform(packageKey: string): string {
   const i = packageKey.lastIndexOf('-');
   if (i > 0 && ORIENTATIONS.includes(packageKey.slice(i + 1))) return packageKey.slice(0, i);

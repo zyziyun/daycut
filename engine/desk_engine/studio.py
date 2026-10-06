@@ -856,7 +856,7 @@ def _glossary_add(glossary, add):
 
 
 HEX = __import__("re").compile(r"^#[0-9A-Fa-f]{6}$")
-PLAT = __import__("re").compile(r"^[a-z][a-z-]{1,30}(:[a-z]{3,12})?$")
+PLAT = __import__("re").compile(r"^[a-z][a-z-]{0,30}(:[a-z]{3,12})?$")
 
 
 def _strs(v, name, n=50, ln=40):

@@ -14,7 +14,7 @@ from .common import need, read_json, write_json
 
 AT_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$")
 STATES = ("planned", "ready", "posted")
-PLATFORM_RE = re.compile(r"^[a-z][a-z-]{1,30}(:[a-z]{3,12})?$")
+PLATFORM_RE = re.compile(r"^[a-z][a-z-]{0,30}(:[a-z]{3,12})?$")
 
 
 class Calendar:

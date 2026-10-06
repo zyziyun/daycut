@@ -79,7 +79,7 @@ from .v02store import CLIENT_RE
 MAX_BODY = 1 << 20
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 TIME_RE = re.compile(r"^\d{2}:\d{2}$")
-PLATFORM_RE = re.compile(r"^[a-z][a-z-]{1,30}(:[a-z]{3,12})?$")
+PLATFORM_RE = re.compile(r"^[a-z][a-z-]{0,30}(:[a-z]{3,12})?$")
 ID_RE = re.compile(r"^[0-9a-f]{12}$")
 
 

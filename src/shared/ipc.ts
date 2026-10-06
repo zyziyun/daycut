@@ -22,7 +22,7 @@ const httpsUrl = z
   .refine((u) => new URL(u).protocol === 'https:', 'https only');
 
 /** Platform ids as the engine takes them: tiktok, xiaohongshu:full, youtube-shorts:vertical. */
-export const platformId = z.string().regex(/^[a-z][a-z-]{1,30}(:[a-z]{3,12})?$/);
+export const platformId = z.string().regex(/^[a-z][a-z-]{0,30}(:[a-z]{3,12})?$/);
 /** API keys: printable ASCII without spaces. The value only ever travels renderer -> main, never back. */
 const secretValue = z.string().regex(/^[\x21-\x7e]{8,400}$/, 'key: 8-400 printable characters, no spaces');
 export const SECRET_NAMES = ['anthropic', 'openai'] as const;

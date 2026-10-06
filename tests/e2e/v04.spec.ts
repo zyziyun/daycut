@@ -174,6 +174,21 @@ test('⌘K palette, ? shortcuts, drop target', async () => {
   await expect(page.getByTestId('shortcuts')).toHaveCount(0);
 });
 
+test('publish calendar: platform chips (X / Instagram / 视频号 / B站) choose where new posts go', async () => {
+  await hash('#/publish');
+  const chips = page.getByTestId('pub-platforms');
+  await expect(chips).toBeVisible({ timeout: 15000 });
+  for (const pf of ['x', 'instagram', 'wechat-channels', 'bilibili', 'xiaohongshu']) await expect(chips.locator(`button[data-pf="${pf}"]`)).toBeVisible();
+  await chips.locator('button[data-pf="x"]').click();
+  await expect(chips.locator('button[data-pf="x"]')).toHaveAttribute('aria-pressed', 'true');
+  expect(await page.evaluate(() => localStorage.getItem('pub.schedTo'))).toBe('x');
+  if (await page.getByTestId('pub-ai').isVisible()) {
+    await page.getByTestId('pub-ai').click();
+    await expect(page.locator('[data-testid="pub-post"] .pfi[data-pf="x"]').first()).toBeVisible({ timeout: 10000 });
+  }
+  await chips.locator('button[data-pf="xiaohongshu"]').click();
+});
+
 const SCREENS = ['#/', '#/inbox', '#/projects', 'PROJECT', 'CLIP', '#/publish', '#/settings'];
 
 for (const lang of ['en', 'zh-CN'] as const) {

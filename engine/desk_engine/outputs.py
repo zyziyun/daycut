@@ -32,7 +32,7 @@ from .common import BadRequest, need, read_json, write_json
 OPS = ("trim", "cut", "cut_remove", "speed", "loudness", "captions", "caption_text", "caption_style", "caption_add",
        "caption_remove", "caption_placement", "title", "effect_add", "effect_update", "effect_remove", "cover",
        "export_add", "export_remove", "reset")
-TARGET_RE = re.compile(r"^([a-z][a-z-]{1,30}(:[a-z]{3,12})?|\d{1,2}:\d{1,2})$")
+TARGET_RE = re.compile(r"^([a-z][a-z-]{0,30}(:[a-z]{3,12})?|\d{1,2}:\d{1,2})$")
 
 
 class EngineMessage(BadRequest):

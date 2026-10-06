@@ -1,0 +1,52 @@
+{
+  "id": "x-web",
+  "name": "X (Twitter)",
+  "nameZh": "X（推特）",
+  "status": "unverified",
+  "lastVerified": null,
+  "packagePlatforms": ["x"],
+  "uploadUrl": "https://x.com/compose/post",
+  "loginUrl": "https://x.com/i/flow/login",
+  "allowedHosts": ["x.com", "*.x.com", "twitter.com", "*.twitter.com", "*.twimg.com", "t.co"],
+  "fields": {
+    "file": {
+      "selectors": ["input[data-testid=\"fileInput\"]", "div[role=\"dialog\"] input[type=\"file\"]", "input[type=\"file\"][accept*=\"video\"]"],
+      "timeoutMs": 30000
+    },
+    "title": null,
+    "description": {
+      "selectors": [
+        "div[role=\"dialog\"] div[data-testid=\"tweetTextarea_0\"][contenteditable=\"true\"]",
+        "div[data-testid=\"tweetTextarea_0\"][contenteditable=\"true\"]",
+        "[data-testid=\"tweetTextarea_0\"] [contenteditable=\"true\"]"
+      ],
+      "kind": "contenteditable",
+      "count": "x-weighted",
+      "softMax": 280,
+      "clear": true,
+      "timeoutMs": 30000
+    },
+    "tags": { "mode": "append-to-description", "format": "#{tag} ", "max": 2 },
+    "cover": null
+  },
+  "publishButton": {
+    "selectors": ["div[role=\"dialog\"] button[data-testid=\"tweetButton\"]", "button[data-testid=\"tweetButton\"]", "button[data-testid=\"tweetButtonInline\"]"]
+  },
+  "disclosure": {
+    "zh": "X 的帖子没有「AI 生成」开关：视频是 AI 生成或做过逼真的修改时，在文字里说明（X 合成与篡改媒体政策）。普通账号：正文按加权计 280 字（中文、emoji 算 2，链接算 23），视频 ≤ 140 秒 / 512 MB；Premium 更长。发布前检查「谁可以回复」。",
+    "en": "X posts have no \"AI-generated\" switch: when the video is AI-made or realistically altered, say so in the text (X synthetic and manipulated media policy). Standard accounts: 280 weighted characters (CJK and emoji count 2, a link 23), video <= 140 s / 512 MB; Premium allows more. Check \"Who can reply\" before posting."
+  },
+  "guide": {
+    "zh": "页面会打开发帖窗口；应用放入视频、填好正文（含 1–2 个话题标签）。视频处理完、字数没变红，再由你点「发帖」。",
+    "en": "The compose window opens; the app adds the video and types the text (with 1-2 hashtags). When the video has processed and the counter is not red, press Post yourself."
+  },
+  "herChoices": {
+    "zh": ["谁可以回复", "是否标注 AI 生成（写在正文里）"],
+    "en": ["Who can reply", "Whether to say it is AI-generated (in the text)"]
+  },
+  "notes": [
+    "UNVERIFIED selectors (written without a logged-in session, 2026-10): data-testid values are what x.com used through 2025; check them on the live page and set status to verified + lastVerified.",
+    "The post text is a Draft.js editor: text is typed with Input.insertText; the 280 limit is weighted (twitter-text v3) - the desk warns, it never cuts (Premium accounts may post more).",
+    "X may refuse unusual browsers; if the login page loops, sign in once with the Google/Apple popup or try again later."
+  ]
+}
