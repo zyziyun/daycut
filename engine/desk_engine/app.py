@@ -26,6 +26,20 @@ Routes (JSON unless noted)
   GET  /api/batches/<id>/events?n=50&job=
   GET  /api/batches/<id>/jobs/<job>        job detail (stages, QC, cleanup words + edits, media paths)
   GET  /api/stream                         text/event-stream: status | log | run-start | run-exit | batches
+                                           | clients | plan | job-edit
+v0.2 (studio.py; engine command when available, desk implementation otherwise)
+  GET  /api/capabilities                   which v0.2 engine commands exist
+  GET  /api/clients | POST /api/clients    client workspaces (client.yaml)
+  GET  /api/clients/<slug> | POST ...      show (config + effective) / update
+  POST /api/clients/<slug>/crm             funnel stage, revenue, 7-day post data, next price
+  POST /api/plans                          AI segment planning (async) -> {id}; GET /api/plans/<id>
+  POST /api/plans/<id>/batch               accepted + edited segments -> segments.yaml -> batch
+  POST /api/batches/<id>/client            {client}
+  POST /api/batches/<id>/jobs/<job>/edit   {op: caption|trim|hook|cover|copy, ...}; /undo; /rerun
+  POST /api/batches/<id>/timing            {job, event: start|stop, what: review, active_s?}
+  POST /api/batches/<id>/deliver           {client?, zip, cleanup_days?}; GET; POST .../deliver/cleanup
+  GET  /api/metrics?batch=|client=         dashboard numbers; GET|POST /api/metrics/weekly (weekly_metrics.csv)
+  GET  /api/cleanup/due | POST /api/cleanup/done   source cleanup after delivery (the desk moves to Trash)
 """
 import hmac
 import json
@@ -37,7 +51,9 @@ import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
+from . import metrics as MET
 from .common import JOB_RE, NAME_RE, BadRequest, need
+from .v02store import CLIENT_RE
 
 MAX_BODY = 1 << 20
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -97,7 +113,202 @@ def validate_create(b):
     if b.get("planner"):
         need(b["planner"] in ("file", "claude"), "planner: file | claude")
         out["planner"] = b["planner"]
+    if b.get("client"):
+        out["client"] = _client(b["client"])
     return out
+
+
+# ------------------------------------------------------------------ v0.2 validators
+PID_RE = re.compile(r"^[0-9a-f]{12}$")
+WEEK_RE = re.compile(r"^W\d{1,2}$")
+
+
+def _client(v):
+    need(isinstance(v, str) and CLIENT_RE.match(v), "client: a-z 0-9 _ - (max 40)")
+    return v
+
+
+def _str(v, name, lo=0, hi=200):
+    need(isinstance(v, str) and lo <= len(v) <= hi, f"{name}: {lo}-{hi} chars")
+    return v
+
+
+def _strlist(v, name, n, ln):
+    need(isinstance(v, list) and len(v) <= n and all(isinstance(x, str) and len(x) <= ln for x in v),
+         f"{name}: up to {n} strings (max {ln} chars)")
+    return v
+
+
+def _platforms(v):
+    need(isinstance(v, list) and 0 < len(v) <= 8 and all(isinstance(p, str) and PLATFORM_RE.match(p) for p in v),
+         "platforms: 1-8 entries like tiktok or xiaohongshu:full")
+    return v
+
+
+def _hook(h, name):
+    need(isinstance(h, dict), f"{name} must be an object")
+    out = dict(start=_num(h.get("start"), 0, 1e6, f"{name}.start"), end=_num(h.get("end"), 0, 1e6, f"{name}.end"),
+               text=_str(h.get("text") or "", f"{name}.text", 0, 200))
+    need(out["end"] > out["start"], f"{name}: end must be after start")
+    return out
+
+
+def validate_client_create(b):
+    need(isinstance(b, dict), "body must be an object")
+    _client(b.get("slug"))
+    return b
+
+
+def validate_plan(b):
+    need(isinstance(b, dict), "body must be an object")
+    out = dict(source=_abs_path(b.get("source"), "source", kind="file"))
+    out["count"] = int(_num(b.get("count", 6), 1, 50, "count"))
+    out["min"] = float(_num(b.get("min", 30), 5, 600, "min"))
+    out["max"] = float(_num(b.get("max", 90), out["min"], 900, "max"))
+    need(b.get("provider", "none") in ("claude", "openai", "none"), "provider: claude | openai | none")
+    out["provider"] = b.get("provider", "none")
+    if b.get("platforms"):
+        out["platforms"] = _platforms(b["platforms"])
+    if b.get("client"):
+        out["client"] = _client(b["client"])
+    return out
+
+
+def validate_plan_batch(b):
+    need(isinstance(b, dict), "body must be an object")
+    need(isinstance(b.get("name"), str) and NAME_RE.match(b["name"]), "name: letters, digits, . _ - (max 64)")
+    segs = b.get("segments")
+    need(isinstance(segs, list) and 0 < len(segs) <= 200, "segments: 1-200 accepted segments")
+    rows = []
+    for i, s in enumerate(segs):
+        n = f"segments[{i}]"
+        need(isinstance(s, dict), f"{n} must be an object")
+        r = dict(start=_num(s.get("start"), 0, 1e6, f"{n}.start"), end=_num(s.get("end"), 0, 1e6, f"{n}.end"),
+                 title=_str(s.get("title"), f"{n}.title", 1, 100))
+        for k, hi in (("chapter", 60), ("why", 500), ("risk", 500), ("body", 2000)):
+            if s.get(k):
+                r[k] = _str(s[k], f"{n}.{k}", 0, hi)
+        if s.get("notes"):
+            r["notes"] = _strlist(s["notes"], f"{n}.notes", 10, 200)
+        if s.get("tags"):
+            r["tags"] = _strlist(s["tags"], f"{n}.tags", 20, 30)
+        if s.get("hook"):
+            r["hook"] = _hook(s["hook"], f"{n}.hook")
+        if s.get("hook_candidates"):
+            need(isinstance(s["hook_candidates"], list) and len(s["hook_candidates"]) <= 10, f"{n}.hook_candidates")
+            r["hook_candidates"] = [_hook(h, f"{n}.hook_candidates") for h in s["hook_candidates"]]
+        rows.append(r)
+    out = dict(name=b["name"], segments=rows, platforms=_platforms(b.get("platforms")))
+    if b.get("client"):
+        out["client"] = _client(b["client"])
+    if b.get("budget") is not None:
+        out["budget"] = validate_create(dict(name="x", recipe="talkinghead-clips", folder="/", platforms=["tiktok"],
+                                             budget=b["budget"]))["budget"]
+    if b.get("out_dir"):
+        out["out_dir"] = _abs_path(b["out_dir"], "out_dir", must_exist=False)
+    return out
+
+
+def validate_edit(b):
+    need(isinstance(b, dict), "body must be an object")
+    op = b.get("op")
+    need(op in ("caption", "trim", "hook", "cover", "copy"), "op: caption | trim | hook | cover | copy")
+    if op == "caption":
+        cue = b.get("cue")
+        need(isinstance(cue, int) and not isinstance(cue, bool) and 0 <= cue <= 100000, "cue: caption index")
+        return op, dict(cue=cue, text=_str(b.get("text"), "text", 1, 200))
+    if op == "trim":
+        a, z = _num(b.get("start"), 0, 1e6, "start"), _num(b.get("end"), 0, 1e6, "end")
+        need(z > a, "end must be after start")
+        return op, dict(start=float(a), end=float(z))
+    if op == "hook":
+        k = b.get("pick")
+        need(isinstance(k, int) and not isinstance(k, bool) and 0 <= k < 20, "pick: hook candidate index")
+        return op, dict(pick=k)
+    if op == "cover":
+        t = b.get("t")
+        return op, dict(t=None if t is None else float(_num(t, 0, 36000, "t")), text=_str(b.get("text") or "", "text", 0, 60))
+    return op, dict(title=_str(b.get("title"), "title", 1, 100), body=_str(b.get("body") or "", "body", 0, 2000),
+                    tags=[t.strip().lstrip("#") for t in _strlist(b.get("tags") or [], "tags", 30, 30) if t.strip()])
+
+
+def validate_timing(b):
+    need(isinstance(b, dict), "body must be an object")
+    need(isinstance(b.get("job"), str) and JOB_RE.match(b["job"]), "bad job id")
+    need(b.get("event") in ("start", "stop"), "event: start | stop")
+    need(b.get("what", "review") == "review", "what: review")
+    out = dict(job=b["job"], event=b["event"], what="review")
+    if b["event"] == "stop":
+        out["active_s"] = float(_num(b.get("active_s", 0), 0, 86400, "active_s"))
+    return out
+
+
+def validate_deliver(b):
+    need(isinstance(b, dict), "body must be an object")
+    out = dict(zip=True)
+    if b.get("client"):
+        out["client"] = _client(b["client"])
+    if "zip" in b:
+        need(isinstance(b["zip"], bool), "zip must be a boolean")
+        out["zip"] = b["zip"]
+    if b.get("cleanup_days") is not None:
+        out["cleanup_days"] = int(_num(b["cleanup_days"], 1, 365, "cleanup_days"))
+    return out
+
+
+def validate_cleanup_set(b):
+    need(isinstance(b, dict) and isinstance(b.get("enabled"), bool), "enabled must be a boolean")
+    out = dict(enabled=b["enabled"], days=None)
+    if b.get("days") is not None:
+        out["days"] = int(_num(b["days"], 1, 365, "days"))
+    need(not out["enabled"] or out["days"], "days required when enabled")
+    return out
+
+
+def validate_crm(b):
+    need(isinstance(b, dict), "body must be an object")
+    out = {}
+    if b.get("stage"):
+        need(b["stage"] in MET.FUNNEL + ("lost",), f"stage: {' | '.join(MET.FUNNEL)} | lost")
+        out["stage"] = b["stage"]
+    if b.get("revenue") is not None:
+        out["revenue"] = float(_num(b["revenue"], 0, 1e7, "revenue"))
+    if b.get("price_next") is not None:
+        out["price_next"] = float(_num(b["price_next"], 0, 1e7, "price_next"))
+    if b.get("note") is not None:
+        out["note"] = _str(b["note"], "note", 0, 2000)
+    if b.get("date"):
+        need(isinstance(b["date"], str) and DATE_RE.match(b["date"]), "date: YYYY-MM-DD")
+        out["date"] = b["date"]
+    if b.get("post"):
+        p = b["post"]
+        need(isinstance(p, dict), "post must be an object")
+        post = dict(platform=_str(p.get("platform") or "", "post.platform", 1, 40))
+        for k in ("plays", "saves", "likes", "comments", "followers"):
+            if p.get(k) is not None:
+                post[k] = int(_num(p[k], 0, 1e10, f"post.{k}"))
+        if p.get("url"):
+            need(isinstance(p["url"], str) and p["url"].startswith("https://") and len(p["url"]) < 2048, "post.url: https")
+            post["url"] = p["url"]
+        if p.get("batch"):
+            need(isinstance(p["batch"], str) and ID_RE.match(p["batch"]), "post.batch: batch id")
+            post["batch"] = p["batch"]
+        if p.get("posted"):
+            need(isinstance(p["posted"], str) and DATE_RE.match(p["posted"]), "post.posted: YYYY-MM-DD")
+            post["posted"] = p["posted"]
+        out["post"] = post
+    need(out, "nothing to update")
+    return out
+
+
+def validate_weekly(b):
+    need(isinstance(b, dict) and isinstance(b.get("week"), str) and WEEK_RE.match(b["week"]), "week: W1..W99")
+    v = b.get("values")
+    need(isinstance(v, dict) and set(v) <= set(MET.MANUAL_COLUMNS), f"values: {', '.join(MET.MANUAL_COLUMNS)}")
+    for k, x in v.items():
+        need(x is None or (isinstance(x, (int, float)) and not isinstance(x, bool)) or (isinstance(x, str) and len(x) <= 20),
+             f"{k}: number")
+    return dict(week=b["week"], values=v)
 
 
 def validate_run(b):
@@ -151,9 +362,94 @@ def validate_package(b):
 
 
 class Api:
-    def __init__(self, engine, bus, token, origins):
+    def __init__(self, engine, bus, token, origins, studio=None):
         self.engine, self.bus, self.token, self.origins = engine, bus, token, set(origins)
+        if studio is None:
+            from .caps import Capabilities
+            from .studio import Studio
+            studio = Studio(engine, engine.data_dir, bus, Capabilities(fixed=set()))
+        self.studio = studio
         self.port = None
+
+    def roots(self):
+        out = list(self.engine.roots())
+        for p in self.studio.plans.values():
+            out.append(os.path.dirname(p["request"]["source"]))
+        return sorted(set(out))
+
+    def route_v02(self, method, parts, query, body):
+        s = self.studio
+        q = lambda k: (query.get(k) or [None])[0]  # noqa: E731
+        if parts == ["capabilities"] and method == "GET":
+            return s.capabilities()
+        if parts[:1] == ["clients"]:
+            if len(parts) == 1:
+                if method == "GET":
+                    return s.list_clients()
+                if method == "POST":
+                    return s.create_client(validate_client_create(body))
+            slug = _client(parts[1])
+            if len(parts) == 2:
+                if method == "GET":
+                    return s.get_client(slug)
+                if method == "POST":
+                    need(isinstance(body, dict), "body must be an object")
+                    return s.update_client(slug, body)
+            if parts[2:] == ["crm"] and method == "POST":
+                s._read_client(slug)
+                return s.set_crm(slug, validate_crm(body))
+        if parts[:1] == ["plans"]:
+            if len(parts) == 1 and method == "POST":
+                return s.start_plan(validate_plan(body))
+            need(len(parts) >= 2 and PID_RE.match(parts[1]), "bad plan id")
+            if len(parts) == 2 and method == "GET":
+                return s.get_plan(parts[1])
+            if parts[2:] == ["batch"] and method == "POST":
+                return s.plan_to_batch(parts[1], validate_plan_batch(body))
+        if parts[:1] == ["metrics"]:
+            if len(parts) == 1 and method == "GET":
+                b, c = q("batch"), q("client")
+                need(b is None or ID_RE.match(b), "bad batch id")
+                return s.metrics(batch=b, client=_client(c) if c else None)
+            if parts[1:] == ["weekly"]:
+                if method == "GET":
+                    return s.weekly()
+                if method == "POST":
+                    return s.set_weekly_manual(validate_weekly(body))
+        if parts[:1] == ["cleanup"]:
+            if parts[1:] == ["due"] and method == "GET":
+                return s.cleanup_due()
+            if parts[1:] == ["done"] and method == "POST":
+                need(isinstance(body, dict) and ID_RE.match(body.get("batch") or ""), "batch id required")
+                paths = body.get("paths") or []
+                need(isinstance(paths, list) and len(paths) <= 100, "paths: list")
+                return s.cleanup_done(body["batch"], [_abs_path(p, "path", must_exist=False) for p in paths])
+        raise KeyError("not found")
+
+    def route_batch_v02(self, method, bid, rest, body):
+        s = self.studio
+        if rest == ["client"] and method == "POST":
+            need(isinstance(body, dict), "body must be an object")
+            return s.set_batch_client(bid, _client(body["client"]) if body.get("client") else None)
+        if rest == ["timing"] and method == "POST":
+            return s.timing(bid, validate_timing(body))
+        if rest == ["deliver"]:
+            if method == "POST":
+                return s.deliver(bid, validate_deliver(body or {}))
+            if method == "GET":
+                return dict(delivery=s.delivery(bid))
+        if rest == ["deliver", "cleanup"] and method == "POST":
+            return s.set_cleanup(bid, validate_cleanup_set(body))
+        if len(rest) == 3 and rest[0] == "jobs" and method == "POST":
+            need(JOB_RE.match(rest[1]), "bad job id")
+            if rest[2] == "edit":
+                op, args = validate_edit(body)
+                return s.edit(bid, rest[1], op, args)
+            if rest[2] == "undo":
+                return s.undo(bid, rest[1])
+            if rest[2] == "rerun":
+                return s.rerun(bid, rest[1])
+        return None
 
     def route(self, method, path, query, body):
         e = self.engine
@@ -163,14 +459,14 @@ class Api:
         if method == "GET" and parts == ["recipes"]:
             return e.recipes()
         if method == "GET" and parts == ["roots"]:
-            return e.roots()
+            return self.roots()
         if parts[:1] != ["batches"]:
-            raise KeyError("not found")
+            return self.route_v02(method, parts, query, body)
         if len(parts) == 1:
             if method == "GET":
-                return e.list_batches()
+                return self.studio.list_batches()
             if method == "POST":
-                return e.create_batch(validate_create(body))
+                return self.studio.create_batch(validate_create(body))
         if parts[1:] == ["import"] and method == "POST":
             need(isinstance(body, dict), "body must be an object")
             return e.import_batch(_abs_path(body.get("dir"), "dir", kind="dir"))
@@ -201,7 +497,10 @@ class Api:
             return e.events(bid, n, job)
         if method == "GET" and len(rest) == 2 and rest[0] == "jobs":
             need(JOB_RE.match(rest[1]), "bad job id")
-            return e.job(bid, rest[1])
+            return self.studio.job_detail(bid, rest[1])
+        r = self.route_batch_v02(method, bid, rest, body)
+        if r is not None:
+            return r
         raise KeyError("not found")
 
 

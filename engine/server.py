@@ -7,6 +7,7 @@ Environment
   VSTUDIO_ENGINE_PATH   the video-studio repo; its lib/ is put on sys.path (PYTHONPATH also works)
   DESK_ENGINE_MOCK=1    force the in-memory mock engine
   DESK_MOCK_STEP        seconds per mock stage (default 0.25)
+  ANTHROPIC_API_KEY / OPENAI_API_KEY   segment-planning providers (from the OS keychain via the desk)
 Prints one line ``{"ready": true, "port": N, "mode": "real"|"mock"}`` on stdout, then serves until stdin closes
 (the parent died) or SIGTERM.
 """
@@ -19,7 +20,9 @@ import threading
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from desk_engine.app import Api, serve  # noqa: E402
+from desk_engine.caps import Capabilities, CliRunner, runner_env  # noqa: E402
 from desk_engine.common import EventBus, Registry  # noqa: E402
+from desk_engine.studio import Studio  # noqa: E402
 
 
 def make_engine(data_dir, bus):
@@ -48,7 +51,13 @@ def main():
     origins = [o.strip() for o in (os.environ.get("DESK_ALLOWED_ORIGINS") or "").split(",") if o.strip()]
     bus = EventBus()
     engine, note = make_engine(data_dir, bus)
-    api = Api(engine, bus, token, origins)
+    if engine.mode == "real":
+        runner = CliRunner(engine.python, runner_env(engine.engine_path))
+        caps = Capabilities(runner)
+        threading.Thread(target=caps.probe, daemon=True).start()      # warm the cache off the start-up path
+    else:
+        runner, caps = None, Capabilities(fixed=set())
+    api = Api(engine, bus, token, origins, studio=Studio(engine, data_dir, bus, caps, runner))
     httpd = serve(api)
     print(json.dumps(dict(ready=True, port=api.port, mode=engine.mode, note=note)), flush=True)
     stop = threading.Event()

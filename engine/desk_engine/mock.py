@@ -13,9 +13,11 @@ import threading
 import time
 
 from .common import BadRequest, batch_id, need, sha1_json, write_json
+from .planning import fake_transcript
 from .real import verify_manifest
 
-STAGES = ["probe", "extract", "asr", "cleanup", "apply", "compose", "export", "verify", "qc", "preview"]
+STAGES = ["probe", "extract", "asr", "cleanup", "apply", "compose", "glossary", "proofread", "export", "verify", "qc",
+          "preview"]
 RECIPES = [
     dict(name="longform-slices", description="one long recording + a job list of ranges -> cleaned, captioned "
                                              "vertical slices per platform", stages=STAGES),
@@ -72,15 +74,26 @@ class MockEngine:
                 j["state"], j["review"] = "approved", "approved"
         b["state"] = "pilot-review"
 
-    def _new(self, name, recipe, platforms, n, d, budget=None):
+    def _new(self, name, recipe, platforms, n, d, budget=None, rows=None):
         bid = batch_id(d)
         jobs = []
-        for i in range(n):
-            jobs.append(dict(id=f"s{i + 1:03d}", item=f"s{i + 1:03d}", variant="", state="planned", qc=None,
+        rows = rows or [None] * n
+        for i, row in enumerate(rows):
+            jid = (row or {}).get("id") or f"s{i + 1:03d}"
+            params = dict(title=f"第 {i + 1} 集：批量剪口播的小技巧", platforms=platforms,
+                          range=[60.0 * i, 60.0 * i + 48.5], cleanup_reply="")
+            if row:
+                params.update({k: v for k, v in row.items() if k not in ("id", "start", "end")})
+                params["range"] = [float(row["start"]), float(row["end"])]
+                params["platforms"] = row.get("platforms") or platforms
+            hooks = _mock_hooks(params["range"])
+            params.setdefault("hook_candidates", hooks)
+            params.setdefault("hook", params["hook_candidates"][0] if params["hook_candidates"] else None)
+            params.setdefault("body", "用一个文件夹批量剪口播，省掉 80% 的重复劳动。")
+            params.setdefault("tags", ["口播", "剪辑", "效率"])
+            jobs.append(dict(id=jid, item=jid, variant="", state="planned", qc=None,
                              qc_reasons=None, sample=0, review=None, review_reason=None, pilot=0, cost=0.0,
-                             params=dict(title=f"第 {i + 1} 集：批量剪口播的小技巧", platforms=platforms,
-                                         range=[60.0 * i, 60.0 * i + 48.5], cleanup_reply=""),
-                             stages={s: "pending" for s in STAGES}, duration=None))
+                             params=params, stages={s: "pending" for s in STAGES}, duration=None))
         b = dict(id=bid, dir=d, name=name, recipe=recipe, state="planned", pause_reason=None, package=None,
                  pilot_jobs=[], budget=budget or dict(max_usd=5.0, max_hours=4), platforms=platforms, jobs=jobs,
                  events=[], manifest=None)
@@ -94,8 +107,9 @@ class MockEngine:
         j["qc"] = "red" if red else "green"
         j["qc_reasons"] = dict(red=["loudness -11.2 LUFS (target -14 ±1)"] if red else [],
                                warn=["title 21/20 chars (小红书)"] if red else [])
-        j["duration"] = 41.3
-        j["cost"] = 0.0
+        a, z = j["params"]["range"]
+        j["duration"] = round((z - a) * 0.85, 1)
+        j["cost"] = 0.012
 
     def _b(self, bid):
         b = self.batches.get(bid)
@@ -132,15 +146,21 @@ class MockEngine:
         return out
 
     def roots(self):
-        return [os.path.join(self.data_dir, "mock")]
+        return [os.path.join(self.data_dir, "mock")] + sorted({b["dir"] for b in self.batches.values()})
+
+    def dir_of(self, bid):
+        return self._b(bid)["dir"]
 
     def create_batch(self, body):
         name = body["name"]
         need(not any(b["name"] == name for b in self.batches.values()), f"a batch named {name} exists")
         d = body.get("out_dir") or os.path.join(self.data_dir, "mock", f"batch-{name}")
         n = 6 if body["recipe"] == "longform-slices" else 4
-        b = self._new(name, body["recipe"], body.get("platforms") or ["xiaohongshu:full"], n, d, body.get("budget"))
-        self._log(b, "plan", f"{n} created")
+        rows = _read_rows(body["segments"]) if body.get("segments") else None
+        b = self._new(name, body["recipe"], body.get("platforms") or ["xiaohongshu:full"], n, d, body.get("budget"),
+                      rows=rows)
+        os.makedirs(d, exist_ok=True)
+        self._log(b, "plan", f"{len(b['jobs'])} created")
         self.bus.publish("batches")
         return dict(id=b["id"], dir=d, spec=None, jobs=[j["id"] for j in b["jobs"]],
                     created=[j["id"] for j in b["jobs"]], updated=[], dropped=[])
@@ -337,6 +357,19 @@ class MockEngine:
             f.write(b"mock video placeholder")
         return path
 
+    def _mock_cover(self, path):
+        if os.path.exists(path):
+            return path
+        if shutil.which("ffmpeg"):
+            try:
+                subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i",
+                                "testsrc=size=540x720:rate=1:duration=1", "-frames:v", "1", path],
+                               check=True, timeout=30)
+                return path
+            except (subprocess.SubprocessError, OSError):
+                pass
+        return None
+
     def package(self, bid, opts):
         b = self._b(bid)
         jobs = [j for j in b["jobs"] if j["state"] in ("approved", "packaged")]
@@ -358,15 +391,19 @@ class MockEngine:
                 counters[key] = k + 1
                 folder = os.path.join(pdir, key, f"{k + 1:03d}_{j['id']}")
                 vid = self._mock_video(os.path.join(folder, "video.mp4"))
+                pp = j["params"]
                 with open(os.path.join(folder, "post.md"), "w", encoding="utf-8") as f:
-                    f.write(f"{j['params']['title']}\n\n用一个文件夹批量剪口播，省掉 80% 的重复劳动。\n\n#口播 #剪辑 #效率\n")
+                    f.write(f"{pp['title']}\n\n{pp.get('body') or ''}\n\n"
+                            + " ".join(f"#{t}" for t in pp.get("tags") or []) + "\n")
+                cover = self._mock_cover(os.path.join(folder, "cover.jpg"))
                 with open(vid, "rb") as f:
                     sha = hashlib.sha256(f.read()).hexdigest()
                 day, slot = divmod(k, per_day)
                 items.append(dict(job=j["id"], platform=key, title=j["params"]["title"],
                                   date=(dt.date.fromisoformat(start) + dt.timedelta(days=day)).isoformat(),
                                   time=times[slot], files=dict(video=os.path.relpath(vid, pdir),
-                                                               post=os.path.relpath(os.path.join(folder, "post.md"), pdir)),
+                                                               post=os.path.relpath(os.path.join(folder, "post.md"), pdir),
+                                                               **({"cover": os.path.relpath(cover, pdir)} if cover else {})),
                                   sha256=sha, bytes=os.path.getsize(vid), duration=j["duration"]))
                 j["state"] = "packaged"
         items.sort(key=lambda x: (x["date"], x["time"], x["platform"], x["job"]))
@@ -388,11 +425,16 @@ class MockEngine:
         return dict(manifest=man, dir=b["package"]["dir"], verify=verify_manifest(man))
 
     # ------------------------------------------------------------------ job detail
-    def job(self, bid, jid):
-        b = self._b(bid)
-        j = next((x for x in b["jobs"] if x["id"] == jid), None)
+    def _job(self, bid, jid):
+        j = next((x for x in self._b(bid)["jobs"] if x["id"] == jid), None)
         if not j:
             raise KeyError(f"unknown job {jid}")
+        return j
+
+    def job(self, bid, jid):
+        """Same shape as vstudio.batch.api.job_detail (job, stages, events, cleanup, transcript, captions, media)."""
+        b = self._b(bid)
+        j = self._job(bid, jid)
         words, edits = _fake_cleanup(jid)
         from .real import _parse_reply_local
         r = _parse_reply_local(j["params"].get("cleanup_reply") or "")
@@ -401,11 +443,105 @@ class MockEngine:
                 e["cut"] = e["id"] not in r["keep"]
             else:
                 e["cut"] = (e["id"] in r["approve"] or r["all_confirm"]) and e["id"] not in r["keep"]
+        a, z = j["params"]["range"]
+        src = [w for w in fake_transcript(z + 25) if a - 20 <= w["t"] and w["te"] <= z + 20]
+        inside = [w for w in src if a <= (w["t"] + w["te"]) / 2 <= z]
+        cues, over = [], j["params"].get("caption_overrides") or {}
+        for k in range(0, len(inside), 8):
+            ws = inside[k:k + 8]
+            i = len(cues)
+            heard = "".join(w["w"] for w in ws)
+            cues.append(dict(i=i, start=round(ws[0]["t"] - a, 2), end=round(ws[-1]["te"] - a, 2),
+                             text=over.get(str(i), heard), heard=heard))
+        pdir = (b.get("package") or {}).get("dir")
+        exports = []
+        if pdir and j["state"] == "packaged":
+            for it in (b.get("manifest") or {}).get("items") or []:
+                if it["job"] == jid:
+                    exports.append(dict(platform=it["platform"].rpartition("-")[0], orientation=it["platform"].rpartition("-")[2],
+                                        file=os.path.join(pdir, it["files"]["video"]),
+                                        cover=os.path.join(pdir, it["files"]["cover"]) if it["files"].get("cover") else None,
+                                        post=os.path.join(pdir, it["files"]["post"]), duration=it["duration"]))
         return dict(job={k: j[k] for k in ("id", "item", "variant", "state", "qc", "qc_reasons", "review",
                                            "review_reason", "pilot", "sample", "cost", "params")},
-                    stages=[dict(name=s, state=st, seconds=0.25 if st == "done" else None, error=None, cached=False,
+                    recipe=b["recipe"],
+                    stages=[dict(name=s, state=st, seconds=self.step if st == "done" else None, error=None, cached=False,
                                  attempts=1 if st == "done" else 0) for s, st in j["stages"].items()],
                     events=self.events(bid, 20, job=jid),
                     cleanup=dict(reply=j["params"].get("cleanup_reply") or "",
                                  parts=[dict(part="body", words=words, edits=edits, stats=None)]),
-                    media=dict(master=None, sheet=None, snippet=None, exports=[]))
+                    transcript=[dict(range=[a - 20, z + 20], text="".join(w["w"] for w in src),
+                                     words=[dict(w=w["w"], t=w["t"], te=w["te"], cut=False) for w in src])],
+                    captions=dict(cues=cues, provider="mock", changes=[], rejected=[], warnings=[]),
+                    media=dict(master=None, sheet=None, snippet=None, exports=exports))
+
+    # ------------------------------------------------------------------ v0.2 edits (desk adapter, mock side)
+    def apply_edit(self, bid, jid, op, args, stages):
+        """Apply a job edit to the params and mark ``stages`` stale (what `job edit` does in the engine)."""
+        with self._lock:
+            j = self._job(bid, jid)
+            p = j["params"]
+            if op == "caption":
+                p.setdefault("caption_overrides", {})[str(args["cue"])] = args["text"]
+            elif op == "trim":
+                p["range"] = [float(args["start"]), float(args["end"])]
+            elif op == "hook":
+                p["hook_pick"] = int(args["pick"])
+                p["hook"] = p["hook_candidates"][int(args["pick"])]
+            elif op == "cover":
+                p["cover"] = dict(t=args.get("t"), text=args.get("text") or "")
+            elif op == "copy":
+                p.update(title=args.get("title") or p.get("title"), body=args.get("body") or "", tags=args.get("tags") or [])
+            for s in stages:
+                if j["stages"].get(s) == "done":
+                    j["stages"][s] = "stale"
+            self._log(self._b(bid), "edit", f"{op} -> rerun {','.join(stages) or 'none'}", job=jid)
+        self.bus.publish("status", batch=bid, status=self.status(bid))
+
+    def clear_pending(self, bid, jid):
+        j = self._job(bid, jid)
+        for s, st in j["stages"].items():
+            if st == "stale":
+                j["stages"][s] = "done"
+        self.bus.publish("status", batch=bid, status=self.status(bid))
+
+    def rerun_job(self, bid, jid, stages):
+        b = self._b(bid)
+        j = self._job(bid, jid)
+        if self.running(bid) or j["state"] == "running":
+            raise BadRequest("this batch is already running")
+        prev = j["state"]
+        j["state"] = "running"
+
+        def go():
+            self.bus.publish("log", batch=bid, line=f"[rerun] {jid}: {', '.join(stages)} (mock)")
+            for s in stages:
+                j["stages"][s] = "running"
+                self.bus.publish("status", batch=bid, status=self.status(bid))
+                time.sleep(self.step)
+                j["stages"][s] = "done"
+            self._finish_job(b, j, red=False)
+            if prev == "packaged" or prev == "approved":
+                j.update(review=None, review_reason=None)          # an edited clip is reviewed again
+            self._log(b, "rerun", f"{len(stages)} stage(s)", job=jid)
+            self.bus.publish("run-exit", batch=bid, code=0, status="ok")
+            self.bus.publish("status", batch=bid, status=self.status(bid))
+        t = threading.Thread(target=go, daemon=True)
+        self.threads[bid] = t
+        t.start()
+        return dict(started=True)
+
+
+def _read_rows(path):
+    from .v02store import load_yaml
+    with open(path, encoding="utf-8") as f:
+        doc = load_yaml(f.read())
+    rows = doc.get("segments") if isinstance(doc, dict) else doc
+    need(isinstance(rows, list) and rows, "segments file has no rows")
+    return rows
+
+
+def _mock_hooks(rng):
+    a, _z = rng
+    lines = ["这一点 90% 的人都做错了", "先说结论：别再这么做", "面试官最想听的其实是这句"]
+    return [dict(start=round(a + 2 + 6 * k, 2), end=round(a + 6 + 6 * k, 2), text=t) for k, t in enumerate(lines)]

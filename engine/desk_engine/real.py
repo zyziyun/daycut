@@ -38,6 +38,9 @@ class RealEngine:
             raise KeyError(f"unknown batch {bid}")
         return b["dir"]
 
+    def dir_of(self, bid):
+        return self._dir(bid)
+
     def _store(self, bid):
         from vstudio.batch.store import Store
         return Store(self._dir(bid))
@@ -125,6 +128,8 @@ class RealEngine:
             spec["schedule"] = body["schedule"]
         if body.get("planner"):
             spec["planner"] = body["planner"]
+        if body.get("client_dir"):                 # only sent when the engine has the `client` command
+            spec["client"] = body["client_dir"]
         spec_path = os.path.join(self.data_dir, "specs", f"{name}.json")
         write_json(spec_path, spec)
         base = os.path.dirname(body.get("source") or body.get("folder").rstrip(os.sep))
@@ -205,17 +210,26 @@ class RealEngine:
 
     def run(self, bid, opts):
         bdir = self._dir(bid)
+        cmd = [self.python, "-m", "vstudio.batch", "run", "--batch", bdir]
+        if opts.get("pilot"):
+            cmd += ["--pilot", str(int(opts["pilot"]))]
+        for flag in ("confirm_pilot", "resume", "retry_failed"):
+            if opts.get(flag):
+                cmd.append("--" + flag.replace("_", "-"))
+        if opts.get("jobs"):
+            cmd += ["--jobs", ",".join(opts["jobs"])]
+        return self._spawn(bid, cmd)
+
+    def spawn_rerun(self, bid, jid):
+        """v0.2 ``job rerun`` (only the stages made stale by ``job edit``); streamed like ``run``."""
+        return self._spawn(bid, [self.python, "-m", "vstudio.batch", "job", "rerun", "--batch", self._dir(bid),
+                                 "--job", jid])
+
+    def _spawn(self, bid, cmd):
+        bdir = self._dir(bid)
         with self._lock:
             if self.running(bid):
                 raise BadRequest("this batch is already running")
-            cmd = [self.python, "-m", "vstudio.batch", "run", "--batch", bdir]
-            if opts.get("pilot"):
-                cmd += ["--pilot", str(int(opts["pilot"]))]
-            for flag in ("confirm_pilot", "resume", "retry_failed"):
-                if opts.get(flag):
-                    cmd.append("--" + flag.replace("_", "-"))
-            if opts.get("jobs"):
-                cmd += ["--jobs", ",".join(opts["jobs"])]
             p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
                                  env=self._env(), cwd=bdir, text=True, bufsize=1, start_new_session=True)
             self.procs[bid] = p
@@ -306,6 +320,19 @@ class RealEngine:
 
     # ------------------------------------------------------------------ job detail
     def job(self, bid, jid):
+        d = self._job_legacy(bid, jid)
+        try:                                       # newer engines: captions + source transcript for in-review edits
+            from vstudio.batch import api
+            if hasattr(api, "job_detail"):
+                full = api.job_detail(self._dir(bid), jid)
+                for k in ("captions", "transcript", "recipe"):
+                    if k in full:
+                        d[k] = full[k]
+        except Exception:  # noqa: BLE001  (the legacy view is enough for review)
+            pass
+        return d
+
+    def _job_legacy(self, bid, jid):
         st = self._store(bid)
         try:
             j = st.job(jid)
