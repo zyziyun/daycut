@@ -4,7 +4,10 @@ import path from 'node:path';
 export interface Settings {
   enginePath?: string;
   python?: string;
-  lang: 'zh' | 'en';
+  /** UI language (v0.4: 'en' default; 'zh' from older profiles reads as 'zh-CN') */
+  lang: 'en' | 'zh-CN';
+  /** brand accent: calm teal (default) or 小红书 red */
+  accent?: 'teal' | 'red';
   theme: 'studio-dark' | 'notebook-light';
   /** adapterId -> account labels (only labels; sessions live in Electron partitions, never exported). */
   accounts: Record<string, string[]>;
@@ -19,7 +22,7 @@ export interface Settings {
   cleanupMigrated?: boolean;
 }
 
-const DEFAULTS: Settings = { lang: 'zh', theme: 'studio-dark', accounts: {}, defaultPlatforms: ['xiaohongshu:full'], cleanupDays: 0 };
+const DEFAULTS: Settings = { lang: 'en', accent: 'teal', theme: 'studio-dark', accounts: {}, defaultPlatforms: ['xiaohongshu:full'], cleanupDays: 0 };
 
 export class SettingsStore {
   private file: string;
@@ -31,6 +34,8 @@ export class SettingsStore {
     try {
       const raw = JSON.parse(fs.readFileSync(this.file, 'utf8'));
       if (raw && typeof raw === 'object') this.data = { ...DEFAULTS, ...raw, accounts: { ...(raw.accounts ?? {}) } };
+      if ((this.data.lang as string) === 'zh') this.data.lang = 'zh-CN'; // pre-v0.4 code
+      if (this.data.lang !== 'en' && this.data.lang !== 'zh-CN') this.data.lang = 'en';
     } catch {
       /* first launch */
     }

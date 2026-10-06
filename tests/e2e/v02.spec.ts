@@ -69,7 +69,7 @@ test('first-run wizard: keys card, models, default platforms, finish', async () 
 });
 
 test('client workspace: create, edit client.yaml fields', async () => {
-  await page.locator('.side a', { hasText: /客户|Clients/ }).click();
+  await page.getByTestId('workspace').click(); // the workspace switcher (客户 moved out of the sidebar)
   await page.getByTestId('new-client').click();
   await page.locator('.modal input').first().fill('E2E 讲师');
   await page.locator('.modal input').nth(1).fill('e2e');
@@ -91,8 +91,7 @@ test('client workspace: create, edit client.yaml fields', async () => {
 let batchId = '';
 
 test('new batch from a raw recording: plan, review segments, estimate, pilot', async () => {
-  await page.locator('.side a', { hasText: /批次|Batches/ }).click();
-  await page.getByRole('link', { name: /新建批次|New batch/ }).click();
+  await page.evaluate(() => (location.hash = '#/new')); // the old form lives under Home → Advanced
   await page.getByTestId('pick-files').click();
   await expect(page.getByTestId('raw-files')).toContainText('raw-lecture.mp4');
   await page.getByTestId('client-select').selectOption('e2e');
@@ -193,7 +192,7 @@ test('delivery package: folders, 文案.md, schedule, notes, zip; delivered stat
   const st = await api<{ jobs: { id: string }[] }>(`/api/batches/${batchId}`);
   for (const j of st.jobs) await api(`/api/batches/${batchId}/timing`, { job: j.id, event: 'stop', what: 'review', active_s: 12 });
   await api(`/api/batches/${batchId}/review/apply`, { decisions: Object.fromEntries(st.jobs.map((j) => [j.id, { decision: 'approve' }])) });
-  await page.locator('.side a', { hasText: /交付|Deliver/ }).click();
+  await page.evaluate((id) => (location.hash = `#/b/${id}/deliver`), batchId);
   await page.getByTestId('deliver').click();
   await expect(page.getByTestId('delivery')).toBeVisible({ timeout: 30000 });
   const d = (await api<{ delivery: { dir: string; zip: string; cleanup: { enabled: boolean } } }>(`/api/batches/${batchId}/deliver`)).delivery;
@@ -207,7 +206,7 @@ test('delivery package: folders, 文案.md, schedule, notes, zip; delivered stat
 });
 
 test('metrics dashboard and weekly_metrics.csv export', async () => {
-  await page.locator('.side a', { hasText: /指标|Metrics/ }).click();
+  await page.evaluate(() => (location.hash = '#/metrics'));
   await expect(page.locator('.tile').first()).toBeVisible();
   await page.locator('select[aria-label="批次"], select[aria-label="Batch"]').selectOption(batchId);
   await expect(page.getByTestId('job-metrics')).toContainText('12s');

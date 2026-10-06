@@ -286,4 +286,8 @@ export type StreamEvent =
   | { type: 'batches'; ts: number }
   | { type: 'clients'; ts: number }
   | { type: 'plan'; plan: string; state: string; progress: string; ts: number }
-  | { type: 'job-edit'; batch: string; job: string; ts: number };
+  | { type: 'job-edit'; batch: string; job: string; ts: number }
+  | { type: 'output-edit'; item: string; clip: string; ts: number }
+  | { type: 'intake'; id: string; state: string; ts: number }
+  | { type: 'inbox'; ts: number }
+  | { type: 'calendar'; ts: number };

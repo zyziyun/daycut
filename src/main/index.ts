@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import { createServer as createNetServer, type AddressInfo } from 'node:net';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { app, BrowserWindow, clipboard, dialog, ipcMain, net, protocol, session, shell, type IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, net, Notification, protocol, session, shell, type IpcMainInvokeEvent } from 'electron';
 import { EngineClient } from '../shared/engineClient';
 import { validateIpc, type IpcChannel, type IpcPayload } from '../shared/ipc';
 import { hostAllowed, type Adapter } from '../shared/publish/adapterSchema';
@@ -425,6 +425,17 @@ function registerIpc() {
     const r = await dialog.showOpenDialog(win!, { properties: ['openFile'], filters });
     return r.canceled ? null : r.filePaths[0];
   });
+  handle('notify:show', async (p) => {
+    if (!Notification.isSupported() || win?.isFocused() || process.env.DESK_HIDE_WINDOW === '1') return;
+    const n = new Notification({ title: p.title, body: p.body, silent: false });
+    n.on('click', () => {
+      if (!win) return;
+      win.show();
+      win.focus();
+      if (p.route) win.webContents.send('notify:open', { route: p.route });
+    });
+    n.show();
+  });
   handle('dialog:openFolder', async () => {
     const r = await dialog.showOpenDialog(win!, { properties: ['openDirectory'] });
     return r.canceled ? null : r.filePaths[0];
@@ -527,7 +538,7 @@ function registerIpc() {
     return historyWatcher.set(p.roots);
   });
   registerV02Ipc(handle, { userData: app.getPath('userData'), settings: () => settings, win: () => win, client: () => client, settingsMsg });
-  registerCleanupIpc(handle, { win: () => win, client: () => client, lang: () => settings.get().lang });
+  registerCleanupIpc(handle, { win: () => win, client: () => client, lang: () => (settings.get().lang === 'zh-CN' ? 'zh' : 'en') });
 }
 
 function loadAssetManifest(): AssetManifest {

@@ -32,7 +32,7 @@ export const ipcSchemas = {
   'engine:info': z.undefined(),
   'engine:restart': z.undefined(),
   'dialog:openFile': z.strictObject({ kind: z.enum(['video', 'segments', 'persona']) }),
-  'dialog:openFiles': z.strictObject({ kind: z.enum(['video']) }),
+  'dialog:openFiles': z.strictObject({ kind: z.enum(['video', 'any']) }),
   'dialog:openFolder': z.undefined(),
   'shell:openExternal': z.strictObject({ url: httpsUrl }),
   'shell:showItem': z.strictObject({ path: absPath }),
@@ -41,8 +41,9 @@ export const ipcSchemas = {
   'settings:set': z.strictObject({
     enginePath: absPath.optional(),
     python: absPath.optional(),
-    lang: z.enum(['zh', 'en']).optional(),
+    lang: z.enum(['en', 'zh-CN']).optional(),
     theme: z.enum(['studio-dark', 'notebook-light']).optional(),
+    accent: z.enum(['teal', 'red']).optional(),
     defaultPlatforms: z.array(platformId).min(1).max(8).optional(),
     cleanupDays: z.number().int().min(0).max(365).optional(),
   }),
@@ -87,6 +88,8 @@ export const ipcSchemas = {
   'update:install': z.undefined(),
   'history:watch': z.strictObject({ roots: z.array(absPath).max(20) }),
   'cleanup:confirm': z.strictObject({ batchId }),
+  // v0.4: a system notification when a run finishes or needs the creator (shown only while the window is not focused)
+  'notify:show': z.strictObject({ title: z.string().min(1).max(120), body: z.string().max(300), route: z.string().regex(/^#\/[A-Za-z0-9/_.%-]{0,200}$/).optional() }),
 } as const;
 
 export type IpcChannel = keyof typeof ipcSchemas;

@@ -1,7 +1,7 @@
 // v0.2 copy (clients, AI segment planning, in-review edits, timing, delivery, metrics, first run, keys).
 // Kept apart from zh.ts / en.ts so v0.2 work does not collide with other changes; t() looks here second.
 
-export const zhV02: Record<string, string> = {
+export const legacyZhV02 = {
   'nav.clients': '客户',
   'nav.deliver': '交付',
   'nav.metrics': '指标',
@@ -370,7 +370,7 @@ export const zhV02: Record<string, string> = {
   'history.status.unreadable': '读不了',
 };
 
-export const enV02: Record<string, string> = {
+export const legacyEnV02 = {
   'nav.clients': 'Clients',
   'nav.deliver': 'Deliver',
   'nav.metrics': 'Metrics',

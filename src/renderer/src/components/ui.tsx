@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { t, tState } from '../i18n';
+import { t, tState, tk } from '../i18n';
 
 export function QcLight({ qc, title }: { qc: string | null | undefined; title?: string }) {
   const cls = qc === 'green' ? 'green' : qc === 'red' ? 'red' : '';
-  return <span className={`light ${cls}`} title={title ?? (qc ? t(`qc.${qc}`) : t('qc.none'))} />;
+  return <span className={`light ${cls}`} title={title ?? (qc ? tk(`qc.${qc}`) : t('qc.none'))} />;
 }
 
 export function StateBadge({ state }: { state: string }) {

@@ -40,8 +40,9 @@ export interface PostedEntryMsg {
 export interface SettingsMsg {
   enginePath?: string;
   python?: string;
-  lang: 'zh' | 'en';
+  lang: 'en' | 'zh-CN';
   theme: 'studio-dark' | 'notebook-light';
+  accent?: 'teal' | 'red';
   accounts: Record<string, string[]>;
   resolved?: { enginePath?: string; python: string; dataDir: string; runtime?: string };
   firstRunDone?: boolean;
@@ -83,8 +84,12 @@ export interface DeskApi {
   showItem(path: string): Promise<void>;
   copyText(text: string): Promise<void>;
   getSettings(): Promise<SettingsMsg>;
-  setSettings(patch: Partial<Pick<SettingsMsg, 'enginePath' | 'python' | 'lang' | 'theme' | 'defaultPlatforms' | 'cleanupDays'>>): Promise<SettingsMsg>;
-  openFiles(kind: 'video'): Promise<string[]>;
+  setSettings(patch: Partial<Pick<SettingsMsg, 'enginePath' | 'python' | 'lang' | 'theme' | 'accent' | 'defaultPlatforms' | 'cleanupDays'>>): Promise<SettingsMsg>;
+  openFiles(kind: 'video' | 'any'): Promise<string[]>;
+  /** absolute path of a file dropped on the window (Electron webUtils; '' when unavailable) */
+  pathForFile(file: File): string;
+  /** system notification (only when the window is in the background); clicking it focuses the app at `route` */
+  notify(title: string, body: string, route?: string): Promise<void>;
   saveText(defaultName: string, text: string): Promise<string | null>;
   firstRun: {
     complete(defaultPlatforms: string[], skipped?: boolean): Promise<SettingsMsg>;
@@ -124,7 +129,7 @@ export interface DeskApi {
     check(): Promise<UpdateStateMsg>;
     install(): Promise<void>;
   };
-  on(event: 'publish:state' | 'publish:fillStep' | 'engine:status' | 'assets:progress' | 'update:state' | 'history:changed', cb: (data: unknown) => void): () => void;
+  on(event: 'publish:state' | 'publish:fillStep' | 'engine:status' | 'assets:progress' | 'update:state' | 'history:changed' | 'notify:open', cb: (data: unknown) => void): () => void;
   /** watch these folders for live job changes ('history:changed' events); -> the folders watched */
   watchHistory(roots: string[]): Promise<string[]>;
   /** source cleanup: a dialog lists the exact files; only on confirm are they moved to the Trash */

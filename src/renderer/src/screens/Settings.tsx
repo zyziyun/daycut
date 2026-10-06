@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import type { SettingsMsg } from '../../../shared/deskApi';
 import { AssetsCard } from '../components/assets';
-import { WatchFoldersField } from '../components/HistoryList';
+import { WatchFoldersField } from '../components/WatchFolders';
 import { KeysCard } from '../components/KeysCard';
 import { ErrorBox, Field } from '../components/ui';
-import { t } from '../i18n';
+import { LANGS, LOCALES, t } from '../i18n';
 import { useEngine } from '../lib/engine';
 import { PlatformPicker } from './Clients';
 
@@ -141,9 +141,9 @@ export function Settings({ onChange }: { onChange: (s: SettingsMsg) => void }) {
           <b>{t('settings.ui')}</b>
           <Field label={t('settings.lang')}>
             <div className="tabs">
-              {(['zh', 'en'] as const).map((l) => (
+              {LANGS.map((l) => (
                 <button key={l} className={`tab ${s.lang === l ? 'on' : ''}`} onClick={() => save({ lang: l })}>
-                  {l === 'zh' ? '中文' : 'English'}
+                  {LOCALES[l].label}
                 </button>
               ))}
             </div>

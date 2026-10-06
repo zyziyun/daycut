@@ -25,7 +25,8 @@ AUDIO = {".wav", ".mp3", ".m4a", ".aac", ".flac"}
 IMAGE = {".jpg", ".jpeg", ".png", ".webp", ".heic"}
 TEXT = {".pdf", ".docx", ".pptx", ".md", ".txt", ".srt", ".vtt", ".ass", ".json"}
 
-PLATFORMS = [("小红书", "xiaohongshu", "小红书"), ("抖音", "douyin", "抖音"), ("视频号", "shipinhao", "视频号"),
+PLATFORMS = [("小红书|xiaohongshu|rednote", "xiaohongshu", "小红书"), ("抖音|douyin", "douyin", "抖音"),
+             ("视频号|channels", "shipinhao", "视频号"),
              ("b站|B站|bilibili", "bilibili", "B 站"), ("youtube|油管", "youtube-shorts", "YouTube"),
              ("tiktok", "tiktok", "TikTok")]
 RECIPES = [  # (pattern, recipe, zh label, role)
@@ -94,7 +95,7 @@ def rule_plan(prompt, inputs, probe=None, plan_id=None, defaults=None):
     if not plats:
         dp = defaults.get("platforms") or ["xiaohongshu:vertical"]
         plats = [(p.split(":")[0], next((zh for _pt, pid, zh in PLATFORMS if pid == p.split(":")[0]), p)) for p in dp]
-    m = re.search(r"([0-9]+|[一两二三四五六七八九十])\s*条", text)
+    m = re.search(r"([0-9]+|[一两二三四五六七八九十])\s*(?:条|clips?\b|videos?\b|shorts?\b)", text, re.I)
     count = _num(m.group(1)) if m else None
     m = re.search(r"每条\s*([0-9]+)\s*秒", text)
     max_s = float(m.group(1)) if m else (75.0 if re.search(r"一分钟|1 ?分钟", text) else 90.0)
@@ -160,10 +161,10 @@ def rule_revise(plan, prompt):
     for proj in p["projects"]:
         prm = proj["params"]
         plats = [(pid, zh) for pat, pid, zh in PLATFORMS if re.search(pat, prompt, re.I)]
-        if plats and re.search(r"只要|只发|只做", prompt):
+        if plats and re.search(r"只要|只发|只做|only", prompt, re.I):
             prm["platforms"] = [f"{pid}:vertical" if pid == "xiaohongshu" else pid for pid, _ in plats]
             changes.append("平台：" + "、".join(zh for _, zh in plats))
-        m = re.search(r"([0-9]+|[一两二三四五六七八九十])\s*条", prompt)
+        m = re.search(r"([0-9]+|[一两二三四五六七八九十])\s*(?:条|clips?\b)", prompt, re.I)
         if m and _num(m.group(1)):
             n = _num(m.group(1))
             rows = proj["items"]["rows"]

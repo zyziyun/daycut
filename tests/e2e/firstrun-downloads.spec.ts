@@ -213,5 +213,5 @@ test('an engine restart while it is still starting: same port, the UI keeps work
   expect(r.status).toBe(200);
   expect(r.baseUrl).toBe(before); // session port kept: CSP + renderer URL stay valid
   expect(await page.evaluate(() => (window as unknown as { __marker?: number }).__marker)).toBe(7);
-  await expect(page.getByTestId('engine-status')).toContainText(/mock|演示/i, { timeout: 15000 });
+  await expect(page.getByTestId('engine-status')).toContainText(/mock|demo|演示/i, { timeout: 15000 });
 });

@@ -1,9 +1,9 @@
 // Preload for the desk UI only (platform pages get no preload at all). Exposes a narrow, typed API; every call
 // is re-validated in the main process.
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { DeskApi } from '../shared/deskApi';
 
-const EVENTS = new Set(['publish:state', 'publish:fillStep', 'engine:status', 'assets:progress', 'update:state', 'history:changed']);
+const EVENTS = new Set(['publish:state', 'publish:fillStep', 'engine:status', 'assets:progress', 'update:state', 'history:changed', 'notify:open']);
 
 const call = (channel: string, payload?: unknown) => ipcRenderer.invoke(channel, payload);
 
@@ -18,6 +18,14 @@ const api: DeskApi = {
   getSettings: () => call('settings:get'),
   setSettings: (patch) => call('settings:set', patch),
   openFiles: (kind) => call('dialog:openFiles', { kind }),
+  pathForFile: (file) => {
+    try {
+      return webUtils.getPathForFile(file);
+    } catch {
+      return '';
+    }
+  },
+  notify: (title, body, route) => call('notify:show', route ? { title, body, route } : { title, body }),
   saveText: (defaultName, text) => call('file:saveText', { defaultName, text }),
   firstRun: {
     complete: (defaultPlatforms, skipped) => call('firstRun:complete', skipped === undefined ? { defaultPlatforms } : { defaultPlatforms, skipped }),

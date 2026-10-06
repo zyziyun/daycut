@@ -6,7 +6,7 @@ import type { SettingsMsg } from '../../../shared/deskApi';
 import { AssetsCard, useAssets } from '../components/assets';
 import { KeysCard } from '../components/KeysCard';
 import { ErrorBox } from '../components/ui';
-import { setLang, t } from '../i18n';
+import { LANGS, LOCALES, setLang, t } from '../i18n';
 import { PlatformPicker } from './Clients';
 
 const STEPS = ['welcome', 'keys', 'models', 'platforms', 'persona'] as const;
@@ -81,7 +81,7 @@ export function FirstRun({ settings, onDone }: { settings: SettingsMsg; onDone: 
           <div className="col">
             <p style={{ margin: 0 }}>{t('fr.welcome')}</p>
             <div className="tabs">
-              {(['zh', 'en'] as const).map((l) => (
+              {LANGS.map((l) => (
                 <button
                   key={l}
                   className={`tab ${lang === l ? 'on' : ''}`}
@@ -91,7 +91,7 @@ export function FirstRun({ settings, onDone }: { settings: SettingsMsg; onDone: 
                     void window.desk.setSettings({ lang: l });
                   }}
                 >
-                  {l === 'zh' ? '中文' : 'English'}
+                  {LOCALES[l].label}
                 </button>
               ))}
             </div>

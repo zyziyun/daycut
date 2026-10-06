@@ -404,6 +404,7 @@ class History:
                        openable=kind_ != "work" and os.path.exists(os.path.join(store_dir, "batch.db")),
                        series=info.get("series") or series.get(rp))
             rows.append(row)
+        rows += self._mock_rows({r["id"] for r in rows})
         if q:
             ql = q.lower()
             rows = [r for r in rows if any(ql in str(r.get(k) or "").lower()
@@ -427,6 +428,27 @@ class History:
         self._thumbs = {r["thumb"] for r in rows if r.get("thumb")}
         self._last = (time.time(), [dict(r) for r in rows[:MAX_ENTRIES]])
         return dict(items=rows[:MAX_ENTRIES], watch=self.watch(), at=time.time(), running=running)
+
+    def _mock_rows(self, have):
+        """Mock mode: the in-memory demo batches have no folder on disk; list them like found batches."""
+        if getattr(self.engine, "mode", None) != "mock" or not hasattr(self.engine, "list_batches"):
+            return []
+        out = []
+        for b in self.engine.list_batches():
+            if b["id"] in have:
+                continue
+            c = b.get("counts") or {}
+            done = c.get("done", 0) + c.get("approved", 0) + c.get("packaged", 0)
+            st = "delivered" if b.get("delivered") else "packaged" if b.get("package") else \
+                "done" if c.get("total") and done >= c["total"] else "in-progress"
+            counts = dict(total=c.get("total", 0), green=c.get("green", 0), red=c.get("red", 0),
+                          approved=c.get("approved", 0), done=done, failed=c.get("failed", 0))
+            live = dict(state="running", status="running", needs_you=False, heartbeat=time.time()) if b.get("running") else None
+            out.append(dict(kind="batch", type="batch", id=b["id"], dir=b["dir"], name=b["name"], recipe=b.get("recipe"),
+                            client=b.get("client"), series=None, created=None, updated=time.time(), counts=counts,
+                            status=st, thumb=None, deliveries=0, sources=["desk"], live=live, opened=True,
+                            openable=True, real=b["dir"]))
+        return out
 
     def open(self, path):
         """Put a found batch (or a project's state batch) in the desk registry -> {id, dir} for the board."""

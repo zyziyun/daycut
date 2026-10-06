@@ -1,5 +1,5 @@
 // English fallbacks (sentence case).
-export const en: Record<string, string> = {
+export const legacyEn = {
   'app.tagline': 'Batch editing workbench',
   'nav.batches': 'Batches',
   'nav.board': 'Board',

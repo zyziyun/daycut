@@ -119,7 +119,8 @@ class Inbox:
                         codes = {}
                         for lst in rv["issues"].values():
                             for i in lst:
-                                codes[i["code"]] = codes.get(i["code"], 0) + 1
+                                if i.get("severity") in (None, "red"):
+                                    codes[i["code"]] = codes.get(i["code"], 0) + 1
                         items.append(dict(key=k, kind="review", group="review", project=proj,
                                           code="inbox.reviewClips" if rv["red"] else "inbox.reviewAll",
                                           params=dict(n=len(rv["red"]) or len(rv["todo"]), passed=rv["passed"],

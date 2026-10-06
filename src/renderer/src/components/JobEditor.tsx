@@ -4,7 +4,7 @@
 // shows which stages will re-run and "re-render affected" runs only those.
 import { useEffect, useRef, useState } from 'react';
 import type { EditBody, EditResult, JobEditInfo } from '../../../shared/v02';
-import { t } from '../i18n';
+import { t, tk } from '../i18n';
 import { useEngine } from '../lib/engine';
 import { hms } from '../lib/format';
 import { EdgeEditor } from './SegmentReview';
@@ -17,8 +17,8 @@ const TABS: Tab[] = ['captions', 'hook', 'trim', 'cut', 'notes', 'cover', 'copy'
 export function refusalText(r: Pick<EditResult, 'reason' | 'reason_code' | 'heard'>): string {
   const code = r.reason_code ?? r.reason ?? 'rejected';
   const key = `edit.reason.${code}`;
-  const base = t(key) !== key ? t(key) : (r.reason ?? t('edit.reason.rejected'));
-  const extra = r.reason && t(key) !== key && r.reason !== code ? ` (${r.reason})` : '';
+  const base = tk(key) !== key ? tk(key) : (r.reason ?? t('edit.reason.rejected'));
+  const extra = r.reason && tk(key) !== key && r.reason !== code ? ` (${r.reason})` : '';
   return base + extra + (r.heard ? ` · ${t('edit.heardAudio')}: 「${r.heard}」` : '');
 }
 

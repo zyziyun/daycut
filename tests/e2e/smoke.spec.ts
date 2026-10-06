@@ -36,9 +36,11 @@ test('window is locked down', async () => {
   expect(page.url()).toMatch(/^app:\/\/desk\//);
 });
 
-test('engine starts (mock) and the batch list renders', async () => {
-  await expect(page.getByTestId('engine-status')).toContainText(/mock|演示/i, { timeout: 30000 });
-  await expect(page.getByText('demo-course', { exact: true })).toBeVisible({ timeout: 15000 });
+test('engine starts (mock), Home and the project grid render', async () => {
+  await expect(page.getByTestId('engine-status')).toContainText(/mock|demo|演示/i, { timeout: 30000 });
+  await expect(page.getByTestId('home')).toBeVisible();
+  await page.getByTestId('nav-projects').click();
+  await expect(page.getByTestId('project-card').filter({ hasText: 'demo-course' })).toBeVisible({ timeout: 15000 });
 });
 
 test('engine refuses requests without the token', async () => {
@@ -50,11 +52,18 @@ test('engine refuses requests without the token', async () => {
   expect(r).toBe(401);
 });
 
-test('board, review and job detail render', async () => {
-  await page.getByText('demo-course', { exact: true }).click();
+test('board, review and job detail render (per-batch tools behind the project page)', async () => {
+  const id = await page.evaluate(async () => {
+    const info = await window.desk.engineInfo();
+    const b = await (await fetch(info.baseUrl + '/api/batches', { headers: { Authorization: `Bearer ${info.token}` } })).json();
+    return b.find((x: { name: string }) => x.name === 'demo-course').id as string;
+  });
+  await page.getByTestId('project-card').filter({ hasText: 'demo-course' }).click();
+  await expect(page.getByTestId('project-title')).toHaveText('demo-course');
+  await page.evaluate((x) => (location.hash = `#/b/${x}/board`), id);
   await expect(page.locator('.lane').first()).toBeVisible();
   await expect(page.locator('.jcard').first()).toBeVisible();
-  await page.locator('.side a', { hasText: /审片|Review/ }).click();
+  await page.evaluate((x) => (location.hash = `#/b/${x}/review`), id);
   await expect(page.locator('.rcard').first()).toBeVisible();
   await page.locator('.rcard').first().dblclick();
   await expect(page.locator('.transcript').first()).toBeVisible();

@@ -7,7 +7,7 @@ import { adapterFor, type Adapter } from '../../../shared/publish/adapterSchema'
 import type { Confirmation } from '../../../shared/publish/gating';
 import type { ManifestItem } from '../../../shared/types';
 import { ErrorBox, Field, Modal } from '../components/ui';
-import { getLang, t } from '../i18n';
+import { getLang, t, tk } from '../i18n';
 import { useEngine, useLoad } from '../lib/engine';
 
 const itemKey = (i: { job: string; platform: string }) => `${i.job}|${i.platform}`;
@@ -178,7 +178,7 @@ export function Publish({ batch }: { batch: string }) {
             <div className="tabs">
               {adapters.map((a) => (
                 <button key={a.id} className={`tab ${a.id === adapterId ? 'on' : ''}`} onClick={() => setAdapterId(a.id)}>
-                  {lang === 'zh' ? a.nameZh : a.name}
+                  {lang === 'zh-CN' ? a.nameZh : a.name}
                   {a.status !== 'verified' && <span className="muted"> · {t(`adapter.${a.status}`)}</span>}
                 </button>
               ))}
@@ -186,7 +186,7 @@ export function Publish({ batch }: { batch: string }) {
             {adapter && (
               <>
                 <div className="notice accent small">
-                  <b>{t('pub.disclosure')}</b> {lang === 'zh' ? adapter.disclosure.zh : adapter.disclosure.en}
+                  <b>{t('pub.disclosure')}</b> {lang === 'zh-CN' ? adapter.disclosure.zh : adapter.disclosure.en}
                 </div>
                 {adapter.status === 'todo' && <div className="notice small">{t('pub.adapterTodo')}</div>}
                 {adapter.status === 'unverified' && <div className="muted small">{t('pub.adapterUnverified')}</div>}
@@ -258,7 +258,7 @@ export function Publish({ batch }: { batch: string }) {
                     <tbody>
                       {steps.map((s, k) => (
                         <tr key={k}>
-                          <td>{t(`fill.${s.field}`)}</td>
+                          <td>{tk(`fill.${s.field}`)}</td>
                           <td className={s.status === 'ok' ? 'okc' : 'err'}>{t(`fill.s.${s.status}`)}</td>
                           <td className="muted mono">{s.detail}</td>
                         </tr>
@@ -268,7 +268,7 @@ export function Publish({ batch }: { batch: string }) {
                 )}
                 {fill && !fill.ok && (
                   <div className="err small">
-                    {t(`gate.${fill.reason}`)}
+                    {tk(`gate.${fill.reason}`)}
                     {fill.detail ? ` (${fill.detail})` : ''}
                   </div>
                 )}

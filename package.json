@@ -48,6 +48,7 @@
   },
   "dependencies": {
     "electron-updater": "^6.8.9",
+    "lucide-react": "^1.52.0",
     "zod": "^4.6.5"
   },
   "repository": {

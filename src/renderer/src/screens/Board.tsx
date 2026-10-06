@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { BatchStatus, Estimate, JobRow } from '../../../shared/types';
 import { ErrorBox, Modal, PromptModal, QcLight, StateBadge } from '../components/ui';
-import { t } from '../i18n';
+import { t, tk } from '../i18n';
 import { useEngine, useLoad } from '../lib/engine';
 import { secs } from '../lib/format';
 import { go } from '../lib/router';
@@ -149,7 +149,7 @@ export function Board({ batch }: { batch: string }) {
         <ErrorBox error={error ?? msg} />
         {lastExit && (
           <div className={`notice ${lastExit.code === 0 ? 'accent' : ''}`}>
-            {t('board.exit', { status: t(`exit.${lastExit.status}`) !== `exit.${lastExit.status}` ? t(`exit.${lastExit.status}`) : lastExit.status })}
+            {t('board.exit', { status: tk(`exit.${lastExit.status}`) !== `exit.${lastExit.status}` ? tk(`exit.${lastExit.status}`) : lastExit.status })}
           </div>
         )}
         {showLog && <div className="log">{log.length ? log.join('\n') : t('board.noLog')}</div>}
@@ -199,7 +199,7 @@ export function Board({ batch }: { batch: string }) {
             return (
               <div className="lane" key={lane.key}>
                 <h3>
-                  <span>{t(`lane.${lane.key}`)}</span>
+                  <span>{tk(`lane.${lane.key}`)}</span>
                   <span className="row">
                     {lane.key === 'review' && greens.length > 0 && (
                       <button className="btn sm" title={t('board.approveGreenHint')} onClick={() => act(() => client!.applyReview(batch, { decisions: Object.fromEntries(greens.map((j) => [j.id, { decision: 'approve' as const }])) }), t('board.approvedN', { n: greens.length }))}>

@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import type { AssetsStatusMsg } from '../../../shared/assets';
 import type { UpdateStateMsg } from '../../../shared/deskApi';
-import { t } from '../i18n';
+import { t, tk } from '../i18n';
 
 type Status = AssetsStatusMsg & { bundled?: boolean };
 
@@ -26,7 +26,7 @@ function Bar({ received, total }: { received: number; total: number }) {
   );
 }
 
-const groupName = (id: string) => t(`assets.group.${id.replace(/-(darwin|win32).*$/, '')}`);
+const groupName = (id: string) => tk(`assets.group.${id.replace(/-(darwin|win32).*$/, '')}`);
 
 /** Shown above every screen (bundled runtime only): missing required assets, background progress, engine restart. */
 export function AssetsBanner() {

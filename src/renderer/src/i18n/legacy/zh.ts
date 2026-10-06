@@ -1,4 +1,4 @@
-export const zh: Record<string, string> = {
+export const legacyZh = {
   'app.tagline': '批量剪辑工作台',
   'nav.batches': '批次',
   'nav.board': '看板',

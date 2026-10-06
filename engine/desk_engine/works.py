@@ -348,6 +348,7 @@ def clips(d, probe=None):
     ``work/clips/*`` (B2). -> [{id, title, state, files [{path, aspect, w, h}], cover, post, duration, source}]"""
     found = scan(d)
     posts = {}
+    unsectioned = None
     mt = lambda rel: _mtime(os.path.join(d, rel))  # noqa: E731
     for rel in sorted(found["posts"], key=mt):            # newer files win (final/v2 over final/)
         try:
@@ -358,6 +359,8 @@ def clips(d, probe=None):
         sections = parse_posts(text)
         if sections:
             posts.update(sections)
+        elif re.match(r"^(post|文案|发布)", os.path.basename(rel), re.I):
+            unsectioned = parse_post_single(text)
         elif re.search(r"[_-](post|文案)$", os.path.splitext(os.path.basename(rel))[0], re.I):
             key = clip_key(re.sub(r"[_-](post|文案)$", "", os.path.splitext(os.path.basename(rel))[0], flags=re.I) + ".mp4")
             posts[key] = dict(parse_post_single(text), file=None, cover=None)
@@ -375,6 +378,8 @@ def clips(d, probe=None):
     for rel in sorted(found["covers"], key=mt):
         covers[clip_key(rel)] = rel
     keys = list(groups)
+    if unsectioned and len(groups) == 1 and not posts:      # one clip + one plain post.md: they belong together
+        posts[keys[0]] = dict(unsectioned, file=None, cover=None)
     if posts:                                   # post.md names the real clips; other files are extras
         keys = [k for k in posts if k in groups] + [k for k in groups if k not in posts]
     out = []

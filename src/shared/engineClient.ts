@@ -34,11 +34,16 @@ import type {
   PlanState,
   WeeklyDoc,
 } from './v02';
+import type { AskResult, CalendarDoc, CalendarPost, ClipsDoc, EditOp, EffectDef, EngineMsg, InboxDoc, IntakeJob, IntakePlan, OutputDoc } from './v04';
 
 export class EngineError extends Error {
   constructor(
     public status: number,
     message: string,
+    /** engine refusals: a code + params the UI localises, and the engine's Chinese text */
+    public code?: string,
+    public params?: Record<string, unknown>,
+    public messageZh?: string,
   ) {
     super(message);
     this.name = 'EngineError';
@@ -68,6 +73,12 @@ function bid(id: string): string {
 
 function jid(id: string): string {
   if (!JOB_RE.test(id)) throw new EngineError(400, `bad job id ${id}`);
+  return encodeURIComponent(id);
+}
+
+/** Clip ids are file stems (Chinese allowed): no separators, never a path. */
+export function clipId(id: string): string {
+  if (!/^[\p{L}\p{N}_][\p{L}\p{N}_ .()+-]{0,119}$/u.test(id) || id.includes('..')) throw new EngineError(400, `bad clip id ${id}`);
   return encodeURIComponent(id);
 }
 
@@ -105,8 +116,15 @@ export class EngineClient {
       throw new EngineError(r.status, `bad response from engine (${r.status})`);
     }
     if (!r.ok) {
-      const msg = (data && typeof data === 'object' && 'error' in data ? String((data as { error: unknown }).error) : '') || r.statusText;
-      throw new EngineError(r.status, msg);
+      const d = (data && typeof data === 'object' ? data : {}) as { error?: unknown; code?: unknown; params?: unknown; message_zh?: unknown };
+      const msg = (d.error ? String(d.error) : '') || r.statusText;
+      throw new EngineError(
+        r.status,
+        msg,
+        typeof d.code === 'string' ? d.code : undefined,
+        d.params && typeof d.params === 'object' ? (d.params as Record<string, unknown>) : undefined,
+        typeof d.message_zh === 'string' ? d.message_zh : undefined,
+      );
     }
     return data as T;
   }
@@ -257,6 +275,12 @@ export class EngineClient {
   adoptHistory(id: string, body: { recipe?: string; title?: string } = {}) {
     return this.req<{ ok: boolean; dir: string; type: string; recipe: string | null }>('POST', `/api/history/item/${bid(id)}/adopt`, body);
   }
+  unhideOne(dir: string) {
+    return this.req<{ ok: boolean }>('POST', '/api/history/unhide-one', { dir });
+  }
+  renameHistory(dir: string, name: string) {
+    return this.req<{ ok: boolean; name: string }>('POST', '/api/history/rename', { dir, name: name.slice(0, 80) });
+  }
   unhideHistory() {
     return this.req<HistoryConfig>('POST', '/api/history/unhide', {});
   }
@@ -265,6 +289,72 @@ export class EngineClient {
   }
   cleanupDone(batch: string, paths: string[]) {
     return this.req<{ ok: boolean }>('POST', '/api/cleanup/done', { batch: bid(batch), paths });
+  }
+
+  // ---------------------------------------------------------------- v0.4: outputs, intake, inbox, calendar
+  clips(item: string) {
+    return this.req<ClipsDoc>('GET', `/api/outputs/${bid(item)}`);
+  }
+  output(item: string, clip: string) {
+    return this.req<OutputDoc>('GET', `/api/outputs/${bid(item)}/${clipId(clip)}`);
+  }
+  editOutput(item: string, clip: string, ops: EditOp[]) {
+    return this.req<{ ok: boolean; step?: { id: string; describe: EngineMsg[] }; warnings?: EngineMsg[] }>('POST', `/api/outputs/${bid(item)}/${clipId(clip)}/edit`, { ops });
+  }
+  askOutput(item: string, clip: string, prompt: string) {
+    return this.req<AskResult>('POST', `/api/outputs/${bid(item)}/${clipId(clip)}/ask`, { prompt: prompt.slice(0, 500) });
+  }
+  renderOutput(item: string, clip: string, opts: { quality?: 'preview' | 'final'; targets?: string } = {}) {
+    return this.req<{ ok: boolean; targets: { target: string; file: string; cover?: string; cached?: boolean }[]; simulated?: boolean }>(
+      'POST',
+      `/api/outputs/${bid(item)}/${clipId(clip)}/render`,
+      opts,
+    );
+  }
+  undoOutput(item: string, clip: string, steps = 1) {
+    return this.req<{ ok: boolean }>('POST', `/api/outputs/${bid(item)}/${clipId(clip)}/undo`, { steps });
+  }
+  redoOutput(item: string, clip: string, steps = 1) {
+    return this.req<{ ok: boolean }>('POST', `/api/outputs/${bid(item)}/${clipId(clip)}/redo`, { steps });
+  }
+  effects() {
+    return this.req<{ effects: EffectDef[]; engine: string }>('GET', '/api/effects');
+  }
+  startIntake(prompt: string, inputs: string[]) {
+    return this.req<{ id: string }>('POST', '/api/intake', { prompt: prompt.slice(0, 2000), inputs });
+  }
+  intake(id: string) {
+    return this.req<IntakeJob>('GET', `/api/intake/${pid(id)}`);
+  }
+  reviseIntake(id: string, prompt: string) {
+    return this.req<{ id: string }>('POST', `/api/intake/${pid(id)}/revise`, { prompt: prompt.slice(0, 500) });
+  }
+  applyIntake(id: string, body: { plan?: IntakePlan; run?: boolean } = {}) {
+    return this.req<{ ok: boolean; projects: { dir: string; name: string; recipe: string }[] }>('POST', `/api/intake/${pid(id)}/apply`, body);
+  }
+  recentPrompts() {
+    return this.req<{ id: string; prompt: string; at: string }[]>('GET', '/api/intake/recent');
+  }
+  inbox() {
+    return this.req<InboxDoc>('GET', '/api/inbox');
+  }
+  answerInbox(keys: string[], answer?: Record<string, unknown>) {
+    return this.req<{ ok: boolean; answered: string[] }>('POST', '/api/inbox/answer', answer ? { keys, answer } : { keys });
+  }
+  undoInbox(keys: string[]) {
+    return this.req<{ ok: boolean }>('POST', '/api/inbox/undo', { keys });
+  }
+  calendar(start?: string) {
+    return this.req<CalendarDoc>('GET', `/api/calendar${start ? `?start=${encodeURIComponent(start)}` : ''}`);
+  }
+  schedule(body: { item: string; clip: string; platform?: string; at: string }) {
+    return this.req<CalendarPost>('POST', '/api/calendar', { ...body, item: bid(body.item) });
+  }
+  updatePost(id: string, body: { at?: string; state?: CalendarPost['state']; remove?: boolean }) {
+    return this.req<{ ok: boolean; post: CalendarPost }>('POST', `/api/calendar/${bid(id)}`, body);
+  }
+  confirmWeek(start: string) {
+    return this.req<{ ok: boolean; ready: number }>('POST', '/api/calendar/confirm', { start });
   }
 
   /** Server-sent events over fetch (EventSource cannot send the Authorization header). Resolves when the

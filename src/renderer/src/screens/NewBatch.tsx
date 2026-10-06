@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import type { Estimate } from '../../../shared/types';
 import { ErrorBox, Field } from '../components/ui';
-import { t } from '../i18n';
+import { t, tk } from '../i18n';
 import { useEngine, useLoad } from '../lib/engine';
 import { bytes, hms, usd } from '../lib/format';
 import { go } from '../lib/router';
@@ -217,7 +217,7 @@ function ClassicNewBatch({ tabs }: { tabs: ReactNode }) {
               <select className="input" value={recipe} onChange={(e) => setRecipe(e.target.value)}>
                 {(recipes.data ?? []).map((r) => (
                   <option key={r.name} value={r.name}>
-                    {t(`recipe.${r.name}`) !== `recipe.${r.name}` ? t(`recipe.${r.name}`) : r.name}
+                    {tk(`recipe.${r.name}`) !== `recipe.${r.name}` ? tk(`recipe.${r.name}`) : r.name}
                   </option>
                 ))}
               </select>
@@ -276,7 +276,7 @@ function ClassicNewBatch({ tabs }: { tabs: ReactNode }) {
                     className={`tab ${platforms.includes(p.id) ? 'on' : ''}`}
                     onClick={() => setPlatforms((x) => (x.includes(p.id) ? x.filter((y) => y !== p.id) : [...x, p.id]))}
                   >
-                    {t(p.label)}
+                    {tk(p.label)}
                   </button>
                 ))}
               </div>

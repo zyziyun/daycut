@@ -6,7 +6,7 @@ import type { Estimate } from '../../../shared/types';
 import { acceptedSegments, PROVIDERS, type PlanState, type Provider, type ReviewedSegment } from '../../../shared/v02';
 import { SegmentReview } from '../components/SegmentReview';
 import { ErrorBox, Field } from '../components/ui';
-import { t } from '../i18n';
+import { t, tk } from '../i18n';
 import { useEngine } from '../lib/engine';
 import { go } from '../lib/router';
 import { PlatformPicker } from './Clients';
@@ -278,7 +278,7 @@ export function NewFromRecording({ tabs }: { tabs: ReactNode }) {
                 {p.error || p.state?.error ? (
                   <span className="err small">{p.error ?? p.state?.error}</span>
                 ) : (
-                  <span className="badge accent">{p.state ? t(`raw.progress.${p.state.progress}`) : t('common.working')}</span>
+                  <span className="badge accent">{p.state ? tk(`raw.progress.${p.state.progress}`) : t('common.working')}</span>
                 )}
               </div>
             ))}
@@ -302,7 +302,7 @@ export function NewFromRecording({ tabs }: { tabs: ReactNode }) {
             )}
             {cur.state?.result?.provider && (
               <div className="muted small">
-                {t('raw.plannedBy', { p: t(`raw.provider.${cur.state.result.provider}`) !== `raw.provider.${cur.state.result.provider}` ? t(`raw.provider.${cur.state.result.provider}`) : cur.state.result.provider })}
+                {t('raw.plannedBy', { p: tk(`raw.provider.${cur.state.result.provider}`) !== `raw.provider.${cur.state.result.provider}` ? tk(`raw.provider.${cur.state.result.provider}`) : cur.state.result.provider })}
               </div>
             )}
             <SegmentReview

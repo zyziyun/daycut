@@ -4,6 +4,7 @@ import { App } from './App';
 import { applyTheme } from './theme/tokens';
 import './theme/global.css';
 import './theme/v02.css';
+import './theme/app.css';
 
 applyTheme('studio-dark');
 createRoot(document.getElementById('root')!).render(

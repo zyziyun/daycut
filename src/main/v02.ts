@@ -44,11 +44,13 @@ const MAX_PERSONA = 256 * 1024;
 
 export function registerV02Ipc(handle: Handle, d: V02Deps) {
   const store = () => secretStore(d.userData);
-  handle('dialog:openFiles', async () => {
+  handle('dialog:openFiles', async (p) => {
     const w = d.win();
-    const opts = { properties: ['openFile', 'multiSelections'] as ('openFile' | 'multiSelections')[], filters: [{ name: 'Video', extensions: ['mp4', 'mov', 'm4v', 'mkv', 'webm'] }] };
+    // 'any': the composer takes any material (video, audio, photos, pdf / docx / pptx / md, subtitles)
+    const filters = p.kind === 'any' ? [] : [{ name: 'Video', extensions: ['mp4', 'mov', 'm4v', 'mkv', 'webm'] }];
+    const opts = { properties: ['openFile', 'multiSelections'] as ('openFile' | 'multiSelections')[], filters };
     const r = w ? await dialog.showOpenDialog(w, opts) : await dialog.showOpenDialog(opts);
-    return r.canceled ? [] : r.filePaths.slice(0, 20);
+    return r.canceled ? [] : r.filePaths.slice(0, p.kind === 'any' ? 200 : 20);
   });
   handle('file:saveText', async (p) => {
     const w = d.win();

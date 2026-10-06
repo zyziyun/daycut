@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { CLEANUP_PROFILES, COVER_STYLES, FUNNEL, type ClientConfig, type GlossaryEntry } from '../../../shared/v02';
 import { ErrorBox, Field } from '../components/ui';
-import { t } from '../i18n';
+import { t, tk } from '../i18n';
 import { useEngine, useLoad } from '../lib/engine';
 import { href } from '../lib/router';
 import { PlatformPicker, StageBadge } from './Clients';
@@ -281,7 +281,7 @@ function CrmCard({ slug, crm, onChange }: { slug: string; crm: import('../../../
         <select className="input" value={post.platform} onChange={(e) => setPost({ ...post, platform: e.target.value })} aria-label={t('crm.platform')}>
           {['xiaohongshu', 'douyin', 'tiktok', 'youtube', 'bilibili'].map((p) => (
             <option key={p} value={p}>
-              {t(`platform.${p === 'xiaohongshu' ? 'xiaohongshu-full' : p}`).replace(/ 9:16$/, '')}
+              {tk(`platform.${p === 'xiaohongshu' ? 'xiaohongshu-full' : p}`).replace(/ 9:16$/, '')}
             </option>
           ))}
         </select>

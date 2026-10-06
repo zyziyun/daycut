@@ -1,7 +1,7 @@
 // Clients (workspaces): one client.yaml per client overriding the global persona; batches belong to a client.
 import { useEffect, useState } from 'react';
 import { Empty, ErrorBox, Field, Modal } from '../components/ui';
-import { t } from '../i18n';
+import { t, tk } from '../i18n';
 import { useEngine, useLoad } from '../lib/engine';
 import { go, href } from '../lib/router';
 import { PLATFORM_CHOICES } from './NewBatch';
@@ -9,7 +9,7 @@ import { PLATFORM_CHOICES } from './NewBatch';
 export function StageBadge({ stage }: { stage: string | null }) {
   if (!stage) return <span className="muted small">—</span>;
   const tone = stage === 'paid' ? 'accent' : stage === 'lost' ? 'danger' : '';
-  return <span className={`badge ${tone}`}>{t(`funnel.${stage}`)}</span>;
+  return <span className={`badge ${tone}`}>{tk(`funnel.${stage}`)}</span>;
 }
 
 export function PlatformPicker({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
@@ -23,7 +23,7 @@ export function PlatformPicker({ value, onChange }: { value: string[]; onChange:
           className={`tab ${value.includes(p.id) ? 'on' : ''}`}
           onClick={() => onChange(value.includes(p.id) ? value.filter((y) => y !== p.id) : [...value, p.id])}
         >
-          {t(p.label)}
+          {tk(p.label)}
         </button>
       ))}
     </div>

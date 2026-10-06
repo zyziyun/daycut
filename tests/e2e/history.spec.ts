@@ -64,47 +64,54 @@ test.afterAll(async () => {
   await app?.close();
 });
 
-test('history lists past work from a watched folder, search, remove from list keeps files', async () => {
-  const rows = page.getByTestId('history-row');
-  await expect(rows).toHaveCount(4, { timeout: 30000 });
-  await expect(page.getByTestId('history')).toContainText('rag');
-  await expect(page.getByTestId('history')).toContainText('自己的账号');
-  await page.getByTestId('history-search').fill('promo');
-  await expect(rows).toHaveCount(1);
-  page.once('dialog', (d) => void d.accept());
-  await rows.first().getByTestId('history-hide').click();
-  await page.getByTestId('history-search').fill('');
-  await expect(rows).toHaveCount(3);
+test('全部项目: past work from a watched folder, search, remove from list (undo) keeps files', async () => {
+  await page.getByTestId('nav-projects').click();
+  const cards = page.getByTestId('project-card');
+  await expect(cards).toHaveCount(5, { timeout: 30000 }); // 4 found folders + the mock engine's demo batch
+  await expect(page.getByTestId('projects-grid')).toContainText('rag');
+  await page.getByTestId('projects-search').fill('promo');
+  await expect(cards).toHaveCount(1);
+  await cards.first().click({ button: 'right' });
+  await page.getByTestId('menu-remove').click();
+  await expect(cards).toHaveCount(0);
+  await page.getByTestId('toast-undo').click(); // undo toast for every destructive action
+  await expect(cards).toHaveCount(1);
+  await cards.first().click({ button: 'right' });
+  await page.getByTestId('menu-remove').click();
+  await page.getByTestId('projects-search').fill('');
+  await expect(cards).toHaveCount(4);
   expect(fs.existsSync(path.join(watch, 'client-a', 'batch-promo', 'batch.db'))).toBe(true);
 });
 
-test('全部项目: a work folder shows its outputs and post copy; 转成项目 writes only the record', async () => {
-  await page.getByTestId('nav-all-work').click();
-  await page.getByTestId('history-type').selectOption('talkinghead');
-  const rows = page.getByTestId('history-row');
-  await expect(rows).toHaveCount(1);
-  await rows.first().getByTestId('history-open').click();
-  await expect(page.getByTestId('work-item')).toContainText('进亚麻不适应');
-  await page.getByTestId('adopt').click();
-  await expect(page.getByTestId('adopt')).toBeDisabled();
+test('a work folder: the whole card opens it, one card per clip with its caption, nothing written', async () => {
+  await page.getByTestId('projects-type').selectOption('talkinghead');
+  const cards = page.getByTestId('project-card');
+  await expect(cards).toHaveCount(1);
+  await cards.first().click(); // B1: the whole card is the link
+  await expect(page.getByTestId('clip-card')).toHaveCount(1);
+  await expect(page.getByTestId('post-copy')).toContainText('进亚麻不适应');
   const th = path.join(watch, '01-talkinghead');
-  expect(fs.readdirSync(th).sort()).toEqual(['.vstudio', 'REPORT.md', 'final']);
-  expect(JSON.parse(fs.readFileSync(path.join(th, '.vstudio', 'work.json'), 'utf8')).type).toBe('talkinghead');
+  expect(fs.readdirSync(th).sort()).toEqual(['REPORT.md', 'final']); // B3: no 转成项目 button, nothing adopted by looking
 });
 
-test('进行中: an external run shows live, goes 中断 when its heartbeat stops, 需要你 at a checkpoint', async () => {
-  await page.getByTestId('nav-all-work').click();
+test('进行中: an external run shows live on Home, 出错 when its heartbeat stops, 需要你 at a checkpoint', async () => {
+  await page.getByTestId('nav-home').click();
   heartbeat({});
   const lane = page.getByTestId('live-lane');
-  await expect(lane).toContainText('render', { timeout: 15000 }); // fs watch -> refresh, no polling
+  await expect(lane).toContainText('clip B', { timeout: 15000 }); // fs watch -> refresh, no polling
   await expect(lane.getByTestId('live-state')).toHaveText(/运行中|Running/);
   await expect(page.getByTestId('running-badge')).toHaveText('1');
   heartbeat({ pid: 999999, heartbeat: Date.now() / 1000 - 3600 }); // the external process died an hour ago
-  await expect(lane.getByTestId('live-state')).toHaveText(/中断|Interrupted/, { timeout: 15000 });
+  await expect(lane.getByTestId('live-row')).toHaveCount(0, { timeout: 15000 });
   await expect(page.getByTestId('running-badge')).toHaveCount(0);
+  await page.getByTestId('nav-projects').click();
+  await page.getByTestId('projects-type').selectOption('');
+  await expect(page.getByTestId('project-card').filter({ hasText: 'fuye' }).getByTestId('status')).toHaveText(/出错|Error/);
   heartbeat({ status: 'waiting', needs_you: true, message: 'checkpoint: hooks' });
-  await expect(lane.getByTestId('needs-you')).toBeVisible({ timeout: 15000 });
-  await expect(page.getByTestId('running-badge')).toHaveText('1');
+  await page.getByTestId('nav-home').click();
+  await expect(lane.getByTestId('live-state')).toHaveText(/需要你|Needs you/, { timeout: 15000 });
   await lane.getByTestId('live-row').first().click();
+  await expect(page.getByTestId('project-title')).toHaveText('fuye');
+  await page.getByTestId('tab-files').click();
   await expect(page.getByTestId('log-tail')).toContainText('rendering clip B');
 });
