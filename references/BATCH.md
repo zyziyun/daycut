@@ -145,7 +145,7 @@ defaults: {platforms: ["xiaohongshu:vertical", "xiaohongshu:full", "douyin", "yo
 | probe / extract / asr | io / io / asr | as above: ONE transcript per source (or `inputs.transcript`) | per source |
 | geometry | cpu | the workflow's `analyze.py` geo frames + `geometry.py` -> crop spans (shared page minus browser chrome), each clipped against `privacy.exclude`; `screen.region` skips detection | per source |
 | cleanup | cpu | range edges snapped word-safe (+ end over the last word's tail), row `cuts` snapped and removed, `vstudio.cleanup.analyze` on the rest -> EDL, review sheet, confirm list (the same reply loop); hook edge snapped | |
-| compose | cpu-render | work dir: `keep_list.json` (EDL + reply), `hook_edges.json`, crop spans, the shared transcript linked as `audio16k.json` -> `build_timeline` -> `make_audio_assets` -> `render.py` (`render.audio_only`: PCM grid + loudnorm, no 16:9 picture) -> `build_subs` (term fixes) | |
+| compose | cpu-render | work dir: `keep_list.json` (EDL + reply), `hook_edges.json`, crop spans, the shared transcript as `audio16k.json` (as the cut leaves it: a cut `filler-merged` edit moves the word it trimmed past the cut, so the word keeps its caption while it is still heard - `lfsplit.cut_transcript`) -> `build_timeline` -> `make_audio_assets` -> `render.py` (`render.audio_only`: PCM grid + loudnorm, no 16:9 picture) -> `build_subs` (term fixes) | |
 | export | cpu-render | `make_vertical.py --targets <platforms>`: vertical master per canvas from the SOURCE + `vstudio.export.export_one` per target (captions, loudness, cover, post) | |
 | verify / proofread | asr / api | re-ASR of the job's audio (lost words); caption proofreading (2c) -> the cues `make_vertical` burns | |
 | qc / preview | cpu / cpu-render | the gates of section 4 + privacy; contact sheet + snippet | |
@@ -195,7 +195,13 @@ when set explicitly; `OPENAI_API_KEY`; default `gpt-4.1-mini`), any other `vstud
 kimi, glm, openrouter, gemini, ollama, lmstudio, vllm, llamacpp, claude-code, codex - references/PROVIDERS.md;
 `proofread.glossary_provider` picks the glossary's), `none`;
 `proofread.call: "module:fn"` plugs in any other `fn(system, prompt, model) -> (text, usage)`. Cost is booked to
-the budget (`prices.proofread_in` / `proofread_out` per MTok override the table);
+the budget (`prices.proofread_in` / `proofread_out` per MTok override the table). The LLM result of every cue is
+cached per batch (`cache/proofread-cues/`, key = the normalized ASR cue text + a hash of the prompt, provider /
+model, glossary, term fixes and topic - not the notes, which are a hint only and never re-run proofread): a re-cut
+re-sends only the cues whose text changed, so the corrections of unchanged cues are never re-rolled
+(`proofread.json` `cache {hits, sent, stored}`; a job proofread before the cache is seeded from its reviewed
+report on `job rerun`). Cues the creator fixed with `job edit --op caption` are locked: no term fix, glossary,
+LLM or filler-edge pass touches them;
 (d) fillers are never removed from captions (they are in the audio): cleanup auto-cuts the obvious caption fillers
 (stacked connectors: an abandoned `因为|而且`, `然后的话`, the `的话` of `另外的话`) and the stacks still spoken are
 listed per job in `decisions_needed.md` / on the review card, to cut with the cleanup reply. No caption ends on a
@@ -336,8 +342,10 @@ up (pitch kept) up to `max_speed`; the other platforms keep the full cut. The ma
   re-run on the job's EDL; answered ones are counted, policy cuts not in the render yet are listed), per-class
   bulk buttons (`"confirm_kinds": ["filler-merged", "filler/lead"]` or `{"ep03": [...], "*": [...]}` in
   decisions.json, or `review --confirm-kinds a,b`; a kind matches its sub-classes) and `"accept_policy": true`
-  (`--accept-policy`) to cut the pending policy approvals; every reply is learned per persona
-  (`vstudio.cleanup.learn`). Caption fixes not backed by the glossary or a strong sound-alike
+  (`--accept-policy`) to cut the pending policy approvals; `"jobs": ["ep02", "ep04"]` (`review --accept-policy
+  --jobs ep02,ep04`) limits both bulk answers to those jobs. Every creator reply is learned per persona
+  (`vstudio.cleanup.learn`) - only the answers new in that reply, never the policy approvals `accept_policy` cuts
+  (they are the policy's, not the creator's). Caption fixes not backed by the glossary or a strong sound-alike
   (`vstudio.proofread.flag_guesses`: pinyin via pypinyin or macOS Foundation, a latin phonetic key) are GUESSES:
   yellow on the page, `<mark>GUESS</mark>` in the sheet.
 * **Package**: approved jobs -> `package/<platform>-<orientation>/<NNN>_<job>/` (`video.mp4`, `cover.jpg`,
@@ -388,14 +396,28 @@ hand-made 24-segment plan (count 24, 45-160 s): openai gpt-4.1 covered 71 % of t
 time recall 0.73 / precision 0.67, 2 of 24 ranges identical, $0.09, 27 s; the rule-based planner 0.48 / 0.56
 (random placement of the same lengths: 0.46 / 0.54), titles noisy - use it offline, review every row.
 
-**Review edits** (`edits.py`). `job edit --batch B --job J --op caption --cue I --text T | trim --start A --end B |
-hook --pick K | cover --t S --text T | copy --title --body --tags a,b | undo` -> `{ok, faithful, reason, rerun,
-pending, glossary_added, undone, adopted, value, warnings}`. Each edit changes the job params (kept in the `edits`
-table, re-applied by a later `plan`) and reports the stages whose input key changes (`rerun`; `pending`
-accumulates until `job rerun`). Caption: accepted only when `proofread.faithful` passes against the cue, the ASR
-text under it or the verify re-hearing (sound-alike swaps only); stored as `caption_overrides [{i, from, to}]`,
-applied at export (no proofread / LLM re-run); the fixed spans go to the client glossary (undo removes them). Trim:
-source seconds snapped to word edges. Hook: `hook_candidates` / `hooks` index, -1 = none. Cover: output seconds ->
+**Review edits** (`edits.py`). `job edit --batch B --job J --op caption --cue I --text T [--reasr] | trim --start A
+--end B | cut --start A --end B [--why TEXT] | notes --set "a|b|c" | hook --pick K | cover --t S --text T | copy
+--title --body --tags a,b | undo` -> `{ok, faithful, reason, reason_code, heard, rerun, pending, glossary_added,
+undone, adopted, value, warnings}`. Each edit changes the job params (kept in the `edits` table, re-applied by a
+later `plan`) and reports the stages whose input key changes (`rerun`; `pending` accumulates until `job rerun`).
+Caption: accepted when `proofread.faithful` passes against the cue, the ASR text under it or the verify re-hearing
+(sound-alike swaps only); otherwise the cue's window of the composed cut is re-heard (`edits.rehear_text`: the
+batch transcriber / `vstudio.asr`, backend `asr.rehear_backend` > `asr.backend`) and the text is accepted when it
+says what was heard (`matched: "reasr"`; normalized similarity >= 0.9, no added phrase). `--reasr` skips the
+sound-alike check: the re-hearing decides. A refusal is `{ok: false, faithful: false, reason: "<a sentence>",
+reason_code: empty-text | not-faithful | differs-from-audio | rehear-failed | rehear-unavailable, heard: "<re-heard
+text>" | null}`. Stored as `caption_overrides [{i, from, to, asr, t, src}]` (the ASR text under the cue and its
+output / source time, so the edit still lands after a re-proofread or re-cut: by index, text, ASR text, a cue
+holding `from`, or time; one that cannot be placed is logged, listed in the export output `caption_overrides
+{applied, missed}`, `job show` `edit.caption_overrides_missed` and a QC warning `caption-edit-missed`), applied at
+export; proofread never touches the cues they cover. The fixed spans go to the client glossary (undo removes them)
+- not a span that only reverts a proofread guess, nor a re-heard rewrite that is no sound-alike. Trim: source
+seconds snapped to word edges. Cut: an inner cut inside the job's range, snapped to whole words (start -> a word
+start, end -> a word end, never splitting one), appended to the row's `cuts` `[a, b, why]` (`value {cut, words,
+cuts, kept_s}`; re-runs cleanup and everything after; `undo` removes it). Notes: the 记笔记 panel lines (`|`
+separated; `""` clears it) - only the panel render (export) and what follows re-run, never proofread / captions /
+cleanup. Hook: `hook_candidates` / `hooks` index, -1 = none. Cover: output seconds ->
 source (`cover_shot`, longform-split) or a frame + text card (other recipes); text `a|b` = two lines. Copy: title
 length checked per platform; the published `post.md` files are rewritten in place, stage keys keep the planned
 copy (`_copy_orig`), only QC re-runs. A reviewed job whose keys drifted since its run (engine update, learned
@@ -433,16 +455,16 @@ Every command a UI needs has a JSON form; paths are absolute; with `--json` stdo
 | `plan SPEC --json` | `{ok, batch_dir, jobs, created, updated, unchanged, dropped}` |
 | `run ... --json-events` | one JSON object per line: `run-start` {jobs, limits, total_stages, stages}, `stage-start` {job, stage, resource, attempt}, `stage-done` {job, stage, seconds, cached, cost_usd}, `stage-retry`, `stage-fail` {error}, `job-done` {state, qc, reasons}, `progress` {done_stages, total_stages, jobs_done, jobs_total}, `pause` {reason}, `log` {msg}, `run-end` {status, exit_code}; every event has `event` and `ts`. The process's own fd 1 is pointed at stderr, so stage code / child processes can never corrupt the stream |
 | `review --json` | `{page, decisions_needed, jobs, red, sampled, confirm_jobs, confirm_edits, items: [...]}`; items as on the review page with absolute `sheet` / `snippet` / `files`, plus `exports` and QC `suggestions` |
-| `review --apply decisions.json --json` | `{ok, approved, rejected, replied, skipped: [{job, why}]}` |
+| `review --apply decisions.json --json` | `{ok, approved, rejected, replied, bulk, learned, skipped: [{job, why}], jobs}` (also with `--confirm-kinds a,b` / `--accept-policy`, limited by `--jobs a,b`) |
 | `job ID --json [--no-words]` | `{job, recipe, stages, events, cleanup {reply, parts [{part, ranges, stats, edits [{id, t0, t1, kind, text, action, reason, cut}]}], row_cuts, edges, hook_edge}, transcript [{range, text, words [{w, t, te, cut}]}], captions {cues, changes, rejected, warnings, low_confidence, fillers_left, filler_edges}, verify, qc {status, reasons, warnings, checks, suggestions}, media {final, exports, length_fit, sheet, snippet}}` - `cut` is the effective state under the job's current cleanup reply |
 | `package --json` | `{dir, code, items, jobs, manifest, manifest_data, verify}` |
 | `verify-manifest MANIFEST` | `{ok, code, stored, items, reason}` (exit 1 on a mismatch) |
 | `recipes --json` | `{recipes: [{name, label, description, inputs: [{key, label, kind file|dir|text|rects|rect, required, accept, help}], row_keys, stages: [{name, deps, shared, resource}]}], capabilities: [plan-segments, client, job-edit, job-rerun, deliver, metrics, timing, ...]}` |
 | `plan-segments ... --json` | `{provider, model, duration, draft, transcript, segments: [{id, start, end, title, chapter, hook {start, end, text}, hook_candidates, notes, tags, why, risk, score}], chapters, words: [{w, t, te}], cost_usd, warnings}` (exit 5: provider unavailable) |
 | `client init/show/update --client C [--set JSON] --json` | `{ok, dir, path, config, effective, batches}` |
-| `job edit ... --json` | `{ok, faithful, reason, rerun, pending, glossary_added, undone, adopted, value, warnings}` (exit 1 when refused) |
+| `job edit ... --json` | `{ok, op, faithful, reason, reason_code, heard, rerun, pending, glossary_added, undone, adopted, value, warnings}` (exit 1 when refused; `reason_code` / `heard` set on caption refusals; ops caption, trim, cut, notes, hook, cover, copy, undo) |
 | `job rerun --job J [--json / --json-events]` | `{ok, job, state, qc, stages, seconds}` / the `run` events + `rerun-done` |
-| `job show ID --json` (or `job ID`) | as `job` below, plus `edit {range, hook, hook_pick, hook_candidates, cover, copy, caption_overrides, history, pending, review_s}` |
+| `job show ID --json` (or `job ID`) | as `job` below, plus `edit {range, hook, hook_pick, hook_candidates, cover, copy, caption_overrides, caption_overrides_missed, history, pending, review_s}` |
 | `deliver ... --json` | `{ok, dir, zip, items, jobs, duration_s, code, package_code, manifest, manifest_data, cleanup_on}` |
 | `metrics ... --json [--csv]` | `{scope, summary, jobs, batches, deliveries? , columns?, rows?, csv?}` |
 | `timing ... --json` | `{ok, job, event, what, seconds, total_s, review_s}` |
