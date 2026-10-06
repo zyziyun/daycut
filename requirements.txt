@@ -1,9 +1,15 @@
 numpy
 opencv-python
 Pillow
-mediapipe>=0.10.14
+# mediapipe 0.10.21 is the last release with macOS x86_64 wheels: Intel Macs stay on it (the code only uses the
+# tasks API that 0.10.14-0.10.21 already have)
+mediapipe==0.10.21; sys_platform == "darwin" and platform_machine == "x86_64"
+mediapipe>=0.10.14; sys_platform != "darwin" or platform_machine != "x86_64"
 scipy
 soundfile
 PyYAML
 fonttools[woff]
 openai
+# local whisper (ASR): MLX on Apple silicon, CTranslate2 elsewhere (vstudio.asr picks what is installed)
+mlx-whisper; sys_platform == "darwin" and platform_machine == "arm64"
+faster-whisper; sys_platform != "darwin" or platform_machine != "arm64"

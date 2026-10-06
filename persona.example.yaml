@@ -43,6 +43,7 @@ audio:
 export:
   fps: 30
   crf: 18
+  # h264_encoder: libx264   # libx264 | h264_videotoolbox | h264_mf; env VSTUDIO_H264_ENCODER wins (lib/vstudio/h264.py)
   audio_bitrate: 192k
   colour: bt709
 

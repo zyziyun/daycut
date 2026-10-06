@@ -91,8 +91,29 @@ STIX Two Text, JetBrains Mono — OFL) and the MediaPipe models (Apache-2.0: fac
 
 Requirements: Python 3.10+, `ffmpeg`. Optional: Node 18+ with `npx hyperframes` (explainer, promo-recut),
 Chrome/Chromium or Playwright (HTML covers/slides), an `OPENAI_API_KEY` (AI narration), the HeyGen CLI (music catalog).
-Transcription uses `mlx-whisper` on Apple Silicon and `faster-whisper` elsewhere. Optional: `librosa` (better beat
-tracking), `pillow-heif` (HEIC photos; macOS falls back to `sips`), `mlx-audio` + a Qwen3-TTS model (voice clone).
+Transcription uses `mlx-whisper` on Apple Silicon and `faster-whisper` elsewhere (both in `requirements.txt` behind
+platform markers). Optional: `librosa` (better beat tracking), `pillow-heif` (HEIC photos; macOS falls back to
+`sips`), `mlx-audio` + a Qwen3-TTS model (voice clone).
+
+**Whisper models.** The first transcription downloads the model into the Hugging Face cache
+(`~/.cache/huggingface/hub`, or `$HF_HOME/hub`): `mlx-community/whisper-large-v3-turbo` for mlx-whisper,
+`large-v3-turbo` (`Systran/faster-whisper-large-v3-turbo`) for faster-whisper. To use a model you already have (or an
+offline machine), point at it: `VSTUDIO_WHISPER_MLX=/path/to/whisper-large-v3-turbo-mlx` (a folder with the MLX
+`config.json` + `weights.*`, or another HF repo id) and `VSTUDIO_WHISPER_FW=/path/to/faster-whisper-large-v3-turbo`
+(a CTranslate2 model folder, or a size name such as `small`); add `HF_HUB_OFFLINE=1` to never touch the network.
+The backend is `auto` (mlx, else faster-whisper, else OpenAI `whisper-1` with `OPENAI_API_KEY`) unless a batch spec
+says `asr: {backend: mlx | faster | openai}`.
+
+**Caches.** Everything video-studio caches (fonts, models, transcripts shared between `plan-segments` and batches,
+ASR sidecars of read-only media, TTS takes, the batch benchmark table) lives under one root:
+`$VSTUDIO_CACHE`, default `~/.cache/video-studio`. Older builds wrote some of it to `~/.cache/vstudio`; that folder
+is still read (nothing is recomputed) but no longer written - delete it once you no longer need it.
+
+**ffmpeg and the H.264 encoder.** `VSTUDIO_FFMPEG` / `VSTUDIO_FFPROBE` point at specific binaries (else `ffmpeg` /
+`ffprobe` on `PATH`, else `static-ffmpeg`). `VSTUDIO_H264_ENCODER` (or persona `export.h264_encoder`) picks the
+H.264 encoder for every encode: `libx264` (default), `h264_videotoolbox` (macOS), `h264_mf` (Windows); quality flags
+are mapped per encoder (`-crf` -> `-q:v` on Apple silicon VideoToolbox, `-b:v` otherwise) and when the chosen encoder
+does not work on the machine everything falls back to libx264 (`lib/vstudio/h264.py`).
 
 ## Platforms
 

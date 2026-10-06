@@ -76,6 +76,13 @@ def ffmpeg_bin(need=None):
 
 @lru_cache(maxsize=None)
 def _ffmpeg_bin(need):
+    env = os.environ.get("VSTUDIO_FFMPEG")             # an explicit binary (the desk's bundled ffmpeg)
+    if env:
+        if not os.path.exists(env):
+            raise FFmpegError(f"VSTUDIO_FFMPEG={env} does not exist")
+        if need and not all(n in _filters(env) for n in need):
+            raise FFmpegError(f"VSTUDIO_FFMPEG={env} lacks filter(s) {need}")
+        return env
     sysbin = shutil.which("ffmpeg")
     if sysbin and all(n in _filters(sysbin) for n in need):
         return sysbin
@@ -93,7 +100,12 @@ def _ffmpeg_bin(need):
 
 @lru_cache(maxsize=None)
 def ffprobe_bin():
-    """Path of ffprobe (system first, static_ffmpeg fallback)."""
+    """Path of ffprobe ($VSTUDIO_FFPROBE, else system, else static_ffmpeg)."""
+    env = os.environ.get("VSTUDIO_FFPROBE")
+    if env:
+        if not os.path.exists(env):
+            raise FFmpegError(f"VSTUDIO_FFPROBE={env} does not exist")
+        return env
     p = shutil.which("ffprobe")
     if p:
         return p
@@ -125,7 +137,14 @@ def run(cmd, capture=False, check=True, quiet=True, input=None):
         cmd[1:1] = ["-v", "error"]
     if os.path.basename(cmd[0]).startswith("ffmpeg") and "-nostdin" not in cmd and input is None:
         cmd[1:1] = ["-nostdin"]
-    r = subprocess.run(cmd, capture_output=True, input=input)
+    from . import h264
+    alt = h264.rewrite(cmd, h264.effective_encoder()) if "libx264" in cmd else cmd
+    r = subprocess.run(alt, capture_output=True, input=input, **({"_vstudio_raw": True} if h264._ORIG_INIT else {}))
+    if r.returncode != 0 and alt is not cmd:          # the configured encoder failed: libx264 fallback
+        print(f"!! video-studio: {alt[alt.index('-c:v') + 1] if '-c:v' in alt else 'encoder'} failed, "
+              "retrying with libx264", file=sys.stderr)
+        r = subprocess.run(cmd, capture_output=True, input=input,
+                           **({"_vstudio_raw": True} if h264._ORIG_INIT else {}))
     if check and r.returncode != 0:
         err = r.stderr.decode("utf-8", "replace") if isinstance(r.stderr, bytes) else (r.stderr or "")
         raise FFmpegError(f"command failed ({r.returncode}): {' '.join(cmd[:8])} ...\n{err[-2500:]}")
@@ -396,7 +415,7 @@ def _bps(v):
 
 
 def delivery_args(crf=None, preset="medium", audio=True, audio_bitrate=None, faststart=True, fps=None,
-                  maxrate=None, vbitrate=None, maxrate_factor=1.15, bufsize=None, encoder="libx264", quality=None):
+                  maxrate=None, vbitrate=None, maxrate_factor=1.15, bufsize=None, encoder=None, quality=None):
     """Encoder args for a publishable MP4: H.264 High yuv420p, CRF (persona export.crf, 18),
     bt709 tags in the container AND the H.264 VUI (h264_metadata bsf, so iOS does not guess),
     AAC ``audio_bitrate`` (persona export.audio_bitrate, 192k) 48 kHz stereo, +faststart.
@@ -406,25 +425,34 @@ def delivery_args(crf=None, preset="medium", audio=True, audio_bitrate=None, fas
       -bufsize (default 2x maxrate) - match a source's bitrate (polish ``venc_args``).
     audio: True -> AAC args; False -> "-an" (drop audio); None -> no audio args at all (the caller
       maps/copies audio itself).
-    encoder: "libx264" | "videotoolbox" (h264_videotoolbox, macOS hardware: ``-q:v quality`` (default
-      65) unless vbitrate is given; no preset/crf). Returns an arg list to put between the
-      inputs/filters and the output path.
+    encoder: None = the configured one (``vstudio.h264``: $VSTUDIO_H264_ENCODER / persona export.h264_encoder,
+      libx264 when it does not work here) | "libx264" | "videotoolbox" (h264_videotoolbox, macOS hardware:
+      ``-q:v`` from the CRF (18 -> 65) on Apple silicon unless vbitrate is given; no preset/crf) | "h264_mf"
+      (Windows Media Foundation, bitrate from the CRF). Returns an arg list to put between the inputs/filters
+      and the output path.
     From polish ``BT709``/``venc_args``/``step_finalize``, call-clips loudnorm/export block, longform
     ``_lfc.video_encoder``.
     """
+    from . import h264
     ex = _persona_export()
     crf = ex.get("crf", 18) if crf is None else crf
-    vt = encoder in ("videotoolbox", "h264_videotoolbox")
-    if vt:
+    encoder = h264.effective_encoder() if encoder is None else h264._norm(encoder)
+    if encoder == "h264_videotoolbox":
         args = ["-c:v", "h264_videotoolbox", "-profile:v", "high", "-pix_fmt", "yuv420p"]
         if not vbitrate:
-            args += ["-q:v", str(65 if quality is None else quality)]
+            args += (["-q:v", str(quality)] if quality is not None else h264.quality_args(encoder, crf))
     elif encoder == "libx264":
         args = ["-c:v", "libx264", "-profile:v", "high", "-pix_fmt", "yuv420p", "-preset", preset]
         if not vbitrate:
             args += ["-crf", str(crf)]
+    elif encoder in h264.KNOWN:
+        args = [a for a in h264.args(crf, preset, enc=encoder) if True]
+        if vbitrate:                                  # bitrate mode below replaces the CRF mapping
+            k = args.index("-b:v") if "-b:v" in args else None
+            if k is not None:
+                del args[k:k + 2]
     else:
-        raise ValueError(f"encoder={encoder!r} (libx264 | videotoolbox)")
+        raise ValueError(f"encoder={encoder!r} ({' | '.join(h264.KNOWN)} | videotoolbox)")
     if vbitrate:
         vb = _bps(vbitrate)
         mr = _bps(maxrate) if maxrate else int(vb * maxrate_factor)

@@ -1,7 +1,9 @@
 """vstudio: the shared library behind every video-studio workflow.
 
 Import submodules directly (``from vstudio import media, cut``); this package imports nothing
-itself, so heavy optional dependencies (cv2, mediapipe, whisper, TTS engines) load only when used.
+itself, so heavy optional dependencies (cv2, mediapipe, whisper, TTS engines) load only when used. The one
+exception: with $VSTUDIO_H264_ENCODER (not libx264) / $VSTUDIO_FFMPEG / $VSTUDIO_FFPROBE set it installs the
+small ``vstudio.h264`` subprocess hook (one encoder and ffmpeg for every script).
 
 Core (audio/video pipeline)
   config   fonts, models, creator persona (``font()``, ``model()``, ``persona()``, ``xhs_len()``)
@@ -28,3 +30,11 @@ Effects
   xfade    cross-engine transition bridge: one name -> HyperFrames GSAP (``hf_transitions``),
            ffmpeg xfade (``ffmpeg_transition`` / ``ffmpeg_expr``), numpy per-frame (``blend``)
 """
+
+import os as _os
+
+if _os.environ.get("VSTUDIO_H264_ENCODER") or _os.environ.get("VSTUDIO_FFMPEG") or _os.environ.get("VSTUDIO_FFPROBE"):
+    from . import h264 as _h264      # one encoder / ffmpeg for every subprocess (see vstudio/h264.py)
+
+    if _h264.wanted():
+        _h264.install()

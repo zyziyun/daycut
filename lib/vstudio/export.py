@@ -394,7 +394,7 @@ def _scale_only(master, dst, prof, info, start, dur, vargs, fps_out):
 
 
 def export_one(master, prof, out_dir, cues=None, covers=None, post=None, mode="face", fallback="pad-blur",
-               start=0.0, dur=None, workdir=None, encoder="libx264", preset="medium", captions=True,
+               start=0.0, dur=None, workdir=None, encoder=None, preset="medium", captions=True,
                cover_targets=None, **reframe_opts):
     """Export ``master`` for one Profile. Returns the manifest entry (dict).
     captions=False: never burn ``cues`` (the master already has them). cover_targets: {target: path}
@@ -539,7 +539,8 @@ def main(argv=None):
     ap.add_argument("--fallback", default="pad-blur", choices=R.MODES[1:])
     ap.add_argument("--start", type=float, default=0.0)
     ap.add_argument("--dur", type=float, default=None)
-    ap.add_argument("--encoder", default="libx264", choices=["libx264", "videotoolbox"])
+    ap.add_argument("--encoder", default=None, help="H.264 encoder (default $VSTUDIO_H264_ENCODER / persona "
+                    "export.h264_encoder / libx264): libx264 | videotoolbox | h264_videotoolbox | h264_mf")
     ap.add_argument("--preset", default="medium")
     a = ap.parse_args(argv)
     targets = a.platforms
