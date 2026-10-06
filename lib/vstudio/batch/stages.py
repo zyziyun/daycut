@@ -703,3 +703,5 @@ register(Recipe("talkinghead-clips", speech_stages(), expand_clips,
 
 
 from . import lfsplit  # noqa: E402,F401  (registers longform-split; it reuses the stages above)
+from . import podcast  # noqa: E402,F401  (registers podcast-clips: workflows/call-clips per job)
+from . import thfolder  # noqa: E402,F401  (registers talkinghead-folder: the talkinghead V pipeline per clip)

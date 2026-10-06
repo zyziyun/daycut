@@ -32,7 +32,6 @@ GTM_HEADER = ("周,线索数,沟通数,样片数,确认试点数,交付数,回�
 def _iso(tmp_path, monkeypatch):
     monkeypatch.setenv("VSTUDIO_BATCH_BENCH", str(tmp_path / "machine_bench.json"))
     monkeypatch.setenv("VSTUDIO_HOME", str(tmp_path / "home"))
-    monkeypatch.setenv("VSTUDIO_CACHE", str(tmp_path / "cache"))
     monkeypatch.delenv("VSTUDIO_CLIENTS", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
@@ -208,8 +207,10 @@ def test_plan_segments_llm_providers_mocked(tmp_path, monkeypatch):
     assert d["provider"] == "claude" and seen["model"] == "claude-opus-5-5"
 
 
-def test_plan_segments_shares_the_transcript_with_the_batch_asr(tmp_path):
+def test_plan_segments_shares_the_transcript_with_the_batch_asr(tmp_path, monkeypatch):
+    import vstudio.config  # noqa: F401  (fonts resolved before the cache root moves)
     from vstudio.batch import transcripts as TS
+    monkeypatch.setenv("VSTUDIO_CACHE", str(tmp_path / "cache"))
     p = TS.save("abc", dict(segments=[dict(start=0, end=1, text="x", words=[dict(word="x", start=0, end=1)])]),
                 "zh", None, "auto")
     path, tr = TS.lookup("abc", "zh", None, "auto")
@@ -443,7 +444,7 @@ def test_timing_and_metrics_json_and_weekly_csv(tmp_path):
 
 # --------------------------------------------------------------------------- CLI contract (desk)
 def test_cli_contract(tmp_path):
-    env = {"VSTUDIO_HOME": str(tmp_path / "home"), "VSTUDIO_CACHE": str(tmp_path / "cache")}
+    env = {"VSTUDIO_HOME": str(tmp_path / "home")}
     h = cli("--help", env=env).stdout
     for c in ("plan-segments", "client", "deliver", "metrics", "timing", "job"):
         assert c in h.split("{", 1)[1].split("}", 1)[0]

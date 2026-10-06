@@ -67,6 +67,15 @@ def clean(batch_dir, dry_run=False):
             n, gone = _purge_dir(a["dir"], stages[name].purge, dry_run)
             freed += n
             files += len(gone)
+        for jid in done:                               # longform-split master stash (re-burn after review edits)
+            stash = os.path.join(store.dir, "jobs", jid, "export.masters")
+            if os.path.isdir(stash):
+                n, gone = _purge_dir(stash, ("*/master.mp4",), dry_run)
+                freed += n
+                files += len(gone)
+                if not dry_run:
+                    import shutil
+                    shutil.rmtree(stash, ignore_errors=True)
         if not dry_run:
             store.log("clean", f"freed {human(freed)} in {files} file(s)")
         return dict(freed=freed, files=files, dry_run=dry_run, usage=usage(store.dir))
