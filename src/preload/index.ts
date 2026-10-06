@@ -3,7 +3,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { DeskApi } from '../shared/deskApi';
 
-const EVENTS = new Set(['publish:state', 'publish:fillStep', 'engine:status', 'assets:progress', 'update:state', 'history:changed', 'notify:open']);
+const EVENTS = new Set(['publish:state', 'publish:fillStep', 'engine:status', 'assets:progress', 'update:state', 'history:changed', 'notify:open', 'term:data', 'term:exit', 'ai:routes']);
 
 const call = (channel: string, payload?: unknown) => ipcRenderer.invoke(channel, payload);
 
@@ -70,6 +70,16 @@ const api: DeskApi = {
     install: () => call('update:install'),
   },
   watchHistory: (roots) => call('history:watch', { roots }),
+  ai: {
+    status: (opts) => call('ai:status', opts ?? {}),
+    test: (provider) => call('ai:test', { provider }),
+    terminal: (req) => call('ai:terminal', req),
+    input: (id, data) => call('term:input', { id, data }),
+    resize: (id, cols, rows) => call('term:resize', { id, cols, rows }),
+    kill: (id) => call('term:kill', { id }),
+    routes: () => call('ai:routes'),
+    setRoutes: (routes) => call('ai:setRoutes', { routes }),
+  },
   confirmCleanup: (batchId) => call('cleanup:confirm', { batchId }),
   mediaUrl: (p) => `vsmedia://local/${encodeURIComponent(p)}`,
 };

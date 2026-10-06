@@ -7,6 +7,7 @@ import { dialog, safeStorage, shell, type BrowserWindow } from 'electron';
 import type { EngineClient } from '../shared/engineClient';
 import type { IpcChannel, IpcPayload } from '../shared/ipc';
 import { cleanupPathOk } from './cleanupPolicy';
+import { routesFilePath } from './aiAccounts';
 import { SecretStore } from './secrets';
 import type { Settings, SettingsStore } from './settings';
 
@@ -37,6 +38,9 @@ export function v02EngineEnv(userData: string, s: Settings): Record<string, stri
     /* keychain locked: run without keys */
   }
   if (s.personaPath && fs.existsSync(s.personaPath)) env.VSTUDIO_PERSONA = s.personaPath;
+  // the creator's AI routes (Settings -> AI accounts & models); read by the engine on every call, so edits apply
+  // without a restart. Absent file = the persona's routes.
+  env.VSTUDIO_LLM_ROUTES_FILE = routesFilePath(userData);
   return env;
 }
 

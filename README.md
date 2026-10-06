@@ -22,6 +22,15 @@ Engine: `engine/server.py` (stdlib HTTP, 127.0.0.1, random port, per-launch toke
 Settings → `VSTUDIO_ENGINE_PATH` → `../video-studio`, and Python via Settings → `DESK_PYTHON` → miniconda/Homebrew.
 `DESK_ENGINE_MOCK=1` forces the in-memory mock engine (also used when `vstudio` cannot be imported).
 
+AI accounts & models (Settings → AI accounts & models, `#/settings/ai`): provider status from the engine
+(`python -m vstudio.llm auth status --json`; Claude Code is checked with a one-line round-trip, so an expired login
+shows as expired), CLI logins in an in-app terminal (xterm.js + node-pty, else a Python PTY, else `script`; the command
+comes from `vstudio.llm auth login`, API keys / base URLs are removed from its environment), API keys in the OS
+keychain, and which provider each task uses (default + per-task override + ordered fallbacks). The choices are saved
+in the desk settings and written to `<userData>/llm-routes.json` (`VSTUDIO_LLM_ROUTES_FILE`, read by the engine on
+every call); the persona's `llm:` routes are the starting values. `DESK_AI_MOCK=<dir>` (status.json, login.json,
+routes.json, test.json) stands in for the engine in tests; `DESK_NO_PTY=1` forces the fallback terminal.
+
 Publish adapters: `adapters/*.json` (schema: `src/shared/publish/adapterSchema.ts`). Override or add adapters
 without rebuilding in `~/Library/Application Support/video-studio-desk/adapters/`. Selectors marked
 `"status": "unverified"` were written without a live session — verify them, then set `verified` + `lastVerified`.

@@ -192,6 +192,14 @@ export interface AskResult {
   dropped?: { op?: unknown; error?: EngineMsg | string }[];
   warnings?: EngineMsg[];
   engine?: string;
+  /** who answered ('rules': the desk's rule-based fallback), the provider the route chose, and the fallback record
+   * when another provider answered instead (vstudio.llm complete -> output ai) */
+  provider?: string | null;
+  model?: string | null;
+  routed?: string | null;
+  fallback?: { from: string; to: string; code: string; error?: string } | null;
+  /** the routed provider failed and no fallback answered: rules were used */
+  failed?: { provider?: string | null; code?: string | null } | null;
 }
 
 // ---------------------------------------------------------------- intake
@@ -229,7 +237,17 @@ export interface IntakePlan {
   kind: 'vstudio.intake.plan';
   id: string;
   prompt: string;
-  planner: { provider?: string; model?: string | null; fallback?: boolean; seconds?: number };
+  planner: {
+    provider?: string;
+    model?: string | null;
+    /** true: the rule planner made this plan */
+    fallback?: boolean;
+    seconds?: number;
+    routed?: string | null;
+    /** another provider answered instead of the routed one */
+    provider_fallback?: { from: string; to: string; code: string; error?: string } | null;
+    failure?: string | null;
+  };
   materials: IntakeMaterial[];
   projects: IntakeProject[];
   series: { id: string; name: string } | null;

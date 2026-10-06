@@ -12,7 +12,8 @@ import { parsePostCopy } from '../shared/publish/postCopy';
 import type { EngineInfo } from '../shared/types';
 import type { AssetManifest } from '../shared/assets';
 import { AssetManager, defaultHfHub, sharedEngineCache } from './assets';
-import { defaultEnginePath, EngineProcess, findPython } from './engine';
+import { registerAiIpc, syncRoutesFile } from './aiAccounts';
+import { defaultEnginePath, EngineProcess, engineProcessEnv, findPython } from './engine';
 import { isAllowedMediaPath, pathFromMediaUrl } from './media';
 import { loadAdapters } from './publish/adapters';
 import { PublishBrowser } from './publish/browser';
@@ -538,6 +539,17 @@ function registerIpc() {
     return historyWatcher.set(p.roots);
   });
   registerV02Ipc(handle, { userData: app.getPath('userData'), settings: () => settings, win: () => win, client: () => client, settingsMsg });
+  registerAiIpc(handle, {
+    userData: app.getPath('userData'),
+    settings: () => settings,
+    win: () => win,
+    log: mainLog,
+    python: () => {
+      const cfg = resolvedConfig();
+      const e = withV02Env(engineEnv(cfg.runtime !== 'system')) as { env?: Record<string, string>; path?: string[]; pythonPath?: string[]; isolatePython?: boolean };
+      return { python: cfg.python, env: engineProcessEnv({ ...e, enginePath: cfg.enginePath }) };
+    },
+  });
   registerCleanupIpc(handle, { win: () => win, client: () => client, lang: () => (settings.get().lang === 'zh-CN' ? 'zh' : 'en') });
 }
 
@@ -568,6 +580,7 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     if (process.env.DESK_HIDE_WINDOW === '1') app.dock?.hide();
     settings = new SettingsStore(app.getPath('userData'));
+    syncRoutesFile(app.getPath('userData'), settings.get().aiRoutes);
     runtime = findBundledRuntime(RES, app.isPackaged);
     assets = new AssetManager({
       manifest: loadAssetManifest(),

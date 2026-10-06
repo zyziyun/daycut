@@ -23,7 +23,8 @@
     "dist:appx": "npm run build && electron-builder --config electron-builder.config.cjs --win appx --x64 --publish never",
     "runtime": "node scripts/runtime/bundle.mjs",
     "runtime:lock": "node scripts/runtime/lock.mjs && node scripts/runtime/assets-lock.mjs",
-    "test:packaged": "playwright test -c playwright.packaged.config.ts"
+    "test:packaged": "playwright test -c playwright.packaged.config.ts",
+    "postinstall": "node scripts/fixPty.mjs"
   },
   "license": "UNLICENSED",
   "devDependencies": {
@@ -33,6 +34,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
+    "@xterm/xterm": "^6.0.0",
     "electron": "^44.5.1",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
@@ -58,5 +60,8 @@
   "author": {
     "name": "zyziyun"
   },
-  "homepage": "https://github.com/zyziyun/video-studio-desk-releases"
+  "homepage": "https://github.com/zyziyun/video-studio-desk-releases",
+  "optionalDependencies": {
+    "node-pty": "^1.1.0"
+  }
 }

@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import type { AiRoutes } from '../shared/aiRoutes';
 
 export interface Settings {
   enginePath?: string;
@@ -20,6 +21,8 @@ export interface Settings {
   cleanupDays?: number;
   /** the old 30-day default was reset to 0 (never) once */
   cleanupMigrated?: boolean;
+  /** AI accounts & models: default provider, per-task overrides, fallback lists (unset: the persona's routes) */
+  aiRoutes?: AiRoutes;
 }
 
 const DEFAULTS: Settings = { lang: 'en', accent: 'teal', theme: 'studio-dark', accounts: {}, defaultPlatforms: ['xiaohongshu:full'], cleanupDays: 0 };

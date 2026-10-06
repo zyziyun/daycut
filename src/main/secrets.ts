@@ -5,8 +5,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-export type SecretName = 'anthropic' | 'openai';
-export const SECRET_ENV: Record<SecretName, string> = { anthropic: 'ANTHROPIC_API_KEY', openai: 'OPENAI_API_KEY' };
+import { KEY_ENV, KEY_NAMES, type KeyName } from '../shared/aiRoutes';
+
+export type SecretName = KeyName;
+export const SECRET_ENV: Record<SecretName, string> = KEY_ENV;
 
 /** The subset of Electron's safeStorage used here (injected so the store is unit-testable). */
 export interface Crypto {
@@ -52,7 +54,7 @@ export class SecretStore {
 
   status(): { backend: 'keychain' | 'basic' | 'unavailable'; keys: Record<SecretName, boolean> } {
     const d = this.read();
-    return { backend: this.backend(), keys: { anthropic: Boolean(d.anthropic), openai: Boolean(d.openai) } };
+    return { backend: this.backend(), keys: Object.fromEntries(KEY_NAMES.map((k) => [k, Boolean(d[k])])) as Record<SecretName, boolean> };
   }
 
   set(name: SecretName, value: string) {

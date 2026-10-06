@@ -59,6 +59,31 @@ export function defaultEnginePath(appPath: string, preferred?: string, bundled?:
   return undefined;
 }
 
+/** Folders where a Finder-launched app finds Homebrew tools and the AI CLIs (claude, codex). */
+export function extraBinDirs(): string[] {
+  if (process.platform !== 'darwin') return [path.join(os.homedir(), '.local/bin')];
+  return ['/opt/homebrew/bin', '/usr/local/bin', path.join(os.homedir(), '.local/bin')];
+}
+
+/** The environment of a Python process that imports vstudio (the sidecar, or a one-off `python -m vstudio.llm`). */
+export function engineProcessEnv(cfg: Pick<EngineConfig, 'env' | 'path' | 'pythonPath' | 'isolatePython' | 'enginePath'>, extra: Record<string, string> = {}): NodeJS.ProcessEnv {
+  let env: NodeJS.ProcessEnv = { ...process.env, ...cfg.env, ...extra, PYTHONUNBUFFERED: '1' };
+  if (cfg.isolatePython) {
+    delete env.PYTHONPATH;
+    delete env.PYTHONHOME;
+  }
+  // Finder-launched apps get a minimal PATH; a system ffmpeg usually lives in Homebrew, the AI CLIs in ~/.local/bin
+  env = prependPath(env, [...(cfg.path ?? []), ...extraBinDirs()]);
+  const pyPath = [...(cfg.pythonPath ?? [])];
+  if (cfg.enginePath) {
+    env.VSTUDIO_ENGINE_PATH = cfg.enginePath;
+    pyPath.push(path.join(cfg.enginePath, 'lib'));
+  }
+  if (env.PYTHONPATH) pyPath.push(env.PYTHONPATH);
+  if (pyPath.length) env.PYTHONPATH = pyPath.join(path.delimiter);
+  return env;
+}
+
 export class EngineProcess {
   private child: ChildProcess | null = null;
   info: EngineInfo | null = null;
@@ -74,28 +99,7 @@ export class EngineProcess {
 
   start(timeoutMs = 30000): Promise<EngineInfo> {
     const token = newToken();
-    let env: NodeJS.ProcessEnv = {
-      ...process.env,
-      ...this.cfg.env,
-      DESK_TOKEN: token,
-      DESK_ALLOWED_ORIGINS: this.cfg.allowedOrigins.join(','),
-      DESK_DATA_DIR: this.cfg.dataDir,
-      PYTHONUNBUFFERED: '1',
-    };
-    if (this.cfg.isolatePython) {
-      delete env.PYTHONPATH;
-      delete env.PYTHONHOME;
-    }
-    // Finder-launched apps get a minimal PATH; a system ffmpeg usually lives in Homebrew
-    const extraPath = process.platform === 'darwin' ? ['/opt/homebrew/bin', '/usr/local/bin'] : [];
-    env = prependPath(env, [...(this.cfg.path ?? []), ...extraPath]);
-    const pyPath = [...(this.cfg.pythonPath ?? [])];
-    if (this.cfg.enginePath) {
-      env.VSTUDIO_ENGINE_PATH = this.cfg.enginePath;
-      pyPath.push(path.join(this.cfg.enginePath, 'lib'));
-    }
-    if (env.PYTHONPATH) pyPath.push(env.PYTHONPATH);
-    if (pyPath.length) env.PYTHONPATH = pyPath.join(path.delimiter);
+    const env = engineProcessEnv(this.cfg, { DESK_TOKEN: token, DESK_ALLOWED_ORIGINS: this.cfg.allowedOrigins.join(','), DESK_DATA_DIR: this.cfg.dataDir });
     if (this.cfg.mock) env.DESK_ENGINE_MOCK = '1';
     if (this.cfg.port) env.DESK_PORT = String(this.cfg.port);
     else delete env.DESK_PORT;

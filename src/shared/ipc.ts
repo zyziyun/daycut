@@ -1,6 +1,7 @@
 // IPC contract between the renderer (via preload) and the main process. Every invoke payload is validated in
 // main with these schemas before anything happens; unknown channels are rejected by construction.
 import { z } from 'zod';
+import { AI_TASK_IDS, KEY_NAMES, PROVIDER_IDS } from './aiRoutes';
 
 const batchId = z.string().regex(/^[0-9a-f]{12}$/);
 const jobId = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/);
@@ -25,7 +26,19 @@ const httpsUrl = z
 export const platformId = z.string().regex(/^[a-z][a-z-]{0,30}(:[a-z]{3,12})?$/);
 /** API keys: printable ASCII without spaces. The value only ever travels renderer -> main, never back. */
 const secretValue = z.string().regex(/^[\x21-\x7e]{8,400}$/, 'key: 8-400 printable characters, no spaces');
-export const SECRET_NAMES = ['anthropic', 'openai'] as const;
+export const SECRET_NAMES = KEY_NAMES;
+const provider = z.enum(PROVIDER_IDS);
+const routeChoice = z.strictObject({
+  provider: z.enum([...PROVIDER_IDS, 'none']),
+  model: z.string().max(120).nullable().optional(),
+  fallback: z.array(provider).max(4),
+});
+const aiRoutes = z.strictObject({
+  default: routeChoice,
+  tasks: z.strictObject(Object.fromEntries(AI_TASK_IDS.map((k) => [k, routeChoice.optional()])) as Record<(typeof AI_TASK_IDS)[number], z.ZodOptional<typeof routeChoice>>),
+});
+const termId = z.string().regex(/^[0-9a-f]{12}$/);
+const termSize = z.number().int().min(10).max(500);
 const fileName = z.string().regex(/^[A-Za-z0-9\u4e00-\u9fff][A-Za-z0-9\u4e00-\u9fff ._()-]{0,79}\.(csv|md|txt)$/, 'file name');
 
 export const ipcSchemas = {
@@ -88,6 +101,21 @@ export const ipcSchemas = {
   'update:install': z.undefined(),
   'history:watch': z.strictObject({ roots: z.array(absPath).max(20) }),
   'cleanup:confirm': z.strictObject({ batchId }),
+  // AI accounts & models: status, CLI login terminal (command from the engine), routes
+  'ai:status': z.strictObject({ refresh: z.boolean().optional(), probe: z.boolean().optional(), providers: z.array(provider).max(12).optional() }),
+  'ai:test': z.strictObject({ provider }),
+  'ai:terminal': z.strictObject({
+    provider: z.enum(['claude-code', 'codex']),
+    action: z.enum(['login', 'logout']),
+    variant: z.enum(['console', 'sso', 'device']).optional(),
+    cols: termSize,
+    rows: termSize,
+  }),
+  'term:input': z.strictObject({ id: termId, data: z.string().max(8192) }),
+  'term:resize': z.strictObject({ id: termId, cols: termSize, rows: termSize }),
+  'term:kill': z.strictObject({ id: termId }),
+  'ai:routes': z.undefined(),
+  'ai:setRoutes': z.strictObject({ routes: aiRoutes.nullable() }),
   // v0.4: a system notification when a run finishes or needs the creator (shown only while the window is not focused)
   'notify:show': z.strictObject({ title: z.string().min(1).max(120), body: z.string().max(300), route: z.string().regex(/^#\/[A-Za-z0-9/_.%-]{0,200}$/).optional() }),
 } as const;

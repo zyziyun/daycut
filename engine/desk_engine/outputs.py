@@ -786,14 +786,18 @@ class Outputs:
                 props = [dict(id=f"p{i + 1}", op=p.get("normalized") or p.get("op"), describe=p.get("describe"),
                               why=p.get("why")) for i, p in enumerate(r.get("proposed") or []) if isinstance(p, dict)]
                 return dict(summary=r.get("summary"), proposals=props, dropped=r.get("dropped") or [],
-                            warnings=r.get("warnings") or [], engine="real")
+                            warnings=r.get("warnings") or [], engine="real", provider=r.get("provider"),
+                            model=r.get("model"), routed=r.get("routed"), fallback=r.get("fallback"))
             except EngineMessage as m:
                 if m.doc.get("code") not in ("llm-failed", "llm-bad-json"):
                     raise
                 note = m.doc                                  # no working model: the desk rules still help
         r = propose(self.show(item_id, clip_id), prompt)
+        r.setdefault("provider", "rules")
         if note:
             r["warnings"] = [note] + r.get("warnings", [])
+            p = (note.get("params") or {})
+            r["failed"] = dict(provider=p.get("provider"), code=_failure_code(p.get("error")))
         return r
 
     def effects(self):
@@ -809,6 +813,14 @@ class Outputs:
     def _publish(self, item_id, clip_id):
         if self.bus:
             self.bus.publish("output-edit", item=item_id, clip=clip_id)
+
+
+def _failure_code(err):
+    try:
+        from vstudio.llm import failure_code
+        return failure_code(err)
+    except Exception:  # noqa: BLE001 - older engine
+        return None
 
 
 # ------------------------------------------------------------------ rule-based proposals (no model)

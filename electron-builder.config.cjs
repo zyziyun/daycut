@@ -38,6 +38,8 @@ module.exports = {
   files: ['out/**', 'package.json', '!**/*.map'],
   npmRebuild: false,
   asar: true,
+  // node-pty (in-app login terminal) loads a native .node + spawn-helper: they must live outside the asar
+  asarUnpack: ['**/node_modules/node-pty/**'],
   extraResources: [
     { from: 'engine', to: 'engine', filter: ['**/*.py', '!tests/**', '!**/__pycache__/**'] },
     { from: 'adapters', to: 'adapters' },

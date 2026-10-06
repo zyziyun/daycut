@@ -1,4 +1,5 @@
 // The API the preload exposes as window.desk.
+import type { AiRoutes, AuthStatusMsg, KeyName } from './aiRoutes';
 import type { AssetsStatusMsg } from './assets';
 import type { Adapter } from './publish/adapterSchema';
 import type { Confirmation } from './publish/gating';
@@ -49,9 +50,33 @@ export interface SettingsMsg {
   defaultPlatforms?: string[];
   personaPath?: string;
   cleanupDays?: number;
+  aiRoutes?: AiRoutes;
 }
 
-export type SecretName = 'anthropic' | 'openai';
+export type SecretName = KeyName;
+
+export interface AiRoutesMsg {
+  /** the creator's own choices (null: none yet, the persona's routes apply) */
+  saved: AiRoutes | null;
+  /** the persona / client routes the engine reports (the starting values) */
+  initial: AiRoutes;
+  /** what runs: saved ?? initial */
+  routes: AiRoutes;
+}
+
+export interface AiTestMsg {
+  ok: boolean;
+  provider: string;
+  model?: string | null;
+  error?: string;
+  seconds?: number;
+}
+
+export interface TermStartMsg {
+  id: string;
+  display: string;
+  backend: 'pty' | 'python' | 'script' | 'pipe';
+}
 
 export interface SecretsStatusMsg {
   /** 'keychain': OS keychain-backed encryption (macOS Keychain / Windows DPAPI / libsecret) */
@@ -129,10 +154,21 @@ export interface DeskApi {
     check(): Promise<UpdateStateMsg>;
     install(): Promise<void>;
   };
-  on(event: 'publish:state' | 'publish:fillStep' | 'engine:status' | 'assets:progress' | 'update:state' | 'history:changed' | 'notify:open', cb: (data: unknown) => void): () => void;
+  on(event: 'publish:state' | 'publish:fillStep' | 'engine:status' | 'assets:progress' | 'update:state' | 'history:changed' | 'notify:open' | 'term:data' | 'term:exit' | 'ai:routes', cb: (data: unknown) => void): () => void;
   /** watch these folders for live job changes ('history:changed' events); -> the folders watched */
   watchHistory(roots: string[]): Promise<string[]>;
   /** source cleanup: a dialog lists the exact files; only on confirm are they moved to the Trash */
+  ai: {
+    status(opts?: { refresh?: boolean; probe?: boolean; providers?: string[] }): Promise<AuthStatusMsg>;
+    test(provider: string): Promise<AiTestMsg>;
+    /** run the CLI's login / logout command (from the engine) in the in-app terminal */
+    terminal(req: { provider: 'claude-code' | 'codex'; action: 'login' | 'logout'; variant?: 'console' | 'sso' | 'device'; cols: number; rows: number }): Promise<TermStartMsg>;
+    input(id: string, data: string): Promise<void>;
+    resize(id: string, cols: number, rows: number): Promise<void>;
+    kill(id: string): Promise<void>;
+    routes(): Promise<AiRoutesMsg>;
+    setRoutes(routes: AiRoutes | null): Promise<AiRoutesMsg>;
+  };
   confirmCleanup(batchId: string): Promise<{ confirmed: boolean; trashed: string[]; failed: string[]; outside: string[] }>;
   mediaUrl(path: string): string;
 }
