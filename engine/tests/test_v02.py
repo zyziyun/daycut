@@ -146,14 +146,20 @@ class RealDispatchTest(unittest.TestCase):
         self.assertEqual(r["dir"], "/x/delivery")
         call = next(c for c in self.runner.calls if c[0] == "deliver")
         self.assertIn("--zip", call)
-        self.assertEqual(call[call.index("--cleanup-days") + 1], "30")
+        # no client = the creator's own workspace: never a source cleanup, whatever was asked
+        self.assertEqual(call[call.index("--cleanup-days") + 1], "0")
+        self.assertEqual(r["cleanup"], dict(enabled=False, days=0, due=None, done=False))
+        self.assertIn("own workspace", r["cleanup_note"])
         # 0 = never delete the sources: passed through to the engine (it was dropped -> the 30-day default)
         self.assertEqual(validate_deliver(dict(cleanup_days=0))["cleanup_days"], 0)
         self.st.deliver(self.bid, dict(zip=True, cleanup_days=0))
         call = [c for c in self.runner.calls if c[0] == "deliver"][-1]
         self.assertEqual(call[call.index("--cleanup-days") + 1], "0")
         self.st.deliver(self.bid, dict(zip=True))
-        self.assertNotIn("--cleanup-days", [c for c in self.runner.calls if c[0] == "deliver"][-1])
+        call = [c for c in self.runner.calls if c[0] == "deliver"][-1]
+        self.assertEqual(call[call.index("--cleanup-days") + 1], "0")
+        with self.assertRaises(BadRequest):
+            self.st.set_cleanup(self.bid, dict(enabled=True, days=7))         # own workspace: never
         self.assertEqual(self.st.metrics()["source"], "engine")
         self.st.timing(self.bid, dict(job="s001", event="stop", what="review", active_s=12.5))
         wait(lambda: any(c[0] == "timing" for c in self.runner.calls))
@@ -311,9 +317,11 @@ class MockFlowTest(unittest.TestCase):
         self.assertEqual(R("GET", "/api/clients/acme")["crm"]["stage"], "delivered")
         self.assertEqual(self.st.cleanup_due(), [])
         due = self.st.cleanup_due(now=time.time() + 31 * 86400)
-        self.assertEqual(due, [dict(batch=bid, paths=[src])])
-        R("POST", "/api/cleanup/done", dict(batch=bid, paths=[src]))
-        self.assertEqual(self.st.cleanup_due(now=time.time() + 31 * 86400), [])
+        # the recording lives outside the batch folder: reported, never offered for deletion
+        self.assertEqual([(x["batch"], x["paths"], x["outside"]) for x in due], [(bid, [], [src])])
+        with self.assertRaises(Exception):
+            R("POST", "/api/cleanup/done", dict(batch=bid, paths=[src]))
+        self.assertTrue(os.path.exists(src))
         # metrics
         m = R("GET", "/api/metrics", q={"batch": [bid]})
         self.assertEqual(m["summary"]["review_s_median"], 20.0)

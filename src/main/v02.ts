@@ -1,5 +1,5 @@
 // v0.2 main-process features: first-run wizard state, API keys (OS keychain), persona import, text exports,
-// and the post-delivery source cleanup loop. Registered from index.ts through its validated `handle`.
+// and the post-delivery source cleanup (only through a confirmation dialog listing the exact files). Registered from index.ts through its validated `handle`.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -84,40 +84,65 @@ export function registerV02Ipc(handle: Handle, d: V02Deps) {
   });
 }
 
-/** Every hour (and shortly after start): move due sources to the Trash and tell the engine. */
-export function startCleanupLoop(client: () => EngineClient | null): () => void {
-  let stopped = false;
-  const run = async () => {
-    const c = client();
-    if (!c || stopped) return;
-    let due: { batch: string; paths: string[] }[];
-    try {
-      due = await c.cleanupDue();
-    } catch {
-      return;
-    }
-    for (const item of due) {
-      const done: string[] = [];
-      for (const p of item.paths) {
-        try {
-          const st = fs.statSync(p);
-          if (!cleanupPathOk(p, st.isDirectory(), os.homedir())) continue;
-          await shell.trashItem(p);
-          done.push(p);
-        } catch {
-          /* already gone / refused: retried next round */
-        }
+export interface DueCleanup {
+  batch: string;
+  paths: string[];
+  outside?: string[];
+}
+
+/** The exact confirmation text for a cleanup: every file, its size; outside-the-batch sources only reported. */
+export function cleanupDialogText(item: DueCleanup, sizes: Record<string, number>, lang: 'zh' | 'en') {
+  const mb = (n: number) => `${(n / 1e6).toFixed(1)} MB`;
+  const list = item.paths.map((p) => `• ${p}  (${mb(sizes[p] ?? 0)})`).join('\n');
+  const out = (item.outside ?? []).map((p) => `• ${p}`).join('\n');
+  const zh = lang === 'zh';
+  return {
+    message: zh ? `把这 ${item.paths.length} 个原始素材移到废纸篓？` : `Move these ${item.paths.length} source file(s) to the Trash?`,
+    detail:
+      list +
+      (out ? (zh ? `\n\n不会删除（在批次文件夹之外，是你自己的录像）：\n${out}` : `\n\nNot deleted (outside the batch folder, your own recordings):\n${out}`) : '') +
+      (zh ? '\n\n可以在废纸篓里恢复。' : '\n\nThey can be restored from the Trash.'),
+    buttons: zh ? ['取消', '移到废纸篓'] : ['Cancel', 'Move to Trash'],
+  };
+}
+
+/** Source cleanup only through an explicit confirmation listing the exact files (never on a timer). */
+export function registerCleanupIpc(handle: Handle, d: { win: () => BrowserWindow | null; client: () => EngineClient | null; lang: () => 'zh' | 'en' }) {
+  handle('cleanup:confirm', async (p) => {
+    const c = d.client();
+    if (!c) throw new Error('engine not running');
+    const item = (await c.cleanupDue()).find((x) => x.batch === p.batchId) as DueCleanup | undefined;
+    const outside = item?.outside ?? [];
+    if (!item || !item.paths.length) return { confirmed: false, trashed: [], failed: [], outside };
+    const sizes: Record<string, number> = {};
+    for (const f of item.paths) {
+      try {
+        sizes[f] = fs.statSync(f).size;
+      } catch {
+        sizes[f] = 0;
       }
-      if (done.length || !item.paths.length) await c.cleanupDone(item.batch, done).catch(() => undefined);
     }
-  };
-  const first = setTimeout(run, 60_000);
-  const timer = setInterval(run, 3_600_000);
-  first.unref?.();
-  timer.unref?.();
-  return () => {
-    stopped = true;
-    clearTimeout(first);
-    clearInterval(timer);
-  };
+    const txt = cleanupDialogText(item, sizes, d.lang());
+    const w = d.win();
+    const opts = { type: 'warning' as const, message: txt.message, detail: txt.detail, buttons: txt.buttons, defaultId: 0, cancelId: 0, noLink: true };
+    const r = w ? await dialog.showMessageBox(w, opts) : await dialog.showMessageBox(opts);
+    if (r.response !== 1) return { confirmed: false, trashed: [], failed: [], outside };
+    const trashed: string[] = [];
+    const failed: string[] = [];
+    for (const f of item.paths) {
+      try {
+        const st = fs.statSync(f);
+        if (!cleanupPathOk(f, st.isDirectory(), os.homedir())) {
+          failed.push(f);
+          continue;
+        }
+        await shell.trashItem(f);
+        trashed.push(f);
+      } catch {
+        failed.push(f);
+      }
+    }
+    if (trashed.length) await c.cleanupDone(p.batchId, trashed).catch(() => undefined);
+    return { confirmed: true, trashed, failed, outside };
+  });
 }

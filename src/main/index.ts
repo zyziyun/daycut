@@ -23,7 +23,7 @@ import { buildCsp, isAppUrl, isSafeExternal } from './security';
 import { SettingsStore } from './settings';
 import { HistoryWatcher } from './historyWatch';
 import { checkForUpdates, initUpdater, installUpdate } from './updater';
-import { registerV02Ipc, startCleanupLoop, v02EngineEnv } from './v02';
+import { registerCleanupIpc, registerV02Ipc, v02EngineEnv } from './v02';
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
@@ -527,6 +527,7 @@ function registerIpc() {
     return historyWatcher.set(p.roots);
   });
   registerV02Ipc(handle, { userData: app.getPath('userData'), settings: () => settings, win: () => win, client: () => client, settingsMsg });
+  registerCleanupIpc(handle, { win: () => win, client: () => client, lang: () => settings.get().lang });
 }
 
 function loadAssetManifest(): AssetManifest {
@@ -574,7 +575,6 @@ if (!app.requestSingleInstanceLock()) {
     hardenDefaultSession();
     registerProtocols();
     registerIpc();
-    startCleanupLoop(() => client);
     void startEngine().catch(() => undefined); // failures are reported through engine:status
     createWindow();
     initUpdater((u) => win?.webContents.send('update:state', u));

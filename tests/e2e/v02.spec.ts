@@ -168,12 +168,12 @@ test('delivery package: folders, 文案.md, schedule, notes, zip; delivered stat
   await page.locator('.side a', { hasText: /交付|Deliver/ }).click();
   await page.getByTestId('deliver').click();
   await expect(page.getByTestId('delivery')).toBeVisible({ timeout: 30000 });
-  const d = (await api<{ delivery: { dir: string; zip: string; cleanup: { days: number } } }>(`/api/batches/${batchId}/deliver`)).delivery;
+  const d = (await api<{ delivery: { dir: string; zip: string; cleanup: { enabled: boolean } } }>(`/api/batches/${batchId}/deliver`)).delivery;
   const names = fs.readdirSync(d.dir);
   for (const f of ['文案.md', '排期表.csv', '交付说明.md', 'manifest.json', '小红书']) expect(names).toContain(f);
   expect(fs.readFileSync(path.join(d.dir, '文案.md'), 'utf8')).toContain('AI 标识提醒');
   expect(fs.existsSync(d.zip)).toBe(true);
-  expect(d.cleanup.days).toBe(30);
+  expect(d.cleanup.enabled).toBe(false); // source cleanup is never on by default
   const c = await api<{ crm: { stage: string } }>('/api/clients/e2e');
   expect(c.crm.stage).toBe('delivered');
 });

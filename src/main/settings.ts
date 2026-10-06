@@ -15,9 +15,11 @@ export interface Settings {
   personaPath?: string;
   /** days after delivery before source footage goes to the Trash (0 = never) */
   cleanupDays?: number;
+  /** the old 30-day default was reset to 0 (never) once */
+  cleanupMigrated?: boolean;
 }
 
-const DEFAULTS: Settings = { lang: 'zh', theme: 'studio-dark', accounts: {}, defaultPlatforms: ['xiaohongshu:full'], cleanupDays: 30 };
+const DEFAULTS: Settings = { lang: 'zh', theme: 'studio-dark', accounts: {}, defaultPlatforms: ['xiaohongshu:full'], cleanupDays: 0 };
 
 export class SettingsStore {
   private file: string;
@@ -31,6 +33,16 @@ export class SettingsStore {
       if (raw && typeof raw === 'object') this.data = { ...DEFAULTS, ...raw, accounts: { ...(raw.accounts ?? {}) } };
     } catch {
       /* first launch */
+    }
+    // Safety: source recordings are never deleted unless the creator turns it on. Profiles written while the
+    // default was "30 days" get "never" once; a value set after this stays.
+    if (!this.data.cleanupMigrated) {
+      this.data = { ...this.data, cleanupDays: 0, cleanupMigrated: true };
+      try {
+        if (fs.existsSync(this.file)) this.set({});
+      } catch {
+        /* read-only profile: the in-memory value still applies */
+      }
     }
   }
 

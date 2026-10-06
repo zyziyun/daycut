@@ -86,6 +86,7 @@ export const ipcSchemas = {
   'update:check': z.undefined(),
   'update:install': z.undefined(),
   'history:watch': z.strictObject({ roots: z.array(absPath).max(20) }),
+  'cleanup:confirm': z.strictObject({ batchId }),
 } as const;
 
 export type IpcChannel = keyof typeof ipcSchemas;

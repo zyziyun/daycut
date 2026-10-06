@@ -62,6 +62,7 @@ const api: DeskApi = {
     install: () => call('update:install'),
   },
   watchHistory: (roots) => call('history:watch', { roots }),
+  confirmCleanup: (batchId) => call('cleanup:confirm', { batchId }),
   mediaUrl: (p) => `vsmedia://local/${encodeURIComponent(p)}`,
 };
 

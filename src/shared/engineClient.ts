@@ -261,7 +261,7 @@ export class EngineClient {
     return this.req<HistoryConfig>('POST', '/api/history/unhide', {});
   }
   cleanupDue() {
-    return this.req<{ batch: string; paths: string[] }[]>('GET', '/api/cleanup/due');
+    return this.req<{ batch: string; paths: string[]; outside?: string[]; due?: number }[]>('GET', '/api/cleanup/due');
   }
   cleanupDone(batch: string, paths: string[]) {
     return this.req<{ ok: boolean }>('POST', '/api/cleanup/done', { batch: bid(batch), paths });

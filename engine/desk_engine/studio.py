@@ -566,8 +566,12 @@ class Studio:
         client = body.get("client") or self.batch_client(bid)
         st = self.e.status(bid)
         cname = (self._read_client(client).get("name") or client) if client else "客户"
-        # None = the client's / engine default; 0 = never delete the sources (passed through, not dropped)
+        # None = the client's / engine default (never); 0 = never delete the sources (passed through, not dropped).
+        # The creator's own workspace (no client / client "self") never schedules a cleanup.
         days = int(body["cleanup_days"]) if body.get("cleanup_days") is not None else None
+        own = not client or client in OWN_CLIENTS
+        if own:
+            days = 0
         if self.has("deliver"):
             args = ["deliver", "--batch", self.e.dir_of(bid), "--json"]
             if client:
@@ -596,7 +600,8 @@ class Studio:
             r = D.build(m["dir"], m["manifest"], os.path.join(st["meta"]["dir"], "delivery"), cname,
                         st["meta"]["name"], jobs=jobs, make_zip=body.get("zip", True), cleanup_days=days,
                         copy_overrides=copies)
-        rec = dict(batch=bid, client=client, at=time.time(), date=dt.date.today().isoformat(), dir=r.get("dir"),
+        rec = dict(batch=bid, client=client, at=time.time(), cleanup_note="own workspace: sources are never cleaned up"
+                   if own and body.get("cleanup_days") else None, date=dt.date.today().isoformat(), dir=r.get("dir"),
                    zip=r.get("zip"), items=r.get("items") or len((r.get("manifest") or {}).get("items") or []),
                    jobs=r.get("jobs") or 0, duration_s=r.get("duration_s"),
                    cleanup=dict(enabled=bool(days), days=days, due=(time.time() + days * 86400) if days else None,
@@ -615,6 +620,8 @@ class Studio:
     def set_cleanup(self, bid, body):
         def f(d):
             need(bid in d, "not delivered yet")
+            need(not body["enabled"] or (d[bid].get("client") and d[bid]["client"] not in OWN_CLIENTS),
+                 "own workspace: source recordings are never cleaned up")
             days = body.get("days")
             d[bid]["cleanup"] = dict(enabled=bool(body["enabled"]), days=days,
                                      due=d[bid]["at"] + days * 86400 if body["enabled"] and days else None,
@@ -628,12 +635,22 @@ class Studio:
             c = d.get("cleanup") or {}
             if not c.get("enabled") or c.get("done") or not c.get("due") or c["due"] > now:
                 continue
+            if d.get("client") in OWN_CLIENTS or not d.get("client"):
+                continue                                # own workspace: never
             m = self.store.batch_meta(bid)
-            paths = [p for p in (m.get("source"), m.get("folder")) if p and os.path.exists(p)]
-            out.append(dict(batch=bid, paths=paths))
+            try:
+                bdir = os.path.realpath(self.e.dir_of(bid))
+            except KeyError:
+                continue
+            found = [p for p in (m.get("source"), m.get("folder")) if p and os.path.exists(p)]
+            inside = [p for p in found if _inside(p, bdir)]
+            out.append(dict(batch=bid, due=c["due"], paths=inside, outside=[p for p in found if p not in inside]))
         return out
 
     def cleanup_done(self, bid, paths):
+        allowed = {p for x in self.cleanup_due(now=float("inf")) if x["batch"] == bid for p in x["paths"]}
+        need(set(paths) <= allowed, "only the listed sources of this delivery can be marked cleaned")
+
         def f(d):
             if bid in d:
                 d[bid]["cleanup"].update(done=True, at=time.time(), paths=paths)
@@ -754,6 +771,14 @@ class Studio:
 
 
 # ---------------------------------------------------------------------- helpers
+OWN_CLIENTS = {"self", "me", "own"}
+
+
+def _inside(path, folder):
+    rp = os.path.realpath(path)
+    return rp != folder and rp.startswith(folder.rstrip(os.sep) + os.sep)
+
+
 def _json(obj):
     import json
     return json.dumps(obj, ensure_ascii=False)

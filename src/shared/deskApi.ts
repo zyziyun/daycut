@@ -127,5 +127,7 @@ export interface DeskApi {
   on(event: 'publish:state' | 'publish:fillStep' | 'engine:status' | 'assets:progress' | 'update:state' | 'history:changed', cb: (data: unknown) => void): () => void;
   /** watch these folders for live job changes ('history:changed' events); -> the folders watched */
   watchHistory(roots: string[]): Promise<string[]>;
+  /** source cleanup: a dialog lists the exact files; only on confirm are they moved to the Trash */
+  confirmCleanup(batchId: string): Promise<{ confirmed: boolean; trashed: string[]; failed: string[]; outside: string[] }>;
   mediaUrl(path: string): string;
 }

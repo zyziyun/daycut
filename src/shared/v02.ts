@@ -215,6 +215,7 @@ export interface DeliveryRecord {
   jobs: number;
   duration_s: number | null;
   cleanup: { enabled: boolean; days: number | null; due: number | null; done: boolean };
+  cleanup_note?: string | null;
   manifest?: { items: { path: string; sha256: string; bytes: number }[] } | null;
 }
 

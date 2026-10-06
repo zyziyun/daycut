@@ -93,7 +93,7 @@ export function Settings({ onChange }: { onChange: (s: SettingsMsg) => void }) {
               min={0}
               max={365}
               style={{ width: 100 }}
-              defaultValue={s.cleanupDays ?? 30}
+              defaultValue={s.cleanupDays ?? 0}
               onBlur={(e) => {
                 const n = Math.max(0, Math.min(365, Math.round(Number(e.target.value) || 0)));
                 if (n !== s.cleanupDays) void save({ cleanupDays: n });

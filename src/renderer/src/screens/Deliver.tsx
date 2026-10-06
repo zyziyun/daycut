@@ -1,6 +1,6 @@
 // Client delivery package (P0-4): per-platform folders, covers, 文案.md (with the AI-label reminder), 排期表.csv,
-// 交付说明.md, manifest (sha256) and a zip; the batch becomes "delivered"; source footage goes to the Trash
-// N days later (setting).
+// 交付说明.md, manifest (sha256) and a zip; the batch becomes "delivered". Source cleanup is off by default, never
+// for the own workspace, and only ever happens through a confirmation dialog listing the exact files (Trash).
 import { useEffect, useState } from 'react';
 import { ErrorBox, Field } from '../components/ui';
 import { t } from '../i18n';
@@ -16,15 +16,16 @@ export function Deliver({ batch }: { batch: string }) {
   const batches = useLoad((c) => c.batches(), []);
   const [clientSlug, setClientSlug] = useState('');
   const [zip, setZip] = useState(true);
-  const [cleanup, setCleanup] = useState(true);
+  const [cleanup, setCleanup] = useState(false); // never on by default: the creator's recordings stay
   const [days, setDays] = useState(30);
+  const due = useLoad((c) => c.cleanupDue(), [batch]);
+  const [cleanMsg, setCleanMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     void window.desk.getSettings().then((s) => {
-      if (s.cleanupDays === 0) setCleanup(false);
-      else if (s.cleanupDays) setDays(s.cleanupDays);
+      if (s.cleanupDays) setDays(s.cleanupDays);
     });
   }, []);
   useEffect(() => {
@@ -36,6 +37,20 @@ export function Deliver({ batch }: { batch: string }) {
   const approved = jobs.filter((j) => j.state === 'approved' || j.state === 'packaged');
   const open = jobs.filter((j) => j.state === 'done');
   const d = del.data?.delivery ?? null;
+  const own = !clientSlug || clientSlug === 'self';
+  const myDue = due.data?.find((x) => x.batch === batch) ?? null;
+
+  async function cleanNow() {
+    setCleanMsg(null);
+    try {
+      const r = await window.desk.confirmCleanup(batch);
+      if (r.confirmed) setCleanMsg(t('deliver.trashed', { n: r.trashed.length }) + (r.failed.length ? ` · ${t('deliver.trashFailed', { n: r.failed.length })}` : ''));
+      del.reload();
+      due.reload();
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  }
 
   async function deliver() {
     if (!client) return;
@@ -43,7 +58,7 @@ export function Deliver({ batch }: { batch: string }) {
     setErr(null);
     try {
       if (clientSlug && batches.data?.find((x) => x.id === batch)?.client !== clientSlug) await client.setBatchClient(batch, clientSlug);
-      await client.deliver(batch, { client: clientSlug || undefined, zip, cleanup_days: cleanup ? days : null });
+      await client.deliver(batch, { client: clientSlug || undefined, zip, cleanup_days: cleanup && !own ? days : 0 });
       del.reload();
       batches.reload();
     } catch (e) {
@@ -90,12 +105,12 @@ export function Deliver({ batch }: { batch: string }) {
             <input type="checkbox" checked={zip} onChange={(e) => setZip(e.target.checked)} /> {t('deliver.zip')}
           </label>
           <label className="row small">
-            <input type="checkbox" checked={cleanup} onChange={(e) => setCleanup(e.target.checked)} data-testid="cleanup-toggle" />
+            <input type="checkbox" checked={cleanup && !own} disabled={own} onChange={(e) => setCleanup(e.target.checked)} data-testid="cleanup-toggle" />
             {t('deliver.cleanup')}
-            <input className="input" type="number" min={1} max={365} style={{ width: 70 }} value={days} disabled={!cleanup} onChange={(e) => setDays(Math.max(1, Math.min(365, Number(e.target.value) || 30)))} aria-label={t('deliver.days')} />
+            <input className="input" type="number" min={1} max={365} style={{ width: 70 }} value={days} disabled={!cleanup || own} onChange={(e) => setDays(Math.max(1, Math.min(365, Number(e.target.value) || 30)))} aria-label={t('deliver.days')} />
             {t('deliver.days')}
           </label>
-          <span className="muted small">{t('deliver.cleanupHint')}</span>
+          <span className="muted small">{own ? t('deliver.ownNever') : t('deliver.cleanupHint')}</span>
           <div className="row">
             <button className="btn primary" disabled={busy || !approved.length} onClick={deliver} data-testid="deliver">
               {busy ? t('common.working') : d ? t('deliver.again') : t('deliver.export')}
@@ -119,13 +134,36 @@ export function Deliver({ batch }: { batch: string }) {
               </button>
             </div>
             <div className="row small">
-              <input type="checkbox" checked={d.cleanup.enabled} disabled={d.cleanup.done} onChange={(e) => saveCleanup(e.target.checked, d.cleanup.days ?? days)} aria-label={t('deliver.cleanup')} />
+              <input type="checkbox" checked={d.cleanup.enabled} disabled={d.cleanup.done || (!d.cleanup.enabled && (!d.client || d.client === 'self'))} onChange={(e) => saveCleanup(e.target.checked, d.cleanup.days ?? days)} aria-label={t('deliver.cleanup')} />
               {d.cleanup.done
                 ? t('deliver.cleaned')
                 : d.cleanup.enabled && d.cleanup.due
                   ? t('deliver.cleanupOn', { date: new Date(d.cleanup.due * 1000).toLocaleDateString() })
                   : t('deliver.cleanupOff')}
             </div>
+            {myDue && (myDue.paths.length > 0 || (myDue.outside ?? []).length > 0) && (
+              <div className="notice small col" data-testid="cleanup-due">
+                <b>{t('deliver.dueTitle')}</b>
+                {myDue.paths.map((p) => (
+                  <span key={p} className="mono">
+                    {p}
+                  </span>
+                ))}
+                {(myDue.outside ?? []).map((p) => (
+                  <span key={p} className="mono muted">
+                    {p} · {t('deliver.outsideKept')}
+                  </span>
+                ))}
+                {myDue.paths.length > 0 && (
+                  <div className="row">
+                    <button className="btn sm" onClick={cleanNow} data-testid="cleanup-confirm">
+                      {t('deliver.cleanNow')}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+            {cleanMsg && <div className="small okc">{cleanMsg}</div>}
             {d.manifest?.items && (
               <table className="t small">
                 <tbody>
