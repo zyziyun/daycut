@@ -4,6 +4,7 @@ import json
 import os
 import queue
 import re
+import tempfile
 import threading
 import time
 
@@ -32,6 +33,46 @@ def write_json(path, obj):
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(obj, f, ensure_ascii=False, indent=1, default=str)
     os.replace(tmp, path)
+
+
+# ------------------------------------------------------------------ temp / junk (registry hygiene)
+def _temp_roots():
+    roots = {tempfile.gettempdir(), "/tmp", "/private/tmp", "/var/tmp", "/private/var/tmp"}
+    return {os.path.realpath(r) for r in roots} | {os.path.abspath(r) for r in roots}
+
+
+_VARF = re.compile(r"^(/private)?/var/folders/[^/]+/[^/]+/T(/|$)")
+
+
+def is_temp_path(path):
+    p = os.path.abspath(path or "")
+    rp = os.path.realpath(p)
+    if _VARF.match(p) or _VARF.match(rp):
+        return True
+    return any(x == r or x.startswith(r.rstrip(os.sep) + os.sep) for r in _temp_roots() for x in (p, rp))
+
+
+def keep_entry(entry_dir, registry_path, marker=None):
+    d = entry_dir or ""
+    if not d or not os.path.isdir(d) or (marker and not os.path.exists(os.path.join(d, marker))):
+        return False
+    return is_temp_path(registry_path) or not is_temp_path(d)
+
+
+def prune_json_registry(path, marker=None):
+    """Drop missing / temp-dir entries from a ``[{dir, ...}]`` JSON registry. -> removed entries."""
+    rows = read_json(path, None)
+    if not isinstance(rows, list):
+        return []
+    keep = [r for r in rows if isinstance(r, dict) and keep_entry(r.get("dir"), path, marker)]
+    gone = [r for r in rows if r not in keep]
+    if gone:
+        try:
+            write_json(path, keep)
+        except OSError:
+            pass
+    return gone
+
 
 
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
@@ -96,6 +137,11 @@ class Registry:
             items.append(ent)
             write_json(self.path, items)
         return ent
+
+    def prune(self):
+        """Drop entries whose folder is gone or that point into temp dirs (test junk). -> number removed."""
+        with self._lock:
+            return len(prune_json_registry(self.path, "batch.db"))
 
     def remove(self, bid):
         with self._lock:

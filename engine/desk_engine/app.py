@@ -40,6 +40,12 @@ v0.2 (studio.py; engine command when available, desk implementation otherwise)
   POST /api/batches/<id>/deliver           {client?, zip, cleanup_days?}; GET; POST .../deliver/cleanup
   GET  /api/metrics?batch=|client=         dashboard numbers; GET|POST /api/metrics/weekly (weekly_metrics.csv)
   GET  /api/cleanup/due | POST /api/cleanup/done   source cleanup after delivery (the desk moves to Trash)
+History (history.py; read-only discovery of past work: desk + engine registries, projects, watched folders)
+  GET  /api/history?q=&status=&kind=       [{kind batch|project, id, dir, name, recipe, client, series, created,
+                                           updated, counts, status, thumb, sources, opened, openable}]
+  GET  /api/history/config | POST {watch[]}   watched folders (default ~/Desktop/video-studio-demos)
+  POST /api/history/open {dir}             put a found batch / project in the desk list -> {id, dir}
+  POST /api/history/hide {dir}             remove from the list (never deletes files); POST /api/history/unhide
 """
 import hmac
 import json
@@ -369,12 +375,16 @@ class Api:
             from .studio import Studio
             studio = Studio(engine, engine.data_dir, bus, Capabilities(fixed=set()))
         self.studio = studio
+        from .common import Registry
+        from .history import History
+        self.history = History(engine.data_dir, getattr(engine, "reg", None) or Registry(engine.data_dir), engine)
         self.port = None
 
     def roots(self):
         out = list(self.engine.roots())
         for p in self.studio.plans.values():
             out.append(os.path.dirname(p["request"]["source"]))
+        out += self.history.roots()
         return sorted(set(out))
 
     def route_v02(self, method, parts, query, body):
@@ -416,6 +426,33 @@ class Api:
                     return s.weekly()
                 if method == "POST":
                     return s.set_weekly_manual(validate_weekly(body))
+        if parts[:1] == ["history"]:
+            h = self.history
+            if parts == ["history"] and method == "GET":
+                st, kind = q("status"), q("kind")
+                need(st is None or re.match(r"^[a-z-]{1,20}$", st), "bad status")
+                need(kind in (None, "batch", "project"), "kind: batch|project")
+                qq = q("q")
+                need(qq is None or len(qq) <= 200, "q: max 200 chars")
+                return h.list(q=qq, status=st, kind=kind)
+            if parts == ["history", "config"]:
+                if method == "GET":
+                    return h.config()
+                if method == "POST":
+                    need(isinstance(body, dict), "body must be an object")
+                    return h.set_watch(body.get("watch"))
+            if parts == ["history", "unhide"] and method == "POST":
+                return h.unhide_all()
+            if parts[1:] in (["open"], ["hide"]) and method == "POST":
+                need(isinstance(body, dict), "body must be an object")
+                d = _abs_path(body.get("dir"), "dir", must_exist=parts[1] == "open", kind="dir")
+                if parts[1] == "hide":
+                    r = h.hide(d)
+                else:
+                    need(self.engine.mode == "real", "opening a found batch needs the real engine")
+                    r = h.open(d)
+                self.bus.publish("batches")
+                return r
         if parts[:1] == ["cleanup"]:
             if parts[1:] == ["due"] and method == "GET":
                 return s.cleanup_due()

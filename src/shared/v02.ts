@@ -359,3 +359,34 @@ export function median(xs: number[]): number | null {
   const m = v.length >> 1;
   return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
 }
+
+// ---------------------------------------------------------------- history (past work, auto-discovered)
+export interface HistoryItem {
+  kind: 'batch' | 'project';
+  id: string;
+  dir: string;
+  name: string;
+  recipe: string | null;
+  client: string | null;
+  series?: string | null;
+  created: number | null;
+  updated: number | null;
+  counts: { total: number; green: number; red: number; approved: number; done: number; failed: number };
+  status: string;
+  thumb: string | null;
+  deliveries?: number;
+  sources: ('desk' | 'engine' | 'watch')[];
+  opened: boolean;
+  openable: boolean;
+  error?: string;
+}
+export interface HistoryDoc {
+  items: HistoryItem[];
+  watch: string[];
+  at: number;
+}
+export interface HistoryConfig {
+  watch: string[];
+  hidden: number;
+  default_watch: string[];
+}

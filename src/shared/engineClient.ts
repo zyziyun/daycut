@@ -25,6 +25,8 @@ import type {
   DeliveryRecord,
   EditBody,
   EditResult,
+  HistoryConfig,
+  HistoryDoc,
   MetricsDoc,
   PlanBatchBody,
   PlanRequest,
@@ -225,6 +227,29 @@ export class EngineClient {
   }
   setWeekly(week: string, values: Record<string, number | string | null>) {
     return this.req<WeeklyDoc>('POST', '/api/metrics/weekly', { week, values });
+  }
+  history(f: { q?: string; status?: string; kind?: 'batch' | 'project' } = {}) {
+    const q = new URLSearchParams();
+    if (f.q) q.set('q', f.q.slice(0, 200));
+    if (f.status) q.set('status', f.status);
+    if (f.kind) q.set('kind', f.kind);
+    const qs = q.toString();
+    return this.req<HistoryDoc>('GET', `/api/history${qs ? `?${qs}` : ''}`);
+  }
+  historyConfig() {
+    return this.req<HistoryConfig>('GET', '/api/history/config');
+  }
+  setHistoryWatch(watch: string[]) {
+    return this.req<HistoryConfig>('POST', '/api/history/config', { watch });
+  }
+  openHistory(dir: string) {
+    return this.req<{ id: string; dir: string; name: string }>('POST', '/api/history/open', { dir });
+  }
+  hideHistory(dir: string) {
+    return this.req<{ ok: boolean; deleted: false }>('POST', '/api/history/hide', { dir });
+  }
+  unhideHistory() {
+    return this.req<HistoryConfig>('POST', '/api/history/unhide', {});
   }
   cleanupDue() {
     return this.req<{ batch: string; paths: string[] }[]>('GET', '/api/cleanup/due');

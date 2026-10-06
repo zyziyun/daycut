@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { HistoryList } from '../components/HistoryList';
 import { ErrorBox, Empty, StateBadge } from '../components/ui';
 import { t } from '../i18n';
 import { useEngine, useLoad } from '../lib/engine';
@@ -97,6 +98,7 @@ export function Batches() {
             </tbody>
           </table>
         )}
+        <HistoryList />
       </div>
     </>
   );

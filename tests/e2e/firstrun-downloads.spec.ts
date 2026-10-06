@@ -86,6 +86,8 @@ test.beforeAll(async () => {
     DESK_USER_DATA: path.join(work, 'profile'),
     DESK_SHARED_CACHE: path.join(work, 'engine-cache'), // never the user's ~/.cache/video-studio
     DESK_HF_HUB: '', // never the user's Hugging Face cache
+    VSTUDIO_HOME: path.join(work, 'vhome'), // never the user's engine registries
+    DESK_HISTORY_WATCH: '', // never scan the user's folders
     DESK_HIDE_WINDOW: '1', // never on the user's screen
     DESK_RUNTIME_DIR: fakeRuntime(),
     DESK_ASSETS_MANIFEST: mf,
