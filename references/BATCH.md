@@ -36,7 +36,7 @@ asr: {language: zh, prompt: "LangChain, RAG", backend: auto}   # transcriber: "m
 budget: {max_usd: 5, max_hours: 6, max_storage_gb: 60}         # `run` refuses when the estimate is over
 concurrency: {cpu-render: 2}       # overrides of the machine defaults (section 3)
 qc: {sample_pct: 10, freeze: warn} # section 4
-proofread: {provider: auto, model: null, low_conf: 0.5}   # section 2c; auto = claude when ANTHROPIC_API_KEY, else none
+proofread: {provider: auto, model: null, low_conf: 0.5}   # section 2c; auto = llm route, else claude with ANTHROPIC_API_KEY, else none
 max_len: {douyin: 60}              # optional shorter per-platform variant (section 4b); rows may override
 breaker: {max_fail_rate: 0.3, min_jobs: 4, max_red_rate: null}
 retry: {backoff: 2}                # seconds, doubled per attempt (transient errors only)
@@ -189,8 +189,11 @@ substitutions of mis-heard spans: on the spoken units (one per CJK character / l
 language; the cue stays >= 60 % similar; a whole-caption "from" is reduced to the words that change. A span the
 term fixes / glossary already fixed is never re-edited, and an accepted term fix is applied to the job's other cues
 with the same span (`llm-propagated`). Everything rejected is logged with the reason. Providers:
-`auto` (default: `claude` when `ANTHROPIC_API_KEY` is set, else `none`), `claude` (anthropic SDK, imported lazily;
-`claude-opus-5-5`), `openai` (only when set explicitly; `OPENAI_API_KEY`; default `gpt-4.1-mini`), `none`;
+`auto` (default: the configured `vstudio.llm` route for tasks `proofread` / `glossary`, else `claude` when
+`ANTHROPIC_API_KEY` is set, else `none`), `claude` (anthropic SDK, imported lazily; `claude-opus-5-5`), `openai` (only
+when set explicitly; `OPENAI_API_KEY`; default `gpt-4.1-mini`), any other `vstudio.llm` provider (deepseek, qwen,
+kimi, glm, openrouter, gemini, ollama, lmstudio, vllm, llamacpp, claude-code, codex - references/PROVIDERS.md;
+`proofread.glossary_provider` picks the glossary's), `none`;
 `proofread.call: "module:fn"` plugs in any other `fn(system, prompt, model) -> (text, usage)`. Cost is booked to
 the budget (`prices.proofread_in` / `proofread_out` per MTok override the table);
 (d) fillers are never removed from captions (they are in the audio): cleanup auto-cuts the obvious caption fillers
@@ -366,7 +369,7 @@ asr prompt as defaults (the spec wins), its glossary appended to `subtitles.term
 `batches.json`) for `metrics --client / --all` and `cleanup-sources`.
 
 **plan-segments** (`segplan.py`). `--source F [--transcript T] [--client C] [--count N] [--min S --max S]
-[--platforms a,b] [--provider auto|claude|openai|none] [--model M] [--out DIR]` -> `segments.draft.yaml` (a
+[--platforms a,b] [--provider auto|claude|openai|<any vstudio.llm provider>|none] [--model M] [--out DIR]` -> `segments.draft.yaml` (a
 segments.yaml: `source:` + `transcript:` header, rows `{id, start, end, title, chapter, hook {start, end, text},
 hook_candidates, notes, tags, why, risk, score}`) + `plan.json`. The transcript comes from `--transcript` or
 `vstudio.asr` and is stored in the shared per-source cache (`transcripts.py`, keyed by the source's content hash),
@@ -375,7 +378,9 @@ word boundaries (`cleanup.snap_range`). Providers: `none` (rule-based: TextTilin
 chapters; windows of whole sentences in [min, max] scored on tf-idf keyword density, self-containedness - no opening
 connective / back-reference, complete ending, no topic shift inside, not followed by its own conclusion - filler
 ratio and speech share; extractive titles / hooks / notes), `claude` (anthropic SDK, claude-opus-5-5, only with
-ANTHROPIC_API_KEY; `auto` picks it), `openai` (named explicitly, OPENAI_API_KEY, gpt-4.1). The LLM gets numbered
+ANTHROPIC_API_KEY; `auto` picks it unless a `segment_plan` llm route is configured), `openai` (named explicitly,
+OPENAI_API_KEY, gpt-4.1), any other `vstudio.llm` provider (local servers, claude-code / codex, presets; checked
+before planning; references/PROVIDERS.md). The LLM gets numbered
 sentences and answers sentence-index ranges; too few / overlapping / invalid picks are filled from the rule-based
 ranking; titles are checked against `publish.title_max` of every target platform (小红书 counts latin as 0.5) and
 shortened when over; hook text is always the transcript of the hook range. Measured on a 72-min lecture against a

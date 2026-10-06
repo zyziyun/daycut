@@ -10,11 +10,13 @@ Core (audio/video pipeline)
   media    ffmpeg/ffprobe discovery, run, probe, extract_wav, grab_frame, contact_sheet,
            HDR->SDR, atempo_chain, delivery_args, retag_bt709
   audio    two-pass loudnorm, stems, RMS envelopes, silence spans, music bed ducking, pitch shift, SFX
-  asr      cached whisper transcription with word timestamps (mlx -> faster -> OpenAI), term fixes
+  asr      cached whisper transcription with word timestamps (mlx -> faster -> OpenAI | self-hosted server), term fixes
   cut      TimeMap, tighten (pause squeeze), find_cuts/split_window (disfluencies), suggest_fillers,
            cut_segments (frame-exact), xfade_assemble (muted-pad dissolves)
   subs     Cue, wrap_cjk / balanced_wrap, highlight markup, SRT/ASS writers, bilingual, retime
-  tts      synth() via OpenAI / Kokoro / Edge with a content-addressed cache
+  tts      synth() via OpenAI / Kokoro / Edge / clone / self-hosted server / ElevenLabs, content-addressed cache
+  llm      complete(): one LLM interface (API providers, local servers, Claude Code / Codex CLIs, none), routing,
+           JSON repair, cost; ``python -m vstudio.llm providers`` (references/PROVIDERS.md)
 
 Face and look
   face     MediaPipe landmarker + landmark index sets

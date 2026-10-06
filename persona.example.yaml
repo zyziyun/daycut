@@ -87,3 +87,15 @@ cleanup:                   # shared 气口 / filler / repeat tool (python -m vst
   never_cut: []            # tokens never flagged as filler / repeat, e.g. [然后]
   # policy: true           # answer low-risk confirm edits automatically (batch stages do by default); learned
   #                        # answers live in ~/.config/vstudio/cleanup_policy.json (or policy_file: <path>)
+
+# AI providers per step (references/PROVIDERS.md). Unset = Anthropic API when ANTHROPIC_API_KEY is set, else rules.
+# Keys never go here: name the env variable (api_key_env). Check: cd lib && python3 -m vstudio.llm providers
+# llm:
+#   default: {provider: claude-code}            # your own Claude Code login, no API key (own local use)
+#   tasks:
+#     segment_plan: {provider: anthropic, model: claude-opus-5-5}
+#     proofread: {provider: ollama, model: "qwen3:8b"}
+#     glossary: {provider: openai-compatible, base_url: "http://localhost:8000/v1", model: Qwen/Qwen3-32B}
+#     copy: {provider: deepseek}
+# asr: {backend: auto}                          # mlx | faster | openai | openai-compatible (+ base_url, model)
+# tts: {engine: auto, server: {base_url: "http://localhost:8880/v1", model: kokoro, voice: af_heart}}

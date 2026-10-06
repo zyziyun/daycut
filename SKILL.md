@@ -94,6 +94,7 @@ When the request is ambiguous, ask one question: what is the material, and where
 | Post copy, title length, chapter timeline | `publish.check_title`, `publish.chapter_lines`, `publish.post_body`, `platform.check_text` |
 | Hide a face / name label (privacy) | `workflows/call-clips` (`face.track_faces` + sticker, `name_mask`) |
 | What was validated on real footage | `references/VALIDATION.md` |
+| Which AI provider / model per step: API key, local model (Ollama, LM Studio, vLLM, llama.cpp, whisper / TTS server) or no key (the user's own Claude Code / Codex login) | `python -m vstudio.llm providers` (from `lib/`), persona / client `llm:` routes; `references/PROVIDERS.md` |
 
 The effect catalogue (87 effects, 190 counting named variants, generated from `lib/vstudio/effects.py`; 9 recipes): `references/EFFECTS.md`. Add an effect: `references/ADDING_EFFECTS.md`. Transitions shared across engines: `vstudio.xfade` (24 names in HyperFrames, ffmpeg and per-frame PIL).
 
@@ -107,7 +108,8 @@ The effect catalogue (87 effects, 190 counting named variants, generated from `l
 | `cut` | `TimeMap`, word-level tightening, automatic disfluency finder, frame-exact cuts, crossfade assembly |
 | `cleanup` | the shared 气口 / filler / repeat / restart / retake tool: `analyze` → EDL + review sheet, `apply` (word-safe, frame-exact, versioned, never re-cuts a cut file), `verify` (re-ASR); profiles gentle / standard / tight, persona `cleanup:`; `python -m vstudio.cleanup` |
 | `subs` | cues, CJK-aware balanced wrap, highlight markup, SRT/ASS, retime, bilingual pairing |
-| `tts` | OpenAI / Kokoro / Edge TTS and local voice clone (Qwen3-TTS) with a content cache |
+| `tts` | OpenAI / Kokoro / Edge / self-hosted server / ElevenLabs TTS and local voice clone (Qwen3-TTS) with a content cache |
+| `llm` | `complete(task, system, prompt, schema=...)`: one LLM call for every provider (anthropic, openai, openai-compatible presets incl. local servers, gemini, claude-code / codex CLIs, none), routing, JSON repair, retries, cost; `python -m vstudio.llm providers / route / test` |
 | `face`, `filters`, `mls`, `retouch` | landmarks, `VideoFaceTracker`, talk activity; One Euro smoothing; own MLS warp; portrait retouch v2 + makeup |
 | `draw`, `overlays`, `cover` | PIL text/shape primitives, themed overlays and progress bars, cover compositors |
 | `render`, `hf` | headless-Chrome HTML→PNG, font staging/subsetting; HyperFrames effect generators |

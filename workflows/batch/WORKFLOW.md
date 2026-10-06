@@ -32,7 +32,7 @@ glossary.
 **1. Transcript + job list.** The creator decides what gets cut. `plan-segments` drafts the list:
 ```bash
 python3 -m vstudio.batch plan-segments --source raw/lecture.mp4 --client acme --count 12 --min 45 --max 150 \
-    --provider auto        # claude with ANTHROPIC_API_KEY, else rule-based; --provider openai only when asked
+    --provider auto        # llm route (persona / client llm:), else claude with ANTHROPIC_API_KEY, else rule-based; or name any provider: openai, ollama, claude-code, ... (references/PROVIDERS.md)
 ```
 -> `plan-<stem>/segments.draft.yaml` (rows with title, chapter, hook + hook candidates, notes, tags, why, risk,
 score; edges on word boundaries; the transcript is shared with the batch). Go through it with the creator: drop,

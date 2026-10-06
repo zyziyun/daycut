@@ -102,7 +102,15 @@ offline machine), point at it: `VSTUDIO_WHISPER_MLX=/path/to/whisper-large-v3-tu
 `config.json` + `weights.*`, or another HF repo id) and `VSTUDIO_WHISPER_FW=/path/to/faster-whisper-large-v3-turbo`
 (a CTranslate2 model folder, or a size name such as `small`); add `HF_HUB_OFFLINE=1` to never touch the network.
 The backend is `auto` (mlx, else faster-whisper, else OpenAI `whisper-1` with `OPENAI_API_KEY`) unless a batch spec
-says `asr: {backend: mlx | faster | openai}`.
+says `asr: {backend: mlx | faster | openai | openai-compatible}` (the last one = your own whisper server).
+
+**AI providers (API key, self-hosted, or no key).** Every AI step (segment planning, proofreading, glossary,
+transcription, narration) runs on any API provider (Anthropic, OpenAI, DeepSeek, Qwen, Kimi, GLM, OpenRouter, Gemini,
+ElevenLabs), on local / self-hosted models (Ollama, LM Studio, vLLM, llama.cpp, local whisper, a whisper or TTS
+server), or with no API key through your own logged-in Claude Code / Codex CLI. Pick per task in
+`persona.local.yaml` (`llm: {default: ..., tasks: {segment_plan, proofread, glossary, copy}}`) and check what this
+machine has with `cd lib && python3 -m vstudio.llm providers`. Setup, routing, costs and what each step sends:
+[references/PROVIDERS.md](references/PROVIDERS.md).
 
 **Caches.** Everything video-studio caches (fonts, models, transcripts shared between `plan-segments` and batches,
 ASR sidecars of read-only media, TTS takes, the batch benchmark table) lives under one root:
