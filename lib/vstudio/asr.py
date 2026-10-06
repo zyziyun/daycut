@@ -6,9 +6,17 @@
     tr["segments"]  -> whisper shape [{start, end, text, words: [{word, start, end}]}]
     asr.apply_term_fixes("cloud code 很好用")                        -> persona + generic fixes
 
-Backends, first available wins (or pass backend=): mlx_whisper (Apple Silicon) -> faster_whisper ->
-OpenAI ``whisper-1`` (only if OPENAI_API_KEY is set in the environment; the key is never read
-from files). Settings that matter on long/noisy speech: no conditioning on previous text and (for
+Backends (``backend=``, or persona ``asr.backend`` / env VSTUDIO_ASR_BACKEND; "auto" = first available):
+  mlx                mlx_whisper (Apple Silicon, local)
+  faster             faster_whisper (CTranslate2, local, any OS)
+  openai             OpenAI ``whisper-1`` (only if OPENAI_API_KEY is set in the environment; the key is never read
+                     from files)
+  openai-compatible  any self-hosted ``/v1/audio/transcriptions`` server (faster-whisper-server / speaches,
+                     whisper.cpp ``server --inference-path /v1/audio/transcriptions``, LocalAI, a GPU box):
+                     persona ``asr.base_url`` / env VSTUDIO_ASR_BASE_URL, optional key env name ``asr.api_key_env`` /
+                     VSTUDIO_ASR_API_KEY_ENV, model ``asr.model`` / VSTUDIO_ASR_MODEL. Never picked by "auto".
+                     A server that returns no word timestamps gets evenly spread words (``approx_words``).
+  auto order: mlx -> faster -> openai. ``providers()`` / ``python -m vstudio.llm providers`` list what works here. Settings that matter on long/noisy speech: no conditioning on previous text and (for
 recordings > 10 min only, see ``skip_silence``) a hallucination-silence threshold, else whisper loops
 ("嗯嗯嗯") over silence.
 
@@ -95,15 +103,44 @@ def apply_term_fixes(text, extra=None, generic=True, clean=True):
 
 
 # ------------------------------------------------------------------ backends
+BACKENDS = ("mlx", "faster", "openai", "openai-compatible")
+ALIASES = {"mlx-whisper": "mlx", "mlx_whisper": "mlx", "faster-whisper": "faster", "faster_whisper": "faster",
+           "whisper-1": "openai", "whisper-server": "openai-compatible", "compatible": "openai-compatible",
+           "self-hosted": "openai-compatible", "local-server": "openai-compatible"}
+
+
+def _asr_cfg():
+    try:
+        from .config import persona
+        return persona().get("asr") or {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def server_config():
+    """The openai-compatible ASR server: dict(base_url, api_key_env, model) from env / persona ``asr``."""
+    c = _asr_cfg()
+    return dict(base_url=os.environ.get("VSTUDIO_ASR_BASE_URL") or c.get("base_url"),
+                api_key_env=os.environ.get("VSTUDIO_ASR_API_KEY_ENV") or c.get("api_key_env"),
+                model=os.environ.get("VSTUDIO_ASR_MODEL") or c.get("model"))
+
+
 def resolve_backend(name="auto"):
-    """The ASR backend ``transcribe(backend=name)`` would use: "mlx" | "faster" | "openai" (probes
-    imports / OPENAI_API_KEY for "auto"; raises RuntimeError if none). Lets callers pick a
+    """The ASR backend ``transcribe(backend=name)`` would use: "mlx" | "faster" | "openai" | "openai-compatible"
+    (probes imports / OPENAI_API_KEY for "auto"; raises RuntimeError if none). Lets callers pick a
     per-backend model before transcribing."""
     return _backend(name)
 
 
 def _backend(name="auto"):
+    name = ALIASES.get(str(name or "auto").lower(), str(name or "auto").lower())
+    if name == "auto":
+        conf = os.environ.get("VSTUDIO_ASR_BACKEND") or _asr_cfg().get("backend")
+        if conf and str(conf).lower() != "auto":
+            name = ALIASES.get(str(conf).lower(), str(conf).lower())
     if name != "auto":
+        if name not in BACKENDS:
+            raise ValueError(f"unknown ASR backend {name!r}: auto | {' | '.join(BACKENDS)}")
         return name
     try:
         import mlx_whisper  # noqa: F401
@@ -118,7 +155,31 @@ def _backend(name="auto"):
     if os.environ.get("OPENAI_API_KEY"):
         return "openai"
     raise RuntimeError("no ASR backend: pip install mlx-whisper (Apple Silicon) or faster-whisper, "
-                       "or set OPENAI_API_KEY for whisper-1")
+                       "or set OPENAI_API_KEY for whisper-1, or point VSTUDIO_ASR_BASE_URL at a whisper server")
+
+
+def providers(probe=True):
+    """[{provider, kind, ready, detail}] for every ASR backend on this machine (no audio is sent)."""
+    import importlib.util
+    has = lambda m: importlib.util.find_spec(m) is not None  # noqa: E731
+    rows = [dict(provider="mlx", kind="local", ready=has("mlx_whisper"),
+                 detail=f"mlx_whisper, {MLX_REPO}" if has("mlx_whisper") else "pip install mlx-whisper (Apple Silicon)"),
+            dict(provider="faster", kind="local", ready=has("faster_whisper"),
+                 detail=f"faster_whisper, {FW_MODEL}" if has("faster_whisper") else "pip install faster-whisper"),
+            dict(provider="openai", kind="api", ready=bool(os.environ.get("OPENAI_API_KEY")) and has("openai"),
+                 detail="whisper-1, key set" if os.environ.get("OPENAI_API_KEY") else "needs OPENAI_API_KEY")]
+    sc = server_config()
+    if sc["base_url"]:
+        up = False
+        if probe:
+            from .llm import _probe_url
+            up = _probe_url(sc["base_url"].rstrip("/") + "/models")[0]
+        rows.append(dict(provider="openai-compatible", kind="local", ready=up,
+                         detail=f"{sc['base_url']}: " + ("up" if up else "no server answering" if probe else "not probed")))
+    else:
+        rows.append(dict(provider="openai-compatible", kind="local", ready=False,
+                         detail="set VSTUDIO_ASR_BASE_URL (faster-whisper-server, whisper.cpp server, ...)"))
+    return rows
 
 
 _STATS = ("no_speech_prob", "avg_logprob", "compression_ratio")
@@ -161,30 +222,69 @@ def _run_faster(wav, language, prompt, word_timestamps, model, hst=None, greedy=
             for s in segs]
 
 
-def _run_openai(wav, language, prompt, word_timestamps, model, hst=None, greedy=False):
-    key = os.environ.get("OPENAI_API_KEY")
-    if not key:
-        raise RuntimeError("OPENAI_API_KEY is not set in the environment")
+def _g(o, k, d=None):
+    return o.get(k, d) if isinstance(o, dict) else getattr(o, k, d)
+
+
+def _spread_words(seg):
+    """Evenly timed words for a segment a server returned without word timestamps (CJK per character)."""
+    toks = re.findall(r"[A-Za-z0-9'’\-]+|[⺀-鿿豈-﫿]|[^\sA-Za-z0-9⺀-鿿豈-﫿]+", seg["text"] or "")
+    toks = [t for t in toks if re.search(r"[A-Za-z0-9⺀-鿿豈-﫿]", t)]
+    if not toks:
+        return []
+    a, b = float(seg["start"]), float(seg["end"])
+    step = (b - a) / len(toks)
+    return [dict(word=(" " + t if re.match(r"[A-Za-z0-9]", t) else t), start=round(a + k * step, 3),
+                 end=round(a + (k + 1) * step, 3)) for k, t in enumerate(toks)]
+
+
+def _openai_api(wav, language, prompt, word_timestamps, model, base_url=None, key=None):
     from openai import OpenAI
+    kw = dict(api_key=key)
+    if base_url:
+        kw["base_url"] = base_url
     # whisper-1 caps uploads at 25 MB: send 32 kbps mono mp3 (~14 MB per hour)
     with tempfile.TemporaryDirectory() as tmp:
         mp3 = os.path.join(tmp, "a.mp3")
         media.run(["ffmpeg", "-y", "-i", wav, "-ac", "1", "-ar", "16000", "-b:a", "32k", mp3])
         with open(mp3, "rb") as f:
-            r = OpenAI(api_key=key).audio.transcriptions.create(
+            r = OpenAI(**kw).audio.transcriptions.create(
                 model=model or "whisper-1", file=f, language=language, prompt=prompt or None,
                 response_format="verbose_json",
                 timestamp_granularities=["word", "segment"] if word_timestamps else ["segment"])
-    words = [dict(word=" " + w.word if not re.match(r"[⺀-￿]", w.word or "") else w.word,
-                  start=w.start, end=w.end) for w in (getattr(r, "words", None) or [])]
+    words = [dict(word=" " + _g(w, "word") if not re.match(r"[⺀-￿]", _g(w, "word") or "") else _g(w, "word"),
+                  start=_g(w, "start"), end=_g(w, "end")) for w in (_g(r, "words") or [])]
     out = []
-    for s in getattr(r, "segments", None) or []:
-        ws = [w for w in words if s.start - 0.01 <= (w["start"] + w["end"]) / 2 < s.end + 0.01]
-        out.append(dict(start=s.start, end=s.end, text=s.text, **_stats(s), words=ws))
+    for s in _g(r, "segments") or []:
+        st, en = _g(s, "start"), _g(s, "end")
+        ws = [w for w in words if st - 0.01 <= (w["start"] + w["end"]) / 2 < en + 0.01]
+        stats = {k: round(float(_g(s, k)), 4) for k in _STATS if _g(s, k) is not None}
+        seg = dict(start=st, end=en, text=_g(s, "text"), **stats, words=ws)
+        if word_timestamps and not ws and not words:
+            seg["words"], seg["approx_words"] = _spread_words(seg), True
+        out.append(seg)
     return out
 
 
-_RUN = {"mlx": _run_mlx, "faster": _run_faster, "openai": _run_openai}
+def _run_openai(wav, language, prompt, word_timestamps, model, hst=None, greedy=False):
+    key = os.environ.get("OPENAI_API_KEY")
+    if not key:
+        raise RuntimeError("OPENAI_API_KEY is not set in the environment")
+    return _openai_api(wav, language, prompt, word_timestamps, model, key=key)
+
+
+def _run_compatible(wav, language, prompt, word_timestamps, model, hst=None, greedy=False):
+    sc = server_config()
+    if not sc["base_url"]:
+        raise RuntimeError("ASR backend openai-compatible needs VSTUDIO_ASR_BASE_URL (or persona asr.base_url)")
+    key = os.environ.get(sc["api_key_env"]) if sc["api_key_env"] else None
+    if sc["api_key_env"] and not key:
+        raise RuntimeError(f"ASR backend openai-compatible needs {sc['api_key_env']}")
+    return _openai_api(wav, language, prompt, word_timestamps, model or sc["model"] or "whisper-1",
+                       base_url=sc["base_url"], key=key or "not-needed")
+
+
+_RUN = {"mlx": _run_mlx, "faster": _run_faster, "openai": _run_openai, "openai-compatible": _run_compatible}
 
 
 def loop_score(segs):
@@ -235,7 +335,7 @@ def transcribe(path, language=None, prompt=None, word_timestamps=True, model=Non
       language: ISO code (default persona creator.language, else "zh").
       prompt: initial_prompt with domain terms (fixes English terms in Chinese speech).
       model: backend model id (mlx HF repo / faster-whisper size / openai model).
-      backend: "auto" | "mlx" | "faster" | "openai".
+      backend: "auto" | "mlx" | "faster" | "openai" | "openai-compatible" (a self-hosted whisper server).
       cache: reuse/write the sidecar ``<path>.asr.json`` keyed by content hash + settings.
       term_fixes: call-site fixes passed to ``apply_term_fixes`` (dict literal or [[regex, repl]]).
       fix_terms: apply term fixes to segment and word text (word count/indices unchanged).
@@ -264,7 +364,8 @@ def transcribe(path, language=None, prompt=None, word_timestamps=True, model=Non
     key = None
     if cache:
         key = hashlib.sha1(json.dumps([CACHE_VERSION, file_hash(path), language, prompt, word_timestamps,
-                                       model, be] + ([hst] if hst != 2.0 else []),
+                                       model, be] + ([hst] if hst != 2.0 else []) +
+                                      ([server_config()["base_url"]] if be == "openai-compatible" else []),
                                       ensure_ascii=False).encode()).hexdigest()
         cp = _cache_path(path)
         if os.path.exists(cp):
@@ -279,7 +380,7 @@ def transcribe(path, language=None, prompt=None, word_timestamps=True, model=Non
         wav = os.path.join(tmp, "a16.wav")
         media.extract_wav(path, wav, sr=16000, channels=1)
         segs = _RUN[be](wav, language, prompt, word_timestamps, model, hst)
-        if be != "openai" and loop_score(segs):
+        if be not in ("openai", "openai-compatible") and loop_score(segs):
             # Temperature fallback (up to 1.0) on hard audio - short cut files, mumbles - can end in a
             # repetition loop over the whole clip; plain greedy decoding is usually clean there.
             alt = _RUN[be](wav, language, prompt, word_timestamps, model, hst, greedy=True)

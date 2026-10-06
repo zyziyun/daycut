@@ -18,7 +18,7 @@ ap.add_argument("--project", "-C", default=".", help="project dir (default: curr
 ap.add_argument("--audio", default="audio/narration.wav", help="relative to the project dir")
 ap.add_argument("--language", default="en")
 ap.add_argument("--model", default=None, help="backend model id (default: vstudio.asr's)")
-ap.add_argument("--backend", default="auto", choices=["auto", "mlx", "faster", "openai"])
+ap.add_argument("--backend", default="auto", choices=["auto", "mlx", "faster", "openai", "openai-compatible"])
 ap.add_argument("--prompt", default=None, help="initial prompt with domain terms")
 ap.add_argument("--term-fixes", action="store_true", help="apply persona/generic ASR term fixes to words")
 a = ap.parse_args()

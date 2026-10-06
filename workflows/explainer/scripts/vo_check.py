@@ -91,7 +91,7 @@ def main():
     ap.add_argument("lines", nargs="*", help="only these line numbers")
     ap.add_argument("--project", "-C", default=".", help="project dir (default: current dir)")
     ap.add_argument("--min-cover", type=float, default=MIN_COVER)
-    ap.add_argument("--backend", default="auto", choices=["auto", "mlx", "faster", "openai"])
+    ap.add_argument("--backend", default="auto", choices=["auto", "mlx", "faster", "openai", "openai-compatible"])
     ap.add_argument("--model", default=None)
     a = ap.parse_args()
     root = pathlib.Path(a.project)

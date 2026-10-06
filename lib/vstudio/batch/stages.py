@@ -327,14 +327,16 @@ def hear(path, tfn, o):
 
 # --------------------------------------------------------------------------- proofread
 def proofread_opts(spec):
-    """Spec ``proofread: {provider: auto|claude|openai|none, model, low_conf, enabled, glossary, glossary_model,
-    filler_edges}`` with the provider resolved now (a key appearing / vanishing changes the stage key)."""
+    """Spec ``proofread: {provider: auto|claude|openai|<any vstudio.llm provider>|none, model, low_conf, enabled,
+    glossary, glossary_provider, glossary_model, filler_edges}`` with the providers resolved now (a key appearing /
+    vanishing changes the stage key). ``auto`` follows the llm routes for tasks proofread / glossary."""
     from vstudio import proofread as PR
     o = dict(spec.get("proofread") or {})
     return dict(provider=PR.resolve_provider(o.get("provider")), model=o.get("model"),
                 low_conf=float(o.get("low_conf", 0.5)), enabled=o.get("enabled", True) is not False,
                 call=o.get("call"), glossary=o.get("glossary", True) is not False,
-                glossary_model=o.get("glossary_model"), filler_edges=o.get("filler_edges", True) is not False)
+                glossary_model=o.get("glossary_model"), filler_edges=o.get("filler_edges", True) is not False,
+                glossary_provider=PR.resolve_provider(o.get("glossary_provider") or o.get("provider"), task="glossary"))
 
 
 def _proofread_on(job, spec):
@@ -359,13 +361,17 @@ def _proofread_params(job, spec):
 
 def _glossary_on(job, spec):
     o = proofread_opts(spec)
-    return _proofread_on(job, spec) and o["glossary"] and (o["provider"] != "none" or bool(o["call"]))
+    return _proofread_on(job, spec) and o["glossary"] and (o["glossary_provider"] != "none" or bool(o["call"]))
+
+
+def _glossary_model(o):
+    return o["glossary_model"] or (o["model"] if o["glossary_provider"] == o["provider"] else None)
 
 
 def _glossary_params(job, spec):
     """Shared per source: everything here must be the same for every job cut from that source."""
     o = proofread_opts(spec)
-    return dict(provider=o["provider"], model=o["glossary_model"] or o["model"], call=o["call"],
+    return dict(provider=o["glossary_provider"], model=_glossary_model(o), call=o["call"],
                 term_fixes=(spec.get("subtitles") or {}).get("term_fixes"), asr=(spec.get("asr") or {}).get("prompt"),
                 series=(spec.get("vertical") or {}).get("series") or _p(job).get("series"), v=1)
 
@@ -406,8 +412,8 @@ def run_glossary(ctx):
     text = transcript_text(tr, tf)
     series = (ctx.spec.get("vertical") or {}).get("series") or ctx.params.get("series")
     call = import_ref(o["call"]) if o["call"] else None
-    res = PR.build_glossary(text, context=dict(topic=series, glossary=_gloss_context(ctx.spec)), provider=o["provider"],
-                            model=o["glossary_model"] or o["model"], call=call, prices=ctx.spec.get("prices"))
+    res = PR.build_glossary(text, context=dict(topic=series, glossary=_gloss_context(ctx.spec)),
+                            provider=o["glossary_provider"], model=_glossary_model(o), call=call, prices=ctx.spec.get("prices"))
     path = write_json(ctx.path("glossary.json"), res)
     ctx.log(f"glossary ({res['provider']}): {len(res['terms'])} term(s), {len(res['fixes'])} fix(es), "
             f"{len(res['rejected'])} rejected")

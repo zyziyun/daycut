@@ -19,7 +19,7 @@ def extra(ap):
     ap.add_argument("--model", default=None, help="mlx: mlx-community/whisper-large-v3-turbo; faster: large-v3-turbo")
     ap.add_argument("--language", default=None)
     ap.add_argument("--audio", default="audio16k.wav")
-    ap.add_argument("--backend", default="auto", choices=["auto", "mlx", "faster", "openai"])
+    ap.add_argument("--backend", default="auto", choices=["auto", "mlx", "faster", "openai", "openai-compatible"])
     ap.add_argument("--prompt", default=None, help="initial prompt with domain terms (default config asr_prompt)")
 
 
