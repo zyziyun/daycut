@@ -36,6 +36,7 @@ Identify the **main material** and the **deliverable**, then open that workflow'
 | Script / idea → AI-generated video (可灵 Kling, Seedance/即梦, MiniMax/海螺): shot list, prompts, credit plan, take review, assembly; AI series → 投稿 packages + per-post confirmed upload | `workflows/ai-video` |
 | Many videos at once (10s–100s): one long recording → N vertical slices, a folder of 口播 clips → cleaned shorts; pilot, resumable runs, QC gates, exception-only review page, publish packages | `workflows/batch` (`python -m vstudio.batch`, references/BATCH.md) |
 | A topic → published short, end to end (script → drill → slides → record → clean up → edit → cover → export → post) | `references/SOP_SHORT_VIDEO.md` |
+| Any workflow as a project of N items (desk app / an agent in the project folder): recipe manifests, checkpoints, inbox, series, publish calendar | `python -m vstudio.project` (references/PROJECTS.md) |
 
 ### What the creator typically says → workflow
 | Phrases (中文 / English) | Workflow |

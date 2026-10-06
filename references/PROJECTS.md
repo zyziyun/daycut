@@ -1,0 +1,189 @@
+# Projects: every workflow as a recipe (`python -m vstudio.project`)
+
+The desk app (and an agent in a project folder) drives every workflow the same way: a **recipe manifest** per
+workflow (`workflows/<name>/recipe.yaml`, extra ones as `recipe.<variant>.yaml`) says what the workflow needs,
+which params it takes, its stage graph, the human decisions (**checkpoints**) and its outputs; a generic
+**project runner** executes it. Code: `lib/vstudio/project/`. Schema: `lib/vstudio/project/manifest.schema.json`.
+
+Batch first: a project holds **N items of one recipe** (a folder of clips, a topic list, CSV rows, the segments of a
+recording, N episodes, variants hook x platform x language); one video is N = 1. Under the hood a project is a
+`vstudio.batch` batch (`<project>/state/`), so items run in parallel on the resource-class queues with the same
+store, shared caches (one ASR per source, one glossary, one geometry), pilot, resume, budgets and circuit breaker
+(references/BATCH.md), and `python -m vstudio.batch review | job edit | job rerun | deliver | metrics --batch
+<project>/state` work on it unchanged.
+
+```
+workspace (persona / client) -> series (presets, cadence) -> project (any recipe) -> items (N) -> outputs (variants x platforms)
+recipes -> new -> [plan-items] -> run -> checkpoint (inbox) -> run ... -> export -> calendar plan -> posted
+```
+
+## 1. Project folder
+
+| path | what |
+|---|---|
+| `project.yaml` | the editable truth: recipe, series, client, params, inputs, items, variants, auto policy, answers, overrides, spec |
+| `items/<item>/` | the item's workspace: authored files (SCRIPT.md, edit.json, spec.py, promo.config.yaml, work/ai/project.yaml ...), the workflow's own `work/` and `out/`, `inputs/` (links) |
+| `state/` | the batch: `batch.db`, `spec.yaml` (generated), `jobs/<item>/<stage>/`, `cache/`, `checkpoints/<item>/<id>.json` (payloads), `answers/` |
+| `exports/` | `export`: `<item>/<platform>-<orientation>.<ext>` (+ `.cover`, `.post`) and `manifest.json` (sha256 per file) |
+| `AGENTS.md`, `CLAUDE.md` | agent hook (written by `new`, `context --write`) |
+
+```yaml
+# project.yaml
+version: 1
+name: weekly-tips
+recipe: talkinghead
+series: daily-tips                 # presets from $VSTUDIO_HOME/series/daily-tips/series.yaml (project wins)
+client: null                       # optional vstudio.batch client workspace
+params: {platforms: ["xiaohongshu:full"], speed: 1.1}      # project-level (shared) params
+inputs: {}                         # project-level inputs (music, refs, the long recording ...)
+items:                             # item-level inputs + params
+  - {id: a, inputs: {video: /abs/a.mp4}, params: {title: "..."}}
+variants: {by: [platform, hook, language], languages: [zh, en]}
+auto: [hook, filler, cover]        # checkpoints `run` answers with their default (never budget / consent)
+answers: {filler: {a: {value: {kinds: [filler]}, digest: 9f.., at: ...}}}
+overrides: {a: {cleanup_reply: "确认 3,5"}}                 # params derived from answers, per job
+spec: {qc: {sample_pct: 0}}        # extra vstudio.batch spec sections (asr transcriber, privacy, screen, call ...)
+```
+
+Items come from `new`: `--input video=a.mp4 --input video=b.mp4` or `--folder raw/ [--glob "*.MOV"]` (one item per
+file of the manifest's `items.from_input`), `--list topics.txt` (one per line, into the first `text` input),
+`--csv rows.csv` (`id` + input / param columns), `--episodes N`, `--items-json`; planner recipes (long recordings)
+get theirs from `plan-items` (a segments file or `python -m vstudio.batch plan-segments`), approved at the
+`segments` checkpoint. Effective params = manifest defaults < series params < project params < item params <
+answer-derived overrides; params with `x-spec` go into a batch spec section (`asr.language`, `privacy.exclude`,
+`call.guests`, `talkinghead.style` via `x-map` presets).
+
+## 2. Manifest
+
+| key | meaning |
+|---|---|
+| `id`, `version`, `workflow`, `labels {zh, en}`, `description {zh, en}`, `category` | identity (category: edit / slice / generate / write / package / batch) |
+| `inputs [{key, kind, labels, required, multiple, accept, scope, help}]` | kind: video / folder / photos / audio / text / script / file / url-free; scope item / project |
+| `items {sources, from_input, planner, per_item, shared, variants, share_cache}` | how items form; which params / stages are per item vs shared |
+| `params` | JSON Schema object; every property has `title`, `x-zh`, `default`, ranges / enums; `x-scope: item`, `x-spec`, `x-map` |
+| `engine {batch_recipe, expand, batch_inputs, spec}` | reuse a vstudio.batch recipe's stages (`batch_recipe: name` or `{param, map}` for engine variants) |
+| `stages [{id, resource, fn \| run \| from_batch, deps, extra_deps, keys, watch, when, paid, units, produces, preview}]` | the graph; `fn` = adapter `module:fn(env)`, `run` = a workflow script through the generic script adapter |
+| `checkpoints [...]` | section 3 |
+| `outputs {platforms, collect, files}` | supported platforms; collector (`module:fn`) or file templates for `export` |
+| `agent {workflow_md, notes, edit_files}`, `gaps`, `capabilities` | agent hook, known gaps |
+
+`run:` stages: `argv` templates (`{python}`, `{workflow_dir}`, `{item_dir}`, `{project_dir}`, `{stage_dir}`, `{item}`,
+`{platform}` (first), `{platforms_csv}`, any param, `{input.<key>}`, `{out.<dep>.<key>}`; `"{x*}"` expands a list;
+`{if: name, args: [...]}` keeps args only when `name` is set), `cwd`, `env`, `ok_codes`, `stdout` (to a file),
+`files` (must exist afterwards), `optional_files`, `patch {from, file, set}` (the authored config + param values ->
+a derived run config the scripts read; the authored file is never rewritten). `keys` = params in the stage key
+(default: all), `watch` = files whose content hash is in the key, so an edit by the app or the agent re-runs exactly
+that stage and what follows. `when: {param: value | [values] | {nonempty: true}}` enables a stage.
+
+Validation (`manifests.validate`, run on load and in the tests): the JSON Schema, unique ids, deps / after / blocks /
+needs exist, `from_batch` stages exist in the engine recipe, every `module:fn` imports, templates / scripts /
+WORKFLOW.md exist, param defaults satisfy their schema, budget / consent checkpoints are `auto: never`.
+
+## 3. Checkpoints
+
+A checkpoint compiles to a gate stage `cp_<id>` after `after` and before `blocks` (default: every direct dependent of
+`after`; `needs` adds stages whose outputs the payload reads). The gate writes the **payload** to
+`state/checkpoints/<item>/<id>.json` and passes when there is nothing to decide (`skip`, or `auto: skip-if-empty`
+with no options), or when the item carries an answer whose digest still matches (`reask`, default on except for
+`author`); otherwise the item parks in `waiting` (not a failure: no circuit breaker, no red QC) and `run` exits 7.
+
+Payload (what the app renders): `{id, kind, scope, item, labels, help, options [...], default, previews [{kind,
+path}], answer_schema, auto, batch_by, aggregate, digest, ...kind-specific}`. Answer: JSON validated against the
+checkpoint's `answer` schema; the checkpoint's `apply` turns it into param changes (`overrides` per item, project
+params for project scope, `items_patch` for segment edits) and a digest; then the project re-plans and reports
+`rerun {item: [stages]}` (only the stages downstream of the gate / of the changed params).
+
+| kind | used by | answer |
+|---|---|---|
+| `filler-confirm` | talkinghead, longform, course, promo, batch | `{approve: [ids], keep: [ids], kinds: [kind...], all}` -> cleanup reply (`确认 3,5 / 保留 7`); bulk by kind in the inbox |
+| `hook-pick` | talkinghead | `{pick: k}` (-1 none) or `{start, end, text}` |
+| `segment-approval` (project) | longform-to-short, call-clips, batch | `{approve: "all" \| [ids], drop: [ids], edits: {id: {start, end, title, hook}}}` |
+| `script-lock` | preproduction, explainer, ai-video | `{lock: true[, content]}` / author answer; digest = the file hash (an edit asks again) |
+| `storyboard-approval`, `author`, `media-selection` | explainer, promo, vlog, photo-story, slides, course, cover HTML | `{done: true}` or `{content: "..."}` for a file the human / agent writes (template seeded into the item) |
+| `voice-pick` | explainer | `{approve, voice, speed}` (cost estimate in the payload, before paid TTS) |
+| `budget-approval` (project) | ai-video | `{approve, budget, allow_unknown}`; payload `aggregate: [credits]` over items; never auto |
+| `take-selection` | ai-video | `{picks: {unit: take file}}` -> auto EDL |
+| `cover-pick` | talkinghead, vlog, cover | `{pick, text}` / `{t, text}` (talkinghead, vlog) or `{pick, title, highlight, quote}` (cover) |
+| `privacy-masks` | longform (exclude rects, project), call-clips (mask coverage), course (QA mosaics) | `{exclude: [[x0,y0,x1,y1]]}` / `{confirm}` / `{ok}` / `{approve}` |
+| `consent` (project) | call-clips | `{consent: true, who, note}`; never auto |
+| `review` | photo-story layout, polish speed | `{approve}` / `{speed}` |
+| `publish` | every video recipe | `{approve, reason}`; sets the batch review state; `export` takes approved items only. The default approve exists only when QC is not red, so `--auto publish` = exception review |
+
+Auto policy: `run --auto hook,filler` (or project.yaml `auto:` / the series) answers checkpoints whose manifest says
+`auto: default` with the payload default, then continues (rounds until nothing auto-answerable is left).
+
+## 4. CLI / JSON contract (desk app)
+
+All commands take `--json` (one document on stdout, paths absolute); `run --json-events` streams one JSON object per
+line (the batch events `run-start`, `stage-start`, `stage-done`, `progress`, `job-done` (state `waiting` at a
+checkpoint), `pause`, `run-end` + `checkpoint {job, checkpoint, checkpoint_kind, scope, payload, n_options}`,
+`auto-answer`, `project-end {status, exit_code, pending}`; logs and child output go to stderr).
+
+| command | stdout |
+|---|---|
+| `recipes --json [--schema]` | `{recipes: [manifest + graph {variant: [{id, deps, resource, shared, paid, gate}]}], capabilities, schema}` |
+| `new --recipe R --dir P ... --json` | `{ok, dir, recipe, items, state, context}` |
+| `plan-items --dir P [--provider X --count N --min --max] [--replace]` | `{ok, items, plan}` |
+| `show --dir P --json` | `{project (project.yaml), manifest, params, status, batch, recipe_name, paths}` |
+| `status --dir P --json [--brief]` | `{state new\|planned\|running\|needs-you\|error\|paused\|interrupted\|done, items [{id, state, waiting, qc, review, progress, stages [{id, state, seconds, cached, error, gate}]}], pending, progress}` |
+| `run \| resume --dir P [--pilot N] [--confirm-pilot] [--items a,b] [--auto ids] [--concurrency k=n]` | `{status, exit_code, batch_status, ran, pending [{item, id, kind, default, payload}], items}` |
+| `checkpoint --dir P [--id X] [--item I] --json` | `{pending: [payload...], n}` |
+| `checkpoint --dir P --id X [--item I \| --items a,b] (--answer JSON \| --answer-file F \| --default) [--run]` | `{ok, checkpoint, answered, rerun {item: stages}, run?}` (exit 5 + `{ok: false, error}` on an invalid answer) |
+| `set --dir P [--item I] --param k=v \| --set JSON` | the `refresh` result |
+| `preview --dir P [--item I] [--stage S]` | `{items: [{id, state, previews [{stage, kind, path, checkpoint?}]}]}` |
+| `export --dir P [--out D] [--all] [--items a,b]` | `{ok, dir, manifest, files, items, skipped, entries [{item, platform, orientation, kind, file, sha256, cover, post}]}` |
+| `context --dir P [--write]` / `refresh --dir P` | section 5 |
+| `list` | `{projects: [{dir, name, recipe, series, state, items, pending, progress}]}` (the parallel lanes) |
+| `series new\|show\|list\|update`, `inbox [answer]`, `calendar ...` | section 6 |
+
+Exit codes: 0 done, 1 failed items, 2 refused (budget), 3 paused (circuit breaker), 4 pilot waits for review, 5 bad
+input, 6 another run holds the project, 7 needs you (checkpoints pending).
+
+## 5. Agent hook (embedded Claude Code / Codex)
+
+`context --json` -> `{project, recipe, labels, state, workflow_md, manifest, project_yaml, state_dir, params, items
+[{id, state, waiting}], pending, edit_files, notes, commands {status, refresh, run, pending, answer, preview, export,
+batch}, rules}`; `context --write` (and `new`) put the same as `AGENTS.md` / `CLAUDE.md` into the project folder, so a
+session started there reads the playbook path, the editable files and the commands. The agent edits project.yaml or
+the item files; the app calls `refresh` -> `{plan {created, updated, unchanged, dropped}, stale {item: stages},
+pending, state}`; finished items whose watched files changed go back to `planned`, and the next `run` re-runs only
+those stages. `state/` is never edited by hand; budget / consent answers are the creator's.
+
+## 6. Series, inbox, calendar
+
+* **Series** (`$VSTUDIO_HOME/series/<id>/series.yaml`: `{id, name, recipe, params, cadence, accounts, spec, client,
+  auto}`, shared refs in `assets/`): `series new --id daily --recipe talkinghead --set '{"platforms": [...]}'
+  --cadence '{"per_week": 5}'`; `new --series daily ...` inherits the recipe, params, spec and auto policy.
+* **Inbox**: `inbox --json` -> `{entries [{project, project_name, recipe, item ("*" = project scope, with items +
+  aggregate), id, kind, labels, options, default, previews, answer_schema, ...}], groups [{recipe, id, kind, n,
+  entries, by [{value, n, refs}]}] (bulk groups, e.g. filler kinds across items), counts, total, errors}`.
+  `inbox answer --project P --id X [--item I] --answer JSON`, or in bulk `inbox answer --id filler --default`
+  / `--kind cover-pick --answer '{"pick": 0}' [--projects a,b] [--items ...]` (budget / consent never by default).
+* **Calendar** (`$VSTUDIO_HOME/calendar.json`; no auto-posting): `calendar account --id xhs-main --platform
+  xiaohongshu --times 12:00,19:00 --per-day 1 [--days 0,1,2,3,4]`; `calendar plan --project P [--accounts a,b]
+  [--start ISO]` puts the exported items into the next free slots of each matching account (`approved`);
+  `calendar set --post ID --state planned|approved|scheduled|posted|skipped [--at] [--url]` (allowed transitions
+  only); `calendar list [--start --end --account]` -> `{posts, gaps [{account, day, missing}] (断档), counts}`.
+
+## 7. Recipes (checkpoints; gaps)
+
+| recipe | items | checkpoints | gaps (agent / manual today) |
+|---|---|---|---|
+| `talkinghead` 口播精剪 (engine fast = talkinghead-clips, vtrack = talkinghead-folder) | clips / folder | hook, filler, cover, publish | vtrack: no hook stage, panels / pops anchors in compose config; retouch_video / drop_pass not stages; H track not an engine |
+| `longform-to-short` 长视频切片 (longform-split / longform-slices) | planned segments | segments (project), privacy (project), filler, publish | speaker region / screen knobs are spec sections |
+| `longform-course` 剪成课程 | recordings | keep (author config), filler, privacy (QA mosaics), publish | speaker aliases, transient / zoom targets, demo re-record by hand |
+| `call-clips` 播客 / 对话 (podcast-clips) | planned segments | segments, consent (project), masks, publish | tile rects asked in the wizard; build_clips filler review not a checkpoint; landscape EN two-pass |
+| `promo-recut` 宣传片 | talks | keep (author), filler, package (author), publish | packaging config authored; --verify not a gate; render needs npx hyperframes |
+| `explainer` 讲解视频 | topics / scripts | script, storyboard, voice (paid TTS), cues (author), scenes (agent-authored compositions), publish | scene HTML, sketches, music bed, hyperframes init are agent work |
+| `photo-story` 文艺片 | stories / episodes | story (spec.py author), layout, publish | the spec is the creative step (agent) |
+| `vlog` | trips / episodes / platform variants | edit (edit.json author), cover, publish | window selection from contact sheets; music catalog |
+| `ai-video` AIGC / 短剧 | episodes | script (project.yaml author), budget (project, never auto), takes, publish | look sheets / web generation / judge cards; budget is a project total |
+| `preproduction` 脚本创作 | topics / drafts | lock, drill_words (author) | drafting / AI rewrite is the agent's |
+| `cover` 封面 | videos / photos | pick, html (patterns A / B) | A / B cells + HTML authored; split cover (C) end to end |
+| `slides` 幻灯片 | decks | deck (author), review | deck HTML authored |
+| `polish` 导出收尾 | exports | speed, publish | cleanup CONFIRM rows not a checkpoint |
+| `batch` 批量 board (any batch recipe) | segments / folder | segments, filler, publish (exception review) | podcast-clips needs the call spec section |
+
+Adding a recipe: write `workflows/<name>/recipe.yaml` (the schema above), adapters only when a stage needs logic the
+scripts don't have (`lib/vstudio/project/adapters/`), then `pytest tests/test_project.py` (every manifest is
+validated, every engine variant built, and a project of synthetic inputs is planned for each recipe).

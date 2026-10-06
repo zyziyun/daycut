@@ -212,8 +212,8 @@ def test_preproduction_checkpoint_roundtrip_refresh_and_export(tmp_path):
     assert open(os.path.join(ex["dir"], "001", "SCRIPT.md"), encoding="utf-8").read().endswith("快，就是被记住。\n")
     ctx = json.loads(cli("context", "--dir", pdir, "--json").stdout)
     assert ctx["workflow_md"].endswith("workflows/preproduction/WORKFLOW.md")
-    assert os.path.join(pdir, "items", "001", "SCRIPT.md") in [os.path.realpath(f) if False else f for f in ctx["edit_files"]] \
-        or any(f.endswith("items/001/SCRIPT.md") for f in ctx["edit_files"])
+    assert any(f.endswith("items/001/SCRIPT.md") for f in ctx["edit_files"])
+    assert os.path.exists(os.path.join(pdir, "CLAUDE.md")) and "refresh" in ctx["commands"]
     assert ctx["pending"][0]["item"] == "002"
 
 
@@ -413,3 +413,24 @@ def test_answer_validation_and_unknown_inputs(tmp_path):
     r = p.answer("lock", dict(lock=True, content="# ok\n\n## HOOK\n    你问两遍，第二次快十倍。\n"))
     assert r["answered"] == ["main"]                          # one item: answered ahead without naming it
     assert p.run()["exit_code"] == 0                          # the gate finds the answer: passes at once
+
+
+def test_pilot_then_confirm_and_recipes_cli(tmp_path):
+    p = Project.create(str(tmp_path / "pilot"), recipe="preproduction", episodes=3)
+    r = p.run(pilot=1)
+    assert r["exit_code"] == 4 and r["batch_status"] == "pilot-review"
+    st = p.status()
+    ran = [i["id"] for i in st["items"] if i["progress"]["done"] > 0]
+    assert ran == ["ep01"]
+    assert p.run()["exit_code"] == 4                          # still waiting for the pilot review
+    r = p.run(confirm_pilot=True)
+    assert r["exit_code"] == 7 and {x["item"] for x in r["pending"]} == {"ep01", "ep02", "ep03"}
+    out = json.loads(cli("recipes", "--json").stdout)
+    ids = {x["id"] for x in out["recipes"]}
+    assert {"talkinghead", "cover", "preproduction", "ai-video", "explainer", "longform-course"} <= ids
+    th = next(x for x in out["recipes"] if x["id"] == "talkinghead")
+    assert set(th["graph"]) == {"talkinghead-clips", "talkinghead-folder"}
+    assert any(sg["id"] == "cp_filler" and sg["gate"] for sg in th["graph"]["talkinghead-clips"])
+    assert "inbox" in out["capabilities"] and os.path.exists(out["schema"])
+    ls = json.loads(cli("list", "--json").stdout)
+    assert any(x["dir"] == p.dir for x in ls["projects"])
