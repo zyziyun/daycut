@@ -22,10 +22,14 @@ CJK character / latin word) nothing may be deleted or added, each replaced run m
 is propagated to the job's other cues; spans the term fixes / glossary fixed are never re-edited. Fillers are never
 removed here - that is cleanup's job (the audio would still say them).
 
-Providers (``provider``):
-  auto     claude when ANTHROPIC_API_KEY is set, else none (OpenAI is never picked implicitly)
+Providers (``provider``; every call goes through ``vstudio.llm.complete``, tasks ``proofread`` / ``glossary``):
+  auto     the configured route (persona / client ``llm.tasks.proofread`` / ``llm.default``, env
+           VSTUDIO_LLM_PROOFREAD_PROVIDER ...), else claude when ANTHROPIC_API_KEY is set, else none (OpenAI, local
+           servers and subscription CLIs are never picked implicitly)
   claude   anthropic SDK (``pip install anthropic``, imported lazily), default model claude-opus-5-5
   openai   only when configured explicitly; OPENAI_API_KEY; ``openai`` SDK, default model gpt-4.1-mini
+  any other ``vstudio.llm`` provider: openai-compatible presets (deepseek, qwen, kimi, glm, openrouter, ollama,
+           lmstudio, vllm, llamacpp), gemini, claude-code / codex (your own CLI login) - see references/PROVIDERS.md
   none     term fixes + glossary fixes + low-confidence flags only
 A test / plugin can pass ``call=fn(system, prompt, model) -> (text, usage dict)`` instead of a provider.
 
@@ -39,11 +43,11 @@ import os
 import re
 
 from . import asr
+from . import llm
 
 DEFAULT_MODELS = {"claude": "claude-opus-5-5", "openai": "gpt-4.1-mini"}
 # USD per million tokens (input, output); spec prices.proofread_in / proofread_out override
-PRICES = {"claude-opus-5-5": (4.0, 20.0), "gpt-4.1-mini": (0.4, 1.6), "gpt-4o-mini": (0.15, 0.6),
-          "gpt-4.1": (2.0, 8.0), "gpt-4o": (2.5, 10.0)}
+PRICES = llm.PRICES
 FILLER_STACK = re.compile(r"(?:然后|就是|那个|这个|因为|所以|而且|的话|但是|嗯|呃|额)(?:然后|就是|那个|这个|因为|所以|而且|的话|"
                           r"但是|嗯|呃|额)+")
 HESITATION_RE = re.compile(r"[嗯呃额]")
@@ -105,14 +109,28 @@ At most 60 terms and 40 fixes (the most frequent first), each listed once; "why"
 Reply with JSON only: {"terms": ["..."], "fixes": [{"from": "...", "to": "...", "why": "...", "confidence": 0.9}]}"""
 
 
-def resolve_provider(provider=None):
-    """"auto" | None -> "claude" when ANTHROPIC_API_KEY is set, else "none"; anything else is returned as is."""
+def resolve_provider(provider=None, task="proofread", config=None):
+    """"auto" | None -> the configured ``vstudio.llm`` route for ``task``, else "claude" when ANTHROPIC_API_KEY is
+    set, else "none"; anything else is validated and returned as is (the Anthropic API keeps the name "claude")."""
     p = (provider or "auto").lower()
     if p == "auto":
-        return "claude" if os.environ.get("ANTHROPIC_API_KEY") else "none"
-    if p not in ("claude", "openai", "none"):
-        raise ValueError(f"proofread provider {provider!r}: auto | claude | openai | none")
-    return p
+        p = llm.route(task, config=config).provider
+    if p in ("claude", "openai", "none"):
+        return p
+    try:
+        c = llm.canonical(p)
+    except ValueError:
+        raise ValueError(f"proofread provider {provider!r}: auto | claude | openai | none | "
+                         + " | ".join(n for n in llm.names() if n not in ("anthropic", "openai", "none"))) from None
+    return "claude" if c == "anthropic" else c
+
+
+def default_model(prov, task="proofread", config=None):
+    """The model for a resolved provider: the route's model when that provider is configured, else the defaults."""
+    if prov in ("none", "custom"):
+        return DEFAULT_MODELS.get(prov)
+    r = llm.route(task, "anthropic" if prov == "claude" else prov, config=config)
+    return r.model or DEFAULT_MODELS.get(prov) or llm.default_model(r.provider, r.opts)
 
 
 def _cue_dict(c):
@@ -123,37 +141,24 @@ def _cue_dict(c):
 
 # ------------------------------------------------------------------ providers
 def _call_claude(system, prompt, model):
-    try:
-        import anthropic
-    except ImportError as e:
-        raise RuntimeError("proofread provider claude needs the anthropic package: pip install anthropic") from e
-    client = anthropic.Anthropic()
-    kw = dict(model=model, max_tokens=16000, system=system, messages=[{"role": "user", "content": prompt}],
-              output_config={"effort": "low"})
-    try:                                          # server-side refusal fallback (beta) when the SDK knows it
-        resp = client.beta.messages.create(betas=["server-side-fallback-2026-07-01"], fallbacks="default", **kw)
-    except TypeError:
-        resp = client.messages.create(**kw)
-    if getattr(resp, "stop_reason", None) == "refusal":
-        raise RuntimeError("proofread: the model declined the request (stop_reason refusal)")
-    text = "".join(getattr(b, "text", "") for b in resp.content if getattr(b, "type", "") == "text")
-    u = getattr(resp, "usage", None)
-    return text, dict(input=getattr(u, "input_tokens", 0) or 0, output=getattr(u, "output_tokens", 0) or 0)
+    """Anthropic API through ``vstudio.llm`` (effort low, JSON parsed / retried by the caller)."""
+    r = llm.complete("proofread", system, prompt, schema=True, provider="anthropic", model=model, max_tokens=16000,
+                     effort="low", repair=False)
+    return r["text"], dict(r["usage"])
 
 
 def _call_openai(system, prompt, model):
-    if not os.environ.get("OPENAI_API_KEY"):
-        raise RuntimeError("proofread provider openai needs OPENAI_API_KEY")
-    try:
-        from openai import OpenAI
-    except ImportError as e:
-        raise RuntimeError("proofread provider openai needs the openai package: pip install openai") from e
-    resp = OpenAI().chat.completions.create(
-        model=model, response_format={"type": "json_object"}, temperature=0, max_tokens=8000,
-        messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}])
-    u = resp.usage
-    return resp.choices[0].message.content or "", dict(input=getattr(u, "prompt_tokens", 0) or 0,
-                                                       output=getattr(u, "completion_tokens", 0) or 0)
+    """OpenAI Chat Completions (JSON mode, temperature 0) through ``vstudio.llm``."""
+    r = llm.complete("proofread", system, prompt, schema=True, provider="openai", model=model, max_tokens=8000,
+                     temperature=0, repair=False)
+    return r["text"], dict(r["usage"])
+
+
+def _call_llm(prov, task="proofread"):
+    """``fn(system, prompt, model) -> (text, usage)`` for any other ``vstudio.llm`` provider."""
+    if prov in CALLS:
+        return CALLS[prov]
+    return llm.call_fn(task, provider=prov, schema=True, temperature=0, repair=False)
 
 
 CALLS = {"claude": _call_claude, "openai": _call_openai}
@@ -412,9 +417,17 @@ def ascii_boundaries(fixes):
     return out if not isinstance(fixes, dict) else fixes
 
 
-def cost_usd(model, usage, prices=None):
+def cost_usd(model, usage, prices=None, provider=None):
+    """USD of ``usage``: spec prices.proofread_in / proofread_out override the table; local servers and
+    subscription CLIs (``provider``) cost 0."""
     pin, pout = (prices or {}).get("proofread_in"), (prices or {}).get("proofread_out")
-    d = PRICES.get(model, (2.5, 10.0))
+    if provider and provider not in ("claude", "custom") and pin is None and pout is None:
+        try:
+            if llm.canonical(provider) in llm.LOCAL:
+                return 0.0
+        except ValueError:
+            pass
+    d = llm.price_of(model, {k: v for k, v in (prices or {}).items() if isinstance(v, (list, tuple))})[0]
     pin = d[0] if pin is None else float(pin)
     pout = d[1] if pout is None else float(pout)
     return round((usage.get("input", 0) * pin + usage.get("output", 0) * pout) / 1e6, 5)
@@ -459,8 +472,8 @@ def build_glossary(text, context=None, provider="auto", model=None, call=None, p
     confusions (``from`` exactly as in the transcript -> what was said), each fix validated
     (``check_glossary_fix``: a term, found in the transcript, sound-alike, no deleted / added words).
     Returns dict(terms, fixes [{from, to, why, count}], rejected, provider, model, usage, cost_usd)."""
-    prov = "custom" if call else resolve_provider(provider)
-    mdl = model or DEFAULT_MODELS.get(prov)
+    prov = "custom" if call else resolve_provider(provider, task="glossary")
+    mdl = model or default_model(prov, "glossary")
     out = dict(terms=[], fixes=[], rejected=[], provider=prov, model=mdl if prov != "none" else None,
                usage=dict(input=0, output=0), cost_usd=0.0)
     if prov == "none" or not text:
@@ -472,7 +485,7 @@ def build_glossary(text, context=None, provider="auto", model=None, call=None, p
     if ctx.get("glossary"):
         lines.append("Terms the creator listed: " + ", ".join(dict.fromkeys(str(g) for g in ctx["glossary"] if g)))
     lines += ["", "Transcript:", text[:max_chars]]
-    fn = call or CALLS[prov]
+    fn = call or _call_llm(prov, "glossary")
 
     def ask(system, prompt):
         reply, u = fn(system, prompt, mdl)
@@ -543,7 +556,7 @@ def build_glossary(text, context=None, provider="auto", model=None, call=None, p
                 out["fixes"].append(dict(fx, checked="second look"))
     else:
         out["fixes"] += cand
-    out["cost_usd"] = cost_usd(mdl, out["usage"], prices)
+    out["cost_usd"] = cost_usd(mdl, out["usage"], prices, prov)
     out["fixes"].sort(key=lambda f: -len(f["from"]))
     return out
 
@@ -842,7 +855,7 @@ def proofread(cues, term_fixes=None, provider="auto", model=None, context=None, 
             protected[i] += [n for _, n in diff_spans(c["text"], new) if n]
             c["text"] = new
     prov = "custom" if call else resolve_provider(provider)
-    mdl = model or DEFAULT_MODELS.get(prov)
+    mdl = model or default_model(prov)
     low = low_confidence(list(words or ()) + list(heard or ()), C, low_conf)
     usage = dict(input=0, output=0)
     ctx = dict(context or {})
@@ -851,7 +864,7 @@ def proofread(cues, term_fixes=None, provider="auto", model=None, context=None, 
         ctx["glossary"] = list(ctx.get("glossary") or []) + list((glossary or {}).get("terms") or [])
     accepted = []
     if prov != "none" and C:
-        fn = call or CALLS[prov]
+        fn = call or _call_llm(prov)
         for rnd, k0 in [(r, k) for r in range(max(1, int(passes))) for k in range(0, len(C), chunk)]:   # recall
             part = C[k0:k0 + chunk]
             plow = [dict(x, i=x["i"] - k0) for x in low if k0 <= x["i"] < k0 + len(part)]
@@ -921,7 +934,7 @@ def proofread(cues, term_fixes=None, provider="auto", model=None, context=None, 
     flag_guesses(changes, glossary, context)
     return dict(cues=C, changes=changes, rejected=rejected, warnings=warnings, low_confidence=low,
                 fillers_left=caption_fillers(C), provider=prov, model=mdl if prov != "none" else None, usage=usage,
-                cost_usd=cost_usd(mdl, usage, prices) if prov not in ("none",) else 0.0,
+                cost_usd=cost_usd(mdl, usage, prices, prov) if prov not in ("none",) else 0.0,
                 glossary=dict(fixes=len(gfix), terms=len((glossary or {}).get("terms") or [])))
 
 

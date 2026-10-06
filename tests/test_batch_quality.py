@@ -207,7 +207,8 @@ def test_provider_resolution_and_mocked_sdks(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     assert PR.resolve_provider("auto") == "claude"
     with pytest.raises(ValueError):
-        PR.resolve_provider("gemini")
+        PR.resolve_provider("no-such-llm")                       # gemini & co are vstudio.llm providers now
+    assert PR.resolve_provider("gemini") == "gemini" and PR.resolve_provider("anthropic") == "claude"
     seen = {}
 
     def fake(name):

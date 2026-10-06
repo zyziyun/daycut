@@ -142,16 +142,20 @@ class ClaudePlanner:
         if not tr or not os.path.exists(tr):
             raise PlannerUnavailable("claude planner needs inputs.transcript (run the asr once, e.g. a 1-job pilot, "
                                      "or longform-to-short transcribe.py) to read the recording")
-        import anthropic
-        client = anthropic.Anthropic()
         reqs = build_requests(spec, _transcript_words(tr))
         out_path = os.path.join(spec["_dir"], "segments.claude.yaml")
         if self.sync:                                     # pilot / interactive: regular API
             rows = []
-            for r in reqs:
-                msg = client.messages.create(**r["params"])
-                rows += parse_reply("".join(b.text for b in msg.content if b.type == "text"))
+            from vstudio import llm
+            for r in reqs:                                # same request through vstudio.llm (system prompt cached)
+                pr = r["params"]
+                res = llm.complete("planner", pr["system"][0]["text"], pr["messages"][0]["content"], schema=True,
+                                   provider="anthropic", model=pr["model"], max_tokens=pr["max_tokens"],
+                                   effort=(pr.get("output_config") or {}).get("effort"), cache=True, repair=False)
+                rows += parse_reply(res["text"])
             return self._write(out_path, rows)
+        import anthropic                                  # Message Batches: an Anthropic-only API (50 % price)
+        client = anthropic.Anthropic()
         bid = self.store.meta("planner_batch_id") if self.store else None
         if not bid:
             from anthropic.types.message_create_params import MessageCreateParamsNonStreaming

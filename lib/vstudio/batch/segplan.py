@@ -21,8 +21,12 @@ Providers:
           inside, not followed by its own conclusion), filler ratio and speech share; the best non-overlapping
           windows win (spread over chapters). Titles / hooks / notes are extractive (the most informative
           sentence / clause, cut to the title limit).
+  auto    the configured ``vstudio.llm`` route for task ``segment_plan`` (client / persona ``llm.tasks.segment_plan``
+          or ``llm.default``, env VSTUDIO_LLM_SEGMENT_PLAN_PROVIDER ...), else claude with ANTHROPIC_API_KEY, else none.
   claude  anthropic SDK (imported lazily), ``claude-opus-5-5``; only with ANTHROPIC_API_KEY (``auto`` picks it).
   openai  only when named; OPENAI_API_KEY; ``gpt-4.1`` (``--model``).
+  any other ``vstudio.llm`` provider (deepseek, qwen, kimi, glm, openrouter, ollama, lmstudio, vllm, llamacpp,
+          gemini, claude-code, codex, openai-compatible): see references/PROVIDERS.md.
   The LLM sees numbered sentences with times and returns sentence-index ranges (so edges are always sentence /
   word edges), titles within the platform limit, hook alternatives, notes, tags, why / risk. Too few or
   invalid picks are filled from the rule-based ranking; hook text is always the transcript of the hook range
@@ -40,8 +44,10 @@ import time
 
 from .util import write_json
 
+from vstudio import llm as LLM
+
 MODELS = {"claude": "claude-opus-5-5", "openai": "gpt-4.1"}
-PRICES = {"claude-opus-5-5": (4.0, 20.0), "gpt-4.1": (2.0, 8.0), "gpt-4.1-mini": (0.4, 1.6), "gpt-4o": (2.5, 10.0)}
+PRICES = LLM.PRICES
 _CJK = re.compile(r"[㐀-鿿豈-﫿]")
 _LAT = re.compile(r"[A-Za-z][A-Za-z0-9+#.\-]*[A-Za-z0-9+#]|[A-Za-z]{2,}")
 STOP_CH = set("的了是在我你他她它这那就都也还要会有个们吧啊呢嘛吗呀哦嗯呃额对和与或但而所以因为然后一不没很太更最被把给让从到上下来去说讲看想做能可以得地着过么什怎哪些里中之其")
@@ -513,15 +519,11 @@ def _call_openai(system, prompt, model):
     if not os.environ.get("OPENAI_API_KEY"):
         raise PlanError("provider openai needs OPENAI_API_KEY")
     try:
-        from openai import OpenAI
-    except ImportError as e:
-        raise PlanError("provider openai needs the openai package: pip install openai") from e
-    resp = OpenAI().chat.completions.create(
-        model=model, response_format={"type": "json_object"}, temperature=0.2, max_tokens=16000,
-        messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}])
-    u = resp.usage
-    return resp.choices[0].message.content or "", dict(input=getattr(u, "prompt_tokens", 0) or 0,
-                                                       output=getattr(u, "completion_tokens", 0) or 0)
+        r = LLM.complete("segment_plan", system, prompt, schema=True, provider="openai", model=model,
+                         max_tokens=16000, temperature=0.2, repair=False)
+    except LLM.LLMError as e:
+        raise PlanError(str(e)) from e
+    return r["text"], dict(r["usage"])
 
 
 def _call_claude(system, prompt, model):
@@ -532,6 +534,21 @@ def _call_claude(system, prompt, model):
         return call(system, prompt, model)
     except RuntimeError as e:
         raise PlanError(str(e)) from e
+
+
+def _call_llm(provider, config=None):
+    """Any other ``vstudio.llm`` provider as ``fn(system, prompt, model) -> (text, usage)``."""
+    if provider in CALLS:
+        return CALLS[provider]
+    inner = LLM.call_fn("segment_plan", provider=provider, schema=True, config=config, temperature=0.2,
+                        repair=False)
+
+    def fn(system, prompt, model):
+        try:
+            return inner(system, prompt, model)
+        except LLM.LLMError as e:
+            raise PlanError(str(e)) from e
+    return fn
 
 
 CALLS = {"claude": _call_claude, "openai": _call_openai}
@@ -552,7 +569,7 @@ def _parse(text):
 
 
 def llm_plan(provider, model, sents, count, min_s, max_s, limit, platform, lang, style="", tags=(), call=None,
-             chunk_chars=150000):
+             chunk_chars=150000, config=None):
     """-> ([(k0, k1, fields)], usage, raw replies)."""
     unit = "characters" if lang == "zh" else "characters"
     rule = "CJK and full-width count 1, latin letters / digits / spaces 0.5" if platform in ("xiaohongshu", "xhs") \
@@ -568,7 +585,7 @@ def llm_plan(provider, model, sents, count, min_s, max_s, limit, platform, lang,
     if cur:
         chunks.append(cur)
     total = sum(sents[c[-1]]["te"] - sents[c[0]]["t"] for c in chunks) or 1.0
-    fn = call or CALLS[provider]
+    fn = call or _call_llm(provider, config)
     picks, usage, raws = [], dict(input=0, output=0), []
     for c in chunks:
         share = (sents[c[-1]]["te"] - sents[c[0]]["t"]) / total
@@ -635,15 +652,28 @@ def plan_segments(source, transcript=None, client=None, count=None, min_s=None, 
         eff = CL.effective(CL.load(cdir))
     platforms = list(platforms or eff.get("platforms") or ["xiaohongshu:full"])
     prov = (provider or "auto").lower()
+    llm_cfg = {"llm": eff.get("llm")} if eff.get("llm") else None
     if prov == "auto":
-        prov = "claude" if os.environ.get("ANTHROPIC_API_KEY") else "none"
+        prov = LLM.route("segment_plan", config=llm_cfg).provider
+        prov = "claude" if prov == "anthropic" else prov
     if prov == "claude" and not os.environ.get("ANTHROPIC_API_KEY") and call is None:
         raise PlanError("provider claude needs ANTHROPIC_API_KEY (or use --provider none)")
     if prov == "openai" and not os.environ.get("OPENAI_API_KEY") and call is None:
         raise PlanError("provider openai needs OPENAI_API_KEY (or use --provider none)")
     if prov not in ("claude", "openai", "none"):
-        raise PlanError(f"provider {provider!r}: auto | claude | openai | none")
-    model = model or MODELS.get(prov)
+        try:
+            prov = LLM.canonical(prov)
+        except ValueError:
+            raise PlanError(f"provider {provider!r}: auto | claude | openai | none | "
+                            + " | ".join(n for n in LLM.names() if n not in ("anthropic", "openai", "none"))) from None
+        prov = "claude" if prov == "anthropic" else prov
+        if prov not in ("claude", "openai", "none") and call is None:
+            chk = LLM.check(prov, LLM.route("segment_plan", prov, config=llm_cfg).opts)
+            if not chk["ready"]:
+                raise PlanError(f"provider {prov}: {chk['detail']} (or use --provider none)")
+    if not model and prov != "none":
+        r = LLM.route("segment_plan", "anthropic" if prov == "claude" else prov, config=llm_cfg)
+        model = r.model or MODELS.get(prov) or LLM.default_model(r.provider, r.opts)
     tr, tr_path, sha = get_transcript(source, transcript, language or eff.get("language"),
                                       eff.get("asr_prompt") or None, echo=echo)
     from vstudio import cleanup as C
@@ -674,7 +704,7 @@ def plan_segments(source, transcript=None, client=None, count=None, min_s=None, 
         picks = [(a, b, None, sc, parts) for sc, a, b, parts in select(ranked, count, len(chapters))]
     else:
         lp, usage, raws = llm_plan(prov, model, sents, count, mn, mx, limit, lim_pf, lang, eff.get("style") or "",
-                                   prefer, call=call)
+                                   prefer, call=call, config=llm_cfg)
         picks, taken = [], []
         sc_of = {(a, b): (sc, parts) for sc, a, b, parts in ranked}
         for a, b, f in sorted(lp, key=lambda x: -float((x[2] or {}).get("score") or 0)):
@@ -744,8 +774,9 @@ def plan_segments(source, transcript=None, client=None, count=None, min_s=None, 
                          hook=hk[0] if hk else None, hook_candidates=hk, notes=notes, tags=tags, why=why, risk=risk,
                          score=score))
     cost = 0.0
-    if prov != "none":
-        pin, pout = PRICES.get(model, (2.5, 10.0))
+    if prov != "none" and (call is not None or LLM.canonical("anthropic" if prov == "claude" else prov)
+                           not in LLM.LOCAL):
+        pin, pout = LLM.price_of(model)[0]
         cost = round((usage["input"] * pin + usage["output"] * pout) / 1e6, 4)
     doc = dict(ok=True, provider=prov, model=model if prov != "none" else None, source=os.path.abspath(source)
                if source else None, transcript=tr_path, transcript_sha1=sha, duration=round(dur_total, 2),

@@ -36,7 +36,7 @@ HEX = re.compile(r"^#[0-9A-Fa-f]{6}$")
 PLAT = re.compile(r"^[a-z][a-z-]{1,30}(:[a-z]{3,12})?$")
 SLUG = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,59}$")
 KNOWN = {"name", "slug", "style", "platforms", "tags", "glossary", "fillers", "brand", "cover_style", "cleanup_profile",
-         "confirm_policy", "language", "asr_prompt", "delivery", "notes", "crm", "created"}
+         "confirm_policy", "language", "asr_prompt", "delivery", "notes", "crm", "created", "llm"}
 DEFAULT_CLEANUP_DAYS = 30
 
 
@@ -199,11 +199,25 @@ def validate(patch, partial=True):
             if d.get("cleanup_days") is not None and (not isinstance(d["cleanup_days"], int) or d["cleanup_days"] < 0):
                 raise ClientError("delivery.cleanup_days: a whole number of days (0 = never)")
             out[k] = d
+        elif k == "llm":
+            if not isinstance(v, dict) or not set(v) <= {"default", "tasks", "prices"}:
+                raise ClientError("llm: {default: {provider, model}, tasks: {segment_plan|proofread|glossary|copy: "
+                                  "{provider, model}}} (see references/PROVIDERS.md)")
+            if any(isinstance(x, str) and x.lower() in ("api_key", "key", "token") for x in _walk_keys(v)):
+                raise ClientError("llm: never put API keys in client.yaml; name the env variable (api_key_env)")
+            out[k] = v
         else:
             out[k] = v
     if unknown:
         out["_unknown"] = unknown
     return out
+
+
+def _walk_keys(d):
+    if isinstance(d, dict):
+        for k, v in d.items():
+            yield k
+            yield from _walk_keys(v)
 
 
 # --------------------------------------------------------------------------- effective config
@@ -272,6 +286,8 @@ def persona_overlay(eff):
                     style=eff.get("style") or ""))
     if eff.get("brand"):
         ov["brand"] = dict(eff["brand"])
+    if eff.get("llm"):
+        ov["llm"] = dict(eff["llm"])
     if plats:
         ov["platforms"] = dict(default=plats[0].split(":")[0])
     return ov

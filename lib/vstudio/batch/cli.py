@@ -16,7 +16,7 @@
   recipes [--json]                                      registered recipes (--json: labels, inputs, row keys)
 v0.2 (desk; all with --json):
   plan-segments --source F [--transcript T] [--client C] [--count N] [--min S --max S] [--platforms a,b]
-      [--provider claude|openai|none] [--out DIR]      transcript -> candidate segments -> segments.draft.yaml
+      [--provider auto|claude|openai|ollama|claude-code|...|none] [--out DIR]      transcript -> candidate segments -> segments.draft.yaml
   client init|show|update|list --client C [--set JSON]  client.yaml layered over the persona (effective config)
   job show ID | job edit --job J --op caption|trim|hook|cover|copy|undo ... | job rerun --job J [--json-events]
   deliver [--client C] [--zip] [--cleanup-days N] [--out DIR]   client delivery package + manifest hash
@@ -603,8 +603,10 @@ def main(argv=None):
     p.add_argument("--min", type=float, help="min seconds per segment (default from the platforms)")
     p.add_argument("--max", type=float, help="max seconds per segment")
     p.add_argument("--platforms", help="a,b (title length + length window)")
-    p.add_argument("--provider", default="auto", choices=["auto", "claude", "openai", "none"],
-                   help="auto = claude with ANTHROPIC_API_KEY, else none; openai only when named")
+    p.add_argument("--provider", default="auto",
+                   help="auto = the configured llm route (segment_plan), else claude with ANTHROPIC_API_KEY, else none; "
+                        "or any vstudio.llm provider: claude | openai | deepseek | qwen | kimi | glm | openrouter | "
+                        "ollama | lmstudio | vllm | llamacpp | gemini | claude-code | codex | none")
     p.add_argument("--model")
     p.add_argument("--language")
     p.add_argument("--out", help="output folder (default <source dir>/plan-<source stem>)")
