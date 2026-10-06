@@ -100,12 +100,14 @@ def job_detail(batch_dir, jid, words=True):
     reply = p.get("cleanup_reply") or ""
     cl, cm, pr, vf, qc, ex, pv = (out(s) for s in ("cleanup", "compose", "proofread", "verify", "qc", "export",
                                                    "preview"))
-    parts = []
+    parts, patched = [], []
     for part in ("body", "hook"):
         E = read_json(cl.get(part)) if cl.get(part) else None
         if E:
             parts.append(dict(part=part, ranges=E.get("ranges"), stats=E.get("stats"),
                               edits=_cut_state(E.get("edits"), reply)))
+            cut_ids = {e["id"] for e in parts[-1]["edits"] if e["cut"]}
+            patched += [e for e in E.get("edits") or [] if e["id"] in cut_ids and e.get("patch")]
     he = cl.get("hook_edge")
     transcript = None
     tr_path = out("asr").get("transcript")
@@ -117,6 +119,8 @@ def job_detail(batch_dir, jid, words=True):
             W = [dict(w=str(w.get("word", "")), t=float(w["start"]), te=float(w["end"])) for w in raw]
         else:
             W = [dict(w=w["w"], t=w["t"], te=w["te"]) for w in C.load_words(tr)]
+        if patched:                                   # a filler-merged cut keeps the word it trimmed (its caption too)
+            W = C.patch_onsets(W, patched, {e["id"] for e in patched})
         cuts = [(e["t0"], e["t1"]) for pt in parts for e in pt["edits"] if e["cut"]]
         cuts += [(float(c[0]), float(c[1])) for c in cl.get("cuts") or []]
         spans = [tuple(cl.get("edges") or p.get("range") or (0, 0))]
@@ -137,14 +141,22 @@ def job_detail(batch_dir, jid, words=True):
     cues = (read_json(pr.get("cues"), {}) or {}).get("cues") if pr.get("cues") else \
         ((read_json(cm.get("cues"), {}) or {}).get("cues") if cm.get("cues") else None)
     vr = read_json(vf.get("report"), {}) if vf.get("report") else {}
+    ov_missed = []
     if cues and p.get("caption_overrides"):            # review caption edits, as they will be burned
-        cues, _, _ = ED.apply_caption_overrides(cues, p["caption_overrides"])
+        asr_cues = (read_json(cm.get("cues"), {}) or {}).get("cues") if cm.get("cues") else None
+        tl = read_json(cm.get("timeline")) if cm.get("timeline") else None
+        to_out = None
+        if tl:
+            from .lfsplit import _out_time
+            to_out = lambda t: _out_time(tl, t)  # noqa: E731
+        cues, _, ov_missed = ED.apply_caption_overrides(cues, p["caption_overrides"], asr_cues=asr_cues, to_out=to_out)
     if cues:
         cues = [dict(c, i=k) for k, c in enumerate(cues)]
     from .metrics import review_seconds
     edit = dict(range=p.get("range"), hook=p.get("hook"), hook_pick=p.get("hook_pick"),
                 hook_candidates=ED.hook_candidates(p), cover=p.get("cover") if isinstance(p.get("cover"), dict) else None,
-                copy=ED.effective_copy(p), caption_overrides=p.get("caption_overrides") or [], history=hist,
+                copy=ED.effective_copy(p), caption_overrides=p.get("caption_overrides") or [],
+                caption_overrides_missed=ov_missed, history=hist,
                 pending=pending, review_s=review_seconds(timing))
     return dict(
         job={k: j[k] for k in ("id", "item", "variant", "state", "qc", "qc_reasons", "review", "review_reason",

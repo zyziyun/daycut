@@ -1265,6 +1265,24 @@ def keep_segments(edits, ranges, approve=(), keep=(), all_confirm=False, extra=(
     return res
 
 
+def patch_onsets(words, edits, ids):
+    """Words as the cut leaves them: a ``filler-merged`` edit cuts the filler / restart merged INTO a word's front
+    (its ``patch`` = [the word's ASR onset, the cut end]) - the word itself is still said after the cut, so its
+    onset moves to the cut end and it keeps its caption (a midpoint test on the ASR times would drop it while the
+    audio keeps it). Only the edits in ``ids`` (the ones actually cut). ``words``: dicts with ``t`` / ``te`` or
+    whisper ``start`` / ``end``; returns new dicts (the input is not changed)."""
+    pats = [e["patch"] for e in edits or () if e.get("id") in set(ids or ()) and e.get("patch")]
+    out = []
+    for w in words or ():
+        w = dict(w)
+        k0, k1 = ("t", "te") if "t" in w else ("start", "end")
+        for p0, p1 in pats:
+            if abs(float(w[k0]) - float(p0)) < 0.002 and float(p1) < float(w[k1]):
+                w[k0] = float(p1)
+        out.append(w)
+    return out
+
+
 def timemap(keep):
     """``vstudio.cut.TimeMap`` of kept spans played back to back (source -> cleaned seconds)."""
     return cut.TimeMap.from_segments(list(keep))
@@ -2003,11 +2021,7 @@ def apply(edl, approve=(), keep=(), all_confirm=False, reply=None, extra_cuts=()
     cut_spans = [(e["t0"], e["t1"]) for e in E["edits"] if e["id"] in kept_ids] + \
         [(float(c[0]), float(c[1])) for c in extra_cuts or ()]
     W = [w for w in load_words(E["words"]) if any(a <= _mid(w) <= b for a, b in E["ranges"])]
-    for e in E["edits"]:
-        if e["id"] in kept_ids and e.get("patch"):
-            for w in W:
-                if abs(w["t"] - e["patch"][0]) < 0.002:
-                    w["t"] = e["patch"][1]
+    W = patch_onsets(W, E["edits"], kept_ids)
     expected = [w for w in W if not any(a <= _mid(w) <= b for a, b in cut_spans)]
     removed = [dict(w=w["w"], t=w["t"]) for w in W if any(a <= _mid(w) <= b for a, b in cut_spans)]
     write_sidecar(out, src, secs, expected, E.get("language"), fps=F, tag=tag, path=side, edl=edl_path, removed=removed,

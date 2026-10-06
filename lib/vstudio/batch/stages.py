@@ -130,11 +130,13 @@ def cleanup_overrides(p):
     return ov
 
 
-def cleanup_params(*keys):
-    """Stage params of a cleanup stage: the row keys + the confirm policy digest (a learned change re-runs it)."""
+def cleanup_params(*keys, optional=()):
+    """Stage params of a cleanup stage: the row keys + the confirm policy digest (a learned change re-runs it).
+    ``optional`` keys only count when set (a new key never re-keys the jobs that do not use it)."""
     def f(job, spec):
         from vstudio import cleanup as C
         d = {k: _p(job).get(k) for k in keys}
+        d.update({k: _p(job)[k] for k in optional if _p(job).get(k)})
         if _p(job).get("cleanup_policy", True) is not False:
             d["policy"] = C.policy_digest()
         return d
@@ -150,7 +152,14 @@ def run_cleanup(ctx):
     rng = p.get("range")
     kw = dict(transcript=tr, language=p.get("language") or (ctx.spec.get("asr") or {}).get("language"),
               profile=prof, overrides=cleanup_overrides(p), force=True)
-    body = C.analyze(src, ranges=[tuple(rng)] if rng else None, out=ctx.path("body.cleanup.json"),
+    ranges = [tuple(rng)] if rng else None
+    if p.get("cuts"):                                 # `job edit --op cut`: inner cuts (word-snapped) leave the range
+        from .lfsplit import _cuts, _subtract
+        a0, b0 = (float(rng[0]), float(rng[1])) if rng else (0.0, _src_dur(ctx.job, ctx.spec) or 1e9)
+        ranges = _subtract(a0, b0, [c[:2] for c in _cuts(p["cuts"])])
+        if not ranges:
+            raise ValueError("the row cuts leave nothing of the range")
+    body = C.analyze(src, ranges=ranges, out=ctx.path("body.cleanup.json"),
                      review=ctx.path("body_review.md"), **kw)
     out = dict(body=body["_path"], hook=None, files=[body["_path"]])
     edits = [dict(e, part="body") for e in body["edits"]]
@@ -260,6 +269,7 @@ def run_export(ctx):
     covers = p.get("cover")
     if isinstance(covers, dict):                      # `job edit --op cover`: {t, text, file}
         covers = [covers["file"]] if covers.get("file") else None
+    ctx.caption_edits = None
     man = X.export(c["master"], _plats(ctx.job), out_dir=ctx.path("exports"),
                    cues=caption_cues(ctx) if p.get("captions", True) else None, covers=covers, post=post,
                    mode=p.get("layout") or "pad-blur", preset=p.get("preset") or "medium",
@@ -278,8 +288,11 @@ def run_export(ctx):
                 e.update(duration=x["duration"], variant=x["variant"])
                 e.pop("loudness", None)
         write_json(ctx.path("exports", "manifest.json"), man)
-    return dict(manifest=ctx.path("exports", "manifest.json"), files=files, exports=exports,
-                warnings=man["warnings"], length_fit=fit)
+    out = dict(manifest=ctx.path("exports", "manifest.json"), files=files, exports=exports,
+               warnings=man["warnings"], length_fit=fit)
+    if getattr(ctx, "caption_edits", None):
+        out["caption_overrides"] = ctx.caption_edits
+    return out
 
 
 ZH_HINT = "以下是普通话的句子，使用简体中文。"
@@ -352,10 +365,10 @@ def _proofread_params(job, spec):
     o = proofread_opts(spec)
     d = dict(provider=o["provider"], model=o["model"], low_conf=o["low_conf"], call=o["call"],
              term_fixes=(spec.get("subtitles") or {}).get("term_fixes"), filler_edges=o["filler_edges"], v=2)
-    if o["provider"] != "none" or o["call"]:          # the LLM prompt's context (a review copy edit does not re-ask)
-        from .edits import key_copy
+    if o["provider"] != "none" or o["call"]:          # the LLM prompt's context (a review copy edit does not re-ask;
+        from .edits import key_copy                   # the notes are a hint only: a notes edit never re-proofreads)
         d.update(asr=(spec.get("asr") or {}).get("prompt"), title=key_copy(_p(job), "title"), chapter=_p(job).get("chapter"),
-                 notes=_p(job).get("notes"), series=_p(job).get("series"))
+                 series=_p(job).get("series"))
     return d
 
 
@@ -451,29 +464,93 @@ def run_proofread(ctx):
     claude / openai / none) validated against the audio (no deleted / added words), low-confidence words, then no
     caption starting / ending on a filler; corrected cues.json + proofread.json (every change logged)."""
     from vstudio import proofread as PR
+    from .edits import locked_cues
     o = proofread_opts(ctx.spec)
     c = ctx.inputs["compose"]
     cues = (read_json(c["cues"], {}) or {}).get("cues", [])
     p = ctx.params
-    gl = _gloss_context(ctx.spec)
-    topic = [(ctx.spec.get("vertical") or {}).get("series"), p.get("series"), p.get("chapter"), p.get("title")]
-    context = dict(topic=" / ".join(dict.fromkeys(str(x) for x in topic if x)), glossary=gl,
-                   notes=[str(x) for x in list(p.get("notes") or [])[:6]])
+    context = proofread_context(ctx.spec, p)
     call = import_ref(o["call"]) if o["call"] else None
     g = (ctx.inputs.get("glossary") or {}).get("glossary")
     glossary = read_json(g, {}) if g else None
+    locked = locked_cues(cues, p.get("caption_overrides"))       # the creator's own caption fixes are final
     res = PR.proofread(cues, term_fixes=(ctx.spec.get("subtitles") or {}).get("term_fixes"), provider=o["provider"],
                        model=o["model"], context=context, heard=_heard_words(ctx), low_conf=o["low_conf"], call=call,
-                       prices=ctx.spec.get("prices"), glossary=glossary)
+                       prices=ctx.spec.get("prices"), glossary=glossary, cache=proofread_cache(ctx.batch_dir),
+                       locked=locked)
     out_cues = res.pop("cues")
     if o["filler_edges"]:
-        out_cues, res["filler_edges"] = PR.fix_filler_edges(out_cues, max_chars=int(p.get("max_chars") or 24))
+        out_cues, res["filler_edges"] = PR.fix_filler_edges(out_cues, max_chars=int(p.get("max_chars") or 24),
+                                                            locked=locked)
     cues_path = write_json(ctx.path("cues.json"), {"cues": out_cues})
     rep = write_json(ctx.path("proofread.json"), res)
+    cs = res.get("cache") or {}
     ctx.log(f"proofread ({res['provider']}): {len(res['changes'])} change(s), {len(res['rejected'])} rejected, "
-            f"{len(res['low_confidence'])} low-confidence word(s)")
+            f"{len(res['low_confidence'])} low-confidence word(s); cache {cs.get('hits', 0)} hit(s), "
+            f"{cs.get('sent', 0)} cue(s) sent" + (f", {len(locked)} locked (caption edits)" if locked else ""))
     return dict(cues=cues_path, report=rep, files=[cues_path, rep], cost_usd=res["cost_usd"],
                 changes=len(res["changes"]), provider=res["provider"], digest=sha1_file(cues_path))
+
+
+def proofread_context(spec, p):
+    """The LLM context of one job's proofread: topic (series / chapter / the planned title), the term list, the
+    notes (a hint only - not part of the cache key)."""
+    from .edits import key_copy
+    topic = [(spec.get("vertical") or {}).get("series"), p.get("series"), p.get("chapter"), key_copy(p, "title")]
+    return dict(topic=" / ".join(dict.fromkeys(str(x) for x in topic if x)), glossary=_gloss_context(spec),
+                notes=[str(x) for x in list(p.get("notes") or [])[:6]])
+
+
+def proofread_cache(batch_dir):
+    """``<batch>/cache/proofread-cues``: the per-cue LLM results (``vstudio.proofread.CueCache``)."""
+    from vstudio import proofread as PR
+    return PR.CueCache(os.path.join(batch_dir, "cache", "proofread-cues")) if batch_dir else None
+
+
+def seed_proofread_cache(batch_dir, spec, job, rows):
+    """A job proofread before the per-cue cache existed: put its reviewed LLM results into the cache (per compose
+    cue: the text after term fixes + glossary -> the text after the LLM), so its next proofread re-sends nothing
+    the creator already saw. Skipped when that proofread degraded (provider warnings) or nothing matches.
+    -> number of cues seeded."""
+    from vstudio import proofread as PR
+    o = proofread_opts(spec)
+    pr = (rows.get("proofread") or {}).get("out") or {}
+    cm = (rows.get("compose") or {}).get("out") or {}
+    if o["provider"] == "none" and not o["call"] or not pr.get("report") or not cm.get("cues"):
+        return 0
+    rep = read_json(pr["report"], {}) or {}
+    if rep.get("cache") is not None or rep.get("provider") in (None, "none") or \
+            any(w.get("source") == "provider" for w in rep.get("warnings") or []):
+        return 0
+    d = read_json(cm["cues"], {}) or {}
+    cues = d.get("cues") if isinstance(d, dict) else d
+    if not cues:
+        return 0
+    g = ((rows.get("glossary") or {}).get("out") or {}).get("glossary")
+    glossary = read_json(g, {}) if g else None
+    p = job["params"]
+    tf = (spec.get("subtitles") or {}).get("term_fixes")
+    context = proofread_context(spec, p)
+    pre = PR.proofread(cues, term_fixes=tf, provider="none", glossary=glossary, context=context)["cues"]
+    mdl = rep.get("model") or o["model"] or PR.default_model(rep["provider"])
+    ch = PR.context_hash(rep["provider"], mdl, glossary, PR.ascii_boundaries(tf), context, 2)
+    cc = proofread_cache(batch_dir)
+    llm = {}
+    for c in rep.get("changes") or []:
+        if c.get("source") == "llm" and isinstance(c.get("i"), int):
+            llm.setdefault(c["i"], []).append(c)
+    if any(i >= len(cues) or llm[i][0].get("before") != pre[i]["text"] for i in llm):
+        return 0                                       # the report does not belong to these compose cues
+    n = 0
+    for i, c in enumerate(cues):
+        key = PR.cue_key(c["text"], ch)
+        if cc.get(key) is not None:
+            continue
+        mine = [{k: v for k, v in x.items() if k not in ("i", "start", "end")} for x in llm.get(i, [])]
+        cc.put(key, dict(pre=pre[i]["text"], text=mine[-1]["after"] if mine else pre[i]["text"], changes=mine,
+                         seeded=True))
+        n += 1
+    return n
 
 
 def sha1_file(path):
@@ -493,11 +570,20 @@ def caption_cues(ctx):
     from .edits import apply_caption_overrides
     d = read_json(path, {}) or {}
     cues = d.get("cues") if isinstance(d, dict) else d
-    cues, applied, missed = apply_caption_overrides(cues, ov)
+    cm = read_json(ctx.inputs["compose"]["cues"], {}) or {}
+    asr_cues = cm.get("cues") if isinstance(cm, dict) else cm
+    cues, applied, missed = apply_caption_overrides(cues, ov, asr_cues=asr_cues)
     for m in missed:
-        ctx.log(f"caption edit not applied (cue changed since): #{m.get('i')} {m.get('from')!r}")
+        ctx.log(f"caption edit not applied (cue changed since): #{m.get('i')} {m.get('from')!r} -> {m.get('to')!r}")
+    ctx.caption_edits = overrides_report(applied, missed)
     out = dict(d, cues=cues) if isinstance(d, dict) else dict(cues=cues)
     return write_json(ctx.path("cues.edited.json"), out)
+
+
+def overrides_report(applied, missed):
+    """Export-stage record of the creator's caption edits: how many landed, which could not be placed (QC warns)."""
+    return dict(applied=len(applied), missed=[dict(i=m.get("i"), **{"from": m.get("from"), "to": m.get("to")})
+                                              for m in missed])
 
 
 def run_qc(ctx):
@@ -585,7 +671,8 @@ def speech_stages():
               units=lambda j, s: _src_dur(j, s) if _no_given(j, s) else 0.0,     # a given transcript is only read
               cost=lambda j, s: _asr_cost(_src_dur)(j, s) if _no_given(j, s) else 0.0, retries=3),
         Stage("cleanup", "cpu", run_cleanup, deps=("probe", "asr"),
-              params=cleanup_params("range", "hook", "cleanup_profile", "cleanup_overrides", "cleanup_policy", "language"),
+              params=cleanup_params("range", "hook", "cleanup_profile", "cleanup_overrides", "cleanup_policy", "language",
+                                    optional=("cuts",)),
               units=_dur, version=4),
         Stage("apply", "cpu-render", run_apply, deps=("cleanup",), params=_keyp("cleanup_reply", "cleanup_profile"),
               units=_dur, purge=("*.mp4", "*.wav", "*.asr.json")),

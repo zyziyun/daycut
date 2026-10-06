@@ -94,12 +94,17 @@ B=batch-course-slices
 python3 -m vstudio.batch job edit --batch $B --job ep02 --op caption --cue 7 --text "..."   # must match the audio
 python3 -m vstudio.batch job edit --batch $B --job ep02 --op hook --pick 1                  # -1: no cold open
 python3 -m vstudio.batch job edit --batch $B --job ep02 --op trim --start 315.2 --end 360   # word-snapped
+python3 -m vstudio.batch job edit --batch $B --job ep02 --op cut --start 482.3 --end 484.5 --why "aside"  # inner cut
+python3 -m vstudio.batch job edit --batch $B --job ep02 --op notes --set "要点一|要点二"     # notes panel only
 python3 -m vstudio.batch job edit --batch $B --job ep02 --op cover --t 12.5 --text "上半句|下半句"
 python3 -m vstudio.batch job edit --batch $B --job ep02 --op copy --title "..." --tags RAG,LLM   # posts rewritten
 python3 -m vstudio.batch job rerun --batch $B --job ep02     # caption edit: re-burn + export only (~1 min / 4 platforms)
 ```
-A caption change that adds or drops a spoken word is refused with the reason. `job edit --op undo` reverts the last
-edit. The desk times each review (`timing --job ep02 --event start|stop --what review`).
+A caption change that adds or drops a spoken word is refused with the reason - unless a re-hearing of the cue's
+audio says the new text (checked automatically; `--reasr` makes the re-hearing decide); the JSON refusal has
+`reason_code` and `heard`. `job edit --op undo` reverts the last edit. `review --accept-policy --jobs ep02,ep04`
+cuts the policy approvals of those jobs only (never learned as the creator's answers). Proofread keeps its LLM
+corrections per cue text (`<batch>/cache/proofread-cues`): a re-cut only re-asks the cues whose words changed. The desk times each review (`timing --job ep02 --event start|stop --what review`).
 
 **6. Deliver / package + clean.**
 ```bash

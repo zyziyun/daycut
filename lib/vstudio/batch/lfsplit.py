@@ -478,17 +478,47 @@ def run_cleanup_split(ctx):
     return out
 
 
-def _keep_pieces(p, edl):
+def _keep_pieces(p, edl, with_ids=False):
+    """Kept source pieces of the job's EDL under its cleanup reply (``with_ids``: also the ids of the edits cut)."""
     from vstudio import cleanup as C
     E = read_json(edl)
     if p.get("cleanup_profile") == "off":
-        return [tuple(r) for r in E["ranges"]]
+        pieces = [tuple(r) for r in E["ranges"]]
+        return (pieces, []) if with_ids else pieces
     reply = p.get("cleanup_reply")
     r = C.parse_reply(reply) if reply else dict(approve=set(), keep=set(), all_confirm=False)
     ids = {e["id"] for e in E["edits"]}
-    return C.keep_segments(E["edits"], E["ranges"], set(r["approve"]) & ids, set(r["keep"]) & ids,
-                           bool(r["all_confirm"]), min_piece=(E.get("settings") or {}).get("min_piece"),
-                           words=E.get("words"))
+    ap, kp, al = set(r["approve"]) & ids, set(r["keep"]) & ids, bool(r["all_confirm"])
+    pieces = C.keep_segments(E["edits"], E["ranges"], ap, kp, al, min_piece=(E.get("settings") or {}).get("min_piece"),
+                             words=E.get("words"))
+    return (pieces, C.applied_ids(E["edits"], ap, kp, al)) if with_ids else pieces
+
+
+def cut_transcript(path, edl, ids):
+    """The workflow transcript (``audio16k.json``, whisper segments) as the job's cut leaves it, for build_subs and
+    the verify sidecar: words a ``filler-merged`` edit only trimmed in front keep their caption, with the onset
+    moved past the cut (``vstudio.cleanup.patch_onsets``). The captions then hold exactly the words whose audio
+    survives (a fully cut word's midpoint is inside the cut). Rewrites ``path`` in place; -> number patched."""
+    from vstudio import cleanup as C
+    E = read_json(edl) or {}
+    if not ids or not any(e.get("patch") for e in E.get("edits") or []):
+        return 0
+    data = read_json(path)
+    n = 0
+    for sg in (data or {}).get("segments") or []:
+        ws = sg.get("words") or []
+        if not ws:
+            continue
+        new = C.patch_onsets(ws, E["edits"], ids)
+        for a, b in zip(ws, new):
+            if abs(float(a["start"]) - float(b["start"])) > 1e-6:
+                n += 1
+        if abs(float(sg["start"]) - float(ws[0]["start"])) < 1e-6:     # the segment opened on a patched word
+            sg["start"] = float(new[0]["start"])
+        sg["words"] = new
+    if n:
+        write_json(path, data)
+    return n
 
 
 def _out_time(timeline, t):
@@ -560,7 +590,8 @@ def run_compose_split(ctx):
     write_json(os.path.join(work, "config.json"), cfg)
     _link(geo["crop_spans"], os.path.join(work, "crop_spans.json"))
     whisper_json(tr, os.path.join(work, "audio16k.json"))
-    pieces = _keep_pieces(p, cl["body"])
+    pieces, applied = _keep_pieces(p, cl["body"], with_ids=True)
+    cut_transcript(os.path.join(work, "audio16k.json"), cl["body"], applied)
     if not pieces:
         raise ValueError("nothing left to keep after cleanup")
     chapter = p.get("chapter")
@@ -602,13 +633,17 @@ def run_export_split(ctx):
     _link(os.path.join(c["work"], "crop_spans.json"), os.path.join(work, "crop_spans.json"))
     pr = (ctx.inputs.get("proofread") or {}).get("cues")
     cues = (read_json(pr, {}) or {}).get("cues", []) if pr else read_json(os.path.join(c["work"], "cues.json"), [])
+    timeline = read_json(os.path.join(c["work"], "timeline.json"))
+    edits_rep = None
     if p.get("caption_overrides"):                         # review caption edits (`job edit --op caption`)
         from .edits import apply_caption_overrides
-        cues, _, missed = apply_caption_overrides(cues, p["caption_overrides"])
+        cues, applied, missed = apply_caption_overrides(
+            cues, p["caption_overrides"], asr_cues=read_json(os.path.join(c["work"], "cues.json"), []),
+            to_out=lambda t: _out_time(timeline, t))
         for m in missed:
-            ctx.log(f"caption edit not applied (cue changed since): #{m.get('i')} {m.get('from')!r}")
+            ctx.log(f"caption edit not applied (cue changed since): #{m.get('i')} {m.get('from')!r} -> {m.get('to')!r}")
+        edits_rep = ST.overrides_report(applied, missed)
     write_json(os.path.join(work, "cues.json"), cues)      # proofread captions (make_vertical reads a bare list)
-    timeline = read_json(os.path.join(c["work"], "timeline.json"))
     hook_text = spoken_hook_lines(timeline, cues)          # the hook band says what the audio says (proofread)
     write_json(os.path.join(work, "timeline.json"), timeline)
     _link(c["final"], os.path.join(out, "final.mp4"))
@@ -654,9 +689,12 @@ def run_export_split(ctx):
     man = write_json(ctx.path("manifest.json"), dict(exports=entries, warnings=warnings, plans=plans, length_fit=fit,
                                                      hook_lines=hook_text))
     files = [x["file"] for x in exports] + [x["cover"] for x in exports if x["cover"]]
-    return dict(manifest=man, files=files, exports=exports, warnings=warnings, length_fit=fit,
-                privacy=dict(exclude=p.get("_exclude") or [], overlap_frames=overlap, modes=sorted(m for m in modes if m),
-                             plans=plans))
+    res = dict(manifest=man, files=files, exports=exports, warnings=warnings, length_fit=fit,
+               privacy=dict(exclude=p.get("_exclude") or [], overlap_frames=overlap, modes=sorted(m for m in modes if m),
+                            plans=plans))
+    if edits_rep:
+        res["caption_overrides"] = edits_rep
+    return res
 
 
 # --------------------------------------------------------------------------- vertical master reuse
