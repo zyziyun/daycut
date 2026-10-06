@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vstudio.intake.plan",
+  "title": "video-studio intake plan (editable; `python -m vstudio.intake apply --plan plan.json`)",
+  "type": "object",
+  "required": ["version", "kind", "prompt", "projects", "summary_zh", "analysis", "planner"],
+  "properties": {
+    "version": {"const": 1},
+    "kind": {"const": "vstudio.intake.plan"},
+    "id": {"type": "string"},
+    "created": {"type": "string"},
+    "prompt": {"type": "string"},
+    "client": {"type": ["string", "null"]},
+    "revisions": {"type": "array", "items": {"type": "object", "required": ["prompt"]}},
+    "planner": {
+      "type": "object",
+      "required": ["provider"],
+      "properties": {
+        "provider": {"type": "string"},
+        "model": {"type": ["string", "null"]},
+        "route": {"type": "string"},
+        "fallback": {"type": "boolean"},
+        "reason": {"type": "string"},
+        "cost_usd": {"type": "number"},
+        "seconds": {"type": "number"}
+      }
+    },
+    "analysis": {
+      "type": "object",
+      "required": ["digest", "inputs"],
+      "properties": {"digest": {"type": "string"}, "inputs": {"type": "array", "items": {"type": "string"}}}
+    },
+    "materials": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "path", "kind", "role"],
+        "properties": {
+          "id": {"type": "string"}, "path": {"type": "string"},
+          "kind": {"enum": ["video", "audio", "image", "text"]}, "role": {"type": "string"}
+        }
+      }
+    },
+    "projects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "recipe", "name", "inputs", "items", "params"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^p\\d+$"},
+          "recipe": {"type": "string"},
+          "recipe_label": {"type": "string"},
+          "name": {"type": "string", "minLength": 1, "maxLength": 60},
+          "why": {"type": "string"},
+          "materials": {"type": "array", "items": {"type": "string"}},
+          "inputs": {"type": "object"},
+          "items": {
+            "type": "object",
+            "required": ["method"],
+            "properties": {
+              "method": {"enum": ["per-file", "single", "planner", "focus", "episodes", "list"]},
+              "count": {"type": ["integer", "null"], "minimum": 1},
+              "focus": {"type": ["string", "null"]},
+              "max_s": {"type": "number"},
+              "unresolved": {"type": "boolean"},
+              "rows": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["id"],
+                  "properties": {
+                    "id": {"type": "string"},
+                    "inputs": {"type": "object"},
+                    "params": {
+                      "type": "object",
+                      "properties": {
+                        "range": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2}
+                      }
+                    },
+                    "why": {"type": "string"}
+                  }
+                }
+              }
+            }
+          },
+          "params": {"type": "object"},
+          "param_sources": {"type": "object"},
+          "auto": {"type": "array", "items": {"type": "string"}},
+          "checkpoints": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "kind", "label", "needs_you"],
+              "properties": {"needs_you": {"type": "boolean"}}
+            }
+          },
+          "estimate": {"type": "object"},
+          "outputs": {"type": "object"}
+        }
+      }
+    },
+    "series": {"type": ["object", "null"], "properties": {"id": {"type": "string"}, "name": {"type": "string"}}},
+    "questions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "text"],
+        "properties": {"project": {"type": ["string", "null"]}, "options": {"type": "array"}}
+      }
+    },
+    "risks": {"type": "array", "items": {"type": "string"}},
+    "warnings": {"type": "array", "items": {"type": "string"}},
+    "estimate": {"type": "object"},
+    "run": {"type": "object", "properties": {"pilot": {"type": ["integer", "null"]}, "auto": {"type": "array"}}},
+    "summary_zh": {"type": "string"}
+  }
+}
