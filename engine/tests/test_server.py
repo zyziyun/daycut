@@ -9,6 +9,8 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import _isolate  # noqa: E402,F401  (VSTUDIO_HOME / DESK_DATA_DIR -> a temp folder, first)
+
 from desk_engine.app import Api, serve, validate_create, validate_decisions  # noqa: E402
 from desk_engine.common import BadRequest, EventBus, Registry  # noqa: E402
 from desk_engine.mock import MockEngine  # noqa: E402

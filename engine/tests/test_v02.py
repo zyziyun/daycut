@@ -12,6 +12,8 @@ import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import _isolate  # noqa: E402,F401  (VSTUDIO_HOME / DESK_DATA_DIR -> a temp folder, first)
+
 from desk_engine import metrics as M  # noqa: E402
 from desk_engine import planning as P  # noqa: E402
 from desk_engine.app import Api, validate_edit, validate_plan_batch  # noqa: E402

@@ -1,0 +1,24 @@
+"""Imported first by every test module: per-user stores go to a throwaway folder.
+
+The engine registers every planned batch in ``$VSTUDIO_HOME/batches.json`` (default ``~/.config/vstudio``) and keeps
+clients under ``$VSTUDIO_HOME/clients``; the desk keeps its registry under ``$DESK_DATA_DIR`` (default
+``~/.vstudio-desk``). Without this, test batches in temp folders ended up in the user's real registry. The variables
+are set in ``os.environ`` so engine subprocesses (``python -m vstudio.batch ...``) inherit them too.
+"""
+import atexit
+import os
+import shutil
+import tempfile
+
+ROOT = tempfile.mkdtemp(prefix="desk-engine-tests-")
+HOME = os.path.join(ROOT, "vstudio-home")
+DATA = os.path.join(ROOT, "desk-data")
+for d in (HOME, DATA):
+    os.makedirs(d, exist_ok=True)
+
+os.environ["VSTUDIO_HOME"] = HOME
+os.environ["VSTUDIO_CLIENTS"] = os.path.join(HOME, "clients")
+os.environ["DESK_DATA_DIR"] = DATA
+os.environ.setdefault("VSTUDIO_BATCH_BENCH", os.path.join(ROOT, "bench.json"))
+
+atexit.register(shutil.rmtree, ROOT, True)

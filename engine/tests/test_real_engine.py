@@ -12,6 +12,8 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import _isolate  # noqa: E402,F401  (VSTUDIO_HOME / DESK_DATA_DIR -> a temp folder, first)
+
 ENGINE = os.environ.get("VSTUDIO_ENGINE_PATH") or os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "..", "video-studio"))
 HAVE = os.path.isdir(os.path.join(ENGINE, "lib", "vstudio", "batch"))
@@ -64,6 +66,23 @@ class RealEngineTest(unittest.TestCase):
         res = self.eng.apply_review(ent["id"], dict(decisions={"a": dict(decision="approve")}))
         self.assertEqual(res["approved"], ["a"])
         self.assertIn(r["batch_dir"], self.eng.roots())
+
+    def test_registry_stays_in_the_temp_home(self):
+        """plan registers the batch under $VSTUDIO_HOME (the tests' temp folder), never ~/.config/vstudio."""
+        from vstudio.batch.plan import plan_batch
+        real = os.path.expanduser("~/.config/vstudio/batches.json")
+        before = open(real, "rb").read() if os.path.exists(real) else None
+        spec = dict(name="fake", recipe="test-fake", plugins=["_batch_helpers"],
+                    plugin_paths=[os.path.join(ENGINE, "tests")], jobs=[dict(id="a")])
+        sp = os.path.join(self.tmp, "fake.json")
+        with open(sp, "w") as f:
+            json.dump(spec, f)
+        r = plan_batch(sp, os.path.join(self.tmp, "batch-reg"), echo=False)
+        self.assertEqual(os.environ["VSTUDIO_HOME"], _isolate.HOME)
+        with open(os.path.join(_isolate.HOME, "batches.json")) as f:
+            self.assertIn(r["batch_dir"], json.dumps(json.load(f)))
+        after = open(real, "rb").read() if os.path.exists(real) else None
+        self.assertEqual(before, after)
 
 
 if __name__ == "__main__":
