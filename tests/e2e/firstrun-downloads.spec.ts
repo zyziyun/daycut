@@ -158,3 +158,58 @@ test('a restart finds everything installed: zero network requests, nothing offer
   await expect(page.getByTestId('assets-banner')).toHaveCount(0);
   expect(requests).toBe(before);
 });
+
+test('assets already on disk at start: in the first engine env, zero engine restarts, first API call succeeds', async () => {
+  await app.close();
+  // Whisper "already in the Hugging Face cache" (content-addressed blob) - found by the start-up scan
+  const hub = tmp('vsdesk-hub-');
+  const snap = path.join(hub, 'models--org--whisper', 'snapshots', 'rev1');
+  fs.mkdirSync(snap, { recursive: true });
+  fs.mkdirSync(path.join(hub, 'models--org--whisper', 'blobs'));
+  fs.writeFileSync(path.join(hub, 'models--org--whisper', 'blobs', sha(files.small)), files.small);
+  fs.symlinkSync(path.join('..', '..', 'blobs', sha(files.small)), path.join(snap, 'w.bin'));
+  const mf = path.join(tmp('vsdesk-mf2-'), 'assets.json');
+  fs.writeFileSync(
+    mf,
+    JSON.stringify({
+      groups: [
+        { id: 'asr-mlx', required: true, root: 'models/asr', env: { VSTUDIO_WHISPER_MLX: '' }, licence: 't', files: [{ url: 'https://huggingface.co/org/whisper/resolve/rev1/w.bin', dest: 'w.bin', sha256: sha(files.small), size: files.small.length }] },
+      ],
+    }),
+  );
+  const userData = tmp('vsdesk-e2e-pre-');
+  app = await electron.launch({ args: [ROOT], env: { ...launchEnv, DESK_USER_DATA: userData, DESK_ASSETS_MANIFEST: mf, DESK_HF_HUB: hub, DESK_SKIP_FIRST_RUN: '1' } });
+  page = await app.firstWindow();
+  await page.waitForURL(/^app:\/\/desk\//);
+  // the very first API call works (no engine swapped underneath it)
+  const first = await page.evaluate(async () => {
+    const i = await window.desk.engineInfo();
+    const r = await fetch(i.baseUrl + '/api/health', { headers: { Authorization: `Bearer ${i.token}` } });
+    return { status: r.status, token: i.token };
+  });
+  expect(first.status).toBe(200);
+  const st = await page.evaluate(() => window.desk.assets.status());
+  expect(st.groups[0].installed).toBe(true);
+  expect(st.restartNeeded).toBe(false); // the first engine already got VSTUDIO_WHISPER_MLX
+  await page.waitForTimeout(2000);
+  expect(await page.evaluate(async () => (await window.desk.engineInfo()).token)).toBe(first.token);
+  const log = fs.readFileSync(path.join(userData, 'logs', 'main.log'), 'utf8');
+  expect(log).toContain('[assets] asr-mlx already on disk');
+  expect(log).not.toContain('restarting the engine sidecar');
+  expect(log).not.toContain('start failed');
+});
+
+test('an engine restart while it is still starting: same port, the UI keeps working without a reload', async () => {
+  await page.evaluate(() => ((window as unknown as { __marker: number }).__marker = 7));
+  const before = await page.evaluate(async () => (await window.desk.engineInfo()).baseUrl);
+  const r = await page.evaluate(async () => {
+    void window.desk.restartEngine(); // do not wait: ask for the engine while the new one is cold-starting
+    const i = await window.desk.engineInfo();
+    const res = await fetch(i.baseUrl + '/api/batches', { headers: { Authorization: `Bearer ${i.token}` } });
+    return { status: res.status, baseUrl: i.baseUrl };
+  });
+  expect(r.status).toBe(200);
+  expect(r.baseUrl).toBe(before); // session port kept: CSP + renderer URL stay valid
+  expect(await page.evaluate(() => (window as unknown as { __marker?: number }).__marker)).toBe(7);
+  await expect(page.getByTestId('engine-status')).toContainText(/mock|演示/i, { timeout: 15000 });
+});

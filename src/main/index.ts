@@ -1,5 +1,6 @@
 // Electron main process: window + security, engine sidecar, media protocol, IPC, publish browser.
 import fs from 'node:fs';
+import { createServer as createNetServer, type AddressInfo } from 'node:net';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { app, BrowserWindow, clipboard, dialog, ipcMain, net, protocol, session, shell, type IpcMainInvokeEvent } from 'electron';
@@ -120,32 +121,55 @@ function settingsMsg() {
   return { ...s, firstRunDone: s.firstRunDone || process.env.DESK_SKIP_FIRST_RUN === '1', resolved: resolvedConfig() };
 }
 
-function startEngine(): Promise<EngineInfo> {
-  const old = engine;
-  const keepPort = enginePort() ?? undefined; // same port -> the page's CSP stays valid -> no window reload
-  const cfg = resolvedConfig();
-  const next = new EngineProcess({
-    engineDir: path.join(RES, 'engine'),
-    enginePath: cfg.enginePath,
-    python: cfg.python,
-    dataDir: cfg.dataDir,
-    allowedOrigins: [APP_ORIGIN],
-    mock: process.env.DESK_ENGINE_MOCK === '1',
-    port: keepPort,
-    ...withV02Env(engineEnv(cfg.runtime !== 'system')),
+/** One engine port per app session, chosen before the first start and reused by every restart (also when the
+ * previous engine never became ready), so the page's CSP and the renderer's base URL stay valid. */
+let sessionPort: number | null = null;
+async function pickSessionPort(): Promise<number | null> {
+  if (sessionPort) return sessionPort;
+  sessionPort = await new Promise<number | null>((resolve) => {
+    const srv = createNetServer();
+    srv.once('error', () => resolve(null));
+    srv.listen(0, '127.0.0.1', () => {
+      const port = (srv.address() as AddressInfo).port;
+      srv.close(() => resolve(port));
+    });
   });
-  engine = next;
+  return sessionPort;
+}
+
+let engineGen = 0;
+function startEngine(): Promise<EngineInfo> {
+  const gen = ++engineGen;
+  const old = engine;
+  engine = null;
   client = null;
-  assets.markEngineStarted();
   restartWhenIdle = false;
-  const p = (old ? old.stop() : Promise.resolve()).then(() => next.start());
+  // assets already on disk (CLI cache, Hugging Face cache) are found BEFORE the engine's env is computed, so the
+  // first engine already has them - no restart at start-up
+  const p = Promise.all([old ? old.stop() : Promise.resolve(), assets.scan(), pickSessionPort()]).then(([, , port]) => {
+    if (gen !== engineGen) throw new SupersededError();
+    const cfg = resolvedConfig();
+    const next = new EngineProcess({
+      engineDir: path.join(RES, 'engine'),
+      enginePath: cfg.enginePath,
+      python: cfg.python,
+      dataDir: cfg.dataDir,
+      allowedOrigins: [APP_ORIGIN],
+      mock: process.env.DESK_ENGINE_MOCK === '1',
+      port: enginePort() ?? port ?? undefined,
+      ...withV02Env(engineEnv(cfg.runtime !== 'system')),
+    });
+    engine = next;
+    assets.markEngineStarted();
+    return next.start();
+  });
   enginePromise = p.then((info) => {
-    if (engine !== next) return info; // superseded by a newer restart
+    if (gen !== engineGen) throw new SupersededError();
     client = new EngineClient(info.baseUrl, info.token);
     rootsCache = { at: 0, roots: [] };
     win?.webContents.send('engine:status', { ok: true, mode: info.mode, note: info.note });
     // the page's CSP pins the engine port: reload only when it was served before any engine was up (first launch,
-    // slow cold start) or the old port could not be kept. The URL (hash route) survives a reload.
+    // slow cold start) or the session port could not be used. The URL (hash route) survives a reload.
     if (!IS_DEV && win && servedPort !== undefined && servedPort !== enginePort()) {
       mainLog(`[engine] port ${servedPort} -> ${enginePort()}: reloading the window for its CSP`);
       win.reload();
@@ -153,12 +177,32 @@ function startEngine(): Promise<EngineInfo> {
     return info;
   });
   enginePromise.catch((e) => {
-    if (engine !== next) return;
+    // an engine stopped on purpose (restart / quit) or superseded by a newer start is not a failure
+    if (gen !== engineGen || e instanceof SupersededError || (e as { stopped?: boolean })?.stopped) return;
     client = null;
     mainLog(`[engine] start failed: ${String(e?.message ?? e)}`);
     win?.webContents.send('engine:status', { ok: false, error: String(e?.message ?? e) });
   });
   return enginePromise;
+}
+
+class SupersededError extends Error {
+  constructor() {
+    super('engine restart superseded');
+  }
+}
+
+/** The current engine, following restarts: a start that was superseded resolves with its successor. */
+async function currentEngine(): Promise<EngineInfo> {
+  for (;;) {
+    const p = enginePromise ?? startEngine();
+    try {
+      return await p;
+    } catch (e) {
+      if (p !== enginePromise) continue; // restarted meanwhile: wait for the new one
+      throw e;
+    }
+  }
 }
 
 // ---------------------------------------------------------------- engine restart after downloads
@@ -327,7 +371,7 @@ function createWindow() {
   // Load once the engine is up (or failed / is slow) so the page's CSP already carries the engine port;
   // startEngine() reloads the page if the port changes later.
   const url = IS_DEV ? DEV_URL! : 'app://desk/index.html';
-  const engineSettled = enginePromise ? enginePromise.then(() => {}, () => {}) : Promise.resolve();
+  const engineSettled = currentEngine().then(() => {}, () => {});
   void Promise.race([engineSettled, new Promise((r) => setTimeout(r, 15000))]).then(() => win?.loadURL(url));
   win.on('closed', () => {
     browser?.destroy();
@@ -361,7 +405,7 @@ function adapterById(id: string): Adapter {
 function registerIpc() {
   handle('engine:info', async () => {
     try {
-      return await (enginePromise ?? startEngine());
+      return await currentEngine();
     } catch (e) {
       throw new Error(`${(e as Error).message}\n${engine?.recentLog().slice(-20).join('\n') ?? ''}`, { cause: e });
     }
@@ -516,10 +560,7 @@ if (!app.requestSingleInstanceLock()) {
       hfHub: hfHubDir(),
     });
     mainLog(`[assets] dir ${assetsDir()} · engine cache ${engineCacheDir()} · hf hub ${hfHubDir() ?? '-'}`);
-    // already on disk (CLI install.sh, Hugging Face cache)? recorded as installed, nothing downloaded
-    void assets.scan().then(() => {
-      if (assets.status().restartNeeded) void restartForAssets();
-    });
+    // already on disk (CLI install.sh, Hugging Face cache)? startEngine() scans first, so the first engine has them
     pstore = new PublishStore(path.join(app.getPath('userData'), 'publish'));
     adapters = loadAdapters([path.join(RES, 'adapters'), path.join(app.getPath('userData'), 'adapters')]);
     for (const e of adapters.errors) console.warn(`[adapters] ${e.file}: ${e.error}`);
@@ -527,7 +568,7 @@ if (!app.requestSingleInstanceLock()) {
     registerProtocols();
     registerIpc();
     startCleanupLoop(() => client);
-    void startEngine().catch((e) => console.error('[engine]', e.message));
+    void startEngine().catch(() => undefined); // failures are reported through engine:status
     createWindow();
     initUpdater((u) => win?.webContents.send('update:state', u));
     app.on('activate', () => {

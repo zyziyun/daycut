@@ -64,6 +64,7 @@ export class EngineProcess {
   info: EngineInfo | null = null;
   lastError: string | null = null;
   private log: string[] = [];
+  private stopping = false;
 
   constructor(private cfg: EngineConfig) {}
 
@@ -134,6 +135,8 @@ export class EngineProcess {
       child.on('exit', (code) => {
         this.info = null;
         this.child = null;
+        // stopped on purpose (restart / quit): not an engine failure
+        if (this.stopping) return done(Object.assign(new Error('engine stopped'), { stopped: true }));
         done(new Error(`engine exited (${code}): ${this.log.slice(-5).join(' | ')}`));
       });
     });
@@ -146,6 +149,7 @@ export class EngineProcess {
 
   /** Stop the engine; resolves once the process has exited (SIGKILL after 3 s), so its port is free again. */
   stop(): Promise<void> {
+    this.stopping = true;
     const c = this.child;
     this.child = null;
     this.info = null;
