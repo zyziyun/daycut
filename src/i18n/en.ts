@@ -15,7 +15,7 @@ export const en: Widen<typeof zh> = {
   meta: {
     title: 'video-studio · Turn one lecture into 30 days of short videos',
     description:
-      'A video studio for course and knowledge creators. Send one long recording and get clips, covers and post copy for Xiaohongshu, Douyin, WeChat Channels, YouTube and Shorts within 72 hours, edited by AI and checked by a person.',
+      'A video studio for course and knowledge creators. Send one long recording and get clips, covers and post copy for Xiaohongshu, Douyin, WeChat Channels, Bilibili, YouTube, Shorts, X and Instagram within 72 hours, edited by AI and checked by a person.',
   },
   nav: {
     how: 'How it works',
@@ -33,7 +33,7 @@ export const en: Widen<typeof zh> = {
     eyebrow: 'An AI video studio for course and knowledge creators',
     titleA: 'Turn one lecture',
     titleB: 'into 30 days of short\u00a0videos',
-    sub: 'Send us a course recording, a talk or a livestream replay. Within 72 hours you get ready-to-post clips with covers and copy for Xiaohongshu, Douyin, WeChat Channels, YouTube and Shorts. AI does the editing, automatic checks catch problems, and a person reviews anything they flag.',
+    sub: 'Send us a course recording, a talk or a livestream replay. Within 72 hours you get ready-to-post clips with covers and copy for Xiaohongshu, Douyin, WeChat Channels, Bilibili, YouTube, Shorts, X and Instagram. AI does the editing, automatic checks catch problems, and a person reviews anything they flag.',
     ctaPrimary: 'Apply for a free spot (first 30)',
     ctaSecondary: 'See a real batch',
     points: [
@@ -76,7 +76,7 @@ export const en: Widen<typeof zh> = {
       },
     ],
     platformsLabel: 'Platforms',
-    platforms: ['Xiaohongshu 3:4', 'Douyin 9:16', 'WeChat Channels 9:16', 'YouTube 16:9', 'YouTube Shorts 9:16'],
+    platforms: ['Xiaohongshu 3:4', 'Douyin 9:16', 'WeChat Channels 9:16', 'Bilibili 16:9', 'YouTube 16:9', 'YouTube Shorts 9:16', 'X 16:9 / 1:1 / 9:16', 'Instagram Reels 9:16 + feed 4:5'],
   },
   proof: {
     kicker: 'Real numbers',
@@ -125,7 +125,7 @@ export const en: Widen<typeof zh> = {
     kicker: 'What you get',
     title: 'What you receive',
     items: [
-      { title: 'Per-platform videos', body: 'Xiaohongshu 3:4; Douyin, WeChat Channels and Shorts 9:16; YouTube 16:9 if you need it. Each one is exported separately at that platform’s loudness level.' },
+      { title: 'Per-platform videos', body: 'Xiaohongshu 3:4; Douyin, WeChat Channels, Shorts and Instagram Reels 9:16; Bilibili and YouTube 16:9; X in the shape closest to your video; Instagram feed 4:5. Each one is exported separately at that platform’s loudness level, with English post copy for X and Instagram when your video is in English.' },
       { title: 'Captions', body: 'Burned-in captions that stay clear of each app’s buttons and title area. SRT files on request.' },
       { title: 'Covers', body: 'One per clip, sized and cropped for each platform’s feed.' },
       { title: 'Post copy', body: 'A title, caption and tags for every clip, within each platform’s limits and ready for you to edit.' },
@@ -158,7 +158,7 @@ export const en: Widen<typeof zh> = {
     hours: 'Roughly how many hours of long recordings you have',
     hoursOptions: ['Under 5 hours', '5–20 hours', 'Over 20 hours'],
     platforms: 'Platforms you post on',
-    platformOptions: ['Xiaohongshu', 'Douyin', 'WeChat Channels', 'YouTube', 'YouTube Shorts', 'Bilibili'],
+    platformOptions: ['Xiaohongshu', 'Douyin', 'WeChat Channels', 'YouTube', 'YouTube Shorts', 'Bilibili', 'X', 'Instagram'],
     sample: 'The recording you would start with (public link or short description, optional)',
     notes: 'Anything else (optional)',
     consentRights: 'I have the rights to this footage; other people in it have agreed, or need to be masked.',
@@ -242,7 +242,7 @@ export const en: Widen<typeof zh> = {
       },
       {
         q: 'Do I need to label AI content when posting?',
-        a: 'Xiaohongshu, Douyin, WeChat Channels, YouTube and others have disclosure or label rules for AI-generated or AI-edited content; follow each platform’s current rules. Our publishing checklist reminds you to tick the AI-content label by default. We do not log in to your accounts or post for you.',
+        a: 'Xiaohongshu, Douyin, WeChat Channels, Bilibili, YouTube, Instagram and others have disclosure or label rules for AI-generated or AI-edited content; follow each platform’s current rules. Our publishing checklist reminds you to tick the AI-content label by default. We do not log in to your accounts or post for you.',
       },
       {
         q: 'What about other people in my videos (guests, students)?',

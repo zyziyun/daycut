@@ -5,7 +5,7 @@ export const zh = {
   meta: {
     title: 'video-studio · 把你的一节课变成 30 天的短视频',
     description:
-      '面向课程与知识类创作者的 AI 剪辑工作室：AI 剪辑 + 自动质检 + 人审，72 小时交付小红书、抖音、视频号、YouTube 和 Shorts 的成片、封面与文案。',
+      '面向课程与知识类创作者的 AI 剪辑工作室：AI 剪辑 + 自动质检 + 人审，72 小时交付小红书、抖音、视频号、B站、YouTube、Shorts、X 和 Instagram 的成片、封面与文案。',
   },
   nav: {
     how: '流程',
@@ -23,7 +23,7 @@ export const zh = {
     eyebrow: '给课程与知识类创作者的 AI 剪辑工作室',
     titleA: '把你的一节课，',
     titleB: '变成 30 天的短视频',
-    sub: '把课程录像、讲座或直播回放交给我们。AI 剪辑、自动质检、人工审片，72 小时交付可以直接发小红书、抖音、视频号、YouTube 和 Shorts 的成片、封面和文案。',
+    sub: '把课程录像、讲座或直播回放交给我们。AI 剪辑、自动质检、人工审片，72 小时交付可以直接发小红书、抖音、视频号、B站、YouTube、Shorts、X 和 Instagram 的成片、封面和文案。',
     ctaPrimary: '申请免费名额（前 30 位）',
     ctaSecondary: '看真实批次数据',
     points: ['你只需要看被质检拦下的例外', '每条附封面、标题、正文和标签', '不登录你的账号，发布由你自己点'],
@@ -62,7 +62,7 @@ export const zh = {
       },
     ],
     platformsLabel: '交付平台',
-    platforms: ['小红书 3:4', '抖音 9:16', '视频号 9:16', 'YouTube 16:9', 'YouTube Shorts 9:16'],
+    platforms: ['小红书 3:4', '抖音 9:16', '视频号 9:16', 'B站 16:9', 'YouTube 16:9', 'YouTube Shorts 9:16', 'X 16:9 / 1:1 / 9:16', 'Instagram Reels 9:16 + 动态 4:5'],
   },
   proof: {
     kicker: '真实数据',
@@ -111,7 +111,7 @@ export const zh = {
     kicker: '交付内容',
     title: '你会拿到什么',
     items: [
-      { title: '各平台成片', body: '小红书 3:4，抖音、视频号、Shorts 9:16，需要时加 YouTube 16:9。每个平台单独导出，响度按平台要求。' },
+      { title: '各平台成片', body: '小红书 3:4，抖音、视频号、Shorts、Instagram Reels 9:16，B站和 YouTube 16:9，X 按视频比例选 16:9 / 1:1 / 9:16，Instagram 动态 4:5。每个平台单独导出，响度按平台要求；英文视频发 X 和 Instagram 时配英文文案。' },
       { title: '字幕', body: '烧录字幕，位置避开各平台的按钮和标题区。需要的话另附 SRT 字幕文件。' },
       { title: '封面', body: '每条一张，按平台尺寸和信息流裁切出图。' },
       { title: '发布文案', body: '每条的标题、正文和标签，按平台字数限制写好，你可以直接改。' },
@@ -144,7 +144,7 @@ export const zh = {
     hours: '现有长视频素材大约多少小时',
     hoursOptions: ['5 小时以内', '5–20 小时', '20 小时以上'],
     platforms: '想发的平台',
-    platformOptions: ['小红书', '抖音', '视频号', 'YouTube', 'YouTube Shorts', 'B站'],
+    platformOptions: ['小红书', '抖音', '视频号', 'YouTube', 'YouTube Shorts', 'B站', 'X', 'Instagram'],
     sample: '想先做的那段素材（公开链接或简单描述，可不填）',
     notes: '其他想告诉我们的（可不填）',
     consentRights: '这段素材我有使用权；里面出现的其他人已同意，或者需要遮挡。',
@@ -228,7 +228,7 @@ export const zh = {
       },
       {
         q: '发布时需要标注 AI 生成吗？',
-        a: '小红书、抖音、视频号、YouTube 等平台对 AI 生成或 AI 处理过的内容有声明或标签要求，具体以各平台当时的规则为准。我们的发布清单默认提醒你勾选 AI 内容声明。我们不登录你的账号，也不替你发布。',
+        a: '小红书、抖音、视频号、B站、YouTube、Instagram 等平台对 AI 生成或 AI 处理过的内容有声明或标签要求，具体以各平台当时的规则为准。我们的发布清单默认提醒你勾选 AI 内容声明。我们不登录你的账号，也不替你发布。',
       },
       {
         q: '视频里有别人（嘉宾、学员）怎么办？',
