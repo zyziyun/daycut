@@ -53,7 +53,9 @@ v0.4 (outputs.py, intake.py, inbox.py; engine command when available, desk imple
   GET  /api/outputs/<item>                 one clip per output {clips [{id, title, state, files, cover, post}], confirm}
   GET  /api/outputs/<item>/<clip>          player + editor document (words, captions, effects, caps, ops, version)
   POST /api/outputs/<item>/<clip>/edit     {ops: [op...]} (one undo step);  /ask {prompt} -> proposals;
-                                           /render {quality?, targets?};  /undo | /redo {steps?}
+                                           /render {quality?, targets?, with_ops?};  /undo | /redo {steps?}
+                                           /revert {step} (one earlier step, later ones kept); /chat {add} |
+                                           {turn, set} (the clip's chat transcript; show returns it as chat)
   GET  /api/effects                        effects catalogue (zh labels, params, preview kind)
   POST /api/intake {prompt, inputs[]}      -> {id}; GET /api/intake/<id>; POST .../revise {prompt}; POST .../apply
                                            {plan?, run?}; GET /api/intake/recent
@@ -445,11 +447,18 @@ class Api:
             if len(parts) == 4 and method == "POST":
                 verb = parts[3]
                 if verb == "edit":
-                    return self.outputs.edit(parts[1], clip, b.get("ops"))
+                    return self.outputs.edit(parts[1], clip, b.get("ops"), turn=b.get("turn"))
                 if verb == "ask":
-                    return self.outputs.ask(parts[1], clip, b.get("prompt"))
+                    return self.outputs.ask(parts[1], clip, b.get("prompt"), context=b.get("context"))
                 if verb == "render":
-                    return self.outputs.render(parts[1], clip, b.get("quality") or "preview", b.get("targets") or "primary")
+                    return self.outputs.render(parts[1], clip, b.get("quality") or "preview", b.get("targets") or "primary",
+                                               with_ops=b.get("with_ops"))
+                if verb == "revert":
+                    return self.outputs.revert(parts[1], clip, b.get("step"))
+                if verb == "chat":
+                    if b.get("turn") is not None:
+                        return self.outputs.chat_update(parts[1], clip, b.get("turn"), b.get("set"))
+                    return self.outputs.chat_add(parts[1], clip, b.get("add"))
                 if verb in ("undo", "redo"):
                     return self.outputs.undo(parts[1], clip, b.get("steps", 1), redo=verb == "redo")
         if parts[:1] == ["intake"]:

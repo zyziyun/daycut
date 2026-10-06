@@ -211,6 +211,84 @@ class OutputsTest(Fixture):
         self.assertEqual(cl[0]["duration"], 80.0)
 
 
+class ChatEditTest(Fixture):
+    """The chat-first editor: selective revert of one card, the chat transcript per clip, context, compare."""
+    C = "A_换圈子"
+
+    def test_revert_one_older_step_keeps_the_later_ones(self):
+        s1 = self.o.edit(self.item, self.C, [dict(op="speed", value=1.1)])["step"]["id"]
+        r2 = self.o.edit(self.item, self.C, [dict(op="effect_add", effect="pop-words", start=2.8, params=dict(text="底气"))])
+        fx = self.o.show(self.item, self.C)["effects"][0]["id"]
+        self.o.edit(self.item, self.C, [dict(op="export_add", target="9:16")])
+        r = self.o.revert(self.item, self.C, s1)
+        self.assertEqual(r["reverted"], s1)
+        doc = self.o.show(self.item, self.C)
+        self.assertEqual(doc["speed"], 1.0)
+        self.assertEqual([e["id"] for e in doc["effects"]], [fx])            # the later card is untouched
+        self.assertEqual(doc["exports"][0]["target"], "9:16")
+        self.assertTrue(doc["steps"][0]["reverted"])
+        self.assertEqual(doc["steps"][-1]["revert_of"], s1)
+        with self.assertRaises(OU.EngineMessage) as cm:
+            self.o.revert(self.item, self.C, s1)
+        self.assertEqual(cm.exception.doc["code"], "already-reverted")
+        self.o.undo(self.item, self.C)                                         # the revert is one undo step
+        self.assertEqual(self.o.show(self.item, self.C)["speed"], 1.1)
+        self.o.undo(self.item, self.C, redo=True)
+        self.assertEqual(self.o.show(self.item, self.C)["speed"], 1.0)
+        self.o.edit(self.item, self.C, [dict(op="effect_update", id=fx, params=dict(text="必看"))])
+        with self.assertRaises(OU.EngineMessage) as cm:                        # a later step builds on it
+            self.o.revert(self.item, self.C, r2["step"]["id"])
+        self.assertEqual((cm.exception.doc["code"], cm.exception.doc["params"]["n"]), ("revert-conflict", 1))
+        with self.assertRaises(OU.EngineMessage) as cm:
+            self.o.revert(self.item, self.C, "s99-x")
+        self.assertEqual(cm.exception.doc["code"], "unknown-step")
+
+    def test_chat_history_persists_with_the_clip(self):
+        r = self.o.ask(self.item, self.C, "再紧凑一点")
+        self.assertTrue(r["turn"])
+        self.assertEqual(r["provider"], "rules")
+        self.o.edit(self.item, self.C, [p["op"] for p in r["proposals"]] or [dict(op="speed", value=1.1)], turn=r["turn"])
+        u = self.o.chat_add(self.item, self.C, dict(role="user", text="/trim", card="trim", junk=1))["turn"]
+        self.assertNotIn("junk", u)
+        # a fresh Outputs (an app restart) rebuilds the same conversation from the clip's edit doc
+        o2 = OU.Outputs(os.path.join(self.root, "desk"), self.h)
+        chat = o2.show(self.item, self.C)["chat"]
+        self.assertEqual([t["id"] for t in chat], [r["turn"], u["id"]])
+        self.assertEqual(chat[0]["status"], "applied")
+        self.assertEqual(chat[0]["text"], "再紧凑一点")
+        self.assertEqual(chat[0]["applied_step"], o2.show(self.item, self.C)["steps"][0]["id"])
+        o2.revert(self.item, self.C, chat[0]["applied_step"])
+        self.assertEqual(o2.show(self.item, self.C)["chat"][0]["status"], "reverted")
+        self.assertEqual(o2.chat_update(self.item, self.C, u["id"], dict(status="discarded"))["turn"]["status"], "discarded")
+        self.assertEqual(self.o.show(self.item, "B_自媒体")["chat"], [])          # per clip
+        with self.assertRaises(BadRequest):
+            o2.chat_update(self.item, self.C, u["id"], dict(status="bogus"))
+        with self.assertRaises(OU.EngineMessage):
+            o2.chat_update(self.item, self.C, "t9-ffff", dict(status="note"))
+
+    def test_context_selection_and_open_effect(self):
+        r = self.o.ask(self.item, self.C, "剪掉这段", context=dict(range=[2.4, 2.8]))
+        self.assertEqual(r["context"], dict(range=[2.4, 2.8]))
+        self.assertEqual([p["op"] for p in r["proposals"]], [dict(op="cut", start=2.4, end=2.8)])
+        self.o.edit(self.item, self.C, [dict(op="effect_add", effect="pop-words", start=2.8, params=dict(text="底气"))])
+        fx = self.o.show(self.item, self.C)["effects"][0]
+        r = self.o.ask(self.item, self.C, "大一点，晚一点", context=dict(effect=fx["id"]))
+        op = r["proposals"][0]["op"]
+        self.assertEqual((op["op"], op["id"], op["start"]), ("effect_update", fx["id"], 3.1))
+        self.assertGreater(op["params"]["size"], 0.11)
+        for bad in (dict(range=[3, 1]), dict(range="x"), dict(cues="c1"), "x"):
+            with self.assertRaises(BadRequest):
+                self.o.ask(self.item, self.C, "x", context=bad)
+
+    def test_compare_render_applies_nothing(self):
+        r = self.o.render(self.item, self.C, with_ops=[dict(op="speed", value=1.5)])
+        self.assertTrue(r["compare"] and r["simulated"])
+        doc = self.o.show(self.item, self.C)
+        self.assertEqual((doc["undo"], doc["renders"]), (0, []))
+        with self.assertRaises(OU.EngineMessage):
+            self.o.render(self.item, self.C, with_ops=[dict(op="trim", start=1, end=1.1)])
+
+
 class RenameTest(Fixture):
     def test_rename_and_unhide_one(self):
         self.h.rename(self.d, "副业复盘 · 4 条切片")

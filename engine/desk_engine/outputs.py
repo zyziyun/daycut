@@ -381,7 +381,8 @@ def apply_op(state, o, base):
         text = (o.get("text") or "").strip()
         if not text or a is None or z is None:
             raise EngineMessage(_m("empty-text", "the caption is empty", "字幕是空的"))
-        cid = f"a{len(state['captions']['added']) + 1}"
+        cid = o.get("id") if isinstance(o.get("id"), str) and re.match(r"^a\d{1,4}$", o["id"]) else \
+            f"a{max([0] + [int(x['id'][1:]) for x in state['captions']['added'] if x['id'][1:].isdigit()]) + 1}"
         state["captions"]["added"].append(dict(id=cid, start=a, end=z, text=text[:200]))
         return _m("op-caption-add", f"add a caption at {a:g}s", f"在 {a:g} 秒加字幕", start=a, end=z), dict(id=cid)
     if op == "caption_remove":
@@ -478,6 +479,7 @@ class Outputs:
         self.dir = os.path.join(data_dir, "outputs")
         self.history, self.runner, self.bus = history, runner, bus
         self._real = None
+        self._ext = False             # the engine also has revert / chat / ai --context / render --with-ops
         self._lock = threading.Lock()
         self._lists = {}
 
@@ -491,6 +493,7 @@ class Outputs:
                     txt = self.runner.sibling("vstudio.project").text(["output", "--help"])
                     ok = all(re.search(rf"\b{v}\b", txt) for v in ("show", "edit", "render", "undo")) and \
                         "invalid choice" not in txt
+                    self._ext = ok and all(re.search(rf"\b{v}\b", txt) for v in ("revert", "chat", "--context"))
                 except Exception:  # noqa: BLE001
                     ok = False
             self._real = ok
@@ -634,8 +637,10 @@ class Outputs:
         out["cover_edit"] = st.get("cover")
         out["exports"] = st.get("exports") or []
         hist = eng.get("history") or {}
-        out["steps"] = [dict(id=s_.get("id"), at=s_.get("at"), by=s_.get("by"), describe=s_.get("describe") or [])
+        out["steps"] = [dict(id=s_.get("id"), at=s_.get("at"), by=s_.get("by"), describe=s_.get("describe") or [],
+                             reverted=bool(s_.get("reverted")), revert_of=s_.get("revert_of"))
                         for s_ in hist.get("steps") or []]
+        out["chat"] = [_public_turn(t) for t in eng.get("chat") or [] if isinstance(t, dict)]
         out["undo"], out["redo"] = hist.get("undo", len(out["steps"])), hist.get("redo", 0)
         out["renders"] = eng.get("renders") or []
         out["caps"] = eng.get("caps") or {}
@@ -658,6 +663,8 @@ class Outputs:
             tr = read_json(os.path.join((eng.get("paths") or {}).get("dir") or "/nonexistent", "transcript.json"), None)
             words = [dict(w=w["w"], t=w["t"], te=w["te"]) for w in (tr or {}).get("words") or []] \
                 if isinstance(tr, dict) else None
+            if not self._ext:                                  # older engine: the desk keeps the transcript
+                eng["chat"] = self._desk(e, clip_id).get("chat") or []
             doc = self._normalise(base, eng, item_id, words or None)
             doc.update(engine="real", output_id=oid)
         else:
@@ -667,9 +674,11 @@ class Outputs:
             capdocs = [dict(c_, added=False, removed=c_["id"] in sc["removed"], text=sc["overrides"].get(c_["id"], c_["text"]))
                        for c_ in base["captions"]] + [dict(c_, added=True, removed=False) for c_ in sc["added"]]
             fresh_key = len(st["steps"])
+            dead = _reverted_ids(st["steps"])
             eng = dict(output=dict(mode=base["mode"], duration=base["duration"], fps=base["fps"]), state=st["state"],
                        captions=capdocs, effects=None, caps=caps, caps_notes=notes,
-                       history=dict(steps=st["steps"], undo=len(st["steps"]), redo=len(st["redo"])),
+                       history=dict(steps=[dict(s_, reverted=s_["id"] in dead) for s_ in st["steps"]],
+                                    undo=len(st["steps"]), redo=len(st["redo"])), chat=st.get("chat") or [],
                        renders=[dict({k: v for k, v in r.items() if k != "key"}, fresh=r.get("key") == fresh_key,
                                      simulated=True) for r in st.get("renders") or []])
             doc = self._normalise(base, eng, item_id)
@@ -688,13 +697,17 @@ class Outputs:
             except Exception:  # noqa: BLE001  (read-only folder: the edit log lives in the desk data dir anyway)
                 pass
 
-    def edit(self, item_id, clip_id, ops, by="user"):
+    def edit(self, item_id, clip_id, ops, by="user", turn=None):
         e, c = self._clip(item_id, clip_id)
         ops = validate_ops(ops)
+        need(turn is None or (isinstance(turn, str) and TURN_RE.match(turn)), "turn: a chat turn id")
         self._adopt_on_first_edit(e)
         oid = self._output_id(e, c)
         if oid:
-            r = self._cli(["edit", "--project", e["dir"], "--output", oid, "--ops", json.dumps(ops, ensure_ascii=False)])
+            args = ["edit", "--project", e["dir"], "--output", oid, "--ops", json.dumps(ops, ensure_ascii=False)]
+            r = self._cli(args + (["--turn", turn] if turn and self._ext else []))
+            if turn and not self._ext:
+                self._desk_turn(e, clip_id, turn, dict(status="applied", applied_step=(r.get("step") or {}).get("id")))
             self._publish(item_id, clip_id)
             return dict(ok=True, step=r.get("step"), values=r.get("values"), warnings=r.get("warnings") or [])
         base = self._base(e, c)
@@ -704,6 +717,8 @@ class Outputs:
             describe, values, warnings = [], [], []
             for o in ops:                                    # all or nothing
                 d, v = apply_op(work, o, base)
+                if o["op"] in ("effect_add", "caption_add") and isinstance(v, dict) and v.get("id"):
+                    o["id"] = v["id"]                        # recorded with its id: a replay (revert) keeps it
                 describe.append(d)
                 values.append(v)
                 if isinstance(v, dict) and v.get("warning"):
@@ -714,9 +729,103 @@ class Outputs:
             st["state"] = work
             st["steps"].append(step)
             st["redo"] = []
+            if turn:
+                _patch_turn(st, turn, dict(status="applied", applied_step=step["id"], applied_ops=len(ops)))
             self._save(e, clip_id, st)
         self._publish(item_id, clip_id)
         return dict(ok=True, step={k: v for k, v in step.items() if k != "before"}, values=values, warnings=warnings)
+
+    # ---------------------------------------------------------- one earlier step, later ones kept
+    def revert(self, item_id, clip_id, step_id):
+        """Cancel ONE earlier step (engine ``output revert --step``): recorded as a new undoable step; refused with
+        ``revert-conflict`` when a later step builds on it."""
+        need(isinstance(step_id, str) and re.match(r"^[\w.:-]{1,80}$", step_id), "step: a history step id")
+        e, c = self._clip(item_id, clip_id)
+        oid = self._output_id(e, c)
+        if oid:
+            if not self._ext:
+                raise EngineMessage(_m("revert-unsupported", "this engine can only undo back to a step",
+                                       "当前引擎只能「回到这一步」", step=step_id))
+            r = self._cli(["revert", "--project", e["dir"], "--output", oid, "--step", step_id])
+            self._publish(item_id, clip_id)
+            return dict(ok=True, step=r.get("step"), reverted=step_id)
+        base = self._base(e, c)
+        with self._lock:
+            st = self._desk(e, clip_id)
+            steps = st["steps"]
+            k = next((i for i, x in enumerate(steps) if x["id"] == step_id), None)
+            if k is None:
+                raise EngineMessage(_m("unknown-step", "no such step in the history", "历史里没有这一步", step=step_id))
+            dead = _reverted_ids(steps)
+            if step_id in dead:
+                raise EngineMessage(_m("already-reverted", "that step is already reverted", "这一步已经撤销过了",
+                                       step=step_id))
+            target = steps[k]
+            made = {o.get("id") for o in target["ops"] if o["op"] in ("effect_add", "caption_add") and o.get("id")}
+            cuts = any(o["op"] in ("cut", "cut_remove") for o in target["ops"])
+            blockers = []
+            for x in steps[k + 1:]:
+                if x["id"] in dead or x.get("revert_of"):
+                    continue
+                for o in x["ops"]:
+                    used = o.get("id") if o["op"] in ("effect_update", "effect_remove") else \
+                        str(o.get("cue")) if o["op"] in ("caption_text", "caption_remove") else None
+                    if (used and used in made) or (cuts and o["op"] == "cut_remove") or o["op"] == "reset":
+                        blockers.append(x["id"])
+                        break
+            if blockers:
+                raise EngineMessage(_m("revert-conflict", "later steps build on this one: undo back to it instead",
+                                       f"后面有 {len(blockers)} 步依赖这一步，只能「回到这一步」", step=step_id,
+                                       steps=blockers, n=len(blockers)))
+            what = [d_.get("message") for d_ in target.get("describe") or []][:3]
+            rv = dict(id=f"s{len(steps) + 1}-{hashlib.sha1(step_id.encode()).hexdigest()[:6]}",
+                      at=time.strftime("%Y-%m-%dT%H:%M:%S"), by="user", note=None,
+                      ops=[dict(op="revert", step=step_id)],
+                      describe=[_m("op-revert", "revert one step", "撤销了其中一步", step=step_id, what=what)],
+                      revert_of=step_id, before=st["state"])
+            steps.append(rv)
+            st["redo"] = []
+            st["state"] = _replay(st, base)
+            for t in st.get("chat") or []:
+                if t.get("applied_step") == step_id:
+                    t.update(status="reverted", reverted_by=rv["id"])
+            self._save(e, clip_id, st)
+        self._publish(item_id, clip_id)
+        return dict(ok=True, step={k_: v for k_, v in rv.items() if k_ != "before"}, reverted=step_id)
+
+    # ---------------------------------------------------------- the clip's chat transcript (history = the chat)
+    def chat_add(self, item_id, clip_id, turn):
+        need(isinstance(turn, dict), "add: a turn object")
+        e, c = self._clip(item_id, clip_id)
+        clean = _clean_turn(turn)
+        oid = self._output_id(e, c)
+        if oid and self._ext:
+            r = self._cli(["chat", "--project", e["dir"], "--output", oid, "--add", json.dumps(clean, ensure_ascii=False)])
+            return dict(ok=True, turn=_public_turn(r.get("turn") or {}))
+        with self._lock:
+            st = self._desk(e, clip_id)
+            t = _desk_turn_add(st, clean)
+            self._save(e, clip_id, st)
+        return dict(ok=True, turn=_public_turn(t))
+
+    def chat_update(self, item_id, clip_id, turn_id, patch):
+        need(isinstance(turn_id, str) and TURN_RE.match(turn_id), "turn: a chat turn id")
+        need(isinstance(patch, dict), "set: an object")
+        e, c = self._clip(item_id, clip_id)
+        clean = _clean_turn(patch)
+        oid = self._output_id(e, c)
+        if oid and self._ext:
+            r = self._cli(["chat", "--project", e["dir"], "--output", oid, "--turn", turn_id, "--set",
+                           json.dumps(clean, ensure_ascii=False)])
+            return dict(ok=True, turn=_public_turn(r.get("turn") or {}))
+        return dict(ok=True, turn=_public_turn(self._desk_turn(e, clip_id, turn_id, clean)))
+
+    def _desk_turn(self, e, clip_id, turn_id, patch):
+        with self._lock:
+            st = self._desk(e, clip_id)
+            t = _patch_turn(st, turn_id, patch)
+            self._save(e, clip_id, st)
+        return t
 
     def undo(self, item_id, clip_id, steps=1, redo=False):
         e, c = self._clip(item_id, clip_id)
@@ -736,6 +845,10 @@ class Outputs:
                         raise EngineMessage(_m("nothing-to-redo", "nothing to redo", "没有可以重做的"))
                     s_ = st["redo"].pop()
                     s_["before"] = st["state"]
+                    if s_.get("revert_of"):
+                        st["steps"].append(s_)
+                        st["state"] = _replay(st, base)
+                        continue
                     work = json.loads(json.dumps(st["state"]))
                     for o in s_["ops"]:
                         apply_op(work, o, base)
@@ -751,11 +864,27 @@ class Outputs:
         self._publish(item_id, clip_id)
         return dict(ok=True)
 
-    def render(self, item_id, clip_id, quality="preview", targets="primary"):
+    def render(self, item_id, clip_id, quality="preview", targets="primary", with_ops=None):
         e, c = self._clip(item_id, clip_id)
         need(quality in ("preview", "final"), "quality: preview | final")
         need(isinstance(targets, str) and re.match(r"^[a-z0-9:,_-]{1,200}$", targets), "targets: primary | all | list")
         oid = self._output_id(e, c)
+        if with_ops is not None:                         # before / after preview of ops that are not applied
+            ops = validate_ops(with_ops)
+            need(quality == "preview", "with_ops: preview only")
+            if oid and self._ext:
+                r = self._cli(["render", "--project", e["dir"], "--output", oid, "--quality", "preview", "--targets",
+                               "primary", "--with-ops", json.dumps(ops, ensure_ascii=False)], timeout=3600)
+                files = [dict(target=x.get("target"), file=x.get("file"), duration=x.get("duration"))
+                         for x in r.get("targets") or []]
+                self.history.allow_media([f["file"] for f in files if f.get("file")])
+                return dict(ok=True, targets=files, simulated=False, compare=True)
+            base = self._base(e, c)
+            work = json.loads(json.dumps(self._desk(e, clip_id)["state"]))
+            for o in ops:
+                apply_op(work, o, base)                      # validated like edit; nothing is written
+            return dict(ok=True, targets=[dict(target=c["files"][0]["aspect"], file=c["files"][0]["path"])]
+                        if c["files"] else [], simulated=True, compare=True)
         if oid:
             r = self._cli(["render", "--project", e["dir"], "--output", oid, "--quality", quality, "--targets", targets],
                           timeout=3 * 3600)
@@ -775,30 +904,52 @@ class Outputs:
         return dict(ok=True, targets=files, simulated=True)
 
     # ---------------------------------------------------------- 让 AI 改 (natural language -> proposed ops)
-    def ask(self, item_id, clip_id, prompt):
+    def ask(self, item_id, clip_id, prompt, context=None):
         need(isinstance(prompt, str) and 0 < len(prompt.strip()) <= 500, "prompt: 1-500 chars")
+        context = _check_context(context)
         e, c = self._clip(item_id, clip_id)
         oid = self._output_id(e, c)
         note = None
+        t0 = time.time()
         if oid:
             try:
-                r = self._cli(["ai", "--project", e["dir"], "--output", oid, "--instruction", prompt], timeout=600)
+                extra = ["--context", json.dumps(context)] if context and self._ext else []
+                r = self._cli(["ai", "--project", e["dir"], "--output", oid, "--instruction", prompt, *extra], timeout=600)
                 props = [dict(id=f"p{i + 1}", op=p.get("normalized") or p.get("op"), describe=p.get("describe"),
                               why=p.get("why")) for i, p in enumerate(r.get("proposed") or []) if isinstance(p, dict)]
-                return dict(summary=r.get("summary"), proposals=props, dropped=r.get("dropped") or [],
-                            warnings=r.get("warnings") or [], engine="real", provider=r.get("provider"),
-                            model=r.get("model"), routed=r.get("routed"), fallback=r.get("fallback"))
+                out = dict(summary=r.get("summary"), proposals=props, dropped=r.get("dropped") or [],
+                           warnings=r.get("warnings") or [], engine="real", provider=r.get("provider"),
+                           model=r.get("model"), routed=r.get("routed"), fallback=r.get("fallback"),
+                           cost_usd=r.get("cost_usd"), seconds=r.get("seconds") or round(time.time() - t0, 2),
+                           context=r.get("context", context), turn=r.get("turn"))
+                if not out["turn"]:
+                    out["turn"] = self._record_ask(e, clip_id, prompt, context, out)
+                return out
             except EngineMessage as m:
                 if m.doc.get("code") not in ("llm-failed", "llm-bad-json"):
                     raise
                 note = m.doc                                  # no working model: the desk rules still help
-        r = propose(self.show(item_id, clip_id), prompt)
+        r = propose(self.show(item_id, clip_id), prompt, context)
         r.setdefault("provider", "rules")
         if note:
             r["warnings"] = [note] + r.get("warnings", [])
             p = (note.get("params") or {})
             r["failed"] = dict(provider=p.get("provider"), code=_failure_code(p.get("error")))
+        r.update(context=context, cost_usd=0.0, seconds=round(time.time() - t0, 2))
+        r["turn"] = self._record_ask(e, clip_id, prompt, context, r)
         return r
+
+    def _record_ask(self, e, clip_id, prompt, context, r):
+        """The desk keeps the turn when the engine does not (desk implementation / older engine / rules)."""
+        with self._lock:
+            st = self._desk(e, clip_id)
+            t = _desk_turn_add(st, dict(role="ai", text=prompt, context=context, summary=r.get("summary"),
+                                        proposed=r.get("proposals") or [], dropped=r.get("dropped") or [],
+                                        warnings=r.get("warnings") or [], provider=r.get("provider"),
+                                        model=r.get("model"), cost_usd=r.get("cost_usd"), seconds=r.get("seconds"),
+                                        status="draft" if r.get("proposals") else "note"))
+            self._save(e, clip_id, st)
+        return t["id"]
 
     def effects(self):
         if self.real():
@@ -813,6 +964,100 @@ class Outputs:
     def _publish(self, item_id, clip_id):
         if self.bus:
             self.bus.publish("output-edit", item=item_id, clip=clip_id)
+
+
+TURN_RE = re.compile(r"^t\d{1,5}-[0-9a-f]{2,12}$")
+TURN_STATUS = ("draft", "applied", "discarded", "reverted", "note")
+TURN_KEYS = ("role", "text", "context", "proposed", "dropped", "summary", "provider", "model", "cost_usd", "seconds",
+             "warnings", "status", "applied_step", "applied_ops", "reverted_by", "card", "reply")
+
+
+def _check_context(ctx):
+    """``{range: [a, b], cues: [..], effect: id}`` (what the creator points at) -> clean dict | None."""
+    if ctx in (None, {}):
+        return None
+    need(isinstance(ctx, dict), "context: {range, cues, effect}")
+    out = {}
+    if ctx.get("range") is not None:
+        r = ctx["range"]
+        need(isinstance(r, list) and len(r) == 2 and all(isinstance(x, (int, float)) and not isinstance(x, bool)
+                                                         and math.isfinite(x) for x in r) and 0 <= r[0] < r[1] <= 36000,
+             "context.range: [start, end] seconds")
+        out["range"] = [round(float(r[0]), 3), round(float(r[1]), 3)]
+    if ctx.get("cues") is not None:
+        need(isinstance(ctx["cues"], list) and len(ctx["cues"]) <= 50 and
+             all(isinstance(x, str) and len(x) <= 20 for x in ctx["cues"]), "context.cues: cue ids")
+        out["cues"] = list(ctx["cues"])
+    if ctx.get("effect") is not None:
+        need(isinstance(ctx["effect"], str) and re.match(r"^[\w-]{1,40}$", ctx["effect"]), "context.effect: an id")
+        out["effect"] = ctx["effect"]
+    return out or None
+
+
+def _clean_turn(t):
+    out = {k: t[k] for k in TURN_KEYS if k in t}
+    need(len(json.dumps(out, ensure_ascii=False, default=str)) < 60000, "turn: too large")
+    if isinstance(out.get("text"), str):
+        out["text"] = out["text"][:2000]
+    need(out.get("status") is None or out["status"] in TURN_STATUS, f"status: {' | '.join(TURN_STATUS)}")
+    need(out.get("role") is None or out["role"] in ("user", "ai"), "role: user | ai")
+    return out
+
+
+def _public_turn(t):
+    """One chat turn for the UI: proposals carry an id + op whichever side recorded them."""
+    props = []
+    for i, p in enumerate(t.get("proposed") or t.get("proposals") or []):
+        if isinstance(p, dict):
+            props.append(dict(id=p.get("id") or f"p{i + 1}", op=p.get("normalized") or p.get("op"),
+                              describe=p.get("describe"), why=p.get("why")))
+    out = {k: t.get(k) for k in TURN_KEYS if k not in ("proposed",)}
+    out.update(id=t.get("id"), at=t.get("at"), proposals=props, role=t.get("role") or "user",
+               status=t.get("status") or "note")
+    return out
+
+
+def _desk_turn_add(st, clean):
+    chat = st.setdefault("chat", [])
+    t = dict(clean, id=f"t{len(chat) + 1}-{hashlib.sha1(f'{time.time()}{len(chat)}'.encode()).hexdigest()[:4]}",
+             at=time.strftime("%Y-%m-%dT%H:%M:%S"))
+    t.setdefault("role", "user")
+    t.setdefault("status", "note")
+    chat.append(t)
+    del chat[:-500]
+    return t
+
+
+def _patch_turn(st, turn_id, patch):
+    for t in st.get("chat") or []:
+        if t.get("id") == turn_id:
+            t.update(patch)
+            return t
+    raise EngineMessage(_m("unknown-turn", "no such chat turn", "没有这条对话", turn=turn_id))
+
+
+def _reverted_ids(steps):
+    dead = set()
+    for s_ in reversed(steps):
+        if s_["id"] not in dead and s_.get("revert_of"):
+            dead.add(s_["revert_of"])
+    return dead
+
+
+def _replay(st, base):
+    """The state from the first step's starting point through every active step (reverted ones skipped); ids
+    recorded with the ops, so later steps still find their effects / captions."""
+    steps = st["steps"]
+    work = json.loads(json.dumps(steps[0]["before"])) if steps and steps[0].get("before") else _new_state()
+    seq = max([st["state"].get("seq", 0)] + [x.get("before", {}).get("seq", 0) for x in steps])
+    dead = _reverted_ids(steps)
+    for x in steps:
+        if x["id"] in dead or x.get("revert_of"):
+            continue
+        for o in x["ops"]:
+            apply_op(work, o, base)
+    work["seq"] = max(work.get("seq", 0), seq)
+    return work
 
 
 def _failure_code(err):
@@ -843,7 +1088,7 @@ def _find_word(words, needle):
     return words[a]["t"], words[z]["te"]
 
 
-def propose(doc, prompt):
+def propose(doc, prompt, context=None):
     """Natural language -> {summary, proposals [{id, op, describe, why}], warnings} over the clip's transcript. The
     engine's model (``output ai``) replaces this; these rules cover the common asks when no model answers."""
     p = prompt.strip()
@@ -854,6 +1099,45 @@ def propose(doc, prompt):
 
     def add(op, d, why):
         props.append(dict(id=f"p{len(props) + 1}", op=op, describe=d, why=why))
+
+    ctx = context or {}
+    rng = ctx.get("range")
+    fx = next((x for x in doc.get("effects") or [] if x.get("id") == ctx.get("effect")), None)
+    if fx:                                                 # an effect card is open: change only that one
+        params, start, end = {}, fx["start"], fx["end"]
+        if re.search(r"大一点|大些|bigger|larger", p, re.I):
+            params["size"] = round(min(0.25, float((fx.get("params") or {}).get("size") or 0.11) * 1.25), 3)
+        if re.search(r"小一点|smaller", p, re.I):
+            params["size"] = round(max(0.05, float((fx.get("params") or {}).get("size") or 0.11) * 0.8), 3)
+        if re.search(r"晚一点|往后|later", p, re.I):
+            start, end = round(start + 0.3, 3), round(min(dur or end + 0.3, end + 0.3), 3)
+        if re.search(r"早一点|往前|earlier", p, re.I):
+            start, end = round(max(0, start - 0.3), 3), round(max(0.1, end - 0.3), 3)
+        if params or start != fx["start"]:
+            op = dict(op="effect_update", id=fx["id"], start=start, end=end)
+            if params:
+                op["params"] = params
+            add(op, _m("op-effect-update", "change the effect", "调整这个效果", id=fx["id"], effect=fx.get("effect")),
+                _m("why-focus", "as asked, this effect only", "按你说的，只改这一个"))
+            return dict(summary=None, proposals=props, dropped=[], warnings=warnings, engine="desk")
+    if rng:
+        a, z = rng
+        if re.search(r"剪掉|删掉|去掉|cut|remove|delete", p, re.I):
+            add(dict(op="cut", start=a, end=z), _m("op-cut", f"cut {a:g}-{z:g}s", f"剪掉 {a:g}-{z:g} 秒", start=a, end=z),
+                _m("why-selection", "the part you selected", "你选中的这一段"))
+        elif re.search(r"弹|pop", p, re.I):
+            said = "".join(w["w"] for w in words if w["t"] >= a - 0.01 and w["te"] <= z + 0.01)[:12]
+            if said:
+                add(dict(op="effect_add", effect="pop-words", start=a, end=round(min(z, a + 1.8), 3), params=dict(text=said)),
+                    _m("op-effect-add", f"add Pop word at {a:.1f}s", f"在 {a:.1f} 秒加弹出大字「{said}」",
+                       effect="pop-words", start=a, end=round(min(z, a + 1.8), 3)),
+                    _m("why-selection", "the part you selected", "你选中的这一段"))
+        elif re.search(r"推近|放大|zoom", p, re.I):
+            add(dict(op="effect_add", effect="punch-in", start=a, end=z),
+                _m("op-effect-add", f"add Punch-in zoom at {a:.1f}s", f"在 {a:.1f} 秒加推镜放大", effect="punch-in",
+                   start=a, end=z), _m("why-selection", "the part you selected", "你选中的这一段"))
+        if props:
+            return dict(summary=None, proposals=props, dropped=[], warnings=warnings, engine="desk")
 
     if re.search(r"开头|开始|从|start", p, re.I) and (quoted or re.search(r"太慢|拖|啰嗦|快一点|slow", p, re.I)):
         hit = _find_word(words, quoted[0]) if quoted else None
