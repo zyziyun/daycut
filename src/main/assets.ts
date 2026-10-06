@@ -190,7 +190,8 @@ export function sha256(file: string): Promise<string> {
 
 function extract(zip: string, dir: string): Promise<void> {
   // ditto keeps macOS bundle symlinks + permissions; Windows 10+ ships bsdtar as tar.exe (reads zip)
-  const [cmd, args] = process.platform === 'darwin' ? ['ditto', ['-x', '-k', zip, dir]] : ['tar', ['-xf', zip, '-C', dir]];
+  const tar = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe');
+  const [cmd, args] = process.platform === 'darwin' ? ['ditto', ['-x', '-k', zip, dir]] : [tar, ['-xf', zip, '-C', dir]];
   return new Promise((resolve, reject) => {
     const p = spawn(cmd, args, { stdio: 'ignore' });
     p.on('error', reject);

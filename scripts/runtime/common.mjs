@@ -28,6 +28,9 @@ export function arg(name, argv = process.argv) {
   return a ? a.slice(name.length + 3) : undefined;
 }
 
+// Windows: always the system bsdtar (handles .zip and drive letters); Git Bash's GNU tar would read "C:" as a host
+export const TAR = process.platform === 'win32' ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe') : 'tar';
+
 export function log(...m) {
   console.log('[runtime]', ...m);
 }
