@@ -173,8 +173,10 @@ async function buildVstudio() {
 
 // ------------------------------------------------------------------ checks
 function verify() {
-  const env = { ...process.env, PYTHONPATH: path.join(OUT, 'vstudio', 'lib'), PYTHONNOUSERSITE: '1', PYTHONDONTWRITEBYTECODE: '1',
-    PATH: [path.join(OUT, 'ffmpeg', 'bin'), process.env.PATH].join(path.delimiter), VSTUDIO_CACHE: path.join(CACHE, 'vstudio-cache-check') };
+  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => k.toUpperCase() !== 'PATH'));
+  const sysPath = Object.entries(process.env).find(([k]) => k.toUpperCase() === 'PATH')?.[1] ?? '';
+  Object.assign(env, { PYTHONPATH: path.join(OUT, 'vstudio', 'lib'), PYTHONNOUSERSITE: '1', PYTHONDONTWRITEBYTECODE: '1',
+    PATH: [path.join(OUT, 'ffmpeg', 'bin'), sysPath].join(path.delimiter), VSTUDIO_CACHE: path.join(CACHE, 'vstudio-cache-check') });
   const asr = isMac && target.endsWith('arm64') ? 'mlx_whisper' : 'faster_whisper';
   run(pyExe(), ['-c', `import numpy, scipy, cv2, mediapipe, soundfile, yaml, PIL, fontTools, openai, ${asr}, vstudio.batch, vstudio.media as m; ` +
     `import shutil; ff = m.ffmpeg_bin(); assert ff.startswith(${JSON.stringify(path.join(OUT, 'ffmpeg'))}), ff; print('ok', ff, '${asr}')`], { env });

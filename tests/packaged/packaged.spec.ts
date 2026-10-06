@@ -11,7 +11,7 @@ const ROOT = path.resolve(import.meta.dirname, '../..');
 function appExecutable(): string {
   if (process.env.DESK_APP_PATH) return process.env.DESK_APP_PATH;
   if (process.platform === 'darwin') {
-    const dir = path.join(ROOT, 'dist', `mac-${process.arch}`);
+    const dir = path.join(ROOT, 'dist', process.arch === 'arm64' ? 'mac-arm64' : 'mac');
     return path.join(dir, 'video-studio desk.app', 'Contents', 'MacOS', 'video-studio desk');
   }
   return path.join(ROOT, 'dist', 'win-unpacked', 'video-studio desk.exe');
