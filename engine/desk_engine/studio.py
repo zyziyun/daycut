@@ -554,12 +554,14 @@ class Studio:
                    zip=r.get("zip"), items=r.get("items") or len((r.get("manifest") or {}).get("items") or []),
                    jobs=r.get("jobs") or 0, duration_s=r.get("duration_s"),
                    cleanup=dict(enabled=bool(days), days=days, due=(time.time() + days * 86400) if days else None,
-                                done=False))
+                                done=False),
+                   manifest=dict(items=[dict(path=i.get("path"), sha256=i.get("sha256"), bytes=i.get("bytes"))
+                                        for i in (r.get("manifest") or {}).get("items") or []]))
         self.store.update("deliveries", lambda d: d.__setitem__(bid, rec))
         if client:
             self.set_crm(client, dict(stage="delivered"))
         self.bus.publish("batches")
-        return dict(rec, manifest=r.get("manifest"))
+        return rec
 
     def delivery(self, bid):
         return (self.store.get("deliveries", {}) or {}).get(bid)

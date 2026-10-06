@@ -1,17 +1,29 @@
 // Job detail: player, QC reasons, stages, and the transcript with cleanup edits struck through. Clicking an edit
 // toggles it; "save" turns the toggles into a cleanup reply (确认 … / 保留 …) and the job re-cuts on the next run.
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { buildReply, canToggle } from '../../../shared/cleanupReply';
 import type { CleanupEdit, CleanupPart } from '../../../shared/types';
+import { JobEditor } from '../components/JobEditor';
 import { ErrorBox, Media, PromptModal, QcLight, StateBadge } from '../components/ui';
 import { t, tStage } from '../i18n';
 import { useEngine, useLoad } from '../lib/engine';
 import { secs } from '../lib/format';
+import { useReviewTiming } from '../lib/reviewTiming';
 import { href } from '../lib/router';
 
 export function JobDetail({ batch, job }: { batch: string; job: string }) {
-  const { client } = useEngine();
+  const { client, subscribe } = useEngine();
   const { data, error, reload } = useLoad((c) => c.job(batch, job), [batch, job]);
+  const player = useRef<HTMLVideoElement>(null);
+  const timing = useReviewTiming(batch, job);
+  useEffect(
+    () =>
+      subscribe((e) => {
+        if ((e.type === 'job-edit' && e.batch === batch && e.job === job) || (e.type === 'run-exit' && e.batch === batch)) reload();
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [subscribe, batch, job],
+  );
   const [cut, setCut] = useState<Record<number, boolean>>({});
   const [msg, setMsg] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState(false);
@@ -65,6 +77,9 @@ export function JobDetail({ batch, job }: { batch: string; job: string }) {
         <h1 className="mono">{j.id}</h1>
         <StateBadge state={j.state} />
         <QcLight qc={j.qc} />
+        <span className={`badge ${timing.idle ? '' : 'accent'}`} title={t('timing.hint')} data-testid="review-timer">
+          {t('timing.label')} {timing.seconds}s{timing.idle ? ` · ${t('timing.idle')}` : ''}
+        </span>
         <div className="sp" />
         <button className="btn" disabled={!['done', 'approved', 'needs-replan'].includes(j.state)} onClick={() => act(() => client!.applyReview(batch, { decisions: { [j.id]: { decision: 'approve' } } }), t('review.approved'))}>
           {t('review.k.approve')}
@@ -78,7 +93,7 @@ export function JobDetail({ batch, job }: { batch: string; job: string }) {
       </div>
       <div className="page" style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 420px) 1fr', gap: 16, alignItems: 'start' }}>
         <div className="col">
-          {video ? <video key={video} className="thumb" style={{ aspectRatio: '9 / 16', maxHeight: '62vh' }} src={window.desk.mediaUrl(video)} controls playsInline /> : <Media path={null} kind="video" />}
+          {video ? <video ref={player} key={video} className="thumb" style={{ aspectRatio: '9 / 16', maxHeight: '62vh' }} src={window.desk.mediaUrl(video)} controls playsInline /> : <Media path={null} kind="video" />}
           <div className="tabs">
             {data.media.exports.map((e) => (
               <button key={e.file} className={`tab ${video === e.file ? 'on' : ''}`} onClick={() => setVideo(e.file)}>
@@ -130,6 +145,7 @@ export function JobDetail({ batch, job }: { batch: string; job: string }) {
         <div className="col">
           <ErrorBox error={error} />
           {msg && <div className="notice accent">{msg}</div>}
+          {data.edit && <JobEditor batch={batch} job={j.id} info={data.edit} getTime={() => player.current?.currentTime ?? 0} onChanged={reload} />}
           <div className="row">
             <b>{t('job.transcript')}</b>
             <span className="muted small">{t('job.transcriptHint')}</span>

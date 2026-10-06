@@ -49,6 +49,7 @@ export function Batches() {
             <thead>
               <tr>
                 <th>{t('batches.name')}</th>
+                <th>{t('new.client')}</th>
                 <th>{t('batches.recipe')}</th>
                 <th>{t('batches.state')}</th>
                 <th>{t('batches.jobs')}</th>
@@ -64,10 +65,12 @@ export function Batches() {
                     <div>{b.name}</div>
                     <div className="muted small mono">{b.dir}</div>
                   </td>
+                  <td onClick={(e) => e.stopPropagation()}>{b.client ? <a href={href({ name: 'client', slug: b.client })}>{b.client}</a> : <span className="muted">—</span>}</td>
                   <td>{b.recipe ?? '-'}</td>
                   <td>
                     <div className="row">
                       <StateBadge state={b.running ? 'running' : b.state} />
+                      {b.delivered && <span className="badge accent">{t('deliver.delivered')}</span>}
                       {b.pause_reason && <span className="small warnc">{b.pause_reason}</span>}
                     </div>
                   </td>
@@ -80,6 +83,9 @@ export function Batches() {
                     <div className="row">
                       <a className="btn sm" href={href({ name: 'review', batch: b.id })}>
                         {t('nav.review')}
+                      </a>
+                      <a className="btn sm" href={href({ name: 'deliver', batch: b.id })}>
+                        {t('nav.deliver')}
                       </a>
                       <a className="btn sm" href={href({ name: 'publish', batch: b.id })}>
                         {t('nav.publish')}

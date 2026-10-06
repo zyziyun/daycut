@@ -6,6 +6,7 @@ import { Empty, ErrorBox, Media, PromptModal, QcLight } from '../components/ui';
 import { t } from '../i18n';
 import { useEngine, useLoad } from '../lib/engine';
 import { secs } from '../lib/format';
+import { useReviewTiming } from '../lib/reviewTiming';
 import { go } from '../lib/router';
 
 type Filter = 'all' | 'red' | 'sample' | 'open';
@@ -33,6 +34,7 @@ export function Review({ batch }: { batch: string }) {
     [data, filter, dec],
   );
   const cur = visible[Math.min(focus, Math.max(0, visible.length - 1))];
+  const timing = useReviewTiming(batch, cur?.id);
 
   const decide = useCallback(
     (kind: 'approve' | 'undo', id = cur?.id) => {
@@ -98,6 +100,11 @@ export function Review({ batch }: { batch: string }) {
           ))}
         </div>
         <div className="sp" />
+        {cur && (
+          <span className={`badge ${timing.idle ? '' : 'accent'}`} title={t('timing.hint')} data-testid="review-timer">
+            {cur.id} · {timing.seconds}s
+          </span>
+        )}
         <span className="muted small">
           <kbd>space</kbd> {t('review.k.approve')} <kbd>x</kbd> {t('review.k.reject')} <kbd>u</kbd> {t('review.k.undo')} <kbd>←</kbd>
           <kbd>→</kbd> {t('review.k.move')} <kbd>↵</kbd> {t('review.k.open')}

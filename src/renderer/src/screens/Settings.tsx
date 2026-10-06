@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import type { SettingsMsg } from '../../../shared/deskApi';
 import { AssetsCard } from '../components/assets';
+import { KeysCard } from '../components/KeysCard';
 import { ErrorBox, Field } from '../components/ui';
 import { t } from '../i18n';
 import { useEngine } from '../lib/engine';
+import { PlatformPicker } from './Clients';
 
 export function Settings({ onChange }: { onChange: (s: SettingsMsg) => void }) {
   const { info, error: engineError } = useEngine();
@@ -77,6 +79,60 @@ export function Settings({ onChange }: { onChange: (s: SettingsMsg) => void }) {
           </div>
         </div>
         <AssetsCard />
+        <KeysCard />
+        <div className="card col" data-testid="defaults-card">
+          <b>{t('settings.defaults')}</b>
+          <Field label={t('settings.defaultPlatforms')}>
+            <PlatformPicker value={s.defaultPlatforms ?? []} onChange={(v) => v.length && save({ defaultPlatforms: v })} />
+          </Field>
+          <Field label={t('settings.cleanupDays')} hint={t('settings.cleanupDaysHint')}>
+            <input
+              className="input"
+              type="number"
+              min={0}
+              max={365}
+              style={{ width: 100 }}
+              defaultValue={s.cleanupDays ?? 30}
+              onBlur={(e) => {
+                const n = Math.max(0, Math.min(365, Math.round(Number(e.target.value) || 0)));
+                if (n !== s.cleanupDays) void save({ cleanupDays: n });
+              }}
+            />
+          </Field>
+          <Field label={t('settings.persona')} hint={t('settings.personaHint')}>
+            <div className="row">
+              <span className="mono small muted" style={{ flex: 1 }}>
+                {s.personaPath ?? t('fr.personaNone')}
+              </span>
+              <button
+                className="btn sm"
+                onClick={async () => {
+                  const p = await window.desk.openFile('persona');
+                  if (p) {
+                    try {
+                      setS(await window.desk.persona.import(p));
+                      setMsg(t('settings.personaImported'));
+                    } catch (e) {
+                      setMsg((e as Error).message);
+                    }
+                  }
+                }}
+              >
+                {t('fr.personaPick')}
+              </button>
+              {s.personaPath && (
+                <button className="btn ghost sm" onClick={async () => setS(await window.desk.persona.clear())}>
+                  {t('keys.remove')}
+                </button>
+              )}
+            </div>
+          </Field>
+          <div className="row">
+            <button className="btn sm" onClick={() => (location.hash = '#/welcome')}>
+              {t('settings.rerunWizard')}
+            </button>
+          </div>
+        </div>
         <div className="card col">
           <b>{t('settings.ui')}</b>
           <Field label={t('settings.lang')}>

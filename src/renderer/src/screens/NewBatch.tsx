@@ -1,11 +1,13 @@
-// New batch wizard: material + recipe + platforms + budget -> plan -> estimate (budget gate) -> pilot.
-import { useState } from 'react';
+// New batch: from a raw recording (AI segment planning -> segment review, NewFromRecording) or the classic
+// wizard: material + recipe + platforms + budget -> plan -> estimate (budget gate) -> pilot.
+import { useEffect, useState, type ReactNode } from 'react';
 import type { Estimate } from '../../../shared/types';
 import { ErrorBox, Field } from '../components/ui';
 import { t } from '../i18n';
 import { useEngine, useLoad } from '../lib/engine';
 import { bytes, hms, usd } from '../lib/format';
 import { go } from '../lib/router';
+import { NewFromRecording } from './NewFromRecording';
 
 export const PLATFORM_CHOICES = [
   { id: 'xiaohongshu:full', label: 'platform.xiaohongshu-full' },
@@ -67,7 +69,7 @@ export function EstimateView({ est }: { est: Estimate }) {
   );
 }
 
-function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
+export function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div>
       <div className="muted small">{label}</div>
@@ -77,7 +79,40 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
   );
 }
 
+/** Client preselected from a client page ("+ new batch") or the last choice. */
+export function initialClient(): string {
+  return sessionStorage.getItem('newClient') ?? '';
+}
+
+export function ClientSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const clients = useLoad((c) => c.clients(), []);
+  return (
+    <select className="input" value={value} onChange={(e) => onChange(e.target.value)} aria-label={t('new.client')} data-testid="client-select">
+      <option value="">{t('new.noClient')}</option>
+      {(clients.data ?? []).map((c) => (
+        <option key={c.slug} value={c.slug}>
+          {c.name}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 export function NewBatch() {
+  const [mode, setMode] = useState<'raw' | 'classic'>('raw');
+  const tabs = (
+    <div className="tabs" role="tablist">
+      {(['raw', 'classic'] as const).map((m) => (
+        <button key={m} role="tab" aria-selected={mode === m} className={`tab ${mode === m ? 'on' : ''}`} onClick={() => setMode(m)} data-testid={`mode-${m}`}>
+          {t(`new.mode.${m}`)}
+        </button>
+      ))}
+    </div>
+  );
+  return mode === 'raw' ? <NewFromRecording tabs={tabs} /> : <ClassicNewBatch tabs={tabs} />;
+}
+
+function ClassicNewBatch({ tabs }: { tabs: ReactNode }) {
   const { client } = useEngine();
   const recipes = useLoad((c) => c.recipes(), []);
   const [step, setStep] = useState<Step>('source');
@@ -96,6 +131,10 @@ export function NewBatch() {
   const [batchId, setBatchId] = useState<string | null>(null);
   const [est, setEst] = useState<Estimate | null>(null);
   const [pilot, setPilot] = useState(3);
+  const [clientSlug, setClientSlug] = useState(initialClient);
+  useEffect(() => {
+    void window.desk.getSettings().then((st) => st.defaultPlatforms?.length && setPlatforms(st.defaultPlatforms));
+  }, []);
 
   const longform = recipe.startsWith('longform'); // one long recording (slices: + a segments job list)
   const needSegments = recipe === 'longform-slices';
@@ -129,6 +168,7 @@ export function NewBatch() {
         platforms,
         budget: { max_usd: num(maxUsd), max_hours: num(maxHours), max_storage_gb: num(maxGb) },
         out_dir: outDir || undefined,
+        client: clientSlug || undefined,
       });
       setBatchId(r.id);
       setEst(await client.estimate(r.id));
@@ -159,6 +199,7 @@ export function NewBatch() {
     <>
       <div className="topbar">
         <h1>{t('new.title')}</h1>
+        {tabs}
         <div className="sp" />
       </div>
       <div className="page" style={{ maxWidth: 860 }}>
@@ -221,6 +262,9 @@ export function NewBatch() {
                 </Field>
               </>
             )}
+            <Field label={t('new.client')}>
+              <ClientSelect value={clientSlug} onChange={setClientSlug} />
+            </Field>
             <Field label={t('new.name')} hint={t('new.nameHint')}>
               <input className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={64} />
             </Field>
@@ -297,7 +341,7 @@ export function NewBatch() {
   );
 }
 
-function defaultName(p: string): string {
+export function defaultName(p: string): string {
   const base = p.split(/[\\/]/).filter(Boolean).pop() ?? 'batch';
   return (base.replace(/\.[^.]+$/, '').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'batch').slice(0, 40);
 }

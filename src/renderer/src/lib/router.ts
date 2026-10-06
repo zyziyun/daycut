@@ -1,10 +1,16 @@
 import { useEffect, useState } from 'react';
 
-// Hash routes: #/batches  #/new  #/b/<id>/board|review|publish  #/b/<id>/job/<job>  #/settings
+// Hash routes: #/batches  #/new  #/b/<id>/board|review|publish|deliver  #/b/<id>/job/<job>  #/settings
+//              #/clients  #/clients/<slug>  #/metrics  #/welcome
 export type Route =
   | { name: 'batches' }
   | { name: 'new' }
   | { name: 'settings' }
+  | { name: 'clients' }
+  | { name: 'client'; slug: string }
+  | { name: 'metrics' }
+  | { name: 'welcome' }
+  | { name: 'deliver'; batch: string }
   | { name: 'board'; batch: string }
   | { name: 'review'; batch: string }
   | { name: 'publish'; batch: string }
@@ -14,10 +20,14 @@ export function parseRoute(hash: string): Route {
   const p = hash.replace(/^#\/?/, '').split('/').filter(Boolean).map(decodeURIComponent);
   if (p[0] === 'new') return { name: 'new' };
   if (p[0] === 'settings') return { name: 'settings' };
+  if (p[0] === 'metrics') return { name: 'metrics' };
+  if (p[0] === 'welcome') return { name: 'welcome' };
+  if (p[0] === 'clients') return p[1] ? { name: 'client', slug: p[1] } : { name: 'clients' };
   if (p[0] === 'b' && p[1]) {
     if (p[2] === 'job' && p[3]) return { name: 'job', batch: p[1], job: p[3] };
     if (p[2] === 'review') return { name: 'review', batch: p[1] };
     if (p[2] === 'publish') return { name: 'publish', batch: p[1] };
+    if (p[2] === 'deliver') return { name: 'deliver', batch: p[1] };
     return { name: 'board', batch: p[1] };
   }
   return { name: 'batches' };
@@ -28,7 +38,12 @@ export function href(r: Route): string {
     case 'batches':
     case 'new':
     case 'settings':
+    case 'clients':
+    case 'metrics':
+    case 'welcome':
       return `#/${r.name}`;
+    case 'client':
+      return `#/clients/${encodeURIComponent(r.slug)}`;
     case 'job':
       return `#/b/${r.batch}/job/${encodeURIComponent(r.job)}`;
     default:

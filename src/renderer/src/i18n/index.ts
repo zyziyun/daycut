@@ -1,5 +1,6 @@
 // Chinese UI copy with English fallbacks (sentence case). t(key) -> current language, else English, else key.
 import { en } from './en';
+import { enV02, zhV02 } from './v02';
 import { zh } from './zh';
 
 export type Lang = 'zh' | 'en';
@@ -15,7 +16,7 @@ export function getLang(): Lang {
 }
 
 export function t(key: string, vars?: Record<string, string | number>): string {
-  const s = (lang === 'zh' ? zh[key] : undefined) ?? en[key] ?? key;
+  const s = (lang === 'zh' ? (zh[key] ?? zhV02[key]) : undefined) ?? en[key] ?? enV02[key] ?? key;
   return vars ? s.replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? '')) : s;
 }
 
