@@ -28,6 +28,8 @@ moment, exclude rects painted out, cut to the timeline item's crop. cards.number
 
 Usage: python3 make_vertical.py work/config.py [--targets xiaohongshu:vertical,xiaohongshu:full]
        [--mode split|screen|speaker|pad-blur] [--episodes 1,2] [--master-only] [--preset veryfast]
+       [--reuse-masters]   (keep vertical/<WxH>/master.mp4 + plan.json from an earlier run: captions / cover /
+                            post re-export only - the batch uses it for in-review caption edits)
 """
 import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
 import json
@@ -52,6 +54,8 @@ def extra(ap):
     ap.add_argument("--episodes", default=None, help="comma list of episode numbers to export (default all)")
     ap.add_argument("--master-only", action="store_true", help="render the vertical masters, skip exports")
     ap.add_argument("--preset", default="veryfast", help="x264 preset for the intermediate master")
+    ap.add_argument("--reuse-masters", action="store_true",
+                    help="keep an existing vertical/<WxH>/master.mp4 + plan.json (caption / cover / post re-export)")
 
 
 cfg, args = _lfc.load(description=__doc__, extra=extra)
@@ -328,6 +332,19 @@ def render_master(group):
     return master, plan
 
 
+def reuse_master(group):
+    """--reuse-masters: the caption-free master of this canvas from an earlier run (the caller guarantees it
+    matches the timeline / layout), else None."""
+    if not args.reuse_masters:
+        return None
+    d = os.path.join("vertical", f"{group[0].w}x{group[0].h}")
+    master, plan = os.path.join(d, "master.mp4"), os.path.join(d, "plan.json")
+    if not (os.path.exists(master) and os.path.exists(plan)):
+        return None
+    print(f"{master}  reused (--reuse-masters)")
+    return master, _lfc.load_json(plan)
+
+
 # ------------------------------------------------------------------------------------------- exports
 def source_shot(t_final, png):
     """Cover screenshot straight from the source at final time t_final (the clip item playing then, else the next
@@ -377,7 +394,7 @@ def main():
     groups = {}
     for p in vprofs:
         groups.setdefault((p.w, p.h), []).append(p)
-    masters = {wh: render_master(g) for wh, g in groups.items()}
+    masters = {wh: reuse_master(g) or render_master(g) for wh, g in groups.items()}
     if args.master_only:
         return
     cues = [Cue.from_dict(c) for c in _lfc.load_json("cues.json")] if os.path.exists("cues.json") else []

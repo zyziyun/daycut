@@ -89,6 +89,10 @@ def job_detail(batch_dir, jid, words=True):
         rows = st.stage_rows(jid)
         evs = st.events(30, job=jid)
         spec = st.spec
+        from . import edits as ED
+        hist = ED.history(st, jid)
+        pending = (st.meta("pending", {}) or {}).get(jid) or []
+        timing = [dict(event=t["event"], what=t["what"], seconds=t["seconds"], ts=t["ts"]) for t in st.timing(jid)]
     finally:
         st.close()
     out = lambda s: (rows.get(s) or {}).get("out") or {}  # noqa: E731
@@ -133,6 +137,15 @@ def job_detail(batch_dir, jid, words=True):
     cues = (read_json(pr.get("cues"), {}) or {}).get("cues") if pr.get("cues") else \
         ((read_json(cm.get("cues"), {}) or {}).get("cues") if cm.get("cues") else None)
     vr = read_json(vf.get("report"), {}) if vf.get("report") else {}
+    if cues and p.get("caption_overrides"):            # review caption edits, as they will be burned
+        cues, _, _ = ED.apply_caption_overrides(cues, p["caption_overrides"])
+    if cues:
+        cues = [dict(c, i=k) for k, c in enumerate(cues)]
+    from .metrics import review_seconds
+    edit = dict(range=p.get("range"), hook=p.get("hook"), hook_pick=p.get("hook_pick"),
+                hook_candidates=ED.hook_candidates(p), cover=p.get("cover") if isinstance(p.get("cover"), dict) else None,
+                copy=ED.effective_copy(p), caption_overrides=p.get("caption_overrides") or [], history=hist,
+                pending=pending, review_s=review_seconds(timing))
     return dict(
         job={k: j[k] for k in ("id", "item", "variant", "state", "qc", "qc_reasons", "review", "review_reason",
                                 "pilot", "sample", "cost", "params")},
@@ -152,7 +165,8 @@ def job_detail(batch_dir, jid, words=True):
         qc=dict(status=qc.get("status"), reasons=qc.get("reasons") or [], warnings=qc.get("warnings") or [],
                 checks=qc.get("checks") or [], suggestions=qc.get("suggestions") or []),
         media=dict(final=cm.get("final") or cm.get("master"), duration=cm.get("duration"), sheet=pv.get("sheet"),
-                   snippet=pv.get("snippet"), exports=ex.get("exports") or [], length_fit=ex.get("length_fit") or []))
+                   snippet=pv.get("snippet"), exports=ex.get("exports") or [], length_fit=ex.get("length_fit") or []),
+        edit=edit)
 
 
 __all__ = ["recipes", "review_items", "job_detail", "verify_manifest"]

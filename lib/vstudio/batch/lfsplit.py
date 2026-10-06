@@ -255,17 +255,22 @@ def whisper_json(transcript, dst):
 # --------------------------------------------------------------------------- the workflow config of one job
 def lfc_config(p, spec, geo, out_dir):
     """Batch job params + spec -> the longform-to-short config dict (one episode = this job)."""
+    from .edits import key_copy
     vs, scr = _vcfg(spec), _screen(spec)
     title = p.get("title") or ""
-    series = p.get("series") or vs.get("series") or ""
+    title0 = key_copy(p, "title") or ""                # the planned title (cover / title band); review copy edits
+    series = p.get("series") or vs.get("series") or ""  # change only the post
     k, n = (p.get("_series_no") or [1, 1])[:2]
-    b1, b2 = _title_parts(title)
+    b1, b2 = _title_parts(title0)
     item = dict(chapters=[1, 1], title=title, body=_post_body(p), big1=p.get("big1") or b1,
                 big2=p.get("big2") if p.get("big2") is not None else b2,
                 sub=p.get("sub") if p.get("sub") is not None else (p.get("chapter") or ""),
                 eyebrow=f"{series} · {k}/{n}" if series else f"{k}/{n}")
+    cov = p.get("cover") if isinstance(p.get("cover"), dict) else {}
     if p.get("cover_shot") is not None:
         item["shot_src"] = parse_time(p["cover_shot"])
+    elif cov.get("src") is not None:
+        item["shot_src"] = float(cov["src"])
     h = p.get("hook")
     if h and h.get("src"):
         item["hook"] = dict(src=[float(x) for x in h["src"]], lines=_hook_lines(h))
@@ -298,7 +303,7 @@ def lfc_config(p, spec, geo, out_dir):
         render=dict(fps=int((spec.get("render") or {}).get("fps", 24)), audio_only=True),
         subtitles=dict(spec.get("subtitles") or {}),
         episodes=dict(series=series, items=[item]),
-        publish=dict(title=title, body=item["body"], tags=list(p.get("tags") or [])))
+        publish=dict(title=title0, body=item["body"], tags=list(p.get("tags") or [])))
     if spec.get("style"):
         cfg["style"] = dict(spec["style"])
     return cfg
@@ -597,14 +602,26 @@ def run_export_split(ctx):
     _link(os.path.join(c["work"], "crop_spans.json"), os.path.join(work, "crop_spans.json"))
     pr = (ctx.inputs.get("proofread") or {}).get("cues")
     cues = (read_json(pr, {}) or {}).get("cues", []) if pr else read_json(os.path.join(c["work"], "cues.json"), [])
+    if p.get("caption_overrides"):                         # review caption edits (`job edit --op caption`)
+        from .edits import apply_caption_overrides
+        cues, _, missed = apply_caption_overrides(cues, p["caption_overrides"])
+        for m in missed:
+            ctx.log(f"caption edit not applied (cue changed since): #{m.get('i')} {m.get('from')!r}")
     write_json(os.path.join(work, "cues.json"), cues)      # proofread captions (make_vertical reads a bare list)
     timeline = read_json(os.path.join(c["work"], "timeline.json"))
     hook_text = spoken_hook_lines(timeline, cues)          # the hook band says what the audio says (proofread)
     write_json(os.path.join(work, "timeline.json"), timeline)
     _link(c["final"], os.path.join(out, "final.mp4"))
     plats = list(p.get("platforms") or [])
-    _script("make_vertical.py", work, "--targets", ",".join(plats), "--preset",
-            (spec.get("vertical") or {}).get("master_preset", "veryfast"))
+    mpreset = (spec.get("vertical") or {}).get("master_preset", "veryfast")
+    stash = os.path.join(ctx.batch_dir, "jobs", ctx.job["id"], "export.masters")
+    mkey = master_key(read_json(os.path.join(work, "config.json")), timeline, c, mpreset)
+    reused = reuse_masters(stash, mkey, os.path.join(work, "vertical"), _canvases(ctx.job))
+    extra = ["--reuse-masters"] if reused else []
+    if reused:
+        ctx.log(f"vertical masters reused ({', '.join(reused)}): captions / cover / post only")
+    _script("make_vertical.py", work, "--targets", ",".join(plats), "--preset", mpreset, *extra)
+    keep_masters(stash, mkey, os.path.join(work, "vertical"))
     ep = os.path.join(out, "vertical", "ep1")
     entries = read_json(os.path.join(ep, "manifest.json"), []) or []
     if not entries:
@@ -640,6 +657,92 @@ def run_export_split(ctx):
     return dict(manifest=man, files=files, exports=exports, warnings=warnings, length_fit=fit,
                 privacy=dict(exclude=p.get("_exclude") or [], overlap_frames=overlap, modes=sorted(m for m in modes if m),
                              plans=plans))
+
+
+# --------------------------------------------------------------------------- vertical master reuse
+_ITEM_COPY = ("title", "body", "big1", "big2", "sub", "shot_src", "eyebrow")
+
+
+def _sig(path):
+    try:
+        st = os.stat(path)
+        return [os.path.basename(path), st.st_size, int(st.st_mtime)]
+    except OSError:
+        return None
+
+
+def master_key(cfg, timeline, compose_out, preset):
+    """What the caption-free vertical masters depend on: the job's make_vertical config minus the per-target /
+    cover / post parts, the timeline (incl. the hook lines the title band shows), the compose audio, the crop
+    spans, the master preset and the workflow code."""
+    c = dict(cfg or {})
+    for k in ("targets", "out", "publish"):
+        c.pop(k, None)
+    ep = dict(c.get("episodes") or {})
+    ep["items"] = [{k: v for k, v in it.items() if k not in _ITEM_COPY} for it in ep.get("items") or []]
+    c["episodes"] = ep
+    vert = dict(c.get("vertical") or {})
+    vert.pop("export_preset", None)
+    c["vertical"] = vert
+    pt = (cfg or {}).get("publish") or {}
+    code = [_sig(os.path.join(LFS, n)) for n in ("make_vertical.py", "_vertical.py", "_lfc.py")]
+    return sha1_json([c, timeline, pt.get("title"), _sig(compose_out.get("final") or ""),
+                      _sig(os.path.join(compose_out.get("work") or "", "crop_spans.json")), preset, code])
+
+
+def reuse_masters(stash, key, vdir, canvases):
+    """Link the stashed masters (+ plan.json) of ``key`` into ``vdir`` when every canvas has one -> [WxH] or []."""
+    names = [f"{w}x{h}" for (w, h) in sorted(canvases)]
+    if not names or read_json(os.path.join(stash, "key.json"), {}).get("key") != key:
+        return []
+    for n in names:
+        if not all(os.path.exists(os.path.join(stash, n, f)) for f in ("master.mp4", "plan.json")):
+            return []
+    for n in names:
+        os.makedirs(os.path.join(vdir, n), exist_ok=True)
+        for f in ("master.mp4", "plan.json"):
+            _link(os.path.join(stash, n, f), os.path.join(vdir, n, f))
+    return names
+
+
+def keep_masters(stash, key, vdir):
+    """After an export: hard-link its masters into the stash (the export stage folder is wiped on a re-run)."""
+    if not os.path.isdir(vdir):
+        return
+    tmp = stash + ".tmp"
+    shutil.rmtree(tmp, ignore_errors=True)
+    n = 0
+    for d in sorted(os.listdir(vdir)):
+        m, pl = os.path.join(vdir, d, "master.mp4"), os.path.join(vdir, d, "plan.json")
+        if os.path.exists(m) and os.path.exists(pl):
+            os.makedirs(os.path.join(tmp, d), exist_ok=True)
+            _link(m, os.path.join(tmp, d, "master.mp4"))
+            _link(pl, os.path.join(tmp, d, "plan.json"))
+            n += 1
+    if not n:
+        shutil.rmtree(tmp, ignore_errors=True)
+        return
+    write_json(os.path.join(tmp, "key.json"), dict(key=key))
+    shutil.rmtree(stash, ignore_errors=True)
+    os.replace(tmp, stash)
+
+
+def ensure_stash(batch_dir, jid, rows, spec):
+    """A job exported before the master stash existed: stash its current masters under the key its export would
+    compute now (so the first review edit is a re-burn too). No-op when stashed / not exported."""
+    stash = os.path.join(batch_dir, "jobs", jid, "export.masters")
+    if os.path.exists(os.path.join(stash, "key.json")):
+        return False
+    ex, cm = rows.get("export") or {}, rows.get("compose") or {}
+    if ex.get("state") != "done" or cm.get("state") != "done":
+        return False
+    work = os.path.join(batch_dir, "jobs", jid, "export", "work")
+    cfg, tl = read_json(os.path.join(work, "config.json")), read_json(os.path.join(work, "timeline.json"))
+    if not cfg or not tl:
+        return False
+    key = master_key(cfg, tl, cm.get("out") or {}, (spec.get("vertical") or {}).get("master_preset", "veryfast"))
+    keep_masters(stash, key, os.path.join(work, "vertical"))
+    return os.path.exists(os.path.join(stash, "key.json"))
 
 
 def spoken_hook_lines(timeline, cues, max_one=16):
@@ -801,8 +904,13 @@ def _compose_params(job, spec):
 
 
 def _export_params(job, spec):
-    d = _keyp("platforms", "title", "body", "tags", "notes", "notes_src", "notes_window", "notes_title", "chapter",
+    from .edits import key_copy
+    d = _keyp("platforms", "notes", "notes_src", "notes_window", "notes_title", "chapter",
               "series", "layout", "preset", "big1", "big2", "sub", "cover_shot", "_series_no", "_exclude")(job, spec)
+    d.update({k: key_copy(_p(job), k) for k in ("title", "body", "tags")})   # review copy edits patch the posts
+    for k in ("caption_overrides", "cover"):           # review edits; only when set (older batches keep their keys)
+        if _p(job).get(k):
+            d[k] = _p(job)[k]
     return dict(d, vertical=spec.get("vertical"), screen=spec.get("screen"), style=spec.get("style"),
                 notes_cfg=spec.get("notes"), cards=spec.get("cards"), render=spec.get("render"),
                 max_len=_p(job).get("max_len") or (spec.get("defaults") or {}).get("max_len") or spec.get("max_len"),

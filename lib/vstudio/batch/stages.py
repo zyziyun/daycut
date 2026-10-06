@@ -100,12 +100,19 @@ def run_asr(ctx):
             raise ValueError(f"transcript {given} unreadable")
         path = given
     else:
-        wav = ctx.inputs["extract"]["wav"]
+        from . import transcripts as TS
+        sha = (ctx.inputs.get("probe") or {}).get("sha1")
         fn = _transcriber(ctx.spec)
-        if fn:
-            tr = fn(wav, language=o["language"], prompt=o["prompt"])
+        hit_path, tr = (None, None) if fn else TS.lookup(sha, o["language"], o["prompt"], o["backend"])
+        if tr is not None:                                # plan-segments already transcribed this recording
+            ctx.log(f"transcript reused from the shared per-source cache ({os.path.basename(hit_path)})")
+            given = hit_path
+        elif fn:
+            tr = fn(ctx.inputs["extract"]["wav"], language=o["language"], prompt=o["prompt"])
         else:
-            tr = asr.transcribe(wav, language=o["language"], prompt=o["prompt"], backend=o["backend"])
+            tr = asr.transcribe(ctx.inputs["extract"]["wav"], language=o["language"], prompt=o["prompt"],
+                                backend=o["backend"])
+            TS.save(sha, tr, o["language"], o["prompt"], o["backend"])
         path = write_json(ctx.path("transcript.json"), tr)
     nw = len(tr.get("words") or []) if isinstance(tr, dict) else len(tr or [])
     cost = 0.0
@@ -248,7 +255,11 @@ def run_export(ctx):
     from vstudio import export as X
     p, c = ctx.params, ctx.inputs["compose"]
     post = read_json(c["post"])
+    if p.get("_copy_orig"):                           # copy edited in review: the post says the new copy
+        post.update(title=p.get("title") or "", body=p.get("body") or "", tags=p.get("tags") or None)
     covers = p.get("cover")
+    if isinstance(covers, dict):                      # `job edit --op cover`: {t, text, file}
+        covers = [covers["file"]] if covers.get("file") else None
     man = X.export(c["master"], _plats(ctx.job), out_dir=ctx.path("exports"),
                    cues=caption_cues(ctx) if p.get("captions", True) else None, covers=covers, post=post,
                    mode=p.get("layout") or "pad-blur", preset=p.get("preset") or "medium",
@@ -339,8 +350,9 @@ def _proofread_params(job, spec):
     o = proofread_opts(spec)
     d = dict(provider=o["provider"], model=o["model"], low_conf=o["low_conf"], call=o["call"],
              term_fixes=(spec.get("subtitles") or {}).get("term_fixes"), filler_edges=o["filler_edges"], v=2)
-    if o["provider"] != "none" or o["call"]:          # the LLM prompt's context (a copy edit re-asks the model)
-        d.update(asr=(spec.get("asr") or {}).get("prompt"), title=_p(job).get("title"), chapter=_p(job).get("chapter"),
+    if o["provider"] != "none" or o["call"]:          # the LLM prompt's context (a review copy edit does not re-ask)
+        from .edits import key_copy
+        d.update(asr=(spec.get("asr") or {}).get("prompt"), title=key_copy(_p(job), "title"), chapter=_p(job).get("chapter"),
                  notes=_p(job).get("notes"), series=_p(job).get("series"))
     return d
 
@@ -465,9 +477,21 @@ def sha1_file(path):
 
 
 def caption_cues(ctx):
-    """The cues to burn: proofread's when it ran, else compose's."""
+    """The cues to burn: proofread's when it ran, else compose's; review caption edits (``caption_overrides``)
+    applied on top (written to the stage folder)."""
     pr = ctx.inputs.get("proofread") or {}
-    return pr.get("cues") or ctx.inputs["compose"]["cues"]
+    path = pr.get("cues") or ctx.inputs["compose"]["cues"]
+    ov = ctx.params.get("caption_overrides")
+    if not ov:
+        return path
+    from .edits import apply_caption_overrides
+    d = read_json(path, {}) or {}
+    cues = d.get("cues") if isinstance(d, dict) else d
+    cues, applied, missed = apply_caption_overrides(cues, ov)
+    for m in missed:
+        ctx.log(f"caption edit not applied (cue changed since): #{m.get('i')} {m.get('from')!r}")
+    out = dict(d, cues=cues) if isinstance(d, dict) else dict(cues=cues)
+    return write_json(ctx.path("cues.edited.json"), out)
 
 
 def run_qc(ctx):
@@ -510,6 +534,21 @@ def _keyp(*keys):
     return lambda job, spec: {k: _p(job).get(k) for k in keys}
 
 
+def _export_params(job, spec):
+    d = dict(_keyp("platforms", "layout", "captions", "cover", "preset", "trims")(job, spec),
+             max_len=_p(job).get("max_len") or spec.get("max_len"))
+    if _p(job).get("caption_overrides"):              # only when set: older batches keep their keys
+        d["caption_overrides"] = _p(job)["caption_overrides"]
+    return d
+
+
+def _compose_params(job, spec):
+    from .edits import key_copy
+    d = _keyp("speed", "hook_speed", "hook", "post_hook", "max_chars", "use_persona_tags", "tag_set")(job, spec)
+    d.update({k: key_copy(_p(job), k) for k in ("title", "body", "tags")})   # post.json; review copy edits are
+    return d                                                                 # applied at export
+
+
 def _no_given(job, spec):
     return not _given_transcript(job, spec)
 
@@ -544,9 +583,7 @@ def speech_stages():
               units=_dur, version=4),
         Stage("apply", "cpu-render", run_apply, deps=("cleanup",), params=_keyp("cleanup_reply", "cleanup_profile"),
               units=_dur, purge=("*.mp4", "*.wav", "*.asr.json")),
-        Stage("compose", "cpu-render", run_compose, deps=("apply",),
-              params=_keyp("speed", "hook_speed", "hook", "title", "body", "tags", "post_hook", "max_chars",
-                           "use_persona_tags", "tag_set"),
+        Stage("compose", "cpu-render", run_compose, deps=("apply",), params=_compose_params,
               units=_dur, purge=("master.mp4",)),
         Stage("glossary", _proofread_resource, run_glossary, deps=("asr",), shared=True, params=_glossary_params,
               enabled=_glossary_on, units=lambda j, s: 1.0, cost=lambda j, s: 0.05, retries=2),
@@ -554,8 +591,7 @@ def speech_stages():
               params=_proofread_params, enabled=_proofread_on, units=lambda j, s: 1.0,
               cost=lambda j, s: 0.02 if proofread_opts(s)["provider"] != "none" else 0.0),
         Stage("export", _export_resource, run_export, deps=("compose", "proofread"),
-              params=lambda j, s: dict(_keyp("platforms", "layout", "captions", "cover", "preset", "trims")(j, s),
-                                       max_len=_p(j).get("max_len") or s.get("max_len")),
+              params=_export_params,
               units=lambda j, s: _dur(j, s) * max(1, len(_plats(j))), purge=("exports/*.mp4", "exports/*.mov")),
         Stage("verify", "asr", run_verify, deps=("apply",), params=lambda j, s: hear_opts(j, s), units=_dur,
               enabled=_verify_on, cost=_asr_cost(_dur), version=5),
