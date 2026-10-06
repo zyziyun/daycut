@@ -387,7 +387,8 @@ def test_cli_json_plan_run_events_review_job_package(tmp_path, monkeypatch):
     assert jd["job"]["id"] == "j1" and {s["name"] for s in jd["stages"]} == {"probe", "asr", "render", "big", "qc"}
     assert _cli("job", "nope", "--batch", plan["batch_dir"], "--json", env=env).returncode == 1
     rec = json.loads(_cli("recipes", "--json", env=env).stdout)
-    ls = next(x for x in rec if x["name"] == "longform-split")
+    assert "job-edit" in rec["capabilities"] and "plan-segments" in rec["capabilities"]
+    ls = next(x for x in rec["recipes"] if x["name"] == "longform-split")
     assert ls["label"] and any(i["key"] == "inputs.source" and i["required"] for i in ls["inputs"])
     assert any(i["key"] == "privacy.exclude" for i in ls["inputs"]) and "cuts" in ls["row_keys"]
 

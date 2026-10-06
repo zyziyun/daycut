@@ -14,6 +14,15 @@
   du [--batch DIR]                                      disk use of the batch folder
   bench [--batch DIR]                                   the benchmark table used by estimate
   recipes [--json]                                      registered recipes (--json: labels, inputs, row keys)
+v0.2 (desk; all with --json):
+  plan-segments --source F [--transcript T] [--client C] [--count N] [--min S --max S] [--platforms a,b]
+      [--provider claude|openai|none] [--out DIR]      transcript -> candidate segments -> segments.draft.yaml
+  client init|show|update|list --client C [--set JSON]  client.yaml layered over the persona (effective config)
+  job show ID | job edit --job J --op caption|trim|hook|cover|copy|undo ... | job rerun --job J [--json-events]
+  deliver [--client C] [--zip] [--cleanup-days N] [--out DIR]   client delivery package + manifest hash
+  cleanup-sources [--batch B | --client C | --all] [--yes]      delete sources of deliveries past cleanup date
+  metrics --batch B | --client C | --all [--csv]        metrics JSON / weekly CSV
+  timing --job J --event start|stop|add --what review [--seconds S]   review timing -> batch store
 --json: one JSON document on stdout (paths absolute); run --json-events: one JSON event per line on stdout
 (the human log goes to stderr). See references/BATCH.md section 7.
 --batch defaults to the current folder when it holds batch.db.
@@ -124,6 +133,9 @@ def cmd_run(a):
 
 
 LIGHT = {"green": "GREEN", "red": "RED", None: "-"}
+# v0.2 commands, as the desk probes them (`recipes --json` -> capabilities)
+CAPABILITIES = ("plan-segments", "client", "job-edit", "job-rerun", "deliver", "metrics", "timing", "job-undo",
+                "cleanup-sources", "recipe:podcast-clips", "recipe:talkinghead-folder")
 
 
 def status_rows(store):
@@ -285,6 +297,186 @@ def cmd_bench(a):
     return 0
 
 
+def _fail(a, e, code=1):
+    if getattr(a, "json", False):
+        _out(dict(ok=False, error=str(e)))
+    else:
+        print(f"[{a.cmd}] {e}", file=sys.stderr)
+    return code
+
+
+def cmd_job_edit(a):
+    from . import edits as ED
+    args = {k: getattr(a, k) for k in ("cue", "text", "start", "end", "pick", "t", "title", "body", "tags")
+            if getattr(a, k, None) is not None}
+    try:
+        r = ED.edit(_batch(a), a.job, a.op, **args)
+    except (KeyError, ValueError) as e:
+        return _fail(a, e)
+    if a.json:
+        _out(r)
+        return 0 if r["ok"] else 1
+    if not r["ok"]:
+        print(f"[job edit] refused: {r.get('reason')}")
+        return 1
+    print(f"[job edit] {a.job} {a.op} ok; stale: {', '.join(r['rerun']) or 'nothing'}; pending: "
+          f"{', '.join(r['pending']) or 'nothing'}" + (f"; glossary +{len(r['glossary_added'])}"
+                                                      if r.get("glossary_added") else ""))
+    for w in r.get("warnings") or []:
+        print(f"  warn: {w}")
+    if r["pending"]:
+        print(f"next: python -m vstudio.batch job rerun --batch {_batch(a)} --job {a.job}")
+    return 0
+
+
+def cmd_job_rerun(a):
+    from . import edits as ED
+    from .run import BatchBusy
+    emit, stream = json_event_sink() if a.json_events else (None, None)
+    try:
+        r = ED.rerun(_batch(a), a.job, on_event=emit, echo=not a.json)
+    except BatchBusy as e:
+        if emit:
+            emit(dict(event="run-end", status="busy", exit_code=6, error=str(e)))
+            return 6
+        return _fail(a, e, 6)
+    except (KeyError, ValueError) as e:
+        return _fail(a, e)
+    if emit:
+        emit(dict(event="rerun-done", **r))
+        stream.flush()
+    elif a.json:
+        _out(r)
+    else:
+        print(f"[job rerun] {a.job}: {', '.join(r['stages']) or 'nothing to do'} in {r['seconds']:.1f}s "
+              f"-> {r['state']} qc={r['qc']}")
+    return 0 if r["ok"] else (r["exit_code"] or 1)
+
+
+def cmd_plan_segments(a):
+    from . import segplan
+    try:
+        r = segplan.plan_segments(
+            a.source, transcript=a.transcript, client=a.client, count=a.count, min_s=a.min, max_s=a.max,
+            platforms=[x.strip() for x in a.platforms.split(",")] if a.platforms else None, provider=a.provider,
+            model=a.model, out=a.out, language=a.language, echo=not a.json)
+    except (segplan.PlanError, FileNotFoundError, ValueError) as e:
+        return _fail(a, e, 5 if isinstance(e, segplan.PlanError) else 1)
+    if a.json:
+        _out(r)
+        return 0
+    for s_ in r["segments"]:
+        print(f"{s_['id']}  {s_['start']:8.2f}-{s_['end']:8.2f} ({s_['end'] - s_['start']:5.1f}s) "
+              f"score {s_['score']:.2f}  {s_['title']}")
+    print(f"[plan-segments] {len(r['segments'])} segment(s) ({r['provider']}) -> {r['draft']}")
+    return 0
+
+
+def cmd_client(a):
+    from . import clients as CL
+    try:
+        if a.verb == "list":
+            r = dict(ok=True, root=CL.clients_root(), clients=CL.list_clients())
+        else:
+            if not a.client:
+                raise CL.ClientError("--client C (a folder or a slug)")
+            cdir = CL.resolve(a.client)
+            fields = json.loads(a.set) if a.set else {}
+            if a.name:
+                fields["name"] = a.name
+            if a.verb == "init":
+                r = CL.init(cdir, fields, exist_ok=a.exist_ok)
+            elif a.verb == "update":
+                r = CL.update(cdir, fields)
+            else:
+                r = CL.view(cdir)
+    except (CL.ClientError, ValueError) as e:
+        return _fail(a, e)
+    if a.json or a.verb != "list":
+        _out(r)
+    else:
+        for c in r["clients"]:
+            print(f"{c['slug']:20s} {c['name']:24s} {','.join(c['platforms']):30s} glossary {c['glossary']}, "
+                  f"batches {c['batches']}")
+    return 0
+
+
+def cmd_deliver(a):
+    from . import deliver as DV
+    try:
+        r = DV.deliver(_batch(a), client=a.client, make_zip=a.zip, cleanup_days=a.cleanup_days, out=a.out)
+    except (ValueError, FileNotFoundError, KeyError) as e:
+        return _fail(a, e)
+    if a.json:
+        _out(r)
+        return 0
+    print(f"[deliver] {r['items']} file(s) of {r['jobs']} job(s) -> {r['dir']}" + (f" (+ {r['zip']})" if r["zip"] else ""))
+    print(f"delivery code {r['code']} (package {r['package_code']}); sources cleaned up on {r['cleanup_on'] or 'never'}")
+    return 0
+
+
+def cmd_cleanup_sources(a):
+    from . import clients as CL
+    from . import deliver as DV
+    if a.batch:
+        dirs = [a.batch]
+    elif a.client:
+        dirs = [b["dir"] for b in CL.batches(CL.resolve(a.client))]
+    elif a.all:
+        dirs = [b["dir"] for b in CL.batches()]
+    else:
+        dirs = [_batch(a)]
+    r = DV.cleanup_sources(dirs, yes=a.yes)
+    if a.json:
+        _out(r)
+        return 0
+    lst = r.get("deleted") if a.yes else r.get("would_delete")
+    for x in lst:
+        print(f"  {'deleted' if a.yes else 'would delete'} {x['path']} ({human(x['bytes'])})")
+    for x in r["kept"]:
+        print(f"  kept {x['path']}: {x['why']}")
+    print(f"[cleanup-sources] {'freed' if a.yes else 'would free'} {human(r['freed'])}"
+          + ("" if a.yes else " (dry run: add --yes)"))
+    return 0
+
+
+def cmd_metrics(a):
+    from . import clients as CL
+    from . import metrics as MT
+    try:
+        if a.batch:
+            r = MT.metrics(batch=a.batch, csv_=a.csv)
+        elif a.client:
+            r = MT.metrics(client=CL.resolve(a.client), csv_=a.csv)
+        else:
+            if not a.all and os.path.exists(DB_NAME):
+                r = MT.metrics(batch=os.getcwd(), csv_=a.csv)
+            else:
+                r = MT.metrics(all_=True, csv_=a.csv)
+    except (FileNotFoundError, ValueError) as e:
+        return _fail(a, e)
+    if a.json:
+        _out(r)
+    elif a.csv:
+        sys.stdout.write(r["csv"])
+    else:
+        _out(r)
+    return 0
+
+
+def cmd_timing(a):
+    from . import metrics as MT
+    try:
+        r = MT.timing(_batch(a), a.job, a.event, a.what, a.seconds, a.actor)
+    except (KeyError, ValueError) as e:
+        return _fail(a, e)
+    if a.json:
+        _out(r)
+    else:
+        print(f"[timing] {a.job} {a.what} {a.event}: {r['total_s']:.1f}s in total")
+    return 0
+
+
 def cmd_job(a):
     from . import api
     try:
@@ -327,7 +519,7 @@ def cmd_recipes(a):
     from . import recipes
     if a.json:
         from . import api
-        _out(api.recipes())
+        _out(dict(recipes=api.recipes(), capabilities=list(CAPABILITIES)))
         return 0
     for n in recipes.names():
         r = recipes.REGISTRY[n]
@@ -374,10 +566,82 @@ def main(argv=None):
     p.add_argument("--accept-policy", action="store_true", help="also cut the policy approvals not rendered yet")
     p.add_argument("--approve-green", action="store_true", help="approve every green job not sampled for review")
     p.add_argument("--json", action="store_true", help="print the result / review items (absolute paths) as JSON")
-    p = add("job", cmd_job, "one job: transcript, cleanup edits, captions, QC, exports")
-    p.add_argument("id")
+    p = sub.add_parser("job", help="one job: show (transcript, edits, captions, QC, exports) | edit | rerun")
+    jsub = p.add_subparsers(dest="verb", required=True)
+    q = jsub.add_parser("show", help="one job as JSON / text (`job ID` works too)")
+    q.add_argument("id")
+    q.add_argument("--batch")
+    q.add_argument("--json", action="store_true")
+    q.add_argument("--no-words", action="store_true", help="skip the per-word transcript")
+    q.set_defaults(fn=cmd_job)
+    q = jsub.add_parser("edit", help="in-review edit: caption | trim | hook | cover | copy | undo")
+    q.add_argument("--batch")
+    q.add_argument("--job", required=True)
+    q.add_argument("--op", required=True, choices=["caption", "trim", "hook", "cover", "copy", "undo"])
+    q.add_argument("--cue", type=int, help="caption: cue index (job show --json captions.cues[].i)")
+    q.add_argument("--text", help="caption: the corrected caption; cover: the cover text (a|b = two lines)")
+    q.add_argument("--start", type=float, help="trim: new start (source seconds, snapped to a word edge)")
+    q.add_argument("--end", type=float, help="trim: new end (source seconds)")
+    q.add_argument("--pick", type=int, help="hook: candidate index (-1 = no cold open)")
+    q.add_argument("--t", type=float, help="cover: frame time in the output video (seconds)")
+    q.add_argument("--title")
+    q.add_argument("--body")
+    q.add_argument("--tags", help="copy: a,b,c")
+    q.add_argument("--json", action="store_true")
+    q.set_defaults(fn=cmd_job_edit)
+    q = jsub.add_parser("rerun", help="re-run only the stages the edits made stale")
+    q.add_argument("--batch")
+    q.add_argument("--job", required=True)
+    q.add_argument("--json", action="store_true")
+    q.add_argument("--json-events", action="store_true", help="progress stream, one JSON object per line")
+    q.set_defaults(fn=cmd_job_rerun)
+    p = sub.add_parser("plan-segments", help="transcript -> candidate segments (segments.draft.yaml)")
+    p.add_argument("--source", required=True, help="the long recording")
+    p.add_argument("--transcript", help="reuse a transcript (whisper JSON / vstudio.asr cache) instead of ASR")
+    p.add_argument("--client", help="client folder or slug (tags, glossary, style, platforms)")
+    p.add_argument("--count", type=int, help="how many segments (default: by duration)")
+    p.add_argument("--min", type=float, help="min seconds per segment (default from the platforms)")
+    p.add_argument("--max", type=float, help="max seconds per segment")
+    p.add_argument("--platforms", help="a,b (title length + length window)")
+    p.add_argument("--provider", default="auto", choices=["auto", "claude", "openai", "none"],
+                   help="auto = claude with ANTHROPIC_API_KEY, else none; openai only when named")
+    p.add_argument("--model")
+    p.add_argument("--language")
+    p.add_argument("--out", help="output folder (default <source dir>/plan-<source stem>)")
     p.add_argument("--json", action="store_true")
-    p.add_argument("--no-words", action="store_true", help="skip the per-word transcript")
+    p.set_defaults(fn=cmd_plan_segments, batch=None)
+    p = sub.add_parser("client", help="client workspace: init | show | update | list")
+    p.add_argument("verb", choices=["init", "show", "update", "list"])
+    p.add_argument("--client", help="client folder or slug")
+    p.add_argument("--set", help="JSON object of client.yaml fields (update: also glossary_add / glossary_remove / "
+                                 "tags_add)")
+    p.add_argument("--name")
+    p.add_argument("--exist-ok", action="store_true", help="init: update when it exists")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(fn=cmd_client, batch=None)
+    p = add("deliver", cmd_deliver, "client delivery package (per-platform folders, 文案.md, 排期表, zip)")
+    p.add_argument("--client", help="client folder or slug (default: the batch's client)")
+    p.add_argument("--zip", action="store_true")
+    p.add_argument("--cleanup-days", type=int, help="delete the sources N days after delivery (0 = never)")
+    p.add_argument("--out", help="delivery root (default <batch>/delivery)")
+    p.add_argument("--json", action="store_true")
+    p = add("cleanup-sources", cmd_cleanup_sources, "delete source files of deliveries past their cleanup date")
+    p.add_argument("--client")
+    p.add_argument("--all", action="store_true")
+    p.add_argument("--yes", action="store_true", help="really delete (default: dry run)")
+    p.add_argument("--json", action="store_true")
+    p = add("metrics", cmd_metrics, "metrics: --batch / --client / --all, JSON or the weekly CSV")
+    p.add_argument("--client")
+    p.add_argument("--all", action="store_true")
+    p.add_argument("--csv", action="store_true", help="the weekly table (gtm weekly metrics columns)")
+    p.add_argument("--json", action="store_true")
+    p = add("timing", cmd_timing, "review timing event -> batch store")
+    p.add_argument("--job", required=True)
+    p.add_argument("--event", required=True, choices=["start", "stop", "add"])
+    p.add_argument("--what", default="review")
+    p.add_argument("--seconds", type=float, help="active seconds (stop / add)")
+    p.add_argument("--actor")
+    p.add_argument("--json", action="store_true")
     p = add("package", cmd_package, "publish folders + schedule + confirmation code")
     p.add_argument("--per-day", type=int)
     p.add_argument("--start", help="first posting date YYYY-MM-DD (default spec schedule.start, else tomorrow)")
@@ -394,6 +658,9 @@ def main(argv=None):
     p = sub.add_parser("recipes", help="list recipes")
     p.add_argument("--json", action="store_true", help="labels, inputs needed, row keys, stages")
     p.set_defaults(fn=cmd_recipes)
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if len(argv) >= 2 and argv[0] == "job" and argv[1] not in ("show", "edit", "rerun", "-h", "--help"):
+        argv.insert(1, "show")                         # `job ID` (F0) == `job show ID`
     a = ap.parse_args(argv)
     if not hasattr(a, "batch"):
         a.batch = None
