@@ -319,7 +319,7 @@ export function joinWords(ws: Word[]): string {
 }
 
 /** Set one edge of a segment, snapped to a word edge, keeping at least minLen seconds. */
-export function setEdge(seg: Segment, edge: 'start' | 'end', t: number, words: Word[], minLen = 3): Segment {
+export function setEdge<S extends { start: number; end: number }>(seg: S, edge: 'start' | 'end', t: number, words: Word[], minLen = 3): S {
   const v = snapToWord(t, words, edge);
   if (edge === 'start') return v <= seg.end - minLen ? { ...seg, start: v } : seg;
   return v >= seg.start + minLen ? { ...seg, end: v } : seg;
