@@ -27,6 +27,9 @@ def plan_batch(spec_path, batch_dir=None, planner=None, overrides=None, sync=Fal
     spec = S.load_spec(spec_path, overrides)
     if planner:
         spec["planner"] = planner
+    from . import clients as CL
+    if spec.get("client"):
+        CL.apply_to_spec(spec, spec["client"])
     recipe = load_recipe(spec)
     bdir = os.path.abspath(batch_dir or spec.get("batch_dir") and os.path.join(spec["_dir"], spec["batch_dir"])
                            or default_batch_dir(spec))
@@ -37,6 +40,8 @@ def plan_batch(spec_path, batch_dir=None, planner=None, overrides=None, sync=Fal
             raise ValueError("no jobs: give `segments:` (a job-list file) or inline `jobs:` in the spec")
         items = recipe.expand(spec, rows)
         jobs = S.apply_variants(spec, items)
+        from . import edits as ED
+        jobs = ED.reapply(store, jobs)             # in-review edits (`job edit`) survive a replan
         old = {j["id"]: j for j in store.jobs()}
         stats = dict(created=[], updated=[], unchanged=[], dropped=[])
         for k, j in enumerate(jobs):
@@ -65,6 +70,8 @@ def plan_batch(spec_path, batch_dir=None, planner=None, overrides=None, sync=Fal
                 store.set_job(jid, state="dropped")
                 stats["dropped"].append(jid)
         store.set_meta("spec", _public_spec(spec))
+        CL.write_persona(bdir, spec)
+        CL.register_batch(bdir, spec.get("name"), CL.batch_client_dir(spec))
         if store.state() in (None, "planned", "ran") or not old:
             store.set_meta("state", "planned")
         store.log("plan", {k: len(v) for k, v in stats.items()})

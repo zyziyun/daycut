@@ -140,8 +140,9 @@ def _jsonable(out):
 
 class Runner:
     def __init__(self, batch_dir, pilot=None, limits=None, confirm_pilot=False, resume=False, retry_failed=False,
-                 only=None, backoff=None, poll=0.05, echo=True, on_event=None):
+                 only=None, backoff=None, poll=0.05, echo=True, on_event=None, targeted=False):
         self.dir = os.path.abspath(batch_dir)
+        self.targeted = bool(targeted and only)     # `job rerun`: named jobs only, batch state left as it was
         self.on_event = on_event
         self.n_total = self.n_done = self.jobs_total = 0
         self.pilot, self.confirm_pilot, self.resume = pilot, confirm_pilot, resume
@@ -245,8 +246,10 @@ class Runner:
             raise BatchBusy(f"another `run` is active on {self.dir}")
         lockf.write(str(os.getpid()))
         lockf.flush()
+        from .clients import activate
         try:
-            return self._run()
+            with activate(self.dir):              # the client's persona overlay (brand, fillers, term fixes)
+                return self._run()
         finally:
             fcntl.flock(lockf, fcntl.LOCK_UN)
             lockf.close()
@@ -258,11 +261,21 @@ class Runner:
 
     def _run(self):
         state = self.store.state()
-        if state == "paused" and not self.resume:
+        if self.targeted:
+            reason = self.store.meta("pause_reason")
+            try:
+                return self._run_inner(state)
+            finally:
+                self.store.set_meta("state", state)
+                self.store.set_meta("pause_reason", reason)
+        return self._run_inner(state)
+
+    def _run_inner(self, state):
+        if not self.targeted and state == "paused" and not self.resume:
             r = self.store.meta("pause_reason")
             self.say(f"batch is paused ({r}); fix the cause, then `run --resume`")
             return self._result("paused", 3, reason=r)
-        if state == "pilot-review" and not self.pilot and not self.confirm_pilot:
+        elif not self.targeted and state == "pilot-review" and not self.pilot and not self.confirm_pilot:
             self.say("pilot finished and waits for review: look at `review`, then `run --confirm-pilot`")
             return self._result("pilot-review", 4)
         self._recover()

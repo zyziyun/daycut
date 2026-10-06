@@ -8,6 +8,9 @@ Tables
   artifacts  (stage, key) -> shared outputs (e.g. one ASR per source, reused by every job of that source)
   events     append-only log
   bench      measured seconds / bytes per unit per stage (feeds ``estimate``)
+  edits      in-review job edits (``job edit``): op, args, the value before, which stages it made stale
+  timing     review timing events (``timing``): job, start / stop, active seconds
+  deliveries client delivery packages (``deliver``): folder, zip, manifest hash, source cleanup due date
 
 Only the scheduler's dispatcher thread writes while a run is going; readers (``status``) use their own
 connection (WAL lets them read while the run writes).
@@ -39,9 +42,16 @@ CREATE TABLE IF NOT EXISTS artifacts (
 CREATE TABLE IF NOT EXISTS events (ts REAL, job TEXT, stage TEXT, kind TEXT, msg TEXT);
 CREATE TABLE IF NOT EXISTS bench (
   stage TEXT PRIMARY KEY, resource TEXT, sec_per_unit REAL, bytes_per_unit REAL, n INTEGER, updated REAL);
+CREATE TABLE IF NOT EXISTS edits (
+  n INTEGER PRIMARY KEY AUTOINCREMENT, job TEXT, op TEXT, args TEXT, before TEXT, result TEXT, rerun TEXT,
+  ts REAL, undone INTEGER DEFAULT 0);
+CREATE TABLE IF NOT EXISTS timing (ts REAL, job TEXT, event TEXT, what TEXT, seconds REAL, actor TEXT);
+CREATE TABLE IF NOT EXISTS deliveries (
+  n INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, client TEXT, dir TEXT, zip TEXT, code TEXT, items INTEGER,
+  jobs INTEGER, duration REAL, cleanup_due REAL, cleaned REAL, sources TEXT);
 """
 
-JSON_COLS = {"params", "qc_reasons", "out"}
+JSON_COLS = {"params", "qc_reasons", "out", "args", "before", "result", "rerun", "sources"}
 
 
 def _row(cur, r):
@@ -201,6 +211,66 @@ class Store:
         if job:
             return self.q("SELECT * FROM events WHERE job=? ORDER BY ts DESC LIMIT ?", (job, n))
         return self.q("SELECT * FROM events ORDER BY ts DESC LIMIT ?", (n,))
+
+    # ------------------------------------------------------------- v0.2: edits / timing / deliveries
+    def add_edit(self, job, op, args, before, result, rerun):
+        d = lambda v: json.dumps(v, ensure_ascii=False, default=str)  # noqa: E731
+        with self._lock:
+            cur = self.conn.execute("INSERT INTO edits(job, op, args, before, result, rerun, ts) VALUES(?,?,?,?,?,?,?)",
+                                    (job, op, d(args), d(before), d(result), d(rerun), now()))
+            return cur.lastrowid
+
+    def edits(self, job=None, include_undone=False):
+        q, a = "SELECT * FROM edits", []
+        cond = []
+        if job:
+            cond.append("job=?")
+            a.append(job)
+        if not include_undone:
+            cond.append("undone=0")
+        if cond:
+            q += " WHERE " + " AND ".join(cond)
+        return self.q(q + " ORDER BY n", tuple(a))
+
+    def set_edit(self, n, **f):
+        cols = ", ".join(f"{k}=?" for k in f)
+        vals = [json.dumps(v, ensure_ascii=False, default=str) if k in JSON_COLS and v is not None else v
+                for k, v in f.items()]
+        self.x(f"UPDATE edits SET {cols} WHERE n=?", (*vals, n))
+
+    def add_timing(self, job, event, what="review", seconds=None, actor=None, ts=None):
+        self.x("INSERT INTO timing(ts, job, event, what, seconds, actor) VALUES(?,?,?,?,?,?)",
+               (ts if ts is not None else now(), job, event, what, seconds, actor))
+
+    def timing(self, job=None, what=None):
+        q, cond, a = "SELECT * FROM timing", [], []
+        if job:
+            cond.append("job=?")
+            a.append(job)
+        if what:
+            cond.append("what=?")
+            a.append(what)
+        if cond:
+            q += " WHERE " + " AND ".join(cond)
+        return self.q(q + " ORDER BY ts", tuple(a))
+
+    def add_delivery(self, **f):
+        if "sources" in f:
+            f["sources"] = json.dumps(f["sources"], ensure_ascii=False)
+        f.setdefault("ts", now())
+        cols = list(f)
+        with self._lock:
+            cur = self.conn.execute(f"INSERT INTO deliveries({', '.join(cols)}) VALUES({', '.join('?' * len(cols))})",
+                                    tuple(f.values()))
+            return cur.lastrowid
+
+    def deliveries(self):
+        return self.q("SELECT * FROM deliveries ORDER BY n")
+
+    def set_delivery(self, n, **f):
+        cols = ", ".join(f"{k}=?" for k in f)
+        vals = [json.dumps(v, ensure_ascii=False) if k in JSON_COLS and v is not None else v for k, v in f.items()]
+        self.x(f"UPDATE deliveries SET {cols} WHERE n=?", (*vals, n))
 
     def bench(self):
         return {r["stage"]: r for r in self.q("SELECT * FROM bench")}
