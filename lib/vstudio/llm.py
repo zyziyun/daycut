@@ -69,7 +69,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 
-TASKS = ("segment_plan", "proofread", "glossary", "copy", "script", "planner", "test")
+TASKS = ("segment_plan", "proofread", "glossary", "copy", "script", "planner", "intake", "output_edit", "test")
 
 DEFAULT_MODELS = {"anthropic": "claude-opus-5-5", "openai": "gpt-4.1-mini", "gemini": "gemini-2.5-flash",
                   "claude-code": None, "codex": None, "openai-compatible": None, "none": None}
