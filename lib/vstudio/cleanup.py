@@ -99,6 +99,7 @@ COMMON = dict(
     hallucinations=True,    # use asr.drop_hallucinations (when present) for asr-noise edits
     breath_flatness=0.2,    # spectral flatness above which a soft voiced run is a breath
     breath_below_db=10.0,   # a breath peaks at least this far below the speech level
+    policy=False,           # confirm policy (``apply_policy``): answer low-risk confirm edits (batch stages turn it on)
 )
 
 
@@ -484,7 +485,8 @@ def _filler_rows(R, cx):
                     conf, why = min(conf, 0.35), "tag question at a sentence end"
                 conf = min(conf, 0.8)
         if conf is not None:
-            out.append(dict(kind=kind, i=a["i"], j=b["i"], conf=conf, reason=why, text=_join(R[k:k + n])))
+            out.append(dict(kind=kind, i=a["i"], j=b["i"], conf=conf, reason=why, text=_join(R[k:k + n]),
+                            feat=dict(iso_b=bool(iso_b), iso_a=bool(iso_a), drawn=bool(drawn))))
         k += n
     return out
 
@@ -609,6 +611,7 @@ def _restart_rows(R, cx, taken):
         j, m, marker = found
         conf = 0.62 + (0.15 if marker else 0.0)
         out.append(dict(kind="restart", i=R[i]["i"], j=R[j - 1]["i"], conf=conf, text=_join(R[i:j]),
+                        feat=dict(marker=bool(marker), m=m),
                         reason=f"starts '{_join(R[i:i + m])}', breaks off"
                                + (" (pause / filler)" if marker else "") + f", restarts as '{_join(R[j:j + m + 2])}'"))
         i = j
@@ -685,6 +688,7 @@ def _merged_rows(R, cx):
         conf = 0.6 if first in HESITATION or w["n"][:2] in HESITATION else 0.45
         out.append(dict(kind="filler-merged", i=w["i"], j=w["i"], conf=conf, text=w["w"], cut_to=round(new, 3),
                         patch=[w["t"], round(new, 3)],
+                        feat=dict(front=round(front, 3), d0=round(d0, 3), d1=round(d1, 3), cut_to=round(new, 3)),
                         reason=f"'{w['w']}' is {d:.2f}s: {front:.2f}s of sound, a dip at {d0:.2f}-{d1:.2f}s, then the "
                                f"word - a filler/restart merged into it; cut up to {new:.2f}s (listen)"))
     return out
@@ -865,8 +869,347 @@ def detect(words, audio=None, ranges=None, profile=None, overrides=None, dropped
             e["gap"] = r["gap"]
         if r.get("patch"):
             e["patch"] = r["patch"]           # [old word start, new start]: the word stays, its start moves
+        if r.get("feat"):
+            e["feat"] = r["feat"]             # detector facts the confirm policy reads (isolation, dip, marker)
         edits.append(e)
+    if st.get("policy"):
+        apply_policy(edits, W)
     return edits
+
+
+# ------------------------------------------------------------------ confirm policy (auto-approve / auto-keep)
+# A confirm edit is a question for the creator. Most of them are the same question asked again and again
+# (然后 at a sentence start, a merged 呃 before a word, 这个 before a noun). The policy answers the low-risk ones:
+#   p = P(the creator would cut it): a per-class prior from the detector's own facts (``policy_prior``), pulled
+#       toward the creator's past answers for that class (and class + text) stored per persona (``learn``);
+#   p >= approve_at -> action "auto" (cut), p <= keep_at -> action "keep", else it stays "confirm".
+# The edit keeps ``base_action: "confirm"`` and ``policy: {action, p, rule}``; ``review_sheet`` shows both.
+POLICY_VERSION = 1
+POLICY_DEFAULTS = dict(
+    approve_at=0.8,         # p at or above -> auto-approved (cut)
+    keep_at=0.3,            # p at or below -> auto-kept (not asked)
+    prior_weight=4.0,       # pseudo-decisions behind the rule prior when blending in the creator's answers
+    implicit_keep=0.5,      # weight of a confirm edit the creator saw in a reply but did not approve
+    never_approve=["retake", "asr-noise"],    # classes / kinds the policy never cuts on its own
+    classes={},             # per class overrides: {"filler/connector": {"approve_at": .9, "keep_at": .2, "off": true}}
+)
+# words that cannot open a clause on their own: dropping the connector before them leaves a fragment
+CLAUSE_BAD_HEAD = {"是", "的", "了", "呢", "吧", "啊", "嘛", "吗", "么", "就", "也", "都", "还", "再", "又", "才",
+                   "的话", "之后", "以后", "后", "呀", "哦", "而", "并", "说", "就是"}
+COPULA_HEAD = {"一个", "一种", "一", "这样", "那种", "这种", "那样", "这么", "说"}
+JIUSHI_GLUE = set("也不这那还可只要即或就都正而")     # 也就是 / 不就是 / 这就是: 就是 is a real verb there
+RESTART_REAL_END = {"可能", "都", "就是", "比如说", "比如", "的话", "有一个", "用", "去", "是", "在", "要", "会", "就",
+                    "说", "那", "这个", "一个", "的", "了", "把", "给", "跟", "和", "如果", "因为", "所以", "但是", "然后",
+                    "也", "还", "再", "可以", "就可以", "能", "能够", "其实", "我们", "你", "他", "它"}
+_MERGED_RX = re.compile(r"is ([\d.]+)s: ([\d.]+)s of sound, a dip at ([\d.]+)-([\d.]+)s.*cut up to ([\d.]+)s")
+_RESTART_RX = re.compile(r"starts '([^']*)'")
+
+
+def edit_class(e):
+    """Stable question class of an edit, for bulk answers and learning: kind[/sub]. Sub-classes split the
+    filler kind by what the detector saw: connector (然后/所以说/那么 at a sentence start), lead (就是-type
+    filler, pause before only), tail (pause after only), drawn, isolated, determiner (这个模型), particle (好啊),
+    phrase (inside a phrase), tag (对吧 at an end); restart -> restart/parallel when it reads like a list."""
+    k, r = e.get("kind", ""), e.get("reason", "")
+    if k == "filler":
+        for key, sub in (("connector at a sentence start", "connector"), ("determiner", "determiner"),
+                         ("particle attached", "particle"), ("inside a phrase", "phrase"), ("tag question", "tag"),
+                         ("hesitation", "hesitation"), ("interjection", "interjection"),
+                         ("stacked", "stacked"), ("的话 adds nothing", "stacked")):
+            if key in r:
+                return f"filler/{sub}"
+        if r.startswith("semantic filler") or r.startswith("discourse filler"):
+            f = _edit_feat(e)
+            if f.get("iso_b") and f.get("iso_a"):
+                return "filler/isolated"
+            if f.get("iso_b"):
+                return "filler/lead"
+            if f.get("iso_a"):
+                return "filler/tail"
+            return "filler/drawn"
+        return "filler"
+    if k == "repeat" and "deliberate" in r:
+        return "repeat/doubling"
+    return k
+
+
+def _edit_feat(e):
+    """Detector facts of an edit: ``feat`` when the EDL has it, else parsed back out of ``reason`` (EDLs
+    written before the policy existed)."""
+    f = dict(e.get("feat") or {})
+    r = e.get("reason", "")
+    if e.get("kind") == "filler" and "iso_b" not in f and r.startswith(("semantic filler", "discourse filler")):
+        f.update(iso_b="pause before" in r or "between pauses" in r, iso_a="pause after" in r or "between pauses" in r,
+                 drawn="drawn out" in r)
+    if e.get("kind") == "filler-merged" and "front" not in f:
+        m = _MERGED_RX.search(r)
+        if m:
+            f.update(front=float(m.group(2)), d0=float(m.group(3)), d1=float(m.group(4)), cut_to=float(m.group(5)))
+    if e.get("kind") == "restart" and "marker" not in f:
+        f["marker"] = "(pause / filler)" in r
+    if e.get("kind") == "restart" and "pref" not in f:
+        m = _RESTART_RX.search(r)
+        f["pref"] = norm(m.group(1)) if m else ""
+    return f
+
+
+def _pnorm(w):
+    return w.get("n") or norm(w.get("w", ""))
+
+
+def _next_clause(W, e, fill):
+    """Words after the edit up to the end of their sentence (or a >= 0.5 s gap, max 14 words), skipping fillers
+    and an immediate copy of the cut text. -> (first word norm, weight in CJK chars)."""
+    t1 = e["t1"]
+    nxt = [w for w in W if _mid(w) > t1 - 0.01][:14]
+    out = []
+    for k, w in enumerate(nxt):
+        if k and w["t"] - nxt[k - 1]["te"] >= 0.5:
+            break
+        out.append(w)
+        if w.get("end"):
+            break
+    cut_txt = norm(e.get("text", ""))
+    while out and (_pnorm(out[0]) in fill or _pnorm(out[0]) == cut_txt):
+        out = out[1:]
+    if not out:
+        return "", 0.0
+    weight = sum(len(_CJK.findall(_pnorm(w))) or 1.5 for w in out)
+    return _pnorm(out[0]), weight
+
+
+def _prev_word(W, e):
+    prev = [w for w in W if _mid(w) < e["t0"] + 0.01]
+    return prev[-1] if prev else None
+
+
+def _complete_clause(W, e, fill):
+    head, weight = _next_clause(W, e, fill)
+    if not head or weight < 4:
+        return False, f"too little follows ({weight:.0f} chars)"
+    if head in CLAUSE_BAD_HEAD or head[:1] in ("的", "了", "呢", "吧", "嘛", "吗", "么"):
+        return False, f"next word '{head}' cannot open a clause"
+    return True, f"'{head}…' opens a complete clause"
+
+
+def policy_prior(e, words, fill=None):
+    """(p, rule): rule-based probability that the creator would cut this confirm edit (None, rule) when no
+    rule has an opinion (it stays a question unless the creator's history decides)."""
+    fill = fill if fill is not None else _all_fillers()
+    cls = edit_class(e)
+    f = _edit_feat(e)
+    W = words or []
+    if cls in ("filler/determiner", "filler/particle", "filler/phrase", "filler/tag", "repeat/doubling"):
+        return 0.2, "reads as a real word / deliberate doubling: keep"
+    if cls == "filler/connector":
+        ok, why = _complete_clause(W, e, fill)
+        return (0.86, f"sentence-start connector; {why}") if ok else (0.5, f"sentence-start connector; {why}")
+    if cls == "filler/lead":
+        ok, why = _complete_clause(W, e, fill)
+        pv = _prev_word(W, e)
+        txt = norm(e.get("text", ""))
+        if pv is not None and _pnorm(pv)[-1:] in JIUSHI_GLUE and len(txt) <= 2:
+            return 0.5, f"'{pv['w']}' before it may make it a real word"
+        head = _next_clause(W, e, fill)[0]
+        if txt == "就是" and head in COPULA_HEAD:
+            return 0.5, f"'就是 {head}…' may be a copula (X 就是 一个 Y)"
+        return (0.84, f"filler after a pause; {why}") if ok else (0.5, f"filler after a pause; {why}")
+    if cls == "filler/tail":
+        txt = norm(e.get("text", ""))
+        nxt = [w for w in W if _mid(w) > e["t1"] - 0.01][:1]
+        pv = _prev_word(W, e)
+        if nxt and (_pnorm(nxt[0]) == txt or _pnorm(nxt[0]) in fill or _pnorm(nxt[0]) in HESITATION):
+            return 0.85, f"another '{nxt[0]['w']}' follows right after: the speaker restarts"
+        if txt in ("这个", "那个") and pv is not None and (_pnorm(pv).endswith("的") or _pnorm(pv) in fill
+                                                       or _pnorm(pv) == "像"):
+            return 0.82, f"'{pv['w']}{e.get('text', '')}' + pause: a spare determiner"
+        if pv is not None and (_pnorm(pv) in fill or _pnorm(pv) in CONNECT_FIRST):
+            return 0.82, f"stacked after '{pv['w']}'"
+        return None, ""
+    if cls == "filler/isolated":
+        return (0.86, "filler between pauses") if f.get("drawn") or e.get("confidence", 0) >= 0.7 else (None, "")
+    if cls == "stammer":
+        return (0.86, "same word twice, the last copy stays") if e.get("confidence", 0) >= 0.7 else (None, "")
+    if cls == "filler-merged":
+        front, d0, d1, to = (f.get(k) for k in ("front", "d0", "d1", "cut_to"))
+        if None in (front, d0, d1, to):
+            return None, ""
+        dip = d1 - d0
+        if front <= 0.35 and dip >= 0.2 and abs(to - d1) <= 0.05:
+            return 0.85, f"short sound ({front:.2f}s) then a clear {dip:.2f}s dip; the word itself stays"
+        if dip < 0.1:
+            return 0.25, f"only a {dip:.2f}s dip: a normal gap between syllables, not a filler ending (keep)"
+        why = "long sound before the dip (maybe a real syllable)" if front > 0.35 else \
+            ("shallow / short dip" if dip < 0.2 else "cut point off the dip")
+        return 0.5, why
+    if cls == "restart":
+        if f.get("marker"):
+            return None, ""
+        idx = e.get("words") or []
+        last = _pnorm(W[idx[-1]]) if idx and idx[-1] < len(W) else ""
+        ws = [_pnorm(W[i]) for i in idx if i < len(W)]
+        if last in RESTART_REAL_END or any(x in fill for x in ws[1:]):
+            return None, ""
+        return 0.15, f"no pause / filler before the repeat and the first part ends in '{last}': a parallel phrase"
+    return None, ""
+
+
+def policy_path():
+    """Where the learned policy lives (outside the repo): $VSTUDIO_CLEANUP_POLICY, else persona
+    ``cleanup.policy_file``, else ~/.config/vstudio/cleanup_policy.json. None under the test persona
+    (VSTUDIO_DEFAULT_PERSONA) unless the env var is set."""
+    env = os.environ.get("VSTUDIO_CLEANUP_POLICY")
+    if env:
+        return os.path.expanduser(env)
+    if os.environ.get("VSTUDIO_DEFAULT_PERSONA"):
+        return None
+    p = _persona_cleanup().get("policy_file")
+    return os.path.expanduser(p) if p else os.path.join(os.path.expanduser("~"), ".config", "vstudio",
+                                                         "cleanup_policy.json")
+
+
+def persona_key():
+    try:
+        from .config import persona
+        c = persona().get("creator") or {}
+        return str(c.get("handle") or c.get("name") or "default")
+    except Exception:  # noqa: BLE001
+        return "default"
+
+
+def _policy_file(path=None):
+    path = path or policy_path()
+    if not path or not os.path.exists(path):
+        return {"version": POLICY_VERSION, "personas": {}}
+    try:
+        with open(path, encoding="utf-8") as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {"version": POLICY_VERSION, "personas": {}}
+    except (OSError, ValueError):
+        return {"version": POLICY_VERSION, "personas": {}}
+
+
+def load_policy(path=None, persona=None):
+    """Effective policy for one persona: POLICY_DEFAULTS <- persona ``cleanup.policy_defaults`` <- the file's
+    ``personas.<key>.settings``; ``stats`` = the creator's learned answers {key: [approved, kept]}."""
+    pol = dict(POLICY_DEFAULTS, classes=dict(POLICY_DEFAULTS["classes"]))
+    pol.update({k: v for k, v in (_persona_cleanup().get("policy_defaults") or {}).items() if k in POLICY_DEFAULTS})
+    ent = (_policy_file(path).get("personas") or {}).get(persona or persona_key()) or {}
+    pol.update({k: v for k, v in (ent.get("settings") or {}).items() if k in POLICY_DEFAULTS})
+    pol["stats"] = dict(ent.get("stats") or {})
+    return pol
+
+
+def policy_digest(path=None, persona=None):
+    """Short hash of the effective policy (batch stage keys: a learned change re-runs cleanup)."""
+    return _sha([POLICY_VERSION, load_policy(path, persona)])[:12]
+
+
+def _blend(p, st, w):
+    if not st:
+        return p
+    a, k = float(st[0]), float(st[1])
+    return (a + w * p) / (a + k + w) if a + k > 0 else p
+
+
+def policy_decide(e, words, pol=None, fill=None):
+    """-> dict(action "auto" | "keep" | "confirm", p, rule) for one confirm edit."""
+    pol = pol if pol is not None else load_policy()
+    cls = edit_class(e)
+    cfg = dict(approve_at=pol["approve_at"], keep_at=pol["keep_at"])
+    for key in (e.get("kind"), cls):
+        cfg.update((pol.get("classes") or {}).get(key) or {})
+    if cfg.get("off"):
+        return dict(action="confirm", p=None, rule="policy off for this class")
+    p0, rule = policy_prior(e, words, fill)
+    stats = pol.get("stats") or {}
+    learned = [stats.get(cls), stats.get(f"{cls}|{norm(e.get('text', ''))}")]
+    if p0 is None and not any(learned):
+        return dict(action="confirm", p=None, rule=rule or "no rule")
+    p = 0.5 if p0 is None else p0
+    for st in learned:
+        p = _blend(p, st, pol["prior_weight"])
+    n = sum((s[0] + s[1]) for s in learned if s)
+    if n:
+        rule = (rule + "; " if rule else "") + f"creator history ({n:g} answers)"
+    never = set(pol.get("never_approve") or [])
+    if p >= cfg["approve_at"] and cls not in never and e.get("kind") not in never:
+        act = "auto"
+    elif p <= cfg["keep_at"]:
+        act = "keep"
+    else:
+        act = "confirm"
+    return dict(action=act, p=round(p, 3), rule=rule)
+
+
+def apply_policy(edits, words, pol=None, path=None):
+    """Answer the low-risk confirm edits in place (idempotent: re-evaluates every edit whose ``base_action``
+    is confirm, so a learned change re-applies cleanly). Returns {auto, keep, confirm} counts of the
+    evaluated edits."""
+    pol = pol if pol is not None else load_policy(path)
+    W = [w if "n" in w else dict(w, n=norm(w.get("w", ""))) for w in (words or [])]
+    fill = _all_fillers()
+    out = dict(auto=0, keep=0, confirm=0)
+    for e in edits:
+        base = e.get("base_action") or e["action"]
+        if base != "confirm":
+            continue
+        d = policy_decide(e, W, pol, fill)
+        e["base_action"] = "confirm"
+        e["action"] = d["action"]
+        if d["action"] != "confirm":
+            e["policy"] = d
+        else:
+            e.pop("policy", None)
+        out[d["action"]] += 1
+    return out
+
+
+def policy_counts(edits):
+    """{asked, auto, keep}: how many confirm questions the policy answered."""
+    ev = [e for e in edits if (e.get("base_action") or e["action"]) == "confirm"]
+    return dict(asked=sum(e["action"] == "confirm" for e in ev), auto=sum(e["action"] == "auto" for e in ev),
+                keep=sum(e["action"] == "keep" for e in ev))
+
+
+def learn(edits, approve=(), keep=(), all_confirm=False, path=None, persona=None, implicit=True):
+    """Store the creator's answers for later batches: every edit that was a question (``base_action`` /
+    ``action`` confirm) and is in ``approve`` (or all_confirm) counts as approved for its class and class|text;
+    ``keep`` ids (also a policy-approved edit the creator kept) count as kept; with ``implicit`` the other
+    questions of a replied job count as kept at weight ``implicit_keep``. Returns the updated stats."""
+    path = path or policy_path()
+    if not path:
+        return {}
+    ap, kp = {int(x) for x in approve or ()}, {int(x) for x in keep or ()}
+    d = _policy_file(path)
+    key = persona or persona_key()
+    ent = d.setdefault("personas", {}).setdefault(key, {})
+    stats = ent.setdefault("stats", {})
+    w_imp = float(load_policy(path, key)["implicit_keep"])
+    for e in edits:
+        asked = (e.get("base_action") or e["action"]) == "confirm"
+        if not asked:
+            continue
+        shown = e["action"] == "confirm"
+        if e["id"] in kp:
+            hit = (0.0, 1.0)
+        elif e["id"] in ap or (all_confirm and shown):
+            hit = (1.0, 0.0)
+        elif implicit and shown and (ap or kp or all_confirm):
+            hit = (0.0, w_imp)
+        else:
+            continue
+        cls = edit_class(e)
+        for k in (cls, f"{cls}|{norm(e.get('text', ''))}"):
+            s = stats.setdefault(k, [0.0, 0.0])
+            s[0], s[1] = round(s[0] + hit[0], 3), round(s[1] + hit[1], 3)
+    d["version"] = POLICY_VERSION
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(d, f, ensure_ascii=False, indent=1, sort_keys=True)
+    os.replace(tmp, path)
+    return stats
 
 
 # ------------------------------------------------------------------ decisions -> keep segments

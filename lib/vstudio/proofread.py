@@ -7,7 +7,8 @@ logged, every change checked against the audio.
     res = proofread.proofread(cues, term_fixes=[["[Tt]runking", "chunking"]], provider="auto", glossary=g,
                               context=dict(topic="RAG lecture", glossary=["RAG", "LLM"]), heard=reasr_words)
     res["cues"]        # corrected cues (same timing, same count)
-    res["changes"]     # [{i, start, end, before, after, source: term_fix | glossary | llm | llm-propagated, why}]
+    res["changes"]     # [{i, start, end, before, after, source: term_fix | glossary | llm | llm-propagated, why,
+                       #   guess, support}]  guess: an LLM fix neither in the glossary nor a strong sound-alike
     cues, log = proofread.fix_filler_edges(res["cues"])   # no caption ends on 就是 / starts on 的话
 
 Captions must match the audio, so nothing here rewrites what was said: term fixes are the creator's own regex /
@@ -657,6 +658,144 @@ def fix_filler_edges(cues, fits=None, max_chars=24, max_gap=0.35, max_dur=7.0):
 
 
 # ------------------------------------------------------------------ main
+# ------------------------------------------------------------------ guess flags (a human must look)
+GUESS_MIN = 0.8          # sound-alike score a caption fix needs (without glossary support) not to be a guess
+_PINYIN_FN = None
+
+
+def _pinyin_backend():
+    """text -> [toneless pinyin syllable per CJK character] or None: pypinyin when installed, else the macOS
+    Foundation Mandarin->Latin transform (pyobjc), else None (no sound-alike check: CJK swaps count as guesses)."""
+    global _PINYIN_FN
+    if _PINYIN_FN is not None:
+        return _PINYIN_FN or None
+    fn = False
+    try:
+        from pypinyin import lazy_pinyin  # type: ignore
+
+        def fn(s):
+            return [x.lower() for x in lazy_pinyin(s)]
+    except Exception:  # noqa: BLE001
+        try:
+            from Foundation import NSString  # type: ignore  (macOS)
+
+            def fn(s):
+                t = NSString.stringWithString_(s)
+                t = t.stringByApplyingTransform_reverse_("Any-Latin; Latin-ASCII", False) or ""
+                return [x.lower() for x in str(t).split()]
+            if fn("上下文") != ["shang", "xia", "wen"]:
+                fn = False
+        except Exception:  # noqa: BLE001
+            fn = False
+    _PINYIN_FN = fn
+    return fn or None
+
+
+def pinyin_of(text):
+    """Toneless pinyin of the CJK characters of ``text`` (one syllable each), None when no backend."""
+    fn = _pinyin_backend()
+    chars = "".join(re.findall(r"[㐀-鿿豈-﫿]", text or ""))
+    if not chars:
+        return []
+    if not fn:
+        return None
+    out = fn(chars)
+    return out if len(out) == len(chars) else None
+
+
+def _phon(s):
+    """Crude latin phonetic key: lowercase letters, c/q/ck -> k, ph/v/w -> f, th/z -> s, every vowel run -> a,
+    a silent final e dropped (peer ~ pair, vibe ~ web, rewanking ~ reranking)."""
+    s = re.sub(r"[^a-z]", "", (s or "").lower())
+    s = re.sub(r"(?<=[^aeiou])e$", "", s)
+    for a, b in (("ph", "f"), ("th", "s"), ("ck", "k"), ("q", "k"), ("c", "k"), ("v", "f"), ("w", "f"), ("z", "s"),
+                 ("x", "ks")):
+        s = s.replace(a, b)
+    return re.sub(r"[aeiouy]+", "a", s)
+
+
+def sound_alike(a, b):
+    """0..1 how alike two spoken spans sound, None when it cannot be told (CJK without a pinyin backend).
+    CJK vs CJK: per-character pinyin similarity; latin vs latin: spelling or phonetic-key similarity;
+    mixed: the pinyin / phonetic keys of both sides compared as one string."""
+    a, b = a or "", b or ""
+    ca, cb = bool(re.search(r"[㐀-鿿]", a)), bool(re.search(r"[㐀-鿿]", b))
+    la, lb = re.sub(r"[^a-z0-9]", "", a.lower()), re.sub(r"[^a-z0-9]", "", b.lower())
+    if not ca and not cb:
+        if not la or not lb:
+            return 0.0
+        r = difflib.SequenceMatcher(None, la, lb).ratio()
+        return round(max(r, difflib.SequenceMatcher(None, _phon(la), _phon(lb)).ratio()), 3)
+    pa, pb = pinyin_of(a), pinyin_of(b)
+    if pa is None or pb is None:
+        return None
+    if ca and cb and not la and not lb and len(pa) == len(pb):
+        return round(sum(difflib.SequenceMatcher(None, x, y).ratio() for x, y in zip(pa, pb)) / len(pa), 3)
+    ka = _phon("".join(pa) + la)
+    kb = _phon("".join(pb) + lb)
+    return round(difflib.SequenceMatcher(None, ka, kb).ratio(), 3) if ka and kb else 0.0
+
+
+def _gloss_terms(glossary=None, context=None):
+    terms = [str(t) for t in (glossary or {}).get("terms") or []]
+    terms += [str(f.get("to", "")) for f in (glossary or {}).get("fixes") or []]
+    terms += [str(t) for t in (context or {}).get("glossary") or []]
+    pairs = {(str(f.get("from", "")).lower(), str(f.get("to", "")).lower()) for f in (glossary or {}).get("fixes") or []}
+    return {t.strip().lower() for t in terms if t and t.strip()}, pairs
+
+
+def guess_check(change, glossary=None, context=None, min_score=GUESS_MIN):
+    """(guess: bool, support: str) for one caption change. term_fix / glossary changes are the creator's or the
+    validated source glossary: never guesses. An LLM change is supported when every swapped span is a glossary
+    confusion / lands on a glossary term, or sounds alike with score >= min_score; else it is a guess."""
+    src = change.get("source")
+    if src in ("term_fix", "glossary"):
+        return False, src
+    spans = change.get("diff") or [list(x) for x in diff_spans(change.get("before", ""), change.get("after", ""))]
+    spans = [(o or "", n or "") for o, n in spans if (o or n)]
+    if not spans:
+        return False, "no change"
+    terms, pairs = _gloss_terms(glossary, context)
+    notes, guess = [], False
+    for o, n in spans:
+        ol, nl = o.strip().lower(), n.strip().lower()
+        if (ol, nl) in pairs:
+            notes.append(f"{o}->{n}: glossary confusion")
+            continue
+        sc = sound_alike(o, n)
+        if nl in terms and (sc is None or sc >= 0.5):
+            notes.append(f"{o}->{n}: glossary term" + (f", sounds {sc:.2f}" if sc is not None else ""))
+            continue
+        if sc is not None and sc >= min_score:
+            notes.append(f"{o}->{n}: sound-alike {sc:.2f}")
+            continue
+        guess = True
+        notes.append(f"{o}->{n}: " + ("cannot check the sound (no pinyin)" if sc is None else
+                                       f"weak sound match {sc:.2f}, not in the glossary"))
+    return guess, "; ".join(notes)
+
+
+def flag_guesses(changes, glossary=None, context=None, min_score=GUESS_MIN):
+    """Mark every change in place with ``guess`` (bool) + ``support`` (why it is / is not trusted). An
+    ``llm-propagated`` change inherits the verdict of the fix it copies. Returns the number of guesses."""
+    n = 0
+    pairs = set()
+    for c in changes or []:
+        for o, nw in (c.get("diff") or diff_spans(c.get("before", ""), c.get("after", ""))):
+            if o and nw:
+                pairs.add((o.strip().lower(), nw.strip().lower()))
+    for c in changes or []:
+        g, why = guess_check(c, glossary, context, min_score)
+        if c.get("source") not in ("term_fix", "glossary"):
+            flip = [f"{o}<->{nw}" for o, nw in (c.get("diff") or diff_spans(c.get("before", ""), c.get("after", "")))
+                    if o and nw and (nw.strip().lower(), o.strip().lower()) in pairs]
+            if flip:
+                g, why = True, why + "; contradicts another fix in this job (" + ", ".join(flip) + ")"
+        c["guess"], c["support"] = g, why
+        n += g
+    return n
+
+
 def proofread(cues, term_fixes=None, provider="auto", model=None, context=None, heard=None, words=None,
               low_conf=0.5, call=None, prices=None, chunk=120, glossary=None, propagate=True, passes=2):
     """cues: [{start, end, text}] (or ``subs.Cue``). Returns dict(cues, changes, rejected, low_confidence,
@@ -779,6 +918,7 @@ def proofread(cues, term_fixes=None, provider="auto", model=None, context=None, 
                 c["text"] = _swap(before, m.start(), o, n)
                 changes.append(dict(i=i, start=c["start"], end=c["end"], before=before, after=c["text"],
                                     source="llm-propagated", why=f"same fix as elsewhere: {o} -> {n}"))
+    flag_guesses(changes, glossary, context)
     return dict(cues=C, changes=changes, rejected=rejected, warnings=warnings, low_confidence=low,
                 fillers_left=caption_fillers(C), provider=prov, model=mdl if prov != "none" else None, usage=usage,
                 cost_usd=cost_usd(mdl, usage, prices) if prov not in ("none",) else 0.0,
@@ -787,4 +927,4 @@ def proofread(cues, term_fixes=None, provider="auto", model=None, context=None, 
 
 __all__ = ["proofread", "resolve_provider", "low_confidence", "caption_fillers", "words_of", "SYSTEM",
            "GLOSSARY_SYSTEM", "build_glossary", "apply_glossary", "check_glossary_fix", "faithful", "faithful_swap",
-           "diff_spans", "tokens", "fix_filler_edges"]
+           "diff_spans", "tokens", "fix_filler_edges", "flag_guesses", "guess_check", "sound_alike", "pinyin_of"]

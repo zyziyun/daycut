@@ -273,7 +273,7 @@ overrides), so run one pilot on an otherwise idle machine to calibrate (`bench` 
 | black / frozen frames | ffmpeg blackdetect (`black_min` 0.5 s; chapter-card windows exempt) + freezedetect (`freeze_min` 3 s; warn for longform-slices / longform-split) | new |
 | privacy (longform-split) | `privacy_overlap_frames` == 0 in every canvas plan; no pad-blur item while an exclude is set | new |
 | length plan | over the platform sweet spot (or `max_len`): warn `length-plan` with a suggestion - speed needed, the cold open that could go, pending cleanup edits, trim candidates in source seconds (also `suggestions` in qc.json / review items); over `max_len` after the variant: red `max-len` | new |
-| screen (longform-split) | `screen-popup`: an editor popup left visible (one that stays open past `popup_max_s`, or `popups: hold / off`) covering > `qc.popup_cover` (0.05) of the crop for > `qc.popup_s` (1 s) -> warn (masked ones are listed only); `screen-text`: text lines drawn < `qc.text_px_min` (14) px -> warn | new |
+| screen (longform-split) | `screen-popup-visible`: make_vertical samples every rendered master at 2 fps (`_vertical.scan_popups`: each screen item, 记笔记 panels / hook boxes masked, pans stabilised, forward + backward `detect_popups`) and any popup still on screen > `qc.popup_s` (1 s) covering >= `qc.popup_scan_cover` (0.02) -> warn with its output times (`scan_popups.py VIDEO --plan plan.json` re-checks an older export); `screen-popup`: an editor popup left visible (one that stays open past `popup_max_s`, or `popups: hold / off`) covering > `qc.popup_cover` (0.05) of the crop for > `qc.popup_s` (1 s) -> warn (masked ones are listed only); `screen-text`: text lines drawn < `qc.text_px_min` (14) px -> warn | new |
 | face-mask coverage, generic layout check, sensitive words, sameness across the batch | - | to build (F1) |
 
 `sample_pct` (default 10) of green jobs are flagged (deterministic per job id + `seed`) for a human look.
@@ -306,6 +306,14 @@ up (pitch kept) up to `max_speed`; the other platforms keep the full cut. The ma
   warnings, sample / pilot badges; keys: space approve, x reject with a reason, u undo, j / k move, d download)
   and `review/decisions_needed.md` (every pending cleanup edit across jobs). The page saves `decisions.json`;
   `review --apply decisions.json` ingests it. `review --approve-green` approves green, unsampled jobs in one go.
+  The page and sheet show each job's questions under the CURRENT confirm policy (`vstudio.cleanup.apply_policy`
+  re-run on the job's EDL; answered ones are counted, policy cuts not in the render yet are listed), per-class
+  bulk buttons (`"confirm_kinds": ["filler-merged", "filler/lead"]` or `{"ep03": [...], "*": [...]}` in
+  decisions.json, or `review --confirm-kinds a,b`; a kind matches its sub-classes) and `"accept_policy": true`
+  (`--accept-policy`) to cut the pending policy approvals; every reply is learned per persona
+  (`vstudio.cleanup.learn`). Caption fixes not backed by the glossary or a strong sound-alike
+  (`vstudio.proofread.flag_guesses`: pinyin via pypinyin or macOS Foundation, a latin phonetic key) are GUESSES:
+  yellow on the page, `<mark>GUESS</mark>` in the sheet.
 * **Package**: approved jobs -> `package/<platform>-<orientation>/<NNN>_<job>/` (`video.mp4`, `cover.jpg`,
   `post.md`, hard links), `schedule.csv` (`per_day` per platform), `manifest.json`; the manifest hash is the
   confirmation code (any change to files, order or dates -> a new code). Nothing is uploaded in F0.

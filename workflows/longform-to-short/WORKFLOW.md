@@ -127,7 +127,10 @@ against the long-form targets → `out/platform_checks.json` + `WARN` lines (see
 **8c. (optional) Vertical slices** — see "Vertical slices" below
 ```bash
 python3 $S/make_vertical.py work/config.py    # out/vertical/ep{N}/<platform>-<orientation>.mp4 + manifest
+python3 $S/scan_popups.py out/vertical/ep1/xiaohongshu-vertical.mp4 --plan work/vertical/1080x1440/plan.json
+                                              # editor popups still visible (2 fps; exit 1 + times when found)
 ```
+make_vertical runs the same 2 fps scan on every master (plan.json `visible_popups`).
 
 **9. Verify before handing off**
 ```bash

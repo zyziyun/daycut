@@ -292,6 +292,29 @@ def detect_popups(stack, o=SCREEN_DEFAULTS, hz=4.0):
     return out
 
 
+def _box_overlap(a, b):
+    return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
+
+
+def find_popups(stack, o=SCREEN_DEFAULTS, hz=4.0):
+    """``detect_popups`` forward, plus a popup already open when the clip starts (it opened before the cut) and
+    closing inside it: found running backwards, its clean page is the first sample after it closes
+    (``clean_after``). The closing of such a popup looks like an opening to the forward pass (a box changes,
+    the page under it "differs" from the popup frame before): that detection would use a popup frame as its
+    clean page and paint the popup back over the rest of the clip, so it is dropped."""
+    popups = detect_popups(stack, o, hz)
+    Tn = len(stack)
+    for pp in detect_popups(stack[::-1].copy(), o, hz):
+        if not pp.get("to_end"):
+            continue
+        c = Tn - pp["j0"]                              # forward index of the clean sample after it closes
+        popups = [q for q in popups if not (q["j0"] <= c + 1 and _box_overlap(q["box"], pp["box"]))]
+        if c <= 0 or any(q["j0"] < c for q in popups):
+            continue                                   # only when it closes before anything else opens
+        popups.append(dict(j0=0, j1=c, box=pp["box"], frac=pp["frac"], clean_after=c))
+    return popups
+
+
 def analyse_screen(src, t0, t1, speed, fps, n, region, box, zoom_center=None, still=None, o=SCREEN_DEFAULTS,
                    vis_h=None):
     """Per-frame crop rects [x, y, cw, ch] (source px) for the screen box of one timeline item, plus stats
@@ -352,17 +375,7 @@ def analyse_screen(src, t0, t1, speed, fps, n, region, box, zoom_center=None, st
     step = fps / hz
     popups = []
     if (o.get("popups") or "off") != "off" and still is None:
-        popups = detect_popups(stack, o, hz)
-        # a popup already open when the clip starts (it opened before the cut) and closing inside it: found
-        # running backwards; its clean page is the first sample after it closes
-        Tn = len(stack)
-        for pp in detect_popups(stack[::-1].copy(), o, hz):
-            if not pp.get("to_end"):
-                continue
-            c = Tn - pp["j0"]                          # forward index of the clean sample after it closes
-            if c <= 0 or any(q["j0"] < c for q in popups):
-                continue                               # only when it closes before anything else opens
-            popups.append(dict(j0=0, j1=c, box=pp["box"], frac=pp["frac"], clean_after=c))
+        popups = find_popups(stack, o, hz)
     held = set()
     for pp in popups:                                  # the popup and its vanishing: never a camera target
         if not pp.get("open"):                         # (one that stays open may be what is shown: follow)
@@ -453,6 +466,151 @@ def mask_popups(fr, i, popups, clean):
             fr = fr.copy() if not fr.flags.writeable else fr
             fr[y0:y1, x0:x1] = clean[p["clean"]][y0:y1, x0:x1]
     return fr
+
+
+# ----------------------------------------------------------------------------------- output popup scan
+SCAN_DEFAULTS = dict(hz=2.0, analysis_w=360, edge_s=0.25, min_frac=0.01)
+
+
+def _stabilise(stack):
+    """Align every sample of a (T, h, w) int16 stack to the first one: the screen crop pans (one zoom per item,
+    so a pan is a translation; phase correlation between neighbours, accumulated). Page cuts (low response)
+    restart the chain."""
+    if len(stack) < 2:
+        return stack
+    out = [stack[0]]
+    h, w = stack.shape[1:]
+    win = cv2.createHanningWindow((w, h), cv2.CV_32F)
+    cx = cy = 0.0
+    for j in range(1, len(stack)):
+        (sx, sy), resp = cv2.phaseCorrelate(stack[j - 1].astype(np.float32), stack[j].astype(np.float32), win)
+        if resp > 0.3 and (abs(sx) > 0.5 or abs(sy) > 0.5) and abs(sx) < w / 4 and abs(sy) < h / 4:
+            cx, cy = cx + sx, cy + sy
+        if abs(cx) < 0.5 and abs(cy) < 0.5:
+            out.append(stack[j])
+            continue
+        M = np.float32([[1, 0, -cx], [0, 1, -cy]])
+        out.append(cv2.warpAffine(stack[j].astype(np.float32), M, (w, h), borderMode=cv2.BORDER_REPLICATE)
+                   .astype(np.int16))
+    return np.stack(out)
+
+
+def _moved_content(st, p, min_resp=0.35, min_shift=1.5):
+    """True when the box of a found 'popup' holds the page content of the frame next to it, only shifted (a
+    scroll or a re-flow, e.g. a stale mask pasted over a page that moved): phase correlation of the box between
+    the sample just outside the popup and the first one inside finds a clear translation."""
+    x0, y0, x1, y1 = [int(v) for v in p["box"]]
+    if x1 - x0 < 8 or y1 - y0 < 8:
+        return False
+    T = len(st)
+    a, b = (p["j0"] - 1, p["j0"]) if p["j0"] > 0 else (min(T - 1, p["j1"]), min(T - 1, p["j1"]) - 1)
+    if a < 0 or b < 0 or a == b:
+        return False
+    pa, pb = st[a, y0:y1, x0:x1].astype(np.float32), st[b, y0:y1, x0:x1].astype(np.float32)
+    win = cv2.createHanningWindow((x1 - x0, y1 - y0), cv2.CV_32F)
+    (sx, sy), resp = cv2.phaseCorrelate(pa, pb, win)
+    return resp >= min_resp and math.hypot(sx, sy) >= min_shift
+
+
+def output_segments(plan, timeline, fps, split=None):
+    """Screen boxes of a rendered vertical master in OUTPUT time: [(t0, t1, box (x0, y0, x1, y1) canvas px, item)]
+    from plan.json (layout + per-item mode / band) and the timeline (final_t0, source span, speed)."""
+    sp = dict(SPLIT_DEFAULTS, **(split or {}))
+    L = plan.get("layout") or {}
+    out = []
+    for rec in plan.get("items") or []:
+        k = rec.get("item")
+        if rec.get("kind") == "card" or k is None or k >= len(timeline) or not rec.get("screen"):
+            continue
+        it = timeline[k]
+        bx = rec.get("box") or boxes(L, rec.get("mode") or "split", rec.get("band") or "title", sp["speaker_frac"],
+                                     sp["band_frac"], sp["screen_to"]).get("screen")
+        if not bx:
+            continue
+        t0 = float(it["final_t0"])
+        dur = (rec.get("frames") / float(fps)) if rec.get("frames") else (it["t1"] - it["t0"]) / it.get("speed", 1.0)
+        out.append((t0, t0 + dur, [int(v) for v in bx], k))
+    return out
+
+
+def legacy_overlays(cfg_panels, plan, timeline, split=None):
+    """Overlay rects [{a, b, rect}] for a plan.json written before make_vertical recorded them: the 记笔记 panels
+    of the config (source spans mapped through the timeline), each as the widest box ``vertical_panels`` can
+    draw (<= 62 % of the safe width, right-aligned, from the screen top + 16 down to the caption box)."""
+    L = plan.get("layout") or {}
+    if not L or not cfg_panels:
+        return []
+    sp = dict(SPLIT_DEFAULTS, **(split or {}))
+    sx0, _, sx1, _ = L["safe"]
+    top = boxes(L, "split", plan.get("band") or "title", sp["speaker_frac"], sp["band_frac"], sp["screen_to"])["screen"][1]
+    pw = int(min(620, (sx1 - sx0) * 0.62))
+    rect = [sx1 - pw, top + 16, sx1, L["caption"][1] - 20]
+    out = []
+    for p in cfg_panels:
+        a, b = (float(x) for x in p.get("src") or (0, 0))
+        for it in timeline:
+            if it.get("kind") == "card" or it.get("t0") is None:
+                continue
+            lo, hi = max(a, it["t0"]), min(b, it["t1"])
+            if hi > lo:
+                sp_ = it.get("speed") or 1.0
+                out.append(dict(a=it["final_t0"] + (lo - it["t0"]) / sp_, b=it["final_t0"] + (hi - it["t0"]) / sp_,
+                                rect=rect))
+    return out
+
+
+def scan_popups(video, segments, overlays=(), caption_top=None, o=SCREEN_DEFAULTS, scan=None):
+    """Editor popups / context menus still VISIBLE in a rendered video (the master or an export): the whole
+    video is sampled at ``scan.hz`` (2 fps), every screen segment [(t0, t1, box, item)] is cut out of those
+    samples (overlay rects [{a, b, rect}] - 记笔记 panels, hook boxes - and the caption band painted flat over
+    the whole segment so they never read as a popup), pans are stabilised, and ``detect_popups`` runs forward and
+    backward (a popup already open when the segment starts). -> [dict(t, dur, item, box canvas px, cover)] in
+    output seconds; QC warns on any longer than ``qc.popup_s`` (1 s)."""
+    sc = dict(SCAN_DEFAULTS, **(scan or {}))
+    hz = float(sc["hz"])
+    info = media.probe(video)
+    W, H = int(info["w"]), int(info["h"])
+    k = sc["analysis_w"] / float(W)
+    aw, ah = even(W * k), even(H * k)
+    cmd = [media.ffmpeg_bin(), "-v", "error", "-i", os.fspath(video), "-map", "0:v:0",
+           "-vf", f"fps={hz},scale={aw}:{ah}:flags=area", "-f", "rawvideo", "-pix_fmt", "gray", "-"]
+    allf = np.stack(list(frames(cmd, aw, ah, 1)) or [np.zeros((ah, aw), np.uint8)]).astype(np.int16)
+    oo = dict(o, popup_max_s=1e6, popup_min_frac=sc["min_frac"])
+    out = []
+    for t0, t1, box, item in segments:
+        j0 = int(np.ceil((t0 + sc["edge_s"]) * hz))
+        j1 = min(len(allf), int(np.floor((t1 - sc["edge_s"]) * hz)) + 1)
+        if j1 - j0 < 3:
+            continue
+        x0, y0, x1, y1 = [int(round(v * k)) for v in box]
+        if caption_top is not None:
+            y1 = min(y1, int(caption_top * k))
+        if x1 - x0 < 16 or y1 - y0 < 16:
+            continue
+        st = allf[j0:j1, y0:y1, x0:x1].copy()
+        for ov in overlays or ():
+            if ov["a"] < t1 and t0 < ov["b"]:
+                rx0, ry0, rx1, ry1 = [int(round(v * k)) for v in ov["rect"]]
+                st[:, max(0, ry0 - y0):max(0, ry1 - y0), max(0, rx0 - x0):max(0, rx1 - x0)] = 128
+        st = _stabilise(st)
+        found = [dict(p, j0=p["j0"], j1=p["j1"]) for p in detect_popups(st, oo, hz)]
+        T = len(st)
+        for p in detect_popups(st[::-1].copy(), oo, hz):
+            if p.get("to_end"):
+                c = T - p["j0"]
+                found = [q for q in found if not (q["j0"] <= c + 1 and _box_overlap(q["box"], p["box"]))]
+                found.append(dict(p, j0=0, j1=c))
+        for p in found:
+            bx0, by0, bx1, by1 = p["box"]
+            if (bx1 - bx0) > 0.8 * st.shape[2] or (by1 - by0) < 0.25 * (bx1 - bx0):
+                continue                               # page-wide (a pan / page change) or a text strip (typing)
+            if _moved_content(st, p):
+                continue                               # the page moved / re-flowed under a mask edge: not a popup
+            out.append(dict(t=round((j0 + p["j0"]) / hz, 2), item=item,
+                            dur=round((min(p["j1"], T) - p["j0"]) / hz, 2), cover=p["frac"],
+                            box=[int(x0 / k + bx0 / k), int(y0 / k + by0 / k), int(x0 / k + bx1 / k),
+                                 int(y0 / k + by1 / k)], open_end=bool(p.get("to_end"))))
+    return sorted(out, key=lambda x: x["t"])
 
 
 # ----------------------------------------------------------------------------------- speaker tracking

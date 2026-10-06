@@ -434,7 +434,7 @@ def run_cleanup_split(ctx):
     W = C.load_words(tr)
     prof = p.get("cleanup_profile")
     prof = None if prof in (None, "off") else prof
-    ov = p.get("cleanup_overrides")
+    ov = ST.cleanup_overrides(p)
     a, b = p["range"]
     speed = float(p.get("speed") or 1.0)
     en = C.energy_of(src, W, [(a - 1.0, b + 1.0)], prof, ov)
@@ -468,6 +468,7 @@ def run_cleanup_split(ctx):
                     confidence=e.get("confidence")) for e in edits if e["action"] == "confirm"]
     write_json(ctx.path("confirm.json"), confirm)
     out.update(confirm=len(confirm), auto=sum(e["action"] == "auto" for e in edits), confirm_file=ctx.path("confirm.json"),
+               policy=C.policy_counts(edits),
                saved_s=round(body["stats"]["source_s"] - body["stats"]["auto_s"], 2))
     return out
 
@@ -684,7 +685,16 @@ def screen_summary(plan, timeline, fps):
     return dict(scale=max([it["screen"].get("scale") or 0 for it in items] or [0]),
                 text_px_min=min(tp) if tp else None, text_small=any(it["screen"].get("text_small") for it in items),
                 moving=sum((it["screen"].get("p95_speed") or 0) > 0.002 for it in items), items=len(items),
-                scrolls=sum(it["screen"].get("scrolls") or 0 for it in items), popups=pops)
+                scrolls=sum(it["screen"].get("scrolls") or 0 for it in items), popups=pops,
+                visible=visible_popups(plan))
+
+
+def visible_popups(plan):
+    """Popups the output scan (make_vertical: the rendered master sampled at 2 fps) still saw on screen:
+    [dict(t, dur, cover, box)] in output seconds, or None when the plan predates the scan."""
+    if "visible_popups" not in plan:
+        return None
+    return [dict(t=x["t"], dur=x["dur"], cover=x.get("cover"), box=x.get("box")) for x in plan["visible_popups"]]
 
 
 def run_verify_split(ctx):
@@ -707,14 +717,22 @@ def run_verify_split(ctx):
 
 
 def screen_checks(job, spec, export_out):
-    """Screen-crop QC: editor popups still visible (not masked: one that stays open, or ``popups: hold / off``)
+    """Screen-crop QC: editor popups the rendered master still shows (make_vertical's 2 fps output scan, every
+    screen item, popups covering >= qc.popup_scan_cover (0.02) for > qc.popup_s (1 s): warn with the timestamps);
+    editor popups the analysis left visible (not masked: one that stays open, or ``popups: hold / off``)
     covering > qc.popup_cover (0.05) of the crop for > qc.popup_s (1 s) -> warn; text lines drawn smaller than
     qc.text_px_min -> warn."""
     from .qc import _c
-    q = dict(dict(popup_cover=0.05, popup_s=1.0, text_px_min=14.0), **((spec.get("qc") or {})))
+    q = dict(dict(popup_cover=0.05, popup_s=1.0, text_px_min=14.0, popup_scan_cover=0.02), **((spec.get("qc") or {})))
     out = []
     for canvas, pl in (((export_out or {}).get("privacy") or {}).get("plans") or {}).items():
         sc = pl.get("screen") or {}
+        vis = sc.get("visible")
+        if vis is not None:                            # what the rendered master really shows (2 fps scan)
+            bad = [x for x in vis if x["dur"] > q["popup_s"] and (x.get("cover") or 0) >= q["popup_scan_cover"]]
+            out.append(_c("screen-popup-visible", not bad, [[x["t"], x["dur"], x.get("cover")] for x in bad],
+                          "editor popup still visible in the output: " +
+                          ", ".join(f"{x['t']:.1f}-{x['t'] + x['dur']:.1f}s" for x in bad), severity="warn", target=canvas))
         big = [x for x in sc.get("popups") or [] if x["cover"] > q["popup_cover"] and x["dur"] > q["popup_s"]]
         shown = [x for x in big if not x.get("masked")]
         out.append(_c("screen-popup", not shown, [[x["t"], x["dur"], x["cover"], x["masked"]] for x in big],
@@ -797,8 +815,8 @@ def split_stages():
         base["probe"], base["extract"], base["asr"],
         Stage("geometry", "cpu", run_geometry, deps=("probe",), shared=True, params=_geo_params, units=ST._src_dur),
         Stage("cleanup", "cpu", run_cleanup_split, deps=("probe", "asr"),
-              params=_keyp("range", "cuts", "hook", "speed", "hook_speed", "cleanup_profile", "cleanup_overrides",
-                           "language"), units=_dur, version=4),
+              params=ST.cleanup_params("range", "cuts", "hook", "speed", "hook_speed", "cleanup_profile",
+                                       "cleanup_overrides", "cleanup_policy", "language"), units=_dur, version=5),
         Stage("compose", "cpu-render", run_compose_split, deps=("cleanup", "geometry", "asr"), params=_compose_params,
               units=_dur, purge=("work/seg/*", "work/*.wav", "work/*.mkv", "out/final.mp4"), version=3),
         base["glossary"], base["proofread"],

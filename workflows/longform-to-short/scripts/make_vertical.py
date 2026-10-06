@@ -193,7 +193,7 @@ def render_master(group):
            "-c:v", "libx264", "-preset", args.preset, "-crf", str(VC.get("crf", 16)), "-pix_fmt", "yuv420p",
            "-c:a", "copy", "-t", f"{sum(nfr) / FPS:.6f}", "-movflags", "+faststart", master]
     pe = subprocess.Popen(enc, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
-    report, bands, privacy_hits = [], {}, 0
+    report, bands, privacy_hits, ov_rects = [], {}, 0, []
     ground = np.zeros((H, W, 3), np.uint8)
     ground[:] = PAL["bg"][::-1]
     for k, it in enumerate(timeline):
@@ -232,7 +232,7 @@ def render_master(group):
                                          PAL, margin, hook=hk)
             base[y0:y1, x0:x1] = bands[ck]
         rec = dict(item=k, kind=it["kind"], mode=mode, band=b if "band" in bx or "speaker" in bx else None,
-                   frames=n, region=region)
+                   frames=n, region=region, box=list(bx["screen"]) if "screen" in bx else None)
         srects = None
         if "screen" in bx and mode != "pad-blur":
             srects, st = V.analyse_screen(src, t0, t1, it["speed"], FPS, n, region, bx["screen"],
@@ -246,7 +246,14 @@ def render_master(group):
         if hl and "band" not in bx:
             hb = V.hook_box(hl, L["safe"][2] - L["safe"][0] - 40, PAL)
             hook_ov = (np.asarray(hb), (W - hb.width) // 2, L["content"][1] + 24)
+            ov_rects.append(dict(a=it["final_t0"], b=it["final_t0"] + n / FPS,
+                                 rect=[hook_ov[1], hook_ov[2], hook_ov[1] + hb.width, hook_ov[2] + hb.height]))
         panel_y = (bx["screen"][1] if "screen" in bx and len(bx) > 1 else L["content"][1]) + 16
+        for p in panels:                                # overlay rects for the output popup scan (never a popup)
+            a_, b_ = max(p["a"], it["final_t0"]), min(p["b"], it["final_t0"] + n / FPS)
+            if b_ > a_:
+                h_, w_ = p["img"].shape[:2]
+                ov_rects.append(dict(a=a_, b=b_, rect=[p["x"], panel_y, p["x"] + w_, panel_y + h_]))
         last = None
         pops = (rec.get("screen") or {}).get("popups") or []
         keep_clean = {p["clean"] for p in pops if p.get("masked") and not p.get("future")}
@@ -267,10 +274,10 @@ def render_master(group):
             fr = last if fr is None else V.paint_out(fr, EXCLUDE)
             if fr is None:
                 fr = still if still is not None else np.zeros((SH, SW, 3), np.uint8)
-            if i in keep_clean:
-                clean[i] = fr.copy()
             if pops:                                    # transient editor popups: the page as it was before
                 fr = V.mask_popups(fr, i, pops, clean)
+            if i in keep_clean:                         # kept AFTER masking: a clean frame inside another masked
+                clean[i] = fr.copy()                    # popup (one open from the clip start) is clean too
             last = fr
             img = base.copy()
             scr = still if still is not None else fr
@@ -308,7 +315,14 @@ def render_master(group):
     if pe.wait() != 0:
         sys.exit(f"vertical master encode failed:\n{err[-1500:]}")
     plan = dict(canvas=[W, H], targets=[p.key for p in group], layout=L, band=band, **binfo,
-                exclude=EXCLUDE, privacy_overlap_frames=int(privacy_hits), items=report)
+                exclude=EXCLUDE, privacy_overlap_frames=int(privacy_hits), items=report, overlays=ov_rects)
+    if (SCREEN_O.get("popups") or "off") != "off":     # QC: popups still visible in what was rendered (2 fps)
+        try:
+            plan["visible_popups"] = V.scan_popups(master, V.output_segments(plan, timeline, FPS, SPLIT), ov_rects,
+                                                   caption_top=None if SPLIT["screen_to"] == "caption" else L["caption"][1],
+                                                   o=SCREEN_O, scan=cfg.get("vertical.popup_scan") or None)
+        except Exception as e:  # noqa: BLE001  (a QC scan never fails the render)
+            plan["visible_popups_error"] = f"{type(e).__name__}: {e}"
     _lfc.dump_json(plan, os.path.join(d, "plan.json"))
     print(f"{master}  band={band} {binfo}  privacy_overlap_frames={privacy_hits}")
     return master, plan

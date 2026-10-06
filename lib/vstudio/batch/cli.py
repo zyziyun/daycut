@@ -5,7 +5,8 @@
   run [--batch DIR] [--pilot N] [--confirm-pilot] [--resume] [--retry-failed] [--jobs a,b]
       [--concurrency asr=1,cpu-render=2] [--json-events]   run the stage DAGs (resumable; refuses over budget)
   status [--batch DIR] [--json] [--events N]            terminal table
-  review [--batch DIR] [--apply decisions.json] [--approve-green] [--json]   HTML grid + decisions sheet / ingest
+  review [--batch DIR] [--apply decisions.json|JSON] [--confirm-kinds a,b] [--accept-policy] [--approve-green] [--json]
+                                                        HTML grid + decisions sheet / ingest (+ bulk answers)
   job ID [--batch DIR] [--json] [--no-words]            one job: transcript + cleanup edits, captions, QC, exports
   package [--batch DIR] [--per-day N] [--start YYYY-MM-DD] [--times 12:00,19:00] [--json]   publish folders
   verify-manifest MANIFEST                              recompute a package's confirmation code (JSON)
@@ -197,14 +198,23 @@ def cmd_status(a):
 
 def cmd_review(a):
     b = _batch(a)
-    if a.apply:
-        r = review.apply_decisions(b, a.apply)
+    if a.apply or a.confirm_kinds or a.accept_policy:
+        dec = (json.loads(a.apply) if a.apply.lstrip().startswith("{") else a.apply) if a.apply else {}
+        if a.confirm_kinds or a.accept_policy:
+            dec = dict(review.read_json(dec) if isinstance(dec, str) else dec)
+            if a.confirm_kinds:
+                dec["confirm_kinds"] = [k.strip() for k in a.confirm_kinds.split(",") if k.strip()]
+            if a.accept_policy:
+                dec["accept_policy"] = True
+        r = review.apply_decisions(b, dec)
         if a.json:
             _out(dict(ok=True, approved=r["approved"], rejected=r["rejected"], replied=r["replied"],
-                      skipped=[dict(job=j, why=w) for j, w in r["skipped"]]))
+                      bulk=r["bulk"], learned=r["learned"], skipped=[dict(job=j, why=w) for j, w in r["skipped"]]))
             return 0
         print(f"[review] approved {len(r['approved'])}, rejected -> needs-replan {len(r['rejected'])}, "
-              f"cleanup replies {len(r['replied'])} (re-run: `run`)")
+              f"cleanup replies {len(r['replied'])} (re-run: `run`)" +
+              (f"; bulk-confirmed {sum(len(v) for v in r['bulk'].values())} edit(s) in {len(r['bulk'])} job(s)"
+               if r["bulk"] else "") + (f"; {r['learned']} answer(s) learned" if r["learned"] else ""))
         for jid, why in r["skipped"]:
             print(f"  skipped {jid}: {why}")
         return 0
@@ -222,8 +232,14 @@ def cmd_review(a):
         from . import api
         _out(dict(r, batch_dir=os.path.abspath(b), items=api.review_items(b)))
         return 0
+    pt = r.get("policy") or {}
     print(f"[review] {r['page']}  ({r['jobs']} jobs, {r['red']} red, {r['sampled']} sampled; "
           f"{r['confirm_edits']} cleanup edits to confirm in {r['confirm_jobs']} jobs -> {r['decisions_needed']})")
+    if pt.get("auto") or pt.get("keep"):
+        print(f"[review] confirm policy answered {pt['auto'] + pt['keep']} question(s): {pt['auto']} cut, {pt['keep']} kept"
+              + (f"; {pt['pending']} cut(s) not rendered yet (`review --accept-policy`, or `run --jobs <ids>` re-runs cleanup)" if pt["pending"] else ""))
+    if r.get("caption_guesses"):
+        print(f"[review] {r['caption_guesses']} caption fix(es) are guesses: marked yellow, look at them")
     print(f"then: python -m vstudio.batch review --batch {b} --apply <downloaded decisions.json>")
     return 0
 
@@ -353,7 +369,9 @@ def main(argv=None):
     p.add_argument("--json", action="store_true")
     p.add_argument("--events", type=int, default=0, help="also show the last N events")
     p = add("review", cmd_review, "HTML review page / apply decisions")
-    p.add_argument("--apply", help="decisions.json downloaded from the review page")
+    p.add_argument("--apply", help="decisions.json downloaded from the review page (or the JSON itself)")
+    p.add_argument("--confirm-kinds", help="bulk: cut every open question of these classes, e.g. filler-merged,filler/lead")
+    p.add_argument("--accept-policy", action="store_true", help="also cut the policy approvals not rendered yet")
     p.add_argument("--approve-green", action="store_true", help="approve every green job not sampled for review")
     p.add_argument("--json", action="store_true", help="print the result / review items (absolute paths) as JSON")
     p = add("job", cmd_job, "one job: transcript, cleanup edits, captions, QC, exports")

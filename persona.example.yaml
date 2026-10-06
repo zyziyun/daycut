@@ -84,3 +84,5 @@ cleanup:                   # shared 气口 / filler / repeat tool (python -m vst
   crossfade: 0.02          # seconds (20 ms) equal-power crossfade at every join; keep within 0.01-0.03
   fillers_extra: []        # your own 口头禅, treated like 那个 / 就是, e.g. [其实, 对不对]
   never_cut: []            # tokens never flagged as filler / repeat, e.g. [然后]
+  # policy: true           # answer low-risk confirm edits automatically (batch stages do by default); learned
+  #                        # answers live in ~/.config/vstudio/cleanup_policy.json (or policy_file: <path>)

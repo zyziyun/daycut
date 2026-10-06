@@ -65,6 +65,19 @@ cleanup:
    should remain. A lost content word fails loudly with its source and output time: keep the edit that
    covers it (`--keep N`) and re-apply. Leftover hesitations / immediate repeats are listed as warnings.
 
+**Confirm policy** (`cleanup.policy: true` in the persona or `overrides`; batch cleanup stages turn it on, row /
+default `cleanup_policy: false` turns it off): most confirm questions are the same question again (然后 at a
+sentence start, a merged 呃 before a word, 这个 before a noun), so `apply_policy` answers the low-risk ones and
+only the rest stay 待确认. p = P(the creator cuts it) from a rule prior on the detector's facts (`policy_prior`:
+connector / lead filler followed by a complete clause, merged filler with <= 0.35 s of sound and a >= 0.2 s dip
+ending at the cut, 这个/那个 + pause after 的, a repeat right after; determiners / particles / deliberate doubling /
+parallel-phrase "restarts" -> keep; a < 0.1 s dip -> keep), blended with the creator's own past answers for the
+class (`edit_class`, e.g. `filler/connector`, `filler-merged`) and class|text (`learn`, stored per persona in
+`~/.config/vstudio/cleanup_policy.json`, `$VSTUDIO_CLEANUP_POLICY` or persona `cleanup.policy_file`; never in the
+repo). p >= 0.8 -> auto, <= 0.3 -> keep, else confirm; retakes and asr-noise are never cut by the policy. Edits
+keep `base_action: "confirm"` and `policy: {action, p, rule}`; `policy_counts(edits)` -> asked / auto / keep. On a
+real 24-clip lecture batch this took 355 questions to 71 (221 cut, 63 kept).
+
 Safety rules built in:
 - **Word-safe edges**: a word edit runs from the silence after the previous kept word to the silence
   before the next one (quiet-run edges ± `pad`, else the quietest 10 ms frame between them) - never

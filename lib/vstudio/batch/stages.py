@@ -115,6 +115,25 @@ def run_asr(ctx):
                 files=[path], cost_usd=cost)
 
 
+def cleanup_overrides(p):
+    """Batch cleanup overrides: the row's ``cleanup_overrides`` + the confirm policy (on unless the row / defaults
+    say ``cleanup_policy: false``): low-risk confirm edits are answered from the policy + the creator's history."""
+    ov = dict(p.get("cleanup_overrides") or {})
+    ov.setdefault("policy", bool(p.get("cleanup_policy", True)))
+    return ov
+
+
+def cleanup_params(*keys):
+    """Stage params of a cleanup stage: the row keys + the confirm policy digest (a learned change re-runs it)."""
+    def f(job, spec):
+        from vstudio import cleanup as C
+        d = {k: _p(job).get(k) for k in keys}
+        if _p(job).get("cleanup_policy", True) is not False:
+            d["policy"] = C.policy_digest()
+        return d
+    return f
+
+
 def run_cleanup(ctx):
     from vstudio import cleanup as C
     p, src = ctx.params, _src(ctx.job)
@@ -123,7 +142,7 @@ def run_cleanup(ctx):
     prof = None if prof in (None, "off") else prof
     rng = p.get("range")
     kw = dict(transcript=tr, language=p.get("language") or (ctx.spec.get("asr") or {}).get("language"),
-              profile=prof, overrides=p.get("cleanup_overrides"), force=True)
+              profile=prof, overrides=cleanup_overrides(p), force=True)
     body = C.analyze(src, ranges=[tuple(rng)] if rng else None, out=ctx.path("body.cleanup.json"),
                      review=ctx.path("body_review.md"), **kw)
     out = dict(body=body["_path"], hook=None, files=[body["_path"]])
@@ -139,7 +158,7 @@ def run_cleanup(ctx):
                     confidence=e.get("confidence")) for e in edits if e["action"] == "confirm"]
     write_json(ctx.path("confirm.json"), confirm)
     out.update(confirm=len(confirm), auto=sum(e["action"] == "auto" for e in edits),
-               confirm_file=ctx.path("confirm.json"),
+               confirm_file=ctx.path("confirm.json"), policy=C.policy_counts(edits),
                saved_s=round(body["stats"]["source_s"] - body["stats"]["auto_s"], 2))
     return out
 
@@ -521,7 +540,8 @@ def speech_stages():
               units=lambda j, s: _src_dur(j, s) if _no_given(j, s) else 0.0,     # a given transcript is only read
               cost=lambda j, s: _asr_cost(_src_dur)(j, s) if _no_given(j, s) else 0.0, retries=3),
         Stage("cleanup", "cpu", run_cleanup, deps=("probe", "asr"),
-              params=_keyp("range", "hook", "cleanup_profile", "cleanup_overrides", "language"), units=_dur, version=3),
+              params=cleanup_params("range", "hook", "cleanup_profile", "cleanup_overrides", "cleanup_policy", "language"),
+              units=_dur, version=4),
         Stage("apply", "cpu-render", run_apply, deps=("cleanup",), params=_keyp("cleanup_reply", "cleanup_profile"),
               units=_dur, purge=("*.mp4", "*.wav", "*.asr.json")),
         Stage("compose", "cpu-render", run_compose, deps=("apply",),
