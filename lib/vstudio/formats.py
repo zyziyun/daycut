@@ -15,6 +15,8 @@ notes / progress bar, cover rules, series labels, captions, which tag set the po
 Precedence: these defaults < persona ``formats.<id>`` (persona.local.yaml) < what the creator says for this job.
 State the summary line before starting so she never has to ask "加速了么" (it also names what is NOT done:
 no hook montage, no series labels). ``vstudio.firstpass`` checks the render against the same format.
+Not the same thing as ``vstudio.create.formats`` (series presets that seed AI-generated content on the Create page):
+these are editing defaults for footage the creator hands over.
 """
 import argparse
 import copy
