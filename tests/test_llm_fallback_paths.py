@@ -236,3 +236,39 @@ def test_output_ai_error_lists_attempts(monkeypatch):
     p = e.info["params"]
     assert e.info["code"] == "llm-failed" and p["tried"] == ["claude-code", "codex"] and p["codes"] == \
         ["auth-expired", "failed"] and "codex" in e.info["message"] and e.info["message_zh"].startswith("所有")
+
+
+def test_a_cli_that_timed_out_is_skipped_for_a_while(monkeypatch, tmp_path):
+    """A dead / hung `claude -p` costs the full CLI timeout once; the next calls go straight to Codex until it answers
+    again (bug bash: real-engine planning took 146 s every time, 120 s of it waiting for Claude Code)."""
+    monkeypatch.setenv("VSTUDIO_AUTH_CACHE", str(tmp_path / "auth.json"))
+    _routes(monkeypatch)
+    calls = []
+
+    def fake(task, system, prompt, provider=None, model=None, cli_timeout=None, **kw):
+        p = llm.canonical(provider) or "claude-code"
+        calls.append(p)
+        if p == "claude-code":
+            raise llm.LLMError("claude CLI timed out after 120 s")
+        return dict(text="{}", json={}, provider=p, model="m", usage=dict(input=1, output=1), cost_usd=0.0)
+    monkeypatch.setattr(llm, "_complete", fake)
+    monkeypatch.setattr(A, "fingerprint", lambda provider, status_out=None: "fp")
+    r1 = llm.complete("intake", "s", "p", retries=0)
+    assert r1["provider"] == "codex" and calls == ["claude-code", "codex"] and A.known_unresponsive("claude-code")
+    calls.clear()
+    r2 = llm.complete("intake", "s", "p", retries=0)
+    assert r2["provider"] == "codex" and calls == ["codex"]                     # no second 120 s wait
+    assert r2["failed_attempts"][0]["code"] == "timeout" and r2["failed_attempts"][0]["cached"]
+    # without a fallback it is still tried (better a slow answer than none)
+    calls.clear()
+    with pytest.raises(llm.LLMError):
+        llm.complete("intake", "s", "p", retries=0, fallback=False)
+    assert calls == ["claude-code"]
+    # it answers again -> the record clears
+    monkeypatch.setattr(llm, "_complete", lambda *a, **k: dict(text="{}", json={}, provider="claude-code", model="m",
+                                                                usage=dict(input=1, output=1), cost_usd=0.0))
+    monkeypatch.setenv("VSTUDIO_LLM_UNRESPONSIVE_TTL", "0")
+    assert not A.known_unresponsive("claude-code")
+    llm.complete("intake", "s", "p", retries=0)
+    monkeypatch.delenv("VSTUDIO_LLM_UNRESPONSIVE_TTL")
+    assert not A.known_unresponsive("claude-code")

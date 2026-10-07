@@ -801,6 +801,12 @@ def complete(task, system, prompt, schema=None, provider=None, model=None, max_t
                              "error": attempts[-1]["error"]})
             except Exception:  # noqa: BLE001  (a progress callback never breaks the call)
                 pass
+        if cname in CLI_PROVIDERS and i < len(cands) - 1 and _known_unresponsive(cname):
+            err = LLMError(f"{cname}: timed out on a call a few minutes ago and has not answered since - skipped "
+                           f"(the next provider answers instead)")
+            last = err
+            attempts.append(dict(provider=cname, code="timeout", error=str(err)[:300], seconds=0.0, cached=True))
+            continue
         if cname in CLI_PROVIDERS and _known_expired(cname):
             err = LLMError(f"{cname}: the login is known to be expired (checked earlier; log in again, then "
                            f"`python -m vstudio.llm auth status --refresh`) - 401")
@@ -818,6 +824,8 @@ def complete(task, system, prompt, schema=None, provider=None, model=None, max_t
             attempts.append(dict(provider=cname, code=code, error=str(e)[:300], seconds=round(time.time() - t0, 1)))
             if cname in CLI_PROVIDERS and code in ("auth-expired", "not-logged-in"):
                 _remember(cname, "expired" if code == "auth-expired" else "not-logged-in", str(e))
+            elif cname in CLI_PROVIDERS and code == "timeout":
+                _remember(cname, "unresponsive", str(e))      # the next calls skip it for a while (fail fast)
             continue
         if cname in CLI_PROVIDERS:
             _remember(cname, "logged-in")
@@ -840,6 +848,14 @@ def _known_expired(provider):
     try:
         from . import llm_auth
         return llm_auth.known_expired(provider)
+    except Exception:  # noqa: BLE001 - the cache never breaks a call
+        return False
+
+
+def _known_unresponsive(provider):
+    try:
+        from . import llm_auth
+        return llm_auth.known_unresponsive(provider)
     except Exception:  # noqa: BLE001 - the cache never breaks a call
         return False
 
