@@ -169,7 +169,15 @@ def spawn(python, env, d, provider=None, bus=None, args=None):
     return rec
 
 
+_RESUME_LOCK = threading.Lock()   # two answers in a row: one run goes on, the second sees it running
+
+
 def resume_after_answer(runner, d, bus=None, spawner=None):
+    with _RESUME_LOCK:
+        return _resume_after_answer(runner, d, bus, spawner)
+
+
+def _resume_after_answer(runner, d, bus=None, spawner=None):
     """She answered a project's question in the Inbox (e.g. the per-clip review): answering records the decision but
     runs nothing, so the project sat paused until something restarted it (only the week plan did). When nothing in
     the project waits for her any more, no run is going and items are unfinished, continue it in the background:
@@ -184,15 +192,15 @@ def resume_after_answer(runner, d, bus=None, spawner=None):
         return None
     if all(it.get("state") in ("done", "failed", "dropped") for it in items):
         return None
-    py = runner.python
-    if isinstance(st, dict) and st.get("batch_state") == "pilot-review":
-        # the desk's pilot (every new project starts as one): `resume` would stop at once ("pilot-review"), and the
-        # question she just answered stays listed until its stage runs again - so carry on with the same pilot run
-        # (finished stages are cached; it stops again at any question still open)
-        return (spawner or spawn)(py, runner.env, d, bus=bus)
     pend = cli.json(["inbox", "--json"], timeout=120)
     entries = (pend.get("entries") or pend.get("items") or []) if isinstance(pend, dict) else []
     if any(os.path.realpath(e.get("project") or e.get("dir") or "") == rd for e in entries if isinstance(e, dict)):
         return None                                           # another question still waits for her
-    return (spawner or spawn)(py, runner.env, d, bus=bus,
-                              args=[py, "-m", "vstudio.project", "resume", "--dir", d, "--json-events"])
+    py = runner.python
+    args = [py, "-m", "vstudio.project", "resume", "--dir", d, "--json-events"]
+    if isinstance(st, dict) and st.get("batch_state") == "pilot-review":
+        # the desk's pilot (every new project starts as one) stops in "pilot-review", where `resume` alone ends at
+        # once: she answered every question it asked, which is her look at it, so the whole project goes on (each
+        # item still stops at its own questions, e.g. the review before publishing)
+        args.append("--confirm-pilot")
+    return (spawner or spawn)(py, runner.env, d, bus=bus, args=args)

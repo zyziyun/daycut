@@ -114,22 +114,22 @@ class EngineAnswerTest(unittest.TestCase):
         self.assertEqual(args[args.index("--answer") + 1], json.dumps(dict(approve=True)))
         self.assertEqual(res.call_args[0][1], "/p/proj")
 
-    def test_a_pilot_carries_on_with_the_same_pilot_run(self):
-        """`resume` stops at once on a pilot ("pilot-review"), and the answered question is still listed until its
-        stage runs again: the desk's pilot continues as `run --pilot 1` instead."""
+    def test_a_pilot_goes_on_past_its_review_once_every_question_is_answered(self):
+        """A desk project starts as a pilot, which ends in "pilot-review", where `resume` alone stops at once: once
+        she has answered every question it asked, the project goes on with `--confirm-pilot`."""
         from desk_engine import pilot
         d = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, d, True)
         open(os.path.join(d, "project.yaml"), "w").write("name: p\n")
         cli = mock.Mock()
         cli.json.side_effect = lambda args, timeout=None: (
-            dict(batch_state="pilot-review", items=[dict(id="c", state="waiting", waiting=["publish"])])
-            if args[0] == "status" else dict(entries=[dict(project=d, id="publish", item="c")]))
+            dict(batch_state="pilot-review", items=[dict(id="c", state="done"), dict(id="d", state="planned")])
+            if args[0] == "status" else dict(entries=[]))
         runner = mock.Mock(python="py", env={})
         runner.sibling.return_value = cli
         calls = []
         pilot.resume_after_answer(runner, d, spawner=lambda *a, **k: calls.append(k.get("args")) or {})
-        self.assertEqual(calls, [None])                           # spawn's default: run --pilot 1
+        self.assertEqual(calls, [["py", "-m", "vstudio.project", "resume", "--dir", d, "--json-events", "--confirm-pilot"]])
 
 
 class HistoryTest(unittest.TestCase):
