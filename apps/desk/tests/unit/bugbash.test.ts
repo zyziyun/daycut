@@ -14,7 +14,8 @@ function fakeEngine(body: string): string {
   return dir;
 }
 
-describe('BB-01 engine crash after start is reported (not a silent "Ready")', () => {
+// real Python processes: a cold start on a Windows CI runner alone can take seconds, so these get 20 s and poll
+describe('BB-01 engine crash after start is reported (not a silent "Ready")', { timeout: 20000 }, () => {
   const base = { python: 'python3', dataDir: os.tmpdir(), allowedOrigins: ['app://desk'] };
   it('calls onDied when the engine dies on its own', async () => {
     const engineDir = fakeEngine('import json,sys,time\nprint(json.dumps({"ready": True, "port": 1, "mode": "real"}), flush=True)\ntime.sleep(0.3)\nsys.exit(3)\n');
@@ -22,8 +23,7 @@ describe('BB-01 engine crash after start is reported (not a silent "Ready")', ()
     const e = new EngineProcess({ ...base, engineDir, onDied: (d) => (crashed = d) });
     const info = await e.start(10000);
     expect(info.mode).toBe('real');
-    await new Promise((r) => setTimeout(r, 1500));
-    expect(crashed).toMatch(/engine exited \(3\)/);
+    await expect.poll(() => crashed, { timeout: 10000 }).toMatch(/engine exited \(3\)/);
     expect(e.info).toBeNull();
   });
   it('does not call onDied for stop()', async () => {
