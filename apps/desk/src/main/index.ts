@@ -968,7 +968,7 @@ if (!app.requestSingleInstanceLock()) {
       platform: process.platform,
       arch: process.arch,
       lang: () => settings.get().lang,
-      demo: () => process.env.DESK_ENGINE_MOCK === '1' || engineMode === 'mock',
+      demo: () => testSwitch('DESK_ENGINE_MOCK') || engineMode === 'mock',
       base: devOnly('REELFOLD_USAGE_BASE'),
       log: mainLog,
     });
@@ -1010,7 +1010,7 @@ if (!app.requestSingleInstanceLock()) {
     createWindow(undefined, !HIDDEN_START);
     void refreshLogins(true).catch(() => undefined);
     startScheduler();
-    if (process.env.DESK_HIDE_WINDOW !== '1') {
+    if (!testSwitch('DESK_HIDE_WINDOW')) {
       tray = new AppTray(
         brandIcon(ICON_256),
         () => {

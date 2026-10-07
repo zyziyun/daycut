@@ -6,6 +6,7 @@ import type { PublishStateMsg } from '../../../shared/deskApi';
 import { t } from '../i18n';
 import { errText } from '../v4/msg';
 import { useUi } from '../v4/ui';
+import { placeBrowser } from '../lib/slotBounds';
 
 /** Redacted snapshot of the open platform page -> a local file (for tuning an adapter's selectors). */
 export async function capturePage(ui: ReturnType<typeof useUi>) {
@@ -24,18 +25,16 @@ export function BrowserPane({ open, hidden, state, hint }: { open: boolean; hidd
   useLayoutEffect(() => {
     const el = slot.current;
     if (!el) return;
-    const send = () => {
-      const r = el.getBoundingClientRect();
-      const show = open && !hidden;
-      void window.desk.publish.setBounds(show ? { x: Math.round(r.left), y: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height) } : { x: 0, y: 0, width: 0, height: 0 });
-    };
+    const send = () => placeBrowser(el, open && !hidden);
     send();
     const ro = new ResizeObserver(send);
     ro.observe(el);
     window.addEventListener('resize', send);
+    window.addEventListener('scroll', send, true); // the slot moves with the page
     return () => {
       ro.disconnect();
       window.removeEventListener('resize', send);
+      window.removeEventListener('scroll', send, true);
     };
   }, [open, hidden]);
   return (
