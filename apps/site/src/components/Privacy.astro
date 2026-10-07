@@ -1,0 +1,109 @@
+---
+import { SITE } from '../config';
+import { t, prefix, type Lang } from '../i18n';
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+const c = t(lang);
+const mail = SITE.contactEmail;
+---
+<article class="legal wrap narrow">
+  {lang === 'zh' ? (
+    <Fragment>
+      <h1>隐私政策</h1>
+      <div class="draft-banner" role="note"><strong>{c.legal.draft}</strong><br />{c.legal.draftBody}</div>
+      <p class="muted small">{c.legal.updated}：2026-10-06</p>
+
+      <h2>1. 我们是谁</h2>
+      <p>本网站和日剪 Daycut 工作室服务由［运营主体名称，待填］提供。联系邮箱：<a href={`mailto:${mail}`}>{mail}</a>。</p>
+
+      <h2>2. 浏览本网站</h2>
+      <ul>
+        <li>本站是静态网站，不使用 cookie，不加载统计或广告脚本，不从第三方加载字体。</li>
+        <li>托管服务商（［Cloudflare Pages / GitHub Pages / Vercel，待定］）可能按其政策记录访问日志，例如 IP 地址和浏览器信息。我们不会用这些日志识别个人。</li>
+      </ul>
+
+      <h2>3. 设计伙伴申请</h2>
+      <ul>
+        <li>收集内容：称呼、联系方式、主页链接、内容类型、素材时长、目标平台、你选择填写的素材链接和备注。</li>
+        <li>用途：联系你、判断是否匹配、安排交付。不出售，不转给第三方用于营销。</li>
+        <li>存放位置：［表单服务商，待定］。保存到申请结束后 12 个月，或在你要求时提前删除。</li>
+      </ul>
+
+      <h2>4. 工作室服务中的素材和数据</h2>
+      <ul>
+        <li>你通过约定的方式（例如网盘链接）把素材发给我们，处理在我们自己的电脑上完成，不放到云服务器上。</li>
+        <li>视频和音频文件本身不发给 AI 服务。为了选段、写标题和校对字幕，逐字稿文本、少量关键帧截图和标题会发给 AI 服务商的 API，目前是 Anthropic（<a href="https://www.anthropic.com/legal/privacy" rel="noopener">隐私政策</a>）和 OpenAI（<a href="https://openai.com/policies/privacy-policy" rel="noopener">隐私政策</a>）。这些数据按服务商的 API 数据政策处理。</li>
+        <li>语音转写默认在本机完成。只有本机转写失败、并且你同意时，才会把音频发给 OpenAI 转写。</li>
+        <li>上述 AI 服务商位于中国境外。开始处理前，我们会就数据出境单独征得你的同意；你不同意的话，我们不会发送。</li>
+        <li>保存期限：原始素材和中间文件在交付后 30 天内删除；成片在你确认收到后 30 天内删除，你书面同意用于案例展示的部分除外。</li>
+        <li>你回传的播放和收藏数据用于评估服务效果，对外引用时会按你的意愿匿名。</li>
+      </ul>
+
+      <h2>5. 桌面版和开源技能</h2>
+      <ul>
+        <li>素材默认留在你自己的电脑上，我们收不到。</li>
+        <li>逐字稿、关键帧、标题等会用你自己的 API key 发给你配置的 AI 服务；用 AI 配音或 AI 视频生成时，文本和参考图会发给对应厂商。这些由你和厂商之间的条款约束。</li>
+        <li>引擎用到的 MediaPipe 组件可能会向 Google 上报匿名使用统计，我们会在应用里说明这一点和关闭方法。</li>
+      </ul>
+
+      <h2>6. 你的权利</h2>
+      <p>你可以要求查看、更正或删除我们保存的你的数据，也可以撤回案例展示的授权（对之后的使用生效）。发邮件到 <a href={`mailto:${mail}`}>{mail}</a>，我们会在 7 天内处理并回复确认。已经发给 AI 服务商的数据按其保存政策处理，我们无法替其删除。</p>
+
+      <h2>7. 未成年人</h2>
+      <p>本服务面向成年人。我们不会有意收集未满 14 周岁儿童的个人信息；素材中出现未成年人时，需要其监护人的同意。</p>
+
+      <h2>8. 变更</h2>
+      <p>政策变化时我们会更新本页日期；涉及你已经提供的数据的重要变化，会单独通知你。</p>
+      <p><a href={`${prefix(lang)}/`}>{c.legal.back}</a></p>
+    </Fragment>
+  ) : (
+    <Fragment>
+      <h1>Privacy policy</h1>
+      <div class="draft-banner" role="note"><strong>{c.legal.draft}</strong><br />{c.legal.draftBody}</div>
+      <p class="muted small">{c.legal.updated}: 2026-10-06</p>
+
+      <h2>1. Who we are</h2>
+      <p>This website and the Daycut studio service are provided by [operating entity, to be filled in]. Contact: <a href={`mailto:${mail}`}>{mail}</a>.</p>
+
+      <h2>2. Visiting this website</h2>
+      <ul>
+        <li>This is a static site. It sets no cookies, loads no analytics or ad scripts, and loads no third-party fonts.</li>
+        <li>The hosting provider ([Cloudflare Pages / GitHub Pages / Vercel, to be decided]) may keep access logs, such as IP address and browser details, under its own policy. We do not use those logs to identify people.</li>
+      </ul>
+
+      <h2>3. Design-partner applications</h2>
+      <ul>
+        <li>What we collect: name, contact, profile link, content type, hours of footage, platforms, and any sample link and notes you choose to add.</li>
+        <li>Why: to contact you, check fit and arrange delivery. We do not sell it or pass it to third parties for marketing.</li>
+        <li>Where it is stored: [form provider, to be decided]. Kept for 12 months after the application closes, or deleted earlier on request.</li>
+      </ul>
+
+      <h2>4. Footage and data in the studio service</h2>
+      <ul>
+        <li>You send footage the way we agree on (for example a cloud-drive link). We process it on our own computers, not on a cloud server.</li>
+        <li>Video and audio files are not sent to AI services. To pick segments, write titles and proofread captions, transcript text, a few keyframe screenshots and titles are sent to AI providers’ APIs, currently Anthropic (<a href="https://www.anthropic.com/legal/privacy" rel="noopener">privacy policy</a>) and OpenAI (<a href="https://openai.com/policies/privacy-policy" rel="noopener">privacy policy</a>), and handled under their API data policies.</li>
+        <li>Transcription runs locally by default. Audio is sent to OpenAI for transcription only if local transcription fails and you agree.</li>
+        <li>These AI providers are based outside mainland China. We ask for your separate consent to this cross-border transfer before processing; if you do not agree, we do not send it.</li>
+        <li>Retention: source footage and intermediate files are deleted within 30 days of delivery; finished clips within 30 days after you confirm receipt, except parts you agreed in writing to use as a case study.</li>
+        <li>Performance data you send us is used to evaluate the service and is anonymised when quoted, if you prefer.</li>
+      </ul>
+
+      <h2>5. Desktop app and open-source skill</h2>
+      <ul>
+        <li>Your footage stays on your computer by default and never reaches us.</li>
+        <li>Transcripts, keyframes and titles go to the AI services you configure, using your own API keys; AI voiceover or video generation sends text and reference images to that vendor. That is governed by your terms with the vendor.</li>
+        <li>The MediaPipe component used by the engine may send anonymous usage statistics to Google; we will explain this, and how to turn it off, inside the app.</li>
+      </ul>
+
+      <h2>6. Your rights</h2>
+      <p>You can ask to see, correct or delete the data we hold about you, and withdraw case-study permission for future use. Email <a href={`mailto:${mail}`}>{mail}</a>; we act within 7 days and confirm by reply. Data already sent to AI providers follows their retention policies and we cannot delete it on their behalf.</p>
+
+      <h2>7. Children</h2>
+      <p>The service is for adults. We do not knowingly collect personal data from children under 14; if minors appear in footage, a guardian must consent.</p>
+
+      <h2>8. Changes</h2>
+      <p>We update the date on this page when the policy changes, and tell you directly about material changes that affect data you already gave us.</p>
+      <p><a href={`${prefix(lang)}/`}>{c.legal.back}</a></p>
+    </Fragment>
+  )}
+</article>
