@@ -1,0 +1,99 @@
+{
+  "id": "reddit",
+  "name": "Reddit",
+  "nameZh": "Reddit",
+  "status": "unverified",
+  "lastVerified": null,
+  "packagePlatforms": [
+    "reddit"
+  ],
+  "uploadUrl": "https://www.reddit.com/submit",
+  "loginUrl": "https://www.reddit.com/login/",
+  "allowedHosts": [
+    "reddit.com",
+    "*.reddit.com",
+    "*.redd.it",
+    "redd.it",
+    "*.redditmedia.com",
+    "*.redditstatic.com"
+  ],
+  "params": [
+    {
+      "key": "subreddit",
+      "label": {
+        "zh": "Subreddit",
+        "en": "Subreddit"
+      },
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_]{1,20}$",
+      "uploadUrl": "https://www.reddit.com/r/{value}/submit"
+    }
+  ],
+  "fields": {
+    "file": {
+      "selectors": [
+        "shreddit-composer input[type=\"file\"]",
+        "faceplate-file-input input[type=\"file\"]",
+        "input[type=\"file\"][accept*=\"video\"]",
+        "input[type=\"file\"]"
+      ],
+      "timeoutMs": 60000
+    },
+    "title": {
+      "selectors": [
+        "textarea[name=\"title\"]",
+        "faceplate-textarea-input[name=\"title\"] textarea",
+        "#post-composer__title textarea"
+      ],
+      "kind": "input",
+      "clear": true,
+      "timeoutMs": 60000,
+      "maxLength": 300
+    },
+    "description": {
+      "selectors": [
+        "shreddit-composer div[contenteditable=\"true\"][role=\"textbox\"]",
+        "div[contenteditable=\"true\"][name=\"body\"]",
+        "div[contenteditable=\"true\"][role=\"textbox\"]"
+      ],
+      "kind": "contenteditable",
+      "clear": true,
+      "timeoutMs": 20000,
+      "maxLength": 40000
+    },
+    "tags": null,
+    "cover": null
+  },
+  "publishButton": {
+    "selectors": [
+      "button#submit-post-button",
+      "shreddit-composer button[type=\"submit\"]"
+    ]
+  },
+  "disclosure": {
+    "zh": "Reddit 没有 AI 开关：按社区规则在标题或正文里说明 AI 生成。先看版规：很多社区限制或禁止自我推广，发自己的视频要说明是自己做的；不要同时发到很多社区。NSFW / 剧透 / flair 由你选。",
+    "en": "Reddit has no AI switch: say it is AI-made in the title or text if the community asks. Read the rules first: many communities limit or ban self-promotion - say it is your own video, and do not post it to many communities at once. NSFW / spoiler / flair are yours to set."
+  },
+  "guide": {
+    "zh": "先在左边填要发的 subreddit（不填就打开通用发帖页，自己选社区），打开「图片和视频」标签。应用放入视频、填好标题（必填，发出后不能改）和正文。选好 flair，再由你点「发布」。",
+    "en": "Type the subreddit first (empty = the general submit page, pick the community there) and open the Images & Video tab. The app adds the video and types the title (required, cannot be edited later) and the text. Pick a flair, then press Post yourself."
+  },
+  "herChoices": {
+    "zh": [
+      "发到哪个 subreddit",
+      "flair",
+      "NSFW / 剧透标记",
+      "是否符合版规的自我推广要求"
+    ],
+    "en": [
+      "Which subreddit",
+      "Flair",
+      "NSFW / spoiler tags",
+      "Whether the community allows this self-promotion"
+    ]
+  },
+  "notes": [
+    "UNVERIFIED selectors (written 2026-10 without a logged-in session): check them on the live page, then set status to verified + lastVerified.",
+    "No hashtags on Reddit: tags are never filled.",
+    "Some subreddits disable video posts or require account age / karma; the page shows it."
+  ]
+}

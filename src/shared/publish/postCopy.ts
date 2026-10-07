@@ -68,6 +68,8 @@ const URL_RE = /(?:https?:\/\/|www\.)\S+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|n
 const EMOJI_RE =
   /(?:[\u{1F1E6}-\u{1F1FF}]{2}|[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{2300}-\u{23FF}](?:\u{FE0F}|[\u{1F3FB}-\u{1F3FF}])*(?:\u{200D}[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}](?:\u{FE0F}|[\u{1F3FB}-\u{1F3FF}])*)*)\u{FE0F}?/gu;
 
+const LINK_RE = /(?:https?:\/\/|www\.)\S+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|io|ai|co|dev|app|me|tv|ly|gg|cn|xyz|fr|es)(?:\/\S*)?/iu;
+
 export function xWeightedLength(text: string): number {
   let n = 0;
   let t = (text ?? '').normalize('NFC');
@@ -97,16 +99,26 @@ export function hashtagsIn(text: string): string[] {
 }
 
 export interface CopyCheck {
-  code: 'text-over' | 'hashtags-over';
+  code: 'text-over' | 'hashtags-over' | 'title-required' | 'link-not-clickable' | 'link-field' | 'link-avoid' | 'no-hashtags';
   field: 'title' | 'description' | 'tags';
   n: number;
   max: number;
   hard?: boolean;
 }
 
+/** Per-platform copy rules from the shared registry (src/shared/platforms.ts): required title, link handling,
+ * platforms without hashtags. */
+export interface CopyRules {
+  titleRequired?: boolean;
+  links?: 'clickable' | 'not-clickable' | 'link-field' | 'avoid';
+  noHashtags?: boolean;
+}
+
 /** What the platform will complain about once the copy is filled: weighted / char length over the soft max, more
- * hashtags than allowed (description #tags + the tags the fill appends, counted together). */
-export function checkCopy(fields: { title: unknown; description: unknown; tags: unknown }, copy: PostCopy): CopyCheck[] {
+ * hashtags than allowed (description #tags + the tags the fill appends, counted together); with ``rules``: a
+ * missing required title, a link in the text where it is not clickable / belongs in a link field / costs reach,
+ * hashtags on a platform that does not use them (Reddit, Pinterest). */
+export function checkCopy(fields: { title: unknown; description: unknown; tags: unknown }, copy: PostCopy, rules: CopyRules = {}): CopyCheck[] {
   type TF = { maxLength?: number; softMax?: number; count?: 'chars' | 'x-weighted' } | null;
   type TG = { mode: string; max?: number; hardMax?: boolean } | null;
   const out: CopyCheck[] = [];
@@ -122,6 +134,9 @@ export function checkCopy(fields: { title: unknown; description: unknown; tags: 
     const n = f.count === 'x-weighted' ? xWeightedLength(text) : Array.from(text).length;
     if (max && n > max) out.push({ code: 'text-over', field, n, max });
   }
+  if (rules.titleRequired && fields.title && !copy.title.trim()) out.push({ code: 'title-required', field: 'title', n: 0, max: 0 });
+  if (rules.links && rules.links !== 'clickable' && LINK_RE.test(copy.description)) out.push({ code: rules.links === 'link-field' ? 'link-field' : `link-${rules.links}`, field: 'description', n: 0, max: 0 });
+  if (rules.noHashtags && (copy.tags.length || hashtagsIn(copy.description).length)) out.push({ code: 'no-hashtags', field: 'tags', n: copy.tags.length + hashtagsIn(copy.description).length, max: 0 });
   if (tg?.max) {
     const all = [...new Set([...hashtagsIn(copy.description), ...appended.map((x) => x.toLowerCase())])];
     const dropped = copy.tags.length - appended.length;

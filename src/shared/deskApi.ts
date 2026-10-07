@@ -94,6 +94,8 @@ export interface FillRequestMsg {
   platform: string;
   adapterId: string;
   account: string;
+  /** adapter params (Reddit: subreddit) - fill only */
+  params?: Record<string, string>;
 }
 
 export interface UpdateStateMsg {

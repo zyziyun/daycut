@@ -80,6 +80,45 @@ class WorkPackageTest(Fixture):
         self.assertIn("title-over", [c["code"] for c in checks])
         self.assertIn("标签：a, b", WP.post_md("bilibili", "T", "B", ["a", "b"]))
 
+    def test_new_platforms_youtube_formats_and_copy_rules(self):
+        self.assertEqual(WP.PLATFORMS[:3], ("youtube", "youtube-shorts", "tiktok"))
+        self.assertEqual(WP.PLATFORMS[-2:], ("dailymotion", "kwai"))
+        for n in WP.PLATFORMS:
+            pr = WP._Prof(n)
+            self.assertIn(pr.default, pr.orient, n)
+            self.assertIn(pr.links, ("clickable", "not-clickable", "link-field", "avoid"), n)
+        vert = [dict(path="/a_9x16.mp4", aspect="9:16", w=1080, h=1920)]
+        horz = [dict(path="/a.mp4", aspect="16:9", w=1920, h=1080)]
+        _, _, chk = WP.pick_version(vert, WP._Prof("youtube"))
+        self.assertEqual(WP.youtube_check("youtube", chk)["code"], "yt-vertical-only")
+        _, _, chk = WP.pick_version(horz, WP._Prof("youtube-shorts"))
+        self.assertEqual(WP.youtube_check("youtube-shorts", chk)["code"], "shorts-horizontal")
+        self.assertEqual(WP.pick_version(vert, WP._Prof("youtube-shorts"))[2], None)
+        # Reddit: title required, no hashtags, subreddit reminder; Pinterest link field; Instagram link not clickable
+        t, b, tags, checks = WP.adapt_copy("reddit", WP._Prof("reddit"), dict(body="b #x", tags=["ai"]), "")
+        codes = [c["code"] for c in checks]
+        self.assertEqual(tags, [])
+        self.assertTrue({"title-required", "no-hashtags", "subreddit"} <= set(codes))
+        _, _, _, checks = WP.adapt_copy("pinterest", WP._Prof("pinterest"), dict(title="t", body="see example.com"), "")
+        self.assertIn("link-field", [c["code"] for c in checks])
+        _, _, _, checks = WP.adapt_copy("instagram", WP._Prof("instagram"), dict(body="https://a.co"), "")
+        self.assertIn("link-not-clickable", [c["code"] for c in checks])
+        _, _, _, checks = WP.adapt_copy("linkedin", WP._Prof("linkedin"), dict(title="T", body="https://a.co"), "")
+        self.assertNotIn("link-not-clickable", [c["code"] for c in checks])
+        self.assertIn("no-title", [c["code"] for c in checks])
+        self.assertTrue(WP.post_md("weibo", "标题标题标题", "正文", ["话题"]).rstrip().endswith("#话题#"))
+
+    def test_package_youtube_long_and_shorts(self):
+        r = self.p.package(self.item, dict(clips=["A_换圈子"], platforms=["youtube", "youtube-shorts", "reddit"],
+                                           start="2026-10-08"))
+        self.assertEqual(r["items"], 3)
+        man = self.p.manifest(self.item)["manifest"]
+        by = {i["platform"]: i for i in man["items"]}
+        self.assertIn("youtube-horizontal", by)
+        self.assertIn("yt-vertical-only", [c["code"] for c in by["youtube-horizontal"]["checks"]])
+        self.assertIn("youtube-shorts-vertical", by)
+        self.assertNotIn("shorts-horizontal", [c["code"] for c in by["youtube-shorts-vertical"]["checks"]])
+
     def test_client_label_agency_mode(self):
         self.h.set_client(self.d, "Acme")
         row = next(r for r in self.h.list()["items"] if r["dir"] == self.d)

@@ -1,0 +1,74 @@
+{
+  "id": "linkedin",
+  "name": "LinkedIn",
+  "nameZh": "领英 LinkedIn",
+  "status": "unverified",
+  "lastVerified": null,
+  "packagePlatforms": [
+    "linkedin"
+  ],
+  "uploadUrl": "https://www.linkedin.com/feed/",
+  "loginUrl": "https://www.linkedin.com/login",
+  "allowedHosts": [
+    "linkedin.com",
+    "*.linkedin.com",
+    "*.licdn.com",
+    "lnkd.in"
+  ],
+  "fields": {
+    "file": {
+      "selectors": [
+        "div[role=\"dialog\"] input[type=\"file\"][accept*=\"video\"]",
+        "input[type=\"file\"][accept*=\"video\"]",
+        "div[role=\"dialog\"] input[type=\"file\"]"
+      ],
+      "timeoutMs": 120000
+    },
+    "title": null,
+    "description": {
+      "selectors": [
+        "div[role=\"dialog\"] div.ql-editor[contenteditable=\"true\"]",
+        "div[role=\"dialog\"] div[contenteditable=\"true\"][role=\"textbox\"]",
+        "div.share-creation-state__text-editor div[contenteditable=\"true\"]"
+      ],
+      "kind": "contenteditable",
+      "clear": true,
+      "timeoutMs": 120000,
+      "softMax": 3000
+    },
+    "tags": {
+      "mode": "append-to-description",
+      "format": "#{tag} ",
+      "max": 3
+    },
+    "cover": null
+  },
+  "publishButton": {
+    "selectors": [
+      "div[role=\"dialog\"] button.share-actions__primary-action",
+      "div[role=\"dialog\"] button[aria-label=\"Post\"]"
+    ]
+  },
+  "disclosure": {
+    "zh": "LinkedIn 没有单独的 AI 开关：AI 生成或逼真修改的视频请在正文说明。正文最多 3000 字，链接可点；话题标签 1–3 个就够。",
+    "en": "LinkedIn has no AI switch: say in the text when the video is AI-made or realistically altered. Post text up to 3,000 characters, links are clickable; 1-3 hashtags are enough."
+  },
+  "guide": {
+    "zh": "打开动态页后点「发帖 → 视频 → 从电脑上传」，应用会放入视频；在下一步点「下一步 / 完成」后应用填好正文。检查可见范围，再由你点「发布」。",
+    "en": "On the feed click Start a post → Video → Upload from computer; the app adds the video. After Next / Done the app types the text. Check who can see it, then press Post yourself."
+  },
+  "herChoices": {
+    "zh": [
+      "可见范围（任何人 / 人脉）",
+      "以个人还是公司主页发布"
+    ],
+    "en": [
+      "Who can see it (Anyone / Connections)",
+      "Post as yourself or as a Page"
+    ]
+  },
+  "notes": [
+    "UNVERIFIED selectors (written 2026-10 without a logged-in session): check them on the live page, then set status to verified + lastVerified.",
+    "One video per post. Company Pages need admin rights on the account."
+  ]
+}

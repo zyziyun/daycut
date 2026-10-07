@@ -12,7 +12,8 @@ import { Modal } from '../components/ui';
 import { fmtAgo, getLang, t } from '../i18n';
 import { Empty } from './kit';
 import { errText } from './msg';
-import { PlatformIcon, SCHEDULE_PLATFORMS } from './PlatformIcon';
+import { sortPlatforms } from '../../../shared/platforms';
+import { PlatformIcon } from './PlatformIcon';
 import { useUi } from './ui';
 
 export const adapterName = (a: Adapter) => (getLang() === 'zh-CN' ? a.nameZh : a.name);
@@ -48,6 +49,19 @@ export function useChannels() {
     };
   }, [reload]);
   return { adapters, channels, setChannels, reload };
+}
+
+/** Adapters in the shared platform order (English / global, Chinese, other); inside a group the platforms with a
+ * connected account first. */
+export function sortAdapters(adapters: Adapter[], channels: Pick<ChannelMsg, 'adapterId'>[]): Adapter[] {
+  const connected = adapters.filter((a) => channels.some((c) => c.adapterId === a.id)).flatMap((a) => a.packagePlatforms);
+  return sortPlatforms(adapters, (a) => a.packagePlatforms[0], connected);
+}
+
+/** Platform ids she has a publishing account for (a YouTube channel counts for long-form and Shorts). */
+export function useConnectedPlatforms(): string[] {
+  const { adapters, channels } = useChannels();
+  return adapters.filter((a) => channels.some((c) => c.adapterId === a.id)).flatMap((a) => a.packagePlatforms);
 }
 
 export function Channels() {
@@ -125,12 +139,7 @@ export function Channels() {
         <div className="pubg" style={{ gridTemplateColumns: 'minmax(340px, 420px) 1fr' }}>
           <aside className="col" style={{ gap: 10 }} data-testid="channel-list">
             {!channels.length && <Empty title={t('ch.empty')} hint={t('ch.emptyHint')} />}
-            {[...adapters]
-              .sort((x, y) => {
-                const has = (a: Adapter) => (channels.some((c) => c.adapterId === a.id) ? 0 : 1);
-                const rank = (a: Adapter) => SCHEDULE_PLATFORMS.indexOf(a.packagePlatforms[0]) + 1 || 99;
-                return has(x) - has(y) || rank(x) - rank(y);
-              })
+            {sortAdapters(adapters, channels)
               .map((a) => {
               const mine = channels.filter((c) => c.adapterId === a.id);
               return (

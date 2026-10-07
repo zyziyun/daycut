@@ -190,6 +190,24 @@ test('publish calendar: platform chips (X / Instagram / 视频号 / B站) choose
   await chips.locator('button[data-pf="xiaohongshu"]').click();
 });
 
+test('platform chips: English, then Chinese, then other languages; YouTube is one chip with long-form / Shorts', async () => {
+  await hash('#/publish');
+  const chips = page.getByTestId('pub-platforms');
+  await expect(chips).toBeVisible({ timeout: 15000 });
+  expect(await chips.locator('[data-group]').evaluateAll((els) => els.map((e) => e.getAttribute('data-group')))).toEqual(['global', 'zh', 'intl']);
+  for (const pf of ['facebook', 'linkedin', 'threads', 'reddit', 'pinterest', 'snapchat']) await expect(chips.locator(`[data-group="global"] button[data-pf="${pf}"]`)).toBeVisible();
+  for (const pf of ['kuaishou', 'weibo', 'zhihu']) await expect(chips.locator(`[data-group="zh"] button[data-pf="${pf}"]`)).toBeVisible();
+  for (const pf of ['dailymotion', 'kwai']) await expect(chips.locator(`[data-group="intl"] button[data-pf="${pf}"]`)).toBeVisible();
+  await expect(chips.locator('button[data-pf="youtube-shorts"]')).toHaveCount(0);
+  await chips.locator('button[data-pf-format="youtube-shorts"]').click();
+  await expect(chips.locator('button[data-pf="youtube"]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(chips.locator('button[data-pf-format="youtube-shorts"]')).toHaveAttribute('aria-pressed', 'true');
+  expect(await page.evaluate(() => localStorage.getItem('pub.schedTo'))).toBe('youtube-shorts');
+  await chips.locator('button[data-pf-format="youtube"]').click();
+  expect(await page.evaluate(() => localStorage.getItem('pub.schedTo'))).toBe('youtube');
+  await chips.locator('button[data-pf="xiaohongshu"]').click();
+});
+
 const SCREENS = ['#/', '#/inbox', '#/projects', 'PROJECT', 'CLIP', '#/publish', '#/settings'];
 
 for (const lang of ['en', 'zh-CN'] as const) {

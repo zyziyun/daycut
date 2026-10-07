@@ -92,7 +92,16 @@ export const ipcSchemas = {
   'publish:navigate': z.strictObject({ action: z.enum(['back', 'forward', 'reload', 'upload', 'login']) }),
   'publish:confirmPackage': z.strictObject({ batchId, code }),
   'publish:confirmations': z.strictObject({ batchId }),
-  'publish:fill': z.strictObject({ batchId, code, job: jobId, platform: packageKey, adapterId, account: accountName }),
+  'publish:fill': z.strictObject({
+    batchId,
+    code,
+    job: jobId,
+    platform: packageKey,
+    adapterId,
+    account: accountName,
+    /** adapter params the creator typed (Reddit: subreddit); checked against the adapter's pattern in main */
+    params: z.record(z.string().regex(/^[a-z]{2,20}$/), z.string().max(40)).optional(),
+  }),
   'publish:markPosted': z.strictObject({
     batchId,
     code,

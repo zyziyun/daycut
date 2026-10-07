@@ -5,6 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { FillResult, FillStepMsg, PostedEntryMsg, PublishStateMsg } from '../../../shared/deskApi';
 import { adapterFor, type Adapter } from '../../../shared/publish/adapterSchema';
 import { checkCopy, type CopyCheck, type PostCopy } from '../../../shared/publish/postCopy';
+import { platformInfo } from '../../../shared/platforms';
 import { PlatformIcon } from '../v4/PlatformIcon';
 import type { Confirmation } from '../../../shared/publish/gating';
 import type { ManifestItem } from '../../../shared/types';
@@ -15,8 +16,9 @@ import { useHistory } from '../lib/history';
 import { href } from '../lib/router';
 import type { PackageCheck } from '../../../shared/types';
 import { basePlatform } from '../../../shared/publish/adapterSchema';
-import { platformName } from '../v4/Home';
 import { SCHEDULE_PLATFORMS } from '../v4/PlatformIcon';
+import { PlatformPicker } from '../v4/PlatformPicker';
+import { sortAdapters, useConnectedPlatforms } from '../v4/Channels';
 
 const itemKey = (i: { job: string; platform: string }) => `${i.job}|${i.platform}`;
 
@@ -42,6 +44,7 @@ export function Publish({ batch }: { batch: string }) {
   const [start, setStart] = useState('');
   const [times, setTimes] = useState('12:00,19:00');
   const [copy, setCopy] = useState<PostCopy | null>(null);
+  const [params, setParams] = useState<Record<string, string>>({});
 
   const { data: hist } = useHistory();
   const entry = hist?.items.find((i) => i.id === batch);
@@ -66,19 +69,21 @@ export function Publish({ batch }: { batch: string }) {
       live = false;
     };
   }, [batch, item]);
-  const checks: CopyCheck[] = adapter && copy ? checkCopy(adapter.fields, copy) : [];
+  const rules = item ? platformInfo(basePlatform(item.platform))?.copy : undefined;
+  const checks: CopyCheck[] = adapter && copy ? checkCopy(adapter.fields, copy, rules ? { titleRequired: rules.titleRequired, links: rules.links, noHashtags: rules.hashtags.max === 0 } : {}) : [];
   const postedKeys = new Set(posted.filter((p) => m && p.code === m.confirmation_code).map((p) => itemKey(p)));
 
   const refreshLocal = useCallback(async () => {
     const [a, acc, c, p] = await Promise.all([window.desk.publish.adapters(), window.desk.publish.accounts(), window.desk.publish.confirmations(batch), window.desk.publish.postedLog(batch)]);
-    const rank = { verified: 0, unverified: 1, todo: 2 } as const;
-    const sorted = [...a.adapters].sort((x, y) => rank[x.status] - rank[y.status] || x.id.localeCompare(y.id));
+    const chans = await window.desk.publish.channels().catch(() => []);
+    // the shared platform order (English / global, Chinese, other); connected accounts first inside each group
+    const sorted = sortAdapters(a.adapters, chans);
     setAdapters(sorted);
     setAdapterErrors(a.errors);
     setAccounts(acc);
     setConfs(c);
     setPosted(p);
-    setAdapterId((cur) => cur || sorted[0]?.id || '');
+    setAdapterId((cur) => cur || sorted.find((x) => (acc[x.id] ?? []).length)?.id || sorted[0]?.id || '');
   }, [batch]);
 
   useEffect(() => {
@@ -141,7 +146,8 @@ export function Publish({ batch }: { batch: string }) {
       if (!m || !item) return;
       setSteps([]);
       setFill(null);
-      const r = await window.desk.publish.fill({ batchId: batch, code: m.confirmation_code, job: item.job, platform: item.platform, adapterId, account });
+      const typed = Object.fromEntries((adapter?.params ?? []).map((p) => [p.key, (params[p.key] ?? '').trim()]).filter(([, v]) => v));
+      const r = await window.desk.publish.fill({ batchId: batch, code: m.confirmation_code, job: item.job, platform: item.platform, adapterId, account, ...(Object.keys(typed).length ? { params: typed } : {}) });
       setFill(r);
     });
 
@@ -279,6 +285,19 @@ export function Publish({ batch }: { batch: string }) {
                   </button>
                 </div>
                 <div className="muted small">{t('pub.loginNote')}</div>
+                {(adapter.params ?? []).map((p) => (
+                  <Field key={p.key} label={lang === 'zh-CN' ? p.label.zh : p.label.en}>
+                    <input
+                      className="input"
+                      value={params[p.key] ?? ''}
+                      onChange={(e) => setParams((x) => ({ ...x, [p.key]: e.target.value }))}
+                      placeholder={p.key === 'subreddit' ? 'r/…' : undefined}
+                      data-testid={`pub-param-${p.key}`}
+                      spellCheck={false}
+                    />
+                    <span className="muted small">{p.key === 'subreddit' ? t('pub.subredditHint') : null}</span>
+                  </Field>
+                ))}
               </>
             )}
             {m && adapter && (
@@ -335,7 +354,9 @@ export function Publish({ batch }: { batch: string }) {
                     {checks.length === 0 && <span className="okc">{t('pub.check.ok')}</span>}
                     {checks.map((c, k) => (
                       <span key={k} className={c.hard ? 'err' : 'muted'} data-code={c.code}>
-                        {c.code === 'hashtags-over'
+                        {c.code !== 'hashtags-over' && c.code !== 'text-over'
+                          ? tk(`pkg.c.${c.code}`)
+                          : c.code === 'hashtags-over'
                           ? t(c.hard ? 'pub.check.hashtags-hard' : 'pub.check.hashtags-over', { n: c.n, max: c.max, platform: adapter.name })
                           : adapter.fields.description?.count === 'x-weighted' && c.field === 'description'
                             ? t('pub.check.text-over-x', { n: c.n, max: c.max })
@@ -507,6 +528,11 @@ function ItemRow({ i, on, posted, onClick }: { i: ManifestItem; on: boolean; pos
           {i.date} {i.time}
         </span>
         <span className="badge">{i.platform}</span>
+        {basePlatform(i.platform).startsWith('youtube') && (
+          <span className="badge" data-testid="pub-item-format" data-format={basePlatform(i.platform) === 'youtube-shorts' ? 'shorts' : 'long'}>
+            {t(basePlatform(i.platform) === 'youtube-shorts' ? 'pf.yt.shorts' : 'pf.yt.long')}
+          </span>
+        )}
         {posted && <span className="badge accent">{t('pub.posted')}</span>}
         {(i.checks ?? []).filter((c) => c.code !== 'ai-label' && c.code !== 'no-title').length > 0 && (
           <span className="badge danger" data-testid="pkg-check-count">
@@ -600,8 +626,8 @@ function WorkPackageCard({ batch, busy, onDone, guard }: { batch: string; busy: 
     else n.add(id);
     return n;
   });
-  const togglePf = (p: string) => {
-    const n = pfs.includes(p) ? pfs.filter((x) => x !== p) : [...pfs, p];
+  const connected = useConnectedPlatforms();
+  const setPfsSaved = (n: string[]) => {
     setPfs(n);
     try {
       localStorage.setItem(PKG_PLATFORMS_KEY, JSON.stringify(n));
@@ -626,14 +652,7 @@ function WorkPackageCard({ batch, busy, onDone, guard }: { batch: string; busy: 
         ))}
       </div>
       <b className="small">{t('pkg.platforms')}</b>
-      <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
-        {SCHEDULE_PLATFORMS.map((p) => (
-          <button key={p} className={`chip ${pfs.includes(p) ? 'on' : ''}`} aria-pressed={pfs.includes(p)} onClick={() => togglePf(p)} data-pf={p} data-testid="pkg-platform" style={{ height: 26, padding: '0 9px' }}>
-            <PlatformIcon id={p} size={14} />
-            {platformName(p)}
-          </button>
-        ))}
-      </div>
+      <PlatformPicker multi value={pfs} onChange={setPfsSaved} connected={connected} testId="pkg-platform" />
       <div className="row">
         <Field label={t('pub.perDay')}>
           <input className="input" type="number" min={1} max={20} value={perDay} onChange={(e) => setPerDay(Math.max(1, Number(e.target.value) || 1))} style={{ width: 70 }} />

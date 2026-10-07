@@ -11,12 +11,12 @@ import { go } from '../lib/router';
 import { NewFromRecording } from './NewFromRecording';
 
 export const PLATFORM_CHOICES = [
+  { id: 'youtube', label: 'platform.youtube' },
+  { id: 'youtube-shorts', label: 'platform.youtube-shorts' },
+  { id: 'tiktok', label: 'platform.tiktok' },
   { id: 'xiaohongshu:full', label: 'platform.xiaohongshu-full' },
   { id: 'xiaohongshu:vertical', label: 'platform.xiaohongshu-vertical' },
   { id: 'douyin', label: 'platform.douyin' },
-  { id: 'tiktok', label: 'platform.tiktok' },
-  { id: 'youtube-shorts', label: 'platform.youtube-shorts' },
-  { id: 'youtube', label: 'platform.youtube' },
   { id: 'bilibili', label: 'platform.bilibili' },
 ];
 

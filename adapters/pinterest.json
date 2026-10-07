@@ -1,0 +1,83 @@
+{
+  "id": "pinterest",
+  "name": "Pinterest",
+  "nameZh": "Pinterest",
+  "status": "unverified",
+  "lastVerified": null,
+  "packagePlatforms": [
+    "pinterest"
+  ],
+  "uploadUrl": "https://www.pinterest.com/pin-creation-tool/",
+  "loginUrl": "https://www.pinterest.com/login/",
+  "allowedHosts": [
+    "pinterest.com",
+    "*.pinterest.com",
+    "*.pinimg.com",
+    "pin.it"
+  ],
+  "fields": {
+    "file": {
+      "selectors": [
+        "input[type=\"file\"][aria-label*=\"upload\" i]",
+        "input[type=\"file\"][accept*=\"video\"]",
+        "input[type=\"file\"]"
+      ],
+      "timeoutMs": 60000
+    },
+    "title": {
+      "selectors": [
+        "input#storyboard-selector-title",
+        "input[placeholder*=\"title\" i]",
+        "textarea[id*=\"title\"]"
+      ],
+      "kind": "input",
+      "clear": true,
+      "timeoutMs": 60000,
+      "maxLength": 100
+    },
+    "description": {
+      "selectors": [
+        "div[data-test-id=\"storyboard-description-field-container\"] div[contenteditable=\"true\"]",
+        "div[contenteditable=\"true\"][aria-label*=\"description\" i]",
+        "textarea[placeholder*=\"description\" i]"
+      ],
+      "kind": "contenteditable",
+      "clear": true,
+      "timeoutMs": 30000,
+      "maxLength": 500
+    },
+    "tags": null,
+    "cover": null
+  },
+  "publishButton": {
+    "selectors": [
+      "button[data-test-id=\"storyboard-creation-nav-done\"]",
+      "div[data-test-id=\"board-dropdown-save-button\"] button"
+    ]
+  },
+  "disclosure": {
+    "zh": "Pinterest 会给 AI 生成的 Pin 加「AI 修改」标签；如实选择。链接要填在「链接」栏，不要写进描述；没有话题标签，选主题（最多 10 个）。",
+    "en": "Pinterest labels AI-modified Pins; answer honestly. The link goes in the Link field, not the description; no hashtags - pick topics (up to 10)."
+  },
+  "guide": {
+    "zh": "创建 Pin 页面打开后，应用放入视频、填好标题和描述。由你选画板、主题、链接和封面，再点「发布」。",
+    "en": "On the Pin creation page the app adds the video and types the title and description. Pick the board, topics, link and cover, then press Publish yourself."
+  },
+  "herChoices": {
+    "zh": [
+      "画板",
+      "主题标签（最多 10 个）",
+      "目标链接",
+      "封面帧"
+    ],
+    "en": [
+      "Board",
+      "Topics (up to 10)",
+      "Destination link",
+      "Cover frame"
+    ]
+  },
+  "notes": [
+    "UNVERIFIED selectors (written 2026-10 without a logged-in session): check them on the live page, then set status to verified + lastVerified."
+  ]
+}

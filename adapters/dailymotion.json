@@ -1,0 +1,83 @@
+{
+  "id": "dailymotion",
+  "name": "Dailymotion",
+  "nameZh": "Dailymotion",
+  "status": "unverified",
+  "lastVerified": null,
+  "packagePlatforms": [
+    "dailymotion"
+  ],
+  "uploadUrl": "https://www.dailymotion.com/partner/",
+  "loginUrl": "https://www.dailymotion.com/signin",
+  "allowedHosts": [
+    "dailymotion.com",
+    "*.dailymotion.com",
+    "*.dmcdn.net",
+    "dai.ly"
+  ],
+  "fields": {
+    "file": {
+      "selectors": [
+        "input[type=\"file\"][accept*=\"video\"]",
+        "input[type=\"file\"]"
+      ],
+      "timeoutMs": 60000
+    },
+    "title": {
+      "selectors": [
+        "input[name=\"title\"]",
+        "input[placeholder*=\"title\" i]",
+        "input[placeholder*=\"titre\" i]"
+      ],
+      "kind": "input",
+      "clear": true,
+      "timeoutMs": 120000,
+      "maxLength": 255
+    },
+    "description": {
+      "selectors": [
+        "textarea[name=\"description\"]",
+        "textarea[placeholder*=\"description\" i]",
+        "textarea"
+      ],
+      "kind": "input",
+      "clear": true,
+      "timeoutMs": 30000,
+      "maxLength": 3000
+    },
+    "tags": {
+      "mode": "append-to-description",
+      "format": "#{tag} ",
+      "max": 15
+    },
+    "cover": null
+  },
+  "publishButton": null,
+  "disclosure": {
+    "zh": "Dailymotion：标题必填（≤ 255），描述 ≤ 3000，描述里最多 15 个 #话题。分类、语言、是否面向儿童由你选。AI 生成内容请在描述里说明。",
+    "en": "Dailymotion: title required (<= 255), description <= 3,000 with up to 15 #hashtags. Category, language and made-for-kids are yours to pick. Say in the description when the video is AI-made."
+  },
+  "guide": {
+    "zh": "打开 Studio → 媒体 → 上传视频，应用放入视频、填好标题和描述。选分类、语言、是否面向儿童和可见范围，再由你点「发布」。",
+    "en": "Open Studio → Media → Upload video; the app adds the video and types the title and description. Pick category, language, made-for-kids and visibility, then press Publish yourself."
+  },
+  "herChoices": {
+    "zh": [
+      "分类",
+      "语言",
+      "是否面向儿童",
+      "可见范围"
+    ],
+    "en": [
+      "Category",
+      "Language",
+      "Made for kids",
+      "Visibility"
+    ]
+  },
+  "notes": [
+    "UNVERIFIED selectors (written 2026-10 without a logged-in session): check them on the live page, then set status to verified + lastVerified.",
+    "The current Studio host is unverified (older: dailymotion.com/partner/); check the address bar after signing in and override uploadUrl locally.",
+    "Standard accounts: 2 h / 4 GB per video, 15 uploads per 24 h."
+  ]
+}

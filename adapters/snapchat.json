@@ -1,0 +1,68 @@
+{
+  "id": "snapchat",
+  "name": "Snapchat Spotlight",
+  "nameZh": "Snapchat 聚光灯",
+  "status": "unverified",
+  "lastVerified": null,
+  "packagePlatforms": [
+    "snapchat"
+  ],
+  "uploadUrl": "https://profile.snapchat.com/",
+  "loginUrl": "https://accounts.snapchat.com/accounts/v2/login",
+  "allowedHosts": [
+    "snapchat.com",
+    "*.snapchat.com",
+    "*.sc-cdn.net",
+    "*.snap.com"
+  ],
+  "fields": {
+    "file": {
+      "selectors": [
+        "input[type=\"file\"][accept*=\"video\"]",
+        "input[type=\"file\"]"
+      ],
+      "timeoutMs": 60000
+    },
+    "title": null,
+    "description": {
+      "selectors": [
+        "textarea[placeholder*=\"description\" i]",
+        "textarea",
+        "div[contenteditable=\"true\"]"
+      ],
+      "kind": "input",
+      "clear": true,
+      "timeoutMs": 60000,
+      "maxLength": 160
+    },
+    "tags": {
+      "mode": "append-to-description",
+      "format": "#{tag} ",
+      "max": 3
+    },
+    "cover": null
+  },
+  "publishButton": null,
+  "disclosure": {
+    "zh": "Spotlight：竖屏 9:16、5–60 秒、不要水印，纯图片 / 纯文字视频会被拒。描述约 160 字，#话题 选相关的。发 Spotlight 要接受创作者条款——由你自己点。",
+    "en": "Spotlight: vertical 9:16, 5-60 s, no watermarks; stills and text-only videos are rejected. About 160 characters, relevant #Topics only. Posting to Spotlight needs the Creator Terms - accept them yourself."
+  },
+  "guide": {
+    "zh": "打开 profile.snapchat.com，应用放入视频、填好描述。在「发送到」勾选「Spotlight」，自己接受条款，再点「发布到 Snapchat」。快拍和 Spotlight 不能同时从网页发。",
+    "en": "On profile.snapchat.com the app adds the video and types the description. Under Send to tick Spotlight, accept the terms yourself, then press Post to Snapchat. Story and Spotlight cannot be posted together from the web."
+  },
+  "herChoices": {
+    "zh": [
+      "发送到 Spotlight / 快拍",
+      "接受创作者条款"
+    ],
+    "en": [
+      "Send to Spotlight / Story",
+      "Accept the Creator Terms"
+    ]
+  },
+  "notes": [
+    "UNVERIFIED selectors (written 2026-10 without a logged-in session): check them on the live page, then set status to verified + lastVerified.",
+    "Older uploader: my.snapchat.com (Public Profiles)."
+  ]
+}

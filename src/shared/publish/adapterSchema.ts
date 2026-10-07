@@ -72,6 +72,19 @@ export const adapterSchema = z
     /** Choices the app never makes for her (B站 分区 / 自制·转载, 视频号 原创声明 ...), shown as a checklist. */
     herChoices: z.strictObject({ zh: z.array(z.string().max(120)).max(10), en: z.array(z.string().max(120)).max(10) }).nullable().default(null),
     notes: z.array(z.string().max(400)).max(20).default([]),
+    /** Values the creator types before the page opens (Reddit: the subreddit). Each one picks a different upload
+     * page: uploadUrl with {value} replaced (the value must match pattern; the page must stay inside allowedHosts). */
+    params: z
+      .array(
+        z.strictObject({
+          key: z.string().regex(/^[a-z]{2,20}$/),
+          label: z.strictObject({ zh: z.string().min(1).max(40), en: z.string().min(1).max(40) }),
+          pattern: z.string().min(2).max(120),
+          uploadUrl: z.string().max(300).startsWith('https://').includes('{value}'),
+        }),
+      )
+      .max(3)
+      .default([]),
   })
   .superRefine((a, ctx) => {
     if (a.status !== 'todo' && a.fields.description === null && a.fields.title === null) {
@@ -79,6 +92,15 @@ export const adapterSchema = z
     }
     if (a.fields.tags?.mode === 'separate' && !a.fields.tags.selectors) {
       ctx.addIssue({ code: 'custom', message: 'tags.mode separate needs selectors' });
+    }
+    for (const p of a.params) {
+      try {
+        new RegExp(p.pattern);
+      } catch {
+        ctx.addIssue({ code: 'custom', message: `params.${p.key}: bad pattern` });
+      }
+      const u = p.uploadUrl.replace('{value}', 'test');
+      if (!URL.canParse(u) || !hostAllowed(new URL(u).hostname, a.allowedHosts)) ctx.addIssue({ code: 'custom', message: `params.${p.key}: ${p.uploadUrl} is outside allowedHosts` });
     }
     for (const u of [a.uploadUrl, a.loginUrl]) {
       if (!hostAllowed(new URL(u).hostname, a.allowedHosts)) {
@@ -102,6 +124,19 @@ export function parseAdapter(json: unknown): { ok: true; adapter: Adapter } | { 
 }
 
 const ORIENTATIONS = ['vertical', 'full', 'horizontal', 'square', 'reels', 'feed'];
+
+/** The upload page for this post: a param's page when the creator typed a valid value (Reddit r/<sub>/submit), else
+ * the adapter's uploadUrl. An invalid value never reaches a URL. */
+export function uploadUrlFor(a: Pick<Adapter, 'uploadUrl' | 'params' | 'allowedHosts'>, values: Record<string, string> = {}): string {
+  for (const p of a.params ?? []) {
+    const v = (values[p.key] ?? '').trim().replace(/^r\//i, '');
+    if (!v) continue;
+    if (!new RegExp(p.pattern).test(v)) throw new Error(`${p.key}: not a valid value`);
+    const u = p.uploadUrl.replace('{value}', encodeURIComponent(v));
+    if (hostAllowed(new URL(u).hostname, a.allowedHosts)) return u;
+  }
+  return a.uploadUrl;
+}
 
 /** "tiktok-vertical" -> "tiktok"; "youtube-shorts-vertical" -> "youtube-shorts"; "instagram-reels" -> "instagram";
  * "x-square" -> "x"; "wechat-channels-vertical" -> "wechat-channels". */

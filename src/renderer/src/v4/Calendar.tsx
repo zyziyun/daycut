@@ -11,6 +11,7 @@ import { useHistory } from '../lib/history';
 import { go, href } from '../lib/router';
 import { platformName } from './Home';
 import { PlatformIcon, SCHEDULE_PLATFORMS } from './PlatformIcon';
+import { PlatformPicker } from './PlatformPicker';
 import { Empty, Seg, Thumb } from './kit';
 import { errText } from './msg';
 import { nextSlots } from './Project';
@@ -186,14 +187,7 @@ export function CalendarScreen() {
             </div>
             <div className="col" style={{ gap: 6, margin: '4px 0 10px' }} data-testid="pub-platforms" title={t('pub.schedToHint')}>
               <span className="muted small">{t('pub.schedTo')}</span>
-              <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
-                {SCHEDULE_PLATFORMS.map((pf) => (
-                  <button key={pf} className={`chip ${schedTo === pf ? 'on' : ''}`} onClick={() => setSchedTo(pf)} aria-pressed={schedTo === pf} data-pf={pf} style={{ height: 26, padding: '0 9px' }}>
-                    <PlatformIcon id={pf} size={14} />
-                    {platformName(pf)}
-                  </button>
-                ))}
-              </div>
+              <PlatformPicker value={schedTo} onChange={setSchedTo} connected={adapters.filter((a) => channels.some((c) => c.adapterId === a.id)).flatMap((a) => a.packagePlatforms)} />
             </div>
             {data && !data.queue.length && <p className="muted">{t('pub.queueEmpty')}</p>}
             {(data?.queue ?? []).slice(0, 30).map((q) => (

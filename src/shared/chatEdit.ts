@@ -45,15 +45,16 @@ export interface ExportJob {
   targets: string[];
 }
 
-/** The 8 platforms of the export card (engine target = platform:orientation). */
+/** The 8 platforms of the export card (engine target = platform:orientation), in the shared order: English / global
+ * first, then Chinese. */
 export const EXPORT_PLATFORMS = [
+  { id: 'youtube', target: 'youtube:horizontal', aspect: '16:9' },
+  { id: 'tiktok', target: 'tiktok:vertical', aspect: '9:16' },
+  { id: 'instagram', target: 'instagram:vertical', aspect: '9:16' },
+  { id: 'x', target: 'x:horizontal', aspect: '16:9' },
   { id: 'xiaohongshu', target: 'xiaohongshu:vertical', aspect: '3:4' },
   { id: 'douyin', target: 'douyin:vertical', aspect: '9:16' },
   { id: 'wechat-channels', target: 'wechat-channels:vertical', aspect: '9:16' },
   { id: 'bilibili', target: 'bilibili:horizontal', aspect: '16:9' },
-  { id: 'youtube', target: 'youtube:horizontal', aspect: '16:9' },
-  { id: 'tiktok', target: 'tiktok:vertical', aspect: '9:16' },
-  { id: 'x', target: 'x:horizontal', aspect: '16:9' },
-  { id: 'instagram', target: 'instagram:vertical', aspect: '9:16' },
 ] as const;
 export type PlatformId = (typeof EXPORT_PLATFORMS)[number]['id'];

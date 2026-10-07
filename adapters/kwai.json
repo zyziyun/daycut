@@ -1,0 +1,53 @@
+{
+  "id": "kwai",
+  "name": "Kwai",
+  "nameZh": "Kwai（快手国际版）",
+  "status": "todo",
+  "lastVerified": null,
+  "packagePlatforms": [
+    "kwai"
+  ],
+  "uploadUrl": "https://www.kwai.com/",
+  "loginUrl": "https://www.kwai.com/",
+  "allowedHosts": [
+    "kwai.com",
+    "*.kwai.com",
+    "*.kwaicdn.com"
+  ],
+  "fields": {
+    "file": {
+      "selectors": [
+        "TODO-input[type=\"file\"]"
+      ]
+    },
+    "title": null,
+    "description": {
+      "selectors": [
+        "TODO-caption"
+      ],
+      "kind": "input",
+      "maxLength": 500,
+      "clear": true
+    },
+    "tags": {
+      "mode": "append-to-description",
+      "format": "#{tag} ",
+      "max": 5
+    },
+    "cover": null
+  },
+  "publishButton": null,
+  "disclosure": {
+    "zh": "Kwai 没有电脑网页上传：把打包好的视频传到手机，用 Kwai App 发布，复制 post.md 里的文案。AI 生成内容请在文案里说明。",
+    "en": "Kwai has no desktop web upload: move the packaged video to your phone and post it in the Kwai app, pasting the copy from post.md. Say in the caption when the video is AI-made."
+  },
+  "guide": {
+    "zh": "在手机上发：打开 Kwai → 「+」→ 从相册选视频 → 粘贴文案 → 发布。发完回来点「标记已发布」并贴上链接。",
+    "en": "Post from the phone: Kwai → + → pick the video from the gallery → paste the caption → Post. Then come back, Mark as posted and paste the link."
+  },
+  "herChoices": null,
+  "notes": [
+    "TODO by design: kwai.com is a viewing / marketing site and Kwai Studio (PC) is for live streaming only - no web upload page to fill (checked 2026-10).",
+    "Fill is disabled; packaging, the checklist and mark-as-posted still work."
+  ]
+}

@@ -12,7 +12,9 @@ describe('adapter JSON schema', () => {
   it('every shipped adapter is valid', () => {
     const r = loadAdapters([dir]);
     expect(r.errors).toEqual([]);
-    expect(r.adapters.map((a) => a.id).sort()).toEqual(['bilibili', 'douyin', 'instagram', 'tiktok', 'wechat-channels', 'x-web', 'xiaohongshu', 'youtube-studio']);
+    expect(r.adapters.map((a) => a.id).sort()).toEqual(
+      ['bilibili', 'dailymotion', 'douyin', 'facebook', 'instagram', 'kuaishou', 'kwai', 'linkedin', 'pinterest', 'reddit', 'snapchat', 'threads', 'tiktok', 'wechat-channels', 'weibo', 'x-web', 'xiaohongshu', 'youtube-studio', 'zhihu'],
+    );
   });
 
   it('TikTok + YouTube are fillable (unverified), 小红书 + 抖音 are TODO placeholders', () => {

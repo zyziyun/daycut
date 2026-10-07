@@ -1,0 +1,86 @@
+{
+  "id": "weibo",
+  "name": "Weibo video",
+  "nameZh": "微博视频",
+  "status": "unverified",
+  "lastVerified": null,
+  "packagePlatforms": [
+    "weibo"
+  ],
+  "uploadUrl": "https://weibo.com/upload/channel",
+  "loginUrl": "https://passport.weibo.com/sso/signin",
+  "allowedHosts": [
+    "weibo.com",
+    "*.weibo.com",
+    "weibo.cn",
+    "*.weibo.cn",
+    "*.sinaimg.cn",
+    "*.sina.com.cn",
+    "t.cn"
+  ],
+  "fields": {
+    "file": {
+      "selectors": [
+        "input[type=\"file\"][accept*=\"video\"]",
+        "input[type=\"file\"]"
+      ],
+      "timeoutMs": 30000
+    },
+    "title": {
+      "selectors": [
+        "input[placeholder*=\"标题\"]",
+        "input[maxlength=\"30\"]"
+      ],
+      "kind": "input",
+      "clear": true,
+      "timeoutMs": 60000,
+      "maxLength": 30
+    },
+    "description": {
+      "selectors": [
+        "textarea[placeholder*=\"简介\"]",
+        "textarea[placeholder*=\"说点什么\"]",
+        "textarea"
+      ],
+      "kind": "input",
+      "clear": true,
+      "timeoutMs": 30000,
+      "maxLength": 2000
+    },
+    "tags": {
+      "mode": "append-to-description",
+      "format": "#{tag}# ",
+      "max": 3
+    },
+    "cover": null
+  },
+  "publishButton": null,
+  "disclosure": {
+    "zh": "含 AI 生成内容时，在「选择内容声明」里选「内容由 AI 生成」。投稿标题至少 6 个字；话题写成 #话题#（两个 #）。个人网站链接常会被提示风险或拦截。",
+    "en": "If the video has AI content, choose 选择内容声明 → 内容由 AI 生成. 投稿 titles need at least 6 characters; topics are #话题# (two hashes). Links to personal sites often get a risk prompt or are blocked."
+  },
+  "guide": {
+    "zh": "打开视频投稿页，应用放入视频、填好标题、简介和 #话题#。频道分类、标签、原创 / 转载、合集由你选，再点「发布」。",
+    "en": "On the video 投稿 page the app adds the video and types the title, intro and #topics#. Pick the channel category, tags, original / repost and collection, then press Publish yourself."
+  },
+  "herChoices": {
+    "zh": [
+      "内容声明（含 AI 生成）",
+      "频道分类 + 标签",
+      "原创 / 转载",
+      "合集",
+      "可见范围"
+    ],
+    "en": [
+      "Content statement (incl. AI)",
+      "Channel category + tags",
+      "Original / repost",
+      "Collection",
+      "Visibility"
+    ]
+  },
+  "notes": [
+    "UNVERIFIED selectors (written 2026-10 without a logged-in session): check them on the live page, then set status to verified + lastVerified.",
+    "PC upload up to 15 GB (kefu FAQ). Posting from the home composer also works but has no title field."
+  ]
+}

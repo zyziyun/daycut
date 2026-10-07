@@ -1,0 +1,69 @@
+{
+  "id": "threads",
+  "name": "Threads",
+  "nameZh": "Threads",
+  "status": "unverified",
+  "lastVerified": null,
+  "packagePlatforms": [
+    "threads"
+  ],
+  "uploadUrl": "https://www.threads.com/",
+  "loginUrl": "https://www.threads.com/login",
+  "allowedHosts": [
+    "threads.com",
+    "*.threads.com",
+    "threads.net",
+    "*.threads.net",
+    "instagram.com",
+    "*.instagram.com",
+    "*.cdninstagram.com",
+    "*.fbcdn.net"
+  ],
+  "fields": {
+    "file": {
+      "selectors": [
+        "div[role=\"dialog\"] input[type=\"file\"]",
+        "input[type=\"file\"][accept*=\"video\"]"
+      ],
+      "timeoutMs": 120000
+    },
+    "title": null,
+    "description": {
+      "selectors": [
+        "div[role=\"dialog\"] div[contenteditable=\"true\"][role=\"textbox\"]",
+        "div[contenteditable=\"true\"][role=\"textbox\"]"
+      ],
+      "kind": "contenteditable",
+      "clear": true,
+      "timeoutMs": 120000,
+      "softMax": 500
+    },
+    "tags": null,
+    "cover": null
+  },
+  "publishButton": null,
+  "disclosure": {
+    "zh": "Threads 用 Meta 的「AI 信息」标签。正文最多 500 字；每条只有一个话题标签（在编辑框里加，不显示 #），这里不会自动填。视频最长 5 分钟。",
+    "en": "Threads uses Meta's \"AI info\" label. Post text up to 500 characters; one topic tag per post (added in the composer, shown without #) - not filled here. Video up to 5 minutes."
+  },
+  "guide": {
+    "zh": "在 Threads 首页点发帖框，应用会放入视频并填好正文。需要的话自己加一个话题，再由你点「发布」。",
+    "en": "Open the composer on Threads; the app adds the video and types the text. Add one topic if you want, then press Post yourself."
+  },
+  "herChoices": {
+    "zh": [
+      "话题（每条一个）",
+      "谁可以回复",
+      "AI 信息标签"
+    ],
+    "en": [
+      "Topic (one per post)",
+      "Who can reply",
+      "AI info label"
+    ]
+  },
+  "notes": [
+    "UNVERIFIED selectors (written 2026-10 without a logged-in session): check them on the live page, then set status to verified + lastVerified.",
+    "Sign-in goes through Instagram; the domain moved from threads.net to threads.com in 2025-04."
+  ]
+}

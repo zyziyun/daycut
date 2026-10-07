@@ -24,34 +24,63 @@ import sys
 
 from .common import need, read_json, sha1_json, write_json
 
-PLATFORMS = ("xiaohongshu", "douyin", "wechat-channels", "bilibili", "youtube", "youtube-shorts", "tiktok", "x",
-             "instagram")
+# Display order: English / global, Chinese, other languages (vstudio.platform.ORDER).
+PLATFORMS = ("youtube", "youtube-shorts", "tiktok", "instagram", "x", "facebook", "linkedin", "threads", "reddit",
+             "pinterest", "snapchat", "xiaohongshu", "douyin", "wechat-channels", "bilibili", "kuaishou", "weibo", "zhihu",
+             "dailymotion", "kwai")
 DEFAULT_TIMES = ["19:00"]
 CLIP_RE = re.compile(r"^[^/\\\0]{1,120}$")
 TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
-# Used when the engine (vstudio.platform) is not importable (mock mode). Values mirror vstudio.platform.PLATFORMS.
+_V, _H, _S, _F = "9:16", "16:9", "1:1", "4:5"
+# Used when the engine (vstudio.platform) is not importable or predates a platform (mock mode / older engine).
+# Values mirror vstudio.platform.PLATFORMS. links: clickable | not-clickable | link-field | avoid.
 _FALLBACK = {
-    "xiaohongshu": dict(default="vertical", o={"vertical": "3:4", "full": "9:16", "horizontal": "16:9"},
-                        title_max=20, desc_max=1000, tags=10, hard=False, length=(5, 900)),
-    "douyin": dict(default="vertical", o={"vertical": "9:16", "horizontal": "16:9"}, title_max=55, desc_max=1000,
-                   tags=10, hard=False, length=(5, 900)),
-    "wechat-channels": dict(default="vertical", o={"vertical": "9:16", "horizontal": "16:9"}, title_max=16,
-                            desc_max=1000, tags=10, hard=False, length=(3, 3600)),
-    "bilibili": dict(default="horizontal", o={"horizontal": "16:9", "vertical": "9:16"}, title_max=80,
-                     desc_max=2000, tags=10, hard=False, length=(5, 36000)),
-    "youtube": dict(default="horizontal", o={"horizontal": "16:9"}, title_max=100, desc_max=5000, tags=15,
-                    hard=False, length=(5, 43200)),
-    "youtube-shorts": dict(default="vertical", o={"vertical": "9:16"}, title_max=100, desc_max=5000, tags=3,
-                           hard=False, length=(1, 180)),
-    "tiktok": dict(default="vertical", o={"vertical": "9:16"}, title_max=55, desc_max=4000, tags=30, hard=False,
-                   length=(3, 600)),
-    "x": dict(default="horizontal", o={"horizontal": "16:9", "square": "1:1", "vertical": "9:16"}, title_max=0,
-              desc_max=280, tags=2, hard=False, length=(1, 140)),
-    "instagram": dict(default="reels", o={"reels": "9:16", "feed": "4:5"}, title_max=0, desc_max=2200, tags=5,
-                      hard=True, length=(3, 900)),
+    "youtube": dict(default="horizontal", o={"horizontal": _H}, title_max=100, desc_max=5000, tags=15, hard=False,
+                    length=(1, 43200), links="clickable", title_required=True),
+    "youtube-shorts": dict(default="vertical", o={"vertical": _V}, title_max=100, desc_max=5000, tags=3, hard=False,
+                           length=(3, 180), links="not-clickable", title_required=True),
+    "tiktok": dict(default="vertical", o={"vertical": _V}, title_max=55, desc_max=4000, tags=30, hard=False,
+                   length=(3, 3600), links="not-clickable"),
+    "instagram": dict(default="reels", o={"reels": _V, "feed": _F}, title_max=0, desc_max=2200, tags=5, hard=True,
+                      length=(3, 1200), links="not-clickable"),
+    "x": dict(default="horizontal", o={"horizontal": _H, "square": _S, "vertical": _V}, title_max=0, desc_max=280,
+              tags=2, hard=False, length=(0.5, 140), links="clickable"),
+    "facebook": dict(default="reels", o={"reels": _V, "feed": _F, "horizontal": _H}, title_max=0, desc_max=2200, tags=5,
+                     hard=False, length=(3, 14400), links="clickable"),
+    "linkedin": dict(default="horizontal", o={"horizontal": _H, "square": _S, "feed": _F}, title_max=0, desc_max=3000,
+                     tags=3, hard=False, length=(3, 900), links="clickable"),
+    "threads": dict(default="vertical", o={"vertical": _V, "horizontal": _H}, title_max=0, desc_max=500, tags=1,
+                    hard=True, length=(1, 300), links="clickable"),
+    "reddit": dict(default="horizontal", o={"horizontal": _H, "square": _S, "vertical": _V}, title_max=300,
+                   desc_max=40000, tags=0, hard=False, length=(1, 900), links="clickable", title_required=True),
+    "pinterest": dict(default="vertical", o={"vertical": _V, "feed": "2:3", "square": _S}, title_max=100, desc_max=500,
+                      tags=0, hard=False, length=(4, 900), links="link-field"),
+    "snapchat": dict(default="vertical", o={"vertical": _V}, title_max=0, desc_max=160, tags=3, hard=False,
+                     length=(5, 60), links="not-clickable"),
+    "xiaohongshu": dict(default="vertical", o={"vertical": "3:4", "full": _V, "horizontal": _H},
+                        title_max=20, desc_max=1000, tags=10, hard=False, length=(5, 900), links="avoid"),
+    "douyin": dict(default="vertical", o={"vertical": _V, "horizontal": _H}, title_max=55, desc_max=1000,
+                   tags=10, hard=False, length=(3, 900), links="avoid"),
+    "wechat-channels": dict(default="vertical", o={"vertical": _V, "horizontal": _H}, title_max=16,
+                            desc_max=1000, tags=10, hard=False, length=(3, 28800), links="avoid"),
+    "bilibili": dict(default="horizontal", o={"horizontal": _H, "vertical": _V}, title_max=80,
+                     desc_max=2000, tags=10, hard=False, length=(10, 36000), links="avoid", title_required=True),
+    "kuaishou": dict(default="vertical", o={"vertical": _V, "horizontal": _H}, title_max=0, desc_max=500, tags=4,
+                     hard=False, length=(3, 900), links="avoid"),
+    "weibo": dict(default="horizontal", o={"horizontal": _H, "vertical": _V}, title_max=30, desc_max=2000, tags=3,
+                  hard=False, length=(3, 900), links="clickable", tag_format="#{t}#"),
+    "zhihu": dict(default="horizontal", o={"horizontal": _H, "vertical": _V}, title_max=30, desc_max=300, tags=5,
+                  hard=False, length=(1, 3600), links="avoid", title_required=True),
+    "dailymotion": dict(default="horizontal", o={"horizontal": _H, "vertical": _V}, title_max=255, desc_max=3000,
+                        tags=15, hard=False, length=(1, 7200), links="clickable", title_required=True),
+    "kwai": dict(default="vertical", o={"vertical": _V}, title_max=0, desc_max=500, tags=5, hard=False,
+                 length=(3, 300), links="not-clickable"),
 }
-NO_TITLE = {"x", "instagram"}
+NO_TITLE = {"x", "instagram", "facebook", "linkedin", "threads", "snapchat", "kuaishou", "kwai"}
+TAG_FORMAT = {"weibo": "#{t}#"}
+URL_RE = re.compile(r"(?:https?://|www\.)\S+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|io|ai|co|dev|app|me|tv|ly|gg|"
+                    r"cn|xyz|fr|es)(?:/\S*)?", re.I)
 
 
 def _ratio(a):
@@ -91,11 +120,18 @@ class _Prof:
             self.hard = bool((base.get("hashtags") or {}).get("hard"))
             L = base.get("length") or {}
             self.length = (L.get("min"), L.get("max"))
-        except Exception:  # noqa: BLE001  (mock mode / older engine)
+            fb = _FALLBACK.get(name, {})
+            lk = base.get("links")
+            self.links = (fb.get("links", "clickable") if lk is None else "link-field" if lk.get("field") else
+                          "clickable" if lk.get("clickable", True) else "avoid" if lk.get("avoid") else "not-clickable")
+            self.title_required = bool(base.get("title_required", fb.get("title_required")))
+        except Exception:  # noqa: BLE001  (mock mode / older engine: the platform is not there)
+            self.P = None
             fb = _FALLBACK[name]
             self.default, self.orient = fb["default"], fb["o"]
             self.title_max, self.desc_max, self.tags, self.hard = fb["title_max"], fb["desc_max"], fb["tags"], fb["hard"]
             self.length = fb["length"]
+            self.links, self.title_required = fb.get("links", "clickable"), bool(fb.get("title_required"))
 
     def title_len(self, title):
         if self.P:
@@ -172,6 +208,18 @@ def pick_version(files, prof):
     return o, f, dict(code="aspect", want=prof.orient[prof.default], got=_aspect_label(r))
 
 
+def youtube_check(pf, aspect_check):
+    """YouTube is one channel with two formats: long-form wants 16:9, Shorts vertical / square. A mismatch is a
+    clearer check than the generic aspect one (long-form from a vertical-only clip: export a 16:9 version or post it
+    as Shorts)."""
+    got = _ratio(aspect_check.get("got"))
+    if pf == "youtube" and got and got < 1:
+        return dict(code="yt-vertical-only", want="16:9", got=aspect_check.get("got"))
+    if pf == "youtube-shorts" and got and got > 1:
+        return dict(code="shorts-horizontal", want="9:16", got=aspect_check.get("got"))
+    return None
+
+
 def adapt_copy(name, prof, post, fallback_title):
     """The clip's post copy for one platform -> (title, body, tags, checks)."""
     post = post or {}
@@ -183,9 +231,18 @@ def adapt_copy(name, prof, post, fallback_title):
         checks.append(dict(code="no-copy"))
     in_body = _hashtags_in(body)
     allt = list(dict.fromkeys([t.lower() for t in tags] + in_body))
-    if prof.tags and len(allt) > prof.tags:
+    if prof.tags == 0 and allt:                     # Reddit / Pinterest: no hashtags (topics / keywords instead)
+        checks.append(dict(code="no-hashtags", n=len(allt)))
+        tags = []
+    elif prof.tags and len(allt) > prof.tags:
         checks.append(dict(code="hashtags-over", n=len(allt), max=prof.tags, hard=prof.hard))
         tags = tags[:max(0, prof.tags - len(in_body))]
+    if prof.title_required and not title:
+        checks.append(dict(code="title-required"))
+    if URL_RE.search(body) and prof.links != "clickable":
+        checks.append(dict(code=prof.links if prof.links == "link-field" else f"link-{prof.links}"))
+    if name == "reddit":
+        checks.append(dict(code="subreddit"))
     if name in NO_TITLE:
         checks.append(dict(code="no-title"))
         text = "\n\n".join(x for x in (title, body) if x)
@@ -208,7 +265,8 @@ def post_md(name, title, body, tags):
     if body:
         lines += [body, ""]
     if tags:
-        lines.append("标签：" + ", ".join(tags) if name == "bilibili" else " ".join(f"#{t}" for t in tags))
+        fmt = TAG_FORMAT.get(name, "#{t}")
+        lines.append("标签：" + ", ".join(tags) if name == "bilibili" else " ".join(fmt.replace("{t}", t) for t in tags))
     return "\n".join(lines).strip() + "\n"
 
 
@@ -292,7 +350,7 @@ class WorkPackages:
                     fh.write(post_md(pf, title, body, tags))
                 files["post"] = os.path.relpath(os.path.join(folder, "post.md"), tmp)
                 if aspect_check:
-                    checks.insert(0, aspect_check)
+                    checks.insert(0, youtube_check(pf, aspect_check) or aspect_check)
                 dur = f.get("duration") or c.get("duration")
                 lo, hi = prof.length
                 if dur and ((hi and dur > hi) or (lo and dur < lo)):
@@ -315,4 +373,4 @@ class WorkPackages:
                     checks=sum(1 for i in items for x in i["checks"] if x["code"] != "ai-label"))
 
 
-__all__ = ["WorkPackages", "PLATFORMS", "pick_version", "adapt_copy", "post_md"]
+__all__ = ["WorkPackages", "PLATFORMS", "pick_version", "adapt_copy", "post_md", "youtube_check"]
