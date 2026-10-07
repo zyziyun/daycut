@@ -90,7 +90,10 @@ export function routesFromEngine(engine: Record<string, { provider?: string; mod
           fallback: (Array.isArray(r.fallback) ? r.fallback : []).map((x) => (typeof x === 'object' && x ? (x as { provider?: string }).provider : x)) as ProviderId[],
         })
       : null;
-  const def = pick(engine?.default) ?? { provider: 'claude-code', model: null, fallback: ['codex'] };
+  // nothing configured (no persona / client route: the engine reports "none") -> the subscription CLIs, which the
+  // routes file then hands to the engine, so what the page shows is what runs (P1-6)
+  const engineDef = pick(engine?.default);
+  const def = engineDef && engineDef.provider !== 'none' ? engineDef : { provider: 'claude-code' as ProviderId, model: null, fallback: ['codex' as ProviderId] };
   const tasks: AiRoutes['tasks'] = {};
   for (const k of AI_TASK_IDS) {
     const c = pick(engine?.[AI_TASKS[k]]);
@@ -204,7 +207,10 @@ export interface AuthRow {
 export interface AuthStatusMsg {
   providers: AuthRow[];
   at: number;
-  error?: string;
+  /** a code, never engine text: engine (the bundled engine is broken) | timeout | failed */
+  error?: 'engine' | 'timeout' | 'failed' | string;
+  /** the claude-code login round-trip took too long: rows are from the quick check */
+  probeTimedOut?: boolean;
 }
 
 /** Pill tone + message key for a status row. */

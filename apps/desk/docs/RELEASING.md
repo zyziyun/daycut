@@ -125,9 +125,11 @@ Tags `v*` on the monorepo are **Daycut** releases (tag engine-only releases `eng
    ```bash
    git tag v0.2.0 && git push origin v0.2.0
    ```
-3. The workflow builds macOS arm64, macOS x64 (allowed to fail) and Windows x64; signs/notarizes when the secrets
-   exist; runs the packaged-app check (engine starts from the bundle, mock + real `health`); uploads artifacts; and,
-   with `RELEASES_TOKEN`, attaches everything to a **draft** release `v0.2.0` in the releases repo.
+3. The workflow builds macOS arm64, macOS x64 (allowed to fail) and Windows x64 (preview, allowed to fail: v0.2 is
+   macOS only); signs/notarizes; runs the packaged-app check (fuses, bundled engine imports, mock + real `health`);
+   uploads artifacts; and attaches everything to a **draft** release `v0.2.0` in the releases repo. A tag (or a
+   *publish* run) **fails at "Signing setup"** when the signing / notarization secrets or `RELEASES_TOKEN` are
+   missing — it never publishes an unsigned build.
 4. Download the DMG / EXE from the draft, smoke-test on a clean machine, write release notes, then **Publish** the
    draft. electron-updater only sees published releases; installed apps check at launch and every 6 hours, download in
    the background and show "Restart to update". Pre-release versions (`0.3.0-beta.1`) only update other pre-releases.
@@ -140,11 +142,19 @@ A manual run (Actions → Release → Run workflow) builds without a tag; tick *
 npm ci                          # at the repo root or in apps/desk: one npm workspace install for all apps
 npm run runtime                 # build/runtime/<platform>-<arch> (≈1 GB; downloads cached in build/.cache)
 npm run dist:mac:unsigned       # dist/*.dmg + .zip, no signing (Gatekeeper: right-click → Open)
-npm run test:packaged           # packaged app: bundled engine, mock + real health
+npm run test:packaged           # packaged app: fuses, bundled engine, mock + real health (driven over CDP)
 DESK_TEST_DOWNLOADS=1 npm run test:packaged   # also downloads the 62 MB core assets through the app
 ```
 
-Signed + notarized local build — either with the variables:
+**Release build on this Mac** (Developer ID in the login keychain + the `vstudio-notary` notarytool profile; arm64,
+signed, notarized, stapled — app and DMG — then verified with codesign / spctl / stapler and the packaged checks):
+
+```bash
+npm run release:mac             # MAC_SIGN_IDENTITY / APPLE_KEYCHAIN_PROFILE override the defaults; SKIP_TESTS=1
+DRY_RUN=1 npm run release:mac   # preflight only: identity, notary profile, arm64, tools; prints the plan
+```
+
+Other signed + notarized local builds — either with the variables:
 
 ```bash
 export APPLE_ID=you@example.com APPLE_APP_SPECIFIC_PASSWORD=xxxx-xxxx-xxxx-xxxx APPLE_TEAM_ID=AB12CD34EF

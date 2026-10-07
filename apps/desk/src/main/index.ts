@@ -14,6 +14,7 @@ import type { EngineInfo } from '../shared/types';
 import type { AssetManifest } from '../shared/assets';
 import { AssetManager, defaultHfHub, sharedEngineCache } from './assets';
 import { registerAiIpc, syncRoutesFile } from './aiAccounts';
+import { APP_MIME, resolveAppFile } from './appProtocol';
 import { installAppMenu } from './appMenu';
 import { defaultEnginePath, EngineProcess, engineProcessEnv, findPython } from './engine';
 import { isAllowedMediaPath, mediaMime, parseRange, pathFromMediaUrl } from './media';
@@ -28,6 +29,7 @@ import { HistoryWatcher } from './historyWatch';
 import { APP_NAME, applyIdentity } from './identity';
 import { checkForUpdates, initUpdater, installUpdate } from './updater';
 import { registerCleanupIpc, registerV02Ipc, v02EngineEnv } from './v02';
+import { devOnly, setPackaged, tempOnly } from './testHooks';
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
@@ -38,6 +40,7 @@ const DEV_URL = !app.isPackaged ? process.env.VITE_DEV_SERVER_URL : undefined;
 const IS_DEV = Boolean(DEV_URL);
 const APP_ORIGIN = IS_DEV ? new URL(DEV_URL!).origin : 'app://desk';
 const RENDERER_DIR = path.join(__dirname, '../renderer');
+setPackaged(app.isPackaged);
 const RES = app.isPackaged ? process.resourcesPath : app.getAppPath();
 /** Daycut brand icons (scripts/brand/icons.mjs): 256 px for windows / About on Windows + Linux, 1024 px for the dev Dock. */
 const ICON_256 = path.join(RES, 'packaging/resources/icons/256x256.png');
@@ -47,6 +50,15 @@ const brandIcon = (f: string) => (fs.existsSync(f) ? f : undefined);
 // Daycut name + the profile folder / keychain key of this install (old video-studio desk installs keep theirs);
 // DESK_USER_DATA: tests, isolated profile
 const IDENTITY = applyIdentity(app);
+// Chromium's own widgets (date / time inputs) follow the UI language: read it before 'ready' (a change applies on
+// the next launch); the app's copy itself switches live through the i18n adapter
+try {
+  const saved = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'settings.json'), 'utf8')) as { lang?: string };
+  const l = saved.lang === 'zh' || saved.lang === 'zh-CN' ? 'zh-CN' : saved.lang?.startsWith('fr') ? 'fr' : 'en-US';
+  app.commandLine.appendSwitch('lang', l);
+} catch {
+  /* first launch: the system language */
+}
 
 // ---------------------------------------------------------------- diagnostics: the main process must never die
 /** Append to <userData>/logs/main.log (and the console). Never throws. */
@@ -86,21 +98,23 @@ function assetsDir() {
 
 /** The engine's cache, shared with the CLI skill (fonts + MediaPipe models live there). DESK_SHARED_CACHE: tests. */
 function engineCacheDir() {
-  return process.env.DESK_SHARED_CACHE || sharedEngineCache();
+  return tempOnly('DESK_SHARED_CACHE') || sharedEngineCache();
 }
 
 /** The Hugging Face hub cache (Whisper is reused from it). DESK_HF_HUB: tests ('' = none). */
 function hfHubDir(): string | null {
-  return process.env.DESK_HF_HUB !== undefined ? process.env.DESK_HF_HUB || null : defaultHfHub();
+  const hub = tempOnly('DESK_HF_HUB');
+  return hub !== undefined ? hub || null : defaultHfHub();
 }
 
 /** Settings override everything; then env vars; then the runtime bundled in the app; then a dev checkout. */
 function resolvedConfig() {
   const s = settings.get();
-  const python = s.python || process.env.DESK_PYTHON || runtime?.python || findPython();
+  // packaged: the bundled runtime only (a renderer-set Python / engine path would run another binary as Daycut)
+  const python = (!app.isPackaged && s.python) || devOnly('DESK_PYTHON') || runtime?.python || findPython();
   const bundled = Boolean(runtime && python === runtime.python);
   return {
-    enginePath: defaultEnginePath(app.getAppPath(), s.enginePath, bundled ? runtime!.vstudio : undefined),
+    enginePath: defaultEnginePath(app.getAppPath(), app.isPackaged ? undefined : s.enginePath, bundled ? runtime!.vstudio : undefined),
     python,
     dataDir: dataDir(),
     runtime: bundled ? `bundled · Python ${runtime!.manifest.python} · video-studio@${runtime!.manifest.vstudioCommit.slice(0, 7)}` : 'system',
@@ -129,7 +143,7 @@ function withV02Env<T extends { env?: Record<string, string> }>(e: T): T {
 
 function settingsMsg() {
   const s = settings.get();
-  return { ...s, firstRunDone: s.firstRunDone || process.env.DESK_SKIP_FIRST_RUN === '1', resolved: resolvedConfig() };
+  return { ...s, firstRunDone: s.firstRunDone || process.env.DESK_SKIP_FIRST_RUN === '1', resolved: resolvedConfig(), packaged: app.isPackaged, platform: process.platform };
 }
 
 /** One engine port per app session, chosen before the first start and reused by every restart (also when the
@@ -287,23 +301,15 @@ function currentCsp(): string {
 /** Engine port baked into the CSP of the page the window last loaded (undefined: nothing loaded yet). */
 let servedPort: number | null | undefined;
 
-const MIME: Record<string, string> = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.svg': 'image/svg+xml',
-  '.png': 'image/png',
-  '.woff2': 'font/woff2',
-  '.json': 'application/json',
-};
+const MIME = APP_MIME;
 
 function registerProtocols() {
   protocol.handle('app', async (req) => {
     const u = new URL(req.url);
     if (u.host !== 'desk') return new Response('not found', { status: 404 });
-    const rel = decodeURIComponent(u.pathname).replace(/^\/+/, '') || 'index.html';
-    if (rel.split('/').includes('..')) return new Response('forbidden', { status: 403 });
-    let file = path.join(RENDERER_DIR, rel);
+    const hit = resolveAppFile(RENDERER_DIR, u.pathname);
+    if (hit === null) return new Response('forbidden', { status: 403 });
+    let file = hit === 'index' ? path.join(RENDERER_DIR, 'index.html') : hit;
     if (!fs.existsSync(file)) file = path.join(RENDERER_DIR, 'index.html');
     const body = await fs.promises.readFile(file);
     if (file.endsWith('.html')) servedPort = enginePort();
@@ -495,6 +501,7 @@ function registerIpc() {
   handle('clipboard:write', async (p) => clipboard.writeText(p.text));
   handle('settings:get', async () => settingsMsg());
   handle('settings:set', async (p) => {
+    if (app.isPackaged && (p.enginePath !== undefined || p.python !== undefined)) throw new Error('engine path and Python are fixed in this build');
     if (p.enginePath && !fs.existsSync(path.join(p.enginePath, 'lib', 'vstudio'))) {
       throw new Error('enginePath must be the video-studio repo (with lib/vstudio)');
     }
@@ -505,7 +512,7 @@ function registerIpc() {
     if (next.enginePath !== before.enginePath || next.python !== before.python) {
       void startEngine();
     }
-    return { ...settingsMsg(), ...next, firstRunDone: settingsMsg().firstRunDone, resolved: resolvedConfig() };
+    return { ...settingsMsg(), ...next, firstRunDone: settingsMsg().firstRunDone, resolved: resolvedConfig(), packaged: app.isPackaged, platform: process.platform };
   });
 
   // ---------------- publish
@@ -610,7 +617,7 @@ function registerIpc() {
     return historyWatcher.set(p.roots);
   });
   registerV02Ipc(handle, { userData: app.getPath('userData'), settings: () => settings, win: () => win, client: () => client, settingsMsg });
-  registerAiIpc(handle, {
+  primeAiRoutes = registerAiIpc(handle, {
     userData: app.getPath('userData'),
     settings: () => settings,
     win: () => win,
@@ -624,10 +631,12 @@ function registerIpc() {
   registerCleanupIpc(handle, { win: () => win, client: () => client, lang: () => (settings.get().lang === 'zh-CN' ? 'zh' : 'en') });
 }
 
+let primeAiRoutes: { primeRoutes: () => Promise<void> } | null = null;
+
 function loadAssetManifest(): AssetManifest {
   try {
     // DESK_ASSETS_MANIFEST: tests point the downloader at a local server
-    const file = process.env.DESK_ASSETS_MANIFEST || path.join(RES, 'packaging', 'assets.json');
+    const file = devOnly('DESK_ASSETS_MANIFEST') || path.join(RES, 'packaging', 'assets.json');
     return JSON.parse(fs.readFileSync(file, 'utf8')) as AssetManifest;
   } catch (e) {
     console.warn('[assets] no manifest:', (e as Error).message);
@@ -680,6 +689,7 @@ if (!app.requestSingleInstanceLock()) {
     registerProtocols();
     registerIpc();
     void startEngine().catch(() => undefined); // failures are reported through engine:status
+    void primeAiRoutes?.primeRoutes().catch(() => undefined);
     createWindow();
     initUpdater((u) => win?.webContents.send('update:state', u));
     app.on('activate', () => {

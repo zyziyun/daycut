@@ -43,7 +43,10 @@ jobs:
         run: |
           grep -v whisper requirements.txt > "$RUNNER_TEMP/req.txt"
           python -m pip install -r "$RUNNER_TEMP/req.txt"
+          python -c "import yaml, numpy"   # fail here, not deep inside an e2e test
           brew install ffmpeg
+          # the app would otherwise pick the runner's Homebrew python3 (no engine deps) before this one
+          echo "DESK_PYTHON=$(python -c 'import sys; print(sys.executable)')" >> "$GITHUB_ENV"
       - run: npm ci
         working-directory: .
       - name: check_skill (personal paths / secrets in apps/)

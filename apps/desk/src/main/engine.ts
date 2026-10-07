@@ -9,6 +9,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import type { EngineInfo, EngineMode } from '../shared/types';
 import { prependPath } from './runtime';
+import { devOnly } from './testHooks';
 
 export interface EngineConfig {
   engineDir: string; // folder holding server.py
@@ -36,7 +37,7 @@ export function newToken(): string {
 export function pythonCandidates(): string[] {
   const home = os.homedir();
   return [
-    process.env.DESK_PYTHON ?? '',
+    devOnly('DESK_PYTHON') ?? '',
     path.join(home, 'miniconda3/bin/python3'),
     path.join(home, 'anaconda3/bin/python3'),
     '/opt/homebrew/bin/python3',

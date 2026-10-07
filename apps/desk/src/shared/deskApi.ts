@@ -42,11 +42,14 @@ export interface PostedEntryMsg {
 export interface SettingsMsg {
   enginePath?: string;
   python?: string;
-  lang: 'en' | 'zh-CN';
+  lang: 'en' | 'zh-CN' | 'fr';
   theme: 'studio-dark' | 'notebook-light';
   accent?: 'teal' | 'red';
   accounts: Record<string, string[]>;
   resolved?: { enginePath?: string; python: string; dataDir: string; runtime?: string };
+  /** a built app (engine path / Python are fixed, developer settings hidden) */
+  packaged?: boolean;
+  platform?: string;
   firstRunDone?: boolean;
   defaultPlatforms?: string[];
   personaPath?: string;

@@ -2,6 +2,7 @@
 // Python with the pinned pip set, an LGPL ffmpeg and the video-studio library at a pinned commit.
 import fs from 'node:fs';
 import path from 'node:path';
+import { devOnly } from './testHooks';
 
 export interface RuntimeManifest {
   target: string;
@@ -23,7 +24,7 @@ export interface BundledRuntime {
 
 /** resources/runtime when packaged; in development only when DESK_RUNTIME_DIR points at a built runtime. */
 export function findBundledRuntime(resourcesDir: string, isPackaged: boolean, env = process.env): BundledRuntime | null {
-  const root = env.DESK_RUNTIME_DIR || (isPackaged ? path.join(resourcesDir, 'runtime') : '');
+  const root = devOnly('DESK_RUNTIME_DIR', env, isPackaged) || (isPackaged ? path.join(resourcesDir, 'runtime') : '');
   if (!root) return null;
   try {
     const manifest = JSON.parse(fs.readFileSync(path.join(root, 'runtime.json'), 'utf8')) as RuntimeManifest;

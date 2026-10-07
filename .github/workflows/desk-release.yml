@@ -1,11 +1,13 @@
 # Daycut release (apps/desk): on a tag v<version> (must equal apps/desk/package.json "version"), build the engine
 # runtime (python + ffmpeg + this repo's own lib/ and workflows/, nothing fetched from git) + installers for
 # macOS arm64, macOS x64 (best effort) and Windows x64, sign/notarize when the secrets exist (unsigned otherwise),
-# run the packaged-app check, upload artifacts, and (with RELEASES_TOKEN) attach everything to a DRAFT release in
+# run the packaged-app check, upload artifacts, and attach everything to a DRAFT release in
 # the public releases repo (repo variables DESK_RELEASES_OWNER / DESK_RELEASES_REPO, default zyziyun/daycut-releases),
 # which electron-updater reads. Publish the draft by hand.
 #
-# Secrets (all optional; see docs/RELEASING.md):
+# Secrets (see docs/RELEASING.md). Test builds (workflow_dispatch without "publish") work without any and are unsigned;
+# a tag / publish run FAILS at "Signing setup" when the signing, notarization or RELEASES_TOKEN secrets are missing.
+# Local alternative (Developer ID in the login keychain + notarytool profile): npm run release:mac
 #   mac signing   MAC_CERT_P12_BASE64, MAC_CERT_PASSWORD
 #   notarization  APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID
 #   win signing   AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, AZURE_SIGNING_ENDPOINT,
@@ -36,7 +38,8 @@ jobs:
         include:
           - { os: macos-14, target: darwin-arm64, eb: '--mac --arm64', experimental: false }
           - { os: macos-15-intel, target: darwin-x64, eb: '--mac --x64 -c.mac.minimumSystemVersion=12.0', experimental: true }
-          - { os: windows-latest, target: win32-x64, eb: '--win nsis --x64', experimental: false }
+          # v0.2 ships macOS only (About / Settings say so); Windows is built as a preview and never blocks the release
+          - { os: windows-latest, target: win32-x64, eb: '--win nsis --x64', experimental: true }
     env:
       DESK_TARGET: ${{ matrix.target }}
     defaults:
@@ -97,7 +100,25 @@ jobs:
             else echo "::warning::no Windows signing secrets: building an UNSIGNED installer"; fi
           fi
           publish=never
-          if [ -n "$RELEASES_TOKEN" ] && { [ "${{ startsWith(github.ref, 'refs/tags/v') }}" = "true" ] || [ "${{ inputs.publish }}" = "true" ]; }; then publish=always; fi
+          wants=false
+          if [ "${{ startsWith(github.ref, 'refs/tags/v') }}" = "true" ] || [ "${{ inputs.publish }}" = "true" ]; then wants=true; fi
+          if [ "$wants" = "true" ]; then
+            # a release is never published unsigned / un-notarized: stop here with the missing secret's name
+            missing=""
+            if [ "$RUNNER_OS" = "macOS" ]; then
+              [ -n "$MAC_CERT_P12_BASE64" ] || missing="$missing MAC_CERT_P12_BASE64"
+              [ -n "$MAC_CERT_PASSWORD" ] || missing="$missing MAC_CERT_PASSWORD"
+              [ -n "$APPLE_ID" ] || missing="$missing APPLE_ID(+APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID)"
+            elif [ -z "$AZURE_CLIENT_ID" ] && [ -z "$WIN_CERT_PFX_BASE64" ]; then
+              missing="$missing AZURE_*|WIN_CERT_PFX_BASE64"
+            fi
+            [ -n "$RELEASES_TOKEN" ] || missing="$missing RELEASES_TOKEN"
+            if [ -n "$missing" ]; then
+              echo "::error title=Release not signed::publishing needs these repository secrets:$missing (docs/RELEASING.md). Or build and notarize locally: npm run release:mac"
+              exit 1
+            fi
+            publish=always
+          fi
           echo "EB_PUBLISH=$publish" >> "$GITHUB_ENV"
           echo "publish: $publish"
 
@@ -126,8 +147,14 @@ jobs:
         shell: bash
         run: |
           app=$(ls -d dist/mac*/*.app | head -1)
-          codesign --verify --deep --strict --verbose=2 "$app" || echo "::warning::app is not (validly) signed"
-          spctl -a -vvv -t exec "$app" || echo "::warning::Gatekeeper would reject this build (unsigned or not notarized)"
+          if [ "$EB_PUBLISH" = "always" ]; then
+            codesign --verify --deep --strict --verbose=2 "$app"
+            spctl -a -vvv -t exec "$app"
+            xcrun stapler validate "$app"
+          else
+            codesign --verify --deep --strict --verbose=2 "$app" || echo "::warning::app is not (validly) signed"
+            spctl -a -vvv -t exec "$app" || echo "::warning::Gatekeeper would reject this build (unsigned or not notarized)"
+          fi
 
       - name: Packaged app check (bundled engine, mock + real health)
         shell: bash

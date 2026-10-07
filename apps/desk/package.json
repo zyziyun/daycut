@@ -1,7 +1,7 @@
 {
   "name": "video-studio-desk",
   "productName": "Daycut",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Daycut (日剪): turn one recording into a month of short videos. Desktop app built on the open-source video-studio engine.",
   "main": "out/main/index.cjs",
@@ -18,6 +18,7 @@
     "test:unit": "vitest run",
     "test:engine": "python3 -m unittest discover -s engine/tests",
     "test:e2e": "npm run build && playwright test",
+    "release:mac": "bash scripts/release-mac.sh",
     "dist:mac:unsigned": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --config electron-builder.config.cjs --mac --arm64 --publish never -c.mac.notarize=false",
     "dist:win": "npm run build && electron-builder --config electron-builder.config.cjs --win nsis --x64 --publish never",
     "dist:appx": "npm run build && electron-builder --config electron-builder.config.cjs --win appx --x64 --publish never",

@@ -14,6 +14,7 @@ import { extraBinDirs } from './engine';
 import { prependPath } from './runtime';
 import type { SettingsStore } from './settings';
 import { ptyProblem, startTerminal, type TermSession } from './terminal';
+import { devOnly } from './testHooks';
 
 type Handle = <C extends IpcChannel>(channel: C, fn: (p: IpcPayload<C>) => unknown) => void;
 
@@ -45,7 +46,7 @@ export function writeRoutesFile(userData: string, routes: AiRoutes | undefined |
 
 /** DESK_AI_MOCK=<dir>: status.json / login.json / routes.json / test.json stand in for the engine (tests). */
 function mockDir(): string | null {
-  return process.env.DESK_AI_MOCK || null;
+  return devOnly('DESK_AI_MOCK') || null;
 }
 function readMock<T>(name: string): T | null {
   const d = mockDir();
@@ -66,7 +67,11 @@ export function runLlm(py: { python: string; env: NodeJS.ProcessEnv }, args: str
     let err = '';
     child.stdout.on('data', (d) => (out += d));
     child.stderr.on('data', (d) => (err += d));
-    const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs);
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill('SIGKILL');
+    }, timeoutMs);
     child.on('error', (e) => {
       clearTimeout(timer);
       reject(e);
@@ -77,10 +82,22 @@ export function runLlm(py: { python: string; env: NodeJS.ProcessEnv }, args: str
       try {
         resolve(JSON.parse(out.slice(Math.max(0, start))));
       } catch {
-        reject(new Error(`vstudio.llm ${args[0]} failed (${code}): ${err.trim().split('\n').slice(-1)[0] ?? ''}`.slice(0, 300)));
+        if (timedOut) reject(new Error(`vstudio.llm ${args[0]} timed out after ${Math.round(timeoutMs / 1000)} s`));
+        else reject(new Error(`vstudio.llm ${args[0]} failed (${code}): ${err.trim().split('\n').slice(-1)[0] ?? ''}`.slice(0, 300)));
       }
     });
   });
+}
+
+/** auth status with the claude-code round-trip, and without it (fallback when the round-trip hangs) */
+export const STATUS_PROBE_MS = 45_000;
+export const STATUS_QUICK_MS = 25_000;
+
+/** A status failure as a code: the engine itself is broken / it took too long / anything else. */
+export function statusErrorCode(msg: string): 'engine' | 'timeout' | 'failed' {
+  if (/timed out/i.test(msg)) return 'timeout';
+  if (/No module named|ModuleNotFoundError|ImportError|ENOENT|EACCES|spawn /i.test(msg)) return 'engine';
+  return 'failed';
 }
 
 let term: TermSession | null = null;
@@ -98,17 +115,32 @@ export function registerAiIpc(handle: Handle, d: AiDeps) {
   handle('ai:status', async (p) => {
     if (lastStatus && !p?.refresh) return lastStatus;
     const mock = readMock<{ providers: AuthStatusMsg['providers'] }>('status.json');
+    const base = ['auth', 'status', '--json', ...(p?.providers ?? []).flatMap((x) => ['--provider', x])];
+    const run = (probe: boolean, ms: number) => runLlm(d.python(), probe ? base : [...base, '--no-probe'], ms) as Promise<{ providers: AuthStatusMsg['providers'] }>;
     try {
-      const args = ['auth', 'status', '--json'];
-      if (p?.probe === false) args.push('--no-probe');
-      for (const x of p?.providers ?? []) args.push('--provider', x);
-      const r = (mock ?? (await runLlm(d.python(), args, 120000))) as { providers: AuthStatusMsg['providers'] };
+      let probeTimedOut = false;
+      let r: { providers: AuthStatusMsg['providers'] };
+      if (mock) r = mock;
+      else if (p?.probe === false) r = await run(false, STATUS_QUICK_MS);
+      else {
+        try {
+          r = await run(true, STATUS_PROBE_MS);
+        } catch (e) {
+          // an expired Claude Code login can take minutes to fail: show what is known without the round-trip
+          if (statusErrorCode((e as Error).message) !== 'timeout') throw e;
+          probeTimedOut = true;
+          r = await run(false, STATUS_QUICK_MS);
+        }
+      }
       const rows = r.providers ?? [];
       // a partial refresh (one provider) updates that row only
       const merged = p?.providers?.length && lastStatus ? lastStatus.providers.map((x) => rows.find((y) => y.provider === x.provider) ?? x) : rows;
-      lastStatus = { providers: merged, at: Date.now() };
+      lastStatus = { providers: merged, at: Date.now(), ...(probeTimedOut ? { probeTimedOut } : {}) };
     } catch (e) {
-      lastStatus = { providers: lastStatus?.providers ?? [], at: Date.now(), error: (e as Error).message };
+      // never the raw text (a Python traceback with paths): a code the page words itself
+      const code = statusErrorCode((e as Error).message);
+      d.log(`[ai] auth status: ${code}`);
+      lastStatus = { providers: lastStatus?.providers ?? [], at: Date.now(), error: code };
     }
     return lastStatus;
   });
@@ -189,10 +221,24 @@ export function registerAiIpc(handle: Handle, d: AiDeps) {
     d.settings().set({ aiRoutes: routes ?? undefined });
     writeRoutesFile(d.userData, routes);
     initial ??= routesFromEngine(await engineRoutes());
+    if (!routes) writeRoutesFile(d.userData, initial); // back to the defaults: the engine follows what is shown
     const msg = { saved: routes, initial, routes: routes ?? initial };
     send('ai:routes', msg);
     return msg;
   });
+  /** Fresh profile (nothing saved): the engine follows the routes the page shows (persona values, else Claude Code
+   * with Codex as fallback), instead of "none" while the page claims Claude Code (P1-6). */
+  return {
+    primeRoutes: async () => {
+      if (d.settings().get().aiRoutes) return;
+      initial ??= routesFromEngine(await engineRoutes());
+      try {
+        writeRoutesFile(d.userData, initial);
+      } catch {
+        /* read-only profile */
+      }
+    },
+  };
 }
 
 /** At start-up: the routes file matches the saved settings (written by an older run, or removed). */

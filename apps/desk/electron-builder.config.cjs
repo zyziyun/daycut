@@ -66,6 +66,21 @@ module.exports = {
     { from: 'build/runtime/${platform}-${arch}', to: 'runtime' },
   ],
   publish: [{ provider: 'github', owner: RELEASES_OWNER, repo: RELEASES_REPO, releaseType: 'draft' }],
+  // Electron fuses (flipped in the binary, then signed): no "run as node", no NODE_OPTIONS / --inspect, the app code
+  // only from an integrity-checked app.asar, encrypted cookies, no extra file:// privileges. Without these any local
+  // process could run code as the signed Daycut and read its keychain item (the stored API keys).
+  // Packaged tests attach over CDP (--remote-debugging-port), not the Node inspector (tests/packaged).
+  electronFuses: {
+    runAsNode: false,
+    enableNodeOptionsEnvironmentVariable: false,
+    enableNodeCliInspectArguments: false,
+    enableEmbeddedAsarIntegrityValidation: true,
+    onlyLoadAppFromAsar: true,
+    enableCookieEncryption: true,
+    grantFileProtocolExtraPrivileges: false,
+    loadBrowserProcessSpecificV8Snapshot: false,
+    resetAdHocDarwinSignature: true, // unsigned arm64 test builds must still launch
+  },
 
   mac: {
     icon: 'packaging/resources/icon.icns', // scripts/brand/icons.mjs
@@ -78,10 +93,6 @@ module.exports = {
     entitlementsInherit: 'packaging/mac/entitlements.mac.inherit.plist',
     signIgnore: [RUNTIME_NON_CODE],
     notarize: true, // only acts when the APPLE_* variables above are present
-    extendInfo: {
-      NSCameraUsageDescription: 'Not used.',
-      NSMicrophoneUsageDescription: 'Not used.',
-    },
   },
   dmg: {
     sign: false,
