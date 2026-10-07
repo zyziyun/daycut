@@ -8,7 +8,7 @@
 //   quiet     - "All clear" + Continue tiles; first run - six starting points
 // Every project / clip / post on the page is the same link as everywhere else (lib/nav).
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, CalendarDays, Check, ChevronDown, ChevronRight, File as FileIcon, FileText, Film, Folder, FolderOpen, Image as ImageIcon, Lightbulb, MessageSquare, Mic, MoreHorizontal, Music, Paperclip, Plus, Repeat, Sparkles, Video, X } from 'lucide-react';
+import { ArrowRight, CalendarDays, Check, ChevronDown, ChevronRight, File as FileIcon, FileText, Film, Folder, FolderOpen, GraduationCap, Image as ImageIcon, Lightbulb, MessageSquare, MessagesSquare, Mic, MoreHorizontal, Music, Paperclip, Plus, Repeat, Sparkles, Video, X } from 'lucide-react';
 import type { HistoryItem } from '../../../shared/v02';
 import type { CalendarPost, InboxItem, IntakeJob } from '../../../shared/v04';
 import { fmtAgo, fmtTime, getLang, t, tk, type MessageKey } from '../i18n';
@@ -32,11 +32,13 @@ import { useWeekPlan } from '../weekplan/useWeekPlan';
 import { WeekPlanCard } from '../weekplan/WeekPlanCard';
 import '../theme/uxcore.css';
 
-/** First run: six starting points (title, what it does, the request it fills in). */
+/** First run: the starting points (title, what it does, the request it fills in). */
 const STARTS: { icon: typeof Film; title: MessageKey; sub: MessageKey; prompt: MessageKey }[] = [
   { icon: Film, title: 'home.start.clips', sub: 'home.start.clipsSub', prompt: 'home.idea1Prompt' },
   { icon: Mic, title: 'home.start.talking', sub: 'home.start.talkingSub', prompt: 'home.idea2Prompt' },
   { icon: MessageSquare, title: 'home.start.course', sub: 'home.start.courseSub', prompt: 'home.idea3Prompt' },
+  { icon: GraduationCap, title: 'home.start.lesson', sub: 'home.start.lessonSub', prompt: 'home.start.lessonPrompt' },
+  { icon: MessagesSquare, title: 'home.start.qa', sub: 'home.start.qaSub', prompt: 'home.start.qaPrompt' },
   { icon: Lightbulb, title: 'home.start.explainer', sub: 'home.start.explainerSub', prompt: 'home.idea4Prompt' },
   { icon: Repeat, title: 'home.start.series', sub: 'home.start.seriesSub', prompt: 'home.idea5Prompt' },
   { icon: Folder, title: 'home.start.folder', sub: 'home.start.folderSub', prompt: 'home.start.folderPrompt' },
