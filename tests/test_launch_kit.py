@@ -236,6 +236,9 @@ def test_fit_measures_the_font():
 def test_red_accent_is_flagged():
     assert B.is_reddish("#FF2442") and B.is_reddish("#D42A43")
     assert not B.is_reddish("#0E9484") and not B.is_reddish("#2F6F9F") and not B.is_reddish("#A84F2D")
+    assert B.warnings({"brand": {"colors": {"accent": "#0A7266"}}}) == []
+    w = B.warnings({"brand": {"colors": {"accent": "#FF2442", "ink": "#9A9A9A"}}})
+    assert len(w) == 2 and "red" in w[0] and "contrast" in w[1]
 
 
 def test_build_writes_a_lint_clean_shaped_project(cfg, shots, tmp_path):

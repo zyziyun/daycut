@@ -43,8 +43,9 @@ def warnings(cfg):
     out = []
     if is_reddish(T["accent"]):
         out.append(f"brand accent {T['accent']} reads as red; the editorial look keeps red out of overlays")
-    if TH.contrast(T["ink"], T["paper"]) < 7:
-        out.append(f"ink {T['ink']} on paper {T['paper']}: contrast {TH.contrast(T['ink'], T['paper']):.1f} < 7")
+    c = TH.contrast(TH.rgb(T, "ink"), TH.rgb(T, "paper"))
+    if c < 7:
+        out.append(f"ink {T['ink']} on paper {T['paper']}: contrast {c:.1f} < 7")
     return out
 
 
