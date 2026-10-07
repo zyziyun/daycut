@@ -126,7 +126,11 @@ export function suggestions(doc: OutputDoc): Suggestion[] {
 }
 
 const CJK = /[\u4e00-\u9fff]/;
-const STOP = new Set(['你在', '我在', '我们', '你们', '他们', '就是', '然后', '这个', '那个', '一个', '因为', '所以', '但是', '其实', '可能', '什么', '自己', '没有', '还是', '如果', '的话', '这样', '时候', '大家']);
+const STOP = new Set(['你在', '我在', '我觉得', '觉得', '不同', '知道', '应该', '需要', '一下', '东西', '事情', '比较', '现在', '之后', '时间', '我们', '你们', '他们', '就是', '然后', '这个', '那个', '一个', '因为', '所以', '但是', '其实', '可能', '什么', '自己', '没有', '还是', '如果', '的话', '这样', '时候', '大家']);
+
+// function characters: a "word" that starts / ends with one is an ASR fragment, not a key word
+const FUNC_HEAD = /^[的了是在有也都就和而与或这那些个一吗呢吧啊么着过很太]/;
+const FUNC_TAIL = /[的了吗呢吧啊么着过们]$/;
 
 /** Words worth popping: CJK words (2-4 characters) that are in the title first, then the most repeated ones;
  * the transcript's own words only (never invented), each once, not already popped. */
@@ -136,7 +140,7 @@ export function keyWords(doc: Pick<OutputDoc, 'words' | 'effects' | 'title' | 'p
   const freq = new Map<string, { n: number; t: number }>();
   for (const w of doc.words) {
     const s = w.w.trim();
-    if (s.length < 2 || s.length > 4 || !CJK.test(s) || STOP.has(s) || used.has(s)) continue;
+    if (s.length < 2 || s.length > 4 || !CJK.test(s) || STOP.has(s) || used.has(s) || FUNC_HEAD.test(s) || FUNC_TAIL.test(s)) continue;
     const f = freq.get(s);
     if (f) f.n++;
     else freq.set(s, { n: 1, t: w.t });
