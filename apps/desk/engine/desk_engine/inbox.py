@@ -250,9 +250,11 @@ class Inbox:
                 if k not in answers:
                     items.append(dict(key=k, kind="checkpoint", group="other", project=proj, code=None, params={},
                                       text=live.get("message"), minutes=1, source="live", at=live.get("heartbeat")))
+        engine_read = False
         if self.real():
             try:
                 doc = self._engine_inbox()
+                engine_read = True
                 by_dir = {os.path.realpath(e["dir"]): e for e in hist}
                 for p in (doc.get("entries") or doc.get("items") or doc.get("pending") or []) if isinstance(doc, dict) else []:
                     if not isinstance(p, dict):
@@ -286,12 +288,12 @@ class Inbox:
             except Exception:  # noqa: BLE001
                 pass
         # a run parked at a checkpoint shows up twice (its live status + the engine's own entry): keep the engine's,
-        # which has the options
+        # which has the options. For a project the engine's inbox is the whole truth: its last run's "needs you"
+        # outlives the answers until the next run writes its status, and would read "A decision is waiting" for
+        # nothing
         asked = {i["project"]["id"] for i in items if i["source"] == "engine"}
-        items = [i for i in items if not (i["source"] == "live" and i["project"]["id"] in asked)]
-        # a run waiting at a checkpoint also writes "needs you" in its status: the engine's own item says what it is
-        asked = {i["project"]["id"] for i in items if i["source"] == "engine"}
-        items = [i for i in items if not (i["source"] == "live" and i["project"]["id"] in asked)]
+        items = [i for i in items if not (i["source"] == "live" and (i["project"]["id"] in asked or (
+            engine_read and i["project"].get("kind") == "project")))]
         for src in self.extra:
             try:
                 items += [i for i in src() if i["key"] not in answers]
