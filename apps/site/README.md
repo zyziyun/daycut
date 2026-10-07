@@ -31,7 +31,7 @@ npm run build        # static site in dist/ (+ sitemap-index.xml)
 npm run check        # copy rules + site checks on dist/ (below)
 npm run preview      # serve dist/
 npm run screenshots  # node scripts/screenshot.mjs <baseUrl> [name-regex]: full-page PNGs into screenshots/
-npm run deploy       # build + wrangler deploy (Cloudflare Worker, see wrangler.jsonc). First time: npx wrangler login
+npm run deploy       # manual build + wrangler deploy (normally CI does this on every push to main: docs/CI_CD.md)
 ```
 
 Generators (outputs are committed, so `npm run build` needs only Node):
@@ -60,7 +60,8 @@ src/components/             Seo, SiteNav, SiteFooter, Ctas, Print, Img (AVIF+Web
                             OpenSource, FinalCta), Privacy, Terms
 src/views/                  page templates (HomePage, UseCasePage, ComparePage, PlatformsPage, LegalPage)
 src/pages/                  thin route files: / , /[slug]/, /compare/[tool]/, /platforms/, … and the same under zh/ fr/ es/
-src/lib/                    zhHeading (中文 clause-safe line breaks), images (screenshot registry), schema (JSON-LD)
+src/lib/                    zhHeading (中文 clause-safe line breaks), images (screenshot registry), schema (JSON-LD),
+                            releaseStatus (build-time downloadReady from the GitHub API)
 src/assets/                 app screenshots (re-rendered with the Reelfold name), batch covers, demo sheets
 src/styles/global.css       tokens + all component styles (ported from the F prototype)
 scripts/                    check-copy, check-site, subset-zh-font.py, og, export-platforms.py, fr-typo.py, screenshot, brand
@@ -69,10 +70,14 @@ docs/SEO_SUBMIT.md          Google Search Console, Bing Webmaster, 百度站长 
 
 ## The "coming soon" switch
 
-`SITE.downloadReady` in `src/config.ts` (default `false`, because no macOS release exists yet). While `false`, every
-CTA on every page and language is **Star on GitHub** + **Build from source**, the fine print says the macOS app is
-coming soon, the header button is "Star", and the JSON-LD has no `downloadUrl`. Set it to `true` once
-`https://github.com/zyziyun/reelfold/releases/latest` has a release: everything switches to **Download for macOS**.
+`SITE.downloadReady` in `src/config.ts`, decided at build time by `src/lib/releaseStatus.ts`: `true` when
+`https://github.com/zyziyun/reelfold/releases/latest` is a published release with a `.dmg` (GitHub API; drafts never
+count). While `false`, every CTA on every page and language is **Star on GitHub** + **Build from source**, the fine
+print says the macOS app is coming soon, the header button is "Star", and the JSON-LD has no `downloadUrl`; once `true`
+everything switches to **Download for macOS**. The deploy workflow (`.github/workflows/deploy-web.yml`) also runs on
+`release: published`, so publishing a desk release turns the buttons on within minutes. `SITE_DOWNLOAD_READY=1` / `0`
+forces it; `DOWNLOAD_READY_FALLBACK` in `config.ts` is used only when the API cannot be reached. The build logs
+`[site] downloadReady=… (reason)`.
 
 ## SEO
 
@@ -104,7 +109,7 @@ Mobile and desktop for `/`, `/zh/`, `/fr/`, `/es/`: Performance 98–100, Access
 
 1. `SITE.contactEmail` (legal pages) is a placeholder.
 2. Legal review of `/privacy` and `/terms`, then remove the draft banners and `noindex`.
-3. First macOS release, then `downloadReady: true`.
+3. First macOS release: publish it on GitHub; the site redeploys and `downloadReady` turns on by itself.
 4. Enable GitHub Discussions (linked from the open-source section and footer).
 5. Re-check `src/content/compare.ts` before changing `CHECKED`; prices and features of other tools change.
 6. Submit the site to search engines: `docs/SEO_SUBMIT.md`.

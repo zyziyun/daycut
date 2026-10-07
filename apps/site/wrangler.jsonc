@@ -1,5 +1,5 @@
 // Cloudflare Worker that serves the static site (dist/) on reelfold.com.
-// Deploy: npm run deploy   (first time: npx wrangler login)
+// Deploy: automatic on push to main (.github/workflows/deploy-web.yml, docs/CI_CD.md); by hand: npm run deploy
 {
   "name": "reelfold-site",
   "compatibility_date": "2026-10-01",
