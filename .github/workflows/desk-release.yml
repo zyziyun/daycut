@@ -27,6 +27,10 @@ on:
         description: 'Also build the experimental Windows installer (unsigned, artifact only)'
         type: boolean
         default: false
+      mac:
+        description: 'Build the macOS app (untick for a Windows-only test build)'
+        type: boolean
+        default: true
 permissions:
   contents: read
 concurrency:
@@ -35,6 +39,7 @@ concurrency:
 jobs:
   mac:
     name: macOS arm64 (signed + notarized)
+    if: github.event_name != 'workflow_dispatch' || inputs.mac
     runs-on: macos-15 # Apple silicon
     timeout-minutes: 120
     permissions:
@@ -197,16 +202,19 @@ jobs:
           rm -f "$RUNNER_TEMP"/AuthKey_*.p8 "$RUNNER_TEMP/cert.p12"
 
   # EXPERIMENTAL: Windows x64 installer, unsigned, never attached to a release (v0.2 ships macOS only). Opt-in on a
-  # manual run (windows: true); allowed to fail. To ship it: add Windows signing (apps/desk/docs/RELEASING.md §3) and
-  # an upload step like the mac job's.
+  # manual run (windows: true; untick mac for a Windows-only run); allowed to fail. Besides building it checks the
+  # real thing: the bundled runtime transcribes a real recording (faster-whisper), the unpacked app and the INSTALLED
+  # app (silent NSIS install into the runner's profile) pass the packaged-app checks. To ship it: Windows signing
+  # (apps/desk/docs/RELEASING.md "Windows") and an upload step like the mac job's.
   windows:
     name: Windows x64 (experimental, unsigned)
     if: github.event_name == 'workflow_dispatch' && inputs.windows
     runs-on: windows-latest
     continue-on-error: true
-    timeout-minutes: 90
+    timeout-minutes: 120
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      DESK_HIDE_WINDOW: '1'
     defaults:
       run:
         shell: bash
@@ -225,8 +233,11 @@ jobs:
           path: apps/desk/build/.cache
           key: runtime-win32-x64-${{ hashFiles('apps/desk/packaging/runtime.lock.json', 'apps/desk/packaging/requirements/*.txt', 'apps/desk/packaging/ffmpeg/*.txt') }}
           restore-keys: runtime-win32-x64-
-      - run: node scripts/runtime/bundle.mjs --target=win32-x64
-      - run: npm run dist:win
+      - name: Engine runtime (python + LGPL ffmpeg + engine; import / encoder / path-length checks)
+        timeout-minutes: 45
+        run: node scripts/runtime/bundle.mjs --target=win32-x64
+      - name: Installer (unsigned NSIS)
+        run: npm run dist:win
       - uses: actions/upload-artifact@v7
         with:
           name: reelfold-win32-x64-unsigned
@@ -235,3 +246,36 @@ jobs:
             apps/desk/dist/*.exe
             apps/desk/dist/*.blockmap
             apps/desk/dist/latest*.yml
+      - name: Packaged checks on the unpacked app (incl. a real transcription)
+        env:
+          DESK_TEST_ASR: '1'
+        run: npx playwright test -c playwright.packaged.config.ts
+      - name: Install silently, run the packaged checks on the installed app, uninstall
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem dist -Filter 'Reelfold-*-win-x64.exe' | Select-Object -First 1
+          Start-Process -Wait -FilePath $exe.FullName -ArgumentList '/S'
+          $app = Join-Path $env:LOCALAPPDATA 'Programs\Reelfold\Reelfold.exe'
+          if (-not (Test-Path $app)) { throw "not installed at $app" }
+          "installed: $app"
+          $env:DESK_APP_PATH = $app
+          npx playwright test -c playwright.packaged.config.ts
+          if ($LASTEXITCODE -ne 0) { throw "packaged checks failed on the installed app" }
+          $un = Join-Path $env:LOCALAPPDATA 'Programs\Reelfold\Uninstall Reelfold.exe'
+          Start-Process -Wait -FilePath $un -ArgumentList '/S'
+          if (Test-Path $app) { throw "uninstall left $app" }
+          "uninstalled"
+      - name: Sizes
+        run: |
+          ls -l dist/*.exe dist/*.blockmap dist/latest*.yml
+          du -sh dist/win-unpacked dist/win-unpacked/resources/runtime
+          {
+            echo "### Windows x64 (unsigned) installer"
+            echo '```'
+            ls -l dist/*.exe | awk '{printf "%s  %.0f MB\n", $NF, $5/1048576}'
+            du -sh dist/win-unpacked
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with: { name: windows-packaged-test-results, path: apps/desk/test-results, retention-days: 7 }

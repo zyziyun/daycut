@@ -1,5 +1,6 @@
 # Reelfold desk app (apps/desk): lint + typecheck, unit tests, sidecar engine tests (against this repo's engine) and
-# the Electron e2e suite (hidden windows) on macOS.
+# the Electron e2e suite (hidden windows) on macOS. The windows job runs the same checks plus the engine's pytest on
+# windows-latest; it is a non-blocking smoke test (continue-on-error) while Windows support is in preview.
 name: Desk CI
 on:
   pull_request:
@@ -60,3 +61,60 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: failure()
         with: { name: desk-test-results, path: apps/desk/test-results, retention-days: 7 }
+
+  windows:
+    name: Windows smoke (preview, non-blocking)
+    runs-on: windows-latest
+    continue-on-error: true
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+        working-directory: apps/desk
+    env:
+      DESK_HIDE_WINDOW: '1'
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: { node-version: 22, cache: npm }
+      - uses: actions/setup-python@v7
+        with: { python-version: '3.12', cache: pip }
+      - name: Engine deps + ffmpeg
+        working-directory: .
+        run: |
+          python -m pip install -r tests/requirements.txt
+          python -c "import yaml, numpy, cv2, mediapipe, faster_whisper; print('deps ok')"
+          choco install ffmpeg -y --no-progress >/dev/null
+          ffmpeg -hide_banner -version | head -1
+          echo "DESK_PYTHON=$(python -c 'import sys; print(sys.executable)')" >> "$GITHUB_ENV"
+      - run: npm ci
+        working-directory: .
+      - run: npm run lint
+      # every check below runs even after a failure, so one run shows all Windows failures
+      - name: Unit tests
+        if: success() || failure()
+        run: npm run test:unit
+      - name: Electron binary (downloaded up front, not lazily inside the first test)
+        if: success() || failure()
+        working-directory: .
+        run: node node_modules/electron/install.js && node -e "console.log(require('electron'))"
+      - name: Build
+        if: success() || failure()
+        run: npm run build
+      - name: App start check (main log)
+        if: success() || failure()
+        run: node scripts/startCheck.mjs 45
+      - name: Sidecar engine tests
+        if: success() || failure()
+        run: python -m unittest discover -s engine/tests
+      - name: Engine pytest
+        if: success() || failure()
+        working-directory: .
+        run: python -m pytest -q -p no:cacheprovider
+      - name: Electron e2e (hidden windows, mock + real engine)
+        if: success() || failure()
+        run: npx playwright test
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with: { name: desk-test-results-windows, path: apps/desk/test-results, retention-days: 7 }
