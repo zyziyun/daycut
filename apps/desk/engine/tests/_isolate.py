@@ -11,6 +11,12 @@ import shutil
 import sys
 import tempfile
 
+# test this checkout's engine: an editable install elsewhere (e.g. another worktree) must not shadow it, here or in the
+# engine subprocesses the tests start (PYTHONPATH comes before .pth entries)
+_REPO_LIB = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..", "lib"))
+sys.path.insert(0, _REPO_LIB)
+os.environ["PYTHONPATH"] = os.pathsep.join([_REPO_LIB] + [p for p in os.environ.get("PYTHONPATH", "").split(os.pathsep) if p])
+
 # the test engine (fake batches, rule plans, fake Create services) lives here, never in desk_engine
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures"))
 
