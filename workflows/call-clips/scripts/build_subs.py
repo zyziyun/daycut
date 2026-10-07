@@ -11,6 +11,7 @@ import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().par
 import argparse, json
 
 from vstudio.asr import apply_term_fixes
+from vstudio.subs import join_caption, text_width
 
 # Call-site REGEX fixes for code-switched zh/en call audio, on top of vstudio.asr's generic list
 # (reasoning, 思维导图, figure out, GitHub, ... live there). Where fixes come from, in order:
@@ -44,7 +45,7 @@ def main():
     ap.add_argument("--start", type=float, required=True)
     ap.add_argument("--end", type=float, required=True)
     ap.add_argument("--out", required=True)
-    ap.add_argument("--max-chars", type=int, default=20)
+    ap.add_argument("--max-chars", type=int, default=20, help="merge limit, CJK chars (latin counts 1/2)")
     ap.add_argument("--max-gap", type=float, default=0.45)
     ap.add_argument("--config", default=None, help="clips.json whose term_fix list to apply first")
     args = ap.parse_args()
@@ -62,8 +63,8 @@ def main():
         b = min(s["end"], args.end) - args.start
         if lines:
             prev = lines[-1]
-            merged = prev["text"] + txt
-            if len(merged) <= args.max_chars and a - prev["end"] <= args.max_gap:
+            merged = join_caption([prev["text"], txt])        # "any" + "way" keeps its space; CJK glues
+            if text_width(merged) <= args.max_chars and a - prev["end"] <= args.max_gap:
                 prev["text"] = merged
                 prev["end"] = b
                 continue

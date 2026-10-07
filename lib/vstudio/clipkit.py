@@ -73,7 +73,7 @@ def _fit_lines(text, role_key, size, max_w, max_lines, min_size=28):
     while True:
         f = _font(role_key, size)
         lines = D.wrap(text, f, max_w, balance=True)
-        if len(lines) <= max_lines or size <= min_size:
+        if (len(lines) <= max_lines and D.fits(lines, f, max_w)) or size <= min_size:
             return f, lines[:max_lines] if len(lines) > max_lines else lines
         size = int(size * 0.9)
 

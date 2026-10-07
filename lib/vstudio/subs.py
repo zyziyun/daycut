@@ -5,6 +5,8 @@ bilingual pairing and retiming through a cut.
     cues = subs.cues_from_words(tr["words"])                 # draft lines from ASR words
     cues = subs.retime(cues, timemap)                         # source -> final seconds
     subs.wrap_cjk("我们用Claude Code做了一个HyperFrames视频", 12)
+    subs.caption_chunks(long_text, 22, max_lines=2)            # THE caption splitter: cue texts, never mid-word
+    subs.join_caption(["any", "way"]); subs.split_two(title)  # seams / two-line titles, same rules
     subs.fit_caption(text, "cjk-bold", box=(x0, y0, x1, y1), max_lines=2)   # -> size + lines, fits w AND h
     subs.srt_write(cues, "out/zh.srt"); subs.ass_write(cues, "work/subs.ass", w=1080, h=1920)
 
@@ -76,7 +78,8 @@ def strip_markup(text):
 
 
 # ------------------------------------------------------------------ wrapping
-_LATIN = re.compile(r"[A-Za-z0-9%/+.\-'’&@#_$€£]+")
+# a latin-script word (accented / Greek / Cyrillic letters too: "café", "Ελλάδα") is one unbreakable unit
+_LATIN = re.compile(r"[A-Za-z0-9\u00C0-\u024F\u0370-\u03FF\u0400-\u04FF\u1E00-\u1EFF%/+.\-'’&@#_$€£]+")
 _CLOSE = set("，。、！？；：”’）》」』】,.!?;:)]…%")
 _OPEN = set("“‘（《「『【([")
 
@@ -88,6 +91,11 @@ def char_width(c):
 
 def text_width(s):
     return sum(char_width(c) for c in s)
+
+
+def char_len(s):
+    """Characters actually shown (markup removed): the unit of the per-platform ``max_chars_en`` limits."""
+    return len(strip_markup(s))
 
 
 def _tokens(text):
@@ -266,6 +274,50 @@ def balanced_wrap(text, max_width, measure=None, max_lines=None, word_aware=True
             if fits:
                 break
     return best or [text.strip()]
+
+
+def split_two(text, measure=None):
+    """``text`` as at most two balanced lines (cover titles, title bands, hook lines): the same breaks as
+    ``balanced_wrap`` - latin words never split, no line starting with closing punctuation, CJK words kept
+    together where possible. One unbreakable word stays one line."""
+    t = (text or "").strip()
+    if not t:
+        return []
+    m = measure or text_width
+    return balanced_wrap(t, m(strip_markup(t)) / 2, measure=measure, max_lines=2)
+
+
+def _seam_space(a, b):
+    """True when caption pieces ``a`` + ``b`` join with a space: latin on both sides of the seam ("the" +
+    "word", "Claude" + "Code做"), never next to CJK or before closing / after opening punctuation."""
+    x, y = strip_markup(a).rstrip(), strip_markup(b).lstrip()
+    if not x or not y or _cjk(x[-1]) or _cjk(y[0]):
+        return False
+    return y[0] not in _CLOSE and x[-1] not in _OPEN
+
+
+def join_caption(parts):
+    """Caption pieces (lines, cue fragments, ASR segments) -> one text: a space between latin words, none
+    between CJK characters ("我们用" + "Claude Code" -> "我们用Claude Code", "any" + "way" -> "any way")."""
+    out = ""
+    for p in parts:
+        p = str(p or "").strip()
+        if p:
+            out = out + (" " if out and _seam_space(out, p) else "") + p
+    return out
+
+
+def caption_chunks(text, line_width, max_lines=2, measure=None):
+    """Split one long caption into cue texts of at most ``max_lines`` lines of ``line_width`` (``text_width``
+    units unless ``measure`` is given): the shared caption splitter. Lines come from ``balanced_wrap``
+    (latin words whole, CJK per character with no-break punctuation, mixed text at script changes), then
+    ``max_lines`` consecutive lines make one cue. Returns [text] when it already fits."""
+    t = (text or "").strip()
+    if not t:
+        return []
+    lines = balanced_wrap(t, line_width, measure=measure)
+    n = max(1, int(max_lines))
+    return [join_caption(lines[i:i + n]) for i in range(0, len(lines), n)]
 
 
 def wrap_cjk(text, max_chars=None, max_lines=None):

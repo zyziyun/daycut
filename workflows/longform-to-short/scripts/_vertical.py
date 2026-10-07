@@ -993,7 +993,8 @@ def title_band(size, eyebrow, title, P, margin, hook=None):
         lines = draw.wrap(title or "", ft, maxw, balance=True)
         lh = int(sum(ft.getmetrics()) * 1.08)
         he = sum(fe.getmetrics()) if eyebrow else 0
-        if (len(lines) <= 2 and he + int(H * 0.05) + lh * len(lines) <= H * 0.86) or size_t <= 26:
+        if (len(lines) <= 2 and draw.fits(lines, ft, maxw) and he + int(H * 0.05) + lh * len(lines) <= H * 0.86) \
+                or size_t <= 26:
             break
         size_t -= 4
     block = he + (int(H * 0.05) if eyebrow else 0) + lh * len(lines)
@@ -1023,22 +1024,12 @@ def hook_box(lines, width, P):
 
 
 # ----------------------------------------------------------------------------------- captions
-def _join_lines(lines):
-    """Wrapped lines back into one caption: CJK lines meet directly, but a latin word on both sides of a break
-    keeps its space (用 Claude / Code 来做 -> 用 Claude Code 来做, never ClaudeCode)."""
-    out = ""
-    for ln in lines:
-        ln = ln.strip()
-        if out and ln and ord(out[-1]) < 0x2E80 and ord(ln[0]) < 0x2E80 and ln[0] not in ",.!?;:)]%…":
-            out += " "
-        out += ln
-    return out
-
-
 def relayout_cues(cues, prof, role="cjk-bold"):
     """Split cues so every one fits the profile's caption box in <= max_lines at a size inside its range
-    (vstudio.platform.fit_text_size); time is shared in proportion to text length."""
-    from vstudio.subs import Cue, balanced_wrap, text_width
+    (vstudio.platform.fit_text_size); time is shared in proportion to text length. Splits come from the shared
+    caption splitter (vstudio.subs.caption_chunks): CJK by ``max_chars_zh`` width, latin by ``max_chars_en``
+    characters, never inside a word."""
+    from vstudio.subs import Cue, balanced_wrap, caption_chunks, char_len, join_caption, text_width
     out = []
     cap = prof.caption
     for c in cues:
@@ -1048,23 +1039,19 @@ def relayout_cues(cues, prof, role="cjk-bold"):
         if PF.fit_text_size(prof, text, role)["fits"]:
             out.append(Cue(c.start, c.end, text, c.alt, c.meta))
             continue
-        per = cap["max_chars_zh"] if draw.has_cjk(text) else cap["max_chars_en"]
-        lines = balanced_wrap(text, per)
-        n = int(cap.get("max_lines", 2))
-        chunks = [_join_lines(lines[i:i + n]) for i in range(0, len(lines), n)]
+        cjk = draw.has_cjk(text)
+        per, meas = (cap["max_chars_zh"], None) if cjk else (cap["max_chars_en"], char_len)
         final = []
-        for ch in chunks:              # rare: pixel width still too wide -> halve
+        for ch in caption_chunks(text, per, int(cap.get("max_lines", 2)), measure=meas):
             stack = [ch]
-            while stack:
+            while stack:              # rare: pixel width still too wide -> two balanced halves
                 s = stack.pop(0)
-                if PF.fit_text_size(prof, s, role)["fits"] or len(s) < 4:
+                halves = [] if PF.fit_text_size(prof, s, role)["fits"] else balanced_wrap(s, text_width(s) / 2 + 1)
+                if len(halves) < 2:   # fits, or one unbreakable word: kept whole (never cut inside a word)
                     final.append(s)
-                else:                       # two balanced halves, breaking after punctuation when possible
-                    halves = balanced_wrap(s, text_width(s) / 2 + 1)
-                    if len(halves) < 2:
-                        halves = [s[:len(s) // 2], s[len(s) // 2:]]
-                    j = len(halves) // 2
-                    stack[:0] = [_join_lines(halves[:j]), _join_lines(halves[j:])]
+                    continue
+                j = len(halves) // 2
+                stack[:0] = [join_caption(halves[:j]), join_caption(halves[j:])]
         tot = sum(max(1.0, text_width(s)) for s in final)
         t = c.start
         for s in final:

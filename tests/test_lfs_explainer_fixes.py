@@ -144,7 +144,7 @@ def test_build_subs_splits_long_english_segment_on_word_boundaries(tmp_path):
     assert " ".join(c["text"] for c in cues) == said.strip()
 
 
-def test_build_subs_mixed_text_keeps_latin_words_and_cjk_unchanged(tmp_path):
+def test_build_subs_mixed_text_keeps_latin_words_and_cjk_by_character(tmp_path):
     from vstudio.subs import text_width
     mixed = "我们今天用ClaudeCode来做一个很长的视频剪辑流程演示然后把filter和database都讲清楚再看看cache怎么warmup最后把这些都串起来"
     zh = "我们今天来做一个很长很长的视频剪辑流程演示然后把每一个步骤都讲清楚再看看缓存怎么预热最后把这些都串起来给大家看"
@@ -155,7 +155,8 @@ def test_build_subs_mixed_text_keeps_latin_words_and_cjk_unchanged(tmp_path):
     for latin in ("ClaudeCode", "filter", "database", "cache", "warmup"):
         assert any(latin in t for t in m), latin
     z = [c["text"] for c in cues if c["start"] >= 8.5]
-    assert z == [zh[i:i + 44] for i in range(0, len(zh), 44)]          # CJK: unchanged, every 44 characters
+    # CJK: split by character into the same two-line chunks the burn-in shows (subs.caption_chunks, 2 x 22)
+    assert len(z) >= 2 and "".join(z) == zh and all(len(t) <= 44 for t in z)
 
 
 def test_build_subs_short_english_piece_keeps_its_space(tmp_path):

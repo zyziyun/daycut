@@ -187,7 +187,8 @@ def _greedy(toks, f, max_w):
 
 
 def _split_wide(toks, f, max_w):
-    """Phrases wider than the line are split back into words; words wider than the line into chars."""
+    """Phrases wider than the line are split back into words. A single latin word wider than the line stays
+    whole (it overflows: callers shrink the font - never "mak / es"); any other over-wide run splits by char."""
     out = []
     for t in toks:
         core = t.rstrip("".join(NO_LINE_START))            # closing punctuation may hang past the edge
@@ -197,9 +198,16 @@ def _split_wide(toks, f, max_w):
             parts = t.split(" ")
             for k, p in enumerate(parts):
                 out += ([" "] if k else []) + _split_wide([p], f, max_w)
+        elif _LATIN.match(t):
+            out.append(t)
         else:
             out += list(t)
     return out
+
+
+def fits(lines, f, max_w) -> bool:
+    """Every line within ``max_w`` px (a shrink loop around ``wrap`` checks this: a long word never splits)."""
+    return all(text_width(ln, f) <= max_w for ln in lines)
 
 
 def _is_orphan(line_toks) -> bool:

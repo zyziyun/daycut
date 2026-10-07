@@ -34,8 +34,6 @@ import _lfc
 from vstudio import asr, subs
 
 FILLER_ONLY = re.compile(r"[嗯啊哦呃哈OK好的。，\s]*")
-# a latin word (with the punctuation glued to it) or one other character, plus the spaces after it
-WORD_TOK = re.compile(r"[A-Za-z0-9'’.\-]+[^\sA-Za-z0-9\u2e80-\U0010ffff]*\s*|\S\s*|\s+")
 
 cfg, _ = _lfc.load(description=__doc__)
 PROF = _lfc.primary_horizontal(cfg)       # None unless targets were set explicitly
@@ -80,27 +78,18 @@ for it in timeline:
         if b - a < 0.25:                 # too short to read alone (a word left between two cuts): it is still
             short.append((a, b, txt))    # SAID, so it joins the caption next to it below
             continue
-        n = MAX_LINE * 2
-        if re.search(r"[A-Za-z]{2}", txt):   # latin / mixed: measure by width, never cut inside a word
-            chunks, cur = [], ""
-            for tok in WORD_TOK.findall(txt):
-                if cur.strip() and subs.text_width(cur + tok) > n and tok[0] not in "，。、！？；：,.!?;:)）】」』》…":
-                    chunks.append(cur.strip()); cur = ""
-                cur += tok
-            if cur.strip():
-                chunks.append(cur.strip())
-        else:
-            chunks = [txt] if len(txt) <= n else [txt[i:i + n] for i in range(0, len(txt), n)]
-        step = (b - a) / len(chunks)
-        events += [(a + i * step, a + (i + 1) * step, c) for i, c in enumerate(chunks)]
+        # a caption longer than two burn-in lines becomes several cues, split where the ASS wrap would break
+        # (vstudio.subs.caption_chunks: latin words whole, CJK by character, no line starting with punctuation);
+        # time is shared by text width
+        chunks = subs.caption_chunks(txt, MAX_LINE, max_lines=2)
+        tot = sum(max(0.5, subs.text_width(c)) for c in chunks)
+        t = a
+        for c in chunks:
+            dt = (b - a) * max(0.5, subs.text_width(c)) / tot
+            events.append((t, t + dt, c))
+            t += dt
 
 events.sort()
-
-
-def _join(x, y):
-    """``x`` then ``y``; latin words on both sides keep a space between them (the database, not thedatabase)."""
-    x, y = x.rstrip(), y.lstrip()
-    return x + (" " if re.search(r"[A-Za-z0-9,.!?;:]$", x) and re.match(r"[A-Za-z0-9]", y) else "") + y
 
 
 OPENERS = ("另外", "然后", "所以", "但是", "而且", "因为", "就是", "那么", "还有", "或者", "如果")
@@ -113,10 +102,10 @@ for a, b, txt in sorted(short):           # captions match the audio: a short pi
         events.append((a, max(b, a + 0.25), txt))
     elif nxt is not None and (gn < gp or txt.strip().startswith(OPENERS) and gn <= 0.5):
         e = events[nxt]
-        events[nxt] = (a, e[1], _join(txt, e[2]))
+        events[nxt] = (a, e[1], subs.join_caption([txt, e[2]]))
     else:
         e = events[prev]
-        events[prev] = (e[0], b, _join(e[2], txt))
+        events[prev] = (e[0], b, subs.join_caption([e[2], txt]))
     events.sort()
 for i in range(1, len(events)):
     pa, pb, pt = events[i - 1]
