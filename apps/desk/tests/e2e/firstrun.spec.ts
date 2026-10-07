@@ -79,6 +79,18 @@ test('fresh profile: welcome -> continue without AI (said out loud) -> platforms
   expect(s.defaultPlatforms).toEqual(['tiktok', 'youtube-shorts']);
 });
 
+test('a fresh profile has no publishing accounts until she adds one (BB-20)', async () => {
+  // through the wizard, Home, Publish, its accounts page and Settings: nothing is seeded, nothing "disconnected"
+  for (const h of ['#/', '#/publish', '#/publish/accounts', '#/settings', '#/settings/publishing', '#/']) {
+    await page.evaluate((x) => (location.hash = x), h);
+    await page.waitForTimeout(400);
+    await expect(page.locator('body')).not.toContainText(/disconnected|19 accounts/i);
+  }
+  expect(await page.evaluate(() => window.desk.publish.accounts())).toEqual({});
+  const st = await page.evaluate(() => window.desk.getSettings());
+  expect(st.accounts ?? {}).toEqual({});
+});
+
 test('Try with a sample: planned without AI in the UI language, started, labelled, deletable', async () => {
   test.setTimeout(90000);
   // first run: the sample card above the starting points; with projects already there (the mock engine lists demo
