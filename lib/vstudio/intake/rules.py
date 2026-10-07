@@ -127,10 +127,16 @@ def parse_prompt(text):
         intent["speed"] = float(m.group(1))
     elif re.search(r"不加速|原速|不要加速", t):
         intent["speed"] = 1.0
-    if re.search(r"竖屏|竖版|9:16|vertical", t):
+    if re.search(r"竖屏|竖版|9:16|3:4|vertical", t):
         intent["orientation"] = "vertical"
     elif re.search(r"横屏|横版|16:9|horizontal", t):
         intent["orientation"] = "horizontal"
+    if re.search(r"9:16|全屏|满屏", t):              # an explicit shape beats the persona's per-platform default
+        intent["shape"] = "full"
+    elif re.search(r"3:4|4:3竖", t):
+        intent["shape"] = "vertical"
+    if re.search(r"保留(原|旧)?字幕|不(要)?(加|换|重做)字幕|字幕不(要)?动", t):
+        intent["keep_captions"] = True
     if re.search(r"英文|英语|english", t):
         intent["language"] = "en"
     elif re.search(r"中文|普通话", t):
@@ -445,14 +451,11 @@ def rule_projects(intent, analysis, ctx):
                 p["materials"] = [src["id"]]
                 p["inputs"] = {key: [src["path"]]}
                 if src.get("burned_captions"):
-                    p["params"].update(captions=False, cleanup_profile="gentle", speed=1.0)
-                    risks.append(f"{src['rel']} 是已剪好的成片（带烧录字幕）：保留原字幕不再叠加、轻度去气口、不再加速")
+                    p["params"].update(cleanup_profile="gentle", speed=1.0)   # layout: plan._burned_defaults
                 p["why"] = f"从 {src['rel']}（{_fmt_dur(src.get('duration'))}）里截出你说的内容，每段一条"
             else:
                 p["items"] = dict(method="per-file", count=len(fs))
                 p["why"] = f"{len(fs)} 条{_role_zh(rmap[fs[0]['id']])}，每条一个视频"
-                if rid == "talkinghead" and any(f.get("burned_captions") for f in fs):
-                    p["params"]["captions"] = False
         elif rid in ("explainer", "preproduction", "slides"):
             docs = [f for f in analysis["files"] if rmap[f["id"]] in ("doc", "slides", "notes", "script") and f["id"] not in used]
             if rid == "explainer":

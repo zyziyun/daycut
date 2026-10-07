@@ -13,6 +13,7 @@ platforms:
   # under platforms.<name>.orientations.<vertical|full|horizontal>.
   default: xiaohongshu     # xiaohongshu | douyin | tiktok | youtube | youtube-shorts | bilibili
   xiaohongshu:
+    post_shape: vertical   # shape when only "小红书" is said (intake / plans): vertical = 3:4 (1080x1440), full = 9:16
     title_max: 20          # 小红书 counts CJK = 1, latin/digit/space = 0.5 (vstudio.config.xhs_len)
     cover_aspect: "3:4"    # vertical posts; horizontal posts show a 4:3 centre crop
     safe_zone: {top: 240, bottom: 1660, right_lower_keepout: 160}   # legacy form, 1080x1920 ("full") canvas
@@ -79,6 +80,10 @@ publish:
   tag_sets: {}             # named alternatives picked per post with tag_set:, e.g. {art: [看展, 艺术]}
                            # a post/spec can also set use_persona_tags: false to use only its own tags
   chapter_line: "时间线在下面，按需跳👇"
+
+intake:                    # one sentence + materials -> plan (python -m vstudio.intake)
+  burned_captions: band    # a finished edit with burned-in captions, cut again: band = crop the old captions off,
+                           # picture in a band, new captions below; keep = leave the old captions, add none
 
 cleanup:                   # shared 气口 / filler / repeat tool (python -m vstudio.cleanup, references/CLEANUP.md)
   profile: standard        # default profile: gentle | standard | tight (vlog / photo-story speech clips use gentle)

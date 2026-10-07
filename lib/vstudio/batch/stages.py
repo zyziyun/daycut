@@ -273,7 +273,8 @@ def run_export(ctx):
     man = X.export(c["master"], _plats(ctx.job), out_dir=ctx.path("exports"),
                    cues=caption_cues(ctx) if p.get("captions", True) else None, covers=covers, post=post,
                    mode=p.get("layout") or "pad-blur", preset=p.get("preset") or "medium",
-                   captions=bool(p.get("captions", True)))
+                   captions=bool(p.get("captions", True)),
+                   **({"crop_bottom": float(p.get("crop_bottom", 0.28))} if p.get("layout") == "band" else {}))
     files = [ctx.path("exports", e["file"]) for e in man["exports"]]
     exports = [dict(platform=e["platform"], orientation=e["orientation"], file=ctx.path("exports", e["file"]),
                     cover=ctx.path("exports", e["cover"]) if e.get("cover") else None,
@@ -627,7 +628,7 @@ def _keyp(*keys):
 
 
 def _export_params(job, spec):
-    d = dict(_keyp("platforms", "layout", "captions", "cover", "preset", "trims")(job, spec),
+    d = dict(_keyp("platforms", "layout", "crop_bottom", "captions", "cover", "preset", "trims")(job, spec),
              max_len=_p(job).get("max_len") or spec.get("max_len"))
     if _p(job).get("caption_overrides"):              # only when set: older batches keep their keys
         d["caption_overrides"] = _p(job)["caption_overrides"]

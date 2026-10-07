@@ -147,10 +147,11 @@ GOLDEN = [
     ("lesson", "把这节课切成 20 条竖屏", dict(recipes=["longform-to-short"], method="planner",
                                             params={"count": 20, "layout_mode": "split", "platforms": ["xiaohongshu:vertical"]})),
     ("talk", "这段口播剪干净发小红书", dict(recipes=["talkinghead"], method="per-file",
-                                          params={"platforms": ["xiaohongshu:full"], "cleanup_profile": "standard",
+                                          params={"platforms": ["xiaohongshu:vertical"], "cleanup_profile": "standard",
                                                   "speed": 1.1})),
     ("finished", "把后面自媒体的思考单独剪出来", dict(recipes=["talkinghead"], method="focus",
-                                                      params={"captions": False, "speed": 1.0, "cleanup_profile": "gentle"},
+                                                      params={"layout": "band", "crop_bottom": 0.28, "captions": True,
+                                                              "speed": 1.0, "cleanup_profile": "gentle"},
                                                       ranges_after=450)),
     ("photos", "这些照片和视频做个文艺片", dict(recipes=["photo-story"], method="single", inputs=["photos", "clips"])),
     ("pdf", "用这份 PDF 做 5 条讲解短视频", dict(recipes=["explainer"], method="list", count=5, params={"mode": "short"})),
@@ -340,7 +341,8 @@ def test_revise_with_model(tmp_path):
         p2 = PL.revise(plan, "也发抖音", call=call)
     finally:
         I.analyze = orig
-    assert p2["projects"][0]["params"]["platforms"] == ["xiaohongshu:full", "douyin"]
+    # the model's shape guess (":full") is not binding: the persona's 小红书 shape (3:4) stays
+    assert p2["projects"][0]["params"]["platforms"] == ["xiaohongshu:vertical", "douyin"]
     assert p2["summary_zh"] == "加上抖音" and p2["planner"]["fallback"] is False
 
 
@@ -377,7 +379,8 @@ def test_apply_focus_rows_become_ranged_items(tmp_path, tiny):
     plan = PL.make_plan("把后面自媒体的思考单独剪出来", analysis=a, asr="off")
     res = AP.apply_plan(plan, str(tmp_path / "out"))
     pr = Project(res["projects"][0]["dir"])
-    assert pr.data["recipe"] == "talkinghead" and pr.data["params"]["captions"] is False
+    assert pr.data["recipe"] == "talkinghead" and pr.data["params"]["layout"] == "band"
+    assert pr.data["params"]["captions"] is True
     assert all(i["params"]["range"][0] >= 450 and i["inputs"]["video"].endswith("_final.mp4") for i in pr.data["items"])
     assert res["series"] is None
 

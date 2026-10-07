@@ -473,9 +473,22 @@ def export_one(master, prof, out_dir, cues=None, covers=None, post=None, mode="f
     out_mp4 = os.path.join(out_dir, stem + ".mp4")
     warnings = []
     same_aspect = abs(np.log(_aspect((info["display_w"], info["display_h"])) / _aspect(prof.size))) < 0.01
-    m = "letterbox" if same_aspect else mode       # same aspect: a fit == a plain scale, no face tracking
+    crop_b = float(reframe_opts.pop("crop_bottom", 0) or 0)
+    crop_t = float(reframe_opts.pop("crop_top", 0) or 0)
+    band = None
+    if mode == "band":                              # old burned captions cropped off, the rest fitted in a band
+        sw, sh = int(info["display_w"]), int(info["display_h"])
+        y0 = int(round(sh * max(0.0, crop_t)))
+        hh = max(2, int(round(sh * max(0.1, 1 - crop_t - crop_b))) // 2 * 2)
+        band = dict(crop_top=crop_t, crop_bottom=crop_b, region=[0, y0, sw, min(hh, sh - y0)])
+        m = "pad-blur"
+        reframe_opts["region"] = band["region"]
+    else:
+        m = "letterbox" if same_aspect else mode   # same aspect: a fit == a plain scale, no face tracking
     pl = R.plan(master, prof.w, prof.h, mode=m, safe=P.safe_box(prof), start=start, dur=dur,
                 fallback=fallback, **reframe_opts)
+    if band:
+        same_aspect = False
     if pl["mode_used"] != m:
         warnings.append(f"reframe fell back to {pl['mode_used']}: {pl.get('fallback_reason')}")
     cue_list = load_cues(cues) if (cues is not None and captions) else []
@@ -550,7 +563,8 @@ def export_one(master, prof, out_dir, cues=None, covers=None, post=None, mode="f
                  loudness=loud, target_loudness=prof.loudness, reframe=dict(
                      mode="scale" if same_aspect else pl["mode"], mode_used="scale" if same_aspect else pl["mode_used"],
                      hit_rate=pl.get("hit_rate"), cuts=len(pl.get("cuts") or []),
-                     switches=pl.get("switches"), stats=pl.get("stats"), plan=os.path.basename(crop_json)),
+                     switches=pl.get("switches"), stats=pl.get("stats"), plan=os.path.basename(crop_json),
+                     **({"band": band} if band else {})),
                  captions=len(cue_list), keepouts=len(kos), captions_moved_frames=cap_report.get("moved", 0),
                  cover=os.path.basename(cover_path), cover_size=list(P.cover_size(prof)),
                  notes=notes, safe_box=list(P.safe_box(prof)), caption_box=list(P.caption_box(prof)))

@@ -53,7 +53,12 @@ def context(client=None):
         eff = CL.effective(CL.load(cdir))
         cfg = {"llm": eff["llm"]} if eff.get("llm") else None
     plat_default = (P.get("platforms") or {}).get("default") or "xiaohongshu"
-    return dict(client=cdir, client_name=eff.get("name") or None, llm_config=cfg,
+    from vstudio import platform as PF
+    shapes = {k: v.get("default") for k, v in PF.PLATFORMS.items() if v.get("default") in ("full", "vertical")}
+    shapes.update({k: v.get("post_shape") for k, v in (P.get("platforms") or {}).items()
+                   if isinstance(v, dict) and v.get("post_shape") in ("full", "vertical", "horizontal")})
+    return dict(client=cdir, client_name=eff.get("name") or None, llm_config=cfg, shapes=shapes,
+                burned=str(((P.get("intake") or {}).get("burned_captions")) or "band"),
                 platforms=[x.split(":")[0] for x in (eff.get("platforms") or [])] or [plat_default],
                 speed=float((P.get("speed") or {}).get("body") or 1.1),
                 cleanup=(eff.get("cleanup_profile") or (P.get("cleanup") or {}).get("profile") or "standard"),
@@ -103,11 +108,14 @@ Rules:
   segment planner picks N ranges of a long recording at run time), focus (the creator named WHICH content to cut out:
   give rows with exact "range": [start_s, end_s] when a transcript is provided, else describe the focus), episodes
   (N episodes), list (one row per topic / script).
-- A finished edit (burned-in captions, "final" export) cut into shorter pieces: keep its captions (talkinghead
-  param captions=false), gentle cleanup, speed 1.0 unless asked.
+- A finished edit (burned-in captions, "final" export) cut into shorter pieces: talkinghead layout "band" (the old
+  burned captions are cropped off, the picture sits in a band, NEW captions go below it: captions=true,
+  crop_bottom ~0.28), gentle cleanup, speed 1.0 unless asked. Only when the creator says to keep the old captions:
+  captions=false.
 - Ask a question ONLY when the answer can't be defaulted and changes the result (e.g. whose face to hide). Never ask
   about things a checkpoint already covers (segment approval, filler cuts, cover pick, publish review).
 - Platforms: use the ids in the recipe's "platforms" list ("xiaohongshu:full" = 9:16, "xiaohongshu:vertical" = 3:4).
+  Give a bare platform name ("xiaohongshu") unless the creator named a shape: the creator's persona picks it.
 - summary_zh: ONE short paragraph in Chinese for the creator: what will be made from what, key settings, what she
   will be asked to confirm. No markdown.
 
@@ -179,8 +187,9 @@ def _valid(value, sch):
         return False
 
 
-def norm_platform(m, name, orientation=None):
-    """'xiaohongshu' / '小红书' / 'xiaohongshu:full' -> the recipe's platform id (orientation preference), or None."""
+def norm_platform(m, name, orientation=None, shapes=None):
+    """'xiaohongshu' / '小红书' / 'xiaohongshu:full' -> the recipe's platform id (orientation preference), or None.
+    ``shapes``: the persona's per-platform default shape ({"xiaohongshu": "vertical"} = 3:4) for a bare name."""
     outs = m["outputs"].get("platforms") or []
     if not name:
         return None
@@ -203,6 +212,9 @@ def norm_platform(m, name, orientation=None):
             if o.endswith(":horizontal") or ":" not in o:
                 return o
     if orientation == "vertical":
+        pref = (shapes or {}).get(base)
+        if pref in ("full", "vertical") and f"{base}:{pref}" in cands:
+            return f"{base}:{pref}"
         for o in cands:
             if o.endswith(":full") or o.endswith(":vertical"):
                 return o
@@ -364,8 +376,13 @@ def normalize_project(raw, idx, analysis, intent, ctx, warn):
         if plats is None:
             plats, sources["platforms"] = list(ctx["platforms"]), ctx["source"]
         fixed = []
+        shapes = dict(ctx.get("shapes") or {})
+        if intent.get("shape"):                          # "9:16" / "3:4" in the request: every platform
+            shapes = {k: intent["shape"] for k in set(shapes) | {"xiaohongshu"}}
         for x in plats if isinstance(plats, list) else [plats]:
-            n = norm_platform(m, x, orient or _orientation_hint(rid, ins, analysis))
+            if sources.get("platforms") == "planner" and isinstance(x, str) and ":" in x and not intent.get("shape"):
+                x = x.split(":")[0]                      # the model's shape guess: the persona decides
+            n = norm_platform(m, x, orient or _orientation_hint(rid, ins, analysis), shapes)
             if n and n not in fixed:
                 fixed.append(n)
             elif not n:
@@ -442,6 +459,21 @@ def _src_file(ins, analysis):
     return None
 
 
+BAND_CROP = {"lower": 0.28}      # source height fraction cropped off per burned-caption band (inventory cap_low .72-.96)
+
+
+def _burned_defaults(src, ctx):
+    """A finished edit with burned-in captions, cut again: crop the old captions off and lay the picture out in a
+    band with NEW captions below (talkinghead layout "band"), unless the persona says ``intake.burned_captions:
+    keep`` (old captions stay, no new ones) or the old captions sit mid-frame (cannot be cropped cleanly)."""
+    if not src or not src.get("burned_captions"):
+        return dict(captions=False) if src and I.material_role(src) == "finished-edit" else {}
+    crop = BAND_CROP.get(src.get("caption_band") or "lower")
+    if ctx.get("burned") == "keep" or crop is None:
+        return dict(captions=False)
+    return dict(layout="band", crop_bottom=crop, captions=True)
+
+
 def _apply_ctx_defaults(m, params, sources, ctx, ins, analysis):
     props = m["params"]["properties"]
     src = _src_file(ins, analysis)
@@ -454,8 +486,12 @@ def _apply_ctx_defaults(m, params, sources, ctx, ins, analysis):
         elif ctx["cleanup"] in ("gentle", "standard", "tight"):
             params["cleanup_profile"], sources["cleanup_profile"] = ctx["cleanup"], ctx["source"]
     if finished and m["id"] == "talkinghead":
-        if "captions" not in params:
-            params["captions"], sources["captions"] = False, "material"
+        bd = _burned_defaults(src, ctx)
+        for k, v in bd.items():
+            if k in props and k not in params:
+                params[k], sources[k] = v, "material"
+        if params.get("layout") == "band" and params.get("captions") is False and sources.get("captions") != "prompt":
+            params["captions"], sources["captions"] = True, "material"   # band = old captions cropped: new ones
         if "speed" not in params:
             params["speed"], sources["speed"] = 1.0, "material"
     if "language" in props and "language" not in params:
@@ -491,6 +527,13 @@ def _apply_intent(m, params, sources, intent, items):
         params["hook_default"], sources["hook_default"] = (0 if intent["hook"] else -1), "prompt"
     if intent.get("orientation") and m["id"] == "promo-recut":
         params["orientation"], sources["orientation"] = intent["orientation"], "prompt"
+    if intent.get("keep_captions") and "captions" in props:
+        params["captions"], sources["captions"] = False, "prompt"
+        if sources.get("layout") == "material":                       # keep the old captions: no band crop
+            params.pop("layout", None)
+            params.pop("crop_bottom", None)
+            sources.pop("layout", None)
+            sources.pop("crop_bottom", None)
     if intent.get("narration") is False and m["id"] == "photo-story":
         params["mode"], sources["mode"] = "music", "prompt"
 
@@ -586,7 +629,9 @@ def summary_zh(plan):
             settings.append(f"发{_plat_zh(pr['platforms'])}")
         if "speed" in pr:
             settings.append(f"{pr['speed']}×")
-        if pr.get("captions") is False:
+        if pr.get("layout") == "band":
+            settings.append("裁掉旧字幕、上下条带版式、重新加字幕")
+        elif pr.get("captions") is False:
             settings.append("保留原字幕不再叠加")
         if pr.get("cleanup_profile"):
             settings.append({"gentle": "轻度去气口", "standard": "标准去气口", "tight": "严格去气口", "off": "不去气口"}[

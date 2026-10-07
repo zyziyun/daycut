@@ -74,10 +74,17 @@ params:
       title: Pause / filler cleanup
       x-zh: 去气口力度
     layout:
-      enum: [face, center, pad-blur, letterbox]
+      enum: [face, center, pad-blur, letterbox, band]
       default: pad-blur
-      title: Reframe when the aspect changes
-      x-zh: 画幅转换方式
+      title: Reframe when the aspect changes (band = crop the old burned captions off, picture in a band, new captions below)
+      x-zh: 画幅转换方式（band：裁掉旧字幕、上下条带、重新加字幕）
+    crop_bottom:
+      type: number
+      minimum: 0
+      maximum: 0.45
+      default: 0.28
+      title: Layout band - share of the source height cropped off at the bottom (old burned captions)
+      x-zh: 条带版式：裁掉底部旧字幕的高度比例
     captions:
       type: boolean
       default: true
