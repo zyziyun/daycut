@@ -141,6 +141,8 @@ class CreatePluginRoutesTest(unittest.TestCase):
         self.req("POST", "/api/create/plugins/agent-runner:fake-agent", {"enabled": True})
         if not shutil.which("ffmpeg"):
             self.skipTest("ffmpeg not installed")
+        if os.name == "nt":
+            self.skipTest("the fake agent is a POSIX shell script")
         st, r = self.req("POST", f"/api/create/episodes/{eid}/make", {"lanes": 2})
         j = self.wait(r["job"])
         self.assertEqual(j["state"], "done", j)
