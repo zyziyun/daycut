@@ -711,7 +711,7 @@ const v04Fr: Record<keyof typeof v04En, string> = {
   'nav.inbox': 'Boîte de réception',
   'nav.projects': 'Tous les projets',
   'nav.publishTop': 'Publier',
-  'engine.ready': 'Prêt sur ce Mac',
+  'engine.ready': 'Prêt sur cet ordinateur',
   'engine.demo': 'Mode démo',
 
   'status.running': 'En cours',

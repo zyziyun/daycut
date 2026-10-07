@@ -26,7 +26,7 @@ export const v04En = {
   'nav.inbox': 'Inbox',
   'nav.projects': 'All projects',
   'nav.publishTop': 'Publish',
-  'engine.ready': 'Ready on this Mac',
+  'engine.ready': 'Ready on this computer',
   'engine.demo': 'Demo mode',
 
   'status.running': 'Running',
