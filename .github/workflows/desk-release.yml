@@ -191,6 +191,7 @@ jobs:
 
       - name: Remove the keychain and API key
         if: always()
+        working-directory: . # apps/desk may not exist (run stopped before checkout)
         run: |
           [ -n "${SIGNING_KEYCHAIN:-}" ] && security delete-keychain "$SIGNING_KEYCHAIN" || true
           rm -f "$RUNNER_TEMP"/AuthKey_*.p8 "$RUNNER_TEMP/cert.p12"
