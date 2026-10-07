@@ -1,6 +1,6 @@
 ---
 title: "CLI"
-description: "Command-line reference for the Reelfold engine (python -m vstudio.*): intake, project, batch, cleanup, export, reframe, platform, effects, llm, retouch."
+description: "Command-line reference for the Reelfold engine (python -m vstudio.*): intake, project, batch, cleanup, export, reframe, platform, effects, llm, retouch, lesson, qa, bilingual."
 editUrl: false
 ---
 
@@ -28,6 +28,9 @@ Every command that reports something accepts `--json` for one machine-readable d
 | [`vstudio.effects`](#vstudioeffects) | List and inspect the effect registry. |
 | [`vstudio.llm`](#vstudiollm) | AI providers on this machine: list, route, auth, test. |
 | [`vstudio.retouch`](#vstudioretouch) | Portrait retouch and makeup for photos and frames. |
+| [`vstudio.lesson`](#vstudiolesson) | Lesson recordings: plan teaching points, sync a camera, render clips, write study notes. |
+| [`vstudio.qa`](#vstudioqa) | Interviews and podcasts: speakers, question / answer pairs, render Q&A clips. |
+| [`vstudio.bilingual`](#vstudiobilingual) | Translate captions (bilingual / translated) and write per-language SRT / VTT. |
 
 ## `vstudio.intake`
 
@@ -461,4 +464,57 @@ options:
                         comma list of per-face strengths, largest face first (e.g. 1,0.6)
   --no-seg              landmark-only skin mask
   --no-region
+```
+
+## `vstudio.lesson`
+
+Lesson recordings: plan teaching points, sync a camera, render clips, write study notes.
+
+```text
+usage: python -m vstudio.lesson [-h] {plan,notes,sync,render} ...
+
+Lesson -> knowledge-point clips: segment a class recording by teaching point, plus a recap and
+study notes.
+
+positional arguments:
+  {plan,notes,sync,render}
+    sync                offset of the camera file against the main recording (audio / timestamps)
+
+options:
+  -h, --help            show this help message and exit
+```
+
+## `vstudio.qa`
+
+Interviews and podcasts: speakers, question / answer pairs, render Q&A clips.
+
+```text
+usage: python -m vstudio.qa [-h] {plan,render} ...
+
+Interview / podcast -> Q&A clips: who speaks when, question / answer pairs, answers trimmed tight.
+
+positional arguments:
+  {plan,render}
+
+options:
+  -h, --help     show this help message and exit
+```
+
+## `vstudio.bilingual`
+
+Translate captions (bilingual / translated) and write per-language SRT / VTT.
+
+```text
+usage: python -m vstudio.bilingual [-h] {translate,tracks} ...
+
+Bilingual captions (中英): source-language cues + a translated second line, per-language SRT / VTT
+tracks.
+
+positional arguments:
+  {translate,tracks}
+    translate         cues.json / .srt -> cues with a translated alt line
+    tracks            cues (with alt) -> per-language SRT / VTT
+
+options:
+  -h, --help          show this help message and exit
 ```

@@ -43,6 +43,8 @@ WORKFLOWS = {  # name -> (sidebar order, short description)
     "preproduction": (11, "Script writing, per-platform script lint and pronunciation drills."),
     "ai-video": (12, "AI-generated video (Kling, Seedance, MiniMax) with a credit budget."),
     "batch": (13, "Many shorts at once: plan, pilot, parallel runs, QC, review, packages."),
+    "lesson-clips": (14, "A lesson into one clip per teaching point, a recap and study notes, with bilingual captions."),
+    "interview-qa": (15, "An interview or podcast into Q&A clips that open on the question."),
 }
 
 ENGINE = {  # references file -> (slug, order)
@@ -323,13 +325,16 @@ CLI = [
     ("effects", "List and inspect the effect registry."),
     ("llm", "AI providers on this machine: list, route, auth, test."),
     ("retouch", "Portrait retouch and makeup for photos and frames."),
+    ("lesson", "Lesson recordings: plan teaching points, sync a camera, render clips, write study notes."),
+    ("qa", "Interviews and podcasts: speakers, question / answer pairs, render Q&A clips."),
+    ("bilingual", "Translate captions (bilingual / translated) and write per-language SRT / VTT."),
 ]
 
 
 def gen_cli() -> None:
     env = dict(os.environ, PYTHONPATH=str(REPO / "lib"), COLUMNS="100", NO_COLOR="1")
     parts = [front("CLI", "Command-line reference for the Reelfold engine (python -m vstudio.*): intake, project, "
-                   "batch, cleanup, export, reframe, platform, effects, llm, retouch."),
+                   "batch, cleanup, export, reframe, platform, effects, llm, retouch, lesson, qa, bilingual."),
              STAMP.format(src="`python -m vstudio.<module> --help`"), "",
              "The engine is a Python package (`vstudio`, in `lib/`). The Mac app and the Claude Code skill both call "
              "these commands; you can run them yourself from a terminal:\n\n```bash\n"

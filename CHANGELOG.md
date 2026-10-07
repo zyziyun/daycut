@@ -45,6 +45,12 @@ the earlier history lives in the commit log (formerly `video-studio` and `Daycut
     audio, resolution, speed, loudness, first frame, caption terms, cover).
   - Named-entity verification after ASR (place names and cities).
   - One design-theme system for every overlay (editorial default).
+  - Recipes for teachers and interview / podcast creators: `lesson-clips` (a lesson cut by teaching point, with
+    "Today's phrase" title cards, key-term cards, a recap and study notes in Markdown / PDF; a screen share and a
+    camera synced by sound, with screen / picture-in-picture / band layouts) and `interview-qa` (question and answer
+    clips that open on the question, tight answers, speakers by role, optional face masks).
+  - Bilingual captions (`vstudio.bilingual`): the spoken line plus a translated second line in the theme's
+    secondary ink, or the translation only; glossary enforced; per-language SRT / VTT with every export.
 - **Platforms**: 20 profiles, each with its own canvas, safe zones, caption box, length, loudness, cover and copy
   limits: YouTube, YouTube Shorts, TikTok, Instagram, X, Facebook, LinkedIn, Threads, Reddit, Pinterest, Snapchat
   Spotlight, Dailymotion, Kwai, 小红书, 抖音, 视频号, B站, 快手, 微博, 知乎.

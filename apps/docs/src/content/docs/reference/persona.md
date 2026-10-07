@@ -31,7 +31,7 @@ The Mac app keeps the same settings under **Settings**; the skill reads `persona
 | [`style`](#style) | The design theme every overlay, card and caption uses. | `theme` |
 | [`brand`](#brand) | Your ink and ground colours. | `ink`, `ground` |
 | [`fonts`](#fonts) | Your own font files per role (cjk, cjk-bold, cjk-serif, serif, mono…), including one face of a .ttc. |  |
-| [`subtitles`](#subtitles) | Caption line length, keyword highlight markup and ASR term fixes. | `max_cjk_chars`, `max_en_chars`, `highlight_markup`, `term_fixes` |
+| [`subtitles`](#subtitles) | Caption line length, keyword highlight markup and ASR term fixes. | `max_cjk_chars`, `max_en_chars`, `highlight_markup`, `term_fixes`, `glossary` |
 | [`voice`](#voice) | Voice rules for scripts and post copy. | `persona`, `rules` |
 | [`publish`](#publish) | Default hashtags, named tag sets and the chapter line format. | `tags`, `tag_sets`, `chapter_line` |
 | [`intake`](#intake) | How the planner treats materials (for example burned-in captions). | `burned_captions` |
@@ -142,6 +142,7 @@ subtitles:
   max_en_chars: 90
   highlight_markup: "【】"  # 【term】 is emphasised the theme's way (marker band / accent), one per line
   term_fixes: {}           # ASR corrections, e.g. {"cloud code": "Claude Code"}
+  glossary: {}             # bilingual captions: fixed translations {source term: target term}, e.g. {"break the ice": "打破僵局"}
 ```
 
 ### `voice`
