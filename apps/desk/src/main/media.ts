@@ -31,6 +31,13 @@ export function isAllowedMediaPath(p: string, roots: string[], pathImpl: typeof 
   });
 }
 
+/** A vsmedia request: the asked path must be well-formed (absolute, a media extension, no '..') and the file it
+ * resolves to (`real`, symlinks followed) must lie in a root. A file asked for through a symlinked folder
+ * (/tmp -> /private/tmp, a linked Desktop or drive) is served; a symlink pointing out of a root is not. */
+export function allowedMedia(asked: string, real: string, roots: string[], pathImpl: typeof path = path): boolean {
+  return isAllowedMediaPath(asked, [pathImpl.parse(asked).root], pathImpl) && isAllowedMediaPath(real, roots, pathImpl);
+}
+
 const MEDIA_MIME: Record<string, string> = {
   '.mp4': 'video/mp4',
   '.m4v': 'video/mp4',

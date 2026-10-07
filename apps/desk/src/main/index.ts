@@ -18,7 +18,7 @@ import { registerAiIpc, syncRoutesFile } from './aiAccounts';
 import { APP_MIME, resolveAppFile } from './appProtocol';
 import { installAppMenu } from './appMenu';
 import { defaultEnginePath, EngineProcess, engineProcessEnv, findPython } from './engine';
-import { isAllowedMediaPath, mediaMime, parseRange, pathFromMediaUrl } from './media';
+import { allowedMedia, mediaMime, parseRange, pathFromMediaUrl } from './media';
 import { loadAdapters } from './publish/adapters';
 import { PublishBrowser } from './publish/browser';
 import { assistedFill } from './publish/fill';
@@ -393,18 +393,20 @@ function registerProtocols() {
     const p = pathFromMediaUrl(req.url);
     let roots = await mediaRoots();
     // a file the engine allowed a moment ago (e.g. a freshly made timeline sprite): refresh the cached roots once
-    if (p && !isAllowedMediaPath(p, roots) && Date.now() - rootsCache.at > 300) {
-      rootsCache.at = 0;
-      roots = await mediaRoots();
-    }
-    if (!p || !isAllowedMediaPath(p, roots)) return new Response('forbidden', { status: 403 });
+    if (!p) return new Response('forbidden', { status: 403 });
+    // judged on the real path (roots carry their real form too): see allowedMedia
     let real: string;
     try {
       real = await fs.promises.realpath(p);
     } catch {
       return new Response('not found', { status: 404 });
     }
-    if (!isAllowedMediaPath(real, roots)) return new Response('forbidden', { status: 403 });
+    const ok = () => allowedMedia(p, real, roots);
+    if (!ok() && Date.now() - rootsCache.at > 300) {
+      rootsCache.at = 0;
+      roots = await mediaRoots();
+    }
+    if (!ok()) return new Response('forbidden', { status: 403 });
     // ranges answered here (206): file:// fetches ignore Range, and without it a video can only seek inside what is
     // already buffered (long outputs could not be scrubbed)
     const size = await fs.promises.stat(real).then((st) => st.size, () => -1);

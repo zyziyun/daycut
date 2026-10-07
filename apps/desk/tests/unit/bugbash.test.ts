@@ -80,3 +80,19 @@ describe('mock-in-product: test switches need a throw-away profile in a packaged
     expect(testSwitch('DESK_HIDE_WINDOW', { DESK_HIDE_WINDOW: '1', DESK_USER_DATA: ud }, true, tmp)).toBe(true);
   });
 });
+
+describe('BB-13 media through a symlinked folder is served, a symlink out of a root is not', async () => {
+  const { allowedMedia } = await import('../../src/main/media');
+  const P = path.posix;
+  const roots = ['/private/tmp/p/engine-data'];
+  it('asked as /tmp/... but really /private/tmp/... (the timeline sprite was a 403)', () => {
+    expect(allowedMedia('/tmp/p/engine-data/strips/a/sprite.jpg', '/private/tmp/p/engine-data/strips/a/sprite.jpg', roots, P)).toBe(true);
+  });
+  it('a link inside a root that points elsewhere is refused', () => {
+    expect(allowedMedia('/private/tmp/p/engine-data/x.jpg', '/Users/me/secret.jpg', roots, P)).toBe(false);
+  });
+  it('the asked path is still checked for shape', () => {
+    expect(allowedMedia('/tmp/p/../p/engine-data/a.jpg', '/private/tmp/p/engine-data/a.jpg', roots, P)).toBe(false);
+    expect(allowedMedia('/tmp/p/engine-data/a.txt', '/private/tmp/p/engine-data/a.txt', roots, P)).toBe(false);
+  });
+});
