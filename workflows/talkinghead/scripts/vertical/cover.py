@@ -8,7 +8,7 @@ Reads the COVER dict from the compose config:
                  T=12.3,                         # chosen with pick_cover_frame.py
                  OUT="cover.jpg",
                  TITLE=["line 1 white", "line 2 with KEYWORDS in yellow"],
-                 STICKY=("记笔记", [("point one", "ink"), ("point two", "red")]),   # or None
+                 STICKY=("记笔记", [("point one", "ink"), ("point two", "accent")]),   # or None
                  TAG="short tag")                # rotated pill top-right, or None
 usage: python3 cover.py work/config.py [--platform douyin --platform youtube]   (then always LOOK at the result)
 OUT belongs to the config's own platform (COVER PLATFORM, else config PLATFORM, else persona platforms.default);
@@ -40,7 +40,7 @@ TITLE = CV.get('TITLE', []); STICKY = CV.get('STICKY'); TAG = CV.get('TAG')
 GRADE = getattr(C, 'GRADE', "hqdn3d=1.2:1.2:3:3,eq=contrast=1.06:brightness=0.015:saturation=1.07:gamma=1.02,colorbalance=rs=-0.02:bs=0.015:rm=-0.01,cas=0.45")
 KW = [k for k in getattr(C, 'KEYWORDS', []) if k]
 B = D.brand(); INK = (34, 34, 40); WHITE = (255, 255, 255, 255)
-COL = {'ink': INK, 'red': (214, 40, 70)}
+COL = {'ink': INK, 'red': B['accent'], 'accent': B['accent']}   # 'red' = the theme accent (no hard-coded red)
 F = lambda sz: D.load_font('cjk-bold', int(sz))
 def colorize(s): return [(t, B['highlight'] + (255,) if h else WHITE) for t, h in D.runs(s, KW)]
 

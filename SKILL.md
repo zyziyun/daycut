@@ -1,136 +1,79 @@
 ---
 name: video-studio
-description: One video-editing skill for every kind of edit, for 小红书 / 抖音 / 视频号 / TikTok / YouTube / Shorts / B站 / X / Instagram. Talking-head 口播 (去气口, 去 filler/重复/口误, 加速, 字幕, 记笔记面板, 气泡, 进度条, 高光预告/快剪 hooks, 精剪风, 修图/美颜, 封面, 发布文案); long recordings → 切片/分集/剪成课程 (去浏览器头/书签栏, 学员变声, 竖屏切片); calls/interviews → 截取一段 + 遮脸/打码/放个小猫; promo recuts with 左右分栏/split screen, 截图卡片高亮, 定格放大, 精选插片; 文艺片/photo stories with effects; travel vlogs (calm or 卡点快节奏, 调色, 转场, 配乐); 3Blue1Brown-style explainers; covers/thumbnails, slides, scripts, pronunciation drills; one master → many platforms. Use whenever the user hands over footage, photos, screenshots or a topic and wants it edited, cut shorter, captioned, given effects, music, a cover or post copy, or wants to tweak one stage of such a video.
+description: One video-editing skill for every kind of edit, for 小红书 / 抖音 / 视频号 / TikTok / YouTube / Shorts / B站 / X / Instagram. Talking-head 口播 (去气口, 去 filler/重复/口误, 加速, 字幕, 记笔记面板, 气泡, 进度条, 高光预告/快剪 hooks, 精剪风, 修图/美颜, 封面, 发布文案); long recordings → 切片/分集/剪成课程 (去浏览器头/书签栏, 学员变声, 竖屏切片); calls/interviews/podcasts → clips + 遮脸/打码/放个小猫; promo recuts with 左右分栏/split screen, 截图卡片高亮, 定格放大, 精选插片; 文艺片/photo stories with effects; travel vlogs (calm or 卡点快节奏, 调色, 转场, 配乐); 3Blue1Brown-style explainers; AI-generated skits; covers/thumbnails, slides, scripts, pronunciation drills; one master → many platforms. Use whenever the user hands over footage, photos, screenshots or a topic and wants it edited, cut shorter, captioned, given effects, music, a cover or post copy, or wants to tweak one stage of such a video.
 ---
 
 # video-studio
 
-Part of [Reelfold](https://github.com/zyziyun/reelfold) (千剪): this skill is the open-source engine behind the Reelfold
-desktop app (`apps/desk`), and it works on its own in Claude Code.
+Part of [Reelfold](https://github.com/zyziyun/reelfold) (千剪): the open-source engine behind the Reelfold desktop app
+(`apps/desk`); works on its own in Claude Code. One entry point, many workflows, one library (`lib/vstudio`), one
+creator persona. `$VSTUDIO` = this folder. Run scripts from the **project folder** of the video being edited.
 
-One entry point, many workflows, one shared library (`lib/vstudio`) and one creator persona.
-`$VSTUDIO` below = this folder. Run scripts from the **project folder** of the video being edited.
+Setup once: `$VSTUDIO/install.sh` (deps, open fonts, MediaPipe models), `cp persona.example.yaml persona.local.yaml`
+(her speeds, theme, tags, term fixes, format overrides), `export PYTHONPATH="$VSTUDIO/lib:$PYTHONPATH"`.
+HyperFrames workflows (explainer, promo-recut) also need Node 18+ and `npx hyperframes`.
 
-## 0. Setup (once per machine)
-```bash
-$VSTUDIO/install.sh                      # Python deps + open-licensed fonts (Noto Sans/Serif SC, STIX, JetBrains Mono) + MediaPipe models (landmarker, selfie + multiclass segmenter)
-cp $VSTUDIO/persona.example.yaml $VSTUDIO/persona.local.yaml   # your speeds, brand colours, tags, voice rules, term fixes
-export PYTHONPATH="$VSTUDIO/lib:$PYTHONPATH"
-```
-HyperFrames-based workflows (explainer, promo-recut) also need Node 18+ and `npx hyperframes`.
+## 1. Every job, in this order
+1. **Format first.** `python -m vstudio.formats detect "<her request>"` (or pick from `formats list`). Say its summary
+   line to her before any render, e.g. "按「口播」默认：正文 1.25x，hook 给 12 条候选你挑，严格去 filler，封面与正片同尺寸、修图，
+   不加系列角标". Her words for this job override it; persona `formats.<id>` holds her lasting overrides. Ask at most one
+   question, and only when the material or the platform is unclear.
+2. **Register** so the desktop app shows it: `python -m vstudio.project new` when a recipe fits, else
+   `python -m vstudio.project touch <folder> --status running --stage plan`; `--stage <s> --progress 0.4` at long steps,
+   `--status waiting --needs-you` at a question, `--status done` at the end (details: references/PROJECTS.md).
+3. **Open the workflow's `WORKFLOW.md`** (table below) and follow it.
+4. **First-pass check before she sees anything:** `python -m vstudio.firstpass final.mp4 --format <id> --source <raw>
+   --cues <cues.json> --cover <cover> --post <post.md>`. Fix every 必须修 item, then look at 3-4 frames (busiest moment,
+   a transition, the cover). Never hand over with a red item.
+5. **Hand over**: the file paths (finals in one place, intermediates under `work/`), the summary line of what was applied
+   (speed, cleanup, hooks, cover), the firstpass result, and any choice left to her as a numbered menu.
 
-## 1. Route the request
-
-Identify the **main material** and the **deliverable**, then open that workflow's `WORKFLOW.md` and follow it.
+## 2. Route: material → deliverable
 
 | Material → deliverable | Workflow |
 |---|---|
-| Talking-head / 口播 recording(s) → tight short with captions, effects, B-roll, cover. Raw vertical phone clips; raw horizontal webcam/camera footage (face-tracked reframe to 9:16, or kept 16:9 with the landscape layout); legacy 剪映 horizontal exports | `workflows/talkinghead` |
-| Talking head **plus** screenshots, links, another video to showcase → premium promo (split screen, 3D screenshot cards, highlight zoom/freeze, inserted highlight reel) | `workflows/promo-recut` |
-| Long recording (lecture, webinar, livestream, screen-share, podcast) → cut course video and/or N short episodes (16:9 or vertical slices) | `workflows/longform-to-short` |
-| Multi-person call / interview (Zoom, Meet, Teams) → clips, hide chosen participants' faces, vertical/landscape/trio layouts | `workflows/call-clips` |
-| Photos / short clips + a narration script (TTS or your cloned voice), or just music → effect-rich story (museum, travel, history, product) | `workflows/photo-story` |
-| B-roll (drone, travel, nature, phone clips) → vlog: `calm` (grade, per-segment speed, crossfades, music) or `fun` (卡点, speed ramps, whips, pops, SFX) | `workflows/vlog` |
-| A topic / concept → 3Blue1Brown-style animated explainer with AI voice + bilingual subtitles (16:9 long or vertical short) | `workflows/explainer` |
-| An already-exported edit → cover on first frame, loudness, speed-up, delivery tags | `workflows/polish` |
-| Just a cover / thumbnail | `workflows/cover` |
-| Square slides for a vertical video | `workflows/slides` |
-| Writing the script before recording, pronunciation drills | `workflows/preproduction` |
-| Script / idea → AI-generated video (可灵 Kling, Seedance/即梦, MiniMax/海螺): shot list, prompts, credit plan, take review, assembly; AI series → 投稿 packages + per-post confirmed upload | `workflows/ai-video` |
-| Many videos at once (10s–100s): one long recording → N vertical slices, a folder of 口播 clips → cleaned shorts; pilot, resumable runs, QC gates, exception-only review page, publish packages | `workflows/batch` (`python -m vstudio.batch`, references/BATCH.md) |
-| A topic → published short, end to end (script → drill → slides → record → clean up → edit → cover → export → post) | `references/SOP_SHORT_VIDEO.md` |
-| Any workflow as a project of N items (the Reelfold desktop app in apps/desk / an agent in the project folder): recipe manifests, checkpoints, inbox, series, publish calendar | `python -m vstudio.project` (references/PROJECTS.md) |
-| Second-pass edit of ANY finished clip (成片二次编辑: project exports and work-folder finals): trim / word-snapped cuts, captions, title band, a design theme (`theme` op), 20 effects (pop words, stamps, punch-in, quote / chapter cards, callouts, notes, stickers, SFX, transitions, progress bar, marker sweep, chapter rule, number counter, lower third ...), cover, speed, loudness, 3:4 / 9:16 / 16:9 re-layout, plain-language `ai` edits (with a selection / effect as context), undo + selective revert of one step, a per-clip chat transcript, cached preview / final renders + a before / after compare preview | `python -m vstudio.project output show / edit / render / undo / revert / ai / chat / effects` (references/OUTPUT_EDIT.md) |
-| A plain-language request + any mix of files / folders (video, audio, photos, pdf / docx / pptx / md) → the right recipe(s), mixed plans allowed: inventory, editable plan, follow-up edits, projects | `python -m vstudio.intake analyze / plan / revise / apply` (references/INTAKE.md) |
+| 口播 / talking-head clip(s) → captioned short (phone vertical, webcam / camera landscape, 剪映 export) | `workflows/talkinghead` |
+| 口播 **plus** screenshots, links, a demo or a finished video of her work → premium promo (split screen, 3D screenshot cards, freeze-zoom, 精选 inserts) | `workflows/promo-recut` |
+| Lecture, webinar, livestream, screen-share → course video or N slices | `workflows/longform-to-short` |
+| Call / interview / **podcast** (Zoom, Meet) → clips, guest faces hidden — even when she says 切片 | `workflows/call-clips` |
+| Her own voice-over + clips / photos → vlog (`calm` or `fun` 卡点) | `workflows/vlog` |
+| Photos / clips + narration or music → 文艺片 / photo story | `workflows/photo-story` |
+| A topic → 3b1b-style explainer (AI voice, bilingual captions) | `workflows/explainer` |
+| Script / idea → AI-generated video (可灵, Seedance / 即梦, 海螺), AI series | `workflows/ai-video` |
+| An exported edit (Descript / CapCut / 剪映) → cover on frame 1, loudness, speed, cleanup | `workflows/polish` |
+| Cover / thumbnail only · square slides · script or pronunciation drill | `workflows/cover` · `workflows/slides` · `workflows/preproduction` |
+| 10s-100s of videos at once (one long recording → N slices, a folder of 口播) | `workflows/batch` (references/BATCH.md) |
+| A **finished** clip to tweak (trim, captions, theme, effects, cover, speed, re-layout, plain-language edits, undo) | `python -m vstudio.project output ...` (references/OUTPUT_EDIT.md) |
+| A sentence + a mixed pile of files → a plan of recipes | `python -m vstudio.intake` (references/INTAKE.md) |
+| 气口 / filler / 重复 / 口误 in any recording with her speech | `python -m vstudio.cleanup` (references/CLEANUP.md), inside every workflow |
 
-### What the creator typically says → workflow
-| Phrases (中文 / English) | Workflow |
-|---|---|
-| 口播, 复盘, 合并剪辑, 二次剪辑, 精剪, 加速, 加 hooks, 高光预告, 快剪, 加进度条, 加气泡, 加面板, 记笔记, 修图, 美颜, 瘦脸, 换剪辑风格, 发小红书 | `talkinghead` |
-| 去气口, 去 filler word, 去嗯啊, 去重复, 去口误, 剪掉停顿, 说一半重来 (any recording with original speech, in any workflow) | `cleanup`: `python -m vstudio.cleanup` → `references/CLEANUP.md` |
-| 宣传一下, 讲我做的东西, 左右分栏, 分屏, 截图放进去, 高亮这句, 把 prompt 放大, 定格, 插一段精选, 精选 | `promo-recut` |
-| 剪成课程, 上课实录, 教学长视频, 切片, 分几集, 去掉浏览器头/书签栏, 加章节/字幕/zoom/笔记面板, 学员变声, 变声, 去头像, 竖屏切片 | `longform-to-short` |
-| 截取一段对话, 发一段出来, 播客剪辑, 把朋友的脸遮一下, 打码, 放个小猫, 三人同框 | `call-clips` |
-| 文艺片, 看展, 照片做成视频, 配旁白, 胶片感, 双语字幕故事 | `photo-story` |
-| 剪成一个 vlog, 旅游 vlog, 卡点, 快节奏, 去掉不好的部分, 加效果转场, 调色, 配乐, 无人机/DJI 素材 | `vlog` (`style: calm` or `fun`) |
-| 讲解视频, 3b1b, 解释一个概念, 原理讲解 | `explainer` (16:9 long or vertical short) |
-| Descript/CapCut/剪映 导出后收尾, 第一帧黑, 响度, 加速 1.2×, 导出后再去气口 | `polish` (`--cleanup pauses\|gentle\|standard\|tight`, default off) |
-| 做封面, 缩略图, thumbnail | `cover` |
-| 幻灯片, slides | `slides` |
-| 写稿, 口播稿, script, 发音练习, 跟读, shadowing | `preproduction` |
-| AI生成视频, 可灵, 即梦, Seedance, 海螺, 分镜prompt, 定妆照, 积分, 投稿, 多平台发布, 连载, 系列 | `ai-video` |
-| 批量, 一次做几十/几百条, 批量切片, 矩阵, batch, 审片 | `batch` |
-| 从选题到发布, 完整流程, SOP, end to end | `references/SOP_SHORT_VIDEO.md` |
-| 一个视频发多个平台, 抖音/Shorts/B站版本 | any workflow → `python -m vstudio.export` |
+Mixed jobs chain workflows (preproduction → record → talkinghead → cover → polish). Phrase table, capability index and
+library modules: [references/CAPABILITIES.md](references/CAPABILITIES.md). Full topic → post SOP: references/SOP_SHORT_VIDEO.md.
 
-Mixed jobs chain workflows (e.g. `preproduction` → record → `talkinghead` → `cover` → `polish`).
-When the request is ambiguous, ask one question: what is the material, and where will it be posted.
+## 3. Rules learned from her corrections (all workflows)
+- **Speed is always applied and always said.** Use the format's speeds; hooks above 1.6x and Chinese speech above ~1.4x
+  sound fake. firstpass fails a render that is not shorter than its sources / speed.
+- **Hooks: never auto-picked.** Formats with `hooks: menu` show ~12 numbered candidates (text, type, length at hook
+  speed) and she picks the set and order; promo / explainer / vlog get no hook montage unless she asks.
+- **She decides taste-critical choices** (hooks, which sentences go, style preset, voice): a short menu with a
+  recommendation, never a silent choice. Lines naming colleagues, a boss, a company or her self-introduction are listed
+  for her before they are cut or kept.
+- **Framing**: keep the source framing; no big-face crop (a 1.7x upscale was 太丑). A finished master with burned
+  captions goes into a band layout (picture band + new captions), not a face crop. Keep people fully in frame.
+- **Look = one design theme** (`vstudio.theme`, references/STYLE_RULES.md), `editorial` by default; never hard-code
+  colours; no saturated red text; notes = light paper card; quotes = typography; subtle stamps / pops.
+- **No series labels** (01/04, PART n, 第n集, 系列名 + 编号) unless she says it is a series.
+- **Captions**: after ASR always run proofread with entity verification (宏都拉斯 → 洪都拉斯) before burning captions or
+  writing cards / copy, and put every new mis-hearing into persona `subtitles.term_fixes` (references/CAPTION_RULES.md).
+- **Cleanup**: strict on fillers, stutters and restarts (persona `cleanup.profile`); deliberate doubling (起起落落,
+  泛泛) and rhetorical repeats stay; every cut is re-transcribed (`cleanup verify`).
+- **Cover**: same canvas as the video, bright, her full face (retouched: slimmer, light makeup), designed type, no
+  clutter labels, burned into frame 1 when the platform shows frame 1. Look at it before handing over.
+- **Voice**: her own recording over TTS; her cloned voice next; a stock TTS voice only when she says so.
+- **Persona first**: speeds, loudness, theme, tags (`publish.tag_sets` per format: no career tags on an art post),
+  voice rules come from `persona()`; never hard-code her taste in a script.
+- **Delivery**: H.264 High, bt709, AAC 192k / 48k, `+faststart`, two-pass loudnorm to −14 LUFS (platform profile),
+  resolution never below the source or the platform canvas.
+- **Public-safe**: fonts / models only via `vstudio.config.font()/model()`; no personal paths or media in the repo.
 
-## 2. Shared rules (all workflows)
-- **The creator decides taste-critical choices**: hook lines, which sentences to cut, style preset, voice. Offer a short menu with a recommendation; don't silently choose.
-- **Look = one design theme** (`lib/vstudio/theme.py`, rules in `references/STYLE_RULES.md`): `editorial` (default), `mono`, `soft`, `night`, `xhs-pop`. Pick it from persona `style.theme` / client / recipe `theme`; restyle a finished clip with the output-edit `theme` op ("换成更高级的配色"). Never hard-code colours in a workflow script: read theme tokens. One accent per frame, one emphasised keyword per line, no saturated red on light paper, notes = light paper card with a small label, quotes = typography (no coloured clip-art quote mark), stamps / pop words subtle (fade + rise, 200-350 ms ease-out), captions contrast >= 4.5:1.
-- **Persona first**: speeds, loudness, brand colours, title rules, tags and voice rules come from `persona()` (`lib/vstudio/config.py`). Never hard-code a creator's taste.
-- **Verify by looking and listening**: snapshot frames at the busiest moment of each section and mid-transition; ASR the cut to confirm no clipped syllables; check loudness of the final file.
-- **Verify names after ASR**: always run proofread with entity verification (`vstudio.proofread.proofread` / the batch proofread stage; `vstudio.entities`) before burning captions or writing cards / post copy, and use its fixes for every text of the project (宏都拉斯 → 洪都拉斯). See [references/CAPTION_RULES.md](references/CAPTION_RULES.md).
-- **Delivery defaults**: H.264 High, bt709 tags, AAC 192k/48k, `+faststart`, two-pass loudnorm to `persona.audio.loudness_lufs` (−14).
-- **Register every job and report its status** so the Reelfold desktop app lists it (全部项目) and shows it live (进行中) without an import: at the start `python -m vstudio.project new` when a recipe fits, else `python -m vstudio.project touch <work folder> --status running --stage plan`; at each long step `touch <folder> --stage <s> --progress 0.4 --message ...`; at a question for the creator `--status waiting --needs-you`; at the end `touch <folder> --status done` (or `adopt <folder>` for an old folder). Scripts: `vstudio.project.touch(dir, recipe, title, outputs, status=..., stage=...)`. Only `<folder>/.vstudio/` is written; ASR / cleanup / export / AIGC polling heartbeat on their own inside a registered folder.
-- **Public-safe**: fonts and models only through `vstudio.config.font()/model()`; no absolute personal paths in configs you commit.
-
-## 3. Find a capability fast
-
-| You want… | Go to |
-|---|---|
-| Cut 气口 / fillers / repeats / misspeaks | ONE shared tool for every workflow with original speech (talkinghead, promo-recut, longform-to-short, call-clips, vlog speech clips, photo-story clips with speech, polish `--cleanup`): `python -m vstudio.cleanup analyze clip.mp4 [--ranges 12.5-80] [--profile gentle\|standard\|tight]` → `cleanup_review.md` → creator replies "确认 3,5,9 / 保留 7" → `apply cleanup.json --reply "确认 3,5,9 / 保留 7"` → `verify <out>` (re-ASR, lost words exit 1). In memory: `cleanup.detect/clean/keep_segments`, captions via `timemap` + `remap_words`. `references/CLEANUP.md`. **Only auto edits are cut until the creator approves more.** |
-| Long → short, multi-episode split, vertical slices | `workflows/longform-to-short` (`--platform xiaohongshu:vertical` or `douyin`; speaker or title band) |
-| Speed up (pitch-preserved), per-segment speed, speed ramps | persona `speed.*`; `media.atempo_chain`; vlog calm = per-segment `speed`, vlog fun = ramps inside a shot + true slow-mo; HyperFrames `data-playback-rate` |
-| Beats / 卡点, cut to music | `vstudio.beats` (`analyze`, `snap`, downbeats, sections, `verify`); vlog `style: fun`; photo-story `MODE = "music"` |
-| Volume / loudness / music bed / ducking | `audio.loudnorm_2pass`, `audio.mix_bed`, `audio.loop_bed`; HyperFrames `carve.mjs` |
-| SFX cue sheets (whoosh / pop / hit on cuts and reveals) | `audio.cue_sheet_for`, `audio.sfx_bank`, `audio.place_sfx`; `references/SOUND.md` |
-| Captions (bilingual, keyword highlight, SRT/ASS) | `asr.transcribe` → `subs` (wrap, retime, srt/ass); explainer `display_en` for spoken numbers → digits |
-| Notes panels 记笔记, callouts, chips, badges, stamps, progress bar, quote card, marker sweep, chapter rule, number counter, lower third | `overlays.*` (PIL, themed by `vstudio.theme`) or `overlays.hf_progress` / `hf.*` (HyperFrames; `theme.css_vars()` for HTML) |
-| 配色 / 风格 / 更高级 / 红色太丑 (the look) | `vstudio.theme` presets, `references/STYLE_RULES.md`; persona `style.theme`; output edit `{op: theme}` |
-| Highlight frame / freeze + enlarge / zoom-in / punch-in | `hf.freeze_hold`, `hf.punch_in`, talkinghead compose zoom, photo-story loupe + red-pen circle |
-| Split screen, screenshot cards with highlighter | `hf.split_screen`, `hf.screenshot_cards` (promo-recut) |
-| B-roll in 口播 (cut-away, PiP, split screen, scrolling screenshot cards) | talkinghead `BROLL` in the config (`scripts/vertical/broll.py`; captions avoid the face in splits) |
-| Transitions | `vstudio.xfade` (24 names in HyperFrames, ffmpeg and per-frame PIL), `hf.scene_transitions`, `cut.xfade_assemble(transition=…)` |
-| Effects registry, add an effect | `python -m vstudio.effects --list / --show <id>`, `effects.find(...)`; `references/ADDING_EFFECTS.md` |
-| Reframe 16:9 ↔ 9:16 ↔ 3:4 (face-tracked) | `python -m vstudio.reframe in.mp4 out.mp4 --size 1080x1920`, `reframe.plan/render` |
-| Platform export (one master → YouTube long + Shorts / TikTok / Instagram / X / Facebook / LinkedIn / Threads / Reddit / Pinterest / Snapchat, 小红书 / 抖音 / 视频号 / B站 / 快手 / 微博 / 知乎, Dailymotion / Kwai) | `python -m vstudio.export master.clean.mp4 --platforms xiaohongshu:vertical,douyin,youtube --cues cues.json --out exports/`; profiles: `vstudio.platform`, `references/PLATFORMS.md`; publishing (assisted fill by default, APIs opt-in): `references/PUBLISHING.md` |
-| Retouch (slim, skin, makeup; video `--preset fast` for long bodies), cover frame picking | `python -m vstudio.retouch`, talkinghead `retouch_video.py`, `references/RETOUCH.md`, `cover.score_frames`, `cover.prepare_photo` |
-| Voice clone (your own voice for narration) | `tts.synth(engine="clone", ref_wav=…, ref_text=…)` (Qwen3-TTS via mlx-audio, local); photo-story `VOICE = dict(engine="clone")`; persona `tts.clone.*` |
-| Vertical explainer (3b1b short) | `workflows/explainer` "Vertical short" (`--platform xiaohongshu:full`, portrait design truth) |
-| Music-only photo story | `workflows/photo-story` `MODE = "music"` (cuts on bars, chapter cards on music sections) |
-| Cover / thumbnail | `workflows/cover`, `cover.split_cover`, `cover.notes_cover`, `cover.framed_cover` (sizes per platform) |
-| Post copy, title length, chapter timeline | `publish.check_title`, `publish.chapter_lines`, `publish.post_body`, `platform.check_text` |
-| Hide a face / name label (privacy) | `workflows/call-clips` (`face.track_faces` + sticker, `name_mask`) |
-| What was validated on real footage | `references/VALIDATION.md` |
-| Which AI provider / model per step: API key, local model (Ollama, LM Studio, vLLM, llama.cpp, whisper / TTS server) or no key (the user's own Claude Code / Codex login) | `python -m vstudio.llm providers` (from `lib/`), persona / client `llm:` routes; `references/PROVIDERS.md` |
-
-The effect catalogue (91 effects, 196 counting named variants, generated from `lib/vstudio/effects.py`; 9 recipes): `references/EFFECTS.md`. Add an effect: `references/ADDING_EFFECTS.md`. Transitions shared across engines: `vstudio.xfade` (24 names in HyperFrames, ffmpeg and per-frame PIL).
-
-## 4. Shared library (`lib/vstudio`)
-| Module | What |
-|---|---|
-| `config` | `font(role)` (incl. `cjk-serif`, persona `path.ttc#N` faces; loud warning when missing), `model(name)`, `persona()`, `xhs_len(title)` |
-| `media` | ffmpeg/ffprobe discovery, probe, frame grab, contact sheet, HDR→SDR, delivery encode + bt709 retag |
-| `audio` | two-pass loudnorm (post-encode true-peak check, wav headroom, `ensure_loudness`), stems, RMS envelopes, silence spans, music beds (mix/loop/duck), pitch shift, SFX bank + cue sheets |
-| `asr` | whisper (mlx → faster-whisper → OpenAI) with word timestamps, cache, term fixes, script alignment; `drop_hallucinations` (on by default) + `has_speech(tr)` for music-only clips |
-| `cut` | `TimeMap`, word-level tightening, automatic disfluency finder, frame-exact cuts, crossfade assembly |
-| `cleanup` | the shared 气口 / filler / repeat / restart / retake tool: `analyze` → EDL + review sheet, `apply` (word-safe, frame-exact, versioned, never re-cuts a cut file), `verify` (re-ASR); profiles gentle / standard / tight, persona `cleanup:`; `python -m vstudio.cleanup` |
-| `subs` | cues, CJK-aware balanced wrap, highlight markup, SRT/ASS, retime, bilingual pairing |
-| `tts` | OpenAI / Kokoro / Edge / self-hosted server / ElevenLabs TTS and local voice clone (Qwen3-TTS) with a content cache |
-| `llm` | `complete(task, system, prompt, schema=...)`: one LLM call for every provider (anthropic, openai, openai-compatible presets incl. local servers, gemini, claude-code / codex CLIs, none), routing, JSON repair, retries, cost; `python -m vstudio.llm providers / route / test` |
-| `face`, `filters`, `mls`, `retouch` | landmarks, `VideoFaceTracker`, talk activity; One Euro smoothing; own MLS warp; portrait retouch v2 + makeup |
-| `theme` | design themes (tokens: paper, ink, one accent, marker, fonts, radius, shadow, card / quote / stamp / pop / progress styles, motion); resolution explicit > env > recipe > client > persona > legacy > `editorial` |
-| `draw`, `overlays`, `cover` | PIL text/shape primitives (`emph_layer`: theme emphasis), themed overlays and progress bars, cover compositors |
-| `render`, `hf` | headless-Chrome HTML→PNG, font staging/subsetting; HyperFrames effect generators |
-| `xfade` | one transition name → HyperFrames GSAP, ffmpeg `xfade` or per-frame blend (24 names) |
-| `effects` | effect registry (91 entries, 196 with variants) → generated `references/EFFECTS.md`; `--list`, `--show`, `find()` |
-| `beats` | beat grid, tempo check, downbeats, energy, sections, `snap`, `cut_plan`, `verify` |
-| `platform` | profiles: canvas, safe box, caption box, keep-outs, loudness, encode, length, cover, text limits |
-| `reframe` | face-tracked / centre / pad-blur / letterbox reframe between aspects (`python -m vstudio.reframe`) |
-| `export` | one clean master → per-platform files, captions (cues.json `keepouts`, 【kw】/`hl` colour, `--no-captions`), covers (`--cover platform=path`), manifest (`python -m vstudio.export`) |
-| `publish` | title checks, chapter lines, post bodies for 小红书 / YouTube / B站 / X (280 weighted) / Instagram (≤ 5 tags), `platform_post` (en/zh/bilingual copy per platform), `generate_copy`; `use_persona_tags=False` / `tag_set=` (persona `publish.tag_sets`) |
-
-Tests: `python3 -m pytest tests -q` (synthetic media, no network).
-Pre-publish repo check: `python3 scripts/check_skill.py` (frontmatter, decorative emoji, personal paths).
+Tests: `python3 -m pytest tests -q`. Repo check: `python3 scripts/check_skill.py`.
