@@ -176,40 +176,34 @@ test('⌘K palette, ? shortcuts, drop target', async () => {
   await expect(page.getByTestId('shortcuts')).toHaveCount(0);
 });
 
-test('publish calendar: platform chips (X / Instagram / 视频号 / B站) choose where new posts go', async () => {
+test('publish board: the platform row lists only connected accounts (+ Add); the full platform list is on Accounts', async () => {
   await hash('#/publish');
-  const chips = page.getByTestId('pub-platforms');
-  await expect(chips).toBeVisible({ timeout: 15000 });
-  for (const pf of ['x', 'instagram', 'wechat-channels', 'bilibili', 'xiaohongshu']) await expect(chips.locator(`button[data-pf="${pf}"]`)).toBeVisible();
-  await chips.locator('button[data-pf="x"]').click();
-  await expect(chips.locator('button[data-pf="x"]')).toHaveAttribute('aria-pressed', 'true');
-  expect(await page.evaluate(() => localStorage.getItem('pub.schedTo'))).toBe('x');
-  if (await page.getByTestId('pub-ai').isVisible()) {
-    await page.getByTestId('pub-ai').click();
-    await expect(page.locator('[data-testid="pub-post"] .pfi[data-pf="x"]').first()).toBeVisible({ timeout: 10000 });
+  await expect(page.getByTestId('calendar')).toBeVisible({ timeout: 15000 });
+  // no account yet: one question instead of a wall of platforms
+  await expect(page.getByTestId('pb-onboarding').or(page.getByTestId('pub-week'))).toBeVisible({ timeout: 15000 });
+  if (await page.getByTestId('pb-onboarding').isVisible()) {
+    await expect(page.getByTestId('pb-ob-tile')).toHaveCount(8);
+    await expect(page.getByTestId('pb-ob-continue')).toBeDisabled();
+    await page.locator('[data-testid="pb-ob-tile"][data-pf="x"]').click();
+    await page.locator('[data-testid="pb-ob-tile"][data-pf="xiaohongshu"]').click();
+    await expect(page.getByTestId('pb-ob-continue')).toContainText('2');
+    await page.getByTestId('pb-ob-continue').click();
+    await expect(page.getByTestId('channels')).toBeVisible(); // step 2: sign in on Accounts
+    await hash('#/publish');
   }
-  await chips.locator('button[data-pf="xiaohongshu"]').click();
+  const row = page.getByTestId('pub-platforms');
+  await expect(row).toBeVisible({ timeout: 15000 });
+  await expect(row.locator('button[data-pf="x"]')).toBeVisible();
+  await expect(row.locator('button[data-pf="xiaohongshu"]')).toBeVisible();
+  await expect(row.locator('button[data-pf="kwai"]')).toHaveCount(0); // not connected: not on the board
+  await row.locator('button[data-pf="x"]').click();
+  await expect(row.locator('button[data-pf="x"]')).toHaveAttribute('aria-pressed', 'true');
+  expect(await page.evaluate(() => localStorage.getItem('pb.filter'))).toBe('x');
+  await row.locator('button[data-pf="all"]').click();
+  await expect(page.getByTestId('pb-add-platform')).toHaveAttribute('href', '#/publish/accounts');
 });
 
-test('platform chips: English, then Chinese, then other languages; YouTube is one chip with long-form / Shorts', async () => {
-  await hash('#/publish');
-  const chips = page.getByTestId('pub-platforms');
-  await expect(chips).toBeVisible({ timeout: 15000 });
-  expect(await chips.locator('[data-group]').evaluateAll((els) => els.map((e) => e.getAttribute('data-group')))).toEqual(['global', 'zh', 'intl']);
-  for (const pf of ['facebook', 'linkedin', 'threads', 'reddit', 'pinterest', 'snapchat']) await expect(chips.locator(`[data-group="global"] button[data-pf="${pf}"]`)).toBeVisible();
-  for (const pf of ['kuaishou', 'weibo', 'zhihu']) await expect(chips.locator(`[data-group="zh"] button[data-pf="${pf}"]`)).toBeVisible();
-  for (const pf of ['dailymotion', 'kwai']) await expect(chips.locator(`[data-group="intl"] button[data-pf="${pf}"]`)).toBeVisible();
-  await expect(chips.locator('button[data-pf="youtube-shorts"]')).toHaveCount(0);
-  await chips.locator('button[data-pf-format="youtube-shorts"]').click();
-  await expect(chips.locator('button[data-pf="youtube"]')).toHaveAttribute('aria-pressed', 'true');
-  await expect(chips.locator('button[data-pf-format="youtube-shorts"]')).toHaveAttribute('aria-pressed', 'true');
-  expect(await page.evaluate(() => localStorage.getItem('pub.schedTo'))).toBe('youtube-shorts');
-  await chips.locator('button[data-pf-format="youtube"]').click();
-  expect(await page.evaluate(() => localStorage.getItem('pub.schedTo'))).toBe('youtube');
-  await chips.locator('button[data-pf="xiaohongshu"]').click();
-});
-
-const SCREENS = ['#/', '#/inbox', '#/projects', 'PROJECT', 'CLIP', '#/publish', '#/publish/accounts', '#/settings', '#/settings/ai'];
+const SCREENS = ['#/', '#/inbox', '#/projects', 'PROJECT', 'CLIP', '#/publish', '#/publish/accounts', '#/settings', '#/settings/ai', '#/settings/ai/jobs', '#/settings/accounts', '#/settings/advanced'];
 
 for (const lang of ['en', 'zh-CN', 'fr'] as const) {
   test(`every main screen renders in ${lang}: no missing keys, no clipped labels`, async () => {
@@ -217,6 +211,7 @@ for (const lang of ['en', 'zh-CN', 'fr'] as const) {
       localStorage.setItem('i18n.strict', '1');
       await window.desk.setSettings({ lang: l });
     }, lang);
+    await hash('#/'); // the app sidebar (engine status) - Settings has its own sub-nav
     await page.reload();
     await page.waitForURL(/^app:\/\/desk\//);
     await expect(page.getByTestId('engine-status')).toBeVisible({ timeout: 30000 });

@@ -155,6 +155,16 @@ export function Publish({ batch }: { batch: string }) {
       const typed = Object.fromEntries((adapter?.params ?? []).map((p) => [p.key, (params[p.key] ?? '').trim()]).filter(([, v]) => v));
       const r = await window.desk.publish.fill({ batchId: batch, code: m.confirmation_code, job: item.job, platform: item.platform, adapterId, account, ...(Object.keys(typed).length ? { params: typed } : {}) });
       setFill(r);
+      // the calendar card shows "Press publish" (the form is filled; she presses publish herself)
+      if (r.ok && client) {
+        try {
+          const cal = await client.calendar();
+          const p = cal.posts.find((x) => x.item === batch && x.clip === item.job && x.platform.split(':')[0] === basePlatform(item.platform) && (x.state === 'planned' || x.state === 'ready'));
+          if (p) await client.updatePost(p.id, { state: 'filled' });
+        } catch {
+          /* the calendar is a convenience; the fill itself worked */
+        }
+      }
     });
 
   const lang = getLang();

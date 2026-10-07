@@ -55,20 +55,23 @@ test('the top-left is the app, not a workspace; clients only in agency mode', as
   await expect(page.getByTestId('projects')).toBeVisible();
   await expect(page.getByTestId('projects-client')).toHaveCount(0);
   await hash('#/settings');
-  await expect(page.getByTestId('settings-channels')).toBeVisible();
+  await expect(page.getByTestId('settings-nav')).toBeVisible();
+  await expect(page.locator('nav.side')).not.toContainText(/All projects|全部项目/); // Settings has its own sub-nav
   const toggle = page.getByTestId('agency-toggle');
   await expect(toggle).not.toBeChecked();
   await expect(page.getByTestId('open-clients')).toHaveCount(0);
-  await expect(page.locator('.pg')).not.toContainText(/Workspaces and clients|工作区和客户/);
   await toggle.check();
   await expect(page.getByTestId('open-clients')).toBeVisible();
-  await hash('#/projects');
+  await page.getByTestId('settings-back').click();
+  await expect(page.getByTestId('projects')).toBeVisible(); // back to where she was
   await expect(page.getByTestId('projects-client')).toBeVisible();
   await hash('#/settings');
   await page.getByTestId('agency-toggle').uncheck();
   await expect(page.getByTestId('open-clients')).toHaveCount(0);
   await hash('#/clients'); // without agency mode the clients screen is not reachable
-  await expect(page.getByTestId('settings-advanced')).toBeVisible();
+  await expect(page.getByTestId('settings-general')).toBeVisible();
+  await hash('#/settings/accounts');
+  await expect(page.getByTestId('settings-channels')).toBeVisible();
 });
 
 test('publishing accounts: name, default times, login state, remove', async () => {
@@ -93,7 +96,7 @@ test('publishing accounts: name, default times, login state, remove', async () =
   await page.getByRole('checkbox').uncheck(); // keep the (empty) session; nothing to sign out of in a test
   await page.getByTestId('channel-remove-ok').click();
   await expect(xrow).toHaveCount(0);
-  await hash('#/settings');
+  await hash('#/settings/accounts');
   await expect(page.getByTestId('settings-channel')).toContainText('@我的抖音');
   await hash('#/publish');
   await expect(page.getByTestId('pub-accounts')).toBeVisible();
@@ -132,7 +135,13 @@ test('package a work folder for platforms -> confirm the code -> calendar slots 
   await page.locator('button.tab[data-adapter="instagram"]').click();
   await page.locator('[data-testid="pub-item"][data-job="A_换圈子"]').click();
   await expect(page.getByTestId('pkg-item-checks').locator('[data-code="hashtags-over"]')).toBeVisible();
-  // the calendar: 8 slots this week, the 抖音 one posted
+  // the board: one card per clip per day (2 clips x 4 platforms = 8 rows, 2 cards), the 抖音 row posted
   await hash('#/publish');
-  await expect(page.getByTestId('pub-post')).toHaveCount(8, { timeout: 15000 });
+  await expect(page.getByTestId('pub-post')).toHaveCount(2, { timeout: 15000 });
+  const posts = await page.evaluate(async () => {
+    const info = await window.desk.engineInfo();
+    return (await (await fetch(info.baseUrl + '/api/calendar', { headers: { Authorization: `Bearer ${info.token}` } })).json()).posts as { platform: string; state: string }[];
+  });
+  expect(posts).toHaveLength(8);
+  expect(posts.some((p) => p.platform === 'douyin' && p.state === 'posted')).toBe(true);
 });
