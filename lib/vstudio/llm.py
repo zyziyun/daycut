@@ -118,6 +118,11 @@ CODEX_STRIP_ENV = ("OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_*", "CODEX_API_K
 # where installers put the CLIs (a Finder-launched app gets a minimal PATH); env VSTUDIO_CLI_EXTRA_DIRS replaces it
 CLI_EXTRA_DIRS = ("~/.local/bin", "~/.claude/local", "/opt/homebrew/bin", "/usr/local/bin", "~/.npm-global/bin",
                   "~/.bun/bin", "~/.volta/bin", "~/.cargo/bin")
+# Windows: npm's global prefix (%APPDATA%\npm: claude.cmd / codex.cmd), the native Claude Code installer
+# (~\.local\bin\claude.exe), winget / scoop shims, pnpm, bun, volta
+CLI_EXTRA_DIRS_WIN = ("~/.local/bin", "%APPDATA%/npm", "%LOCALAPPDATA%/Microsoft/WinGet/Links", "~/scoop/shims",
+                      "%LOCALAPPDATA%/pnpm", "~/.bun/bin", "%LOCALAPPDATA%/Volta/bin", "~/.cargo/bin",
+                      "%ProgramFiles%/nodejs")
 
 
 class LLMError(RuntimeError):
@@ -469,27 +474,71 @@ def _cli_env(strip, opts):
     return dict(os.environ) if opts.get("inherit_env") else strip_env(os.environ, strip)
 
 
+def _exe_names(name, windows):
+    """``name`` plus the executable extensions Windows would try (PATHEXT order: .exe before .cmd)."""
+    if not windows or os.path.splitext(name)[1]:
+        return [name]
+    exts = [e.lower() for e in os.environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD").split(";") if e]
+    return [name + e for e in exts if e in (".exe", ".cmd", ".bat", ".com")]
+
+
 def find_cli(name, opts=None):
-    """Absolute path of a CLI: route option ``cli``, PATH, then where installers usually put it."""
+    """Absolute path of a CLI: route option ``cli``, PATH, then where installers usually put it (on Windows
+    ``claude.exe`` / ``claude.cmd`` in npm's prefix, ~/.local/bin, ...). Run it through ``cli_argv``."""
     if (opts or {}).get("cli"):
         return opts["cli"]
     exe = shutil.which(name)
     if exe:
         return exe
+    windows = os.name == "nt"
     extra = os.environ.get("VSTUDIO_CLI_EXTRA_DIRS")
-    dirs = [d for d in extra.split(os.pathsep) if d] if extra is not None else CLI_EXTRA_DIRS
+    dirs = [d for d in extra.split(os.pathsep) if d] if extra is not None else \
+        (CLI_EXTRA_DIRS_WIN if windows else CLI_EXTRA_DIRS)
     for d in dirs:
-        p = os.path.join(os.path.expanduser(d), name)
-        if os.path.isfile(p) and os.access(p, os.X_OK):
-            return p
+        d = os.path.normpath(os.path.expanduser(os.path.expandvars(d)))
+        if "%" in d:                                       # an unset %VAR%
+            continue
+        for n in _exe_names(name, windows):
+            p = os.path.join(d, n)
+            if os.path.isfile(p) and os.access(p, os.X_OK):
+                return p
     return None
+
+
+_SHIM_TARGET = re.compile(r'"%(?:~dp0|dp0%)\\?([^"%]+)"\s+%\*')
+
+
+def cli_argv(exe, windows=None):
+    """The argv prefix that runs the CLI at ``exe``. On Windows an npm / pnpm ``.cmd`` shim is unwrapped into
+    ``[node.exe, <script>]`` (or the ``.exe`` it points at): running a .cmd goes through cmd.exe, which re-parses
+    every argument - a JSON schema or a prompt with quotes, ``&`` or ``%`` would be mangled (and could inject
+    commands). Anything else (and a shim that cannot be read) is ``[exe]``."""
+    windows = os.name == "nt" if windows is None else windows
+    if not (windows and str(exe).lower().endswith((".cmd", ".bat"))):
+        return [exe]
+    try:
+        with open(exe, encoding="utf-8", errors="replace") as f:
+            hits = _SHIM_TARGET.findall(f.read())
+    except OSError:
+        return [exe]
+    if not hits:
+        return [exe]
+    base = os.path.dirname(os.path.abspath(exe))
+    target = os.path.normpath(os.path.join(base, hits[-1].replace("/", os.sep).replace("\\", os.sep)))
+    if not os.path.isfile(target):
+        return [exe]
+    if target.lower().endswith(".exe"):
+        return [target]
+    node = os.path.join(base, "node.exe")
+    node = node if os.path.isfile(node) else shutil.which("node")
+    return [node, target] if node else [exe]
 
 
 def _claude_code(system, prompt, model, schema, max_tokens, timeout, opts):
     exe = find_cli("claude", opts)
     if not exe:
         raise LLMError("provider claude-code needs the Claude Code CLI (`claude`) on PATH")
-    cmd = [exe, "-p", "--output-format", "json", "--tools", "", "--no-session-persistence", "--strict-mcp-config"]
+    cmd = [*cli_argv(exe), "-p", "--output-format", "json", "--tools", "", "--no-session-persistence", "--strict-mcp-config"]
     if system:
         cmd += ["--system-prompt", system]
     if model:
@@ -498,8 +547,8 @@ def _claude_code(system, prompt, model, schema, max_tokens, timeout, opts):
         cmd += ["--json-schema", json.dumps(schema, ensure_ascii=False)]
     with tempfile.TemporaryDirectory(prefix="vstudio-llm-") as tmp:
         try:
-            r = subprocess.run(cmd, input=prompt, capture_output=True, text=True, cwd=tmp, timeout=timeout,
-                               env=_cli_env(CLI_STRIP_ENV, opts))
+            r = subprocess.run(cmd, input=prompt, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                               cwd=tmp, timeout=timeout, env=_cli_env(CLI_STRIP_ENV, opts))
         except subprocess.TimeoutExpired as e:
             raise LLMError(f"claude CLI timed out after {timeout} s") from e
     try:
@@ -604,7 +653,7 @@ def _codex(system, prompt, model, schema, max_tokens, timeout, opts):
 def _codex_run(exe, system, prompt, model, schema, timeout, opts):
     with tempfile.TemporaryDirectory(prefix="vstudio-llm-") as tmp:
         last = os.path.join(tmp, "last.txt")
-        cmd = [exe, "exec", "--json", "--sandbox", "read-only", "--skip-git-repo-check", "--cd", tmp,
+        cmd = [*cli_argv(exe), "exec", "--json", "--sandbox", "read-only", "--skip-git-repo-check", "--cd", tmp,
                "--output-last-message", last]
         if model:
             cmd += ["--model", model]
@@ -616,8 +665,8 @@ def _codex_run(exe, system, prompt, model, schema, timeout, opts):
         cmd.append("-")                                    # prompt from stdin
         full = (f"{system}\n\n---\n\n{prompt}" if system else prompt)
         try:
-            r = subprocess.run(cmd, input=full, capture_output=True, text=True, cwd=tmp, timeout=timeout,
-                               env=_cli_env(CODEX_STRIP_ENV, opts))
+            r = subprocess.run(cmd, input=full, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                               cwd=tmp, timeout=timeout, env=_cli_env(CODEX_STRIP_ENV, opts))
         except subprocess.TimeoutExpired as e:
             raise LLMError(f"codex CLI timed out after {timeout} s") from e
         text = open(last, encoding="utf-8").read() if os.path.exists(last) else ""
@@ -974,7 +1023,8 @@ def _probe_url(url, timeout=0.6, strict=True):
 
 def _cli_version(exe, timeout=10):
     try:
-        r = subprocess.run([exe, "--version"], capture_output=True, text=True, timeout=timeout)
+        r = subprocess.run([*cli_argv(exe), "--version"], capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=timeout)
         return (r.stdout or r.stderr).strip().splitlines()[0] if r.returncode == 0 else None
     except Exception:  # noqa: BLE001
         return None

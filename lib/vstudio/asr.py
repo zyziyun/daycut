@@ -210,16 +210,51 @@ def _run_mlx(wav, language, prompt, word_timestamps, model, hst=None, greedy=Fal
                         for w in s.get("words", []) or []]) for s in r["segments"]]
 
 
+def faster_device(env=None, platform=None, cuda_count=None):
+    """(device, compute_type) for faster-whisper.
+
+    ``VSTUDIO_WHISPER_DEVICE`` = cpu | cuda | auto picks the device (``VSTUDIO_WHISPER_COMPUTE`` the compute type).
+    Default: the CPU on Windows - ctranslate2 sees an NVIDIA driver there even when the CUDA 12 cuBLAS / cuDNN DLLs
+    it needs are not installed (they are not in the wheel) and then fails mid-run; elsewhere "auto" (CUDA when a GPU
+    is visible). There is no silent switch: a CUDA run that fails raises with how to pick the CPU."""
+    env = os.environ if env is None else env
+    platform = os.name if platform is None else platform
+    want = (env.get("VSTUDIO_WHISPER_DEVICE") or "").strip().lower() or ("cpu" if platform == "nt" else "auto")
+    compute = (env.get("VSTUDIO_WHISPER_COMPUTE") or "").strip().lower() or None
+    if want not in ("cpu", "cuda"):
+        if cuda_count is None:
+            try:
+                import ctranslate2
+                cuda_count = ctranslate2.get_cuda_device_count()
+            except Exception:  # noqa: BLE001
+                cuda_count = 0
+        want = "cuda" if cuda_count else "cpu"
+    return want, compute or ("int8" if want == "cpu" else "float16")
+
+
 def _run_faster(wav, language, prompt, word_timestamps, model, hst=None, greedy=False):
     from faster_whisper import WhisperModel
-    m = WhisperModel(model or FW_MODEL, device="auto", compute_type="auto")
-    kw = {"temperature": 0.0} if greedy else {}
-    segs, _ = m.transcribe(wav, language=language, word_timestamps=word_timestamps, initial_prompt=prompt or None, **kw,
-                           condition_on_previous_text=False,
-                           hallucination_silence_threshold=hst if word_timestamps else None, vad_filter=False)
-    return [dict(start=s.start, end=s.end, text=s.text, **_stats(s),
-                 words=[dict(word=w.word, start=w.start, end=w.end, p=w.probability) for w in (s.words or [])])
-            for s in segs]
+    device, compute = faster_device()
+    try:
+        m = WhisperModel(model or FW_MODEL, device=device, compute_type=compute)
+        kw = {"temperature": 0.0} if greedy else {}
+        # the samples, not the path: faster-whisper decodes a path with PyAV, whose API moves under it (faster-whisper
+        # 1.2.1 + PyAV 19: open() no longer takes metadata_errors); our wav is already 16 kHz mono from ffmpeg
+        import soundfile as sf
+        audio, sr = sf.read(wav, dtype="float32", always_2d=False)
+        if sr != 16000 or getattr(audio, "ndim", 1) != 1:
+            raise RuntimeError(f"faster-whisper needs 16 kHz mono audio, got {sr} Hz / {getattr(audio, 'ndim', 1)} dims")
+        segs, _ = m.transcribe(audio, language=language, word_timestamps=word_timestamps, initial_prompt=prompt or None,
+                               **kw, condition_on_previous_text=False,
+                               hallucination_silence_threshold=hst if word_timestamps else None, vad_filter=False)
+        return [dict(start=s.start, end=s.end, text=s.text, **_stats(s),
+                     words=[dict(word=w.word, start=w.start, end=w.end, p=w.probability) for w in (s.words or [])])
+                for s in segs]
+    except RuntimeError as e:
+        if device == "cuda" and re.search(r"cuda|cublas|cudnn", str(e), re.I):
+            raise RuntimeError(f"faster-whisper could not run on the GPU ({str(e).splitlines()[0][:200]}). Install the "
+                               "CUDA 12 cuBLAS + cuDNN libraries, or set VSTUDIO_WHISPER_DEVICE=cpu") from e
+        raise
 
 
 def _g(o, k, d=None):

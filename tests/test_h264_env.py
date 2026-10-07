@@ -56,7 +56,7 @@ def test_media_run_falls_back_to_libx264(monkeypatch, tmp_path):
     def fake_run(cmd, **kw):
         calls.append(list(cmd))
         return R(1 if "h264_mf" in cmd else 0)
-    monkeypatch.setattr(h264, "effective_encoder", lambda: "h264_mf")
+    monkeypatch.setattr(h264, "effective_encoder", lambda *a: "h264_mf")
     monkeypatch.setattr(media.subprocess, "run", fake_run)
     media.run(["ffmpeg", "-i", "a.mp4", "-c:v", "libx264", "-crf", "18", "o.mp4"])
     assert "h264_mf" in calls[0] and "libx264" in calls[1] and len(calls) == 2
@@ -90,9 +90,13 @@ def test_ffmpeg_paths_from_env(monkeypatch, tmp_path):
 
 def test_popen_hook_rewrites_subprocess_ffmpeg_lines(tmp_path):
     """A workflow script calling subprocess.run(["ffmpeg", ... "-c:v", "libx264" ...]) gets the encoder."""
-    shim = tmp_path / "ffmpeg"
-    shim.write_text("#!/bin/sh\necho \"$@\" > \"$OUT\"\n")
-    shim.chmod(0o755)
+    if os.name == "nt":                                   # a batch file stands in for ffmpeg.exe
+        shim = tmp_path / "ffmpeg.cmd"
+        shim.write_text('@echo %* > "%OUT%"\r\n')
+    else:
+        shim = tmp_path / "ffmpeg"
+        shim.write_text("#!/bin/sh\necho \"$@\" > \"$OUT\"\n")
+        shim.chmod(0o755)
     code = ("import subprocess, vstudio, vstudio.h264 as h; h._PROBED[r'%s|h264_mf'] = True; "
             "subprocess.run(['ffmpeg', '-i', 'a', '-c:v', 'libx264', '-crf', '23', 'o.mp4'])" % shim)
     env = dict(os.environ, PYTHONPATH=os.path.join(ROOT, "lib"), VSTUDIO_H264_ENCODER="h264_mf",

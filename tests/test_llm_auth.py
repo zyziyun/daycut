@@ -46,7 +46,7 @@ def _fake_cli(monkeypatch, replies):
     monkeypatch.setattr(llm.shutil, "which", lambda n: f"/bin/{n}" if n in ("claude", "codex") else None)
     monkeypatch.setattr(llm, "_cli_version", lambda exe, timeout=10: "9.9 (test)")
 
-    def run(cmd, input=None, capture_output=None, text=None, cwd=None, timeout=None, env=None):
+    def run(cmd, input=None, capture_output=None, text=None, cwd=None, timeout=None, env=None, **kw):
         calls.append(dict(cmd=cmd, env=env, input=input))
         for key, (rc, out, err) in replies.items():
             if " ".join(cmd[1:]).startswith(key):

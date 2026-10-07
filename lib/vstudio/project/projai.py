@@ -30,6 +30,7 @@ from vstudio import messages as MSG
 from vstudio.batch.util import read_json
 
 from . import outputs as O
+from ..oscompat import relpath as _relpath
 
 DEFAULT_TIMEOUT = 120.0
 MAX_OUTPUTS = 40
@@ -176,15 +177,15 @@ def _source_hits(d, stems, limit=24):
     hits, scripts, seen = [], [], 0
     keys = [s for s in stems if s]
     for root, dirs, files in os.walk(d):
-        rel_root = os.path.relpath(root, d)
-        depth = 0 if rel_root == "." else rel_root.count(os.sep) + 1
+        rel_root = _relpath(root, d)
+        depth = 0 if rel_root == "." else rel_root.count("/") + 1
         dirs[:] = [x for x in sorted(dirs) if x not in _SKIP_DIRS and not x.startswith(".") and depth < 3]
         for fn in sorted(files):
             ext = os.path.splitext(fn)[1].lower()
             if ext not in _TEXT_EXT or fn.endswith(".asr.json") or fn.startswith("."):
                 continue
             p = os.path.join(root, fn)
-            rel = os.path.relpath(p, d)
+            rel = _relpath(p, d)
             try:
                 if os.path.getsize(p) > 512 * 1024:
                     continue
@@ -225,9 +226,9 @@ def _paths(d, kind, recs, cls, zh):
                                       label=O.msg("act-regenerate", "Regenerate these clips", "重新生成这几条",
                                                   n=len(items)))]))
     hits, scripts = _source_hits(d, stems, limit=60) if kind == "work" else ([], [])
-    tags = {p for r in recs for p in os.path.relpath(os.path.dirname(r["file"]), d).split(os.sep)
+    tags = {p for r in recs for p in _relpath(os.path.dirname(r["file"]), d).split("/")
             if p not in (".", "final", "exports", "out")}             # final/v2/A.mp4 -> work/v2/ scripts first
-    hits.sort(key=lambda h: (0 if tags & set(h["file"].split(os.sep)) else 1))
+    hits.sort(key=lambda h: (0 if tags & set(h["file"].split("/")) else 1))
     hits = hits[:24]
     if kind == "work" and (hits or scripts):
         files = list(dict.fromkeys(h["file"] for h in hits))

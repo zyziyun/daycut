@@ -95,13 +95,9 @@ def write(d, status, stage=None, progress=None, message=None, eta=None, needs_yo
 
 
 def _pid_alive(pid):
-    try:
-        os.kill(int(pid), 0)
-        return True
-    except PermissionError:
-        return True
-    except (OSError, TypeError, ValueError):
-        return False
+    """True while ``pid`` exists (never signals it: ``os.kill(pid, 0)`` terminates the process on Windows)."""
+    from ..oscompat import pid_alive as alive
+    return alive(pid)
 
 
 def effective(rec, now=None):

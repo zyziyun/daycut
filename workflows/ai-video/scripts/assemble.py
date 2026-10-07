@@ -20,6 +20,7 @@ import pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
 
 from vstudio import media  # noqa: E402
+from vstudio.oscompat import relpath as _relpath  # noqa: E402
 
 
 def load(path):
@@ -144,8 +145,8 @@ def assemble(t, asr=True, out=print):
     res = {"master": master}
     if asr:
         res["cues"] = captions(t, master, out=out)
-    out("next: python3 -m vstudio.export " + os.path.relpath(master) + " --platforms <list> "
-        + (f"--cues {os.path.relpath(res['cues'])} " if res.get("cues") else "") + "--out exports/")
+    out("next: python3 -m vstudio.export " + _relpath(master) + " --platforms <list> "
+        + (f"--cues {_relpath(res['cues'])} " if res.get("cues") else "") + "--out exports/")
     return res
 
 

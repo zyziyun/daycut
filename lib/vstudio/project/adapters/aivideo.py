@@ -10,6 +10,7 @@ import yaml
 from vstudio.batch.util import read_json, sha1_json, write_json
 
 from ..build import file_sha
+from ...oscompat import relpath as _relpath
 
 _TOTAL = re.compile(r"Estimated total:\s*([\d.]+)\s*credits(?:\s*\(\+\d+% retry allowance = ([\d.]+)\))?")
 
@@ -119,7 +120,7 @@ def timeline(env):
     edl = []
     for unit in sorted(picks):
         f = picks[unit]
-        edl.append({"take": os.path.relpath(f, os.path.join(d, "takes")), "in": 0.0,
+        edl.append({"take": _relpath(f, os.path.join(d, "takes")), "in": 0.0,
                     "out": round(media.duration(f), 3)})
     tl = dict(canvas=[w, h], fps=30, takes_dir="takes", out="master.mp4", grade=dict(saturation=0.88, grain=4),
               edl=edl, music=dict(path=None, duck_db=-10, carve=True),

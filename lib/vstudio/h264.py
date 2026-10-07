@@ -14,8 +14,12 @@ or when ``VSTUDIO_FFMPEG`` / ``VSTUDIO_FFPROBE`` are set) that maps
   -preset / -tune / -x264-params / -x264opts -> dropped;   h264_mf: no -profile / -level, nv12 input;
 
 and a bare ``ffmpeg`` / ``ffprobe`` argv[0] to the configured binaries. Fallback: the encoder is probed once
-(a 0.1 s test encode); when it does not work on this machine nothing is rewritten (libx264 stays), and
-``media.run`` re-runs a failed rewritten command with the original libx264 line.
+(a 0.1 s test encode); when it does not work on this machine the next of ``FALLBACKS`` that this ffmpeg has is
+used - libx264 (GPL builds: Homebrew, most Linux distros), else libopenh264 (the LGPL build the desk app bundles
+has no libx264: a Windows PC without a working Media Foundation H.264 encoder - Windows N without the Media
+Feature Pack, some VMs - still encodes). ``media.run`` re-runs a failed rewritten command with that fallback.
+OpenH264 is built from source here, so Cisco's patent licence for its own binaries does not cover it; it is the
+last resort after the OS / GPU encoders (VideoToolbox, Media Foundation, NVENC / QSV / AMF).
 """
 import os
 import subprocess
@@ -23,10 +27,13 @@ import sys
 
 DEFAULT = "libx264"
 ALIASES = {"videotoolbox": "h264_videotoolbox", "vt": "h264_videotoolbox", "mf": "h264_mf", "x264": "libx264"}
-KNOWN = ("libx264", "h264_videotoolbox", "h264_mf", "h264_nvenc", "h264_qsv", "h264_amf")
+KNOWN = ("libx264", "h264_videotoolbox", "h264_mf", "h264_nvenc", "h264_qsv", "h264_amf", "libopenh264")
+FALLBACKS = ("libx264", "libopenh264")            # tried in order when the configured encoder does not work
+NO_PROFILE = ("h264_mf", "libopenh264")             # take no -profile:v high / -level (MF: rejected, OpenH264: CB)
 X264_ONLY = {"-preset", "-tune", "-x264-params", "-x264opts"}
 CODEC_FLAGS = ("-c:v", "-vcodec", "-codec:v")
 _PROBED = {}
+_LISTED = {}
 _ORIG_INIT = None
 
 
@@ -89,7 +96,7 @@ def args(crf=18, preset="medium", enc=None, pix_fmt="yuv420p", profile="high"):
         out += ["-profile:v", profile] if profile else []
         return out + (["-pix_fmt", pix_fmt] if pix_fmt else [])
     out = ["-c:v", enc]
-    if enc != "h264_mf" and profile:
+    if enc not in NO_PROFILE and profile:
         out += ["-profile:v", profile]
     if pix_fmt:
         out += ["-pix_fmt", "nv12" if enc == "h264_mf" and pix_fmt == "yuv420p" else pix_fmt]
@@ -128,7 +135,7 @@ def rewrite(argv, enc=None, machine=None):
                 crf = 18.0
             i += 2
             continue
-        if enc == "h264_mf" and x in ("-profile:v", "-level", "-level:v") and nxt is not None:
+        if enc in NO_PROFILE and x in ("-profile:v", "-level", "-level:v") and nxt is not None:
             i += 2
             continue
         if enc == "h264_mf" and x == "-pix_fmt" and nxt == "yuv420p":
@@ -150,39 +157,73 @@ def ffprobe_path():
     return os.environ.get("VSTUDIO_FFPROBE") or None
 
 
+def listed(enc, ffmpeg=None):
+    """False only when ``ffmpeg -encoders`` runs and does not list ``enc`` (unknown -> True)."""
+    ff = ffmpeg or ffmpeg_path() or "ffmpeg"
+    if ff not in _LISTED:
+        out = ""
+        try:
+            p = subprocess.Popen([ff, "-hide_banner", "-encoders"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                 stdin=subprocess.DEVNULL, **({"_vstudio_raw": True} if _ORIG_INIT else {}))
+            out = p.communicate(timeout=30)[0].decode("utf-8", "replace")
+        except (OSError, subprocess.SubprocessError):
+            pass
+        _LISTED[ff] = set(ln.split()[1] for ln in out.splitlines() if len(ln.split()) > 1 and ln[:1] == " " and
+                          ln.split()[0][:1] == "V") if "Encoders:" in out else None
+    names = _LISTED[ff]
+    return names is None or enc in names
+
+
+def _marks():
+    return dict(x.rsplit("=", 1) for x in os.environ.get("VSTUDIO_H264_PROBED", "").split("\n") if "=" in x)
+
+
 def works(enc=None, ffmpeg=None):
-    """True when ``enc`` can encode a tiny clip with this ffmpeg (cached per process and in the environment)."""
+    """True when ``enc`` can encode a tiny clip with this ffmpeg (cached per process and in the environment).
+    libx264 is not test-encoded: it works when this ffmpeg lists it (or the list cannot be read)."""
     enc = _norm(enc) or encoder()
     if enc == "libx264":
-        return True
+        return listed(enc, ffmpeg)
     ff = ffmpeg or ffmpeg_path() or "ffmpeg"
     key = f"{ff}|{enc}"
     if key in _PROBED:
         return _PROBED[key]
-    mark = os.environ.get("VSTUDIO_H264_PROBED", "")
-    if mark.startswith(key + "="):
-        _PROBED[key] = mark.endswith("=1")
+    marks = _marks()
+    if key in marks:
+        _PROBED[key] = marks[key] == "1"
         return _PROBED[key]
-    cmd = [ff, "-v", "error", "-nostdin", "-f", "lavfi", "-i", "color=c=gray:s=128x128:d=0.2:r=10"] + \
-        args(18, enc=enc) + ["-f", "null", "-"]
-    try:
-        p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
-                             _vstudio_raw=True) if _ORIG_INIT else \
-            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
-        ok = p.wait(timeout=30) == 0
-    except (OSError, subprocess.SubprocessError):
-        ok = False
+    ok = listed(enc, ff)
+    if ok:
+        cmd = [ff, "-v", "error", "-nostdin", "-f", "lavfi", "-i", "color=c=gray:s=128x128:d=0.2:r=10"] + \
+            args(18, enc=enc) + ["-f", "null", "-"]
+        try:
+            p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
+                                 _vstudio_raw=True) if _ORIG_INIT else \
+                subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
+            ok = p.wait(timeout=30) == 0
+        except (OSError, subprocess.SubprocessError):
+            ok = False
     _PROBED[key] = ok
-    os.environ["VSTUDIO_H264_PROBED"] = f"{key}={int(ok)}"
+    marks[key] = str(int(ok))
+    os.environ["VSTUDIO_H264_PROBED"] = "\n".join(f"{k}={v}" for k, v in marks.items())
     if not ok:
-        print(f"!! video-studio: H.264 encoder {enc} does not work with {ff}; using libx264", file=sys.stderr)
+        print(f"!! video-studio: H.264 encoder {enc} does not work with {ff}; "
+              f"using {fallback(enc, ff)}", file=sys.stderr)
     return ok
 
 
-def effective_encoder():
-    """``encoder()`` when it works here, else libx264."""
+def fallback(failed=None, ffmpeg=None):
+    """The first of ``FALLBACKS`` (other than ``failed``) this ffmpeg can use; libx264 when none can."""
+    for enc in FALLBACKS:
+        if enc != failed and works(enc, ffmpeg):
+            return enc
+    return DEFAULT
+
+
+def effective_encoder(ffmpeg=None):
+    """``encoder()`` when it works here, else ``fallback()`` (libx264, else libopenh264)."""
     enc = encoder()
-    return enc if enc == "libx264" or works(enc) else "libx264"
+    return enc if works(enc, ffmpeg) else fallback(enc, ffmpeg)
 
 
 def resolve_bin(argv):
@@ -207,11 +248,10 @@ def install():
     def _init(self, cmd, *a, _vstudio_raw=False, **kw):
         if not _vstudio_raw and isinstance(cmd, (list, tuple)):
             cmd = resolve_bin(cmd)
-            enc = _norm(os.environ.get("VSTUDIO_H264_ENCODER"))
-            if enc and enc != "libx264":
-                new = rewrite(cmd, enc)
-                if new is not cmd and works(enc, str(cmd[0])):
-                    cmd = new
+            if "libx264" in cmd and os.path.basename(str(cmd[0])).lower().startswith("ffmpeg"):
+                enc = effective_encoder(str(cmd[0]))
+                if enc != "libx264":
+                    cmd = rewrite(cmd, enc)
         _ORIG_INIT(self, cmd, *a, **kw)
 
     subprocess.Popen.__init__ = _init

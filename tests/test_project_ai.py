@@ -87,7 +87,7 @@ def test_burned_text_on_flattened_outputs_needs_rerender_fast_without_model(tmp_
     assert n["code"] == "burned-text" and n["reason"]["message_zh"] and n["targets"] == ["副业复盘"]
     p = n["paths"][0]
     assert p["kind"] == "rerender-scripts"
-    assert any(h["file"] == os.path.join("work", "clipdefs.py") and h["line"] == 3 for h in p["files"])
+    assert any(h["file"] == "work/clipdefs.py" and h["line"] == 3 for h in p["files"])
     kinds = [a["kind"] for a in p["actions"]]
     assert kinds[0] == "copy-prompt" and "open-file" in kinds
     assert "副业复盘" in p["prompt"] and "work/" in p["prompt"]
@@ -182,7 +182,7 @@ def test_unknown_output_and_cli_events(tmp_path, clip):
     with pytest.raises(O.OutputError):
         PA.plan(w, "x", outputs="final/nope.mp4")
     env = dict(os.environ, PYTHONPATH=os.path.join(ROOT, "lib"), VSTUDIO_LLM_OUTPUT_EDIT_PROVIDER="claude-code",
-               PATH="/usr/bin:/bin:" + os.path.dirname(shutil.which("ffmpeg")))
+               PATH=os.pathsep.join(["/usr/bin", "/bin", os.path.dirname(shutil.which("ffmpeg"))]))
     p = subprocess.run([sys.executable, "-m", "vstudio.project", "ai", "--project", w, "--instruction",
                         "把副业复盘01，02，03都去掉", "--outputs", f"final/{NAMES[0]}.mp4,final/{NAMES[1]}.mp4",
                         "--json-events"], capture_output=True, text=True, env=env, timeout=60)

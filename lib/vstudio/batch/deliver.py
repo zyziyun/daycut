@@ -35,6 +35,7 @@ import zipfile
 
 from .store import Store
 from .util import read_json, sha1_json, sha256_file, write_json
+from ..oscompat import relpath as _relpath
 
 PLATFORM_NAMES = {"xiaohongshu": "小红书", "douyin": "抖音", "tiktok": "TikTok", "youtube-shorts": "YouTube Shorts",
                   "youtube": "YouTube", "bilibili": "B站", "kuaishou": "快手", "weixin-channels": "视频号",
@@ -163,10 +164,10 @@ def deliver(batch_dir, client=None, make_zip=False, cleanup_days=None, out=None,
                 csrc = os.path.join(pdir, it["files"]["cover"])
                 cdst = _place(csrc, os.path.join(ddir, label, f"{stem}_封面{os.path.splitext(csrc)[1] or '.jpg'}"))
                 files.append(cdst)
-                cover_rel = os.path.relpath(cdst, ddir)
+                cover_rel = _relpath(cdst, ddir)
             post = _post_text(os.path.join(pdir, it["files"]["post"])) if it["files"].get("post") else ""
             total_s += float(it.get("duration") or 0)
-            rel = os.path.relpath(vdst, ddir)
+            rel = _relpath(vdst, ddir)
             posts.append(dict(no=n, platform=label, job=it["job"], date=it.get("date"), time=it.get("time"), file=rel,
                               cover=cover_rel, title=title, body=_strip_title(post, title) or (p.get("body") or ""),
                               tags=list(p.get("tags") or []), sha256=it.get("sha256")))
@@ -207,7 +208,7 @@ def deliver(batch_dir, client=None, make_zip=False, cleanup_days=None, out=None,
         if due:
             notes += [f"原始素材将于 {due.isoformat()} 从制作电脑上删除（交付后 {cleanup_days} 天）。需要保留请提前告知。", ""]
         files.append(_write(os.path.join(ddir, "交付说明.md"), "\n".join(notes)))
-        entries = [dict(path=os.path.relpath(f, ddir), sha256=sha256_file(f), bytes=os.path.getsize(f))
+        entries = [dict(path=_relpath(f, ddir), sha256=sha256_file(f), bytes=os.path.getsize(f))
                    for f in sorted(files)]
         code = sha1_json(dict(batch=bname, client=cname, items=entries))[:12]
         dman = dict(client=cname, batch=bname, date=today.isoformat(), package_code=man.get("confirmation_code"),
@@ -220,7 +221,7 @@ def deliver(batch_dir, client=None, make_zip=False, cleanup_days=None, out=None,
                 for r_, _d, fs in os.walk(ddir):
                     for fn in sorted(fs):
                         fp = os.path.join(r_, fn)
-                        z.write(fp, os.path.join(name, os.path.relpath(fp, ddir)))
+                        z.write(fp, os.path.join(name, _relpath(fp, ddir)))
         srcs = sorted({x for x in _sources(spec, jobs.values()) if x})
         now = time.time()
         n = store.add_delivery(client=cname, dir=ddir, zip=zpath, code=code, items=len(posts), jobs=len(job_ids),

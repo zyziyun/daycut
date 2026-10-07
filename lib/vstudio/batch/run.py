@@ -24,7 +24,6 @@
   ``stage-fail``, ``job-done`` {state, qc}, ``progress`` {done_stages, total_stages, jobs_done, jobs_total},
   ``pause`` {reason}, ``log`` {msg}, ``run-end`` {status, exit_code}. Every event has ``event`` and ``ts``.
 """
-import fcntl
 import json
 import os
 import re
@@ -239,11 +238,16 @@ class Runner:
 
     # ------------------------------------------------------------- main
     def run(self):
-        lockf = open(os.path.join(self.dir, "run.lock"), "w")
+        from ..oscompat import try_lock, unlock
         try:
-            fcntl.flock(lockf, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
+            lockf = open(os.path.join(self.dir, "run.lock"), "a")
+        except PermissionError:                              # Windows: the running batch has it open
             raise BatchBusy(f"another `run` is active on {self.dir}")
+        if not try_lock(lockf):
+            lockf.close()
+            raise BatchBusy(f"another `run` is active on {self.dir}")
+        lockf.seek(0)
+        lockf.truncate()
         lockf.write(str(os.getpid()))
         lockf.flush()
         from . import livestatus as LS
@@ -255,7 +259,7 @@ class Runner:
                 pulse.final = _final_status(res)
                 return res
         finally:
-            fcntl.flock(lockf, fcntl.LOCK_UN)
+            unlock(lockf)
             lockf.close()
 
     def _live_fields(self):
@@ -595,12 +599,15 @@ def runner_active(batch_dir):
     path = os.path.join(os.path.abspath(batch_dir), "run.lock")
     if not os.path.exists(path):
         return False
-    with open(path, "a") as f:
-        try:
-            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
+    from ..oscompat import try_lock, unlock
+    try:
+        f = open(path, "a")
+    except PermissionError:
+        return True
+    with f:
+        if not try_lock(f):
             return True
-        fcntl.flock(f, fcntl.LOCK_UN)
+        unlock(f)
     return False
 
 

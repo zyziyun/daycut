@@ -22,6 +22,7 @@ from vstudio import media
 from . import brand as B
 from . import config as C
 from . import story as S
+from ..oscompat import relpath as _relpath
 
 GSAP = "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"
 DISPLAY_W = 560                 # display font weight used on screen (and when measuring)
@@ -85,7 +86,7 @@ def _asset(src, proj, sub, name=None):
     dst = os.path.join(d, name or os.path.basename(src))
     if not os.path.exists(dst) or os.path.getmtime(dst) < os.path.getmtime(src):
         shutil.copy2(src, dst)
-    return os.path.relpath(dst, proj)
+    return _relpath(dst, proj)
 
 
 def _frame(src, t, proj, name):
@@ -94,7 +95,7 @@ def _frame(src, t, proj, name):
     out = os.path.join(d, name)
     if not os.path.exists(out) or os.path.getmtime(out) < os.path.getmtime(src):
         media.grab_frame(src, max(0.0, t), out, quality=2)
-    return os.path.relpath(out, proj)
+    return _relpath(out, proj)
 
 
 def _music(cfg, proj, total):
@@ -109,7 +110,7 @@ def _music(cfg, proj, total):
     fo = max(0.0, total - 1.6)
     media.run(["ffmpeg", "-y", "-i", src, "-t", f"{total:.3f}", "-af",
                f"afade=t=in:d=0.4,afade=t=out:st={fo:.3f}:d=1.6", "-c:a", "aac", "-b:a", "192k", out])
-    return os.path.relpath(out, proj)
+    return _relpath(out, proj)
 
 
 def _vo(cfg, scene, proj, lang):
@@ -119,7 +120,7 @@ def _vo(cfg, scene, proj, lang):
     os.makedirs(d, exist_ok=True)
     out = os.path.join(d, f"vo-{scene['id']}-{lang}.wav")
     tts.synth(C.plain(scene["vo"]), engine=vo.get("engine") or "auto", voice=vo.get("voice"), out=out)
-    return os.path.relpath(out, proj), media.probe(out)["duration"]
+    return _relpath(out, proj), media.probe(out)["duration"]
 
 
 # ------------------------------------------------------------------------------------------------ build

@@ -18,6 +18,7 @@ from vstudio import media
 from .api import verify_manifest  # noqa: F401  (public: recompute the confirmation code of a manifest)
 from .store import Store
 from .util import read_json, sha1_json, sha256_file, write_json
+from ..oscompat import relpath as _relpath
 
 DEFAULT_TIMES = ["12:00", "19:00", "21:00"]
 
@@ -69,11 +70,11 @@ def package(batch_dir, out=None, per_day=None, start=None, times=None, include_p
                 folder = os.path.join(pdir, key, f"{k + 1:03d}_{j['id']}")
                 os.makedirs(folder)
                 vid = media.link_or_copy(src_v, os.path.join(folder, "video.mp4"))
-                files = {"video": os.path.relpath(vid, pdir)}
+                files = {"video": _relpath(vid, pdir)}
                 for name, src in (("cover", e.get("cover") or prev.get("cover")), ("post", e.get("post") or prev.get("post"))):
                     if src and os.path.exists(src):
                         dst = media.link_or_copy(src, os.path.join(folder, "cover.jpg" if name == "cover" else "post.md"))
-                        files[name] = os.path.relpath(dst, pdir)
+                        files[name] = _relpath(dst, pdir)
                 day, slot = divmod(k, per_day)
                 items.append(dict(job=j["id"], platform=key, title=p.get("title") or "", date=(d0 + dt.timedelta(days=day))
                                   .isoformat(), time=times[slot], files=files, sha256=sha256_file(vid),

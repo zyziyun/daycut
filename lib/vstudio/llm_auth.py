@@ -92,9 +92,11 @@ def msg(code, _fmt=None, **params):
 
 def _run(cmd, env, timeout, input=None):
     """(returncode, stdout, stderr) of a CLI in an empty temp dir; (-1, "", why) when it cannot run."""
+    cmd = [*L.cli_argv(cmd[0]), *cmd[1:]]                  # Windows: npm .cmd shims run through node directly
     with tempfile.TemporaryDirectory(prefix="vstudio-auth-") as tmp:
         try:
-            r = subprocess.run(cmd, input=input, capture_output=True, text=True, cwd=tmp, timeout=timeout, env=env)
+            r = subprocess.run(cmd, input=input, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                               cwd=tmp, timeout=timeout, env=env)
         except subprocess.TimeoutExpired:
             return -1, "", f"timed out after {timeout} s"
         except OSError as e:
@@ -479,7 +481,7 @@ def command(provider, action="login", variant=None):
             args = ["logout"]
     chosen = next((v["args"] for v in variants if v["id"] == variant), args)
     display = " ".join([CLIS[p]["exe"], *chosen])
-    return dict(ok=True, provider=p, action=action, command=[exe, *chosen], display=display,
+    return dict(ok=True, provider=p, action=action, command=[*L.cli_argv(exe), *chosen], display=display,
                 env_unset=list(CLIS[p]["strip"]), interactive=action == "login",
                 variants=[dict(v, display=" ".join([CLIS[p]["exe"], *v["args"]])) for v in variants],
                 note=None if args else "type /login in the session, then /exit",

@@ -212,7 +212,7 @@ def test_preproduction_checkpoint_roundtrip_refresh_and_export(tmp_path):
     assert open(os.path.join(ex["dir"], "001", "SCRIPT.md"), encoding="utf-8").read().endswith("快，就是被记住。\n")
     ctx = json.loads(cli("context", "--dir", pdir, "--json").stdout)
     assert ctx["workflow_md"].endswith("workflows/preproduction/WORKFLOW.md")
-    assert any(f.endswith("items/001/SCRIPT.md") for f in ctx["edit_files"])
+    assert any(f.replace(os.sep, "/").endswith("items/001/SCRIPT.md") for f in ctx["edit_files"])
     assert os.path.exists(os.path.join(pdir, "CLAUDE.md")) and "refresh" in ctx["commands"]
     assert ctx["pending"][0]["item"] == "002"
 

@@ -138,12 +138,14 @@ def run(cmd, capture=False, check=True, quiet=True, input=None):
     if os.path.basename(cmd[0]).startswith("ffmpeg") and "-nostdin" not in cmd and input is None:
         cmd[1:1] = ["-nostdin"]
     from . import h264
-    alt = h264.rewrite(cmd, h264.effective_encoder()) if "libx264" in cmd else cmd
+    alt = h264.rewrite(cmd, h264.effective_encoder(cmd[0])) if "libx264" in cmd else cmd
     r = subprocess.run(alt, capture_output=True, input=input, **({"_vstudio_raw": True} if h264._ORIG_INIT else {}))
-    if r.returncode != 0 and alt is not cmd:          # the configured encoder failed: libx264 fallback
-        print(f"!! video-studio: {alt[alt.index('-c:v') + 1] if '-c:v' in alt else 'encoder'} failed, "
-              "retrying with libx264", file=sys.stderr)
-        r = subprocess.run(cmd, capture_output=True, input=input,
+    if r.returncode != 0 and alt is not cmd:          # the configured encoder failed: libx264 / OpenH264 fallback
+        failed = alt[alt.index('-c:v') + 1] if '-c:v' in alt else None
+        fb = h264.fallback(failed, cmd[0])
+        print(f"!! video-studio: {failed or 'encoder'} failed, retrying with {fb}", file=sys.stderr)
+        retry = cmd if fb == "libx264" else h264.rewrite(cmd, fb)
+        r = subprocess.run(retry, capture_output=True, input=input,
                            **({"_vstudio_raw": True} if h264._ORIG_INIT else {}))
     if check and r.returncode != 0:
         err = r.stderr.decode("utf-8", "replace") if isinstance(r.stderr, bytes) else (r.stderr or "")

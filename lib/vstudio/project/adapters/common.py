@@ -24,6 +24,7 @@ from vstudio.batch.util import read_json, sha1_json, write_json
 
 from .. import manifests as M
 from ..build import file_sha, static_tctx
+from ...oscompat import relpath as _relpath
 
 
 # --------------------------------------------------------------------------- author
@@ -39,7 +40,7 @@ def dir_sha(path):
         for f in sorted(files):
             p = os.path.join(root, f)
             st = os.stat(p)
-            rows.append([os.path.relpath(p, path), st.st_size, int(st.st_mtime)])
+            rows.append([_relpath(p, path), st.st_size, int(st.st_mtime)])
     return sha1_json(sorted(rows))[:16] if rows else None
 
 

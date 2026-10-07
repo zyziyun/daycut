@@ -377,7 +377,8 @@ def _reg_path(cdir=None):
 def _temp_roots():
     import tempfile
     roots = {tempfile.gettempdir(), "/tmp", "/private/tmp", "/var/tmp", "/private/var/tmp"}
-    return {os.path.realpath(r) for r in roots} | {os.path.abspath(r) for r in roots}
+    # normcase: Windows compares case-insensitively (gettempdir may be the 8.3 short form, realpath the long one)
+    return {os.path.normcase(os.path.realpath(r)) for r in roots} | {os.path.normcase(os.path.abspath(r)) for r in roots}
 
 
 def is_temp_path(path):
@@ -386,7 +387,8 @@ def is_temp_path(path):
     rp = os.path.realpath(p)
     if re.match(r"^(/private)?/var/folders/[^/]+/[^/]+/T(/|$)", p) or re.match(r"^/private/var/folders/[^/]+/[^/]+/T(/|$)", rp):
         return True
-    return any(x == r or x.startswith(r.rstrip(os.sep) + os.sep) for r in _temp_roots() for x in (p, rp))
+    return any(x == r or x.startswith(r.rstrip(os.sep) + os.sep) for r in _temp_roots()
+               for x in (os.path.normcase(p), os.path.normcase(rp)))
 
 
 def keep_entry(entry_dir, registry_path, marker=None):

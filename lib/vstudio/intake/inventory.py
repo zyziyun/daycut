@@ -28,6 +28,7 @@ import tempfile
 import time
 
 from . import docs as D
+from ..oscompat import relpath as _relpath
 
 VERSION = 3
 MAX_FILES = 2000
@@ -437,7 +438,7 @@ def analyze(inputs, asr="sample", use_cache=True, language=None, max_files=MAX_F
     for k, (fp, base) in enumerate(files):
         kind = kind_of(fp)
         st = os.stat(fp)
-        rel = os.path.relpath(fp, base) if base else os.path.basename(fp)
+        rel = _relpath(fp, base) if base else os.path.basename(fp)
         entry = dict(id=f"f{k + 1}", path=fp, rel=rel, kind=kind, size=st.st_size)
         if kind == "other":
             entry["note"] = "not a media / text file (ignored)"

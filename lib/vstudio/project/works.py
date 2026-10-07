@@ -15,6 +15,7 @@ import re
 import time
 
 from vstudio.batch.util import read_json, write_json
+from ..oscompat import relpath as _relpath
 
 VIDEO = {".mp4", ".mov", ".m4v", ".mkv", ".webm"}
 IMAGE = {".jpg", ".jpeg", ".png", ".webp"}
@@ -56,7 +57,7 @@ def _rel_files(d, sub, exts, limit=200):
         dns[:] = [x for x in dns if not x.startswith(".")]
         for fn in sorted(fns):
             if os.path.splitext(fn)[1].lower() in exts and not fn.startswith("."):
-                out.append(os.path.relpath(os.path.join(dp, fn), d))
+                out.append(_relpath(os.path.join(dp, fn), d))
                 if len(out) >= limit:
                     return out
         if dp.count(os.sep) - root.count(os.sep) >= 2:
@@ -80,7 +81,8 @@ def scan(d):
     notes = [n for n in NOTE_FILES if os.path.exists(os.path.join(d, n))]
     sources = []
     for sub in SRC_DIRS:
-        sources += [os.path.join(d, p) for p in _rel_files(d, sub, VIDEO | {".wav", ".mp3", ".m4a"} | IMAGE, 50)]
+        sources += [os.path.normpath(os.path.join(d, p))
+                    for p in _rel_files(d, sub, VIDEO | {".wav", ".mp3", ".m4a"} | IMAGE, 50)]
     return dict(outputs=outs, covers=covers, posts=posts, sheets=sheets, notes=notes, sources=sources[:50])
 
 
@@ -178,7 +180,7 @@ def touch(d, recipe=None, title=None, outputs=None, client=None, sources=None, r
         recipe_id = TYPES.get(recipe, recipe) if recipe in TYPES else recipe
     else:
         recipe_id = old.get("recipe") or TYPES.get(typ)
-    outs = [os.path.relpath(os.path.abspath(os.path.join(d, p)), d) for p in outputs] if outputs else found["outputs"]
+    outs = [_relpath(os.path.abspath(os.path.join(d, p)), d) for p in outputs] if outputs else found["outputs"]
     now = time.strftime("%Y-%m-%dT%H:%M:%S")
     rec = dict(old, kind="work", title=title or old.get("title") or _title(d), recipe=recipe_id, type=typ,
                outputs=outs, covers=found["covers"], posts=found["posts"], sheets=found["sheets"],

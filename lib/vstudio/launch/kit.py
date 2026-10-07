@@ -17,6 +17,7 @@ import os
 from . import compose as CO
 from . import config as C
 from . import story as S
+from ..oscompat import relpath as _relpath
 
 CANVAS_TAG = {"16:9": "16x9", "9:16": "9x16", "1:1": "1x1"}
 # the platform a render is checked against (first-pass: safe area, canvas); international first
@@ -184,7 +185,7 @@ def write_manifest(cfg):
     out = cfg["out"]
 
     def rel(pats):
-        return sorted(os.path.relpath(p, out) for pat in pats for p in glob.glob(os.path.join(out, pat)))
+        return sorted(_relpath(p, out) for pat in pats for p in glob.glob(os.path.join(out, pat)))
     man = dict(product=cfg["product"]["name"], version=cfg["product"].get("version"),
                demo=rel(["demo/*.mp4"]), readme=rel(["readme/*.mp4", "readme/*.gif"]), clips=rel(["clips/*.mp4"]),
                covers=rel(["demo/*.cover.jpg", "clips/*.cover.jpg", "readme/*.cover.jpg"]),

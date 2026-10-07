@@ -51,7 +51,7 @@ def _codex_run(monkeypatch, reject_schema=False):
     monkeypatch.setattr(llm.shutil, "which", lambda n: "/opt/bin/codex" if n == "codex" else None)
     calls = []
 
-    def run(cmd, input=None, capture_output=None, text=None, cwd=None, timeout=None, env=None):
+    def run(cmd, input=None, capture_output=None, text=None, cwd=None, timeout=None, env=None, **kw):
         sch = None
         if "--output-schema" in cmd:
             with open(cmd[cmd.index("--output-schema") + 1]) as f:
@@ -123,7 +123,7 @@ def test_cli_timeout_reaches_the_cli(monkeypatch):
     monkeypatch.setattr(llm.shutil, "which", lambda n: "/opt/bin/claude" if n == "claude" else None)
     seen = []
 
-    def run(cmd, input=None, capture_output=None, text=None, cwd=None, timeout=None, env=None):
+    def run(cmd, input=None, capture_output=None, text=None, cwd=None, timeout=None, env=None, **kw):
         seen.append(timeout)
         return subprocess.CompletedProcess(cmd, 0, json.dumps(dict(result='{"a": 1}', usage={})), "")
     monkeypatch.setattr(llm.subprocess, "run", run)
@@ -138,7 +138,7 @@ def test_known_expired_login_is_skipped_at_once(monkeypatch):
     monkeypatch.setattr(llm.shutil, "which", lambda n: f"/opt/bin/{n}" if n in ("claude", "codex") else None)
     runs = []
 
-    def run(cmd, input=None, capture_output=None, text=None, cwd=None, timeout=None, env=None):
+    def run(cmd, input=None, capture_output=None, text=None, cwd=None, timeout=None, env=None, **kw):
         runs.append(" ".join(cmd[1:3]))
         if cmd[0].endswith("claude"):
             if cmd[1:3] == ["auth", "status"]:

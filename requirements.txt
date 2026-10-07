@@ -17,3 +17,5 @@ openai
 # local whisper (ASR): MLX on Apple silicon, CTranslate2 elsewhere (vstudio.asr picks what is installed)
 mlx-whisper; sys_platform == "darwin" and platform_machine == "arm64"
 faster-whisper; sys_platform != "darwin" or platform_machine != "arm64"
+# IANA time zones for zoneinfo (scheduled posts): built into macOS / Linux, a package on Windows
+tzdata; sys_platform == "win32"

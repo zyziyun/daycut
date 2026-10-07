@@ -11,6 +11,12 @@ from vstudio.project import home as H  # noqa: E402
 
 
 def test_is_temp_path():
+    import tempfile
+    assert CL.is_temp_path(os.path.join(tempfile.gettempdir(), "tmpx", "batch-fake"))
+    if os.name == "nt":                                    # any case, the long and the 8.3 form
+        assert CL.is_temp_path(os.path.join(tempfile.gettempdir().upper(), "x"))
+        assert not CL.is_temp_path(r"D:\work\videos\batch-rag")
+        return
     assert CL.is_temp_path("/var/folders/1s/abc/T/tmpx/batch-fake")
     assert CL.is_temp_path("/private/var/folders/1s/abc/T/x")
     assert CL.is_temp_path("/tmp/x")

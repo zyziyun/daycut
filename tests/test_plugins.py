@@ -20,6 +20,9 @@ from vstudio.create.i18n import CreateError
 from vstudio.plugins import board as B, importing as IM, jobfolder as JF, lanes as L, registry as R
 from vstudio.plugins.builtin import hyperframes as HF, shotlist as SL, timeline as TL
 
+# the fake agents / CLIs below are /bin/sh scripts (Windows coverage of agent lanes: still to do)
+POSIX_ONLY = pytest.mark.skipif(os.name == "nt", reason="fake agents are /bin/sh scripts")
+
 FIX = ROOT / "tests" / "fixtures" / "plugins" / "hyperframes-tiny"
 
 
@@ -196,6 +199,7 @@ def test_import_board_into_new_series_then_make_with_render(home, plugdir, tmp_p
 
 
 @needs_ffmpeg
+@POSIX_ONLY
 def test_hyperframes_render_with_the_projects_cli_and_resume(home, plugdir, tmp_path):
     proj = tmp_path / "hf"
     shutil.copytree(FIX, proj)
@@ -352,6 +356,7 @@ def _set_mode(tmp_path, mode):
 
 
 @needs_ffmpeg
+@POSIX_ONLY
 def test_agent_runner_parallel_lanes_takes_heartbeat(home, plugdir, tmp_path):
     eid, log = _agent_series(home, plugdir, tmp_path, n=4, conc=2)
     seen = []
@@ -378,6 +383,7 @@ def test_agent_runner_parallel_lanes_takes_heartbeat(home, plugdir, tmp_path):
 
 
 @needs_ffmpeg
+@POSIX_ONLY
 def test_agent_failures_qc_and_retry(home, plugdir, tmp_path):
     eid, _ = _agent_series(home, plugdir, tmp_path, n=2)
     _set_mode(tmp_path, "fail")
@@ -394,6 +400,7 @@ def test_agent_failures_qc_and_retry(home, plugdir, tmp_path):
     assert {u["state"] for u in m["units"].values()} == {"done"}
 
 
+@POSIX_ONLY
 def test_agent_timeout_and_stop(home, plugdir, tmp_path):
     eid, _ = _agent_series(home, plugdir, tmp_path, n=1, timeout=1)
     _set_mode(tmp_path, "hang")
@@ -430,6 +437,7 @@ def test_disabled_runner_is_reported(home, plugdir, tmp_path):
     assert m["units"]["01"]["code"] == "create.plugin.disabled" and not log.exists()
 
 
+@POSIX_ONLY
 def test_builtin_cli_runners_command_shape(home, plugdir, tmp_path, monkeypatch):
     bin_ = tmp_path / "bin"
     bin_.mkdir()

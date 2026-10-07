@@ -33,9 +33,9 @@ def test_detect_and_guess(tmp_path):
     assert W.guess_type(str(fuye)) == "slices"
     assert W.guess_type(str(pod)) == "podcast"
     s = W.scan(str(th))
-    assert s["outputs"] == [os.path.join("final", "xhs_3x4.mp4")]
-    assert s["covers"] == [os.path.join("final", "cover_3x4.jpg")]
-    assert s["posts"] == [os.path.join("final", "post.md")]
+    assert s["outputs"] == ["final/xhs_3x4.mp4"]
+    assert s["covers"] == ["final/cover_3x4.jpg"]
+    assert s["posts"] == ["final/post.md"]
 
 
 def test_adopt_registers_and_lists(monkeypatch, tmp_path):
@@ -44,7 +44,7 @@ def test_adopt_registers_and_lists(monkeypatch, tmp_path):
     before = sorted(str(p) for p in d.rglob("*"))
     r = W.adopt(str(d))
     assert r["type"] == "photo-story" and r["recipe"] == "photo-story"
-    assert r["outputs"] == [os.path.join("final", "story.mp4")]
+    assert r["outputs"] == ["final/story.mp4"]
     assert r["sources"] == [str(d / "src" / "a.jpg")]
     after = sorted(str(p) for p in d.rglob("*"))
     assert set(after) - set(before) == {str(d / ".vstudio"), str(d / ".vstudio" / "work.json")}   # only the record

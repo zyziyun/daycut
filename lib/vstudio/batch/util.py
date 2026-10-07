@@ -124,8 +124,6 @@ def import_ref(ref):
 
 
 def pid_alive(pid):
-    try:
-        os.kill(int(pid), 0)
-        return True
-    except (OSError, ValueError, TypeError):
-        return False
+    """True while ``pid`` exists (never signals it: ``os.kill(pid, 0)`` terminates the process on Windows)."""
+    from ..oscompat import pid_alive as alive
+    return alive(pid)

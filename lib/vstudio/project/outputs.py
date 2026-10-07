@@ -35,6 +35,7 @@ import time
 from vstudio.batch.util import read_json, sha1_json, write_json
 
 from . import outfx as FX
+from ..oscompat import relpath as _relpath
 
 VIDEO = {".mp4", ".mov", ".m4v", ".mkv", ".webm"}
 DOC_VERSION = 1
@@ -234,7 +235,7 @@ def register_master(d, output, master, cues=None):
     """Workflows: say which clean master (+ cues JSON) made a work-folder output, so its second-pass edits
     re-compose from the master (``pipeline`` mode) instead of editing the flattened file."""
     d = os.path.abspath(d)
-    rel = os.path.relpath(os.path.abspath(os.path.join(d, output)), d)
+    rel = _relpath(os.path.abspath(os.path.join(d, output)), d)
     path = os.path.join(d, ".vstudio", "masters.json")
     data = read_json(path, {}) or {}
     data[rel] = dict(master=os.path.abspath(master), cues=os.path.abspath(cues) if cues else None)
@@ -255,7 +256,8 @@ def list_outputs(d):
         from . import works as W
         rec = W.show(d) or {}
         for r in _work_files(d):
-            rows.append(dict(id=r, file=os.path.join(d, r), title=os.path.splitext(os.path.basename(r))[0],
+            rows.append(dict(id=r, file=os.path.normpath(os.path.join(d, r)),
+                             title=os.path.splitext(os.path.basename(r))[0],
                              item=None, platform=None, orientation=None, work_title=rec.get("title")))
     root = edits_root(d, kind)
     for r in rows:
@@ -312,7 +314,8 @@ def resolve(d, output):
     if kind == "project":
         rows = _project_outputs(d)
     else:
-        rows = [dict(id=r, file=os.path.join(d, r), title=os.path.splitext(os.path.basename(r))[0])
+        rows = [dict(id=r, file=os.path.normpath(os.path.join(d, r)),
+                     title=os.path.splitext(os.path.basename(r))[0])
                 for r in _work_files(d)]
     o = _match(rows, output)
     if not o:
@@ -335,7 +338,7 @@ def resolve(d, output):
             rec["reason"] = msg("no-master", "the recipe kept no clean master for this output: edits go on top of "
                                 "the finished file", "这个成片没有保留干净母版：在成片上叠加编辑")
     else:
-        rel = os.path.relpath(o["file"], d)
+        rel = _relpath(o["file"], d)
         master, cpath = _work_master(d, rel)
         if master:
             cues = _cues_file(cpath)

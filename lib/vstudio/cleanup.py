@@ -71,6 +71,7 @@ import numpy as np
 
 from . import asr, cut, media
 from .audio import SR, decode_audio, rms_envelope, write_wav
+from .oscompat import relpath as _relpath
 
 VERSION = 1
 
@@ -1823,7 +1824,7 @@ def analyze(media_path, transcript=None, ranges=None, language=None, profile=Non
     en = Energy.from_any(media_path, start=a0, end=a1)
     en.calibrate([w for w in W if not rg or any(a <= _mid(w) <= b for a, b in rg)] or W, st)
     info = dict(info, size=os.path.getsize(media_path))
-    rel = os.path.relpath(os.path.abspath(media_path), os.path.dirname(os.path.abspath(out))) if write else media_path
+    rel = _relpath(os.path.abspath(media_path), os.path.dirname(os.path.abspath(out))) if write else media_path
     edl = build_edl(W, rel, en, rg, st["profile"], overrides, dropped, language, info["duration"], info, id_offset)
     if write:
         path = out

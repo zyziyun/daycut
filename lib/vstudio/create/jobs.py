@@ -16,7 +16,6 @@ manual (即梦) units get a prompt sheet and wait for the files; record units wa
 shots are made in post.
 """
 import contextlib
-import fcntl
 import glob
 import os
 import shutil
@@ -27,6 +26,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from . import costs, formats as F, providers as PR, routing, store, stills, storyboard
 from .i18n import CreateError, msg
+from .. import oscompat
 
 STAGES = ("stills", "animatic", "drafts", "finals")
 _locks = {}
@@ -47,11 +47,11 @@ def submit_lock(eid):
     with lock(eid):
         d = store.episode_dir(eid)
         with open(os.path.join(d, ".submit.lock"), "a") as f:
-            fcntl.flock(f, fcntl.LOCK_EX)
+            oscompat.lock(f)
             try:
                 yield
             finally:
-                fcntl.flock(f, fcntl.LOCK_UN)
+                oscompat.unlock(f)
 
 
 def context(eid):

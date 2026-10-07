@@ -218,7 +218,7 @@ def test_claude_code_cli(monkeypatch):
     monkeypatch.setattr(llm.shutil, "which", lambda n: "/usr/local/bin/claude" if n == "claude" else None)
     calls = []
 
-    def run(cmd, input=None, capture_output=None, text=None, cwd=None, timeout=None, env=None):
+    def run(cmd, input=None, capture_output=None, text=None, cwd=None, timeout=None, env=None, **kw):
         calls.append(dict(cmd=cmd, input=input, cwd=cwd, timeout=timeout, env=env))
         out = dict(type="result", subtype="success", is_error=False, result="ignored",
                    structured_output={"ok": True}, total_cost_usd=0.01,
@@ -256,7 +256,7 @@ def test_codex_cli(monkeypatch):
     monkeypatch.setattr(llm.shutil, "which", lambda n: "/opt/bin/codex" if n == "codex" else None)
     calls = []
 
-    def run(cmd, input=None, capture_output=None, text=None, cwd=None, timeout=None, env=None):
+    def run(cmd, input=None, capture_output=None, text=None, cwd=None, timeout=None, env=None, **kw):
         calls.append(dict(cmd=cmd, input=input, cwd=cwd, env=env))
         with open(cmd[cmd.index("--output-last-message") + 1], "w") as f:
             f.write('```json\n{"c": 3}\n```')

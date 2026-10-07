@@ -44,6 +44,7 @@ import _vertical as V
 import make_cover as MC
 from vstudio import draw, media, overlays
 from vstudio.config import persona
+from vstudio.oscompat import relpath as _relpath
 
 
 def extra(ap):
@@ -467,7 +468,7 @@ def main():
                              preset=cfg.get("vertical.export_preset", "medium"))
             entries.append(e)
             manifest["warnings"] += [f"ep{ep['n']} {p.key}: {w}" for w in e["warnings"]]
-        manifest["episodes"].append(dict(n=ep["n"], a=round(a, 3), b=round(b, 3), dir=os.path.relpath(ddir, cfg.out),
+        manifest["episodes"].append(dict(n=ep["n"], a=round(a, 3), b=round(b, 3), dir=_relpath(ddir, cfg.out),
                                          exports=entries))
         ep_man = os.path.join(ddir, "manifest.json")
         old = _lfc.load_json(ep_man) if os.path.exists(ep_man) else []

@@ -24,6 +24,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from . import jobfolder as JF, registry as R
+from .. import oscompat
 
 HEARTBEAT_S = 1.0
 
@@ -137,10 +138,7 @@ class Maker:
                 elif time.time() - t0 > limit:
                     why = "timeout"
                 if why:
-                    try:
-                        os.killpg(p.pid, signal.SIGKILL)
-                    except OSError:
-                        p.kill()
+                    oscompat.kill_tree(p, getattr(signal, "SIGKILL", signal.SIGTERM))   # the agent + what it started
                     p.wait()
                     break
         JF.set_status(d, exit_code=p.returncode, finished=time.time(), **dict(own, pid=None))

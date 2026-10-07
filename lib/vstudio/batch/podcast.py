@@ -38,6 +38,7 @@ from . import spec as S
 from . import stages as ST
 from .recipes import Recipe, Stage, register
 from .util import parse_time, read_json, write_json
+from ..oscompat import relpath as _relpath
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 CC = os.path.join(ROOT, "workflows", "call-clips", "scripts")
@@ -188,7 +189,7 @@ def run_compose_call(ctx):
     cid = p["_clip_id"]
     master = ctx.path("out", f"{cid}.clean.mp4")
     if not os.path.exists(master):
-        raise RuntimeError(f"build_clips.py wrote no {os.path.relpath(master, ctx.dir)}")
+        raise RuntimeError(f"build_clips.py wrote no {_relpath(master, ctx.dir)}")
     raw = read_json(ctx.path("work", f"{cid}.cues.json"), []) or []
     cues_path = write_json(ctx.path("cues.json"), dict(cues=raw))
     guests = cfg.get("guests") or []

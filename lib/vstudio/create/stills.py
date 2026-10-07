@@ -12,11 +12,21 @@ SWATCH = {"kling-mcp": (15, 122, 108), "minimax": (194, 96, 58), "veo": (47, 106
           "card": (176, 138, 46)}
 
 
+def _font_paths():
+    """The engine's own CJK font (downloaded on first run), then system CJK fonts (macOS, Windows, Linux)."""
+    from ..config import FONT_DIR, FONTS
+    out = [os.path.join(FONT_DIR, n) for n in FONTS.get("cjk", [])]
+    win = os.path.join(os.environ.get("WINDIR") or os.environ.get("SystemRoot") or r"C:\Windows", "Fonts")
+    return out + ["/System/Library/Fonts/PingFang.ttc", "/System/Library/Fonts/Hiragino Sans GB.ttc",
+                  "/System/Library/Fonts/STHeiti Medium.ttc", "/Library/Fonts/Arial Unicode.ttf",
+                  os.path.join(win, "msyh.ttc"), os.path.join(win, "simhei.ttf"), os.path.join(win, "arial.ttf"),
+                  "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+                  "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"]
+
+
 def _font(size):
     from PIL import ImageFont
-    for p in ("/System/Library/Fonts/PingFang.ttc", "/System/Library/Fonts/Hiragino Sans GB.ttc",
-              "/System/Library/Fonts/STHeiti Medium.ttc", "/Library/Fonts/Arial Unicode.ttf",
-              "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"):
+    for p in _font_paths():
         if os.path.exists(p):
             try:
                 return ImageFont.truetype(p, size)

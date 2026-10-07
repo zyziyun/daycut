@@ -25,12 +25,13 @@ import os
 
 from .store import Store
 from .util import read_json, write_json
+from ..oscompat import relpath as _relpath
 
 REVIEW_STATES = ("done", "approved", "needs-replan", "packaged")
 
 
 def _rel(path, base):
-    return os.path.relpath(path, base) if path else None
+    return _relpath(path, base) if path else None
 
 
 def _row(e):
