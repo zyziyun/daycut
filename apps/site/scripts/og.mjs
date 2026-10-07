@@ -29,8 +29,8 @@ const page = (lang, c) => {
   const zhl = lang === 'zh';
   const shot = `file://${join(ROOT, 'src/assets/app', zhl ? 'home-zh.png' : 'home-en.png')}`;
   return `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><style>
-@font-face{font-family:IS;src:url(${F('instrument-serif-latin-400-normal.woff2')})}
-@font-face{font-family:IS;font-style:italic;src:url(${F('instrument-serif-latin-400-italic.woff2')})}
+@font-face{font-family:IS;src:url(${F('newsreader-latin-opsz-normal.woff2')})}
+@font-face{font-family:IS;font-style:italic;src:url(${F('newsreader-latin-opsz-italic.woff2')})}
 @font-face{font-family:Inter;font-weight:100 900;src:url(${F('inter-latin-wght-normal.woff2')})}
 @font-face{font-family:NS;font-weight:600;src:url(${F(zhFont.core)}),url(${F(zhFont.extra)})}
 *{box-sizing:border-box}html,body{margin:0}

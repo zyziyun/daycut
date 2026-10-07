@@ -2,11 +2,11 @@
    Contrast on --paper (WCAG): ink2 7.8:1, ink3 5.2:1, teal 5.1:1, warn 5.6:1. On --paper2: ink3 4.8:1, teal 4.7:1. */
 
 /* ---------- fonts (self-hosted, SIL OFL 1.1; licences in /fonts) ---------- */
-@font-face { font-family: 'Instrument Serif'; font-style: normal; font-weight: 400; font-display: swap;
-  src: url(/fonts/instrument-serif-latin-400-normal.woff2) format('woff2');
+@font-face { font-family: 'Newsreader'; font-style: normal; font-weight: 200 800; font-display: swap;
+  src: url(/fonts/newsreader-latin-opsz-normal.woff2) format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
-@font-face { font-family: 'Instrument Serif'; font-style: italic; font-weight: 400; font-display: swap;
-  src: url(/fonts/instrument-serif-latin-400-italic.woff2) format('woff2');
+@font-face { font-family: 'Newsreader'; font-style: italic; font-weight: 200 800; font-display: swap;
+  src: url(/fonts/newsreader-latin-opsz-italic.woff2) format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
 @font-face { font-family: 'Inter'; font-style: normal; font-weight: 100 900; font-display: swap;
   src: url(/fonts/inter-latin-wght-normal.woff2) format('woff2');
@@ -15,8 +15,8 @@
   src: url(/fonts/jetbrains-mono-latin-400-normal.woff2) format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+2000-206F, U+2212; }
 /* Metric-matched fallbacks keep layout shift low while the web fonts load. */
-@font-face { font-family: 'Instrument Serif Fallback'; src: local('Times New Roman'), local('Times'), local('Liberation Serif');
-  size-adjust: 91%; ascent-override: 103%; descent-override: 27%; line-gap-override: 0%; }
+@font-face { font-family: 'Newsreader Fallback'; src: local('Times New Roman'), local('Times'), local('Liberation Serif');
+  size-adjust: 100%; ascent-override: 92%; descent-override: 24%; line-gap-override: 0%; }
 @font-face { font-family: 'Inter Fallback'; src: local('Arial'), local('Helvetica'), local('Liberation Sans');
   size-adjust: 107%; ascent-override: 90%; descent-override: 22%; line-gap-override: 0%; }
 /* Noto Serif SC 600 (Source Han Serif) is subset to the glyphs the 中文 headings use: src/styles/zh-font.css
@@ -27,13 +27,13 @@
   --ink: #1C1A17; --ink2: #4F4943; --ink3: #6B6359;
   --rule: rgba(28, 26, 23, .13);
   --teal: #0A7266; --warn: #80570A;
-  --serif: 'Instrument Serif', 'Instrument Serif Fallback', 'Noto Serif SC', Georgia, serif;
+  --serif: 'Newsreader', 'Newsreader Fallback', 'Noto Serif SC', Georgia, serif;
   --sans: Inter, 'Inter Fallback', 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans SC', system-ui, sans-serif;
   --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
-  --w: 1180px; --pad: clamp(20px, 5vw, 56px);
+  --w: 1320px; --pad: clamp(20px, 5vw, 56px);
   --ease: cubic-bezier(.2, .7, .2, 1);
 }
-.lang-zh { --serif: 'Noto Serif SC', 'Instrument Serif', 'Songti SC', 'STSong', serif; }
+.lang-zh { --serif: 'Noto Serif SC', 'Newsreader', 'Songti SC', 'STSong', serif; }
 
 *, *::before, *::after { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; scroll-padding-top: 84px; }
@@ -86,16 +86,16 @@ a:focus-visible, summary:focus-visible, .btn:focus-visible { outline: 2px solid 
 .hero { text-align: center; padding-top: clamp(48px, 6.4vw, 92px); }
 .eyebrow { margin: 0; font: 500 12.5px/1.4 var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--ink3); }
 .lang-zh .eyebrow { letter-spacing: .2em; }
-h1 { font: 400 clamp(56px, 8.4vw, 118px)/.94 var(--serif); letter-spacing: -.025em; margin: 24px 0 0; text-wrap: balance; }
+h1 { font: 400 clamp(44px, 6vw, 84px)/1.04 var(--serif); letter-spacing: -.022em; margin: 24px 0 0; text-wrap: balance; }
 h1 em { font-style: italic; }
-.lang-fr .hero h1, .lang-es .hero h1 { font-size: clamp(48px, 7.4vw, 104px); }
-.lang-zh h1 { font-weight: 600; letter-spacing: .02em; line-height: 1.12; font-size: clamp(48px, 7vw, 96px); }
+.lang-fr .hero h1, .lang-es .hero h1 { font-size: clamp(40px, 5.4vw, 76px); }
+.lang-zh h1 { font-weight: 600; letter-spacing: .02em; line-height: 1.16; font-size: clamp(40px, 5.4vw, 76px); }
 .lang-zh h1 em { font-style: normal; color: var(--teal); }
-.sub { max-width: 640px; margin: 30px auto 0; font-size: clamp(17px, 1.5vw, 19.5px); line-height: 1.6; color: var(--ink2); text-wrap: balance; }
-.lang-zh .sub { max-width: 620px; line-height: 1.85; }
+.sub { max-width: 760px; margin: 30px auto 0; font-size: clamp(17px, 1.5vw, 19.5px); line-height: 1.6; color: var(--ink2); text-wrap: balance; }
+.lang-zh .sub { max-width: 720px; line-height: 1.85; }
 .ctas { display: flex; gap: 12px; justify-content: center; margin-top: 34px; flex-wrap: wrap; }
 .fine { margin: 18px 0 0; font-size: 13.5px; color: var(--ink3); }
-.herofig { margin: clamp(48px, 5vw, 68px) auto 0; max-width: 1240px; }
+.herofig { margin: clamp(48px, 5vw, 68px) auto 0; max-width: 1320px; }
 
 /* ---------- print (framed screenshot) ---------- */
 figure { margin: 0; }
@@ -110,7 +110,7 @@ section.wrap, .sec { padding-top: clamp(96px, 11vw, 160px); }
 .kick { display: flex; align-items: center; gap: 14px; margin: 0; font: 500 12.5px/1 var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--ink3); }
 .kick::before { content: ''; width: 28px; height: 1px; background: var(--ink3); }
 .lang-zh .kick { letter-spacing: .2em; }
-h2 { font: 400 clamp(40px, 5.2vw, 68px)/1.02 var(--serif); letter-spacing: -.02em; margin: 22px 0 0; max-width: 14ch; text-wrap: balance; }
+h2 { font: 400 clamp(34px, 4.2vw, 56px)/1.08 var(--serif); letter-spacing: -.018em; margin: 22px 0 0; max-width: 14ch; text-wrap: balance; }
 .lang-fr h2, .lang-es h2 { max-width: 17ch; }
 .lang-zh h2 { font-weight: 600; letter-spacing: .01em; line-height: 1.2; font-size: clamp(32px, 4vw, 52px); max-width: none; }
 .h2wide { max-width: 20ch; }
@@ -214,7 +214,7 @@ h2 { font: 400 clamp(40px, 5.2vw, 68px)/1.02 var(--serif); letter-spacing: -.02e
 
 /* final */
 .final { text-align: center; padding: clamp(100px, 12vw, 168px) var(--pad) clamp(88px, 10vw, 140px); }
-.final h2 { margin: 0 auto; max-width: 16ch; font-size: clamp(44px, 6vw, 84px); }
+.final h2 { margin: 0 auto; max-width: 18ch; font-size: clamp(38px, 4.8vw, 68px); }
 .lang-fr .final h2, .lang-es .final h2 { max-width: 18ch; font-size: clamp(40px, 5.4vw, 76px); }
 .lang-zh .final h2 { font-size: clamp(34px, 4.6vw, 60px); }
 .final .mark { display: block; width: 64px; height: auto; margin: 0 auto 36px; }
@@ -238,7 +238,7 @@ footer { border-top: 1px solid var(--rule); padding: 56px 0 48px; font-size: 14p
 .crumbs li + li::before { content: '/'; margin-right: 6px; color: var(--rule); color: var(--ink3); }
 .crumbs a:hover { color: var(--ink); text-decoration: underline; }
 .phero { padding-top: clamp(40px, 5vw, 72px); }
-.phero h1 { font-size: clamp(46px, 6.6vw, 92px); line-height: .98; max-width: 16ch; }
+.phero h1 { font-size: clamp(40px, 5.2vw, 72px); line-height: 1.06; max-width: 16ch; }
 .lang-fr .phero h1, .lang-es .phero h1 { font-size: clamp(42px, 5.8vw, 82px); max-width: 18ch; }
 .lang-zh .phero h1 { font-size: clamp(36px, 5.2vw, 68px); line-height: 1.2; max-width: none; }
 .phero .lede { font-size: clamp(17px, 1.5vw, 20px); max-width: 60ch; }
