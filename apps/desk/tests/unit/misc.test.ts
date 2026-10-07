@@ -58,9 +58,19 @@ describe('media protocol allowlist', () => {
     expect(isAllowedMediaPath('/Users/me/batch-a/batch.db', roots, path.posix)).toBe(false);
     expect(isAllowedMediaPath('relative/x.mp4', roots, path.posix)).toBe(false);
   });
+  it('Windows: drive letters in any case, no climbing, no sibling prefix', () => {
+    const w = ['C:\\Users\\Me\\batch-a', 'D:\\素材'];
+    expect(isAllowedMediaPath('c:\\users\\me\\batch-a\\jobs\\s1\\预览 1.mp4', w, path.win32)).toBe(true);
+    expect(isAllowedMediaPath('D:\\素材\\a.mov', w, path.win32)).toBe(true);
+    expect(isAllowedMediaPath('C:\\Users\\Me\\batch-ab\\x.mp4', w, path.win32)).toBe(false);
+    expect(isAllowedMediaPath('C:\\Users\\Me\\batch-a\\..\\x.mp4', w, path.win32)).toBe(false);
+    expect(isAllowedMediaPath('E:\\素材\\a.mov', w, path.win32)).toBe(false);
+  });
   it('round-trips URLs', () => {
     const p = '/Users/me/batch-a/jobs/s 1/预览.mp4';
     expect(pathFromMediaUrl(mediaUrl(p))).toBe(p);
+    const w = 'C:\\Users\\李 雷\\batch #1\\预览.mp4';
+    expect(pathFromMediaUrl(mediaUrl(w))).toBe(w);
     expect(pathFromMediaUrl('https://x/y')).toBeNull();
   });
 });

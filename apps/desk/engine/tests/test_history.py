@@ -236,9 +236,12 @@ class HistoryTest(unittest.TestCase):
 
 class HygieneTest(unittest.TestCase):
     def test_is_temp_path(self):
-        self.assertTrue(C.is_temp_path("/var/folders/1s/q5/T/tmpdgrjlyfq/batch-fake"))
-        self.assertTrue(C.is_temp_path("/tmp/x/batch"))
-        self.assertFalse(C.is_temp_path("/Users/me/Desktop/video-studio-demos/batch-rag"))
+        self.assertTrue(C.is_temp_path(os.path.join(tempfile.gettempdir(), "tmpdgrjlyfq", "batch-fake")))
+        self.assertTrue(C.is_temp_path(os.path.join(tempfile.gettempdir().upper(), "x")) or os.name != "nt")
+        if os.name != "nt":                         # macOS / Linux temp roots
+            self.assertTrue(C.is_temp_path("/var/folders/1s/q5/T/tmpdgrjlyfq/batch-fake"))
+            self.assertTrue(C.is_temp_path("/tmp/x/batch"))
+        self.assertFalse(C.is_temp_path(os.path.join(os.path.expanduser("~"), "Desktop", "video-studio-demos", "batch-rag")))
 
     def test_prune_real_registry(self):
         root = tempfile.mkdtemp(prefix="hyg-")

@@ -70,6 +70,14 @@ export function scriptCommand(cmd: string[], platform: NodeJS.Platform = process
   return null;
 }
 
+/** Windows: a .cmd / .bat (an npm shim the engine could not unwrap into node + script) cannot be spawned directly
+ * (Node refuses with EINVAL since the 2024 batch-file fix, ConPTY needs an executable): run it through cmd.exe. The
+ * arguments are the engine's fixed login / logout words, never user text. */
+export function windowsCommand(cmd: string[], platform: NodeJS.Platform = process.platform, comspec = process.env.ComSpec): string[] {
+  if (platform !== 'win32' || !/\.(cmd|bat)$/i.test(cmd[0] ?? '')) return cmd;
+  return [comspec || 'cmd.exe', '/d', '/c', ...cmd];
+}
+
 /** A PTY through Python's pty module (the engine's Python is always there): works with piped stdio, unlike
  * `script`, which needs a terminal on its own stdin. Exit code passed through. */
 export const PY_PTY = [
@@ -104,6 +112,7 @@ export function startTerminal(
   python?: string | null,
 ): TermSession {
   const id = crypto.randomBytes(6).toString('hex');
+  cmd = windowsCommand(cmd);
   const pty = process.env.DESK_NO_PTY === '1' ? null : loadPty();
   if (pty) {
     try {
@@ -136,7 +145,7 @@ export function startTerminal(
   const viaPython = python && process.platform !== 'win32' && fs.existsSync(python) ? [python, '-c', PY_PTY, String(size.cols), String(size.rows), ...cmd] : null;
   const viaScript = viaPython ? null : scriptCommand(cmd);
   const run = viaPython ?? viaScript ?? cmd;
-  const child = spawn(run[0], run.slice(1), { cwd, env: { ...env, COLUMNS: String(size.cols), LINES: String(size.rows) }, stdio: ['pipe', 'pipe', 'pipe'] });
+  const child = spawn(run[0], run.slice(1), { cwd, env: { ...env, COLUMNS: String(size.cols), LINES: String(size.rows) }, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
   child.stdout.setEncoding('utf8');
   child.stderr.setEncoding('utf8');
   child.stdout.on('data', (d: string) => h.onData(d));

@@ -6,7 +6,7 @@ describe('app:// file resolution', () => {
   const root = '/app/out/renderer';
   it('serves renderer files and falls back to index for routes', () => {
     expect(resolveAppFile(root, '/')).toBe('index');
-    expect(resolveAppFile(root, '/assets/index-abc.js')).toBe(path.join(root, 'assets/index-abc.js'));
+    expect(resolveAppFile(root, '/assets/index-abc.js')).toBe(path.resolve(root, 'assets/index-abc.js'));
     expect(resolveAppFile(root, '/projects')).toBe('index');
   });
   it('refuses traversal with either separator, encoded or not', () => {

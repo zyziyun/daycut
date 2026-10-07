@@ -25,7 +25,7 @@ export function devOnly(name: DevOnlyHook, env: NodeJS.ProcessEnv = process.env,
 
 const real = (p: string) => {
   try {
-    return fs.realpathSync(p);
+    return fs.realpathSync.native(p); // .native: Windows 8.3 short names (RUNNER~1) become the long ones on both sides
   } catch {
     return path.resolve(p);
   }

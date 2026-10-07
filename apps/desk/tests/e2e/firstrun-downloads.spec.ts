@@ -28,11 +28,16 @@ let launchEnv: Record<string, string> = {};
 /** A fake bundled runtime: the system Python (mock engine) + the folder layout findBundledRuntime() checks. */
 function fakeRuntime(): string {
   const rt = tmp('vsdesk-rt-');
-  fs.mkdirSync(path.join(rt, 'python', 'bin'), { recursive: true });
   fs.mkdirSync(path.join(rt, 'vstudio', 'lib', 'vstudio'), { recursive: true });
   fs.mkdirSync(path.join(rt, 'ffmpeg', 'bin'), { recursive: true });
-  const py = execFileSync('python3', ['-c', 'import sys; print(sys.executable)']).toString().trim();
-  fs.symlinkSync(py, path.join(rt, 'python', 'bin', 'python3'));
+  const py = execFileSync(process.platform === 'win32' ? 'python' : 'python3', ['-c', 'import sys; print(sys.executable)']).toString().trim();
+  if (process.platform === 'win32') {
+    // the bundle layout is python\python.exe: a junction to the real install keeps python.exe next to its DLLs
+    fs.symlinkSync(path.dirname(py), path.join(rt, 'python'), 'junction');
+  } else {
+    fs.mkdirSync(path.join(rt, 'python', 'bin'), { recursive: true });
+    fs.symlinkSync(py, path.join(rt, 'python', 'bin', 'python3'));
+  }
   fs.writeFileSync(
     path.join(rt, 'runtime.json'),
     JSON.stringify({ target: `${process.platform}-${process.arch}`, python: '3', vstudioCommit: 'test', ffmpeg: 'x', h264Encoder: 'libx264', asr: 'x', builtAt: '' }),
@@ -47,7 +52,9 @@ test.beforeAll(async () => {
   fs.mkdirSync(path.join(zsrc, 'tool', 'bin'), { recursive: true });
   fs.writeFileSync(path.join(zsrc, 'tool', 'bin', 'run'), '#!/bin/sh\necho ok\n', { mode: 0o755 });
   const zip = path.join(tmp('vsdesk-zip-'), 'tool.zip');
-  execFileSync('ditto', ['-c', '-k', zsrc, zip]);
+  // macOS: ditto; Windows 10+: the system bsdtar writes zip too (-a picks the format from the .zip name)
+  if (process.platform === 'win32') execFileSync(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe'), ['-a', '-c', '-f', zip, '-C', zsrc, 'tool']);
+  else execFileSync('ditto', ['-c', '-k', zsrc, zip]);
   files.zip = fs.readFileSync(zip);
   files.small = Buffer.from('weights');
 

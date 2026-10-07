@@ -272,10 +272,8 @@ class RealEngine:
         p = self.procs.get(bid)
         if not p or p.poll() is not None:
             return dict(cancelled=False)
-        try:
-            os.killpg(p.pid, signal.SIGINT)      # the run is resumable: stale `running` rows go back to pending
-        except OSError:
-            p.terminate()
+        from .proc import kill_tree
+        kill_tree(p, signal.SIGINT)              # the run is resumable: stale `running` rows go back to pending
         return dict(cancelled=True)
 
     def shutdown(self):

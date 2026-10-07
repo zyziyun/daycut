@@ -49,7 +49,11 @@ test.beforeAll(async () => {
   );
   // the "CLI login": prints, waits for a pasted code, then the login is fixed (status-ok.json) and it exits
   const script = `printf 'Opening your browser to sign in\\r\\nPaste code: '; read code; printf "got %s\\r\\n" "$code"; cp '${path.join(mock, 'status-ok.json')}' '${path.join(mock, 'status.json')}'; exit 0`;
-  fs.writeFileSync(path.join(mock, 'login.json'), JSON.stringify({ 'claude-code:login': { command: ['/bin/sh', '-c', script], display: 'claude auth login', env_unset: ['ANTHROPIC_API_KEY'] } }));
+  // Windows: the same login as a .cmd (what an npm-installed CLI is there), so the sheet runs it through cmd.exe
+  const cmdFile = path.join(mock, 'login.cmd');
+  fs.writeFileSync(cmdFile, ['@echo off', 'echo Opening your browser to sign in', 'set /p code=Paste code: ', 'echo got %code%', `copy /y "${path.join(mock, 'status-ok.json')}" "${path.join(mock, 'status.json')}" >nul`, 'exit /b 0', ''].join('\r\n'));
+  const command = process.platform === 'win32' ? [cmdFile] : ['/bin/sh', '-c', script];
+  fs.writeFileSync(path.join(mock, 'login.json'), JSON.stringify({ 'claude-code:login': { command, display: 'claude auth login', env_unset: ['ANTHROPIC_API_KEY'] } }));
   // one clip for the 让 AI 改 panel
   fs.mkdirSync(path.join(work, 'final'), { recursive: true });
   execFileSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=size=180x320:rate=30:duration=3', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=3', '-shortest', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', path.join(work, 'final', 'A_test.mp4')]);

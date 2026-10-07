@@ -6,6 +6,8 @@ import { APP_ID, APP_NAME, appDataOverride, applyIdentity, LEGACY_NAMES, migrate
 import { SecretStore, type Crypto } from '../../src/main/secrets';
 
 const [DAYCUT, VSDESK] = LEGACY_NAMES;
+/** a path as it appears inside a JSON string (Windows backslashes are escaped) */
+const json = (p: string) => JSON.stringify(p).slice(1, -1);
 
 function appData(dirs: Record<string, string[]>) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'reelfold-id-'));
@@ -107,7 +109,7 @@ describe('migrateProfile', () => {
     const before = fs.readdirSync(from).sort();
     expect(migrateProfile(from, to, VSDESK)).toBe(true);
     expect(fs.readdirSync(from).sort()).toEqual(before);
-    expect(fs.readFileSync(path.join(from, 'assets/installed.json'), 'utf8')).toContain(from); // old folder untouched
+    expect(fs.readFileSync(path.join(from, 'assets/installed.json'), 'utf8')).toContain(json(from)); // old folder untouched
     expect(JSON.parse(fs.readFileSync(path.join(to, 'settings.json'), 'utf8')).accounts).toEqual([{ id: 'a' }]);
     expect(fs.readFileSync(path.join(to, 'secrets.json'), 'utf8')).toContain('Y2lwaGVy');
     expect(fs.readFileSync(path.join(to, 'Partitions/douyin-main/Cookies'), 'utf8')).toBe('sqlite');
@@ -115,8 +117,8 @@ describe('migrateProfile', () => {
     const inst = JSON.parse(fs.readFileSync(path.join(to, 'assets/installed.json'), 'utf8'));
     expect(inst.chromium.root).toBe(path.join(to, 'assets/chromium/1'));
     expect(inst.core.root).toBe('/elsewhere/cache');
-    expect(fs.readFileSync(path.join(to, 'engine-data/v02/projects.json'), 'utf8')).toContain(path.join(to, 'engine-data/outputs/p1'));
-    expect(fs.readFileSync(path.join(to, 'engine-data/strips/abc/strip.json'), 'utf8')).not.toContain(from);
+    expect(fs.readFileSync(path.join(to, 'engine-data/v02/projects.json'), 'utf8')).toContain(json(path.join(to, 'engine-data/outputs/p1')));
+    expect(fs.readFileSync(path.join(to, 'engine-data/strips/abc/strip.json'), 'utf8')).not.toContain(json(from));
     for (const skipped of ['Cache', 'Code Cache', 'SingletonLock']) expect(fs.existsSync(path.join(to, skipped))).toBe(false);
     expect(readMigration(to)).toMatchObject({ from, safeStorageName: VSDESK });
     expect(fs.readdirSync(path.dirname(to)).filter((d) => d.includes('.migrating-'))).toEqual([]);
@@ -144,7 +146,8 @@ describe('migrateProfile', () => {
     expect(JSON.parse(fs.readFileSync(path.join(to, 'settings.json'), 'utf8')).lang).toBe('en');
   });
 
-  it('a failed copy runs on the old profile in place instead of starting empty', () => {
+  // chmod cannot make a folder unwritable on Windows
+  it.skipIf(process.platform === 'win32')('a failed copy runs on the old profile in place instead of starting empty', () => {
     const { root, from } = oldProfile();
     fs.writeFileSync(path.join(root, APP_NAME + '.blocker'), '');
     const a = fakeApp(root);

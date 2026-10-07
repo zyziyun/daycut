@@ -1002,8 +1002,9 @@ class Outputs:
             raise KeyError(f"no export {job}")
         j["stop"].set()
         if j.get("proc") is not None:
+            from .proc import kill_tree
             try:
-                j["proc"].terminate()
+                kill_tree(j["proc"])
             except OSError:
                 pass
         return dict(ok=True, job=job)

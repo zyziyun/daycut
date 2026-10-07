@@ -126,10 +126,8 @@ def kill_tracked(procs):
             continue
         n += 1
         try:
-            if os.name == "posix":
-                os.killpg(p.pid, signal.SIGTERM)
-            else:
-                p.terminate()
+            from .proc import kill_tree
+            kill_tree(p, signal.SIGTERM)
         except (OSError, ProcessLookupError):
             try:
                 p.kill()

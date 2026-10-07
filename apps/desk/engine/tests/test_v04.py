@@ -362,6 +362,8 @@ class RebaseTest(unittest.TestCase):
         open(os.path.join(b, "jobs", "ep01", "preview", "sheet.jpg"), "wb").close()
         old = "/Users/me/Desktop/old-place/batch-rag/jobs/ep01/preview/sheet.jpg"
         self.assertEqual(rebase(old, b), os.path.join(b, "jobs", "ep01", "preview", "sheet.jpg"))
+        made_on_windows = "D:\\素材\\old place\\batch-rag\\jobs\\ep01\\preview\\sheet.jpg"   # a Windows path, any OS
+        self.assertEqual(rebase(made_on_windows, b), os.path.join(b, "jobs", "ep01", "preview", "sheet.jpg"))
         self.assertEqual(rebase("/elsewhere/x.jpg", b), "/elsewhere/x.jpg")
         self.assertEqual(rebase("rel/x.jpg", b), "rel/x.jpg")
 

@@ -141,6 +141,8 @@ test('real engine starts from the bundle (vstudio, Python and ffmpeg inside the 
     // the engine's own encoder setting (no desk shim): its 0.1 s probe encode ran through the bundled LGPL ffmpeg
     // (VSTUDIO_FFMPEG); on macOS VideoToolbox must work, else every export silently falls back to libx264 (absent)
     if (process.platform === 'darwin') expect(h.health.h264_effective).toBe('h264_videotoolbox');
+    // Windows: Media Foundation, or OpenH264 where MF has no H.264 encoder (Windows N, CI VMs); never the absent libx264
+    if (process.platform === 'win32') expect(['h264_mf', 'libopenh264']).toContain(h.health.h264_effective);
     expect(fs.existsSync(path.join(res, 'engine', 'runtime_shim'))).toBe(false);
     const page = app.page;
     const recipes = await page.evaluate(async () => {
@@ -190,6 +192,41 @@ test('first-run download: the core group (fonts + MediaPipe models) installs and
   } finally {
     await app.close();
   }
+});
+
+test('real speech recognition on the bundled runtime (a real recording, the smallest Whisper model)', async () => {
+  test.skip(process.env.DESK_TEST_ASR !== '1', 'set DESK_TEST_ASR=1 (downloads a ~75 MB Whisper model + a 1 MB recording)');
+  test.setTimeout(600000);
+  const rt = path.join(resourcesDir(appExecutable()), 'runtime');
+  const win = process.platform === 'win32';
+  const py = win ? path.join(rt, 'python', 'python.exe') : path.join(rt, 'python', 'bin', 'python3');
+  const exe = win ? '.exe' : '';
+  // JFK's inaugural address excerpt, the sample faster-whisper's own tests use (public domain recording)
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vsdesk-asr 语音 '));
+  const audio = path.join(dir, 'jfk 片段.flac');
+  const r = await fetch('https://raw.githubusercontent.com/SYSTRAN/faster-whisper/v1.1.1/tests/data/jfk.flac');
+  expect(r.ok).toBe(true);
+  fs.writeFileSync(audio, Buffer.from(await r.arrayBuffer()));
+  const env = {
+    ...cleanEnv({}),
+    PYTHONPATH: path.join(rt, 'vstudio', 'lib'),
+    PYTHONNOUSERSITE: '1',
+    PYTHONDONTWRITEBYTECODE: '1',
+    PYTHONUTF8: '1',
+    HF_HOME: path.join(dir, 'hf'),
+    VSTUDIO_CACHE: path.join(dir, 'cache'),
+    VSTUDIO_FFMPEG: path.join(rt, 'ffmpeg', 'bin', `ffmpeg${exe}`),
+    VSTUDIO_FFPROBE: path.join(rt, 'ffmpeg', 'bin', `ffprobe${exe}`),
+  };
+  const model = win || process.arch !== 'arm64' ? 'tiny' : 'mlx-community/whisper-tiny';
+  const code = 'import json, sys; from vstudio import asr; t = asr.transcribe(sys.argv[1], language="en", model=sys.argv[2], cache=False); ' + 'print(json.dumps(dict(backend=t["backend"], text=t["text"], words=len(t["words"]))))';
+  const out = spawnSync(py, ['-c', code, audio, model], { env, encoding: 'utf8', timeout: 540000 });
+  expect(out.status, out.stderr).toBe(0);
+  const res = JSON.parse(out.stdout.trim().split('\n').pop()!) as { backend: string; text: string; words: number };
+  console.log('[packaged] asr', JSON.stringify(res));
+  expect(res.backend).toBe(win || process.arch !== 'arm64' ? 'faster' : 'mlx');
+  expect(res.text.toLowerCase()).toContain('country');
+  expect(res.words).toBeGreaterThan(10);
 });
 
 test('fuses are set in the built binary', async () => {

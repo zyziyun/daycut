@@ -38,7 +38,8 @@ def write_json(path, obj):
 # ------------------------------------------------------------------ temp / junk (registry hygiene)
 def _temp_roots():
     roots = {tempfile.gettempdir(), "/tmp", "/private/tmp", "/var/tmp", "/private/var/tmp"}
-    return {os.path.realpath(r) for r in roots} | {os.path.abspath(r) for r in roots}
+    # normcase: Windows compares case-insensitively (and gettempdir may be the 8.3 short form, realpath the long one)
+    return {os.path.normcase(os.path.realpath(r)) for r in roots} | {os.path.normcase(os.path.abspath(r)) for r in roots}
 
 
 _VARF = re.compile(r"^(/private)?/var/folders/[^/]+/[^/]+/T(/|$)")
@@ -49,7 +50,8 @@ def is_temp_path(path):
     rp = os.path.realpath(p)
     if _VARF.match(p) or _VARF.match(rp):
         return True
-    return any(x == r or x.startswith(r.rstrip(os.sep) + os.sep) for r in _temp_roots() for x in (p, rp))
+    return any(x == r or x.startswith(r.rstrip(os.sep) + os.sep) for r in _temp_roots()
+               for x in (os.path.normcase(p), os.path.normcase(rp)))
 
 
 def keep_entry(entry_dir, registry_path, marker=None):
@@ -92,15 +94,16 @@ JOB_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 def rebase(p, bdir):
     """B11: a batch moved or cloned keeps absolute artifact paths of its old place; map ``.../jobs/...`` (or
     ``.../review/...``) back into this batch folder when the stored path is gone or points elsewhere."""
-    if not isinstance(p, str) or not os.path.isabs(p):
+    if not isinstance(p, str) or not (os.path.isabs(p) or re.match(r"^[A-Za-z]:[\\/]", p)):
         return p
     root = os.path.abspath(bdir).rstrip(os.sep) + os.sep
     if p.startswith(root) and os.path.exists(p):
         return p
-    for seg in (f"{os.sep}jobs{os.sep}", f"{os.sep}review{os.sep}", f"{os.sep}package{os.sep}"):
-        i = p.rfind(seg)
-        if i >= 0:
-            cand = os.path.join(bdir, p[i + 1:])
+    # either separator: a batch made on a Mac and opened on Windows (or the other way round) maps too
+    for seg in ("jobs", "review", "package"):
+        hits = list(re.finditer(rf"[\\/]{seg}[\\/]", p))
+        if hits:
+            cand = os.path.join(bdir, *re.split(r"[\\/]+", p[hits[-1].start() + 1:]))
             if os.path.exists(cand):
                 return cand
     return p
@@ -124,13 +127,8 @@ LIVE_HARD_S = 7200
 
 
 def _pid_alive(pid):
-    try:
-        os.kill(int(pid), 0)
-        return True
-    except PermissionError:
-        return True
-    except (OSError, TypeError, ValueError):
-        return False
+    from .proc import pid_alive
+    return pid_alive(pid)
 
 
 def live_status(d, now=None):

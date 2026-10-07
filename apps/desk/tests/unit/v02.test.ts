@@ -134,7 +134,7 @@ describe('segment helpers', () => {
 
   it('weekly columns match the gtm weekly metrics sheet (header kept in tests/fixtures)', () => {
     const f = path.resolve(import.meta.dirname, '../fixtures/weekly_metrics.csv');
-    expect(fs.readFileSync(f, 'utf8').replace(/^\uFEFF/, '').split('\n')[0].split(',')).toEqual([...WEEKLY_COLUMNS]);
+    expect(fs.readFileSync(f, 'utf8').replace(/^\uFEFF/, '').split(/\r?\n/)[0].split(',')).toEqual([...WEEKLY_COLUMNS]);
   });
 });
 
@@ -176,6 +176,21 @@ describe('cleanup policy', () => {
     expect(cleanupPathOk('/Users/me/notes.txt', false, home)).toBe(false);
     expect(cleanupPathOk('/Users/me/Movies/../.ssh/id.mp4', false, home)).toBe(false);
     expect(cleanupPathOk('relative.mp4', false, home)).toBe(false);
+  });
+  it('Windows paths: drive letters, any case, known folders, UNC shares', () => {
+    const w = path.win32;
+    const h = 'C:\\Users\\Me';
+    expect(cleanupPathOk('C:\\Users\\Me\\Videos\\raw\\录屏 1.mp4', false, h, w)).toBe(true);
+    expect(cleanupPathOk('D:\\素材\\2026\\rec.mov', false, h, w)).toBe(true);
+    expect(cleanupPathOk('D:\\素材\\2026', true, h, w)).toBe(true);
+    expect(cleanupPathOk('c:\\users\\me', true, h, w)).toBe(false);
+    expect(cleanupPathOk('C:\\Users\\Me\\videos', true, h, w)).toBe(false);
+    expect(cleanupPathOk('C:\\Users\\Me\\OneDrive\\', true, h, w)).toBe(false);
+    expect(cleanupPathOk('C:\\Users', true, h, w)).toBe(false);
+    expect(cleanupPathOk('D:\\rec.mp4', false, h, w)).toBe(false);
+    expect(cleanupPathOk('\\\\nas\\share', true, h, w)).toBe(false);
+    expect(cleanupPathOk('\\\\nas\\share\\raw\\a.mp4', false, h, w)).toBe(true);
+    expect(cleanupPathOk('C:\\Users\\Me\\Videos\\..\\x.mp4', false, h, w)).toBe(false);
   });
 });
 

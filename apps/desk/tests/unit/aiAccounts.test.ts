@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { effective, fallbackNotice, normalizeRoutes, pill, routesFile, routesFromEngine, stripEnv, type AiRoutes } from '../../src/shared/aiRoutes';
 import { validateIpc } from '../../src/shared/ipc';
 import { routesFilePath, runLlm, writeRoutesFile } from '../../src/main/aiAccounts';
-import { scriptCommand, startTerminal } from '../../src/main/terminal';
+import { scriptCommand, startTerminal, windowsCommand } from '../../src/main/terminal';
 import { setLang, t } from '../../src/renderer/src/i18n';
 
 const persona = {
@@ -128,13 +128,30 @@ describe('login terminal', () => {
     expect(r.code).toBe(4);
   });
 
+  it('Windows: a .cmd shim runs through cmd.exe, executables as they are', () => {
+    const shim = 'C:\\Users\\A B\\AppData\\Roaming\\npm\\claude.CMD';
+    expect(windowsCommand([shim, 'auth', 'login'], 'win32', 'C:\\Windows\\system32\\cmd.exe')).toEqual(['C:\\Windows\\system32\\cmd.exe', '/d', '/c', shim, 'auth', 'login']);
+    expect(windowsCommand(['C:\\nodejs\\node.exe', 'cli.js', 'auth', 'login'], 'win32')).toEqual(['C:\\nodejs\\node.exe', 'cli.js', 'auth', 'login']);
+    expect(windowsCommand(['/usr/local/bin/claude.cmd'], 'darwin')).toEqual(['/usr/local/bin/claude.cmd']);
+  });
+
+  it.runIf(process.platform === 'win32')('Windows: a .cmd login command runs in the terminal and reports its exit', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vsdesk 终端 '));
+    const shim = path.join(dir, 'claude.cmd');
+    fs.writeFileSync(shim, '@echo off\r\necho sign in %1 %2\r\nexit /b 3\r\n');
+    const r = await run([shim, 'auth', 'login'], true);
+    expect(r.out).toContain('sign in auth login');
+    expect(r.code).toBe(3);
+  });
+
   it.runIf(process.platform === 'darwin')('the last resort is `script`', async () => {
     expect(scriptCommand(['claude', 'auth', 'login'], 'darwin')).toEqual(['/usr/bin/script', '-q', '/dev/null', 'claude', 'auth', 'login']);
   });
 });
 
 describe('engine call', () => {
-  it('python -m vstudio.llm ... -> JSON; the routes file can be hidden (persona values)', async () => {
+  // a /bin/sh stand-in for python: POSIX only
+  it.skipIf(process.platform === 'win32')('python -m vstudio.llm ... -> JSON; the routes file can be hidden (persona values)', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vsdesk-py-'));
     const py = path.join(dir, 'python');
     fs.writeFileSync(py, '#!/bin/sh\nprintf \'{"args": "%s", "routes": "%s"}\' "$*" "$VSTUDIO_LLM_ROUTES_FILE"\n', { mode: 0o755 });

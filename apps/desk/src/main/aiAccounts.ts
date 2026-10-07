@@ -62,7 +62,7 @@ function readMock<T>(name: string): T | null {
 export function runLlm(py: { python: string; env: NodeJS.ProcessEnv }, args: string[], timeoutMs: number, routesFileEnv?: string): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const env = { ...py.env, ...(routesFileEnv !== undefined ? { VSTUDIO_LLM_ROUTES_FILE: routesFileEnv } : {}) };
-    const child = spawn(py.python, ['-m', 'vstudio.llm', ...args], { env, stdio: ['ignore', 'pipe', 'pipe'], cwd: os.tmpdir() });
+    const child = spawn(py.python, ['-m', 'vstudio.llm', ...args], { env, stdio: ['ignore', 'pipe', 'pipe'], cwd: os.tmpdir(), windowsHide: true });
     let out = '';
     let err = '';
     child.stdout.on('data', (d) => (out += d));

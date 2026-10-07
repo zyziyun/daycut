@@ -66,15 +66,33 @@ export function defaultEnginePath(appPath: string, preferred?: string, bundled?:
   return undefined;
 }
 
-/** Folders where a Finder-launched app finds Homebrew tools and the AI CLIs (claude, codex). */
-export function extraBinDirs(): string[] {
-  if (process.platform !== 'darwin') return [path.join(os.homedir(), '.local/bin')];
-  return ['/opt/homebrew/bin', '/usr/local/bin', path.join(os.homedir(), '.local/bin')];
+/** Folders where a Finder- / Start-menu-launched app finds Homebrew tools and the AI CLIs (claude, codex). On Windows:
+ * the native Claude Code installer (~\\.local\\bin), npm's global prefix (%APPDATA%\\npm: claude.cmd / codex.cmd),
+ * winget links and scoop shims (an app started before an install keeps the PATH it was started with). */
+export function extraBinDirs(platform: NodeJS.Platform = process.platform, env: NodeJS.ProcessEnv = process.env, home = os.homedir()): string[] {
+  if (platform === 'win32') {
+    const p = path.win32;
+    const local = env.LOCALAPPDATA || p.join(home, 'AppData', 'Local');
+    return [
+      p.join(home, '.local', 'bin'),
+      p.join(env.APPDATA || p.join(home, 'AppData', 'Roaming'), 'npm'),
+      p.join(local, 'Microsoft', 'WinGet', 'Links'),
+      p.join(home, 'scoop', 'shims'),
+    ];
+  }
+  if (platform !== 'darwin') return [path.join(home, '.local/bin')];
+  return ['/opt/homebrew/bin', '/usr/local/bin', path.join(home, '.local/bin')];
+}
+
+/** Windows: Python's UTF-8 mode, so the engine reads / writes files, pipes and CLI output (Chinese titles, captions,
+ * prompts) as UTF-8 instead of the ANSI code page (cp936 / cp1252). Elsewhere UTF-8 is already the default. */
+export function utf8Env(platform: NodeJS.Platform = process.platform): Record<string, string> {
+  return platform === 'win32' ? { PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' } : {};
 }
 
 /** The environment of a Python process that imports vstudio (the sidecar, or a one-off `python -m vstudio.llm`). */
 export function engineProcessEnv(cfg: Pick<EngineConfig, 'env' | 'path' | 'pythonPath' | 'isolatePython' | 'enginePath'>, extra: Record<string, string> = {}): NodeJS.ProcessEnv {
-  let env: NodeJS.ProcessEnv = { ...process.env, ...cfg.env, ...extra, PYTHONUNBUFFERED: '1' };
+  let env: NodeJS.ProcessEnv = { ...process.env, ...utf8Env(), ...cfg.env, ...extra, PYTHONUNBUFFERED: '1' };
   if (cfg.isolatePython) {
     delete env.PYTHONPATH;
     delete env.PYTHONHOME;
@@ -89,6 +107,16 @@ export function engineProcessEnv(cfg: Pick<EngineConfig, 'env' | 'path' | 'pytho
   if (env.PYTHONPATH) pyPath.push(env.PYTHONPATH);
   if (pyPath.length) env.PYTHONPATH = pyPath.join(path.delimiter);
   return env;
+}
+
+/** Windows: end a process and everything it started (taskkill /T /F). */
+export function killTree(pid: number | undefined) {
+  if (!pid) return;
+  try {
+    spawn(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'taskkill.exe'), ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true }).on('error', () => {});
+  } catch {
+    /* already gone */
+  }
 }
 
 export class EngineProcess {
@@ -115,6 +143,7 @@ export class EngineProcess {
     const child = spawn(this.cfg.python, [path.join(this.cfg.engineDir, 'server.py')], {
       env,
       stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true, // Windows: no console window for python.exe (its ffmpeg / CLI children share the hidden one)
     });
     this.child = child;
     return new Promise<EngineInfo>((resolve, reject) => {
@@ -169,13 +198,27 @@ export class EngineProcess {
     if (this.log.length > 1000) this.log.splice(0, 500);
   }
 
-  /** Stop the engine; resolves once the process has exited (SIGKILL after 3 s), so its port is free again. */
+  /** Stop the engine; resolves once the process has exited (SIGKILL after 3 s), so its port is free again. Closing
+   * stdin asks it to stop its runs and exit. Windows has no SIGTERM (kill() is TerminateProcess, which would orphan the
+   * runs' ffmpeg / python children): the engine gets 2 s to exit on its own, then its whole tree is ended. */
   stop(): Promise<void> {
     this.stopping = true;
     const c = this.child;
     this.child = null;
     this.info = null;
     if (!c || c.exitCode !== null || c.signalCode !== null) return Promise.resolve();
+    if (process.platform === 'win32') {
+      return new Promise<void>((resolve) => {
+        const tree = setTimeout(() => c.exitCode === null && killTree(c.pid), 2000);
+        const cap = setTimeout(resolve, 5000);
+        c.once('exit', () => {
+          clearTimeout(tree);
+          clearTimeout(cap);
+          resolve();
+        });
+        c.stdin?.end();
+      });
+    }
     return new Promise<void>((resolve) => {
       const kill = setTimeout(() => c.exitCode === null && c.kill('SIGKILL'), 3000);
       const cap = setTimeout(resolve, 5000); // never hang a restart on a stuck child

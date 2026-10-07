@@ -1,4 +1,6 @@
 // Production build: renderer with Vite, main + preload with esbuild (CJS; the sandboxed preload must be CJS).
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { build as esbuild } from 'esbuild';
 import { build as vite } from 'vite';
 
@@ -16,7 +18,8 @@ export const mainOptions = (extra = {}) => ({
   ...extra,
 });
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// run as a script (not imported by dev.mjs): compare URLs, so Windows paths (D:\...) match too
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   await vite({ configFile: 'vite.config.ts', mode: 'production' });
   await esbuild(mainOptions({ minify: false }));
 }

@@ -349,7 +349,9 @@ async function mediaRoots(): Promise<string[]> {
   try {
     const roots = (await client.roots()).flatMap((r) => {
       try {
-        return [r, fs.realpathSync(r)];
+        // .native, like the request side's fs.promises.realpath: on Windows it also expands 8.3 short names
+        // (C:\Users\RUNNER~1 -> C:\Users\runneradmin), which the JS realpathSync keeps
+        return [r, fs.realpathSync.native(r)];
       } catch {
         return [r];
       }

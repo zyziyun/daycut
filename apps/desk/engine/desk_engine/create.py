@@ -165,13 +165,11 @@ class CreateApi:
         if limit:
             def stop():
                 killed.append(1)
-                try:                                     # its own session: the model CLI it started goes too
-                    os.killpg(p.pid, signal.SIGKILL)
+                from .proc import kill_tree               # its own session: the model CLI it started goes too
+                try:
+                    kill_tree(p, getattr(signal, "SIGKILL", signal.SIGTERM))
                 except OSError:
-                    try:
-                        p.kill()
-                    except OSError:
-                        pass
+                    pass
             watchdog = threading.Timer(limit, stop)
             watchdog.daemon = True
             watchdog.start()

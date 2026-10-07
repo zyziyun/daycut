@@ -253,20 +253,12 @@ class ProjectAsk:
         p = j.get("proc")
         if p is None or p.poll() is not None:
             return False
-        try:
-            os.killpg(p.pid, signal.SIGTERM)          # the engine + the model CLI it started
-        except (OSError, AttributeError):
-            try:
-                p.terminate()
-            except OSError:
-                pass
+        from .proc import kill_tree
+        kill_tree(p, signal.SIGTERM)                  # the engine + the model CLI it started
         try:
             p.wait(timeout=3)
         except subprocess.TimeoutExpired:
-            try:
-                os.killpg(p.pid, signal.SIGKILL)
-            except (OSError, AttributeError):
-                p.kill()
+            kill_tree(p, getattr(signal, "SIGKILL", signal.SIGTERM))
         return True
 
     def _finish(self, j, result=None, error=None):

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { defaultEnginePath } from '../../src/main/engine';
+import { defaultEnginePath, engineProcessEnv, extraBinDirs, utf8Env } from '../../src/main/engine';
 
 describe('defaultEnginePath (monorepo)', () => {
   it('dev: apps/desk finds the engine at the repo root (../..)', () => {
@@ -32,5 +32,27 @@ describe('defaultEnginePath (monorepo)', () => {
       if (saved !== undefined) process.env.VSTUDIO_ENGINE_PATH = saved;
       fs.rmSync(tmp, { recursive: true, force: true });
     }
+  });
+});
+
+describe('Windows engine environment', () => {
+  it('finds the AI CLIs where Windows installers put them', () => {
+    const dirs = extraBinDirs('win32', { APPDATA: 'C:\\Users\\李 雷\\AppData\\Roaming', LOCALAPPDATA: 'C:\\Users\\李 雷\\AppData\\Local' }, 'C:\\Users\\李 雷');
+    expect(dirs).toEqual([
+      'C:\\Users\\李 雷\\.local\\bin',
+      'C:\\Users\\李 雷\\AppData\\Roaming\\npm',
+      'C:\\Users\\李 雷\\AppData\\Local\\Microsoft\\WinGet\\Links',
+      'C:\\Users\\李 雷\\scoop\\shims',
+    ]);
+    expect(extraBinDirs('win32', {}, 'C:\\Users\\me')[1]).toBe('C:\\Users\\me\\AppData\\Roaming\\npm');
+    expect(extraBinDirs('darwin', {}, '/Users/me')).toContain('/opt/homebrew/bin');
+  });
+
+  it('runs Python in UTF-8 mode on Windows only', () => {
+    expect(utf8Env('win32')).toEqual({ PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' });
+    expect(utf8Env('darwin')).toEqual({});
+    const env = engineProcessEnv({ env: { PYTHONUTF8: '0' } });
+    expect(env.PYTHONUNBUFFERED).toBe('1');
+    expect(env.PYTHONUTF8).toBe('0'); // an explicit setting wins
   });
 });

@@ -80,10 +80,12 @@ test('an old profile is copied into Reelfold once and its encrypted data still r
   const rec = JSON.parse(fs.readFileSync(path.join(newDir, 'migrated-from.json'), 'utf8'));
   expect(rec.safeStorageName).toBe(LEGACY);
   expect(JSON.parse(fs.readFileSync(path.join(newDir, 'settings.json'), 'utf8'))).toMatchObject({ lang: 'fr', accent: 'red' });
-  expect(fs.readFileSync(path.join(newDir, 'assets/installed.json'), 'utf8')).toContain(path.join(newDir, 'assets'));
+  // paths inside JSON strings (Windows backslashes are escaped there)
+  const inJson = (p: string) => JSON.stringify(p).slice(1, -1);
+  expect(fs.readFileSync(path.join(newDir, 'assets/installed.json'), 'utf8')).toContain(inJson(path.join(newDir, 'assets')));
   // the old folder is kept, unchanged
   expect(fs.readFileSync(path.join(oldDir, 'settings.json'), 'utf8')).toBe(before);
-  expect(fs.readFileSync(path.join(oldDir, 'assets/installed.json'), 'utf8')).toContain(path.join(oldDir, 'assets'));
+  expect(fs.readFileSync(path.join(oldDir, 'assets/installed.json'), 'utf8')).toContain(inJson(path.join(oldDir, 'assets')));
 });
 
 test('the second launch reuses the copy (no new migration) and still decrypts', async () => {
@@ -103,7 +105,10 @@ test('the second launch reuses the copy (no new migration) and still decrypts', 
   expect(mainLog().match(/copied the profile/g)?.length).toBe(1);
 });
 
+// macOS / Linux: the key lives in a keychain item named after the app. Windows' DPAPI key sits in the profile's own
+// Local State (copied with it), so the app name does not matter there and this control does not apply.
 test('control: with the wrong keychain key the same data does not read (and the app says so)', async () => {
+  test.skip(process.platform === 'win32', 'DPAPI: the key travels with the profile');
   const rec = path.join(newDir, 'migrated-from.json');
   const saved = fs.readFileSync(rec, 'utf8');
   fs.writeFileSync(rec, JSON.stringify({ ...JSON.parse(saved), safeStorageName: 'Reelfold E2E Other' }));

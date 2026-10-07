@@ -21,6 +21,12 @@ import re
 import shutil
 import zipfile
 
+
+def _rel(path, start):
+    """A relative path with / on every OS (manifests read elsewhere; Windows accepts /)."""
+    return os.path.relpath(path, start).replace(os.sep, "/")
+
+
 PLATFORM_NAMES = {
     "xiaohongshu": "小红书", "douyin": "抖音", "tiktok": "TikTok", "youtube-shorts": "YouTube Shorts",
     "youtube": "YouTube", "bilibili": "B站", "kuaishou": "快手", "weixin-channels": "视频号",
@@ -127,9 +133,9 @@ def build(pkg_dir, manifest, out_root, client_name, batch_name, jobs=None, make_
                 cdst = os.path.join(out, label, f"{stem}_封面{os.path.splitext(csrc)[1] or '.jpg'}")
                 _place(csrc, cdst)
                 files.append(cdst)
-                cover_rel = os.path.relpath(cdst, out)
+                cover_rel = _rel(cdst, out)
         total_s += float(it.get("duration") or 0)
-        rel = os.path.relpath(vdst, out)
+        rel = _rel(vdst, out)
         posts.append(dict(no=n, platform=label, job=it["job"], date=it.get("date"), time=it.get("time"),
                           file=rel, cover=cover_rel, **post))
         sched.append([it.get("date") or "", it.get("time") or "", label, n, post["title"], rel])
@@ -176,7 +182,7 @@ def build(pkg_dir, manifest, out_root, client_name, batch_name, jobs=None, make_
 
     entries = []
     for f in sorted(files + [os.path.join(out, n) for n in ("文案.md", "排期表.csv", "交付说明.md")]):
-        entries.append(dict(path=os.path.relpath(f, out), sha256=_sha(f), bytes=os.path.getsize(f)))
+        entries.append(dict(path=_rel(f, out), sha256=_sha(f), bytes=os.path.getsize(f)))
     man = dict(client=client_name, batch=batch_name, date=today.isoformat(),
                package_code=manifest.get("confirmation_code"), items=entries, posts=posts)
     import json
@@ -188,7 +194,7 @@ def build(pkg_dir, manifest, out_root, client_name, batch_name, jobs=None, make_
             for root, _dirs, fs in os.walk(out):
                 for fn in sorted(fs):
                     p = os.path.join(root, fn)
-                    z.write(p, os.path.join(name, os.path.relpath(p, out)))
+                    z.write(p, os.path.join(name, _rel(p, out)))
     return dict(dir=out, zip=zpath, items=len(posts), jobs=len(job_ids), duration_s=round(total_s, 1),
                 manifest=man, cleanup_on=cleanup)
 

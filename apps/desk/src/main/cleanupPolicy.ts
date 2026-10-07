@@ -5,15 +5,21 @@ import path from 'node:path';
 
 const MEDIA = new Set(['.mp4', '.mov', '.m4v', '.mkv', '.webm', '.wav', '.mp3', '.m4a']);
 
+// home folders that are never trashed as a whole (macOS + the Windows / OneDrive known folders)
+const TOP = ['Desktop', 'Documents', 'Downloads', 'Movies', 'Pictures', 'Library', 'Videos', 'Music', 'OneDrive', 'AppData'];
+
 export function cleanupPathOk(p: string, isDir: boolean, home: string, pathImpl: typeof path = path): boolean {
   if (!p || p.includes('\0') || !pathImpl.isAbsolute(p) || p.split(/[\\/]/).includes('..')) return false;
+  // Windows paths compare case-insensitively ("c:\users\me" is the home folder too)
+  const win = pathImpl.sep === '\\';
+  const key = (s: string) => (win ? s.toLowerCase() : s);
   const norm = pathImpl.normalize(p).replace(/[\\/]+$/, '');
   const depth = norm.split(/[\\/]/).filter(Boolean).length;
-  if (depth < 3) return false; // "/", "/Users", "/Users/me"
+  if (depth < 3) return false; // "/", "/Users", "/Users/me" (Windows: "C:\", "C:\Users")
   const h = pathImpl.normalize(home).replace(/[\\/]+$/, '');
-  if (norm === h) return false;
-  for (const top of ['Desktop', 'Documents', 'Downloads', 'Movies', 'Pictures', 'Library']) {
-    if (norm === pathImpl.join(h, top)) return false;
+  if (key(norm) === key(h)) return false;
+  for (const top of TOP) {
+    if (key(norm) === key(pathImpl.join(h, top))) return false;
   }
   return isDir || MEDIA.has(pathImpl.extname(norm).toLowerCase());
 }

@@ -73,9 +73,10 @@ describe('lint: no component hardcodes a Chinese-first platform order', () => {
     expect(misordered("const A = ['tiktok', 'douyin'];")).toHaveLength(0);
   });
   it('src/ has none (outside the deferred list)', () => {
+    const rel = (f: string) => path.relative(ROOT, f).split(path.sep).join('/'); // the same on Windows
     const bad = files(ROOT)
-      .filter((f) => !DEFERRED.has(path.relative(ROOT, f)))
-      .flatMap((f) => misordered(fs.readFileSync(f, 'utf8')).map((m) => `${path.relative(ROOT, f)}: ${m}`));
+      .filter((f) => !DEFERRED.has(rel(f)))
+      .flatMap((f) => misordered(fs.readFileSync(f, 'utf8')).map((m) => `${rel(f)}: ${m}`));
     expect(bad).toEqual([]);
   });
 });

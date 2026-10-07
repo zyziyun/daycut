@@ -68,6 +68,7 @@ class PlanRealEngineTest(unittest.TestCase):
     def steps(self, j):
         return [e.get("step") for e in j["events"] if e.get("event") == "create.step"]
 
+    @unittest.skipIf(os.name == "nt", "the fake CLIs are /bin/sh scripts")
     def test_hanging_claude_then_failing_codex_is_a_clear_error(self):
         api = self.make()
         t0 = time.time()
@@ -102,6 +103,7 @@ class PlanRealEngineTest(unittest.TestCase):
         self.assertEqual((j["error"]["code"], j["error"]["params"]["reason"]), ("create.ai-failed", "not-set-up"))
         self.assertLess(time.time() - t0, 20)
 
+    @unittest.skipIf(os.name == "nt", "the fake CLIs are /bin/sh scripts")
     def test_watchdog_stops_a_stuck_engine(self):
         api = self.make(timeout="60", deadline="60")
         jid = api.job("plan", ["plan", "--format", "series-ad", "--lang", "zh"], limit=1.5)["job"]

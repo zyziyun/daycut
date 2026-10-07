@@ -46,7 +46,8 @@ describe('dev single-instance guard', () => {
     expect(L.pidfilePath('/a/repo', tmp)).not.toBe(L.pidfilePath('/b/repo', tmp));
   });
 
-  it('stops the previous run recorded in the pidfile (its process group) and frees the port', async () => {
+  // process groups + ps / lsof: macOS / Linux (on Windows a dev run just moves to the next free port)
+  it.skipIf(process.platform === 'win32')('stops the previous run recorded in the pidfile (its process group) and frees the port', async () => {
     const port = await freePort();
     const k = await holder(port);
     const file = path.join(tmp, 'prev.json');

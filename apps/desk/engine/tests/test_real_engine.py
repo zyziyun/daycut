@@ -80,7 +80,7 @@ class RealEngineTest(unittest.TestCase):
         r = plan_batch(sp, os.path.join(self.tmp, "batch-reg"), echo=False)
         self.assertEqual(os.environ["VSTUDIO_HOME"], _isolate.HOME)
         with open(os.path.join(_isolate.HOME, "batches.json")) as f:
-            self.assertIn(r["batch_dir"], json.dumps(json.load(f)))
+            self.assertIn(r["batch_dir"], [e.get("dir") for e in json.load(f)])
         after = open(real, "rb").read() if os.path.exists(real) else None
         self.assertEqual(before, after)
 

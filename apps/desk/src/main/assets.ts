@@ -380,7 +380,7 @@ function extract(zip: string, dir: string): Promise<void> {
   const tar = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe');
   const [cmd, args] = process.platform === 'darwin' ? ['ditto', ['-x', '-k', zip, dir]] : [tar, ['-xf', zip, '-C', dir]];
   return new Promise((resolve, reject) => {
-    const p = spawn(cmd, args, { stdio: 'ignore' });
+    const p = spawn(cmd, args, { stdio: 'ignore', windowsHide: true });
     p.on('error', reject);
     p.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`${cmd} exited ${code}`))));
   });

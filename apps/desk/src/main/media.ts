@@ -23,10 +23,12 @@ export function pathFromMediaUrl(url: string): string | null {
 export function isAllowedMediaPath(p: string, roots: string[], pathImpl: typeof path = path): boolean {
   if (!p || p.includes('\0') || !pathImpl.isAbsolute(p)) return false;
   if (p.split(/[\\/]/).includes('..')) return false;
-  const norm = pathImpl.normalize(p);
+  // Windows paths compare case-insensitively (the engine may say c:\\ where Node says C:\\)
+  const key = (s: string) => (pathImpl.sep === '\\' ? s.toLowerCase() : s);
+  const norm = key(pathImpl.normalize(p));
   if (!MEDIA_EXT.has(pathImpl.extname(norm).toLowerCase())) return false;
   return roots.some((r) => {
-    const root = pathImpl.normalize(r).replace(/[\\/]+$/, '');
+    const root = key(pathImpl.normalize(r).replace(/[\\/]+$/, ''));
     return norm === root || norm.startsWith(root + pathImpl.sep);
   });
 }
