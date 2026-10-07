@@ -105,6 +105,13 @@ export function useSplit() {
       setForceOpen(false);
     }
   }, [collapsed, narrow]);
+  /** Open the AI column if it is folded (by ⌘\ or because the window is narrow): anything that opens a card there
+   * (Export, /, a marker) must be visible, not land in a folded column. */
+  const openChat = useCallback(() => {
+    if (!collapsed) return;
+    setLayout((l) => ({ ...l, chatCollapsed: false }));
+    if (narrow) setForceOpen(true);
+  }, [collapsed, narrow]);
   /** pointer-drag on the divider (pointer capture), clamped to the min sizes */
   const dragDivider = useCallback(
     (e: React.PointerEvent) => {
@@ -127,5 +134,5 @@ export function useSplit() {
     },
     [setStage],
   );
-  return { layout, stage, height, collapsed, narrow, ref, setPreset, setStage, setTab, setChatW, toggleChat, dragDivider, reset: () => setPreset('balanced') };
+  return { layout, stage, height, collapsed, narrow, ref, setPreset, setStage, setTab, setChatW, toggleChat, openChat, dragDivider, reset: () => setPreset('balanced') };
 }

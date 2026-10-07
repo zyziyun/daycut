@@ -60,7 +60,7 @@ test.beforeAll(async () => {
   // nothing may reach the desktop: dialogs, Finder, the default browser, notifications
   await app.evaluate(({ dialog, shell, Notification }) => {
     dialog.showOpenDialog = (async () => ({ canceled: true, filePaths: [] })) as typeof dialog.showOpenDialog;
-    dialog.showSaveDialog = (async () => ({ canceled: true })) as typeof dialog.showSaveDialog;
+    dialog.showSaveDialog = (async () => ({ canceled: true, filePath: '' })) as typeof dialog.showSaveDialog;
     dialog.showMessageBox = (async () => ({ response: 0, checkboxChecked: false })) as typeof dialog.showMessageBox;
     shell.openExternal = async () => undefined;
     shell.openPath = async () => '';
@@ -203,6 +203,13 @@ test('clip editor: transcript, timeline, chat', async () => {
       await page.mouse.click(box.x + box.width * 0.6, box.y + box.height / 2);
     }
   }
+  // BB-12: Export opens its card even when the AI column is folded (a window under 1280 px folds it by itself)
+  await page.setViewportSize({ width: 1200, height: 800 });
+  await go(route);
+  await expect(page.getByTestId('player-play')).toBeVisible({ timeout: 20000 });
+  await page.getByTestId('editor-export').click();
+  await expect(page.getByTestId('export-go')).toBeVisible();
+  await page.setViewportSize({ width: 1440, height: 900 });
   expectClean('clip editor');
 });
 

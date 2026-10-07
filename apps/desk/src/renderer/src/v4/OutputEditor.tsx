@@ -331,6 +331,7 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
       else void undo(1, e.shiftKey);
     } else if (!mod && e.key === '/') {
       e.preventDefault();
+      split.openChat();
       chat.current?.focus('/');
     } else if (!mod && !e.altKey && k === 'e') {
       if (tsel) return; // the transcript's fix-text
@@ -545,7 +546,7 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
             <SlidersHorizontal className="ico" />
             {t('ce.precise')}
           </button>
-          <button className={`btn ${primary === 'export' && !pending ? 'primary' : ''}`} onClick={() => chat.current?.openCard('export')} disabled={doc.caps.export === false} data-testid="editor-export">
+          <button className={`btn ${primary === 'export' && !pending ? 'primary' : ''}`} onClick={() => (split.openChat(), chat.current?.openCard('export'))} disabled={doc.caps.export === false} data-testid="editor-export">
             <Upload className="ico" />
             {t('ce.export')}
           </button>
@@ -677,7 +678,7 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
                     ) : null
                   }
                   markers={marks}
-                  onMarker={(turn) => chat.current?.focusTurn(turn)}
+                  onMarker={(turn) => (split.openChat(), chat.current?.focusTurn(turn))}
                   onSeek={(x) => pl.current?.seek(x)}
                   onSelect={(s) => {
                     setSel(s);
