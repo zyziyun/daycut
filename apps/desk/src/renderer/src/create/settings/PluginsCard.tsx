@@ -107,7 +107,7 @@ export function PluginsCard() {
                               <input
                                 className="input"
                                 style={{ flex: 1, minWidth: 200 }}
-                                placeholder="mytool --in {job_dir} --out {outputs}"
+                                placeholder={t('create.plugins.commandPlaceholder', { job_dir: '{job_dir}', outputs: '{outputs}' })}
                                 value={cmd ?? ''}
                                 onChange={(e) => setCmd(e.target.value)}
                                 data-testid="create-plugin-command"

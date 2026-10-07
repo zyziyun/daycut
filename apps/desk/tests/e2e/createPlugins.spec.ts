@@ -119,8 +119,7 @@ test.describe('Create plugins', () => {
     fs.writeFileSync(csv, 'shot,duration,action,source\n1,2,Cup,agent:fake-agent\n2,2,Pour,agent:fake-agent\n3,2,Sip,agent:fake-agent\n');
     await pickNext(app, csv);
     await page.getByTestId('create-storyboard-import').click();
-    await expect(page.getByTestId('create-import-done')).toBeVisible({ timeout: 60000 });
-    await expect(page.getByTestId('create-episode').locator('.cr-sw.sw-agent').first()).toBeVisible({ timeout: 30000 });
+    await expect(page.getByTestId('create-episode').locator('.cr-sw.sw-agent')).toHaveCount(3, { timeout: 60000 });
     const primary = page.getByTestId('create-primary');
     await expect(primary).toContainText(/3/);
     await primary.click();
