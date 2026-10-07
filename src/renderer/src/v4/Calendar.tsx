@@ -2,7 +2,8 @@
 // the left (drag them onto a day, or let AI fill the free days), and ONE primary: confirm this week. Clicking a
 // post offers the assisted-fill browser (the app fills the forms; she presses publish herself).
 import { useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, ExternalLink, Sparkles, Trash2, CheckCircle2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ExternalLink, Package, Sparkles, Trash2, CheckCircle2, UserRound } from 'lucide-react';
+import { useChannels } from './Channels';
 import type { CalendarPost } from '../../../shared/v04';
 import { fmtDate, fmtTime, fmtWeekday, t, tk } from '../i18n';
 import { useEngine, useLoad } from '../lib/engine';
@@ -17,7 +18,6 @@ import { useUi } from './ui';
 
 /** Default post time per platform when a clip is dropped on a day (a convention, editable per post). */
 export const SLOT_TIME: Record<string, string> = { x: '09:00', instagram: '18:00', 'wechat-channels': '12:00' };
-const slotTime = (pf: string) => SLOT_TIME[pf] ?? '19:00';
 
 function loadSchedTo(): string {
   try {
@@ -47,6 +47,14 @@ export function CalendarScreen() {
   const start = useMemo(() => weekStart(new Date(), off), [off]);
   const days = useMemo(() => Array.from({ length: view === 'week' ? 7 : 35 }, (_, k) => new Date(start.getTime() + k * 86400000)), [start, view]);
   const { data, reload } = useLoad((c) => c.calendar(), []);
+  const { adapters, channels } = useChannels();
+  // a publishing account's default post time (发布账号) wins over the convention
+  const slotTime = (pf: string) => {
+    const a = adapters.find((x) => x.packagePlatforms.includes(pf));
+    const c = a && channels.find((x) => x.adapterId === a.id && x.times.length);
+    return c?.times[0] ?? SLOT_TIME[pf] ?? '19:00';
+  };
+  const signedIn = channels.filter((c) => c.login.state === 'in').length;
   const [over, setOver] = useState<string | null>(null);
   const [schedTo, setSchedToState] = useState<string>(loadSchedTo);
   const setSchedTo = (v: string) => {
@@ -125,7 +133,7 @@ export function CalendarScreen() {
   const postMenu = (p: CalendarPost) => (e: React.MouseEvent) => {
     const batch = hist?.items.find((i) => i.id === p.item);
     ui.menu(e, [
-      { label: t('pub.fill'), icon: <ExternalLink className="ico" />, run: () => (batch?.kind !== 'work' && batch?.openable ? go({ name: 'publish', batch: p.item }) : ui.toast(t('pub.fillHint'))) },
+      { label: t('pub.fill'), icon: <ExternalLink className="ico" />, run: () => (batch ? go({ name: 'publish', batch: p.item }) : ui.toast(t('pub.fillHint'))) },
       { label: t('pub.markPosted'), icon: <CheckCircle2 className="ico" />, run: async () => (await client?.updatePost(p.id, { state: 'posted' }), reload()) },
       { label: t('clip.edit'), icon: <Sparkles className="ico" />, run: () => go({ name: 'clip', id: p.item, clip: p.clip }) },
       { label: '', sep: true, run: () => undefined },
@@ -160,6 +168,11 @@ export function CalendarScreen() {
                 { v: 'data' as 'week', label: t('pub.data') },
               ]}
             />
+            <a className="btn ghost" href={href({ name: 'channels' })} data-testid="pub-accounts" data-tip={t('set.channelsHint')}>
+              <UserRound className="ico" />
+              {t('ch.manage')}
+              {channels.length > 0 && <span className="muted num">{t('ch.status', { n: signedIn, total: channels.length })}</span>}
+            </a>
             <button className="btn primary" onClick={() => void confirm()} disabled={!weekPosts.some((p) => p.state === 'planned')} data-testid="pub-confirm">
               {t('pub.confirm')}
             </button>
@@ -196,12 +209,15 @@ export function CalendarScreen() {
                 data-testid="pub-queue-item"
               >
                 <Thumb src={q.cover} />
-                <div style={{ minWidth: 0 }}>
+                <div style={{ minWidth: 0, flex: 1 }}>
                   <div className="clamp2" lang="zh-CN">
                     {q.title}
                   </div>
                   <span className="muted clamp1">{q.project}</span>
                 </div>
+                <a className="btn ghost icon sm" href={href({ name: 'publish', batch: q.item })} aria-label={t('pkg.open')} data-tip={t('pkg.open')} data-testid="pub-queue-package" draggable={false} onClick={(e) => e.stopPropagation()}>
+                  <Package className="ico" />
+                </a>
               </div>
             ))}
             {(data?.queue.length ?? 0) > 0 && (

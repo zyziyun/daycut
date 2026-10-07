@@ -226,6 +226,18 @@ export interface ManifestItem {
   sha256: string;
   bytes: number;
   duration: number | null;
+  /** work-folder packages (workpkg.py): what to look at before posting, for the UI's own words */
+  checks?: PackageCheck[];
+}
+
+export interface PackageCheck {
+  code: 'title-over' | 'desc-over' | 'hashtags-over' | 'length' | 'aspect' | 'ai-label' | 'no-copy' | 'no-title';
+  n?: number;
+  max?: number;
+  min?: number;
+  want?: string;
+  got?: string;
+  hard?: boolean;
 }
 
 export interface Manifest {

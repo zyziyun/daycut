@@ -170,6 +170,10 @@ export class EngineClient {
   package(id: string, opts: { per_day?: number; start?: string; times?: string[] } = {}) {
     return this.req<PackageResult>('POST', `/api/batches/${bid(id)}/package`, opts);
   }
+  /** a work folder / project: chosen clips x platforms -> per-platform package (engine workpkg.py) */
+  packageWork(id: string, opts: { clips: string[]; platforms: string[]; per_day?: number; start?: string; times?: string[]; times_by_platform?: Record<string, string[]> }) {
+    return this.req<{ dir: string; items: number; confirmation_code: string; checks: number }>('POST', `/api/batches/${bid(id)}/package`, opts);
+  }
   manifest(id: string) {
     return this.req<ManifestResponse>('GET', `/api/batches/${bid(id)}/package`);
   }
@@ -282,6 +286,10 @@ export class EngineClient {
   }
   renameHistory(dir: string, name: string) {
     return this.req<{ ok: boolean; name: string }>('POST', '/api/history/rename', { dir, name: name.slice(0, 80) });
+  }
+  /** agency mode: the client a project is for ('' = her own) */
+  setHistoryClient(dir: string, client: string) {
+    return this.req<{ ok: boolean; client: string | null }>('POST', '/api/history/client', { dir, client: client.slice(0, 80) });
   }
   unhideHistory() {
     return this.req<HistoryConfig>('POST', '/api/history/unhide', {});

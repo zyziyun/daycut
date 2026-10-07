@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { WebContents } from 'electron';
+import { loginState } from '../../shared/channels';
 import type { EngineClient } from '../../shared/engineClient';
 import { hostAllowed, type Adapter } from '../../shared/publish/adapterSchema';
 import { planFill } from '../../shared/publish/fillPlan';
@@ -70,6 +71,10 @@ export async function assistedFill(
   const postPath = item.files.post ? resolveInside(dir, item.files.post, path.sep) : null;
   const md = postPath && fs.existsSync(postPath) ? fs.readFileSync(postPath, 'utf8') : '';
   const copy = parsePostCopy(md, item.title, { keepFirstLine: adapter.fields.title === null });
+  // no title field (X, Instagram): the title is the hook - the first line of the post text
+  if (adapter.fields.title === null && copy.title && !copy.description.startsWith(copy.title)) {
+    copy.description = copy.description ? `${copy.title}\n\n${copy.description}` : copy.title;
+  }
 
   const entry = deps.browser.open(adapter, req.account, 'upload');
   const wc = entry.view.webContents;
@@ -78,7 +83,7 @@ export async function assistedFill(
     await wc.loadURL(adapter.uploadUrl).catch(() => undefined);
     await waitLoaded(wc);
   }
-  if (/login|signin|passport/i.test(new URL(wc.getURL() || adapter.uploadUrl).pathname)) {
+  if (loginState(wc.getURL() || adapter.uploadUrl, adapter, null) === 'out' || /login|signin|passport/i.test(new URL(wc.getURL() || adapter.uploadUrl).pathname)) {
     return { ok: false, reason: 'login-required' };
   }
   if (!onUploadPage(wc.getURL(), adapter)) return { ok: false, reason: 'page-failed', detail: wc.getURL() };

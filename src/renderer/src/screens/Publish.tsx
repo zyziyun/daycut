@@ -11,6 +11,12 @@ import type { ManifestItem } from '../../../shared/types';
 import { ErrorBox, Field, Modal } from '../components/ui';
 import { getLang, t, tk } from '../i18n';
 import { useEngine, useLoad } from '../lib/engine';
+import { useHistory } from '../lib/history';
+import { href } from '../lib/router';
+import type { PackageCheck } from '../../../shared/types';
+import { basePlatform } from '../../../shared/publish/adapterSchema';
+import { platformName } from '../v4/Home';
+import { SCHEDULE_PLATFORMS } from '../v4/PlatformIcon';
 
 const itemKey = (i: { job: string; platform: string }) => `${i.job}|${i.platform}`;
 
@@ -36,6 +42,11 @@ export function Publish({ batch }: { batch: string }) {
   const [times, setTimes] = useState('12:00,19:00');
   const [copy, setCopy] = useState<PostCopy | null>(null);
 
+  const { data: hist } = useHistory();
+  const entry = hist?.items.find((i) => i.id === batch);
+  // a work folder / project (not a batch): the package is made here from chosen clips x platforms (workpkg.py)
+  const isWork = !!entry && (entry.kind === 'work' || entry.kind === 'project') && !entry.openable;
+  const [repack, setRepack] = useState(false);
   const m = man.data?.manifest ?? null;
   const verify = man.data?.verify;
   const adapter = adapters.find((a) => a.id === adapterId) ?? null;
@@ -151,7 +162,29 @@ export function Publish({ batch }: { batch: string }) {
                 {t('pub.adapterError')}: {e.file}: {e.error}
               </div>
             ))}
-            {!m && man.data && (
+            {isWork && (!m || repack) && man.data && (
+              <WorkPackageCard
+                batch={batch}
+                busy={busy}
+                onDone={() => {
+                  setRepack(false);
+                  setSel('');
+                  man.reload();
+                }}
+                guard={guard}
+              />
+            )}
+            {isWork && m && !repack && (
+              <div className="row small">
+                <button className="btn ghost sm" onClick={() => setRepack(true)} data-testid="pkg-redo">
+                  {t('pkg.redo')}
+                </button>
+                <a className="btn ghost sm" href={href({ name: 'channels' })}>
+                  {t('ch.manage')}
+                </a>
+              </div>
+            )}
+            {!isWork && !m && man.data && (
               <div className="card col">
                 <b>{t('pub.packageFirst')}</b>
                 <span className="muted small">{t('pub.packageHint')}</span>
@@ -185,7 +218,7 @@ export function Publish({ batch }: { batch: string }) {
               <div className="notice">
                 {t('pub.confirmNeeded', { n: m.items.length, code: m.confirmation_code })}
                 <div style={{ marginTop: 6 }}>
-                  <button className="btn primary sm" onClick={() => setModal('confirm')}>
+                  <button className="btn primary sm" onClick={() => setModal('confirm')} data-testid="pub-review-list">
                     {t('pub.reviewList')}
                   </button>
                 </div>
@@ -280,6 +313,15 @@ export function Publish({ batch }: { batch: string }) {
                     {t('pub.showFile')}
                   </button>
                 </div>
+                {item.checks && item.checks.length > 0 && (
+                  <div className="col small" data-testid="pkg-item-checks">
+                    {item.checks.map((c, k) => (
+                      <span key={k} className={c.code === 'ai-label' ? 'warnc' : c.hard ? 'err' : 'muted'} data-code={c.code}>
+                        · {checkText(c)}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 {copy && (
                   <div className="col small" data-testid="pub-checks">
                     <b>{t('pub.checks')}</b>
@@ -315,7 +357,7 @@ export function Publish({ batch }: { batch: string }) {
                   </div>
                 )}
                 {fill?.ok && <div className="notice accent small">{t('pub.afterFill')}</div>}
-                <button className="btn" disabled={!confirmed || postedKeys.has(itemKey(item))} onClick={() => setModal('posted')}>
+                <button className="btn" disabled={!confirmed || postedKeys.has(itemKey(item))} onClick={() => setModal('posted')} data-testid="pub-mark-posted">
                   {postedKeys.has(itemKey(item)) ? t('pub.alreadyPosted') : t('pub.markPosted')}
                 </button>
               </div>
@@ -397,11 +439,13 @@ export function Publish({ batch }: { batch: string }) {
             </button>
             <button
               className="btn primary"
+              data-testid="pub-confirm-ok"
               onClick={() =>
                 guard(async () => {
                   await window.desk.publish.confirmPackage(batch, m.confirmation_code);
                   setModal(null);
                   await refreshLocal();
+                  if (isWork && client) setMsg(t('pkg.calendared', { n: await toCalendar(client, batch, m.items) }));
                 })
               }
             >
@@ -432,6 +476,14 @@ export function Publish({ batch }: { batch: string }) {
               await window.desk.publish.markPosted({ batchId: batch, code: m.confirmation_code, job: item.job, platform: item.platform, adapterId, account, url: url || undefined });
               setModal(null);
               await refreshLocal();
+              // the calendar shows it as posted too (its slot, or the matching planned post)
+              if (client) {
+                const cal = await client.calendar();
+                const base = basePlatform(item.platform);
+                const p = cal.posts.find((x) => x.item === batch && x.clip === item.job && x.platform.split(':')[0] === base && x.state !== 'posted');
+                if (p) await client.updatePost(p.id, { state: 'posted' });
+                setMsg(t('pub.postedCal'));
+              }
             })
           }
         />
@@ -442,13 +494,18 @@ export function Publish({ batch }: { batch: string }) {
 
 function ItemRow({ i, on, posted, onClick }: { i: ManifestItem; on: boolean; posted: boolean; onClick: () => void }) {
   return (
-    <div className={`item ${on ? 'on' : ''} ${posted ? 'posted' : ''}`} onClick={onClick}>
+    <div className={`item ${on ? 'on' : ''} ${posted ? 'posted' : ''}`} onClick={onClick} data-testid="pub-item" data-platform={i.platform} data-job={i.job}>
       <div className="row small">
         <span className="mono">
           {i.date} {i.time}
         </span>
         <span className="badge">{i.platform}</span>
         {posted && <span className="badge accent">{t('pub.posted')}</span>}
+        {(i.checks ?? []).filter((c) => c.code !== 'ai-label' && c.code !== 'no-title').length > 0 && (
+          <span className="badge danger" data-testid="pkg-check-count">
+            {(i.checks ?? []).filter((c) => c.code !== 'ai-label' && c.code !== 'no-title').length}
+          </span>
+        )}
       </div>
       <div>{i.title || i.job}</div>
     </div>
@@ -485,10 +542,130 @@ function PostedModal({ adapter, onClose, onOk }: { adapter: Adapter; onClose: ()
         <button className="btn" onClick={onClose}>
           {t('common.cancel')}
         </button>
-        <button className="btn primary" disabled={!valid} onClick={() => onOk(url)}>
+        <button className="btn primary" disabled={!valid} onClick={() => onOk(url)} data-testid="pub-posted-ok">
           {t('pub.markPostedBtn')}
         </button>
       </div>
     </Modal>
+  );
+}
+
+export function checkText(c: PackageCheck): string {
+  return tk(`pkg.c.${c.code}`, { n: c.n ?? '', max: c.max ?? '', min: c.min ?? '', want: c.want ?? '', got: c.got ?? '' });
+}
+
+/** Confirmed work package -> one calendar slot per item (its date / time / platform); existing slots are kept. */
+export async function toCalendar(client: NonNullable<ReturnType<typeof useEngine>['client']>, batch: string, items: ManifestItem[]): Promise<number> {
+  const cal = await client.calendar();
+  let n = 0;
+  for (const i of items) {
+    const platform = basePlatform(i.platform);
+    if (cal.posts.some((p) => p.item === batch && p.clip === i.job && p.platform.split(':')[0] === platform)) continue;
+    await client.schedule({ item: batch, clip: i.job, at: `${i.date}T${i.time}`, platform });
+    n++;
+  }
+  return n;
+}
+
+const PKG_PLATFORMS_KEY = 'pkg.platforms';
+
+function WorkPackageCard({ batch, busy, onDone, guard }: { batch: string; busy: boolean; onDone: () => void; guard: (fn: () => Promise<unknown>) => Promise<void> }) {
+  const { client } = useEngine();
+  const clips = useLoad((c) => c.clips(batch), [batch]);
+  const ready = (clips.data?.clips ?? []).filter((c) => c.files.length > 0 && !c.extra && c.state !== 'running' && c.state !== 'queued');
+  const [picked, setPicked] = useState<Set<string> | null>(null);
+  const [pfs, setPfs] = useState<string[]>(() => {
+    try {
+      const v = JSON.parse(localStorage.getItem(PKG_PLATFORMS_KEY) || 'null');
+      if (Array.isArray(v) && v.every((x) => SCHEDULE_PLATFORMS.includes(x))) return v;
+    } catch {
+      /* default */
+    }
+    return ['xiaohongshu', 'douyin'];
+  });
+  const [perDay, setPerDay] = useState(1);
+  const [start, setStart] = useState('');
+  const [times, setTimes] = useState('19:00');
+  const sel = picked ?? new Set(ready.map((c) => c.id));
+  const toggle = (id: string) => setPicked(() => {
+    const n = new Set(sel);
+    if (n.has(id)) n.delete(id);
+    else n.add(id);
+    return n;
+  });
+  const togglePf = (p: string) => {
+    const n = pfs.includes(p) ? pfs.filter((x) => x !== p) : [...pfs, p];
+    setPfs(n);
+    try {
+      localStorage.setItem(PKG_PLATFORMS_KEY, JSON.stringify(n));
+    } catch {
+      /* private mode */
+    }
+  };
+  const n = sel.size * pfs.length;
+  return (
+    <div className="card col" data-testid="pkg-card">
+      <b>{t('pkg.title')}</b>
+      <span className="muted small">{t('pkg.hint')}</span>
+      <b className="small">{t('pkg.clips')}</b>
+      {clips.data && !ready.length && <span className="muted small">{t('pkg.none')}</span>}
+      <div className="col" style={{ gap: 4 }}>
+        {ready.map((c) => (
+          <label key={c.id} className="row small" style={{ gap: 6 }} data-testid="pkg-clip">
+            <input type="checkbox" checked={sel.has(c.id)} onChange={() => toggle(c.id)} />
+            <span className="clamp1">{c.title || c.id}</span>
+            <span className="muted mono">{c.files.map((f) => f.aspect).join(' · ')}</span>
+          </label>
+        ))}
+      </div>
+      <b className="small">{t('pkg.platforms')}</b>
+      <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
+        {SCHEDULE_PLATFORMS.map((p) => (
+          <button key={p} className={`chip ${pfs.includes(p) ? 'on' : ''}`} aria-pressed={pfs.includes(p)} onClick={() => togglePf(p)} data-pf={p} data-testid="pkg-platform" style={{ height: 26, padding: '0 9px' }}>
+            <PlatformIcon id={p} size={14} />
+            {platformName(p)}
+          </button>
+        ))}
+      </div>
+      <div className="row">
+        <Field label={t('pub.perDay')}>
+          <input className="input" type="number" min={1} max={20} value={perDay} onChange={(e) => setPerDay(Math.max(1, Number(e.target.value) || 1))} style={{ width: 70 }} />
+        </Field>
+        <Field label={t('pub.start')}>
+          <input className="input" type="date" value={start} onChange={(e) => setStart(e.target.value)} />
+        </Field>
+        <Field label={t('pub.times')}>
+          <input className="input" value={times} onChange={(e) => setTimes(e.target.value)} style={{ width: 120 }} />
+        </Field>
+      </div>
+      <button
+        className="btn primary"
+        disabled={busy || !n || !client}
+        data-testid="pkg-go"
+        onClick={() =>
+          guard(async () => {
+            // each account's default post times (发布账号) win over the common times for its platform
+            const chans = await window.desk.publish.channels().catch(() => []);
+            const ads = (await window.desk.publish.adapters()).adapters;
+            const byPf: Record<string, string[]> = {};
+            for (const c of chans) {
+              const a = ads.find((x) => x.id === c.adapterId);
+              for (const p of a?.packagePlatforms ?? []) if (pfs.includes(p) && c.times.length && !byPf[p]) byPf[p] = c.times;
+            }
+            await client!.packageWork(batch, {
+              clips: ready.filter((c) => sel.has(c.id)).map((c) => c.id),
+              platforms: pfs,
+              per_day: perDay,
+              start: start || undefined,
+              times: times.split(/[,，\s]+/).map((x) => x.trim()).filter(Boolean),
+              times_by_platform: byPf,
+            });
+            onDone();
+          })
+        }
+      >
+        {t('pkg.go', { n })}
+      </button>
+    </div>
   );
 }

@@ -23,6 +23,8 @@ Routes (JSON unless noted)
   POST /api/batches/<id>/review/apply      {decisions: {job: {decision, reason}}, cleanup: {job: reply}}
   POST /api/batches/<id>/package           {per_day?, start?, times?[]}
   GET  /api/batches/<id>/package           manifest + verify (recomputed confirmation code)
+                                           work folders / projects: POST {clips[], platforms[], per_day?, start?,
+                                           times?[], times_by_platform?} -> packages/<id> (workpkg.py)
   GET  /api/batches/<id>/events?n=50&job=
   GET  /api/batches/<id>/jobs/<job>        job detail (stages, QC, cleanup words + edits, media paths)
   GET  /api/stream                         text/event-stream: status | log | run-start | run-exit | batches
@@ -47,6 +49,7 @@ History (history.py; read-only discovery of past work: desk + engine registries,
   GET  /api/history/config | POST {watch[]}   watched folders (default ~/Desktop/video-studio-demos)
   POST /api/history/open {dir}             put a found batch / project in the desk list -> {id, dir}
   POST /api/history/hide {dir}             remove from the list (never deletes files); POST /api/history/unhide
+  POST /api/history/client {dir, client}   agency mode: the client a project is for ('' = her own)
   GET  /api/history/item/<id>              one entry; work folders + detail {outputs, covers, sheets, posts, notes}
   POST /api/history/item/<id>/adopt        {recipe?: guess|name, title?} plain work folder -> .vstudio/work.json
 v0.4 (outputs.py, intake.py, inbox.py; engine command when available, desk implementation otherwise)
@@ -428,6 +431,8 @@ class Api:
         self.inbox = Inbox(engine.data_dir, self.history, runner, engine.mode, bus)
         from .calendar import Calendar
         self.calendar = Calendar(engine.data_dir, self.history, self.outputs, bus)
+        from .workpkg import WorkPackages
+        self.workpkg = WorkPackages(engine.data_dir, self.history, self.outputs)
         self.port = None
 
     def roots(self):
@@ -600,6 +605,11 @@ class Api:
                     return h.set_watch(body.get("watch"))
             if parts == ["history", "unhide"] and method == "POST":
                 return h.unhide_all()
+            if parts[1:] == ["client"] and method == "POST":
+                need(isinstance(body, dict), "body must be an object")
+                r = h.set_client(_abs_path(body.get("dir"), "dir", must_exist=False), body.get("client"))
+                self.bus.publish("batches")
+                return r
             if parts[1:] in (["unhide-one"], ["rename"]) and method == "POST":
                 need(isinstance(body, dict), "body must be an object")
                 d = _abs_path(body.get("dir"), "dir", must_exist=False)
@@ -688,6 +698,9 @@ class Api:
             return e.review_items(bid)
         if method == "POST" and rest == ["review", "apply"]:
             return e.apply_review(bid, validate_decisions(body))
+        if rest == ["package"] and method in ("GET", "POST") and self.workpkg.owns(bid):
+            # a work folder / project: clips x platforms -> per-platform package (workpkg.py)
+            return self.workpkg.package(bid, body or {}) if method == "POST" else self.workpkg.manifest(bid)
         if method == "POST" and rest == ["package"]:
             return e.package(bid, validate_package(body or {}))
         if method == "GET" and rest == ["package"]:
