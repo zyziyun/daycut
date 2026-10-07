@@ -1,0 +1,214 @@
+# Recipe manifest (vstudio.project). Schema: lib/vstudio/project/manifest.schema.json - docs: references/PROJECTS.md
+# Engine: vstudio.lesson (plan / sync / render / notes) on vstudio.clipkit + vstudio.bilingual + vstudio.export.
+id: lesson-clips
+version: 1
+workflow: lesson-clips
+labels: {zh: "课堂 → 知识点切片", en: "Lesson to knowledge-point clips"}
+description:
+  zh: 一节课的录像（可加一路摄像头，自动按声音对齐）→ 按知识点切段（短语 / 单词 / 规则 / 易错点）→ 每条「今日短语」标题卡 + 关键词卡 + 中英字幕 → 本课回顾 + 学习笔记（md / PDF）
+  en: one lesson recording (plus an optional camera file, synced by audio) -> one clip per teaching point (phrase / word / rule / common mistake) with a "Today's phrase" title card, key-term cards and bilingual captions -> a recap clip + study notes (md / PDF)
+category: slice
+inputs:
+  - key: source
+    kind: video
+    labels: {zh: "课堂录像（录屏或录像）", en: "Lesson recording (screen share or camera)"}
+    required: true
+    multiple: true
+    accept: [.mp4, .mov, .m4v, .mkv, .webm]
+    scope: item
+  - key: camera
+    kind: video
+    labels: {zh: "同一节课的摄像头（可选）", en: "Camera of the same lesson (optional)"}
+    required: false
+    accept: [.mp4, .mov, .m4v, .mkv, .webm]
+    scope: project
+  - key: transcript
+    kind: file
+    labels: {zh: "已有逐字稿（可选）", en: "Existing transcript (optional)"}
+    required: false
+    accept: [.json]
+    scope: item
+items:
+  sources: [single, files]
+  from_input: source
+  per_item: [title]
+  shared: [language, subtitles, subtitle_lang, layout, platforms, count, min_s, max_s, mask, mask_target, speed]
+params:
+  type: object
+  properties:
+    language:
+      enum: [auto, en, zh]
+      default: auto
+      title: Lesson language
+      x-zh: 课堂语言
+    subtitles:
+      enum: [bilingual, mono, translated]
+      default: bilingual
+      title: Captions (bilingual / source only / translation only)
+      x-zh: 字幕（双语 / 只要原文 / 只要译文）
+    subtitle_lang:
+      enum: [auto, zh, en]
+      default: auto
+      title: Translation language (auto = the other of zh / en)
+      x-zh: 翻译成
+    layout:
+      enum: [auto, screen, pip, band, camera]
+      default: auto
+      title: Layout with a camera file (screen focus / picture-in-picture / band / camera)
+      x-zh: 有摄像头时的版式（只看屏幕 / 画中画 / 上下分栏 / 只看人）
+    platforms:
+      type: array
+      items: {type: string}
+      default: ["xiaohongshu:full", douyin]
+      title: Platforms
+      x-zh: 发布平台
+    planner:
+      type: string
+      default: auto
+      title: Point planner (auto = the routed AI, else rules)
+      x-zh: 知识点规划
+    count:
+      type: integer
+      minimum: 1
+      maximum: 30
+      default: 6
+      title: Points to cut
+      x-zh: 知识点条数
+    min_s:
+      type: number
+      default: 20
+      title: Min clip seconds
+      x-zh: 最短秒数
+    max_s:
+      type: number
+      default: 90
+      title: Max clip seconds
+      x-zh: 最长秒数
+    mask:
+      enum: ["off", sticker, blur]
+      default: "off"
+      title: Hide faces (off / sticker / blur)
+      x-zh: 遮脸（不遮 / 贴纸 / 模糊）
+    mask_target:
+      enum: [all, camera, screen]
+      default: all
+      title: Whose face (the whole picture / the camera tile / the screen)
+      x-zh: 遮哪里的脸
+    speed:
+      type: number
+      minimum: 1.0
+      maximum: 1.4
+      default: 1.0
+      title: Speed (language lessons stay at 1.0)
+      x-zh: 语速（语言课保持原速）
+    recap:
+      type: boolean
+      default: true
+      title: Also a recap clip
+      x-zh: 同时出本课回顾
+    title:
+      type: string
+      default: ""
+      title: Lesson title (notes / recap)
+      x-zh: 课程标题
+      x-scope: item
+stages:
+  - id: prepare
+    resource: io
+    fn: vstudio.project.adapters.common:prepare
+    keys: []
+    produces: ["{item_dir}/inputs/<source>"]
+  - id: sync
+    resource: cpu
+    deps: [prepare]
+    keys: []
+    run:
+      argv: ["{python}", "-m", "vstudio.lesson", "sync", "--source", "{input.source}",
+             {if: input.camera, args: ["--camera", "{input.camera}"]}, "--out", "{item_dir}/work/sync.json"]
+      files: ["{item_dir}/work/sync.json"]
+    produces: [work/sync.json (camera offset against the recording)]
+    preview: {kind: json, path: "{item_dir}/work/sync.json"}
+  - id: plan
+    resource: asr
+    deps: [prepare]
+    keys: [language, planner, count, min_s, max_s]
+    run:
+      argv: ["{python}", "-m", "vstudio.lesson", "plan", "--source", "{input.source}", "--language", "{language}",
+             {if: input.transcript, args: ["--transcript", "{input.transcript}"]},
+             "--count", "{count}", "--min", "{min_s}", "--max", "{max_s}", "--provider", "{planner}",
+             "--out", "{item_dir}/work/points.json", "--keep-edited"]
+      files: ["{item_dir}/work/points.json"]
+    produces: [work/points.json (points + recap; transcript in the shared cache)]
+    preview: {kind: json, path: "{item_dir}/work/points.json"}
+  - id: render
+    resource: cpu-render
+    deps: [plan, sync]
+    units: duration
+    watch: ["{item_dir}/work/points.json"]
+    keys: [subtitles, subtitle_lang, layout, platforms, mask, mask_target, speed, recap, title]
+    run:
+      argv: ["{python}", "-m", "vstudio.lesson", "render", "{item_dir}/work/points.json", "--source", "{input.source}",
+             {if: input.camera, args: ["--camera", "{input.camera}", "--sync", "{item_dir}/work/sync.json"]},
+             "--layout", "{layout}", "--platforms", "{platforms_csv}", "--subtitles", "{subtitles}",
+             "--to", "{subtitle_lang}", "--mask", "{mask}", "--mask-target", "{mask_target}", "--speed", "{speed}",
+             {if: title, args: ["--title", "{title}"]}, {if: recap, args: ["--recap"]}, "--out", "{item_dir}/out"]
+      files: ["{item_dir}/out/report.json"]
+      ok_codes: [0, 1]
+    produces: ["out/<point>/<platform>-<orientation>.mp4 + cover + post, <point>.<lang>.srt/.vtt, out/recap/, out/report.json (firstpass per export)"]
+    preview: {kind: json, path: "{item_dir}/out/report.json"}
+  - id: notes
+    resource: cpu
+    deps: [plan]
+    watch: ["{item_dir}/work/points.json"]
+    keys: [title]
+    run:
+      argv: ["{python}", "-m", "vstudio.lesson", "notes", "{item_dir}/work/points.json", "--out",
+             "{item_dir}/out/notes.md", "--pdf", "{item_dir}/out/notes.pdf", {if: title, args: ["--title", "{title}"]}]
+      files: ["{item_dir}/out/notes.md", "{item_dir}/out/notes.pdf"]
+    produces: [out/notes.md, out/notes.pdf (study notes)]
+    preview: {kind: markdown, path: "{item_dir}/out/notes.md"}
+checkpoints:
+  - id: points
+    kind: author
+    scope: item
+    after: plan
+    blocks: [render, notes]
+    labels: {zh: "审核知识点", en: "Approve the points"}
+    help:
+      zh: 'work/points.json 里每个知识点（类型、起止、标题、释义、关键词）都可以改；改过的文件加 "edited": true 就不会被重新规划覆盖'
+      en: 'Edit any point in work/points.json (kind, start / end, title, gloss, terms); add "edited": true so a re-plan keeps your file'
+    author:
+      file: "{item_dir}/work/points.json"
+      format: "vstudio.lesson plan JSON (points [{id, kind, start, end, title, phrase, gloss, terms, summary}], recap)"
+      doc: workflows/lesson-clips/WORKFLOW.md
+    payload: vstudio.project.adapters.common:author_payload
+    apply: vstudio.project.adapters.common:author_apply
+    answer:
+      type: object
+      properties: {done: {type: boolean}, content: {type: string}}
+    auto: default
+  - id: publish
+    kind: publish
+    scope: item
+    after: render
+    needs: [render, notes]
+    labels: {zh: "审片发布", en: "Review and publish"}
+    payload: vstudio.project.adapters.edu:publish_payload
+    apply: vstudio.project.adapters.common:publish_apply
+    answer:
+      type: object
+      properties: {approve: {type: boolean}, reason: {type: string}}
+      required: [approve]
+    auto: default
+outputs:
+  platforms: ["xiaohongshu:full", douyin, tiktok, youtube-shorts, "bilibili:vertical", youtube, bilibili]
+  collect: vstudio.project.adapters.edu:collect
+  files: ["{item_dir}/out/*/*.srt", "{item_dir}/out/*/*.vtt", "{item_dir}/out/notes.md", "{item_dir}/out/notes.pdf"]
+agent:
+  workflow_md: workflows/lesson-clips/WORKFLOW.md
+  notes: "Edit items/<item>/work/points.json (set \"edited\": true), then refresh: render and notes re-run from it. Captions translate through vstudio.llm task translate (persona subtitles.glossary is enforced)."
+  edit_files: ["{item_dir}/work/points.json"]
+gaps:
+  - Pinyin / IPA lines are not drawn (the target phrase is highlighted instead).
+  - Student faces on the screen share are not detected separately; use mask_target screen or crop them in the recording.
+capabilities: [segment-planning, title-cards, key-term-cards, bilingual-captions, srt-vtt, study-notes, recap, two-source-sync, layouts, face-mask, export, firstpass]

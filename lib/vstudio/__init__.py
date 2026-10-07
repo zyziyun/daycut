@@ -28,6 +28,13 @@ Face and look
 Visual (overlays, covers, HTML render, publish copy) - see each module's docstring:
   draw, overlays, cover, render, publish
 
+Lessons, interviews, bilingual captions
+  lesson     teaching-point planner (phrase / vocab / concept / correction), recap, study notes (md / PDF)
+  qa         speakers, question / answer pairs, tight answers, role labels
+  bilingual  caption translation (llm task ``translate``, glossary), mono / bilingual / translated, SRT / VTT
+  clipkit    planned clips -> masters per canvas (cards, header, term cards, layouts, masks) -> export + firstpass
+  avsync     offset between two recordings of one session (screen share + camera)
+
 Effects
   effects  declarative registry of every effect (engines, entry points, params + feel, energy,
            duration, max uses, pitfalls); generates references/EFFECTS.md (``--write-md``)

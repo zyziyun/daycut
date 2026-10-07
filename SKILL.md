@@ -36,6 +36,8 @@ HyperFrames workflows (explainer, promo-recut) also need Node 18+ and `npx hyper
 | 口播 **plus** screenshots, links, a demo or a finished video of her work → premium promo (split screen, 3D screenshot cards, freeze-zoom, 精选 inserts) | `workflows/promo-recut` |
 | Lecture, webinar, livestream, screen-share → course video or N slices | `workflows/longform-to-short` |
 | Call / interview / **podcast** (Zoom, Meet) → clips, guest faces hidden — even when she says 切片 | `workflows/call-clips` |
+| A **lesson** (teacher / tutor / coach; screen share and / or camera) → one clip per teaching point (今日短语 / 知识点), recap, study notes, 中英字幕 | `workflows/lesson-clips` |
+| Interview / podcast / coaching → **Q&A clips** (一问一答: opens on the question, answer cut tight, role labels) | `workflows/interview-qa` |
 | Her own voice-over + clips / photos → vlog (`calm` or `fun` 卡点) | `workflows/vlog` |
 | Photos / clips + narration or music → 文艺片 / photo story | `workflows/photo-story` |
 | A topic → 3b1b-style explainer (AI voice, bilingual captions) | `workflows/explainer` |
@@ -63,6 +65,9 @@ library modules: [references/CAPABILITIES.md](references/CAPABILITIES.md). Full 
 - **Look = one design theme** (`vstudio.theme`, references/STYLE_RULES.md), `editorial` by default; never hard-code
   colours; no saturated red text; notes = light paper card; quotes = typography; subtle stamps / pops.
 - **No series labels** (01/04, PART n, 第n集, 系列名 + 编号) unless she says it is a series.
+- **Bilingual captions** (中英): `vstudio.bilingual` (source line + smaller translated line in the theme's secondary
+  ink, or translation only); persona `subtitles.glossary` is enforced; a failed translation stops the job (never a
+  silent mono). Per-language SRT / VTT go with every export.
 - **Captions**: after ASR always run proofread with entity verification (宏都拉斯 → 洪都拉斯) before burning captions or
   writing cards / copy, and put every new mis-hearing into persona `subtitles.term_fixes` (references/CAPTION_RULES.md).
 - **Cleanup**: strict on fillers, stutters and restarts (persona `cleanup.profile`); deliberate doubling (起起落落,

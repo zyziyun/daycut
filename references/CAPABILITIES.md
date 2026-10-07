@@ -11,6 +11,8 @@ capability lives.
 | 宣传一下, 讲我做的东西, 左右分栏, 分屏, 截图放进去, 高亮这句, 把 prompt 放大, 定格, 插一段精选, 精选 | `promo-recut` |
 | 剪成课程, 上课实录, 教学长视频, 切片, 分几集, 去掉浏览器头/书签栏, 加章节/字幕/zoom/笔记面板, 学员变声, 变声, 去头像, 竖屏切片 | `longform-to-short` |
 | 截取一段对话, 发一段出来, 播客剪辑, 播客 / 访谈切片 (a conversation cut into clips is call-clips, not longform), 把朋友的脸遮一下, 打码, 放个小猫, 三人同框 | `call-clips` |
+| 把这节课切成知识点, 今日短语, 每个短语一条, 学习笔记, knowledge-point clips, today's phrase, study notes (a lesson cut by teaching point, not by length) | `lesson-clips` |
+| 问答切片, 一问一答, Q&A clips, questions and answers (each clip opens on the question) | `interview-qa` |
 | 文艺片, 看展, 照片做成视频, 配旁白, 胶片感, 双语字幕故事 | `photo-story` |
 | 剪成一个 vlog, 旅游 vlog, 卡点, 快节奏, 去掉不好的部分, 加效果转场, 调色, 配乐, 无人机/DJI 素材 | `vlog` (`style: calm` or `fun`) |
 | 讲解视频, 3b1b, 解释一个概念, 原理讲解 | `explainer` (16:9 long or vertical short) |
@@ -70,7 +72,12 @@ The effect catalogue (92 effects, 197 counting named variants, generated from `l
 | `asr` | whisper (mlx → faster-whisper → OpenAI) with word timestamps, cache, term fixes, script alignment; `drop_hallucinations` (on by default) + `has_speech(tr)` for music-only clips |
 | `cut` | `TimeMap`, word-level tightening, automatic disfluency finder, frame-exact cuts, crossfade assembly |
 | `cleanup` | the shared 气口 / filler / repeat / restart / retake tool: `analyze` → EDL + review sheet, `apply` (word-safe, frame-exact, versioned, never re-cuts a cut file), `verify` (re-ASR); profiles gentle / standard / tight, persona `cleanup:`; `python -m vstudio.cleanup` |
-| `subs` | cues, CJK-aware balanced wrap, highlight markup, SRT/ASS, retime, bilingual pairing |
+| `subs` | cues, CJK-aware balanced wrap, highlight markup, SRT/VTT/ASS, retime, bilingual pairing |
+| `bilingual` | caption translation through `llm` task `translate` (glossary enforced, cached), mono / bilingual / translated modes, target-phrase highlight, per-language SRT / VTT |
+| `lesson` | teaching-point planner (phrase / vocab / concept / correction; rules or `llm` task `lesson_plan`), recap, study notes md / PDF, lesson clip specs |
+| `qa` | speakers (pyannote local / tiles / voice clustering, said which), question / answer pairs, tight answers (`cleanup`), role labels, call-clips segment rows |
+| `clipkit` | planned clips -> per-canvas masters (title / question cards, header, key-term cards, labels, layouts for screen + camera, face masks) -> `export` + tracks + `firstpass` |
+| `avsync` | offset between two recordings of one session (audio cross-correlation, container timestamps) |
 | `tts` | OpenAI / Kokoro / Edge / self-hosted server / ElevenLabs TTS and local voice clone (Qwen3-TTS) with a content cache |
 | `llm` | `complete(task, system, prompt, schema=...)`: one LLM call for every provider (anthropic, openai, openai-compatible presets incl. local servers, gemini, claude-code / codex CLIs, none), routing, JSON repair, retries, cost; `python -m vstudio.llm providers / route / test` |
 | `face`, `filters`, `mls`, `retouch` | landmarks, `VideoFaceTracker`, talk activity; One Euro smoothing; own MLS warp; portrait retouch v2 + makeup |

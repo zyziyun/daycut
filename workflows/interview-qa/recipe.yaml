@@ -1,0 +1,203 @@
+# Recipe manifest (vstudio.project). Schema: lib/vstudio/project/manifest.schema.json - docs: references/PROJECTS.md
+# Engine: vstudio.qa (speakers + Q&A pairs + tight answers, render) on vstudio.clipkit + vstudio.bilingual.
+# Gallery-view calls that need tile layouts / trio renders: `vstudio.qa plan --segments` -> call-clips.
+id: interview-qa
+version: 1
+workflow: interview-qa
+labels: {zh: "访谈 / 播客 → 问答切片", en: "Interview / podcast to Q&A clips"}
+description:
+  zh: 一期访谈 / 播客 / 辅导课录像 → 分辨说话人 → 一问一答切段（以问题开头：问题卡或提问原声；回答剪紧）→ 角色标签、可遮脸、中英字幕 → 各平台成片
+  en: an interview / podcast / coaching recording -> speakers -> one clip per question and answer (opens on the question as a card or the asker's voice; the answer cut tight) -> role labels, optional face masks, bilingual captions -> per-platform files
+category: slice
+inputs:
+  - key: source
+    kind: video
+    labels: {zh: "访谈录像", en: "Interview recording"}
+    required: true
+    multiple: true
+    accept: [.mp4, .mov, .m4v, .mkv, .webm]
+    scope: item
+  - key: transcript
+    kind: file
+    labels: {zh: "已有逐字稿（可选）", en: "Existing transcript (optional)"}
+    required: false
+    accept: [.json]
+    scope: item
+items:
+  sources: [single, files]
+  from_input: source
+  per_item: [names]
+  shared: [language, speakers, question, subtitles, subtitle_lang, platforms, count, min_s, max_s, mask, speed]
+params:
+  type: object
+  properties:
+    language:
+      enum: [auto, en, zh]
+      default: auto
+      title: Speech language
+      x-zh: 语言
+    speakers:
+      type: integer
+      minimum: 1
+      maximum: 6
+      default: 2
+      title: Number of speakers
+      x-zh: 说话人数
+    diarize:
+      enum: [auto, pyannote, voice]
+      default: auto
+      title: Who-speaks-when method (auto = local pyannote if installed, else voice clustering; the plan says which ran)
+      x-zh: 区分说话人的方法
+    names:
+      type: string
+      default: ""
+      title: "Names instead of roles, e.g. S1=Ziyun,S2=Alex (empty = Host / Guest)"
+      x-zh: 说话人名字（不填就写「主持人 / 嘉宾」）
+      x-scope: item
+    question:
+      enum: [audio, card, both]
+      default: audio
+      title: How each clip opens (the asker's voice / a question card / both)
+      x-zh: 开头怎么给问题（提问原声 / 问题卡 / 都要）
+    subtitles:
+      enum: [bilingual, mono, translated]
+      default: bilingual
+      title: Captions (bilingual / source only / translation only)
+      x-zh: 字幕（双语 / 只要原文 / 只要译文）
+    subtitle_lang:
+      enum: [auto, zh, en]
+      default: auto
+      title: Translation language (auto = the other of zh / en)
+      x-zh: 翻译成
+    platforms:
+      type: array
+      items: {type: string}
+      default: ["xiaohongshu:full", douyin]
+      title: Platforms
+      x-zh: 发布平台
+    count:
+      type: integer
+      minimum: 1
+      maximum: 40
+      default: 8
+      title: Q&A clips
+      x-zh: 问答条数
+    min_s:
+      type: number
+      default: 15
+      title: Min answer seconds
+      x-zh: 回答最短秒数
+    max_s:
+      type: number
+      default: 75
+      title: Max answer seconds
+      x-zh: 回答最长秒数
+    mask:
+      enum: ["off", sticker, blur]
+      default: "off"
+      title: Hide the guest's face (off / sticker / blur)
+      x-zh: 嘉宾遮脸（不遮 / 贴纸 / 模糊）
+    mask_regions:
+      type: string
+      default: ""
+      title: "Faces to hide as x,y,w,h boxes in the recording, space-separated (empty = the main face)"
+      x-zh: 要遮的脸所在区域（x,y,w,h，空格分隔；不填 = 画面主脸）
+    speed:
+      type: number
+      minimum: 1.0
+      maximum: 1.4
+      default: 1.1
+      title: Answer speed
+      x-zh: 语速
+stages:
+  - id: prepare
+    resource: io
+    fn: vstudio.project.adapters.common:prepare
+    keys: []
+    produces: ["{item_dir}/inputs/<source>"]
+  - id: plan
+    resource: asr
+    deps: [prepare]
+    keys: [language, speakers, diarize, names, count, min_s, max_s, question]
+    run:
+      argv: ["{python}", "-m", "vstudio.qa", "plan", "--source", "{input.source}", "--language", "{language}",
+             {if: input.transcript, args: ["--transcript", "{input.transcript}"]},
+             "--speakers", "{speakers}", "--diarize", "{diarize}", "--count", "{count}", "--min", "{min_s}",
+             "--max", "{max_s}", {if: names, args: ["--names-csv", "{names}"]}, "--question", "{question}",
+             "--out", "{item_dir}/work/pairs.json", "--segments", "{item_dir}/work/segments.yaml", "--keep-edited"]
+      files: ["{item_dir}/work/pairs.json"]
+      optional_files: ["{item_dir}/work/segments.yaml"]
+    produces: ["work/pairs.json (speakers, roles, pairs with tight answer windows), work/segments.yaml (call-clips rows)"]
+    preview: {kind: json, path: "{item_dir}/work/pairs.json"}
+  - id: render
+    resource: face
+    deps: [plan]
+    units: duration
+    watch: ["{item_dir}/work/pairs.json"]
+    keys: [question, subtitles, subtitle_lang, platforms, mask, mask_regions, speed]
+    run:
+      argv: ["{python}", "-m", "vstudio.qa", "render", "{item_dir}/work/pairs.json", "--source", "{input.source}",
+             "--platforms", "{platforms_csv}", "--question", "{question}", "--subtitles", "{subtitles}",
+             "--to", "{subtitle_lang}", "--mask", "{mask}", {if: mask_regions, args: ["--mask-regions-csv", "{mask_regions}"]},
+             "--speed", "{speed}", "--out", "{item_dir}/out"]
+      files: ["{item_dir}/out/report.json"]
+      ok_codes: [0, 1]
+    produces: ["out/<qNN>/<platform>-<orientation>.mp4 + cover + post, <qNN>.<lang>.srt/.vtt, out/report.json (firstpass per export)"]
+    preview: {kind: json, path: "{item_dir}/out/report.json"}
+checkpoints:
+  - id: pairs
+    kind: author
+    scope: item
+    after: plan
+    blocks: [render]
+    labels: {zh: "审核问答", en: "Approve the Q&A pairs"}
+    help:
+      zh: 'work/pairs.json 里每对问答（问题文字、回答的保留片段、角色）都可以改；改过的文件加 "edited": true'
+      en: 'Edit any pair in work/pairs.json (question text, answer windows, roles); add "edited": true so a re-plan keeps your file'
+    author:
+      file: "{item_dir}/work/pairs.json"
+      format: "vstudio.qa plan JSON (pairs [{id, title, question {start, end, text, role}, answer {windows, role}}], roles)"
+      doc: workflows/interview-qa/WORKFLOW.md
+    payload: vstudio.project.adapters.common:author_payload
+    apply: vstudio.project.adapters.common:author_apply
+    answer:
+      type: object
+      properties: {done: {type: boolean}, content: {type: string}}
+    auto: default
+  - id: consent
+    kind: consent
+    scope: project
+    after: prepare
+    blocks: [render]
+    labels: {zh: "嘉宾同意", en: "Guest consent"}
+    help: {zh: "嘉宾是否同意发布（露脸 / 遮脸）？由你确认", en: "Did the guests agree to publication (faces shown / masked)? Your call"}
+    answer:
+      type: object
+      properties: {consent: {type: boolean, const: true}, who: {type: string}, note: {type: string}}
+      required: [consent]
+    auto: never
+  - id: publish
+    kind: publish
+    scope: item
+    after: render
+    needs: [render]
+    labels: {zh: "审片发布", en: "Review and publish"}
+    payload: vstudio.project.adapters.edu:publish_payload
+    apply: vstudio.project.adapters.common:publish_apply
+    answer:
+      type: object
+      properties: {approve: {type: boolean}, reason: {type: string}}
+      required: [approve]
+    auto: default
+outputs:
+  platforms: ["xiaohongshu:full", douyin, tiktok, youtube-shorts, "bilibili:vertical", youtube, bilibili]
+  collect: vstudio.project.adapters.edu:collect
+  files: ["{item_dir}/out/*/*.srt", "{item_dir}/out/*/*.vtt", "{item_dir}/work/segments.yaml"]
+agent:
+  workflow_md: workflows/interview-qa/WORKFLOW.md
+  notes: "Edit items/<item>/work/pairs.json (set \"edited\": true), then refresh. Speaker labels are roles unless names is set. A gallery-view call that needs call-clips layouts: hand work/segments.yaml to a call-clips project (inputs.segments)."
+  edit_files: ["{item_dir}/work/pairs.json"]
+gaps:
+  - Voice clustering separates 2-3 distinct voices; similar voices or crosstalk need names checked in the pairs checkpoint (or pyannote installed locally).
+  - Only one face per mask region is tracked; a guest who walks between regions needs a bigger region.
+capabilities: [speaker-diarization, qa-pairs, tight-answers, question-cards, role-labels, face-mask, bilingual-captions, srt-vtt, export, firstpass]

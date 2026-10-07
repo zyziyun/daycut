@@ -69,6 +69,20 @@ FORMATS = {
         progress="refined", series_labels="ask",
         cover=dict(aspect="video", style="title-card", retouch=False, min_luma=0.42, text="designed"),
         rules=["去掉学员信息 / 头像 / 浏览器书签栏", "每条只讲一个有长期价值的点"]),
+    "lesson-points": dict(
+        labels=dict(zh="课堂知识点切片", en="Lesson knowledge points"), workflow="lesson-clips",
+        speed=dict(body=1.0, hook=1.0, inserts=1.0), hooks="none", cleanup="gentle", notes=True, progress=None,
+        captions="bilingual", tag_set="",
+        cover=dict(aspect="video", style="title-card", retouch=False, min_luma=0.42, text="designed"),
+        rules=["一条只讲一个知识点（短语 / 词 / 规则 / 易错点），开头是「今日短语」标题卡", "语言课不加速：学生要听清老师的原速",
+               "目标短语在字幕里高亮，关键词卡片在第一次出现时弹出", "学生的名字 / 脸不进成片；每节课附学习笔记"]),
+    "interview-qa": dict(
+        labels=dict(zh="访谈 / 播客问答切片", en="Interview Q&A clips"), workflow="interview-qa",
+        speed=dict(body=1.1, hook=1.0, inserts=1.0), hooks="none", cleanup="tight", notes=False, progress=None,
+        guests="ask-mask", captions="bilingual", tag_set="",
+        cover=dict(aspect="video", style="title-card", retouch=False, min_luma=0.42, text="designed"),
+        rules=["每条以问题开头（问题卡或提问者原声），回答剪紧：去掉「好问题」、口癖和长停顿",
+               "说话人标签用角色（主持人 / 嘉宾），没给名字就不写名字", "嘉宾露脸先问，遮脸只盖头"]),
     "vlog": dict(
         labels=dict(zh="vlog（自己的旁白）", en="Voice-over vlog"), workflow="vlog",
         speed=dict(body=1.3, hook=1.3, inserts=1.0), hooks="none", cleanup="gentle", tag_set="",
@@ -98,12 +112,14 @@ FORMATS = {
 # recipe / workflow id -> format (intake.rules recipe ids and workflow folder names)
 BY_RECIPE = {"talkinghead": "talking-head", "promo-recut": "promo", "call-clips": "call-clips",
              "longform-to-short": "lecture-slices", "longform-course": "lecture-slices", "batch": "lecture-slices",
-             "vlog": "vlog", "explainer": "explainer", "photo-story": "photo-story", "ai-video": "ai-skit"}
+             "vlog": "vlog", "explainer": "explainer", "photo-story": "photo-story", "ai-video": "ai-skit",
+             "lesson-clips": "lesson-points", "interview-qa": "interview-qa"}
 ALIASES = {"口播": "talking-head", "talkinghead": "talking-head", "promo-recut": "promo", "宣传": "promo",
            "播客": "call-clips", "podcast": "call-clips", "call": "call-clips", "访谈": "call-clips",
            "lecture": "lecture-slices", "课程": "lecture-slices", "切片": "lecture-slices", "讲解": "explainer",
            "3b1b": "explainer", "文艺片": "photo-story", "photo": "photo-story", "ai-video": "ai-skit",
-           "ai": "ai-skit", "短剧": "ai-skit"}
+           "ai": "ai-skit", "短剧": "ai-skit", "知识点": "lesson-points", "lesson": "lesson-points",
+           "问答": "interview-qa", "q&a": "interview-qa", "qa": "interview-qa"}
 
 
 def _merge(a, b):
@@ -167,6 +183,8 @@ def detect(text, materials=None):
         fs["promo"] = max(fs.get("promo", 0), fs["talking-head"] + 0.5)
     if materials and (materials.get("screenshots") or materials.get("links")) and "talking-head" in fs:
         fs["promo"] = max(fs.get("promo", 0), fs["talking-head"] + 0.5)
+    if "interview-qa" in fs and "call-clips" in fs:
+        fs["interview-qa"] = max(fs["interview-qa"], fs["call-clips"] + 0.5)   # 问答 / Q&A named: the Q&A cut
     if "call-clips" in fs and "lecture-slices" in fs and not any(w in t for w in ("课", "讲座", "lecture", "webinar")):
         fs["call-clips"] = fs["lecture-slices"] + 0.5     # 播客 / 访谈切片 = a conversation cut into clips
     if not fs:

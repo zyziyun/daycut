@@ -72,6 +72,7 @@ subtitles:
   max_en_chars: 90
   highlight_markup: "【】"  # 【term】 is emphasised the theme's way (marker band / accent), one per line
   term_fixes: {}           # ASR corrections, e.g. {"cloud code": "Claude Code"}
+  glossary: {}             # bilingual captions: fixed translations {source term: target term}, e.g. {"break the ice": "打破僵局"}
 
 voice:                     # style rules for scripts and post copy (see workflows/preproduction)
   persona: "practitioner sharing what they figured out"

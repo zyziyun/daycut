@@ -732,7 +732,8 @@ class Project:
 
     def export(self, out_dir=None, include_unapproved=False, items=None):
         """Final files of the finished (and, when the recipe has a publish checkpoint, approved) items ->
-        ``<project>/exports/<item>/<platform>-<orientation>.<ext>`` (hard links) + manifest.json (sha256)."""
+        ``<project>/exports/<item>/[<clip>-]<platform>-<orientation>.<ext>`` (hard links; ``clip`` when one item
+        yields several clips, e.g. lesson points) + manifest.json (sha256)."""
         from .adapters.common import copy_into
         collect = M.resolve_ref(self.manifest["outputs"]["collect"])
         pub = next((c["id"] for c in self.manifest["checkpoints"] if c["kind"] == "publish"), None)
@@ -756,11 +757,12 @@ class Project:
                 for e in collect(self, j, rows) or []:
                     if not e.get("file") or not os.path.exists(e["file"]):
                         continue
-                    tag = "-".join(x for x in (e.get("platform"), e.get("orientation")) if x) or "file"
+                    tag = "-".join(x for x in (e.get("clip"), e.get("platform"), e.get("orientation")) if x) or "file"
                     ext = os.path.splitext(e["file"])[1]
                     name = f"{tag}{ext}" if e.get("platform") else os.path.basename(e["file"])
                     dst = copy_into(e["file"], os.path.join(out_dir, j["id"], name))
                     rec = dict(item=j["id"], platform=e.get("platform"), orientation=e.get("orientation"),
+                               **({"clip": e["clip"]} if e.get("clip") else {}),
                                kind=e.get("kind") or "file", file=dst, sha256=sha256_file(dst),
                                bytes=os.path.getsize(dst), title=(j["params"] or {}).get("title"))
                     for k in ("cover", "post"):
