@@ -36,7 +36,9 @@ if [ "${SKIP_TESTS:-0}" != "1" ]; then
   since=$(date '+%Y-%m-%d %H:%M:%S')
   DESK_APP_PATH="$PWD/$APP/Contents/MacOS/Reelfold" DESK_EDITION=mas npx playwright test -c playwright.packaged.config.ts || status=$?
   say "sandbox violations since $since (Reelfold and its children)"
-  /usr/bin/log show --start "$since" --style compact --predicate 'sender == "Sandbox" AND eventMessage CONTAINS "Reelfold"' 2>/dev/null |
-    grep -oE 'deny\([0-9]+\) [a-z-]+(\*)? [^ ]+' | sort | uniq -c | sort -rn | head -40 || true
+  /usr/bin/log show --start "$since" --style compact --predicate 'process == "kernel" AND eventMessage CONTAINS "Sandbox:"' 2>/dev/null |
+    grep -E 'Sandbox: (Reelfold|python3|ffmpeg|ffprobe)' | grep -oE '(Reelfold[^(]*|python3[^(]*|ffmpeg|ffprobe)\([0-9]+\) deny\([0-9]+\) [a-z*-]+ [^ ]+' |
+    sed -E 's/\([0-9]+\) deny\([0-9]+\)/ deny/' | sort | uniq -c | sort -rn | head -40 || true
+  echo "(nothing listed = no sandbox violations)"
   exit "${status:-0}"
 fi
