@@ -225,7 +225,7 @@ references/               EFFECTS.md (generated catalogue), ADDING_EFFECTS, PLAT
                           AESTHETICS, VALIDATION (real-media test record)
 tests/                    pytest on synthetic media (python3 -m pytest tests -q)
 apps/desk/                Reelfold (千剪) desktop app: Electron workbench on this engine (README there)
-apps/site/                Reelfold website (Astro static site, EN / 中文 / FR)
+apps/site/                Reelfold website (Astro static site, EN / 中文 / FR / ES)
 package.json              npm workspaces for apps/* (the skill itself needs no Node)
 ```
 
@@ -240,6 +240,7 @@ URL moved to `github.com/zyziyun/reelfold`.
 
 - Code: MIT (see `LICENSE`), including `apps/desk` and `apps/site`.
 - Fonts and models are downloaded at install time from their upstream projects under their own licences
-  (SIL OFL 1.1; Apache-2.0) and are not redistributed here.
+  (SIL OFL 1.1; Apache-2.0) and are not redistributed here. The website ships its own web fonts (Instrument Serif,
+  Inter, JetBrains Mono, a subset of Noto Serif SC; SIL OFL 1.1, licences in `apps/site/public/fonts/`).
 - The optional RVM matting engine in `workflows/cover` is GPL-3.0 and is fetched at runtime only if you choose it.
 - Built with [HyperFrames](https://hyperframes.heygen.com) for the HTML-to-video workflows.
