@@ -28,8 +28,7 @@ for i in 0 1 2 3 4 5; do
   enc "$tmp/frame-$((i+1)).png" "frame-$((i+1))"
 done
 
-# Social preview (1200x630) built from the strip on the paper background.
-magick -size 1200x630 xc:'#FAF6EE' "$SRC/strip.jpg" -geometry +0+187 -composite -strip -quality 82 "$OUT/og.jpg"
+# Open Graph image (public/img/og.png): scripts/brand.mjs
 
 rm -rf "$tmp"
 ls -la "$OUT" | awk '{print $5, $9}'

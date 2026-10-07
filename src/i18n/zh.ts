@@ -3,9 +3,9 @@ export const zh = {
   lang: 'zh-CN',
   htmlLang: 'zh-CN',
   meta: {
-    title: 'video-studio · 把你的一节课变成 30 天的短视频',
+    title: '日剪 Daycut · 把一次录制变成一个月的短视频',
     description:
-      '面向课程与知识类创作者的 AI 剪辑工作室：AI 剪辑 + 自动质检 + 人审，72 小时交付小红书、抖音、视频号、B站、YouTube、Shorts、X 和 Instagram 的成片、封面与文案。',
+      '日剪 Daycut 是面向课程与知识类创作者的 AI 剪辑工作室：AI 剪辑 + 自动质检 + 人审，72 小时交付小红书、抖音、视频号、B站、YouTube、Shorts、X 和 Instagram 的成片、封面与文案。',
   },
   nav: {
     how: '流程',

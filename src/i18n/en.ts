@@ -13,9 +13,9 @@ export const en: Widen<typeof zh> = {
   lang: 'en',
   htmlLang: 'en',
   meta: {
-    title: 'video-studio · Turn one lecture into 30 days of short videos',
+    title: 'Daycut · Turn one recording into a month of short videos',
     description:
-      'A video studio for course and knowledge creators. Send one long recording and get clips, covers and post copy for Xiaohongshu, Douyin, WeChat Channels, Bilibili, YouTube, Shorts, X and Instagram within 72 hours, edited by AI and checked by a person.',
+      'Daycut is an AI video studio for course and knowledge creators. Send one long recording and get clips, covers and post copy for Xiaohongshu, Douyin, WeChat Channels, Bilibili, YouTube, Shorts, X and Instagram within 72 hours, edited by AI and checked by a person.',
   },
   nav: {
     how: 'How it works',

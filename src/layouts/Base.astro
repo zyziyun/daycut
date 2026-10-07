@@ -1,6 +1,7 @@
 ---
 import '../styles/global.css';
 import { SITE } from '../config';
+import Logo from '../components/Logo.astro';
 import { t, prefix, pathFor, type Lang } from '../i18n';
 
 interface Props {
@@ -12,7 +13,8 @@ interface Props {
 const { lang, page = '', title, description } = Astro.props;
 const c = t(lang);
 const home = prefix(lang) + '/';
-const pageTitle = title ? `${title} · ${SITE.name}` : c.meta.title;
+const brand = lang === 'zh' ? `${SITE.nameZh} ${SITE.name}` : SITE.name;
+const pageTitle = title ? `${title} · ${brand}` : c.meta.title;
 const desc = description ?? c.meta.description;
 const site = SITE.url.replace(/\/$/, '');
 const zhPath = pathFor('zh', page);
@@ -40,13 +42,20 @@ const nav = [
     <link rel="alternate" hreflang="zh-CN" href={zhUrl} />
     <link rel="alternate" hreflang="en" href={enUrl} />
     <link rel="alternate" hreflang="x-default" href={enUrl} />
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
     <meta name="theme-color" content="#FAF6EE" />
     <meta property="og:type" content="website" />
+    <meta property="og:site_name" content={brand} />
     <meta property="og:title" content={pageTitle} />
     <meta property="og:description" content={desc} />
     <meta property="og:url" content={canonical} />
-    <meta property="og:image" content={`${site}/img/og.jpg`} />
+    <meta property="og:image" content={`${site}/img/og.png`} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Daycut 日剪: Turn one recording into a month of short videos" />
     <meta name="twitter:card" content="summary_large_image" />
     {page !== '' && <meta name="robots" content="noindex" />}
   </head>
@@ -54,9 +63,8 @@ const nav = [
     <a class="skip" href="#main">{c.nav.skip}</a>
     <header class="site-header">
       <div class="wrap header-row">
-        <a class="logo" href={home} aria-label={SITE.name}>
-          <svg aria-hidden="true" viewBox="0 0 64 64" width="28" height="28"><rect width="64" height="64" rx="16" fill="#FF2442"/><rect x="10" y="40" width="44" height="10" rx="3" fill="#FFD60A"/><path d="M26 16v22l18-11z" fill="#fff"/></svg>
-          <span>{SITE.name}</span>
+        <a class="logo" href={home} aria-label={brand}>
+          <Logo zh={lang === 'zh'} />
         </a>
         <nav class="main-nav" aria-label="primary">
           {nav.map(([id, label]) => <a href={`${home}#${id}`}>{label}</a>)}
@@ -76,7 +84,7 @@ const nav = [
     </main>
     <footer class="site-footer">
       <div class="wrap footer-row">
-        <p>© 2026 {SITE.name}</p>
+        <p>© 2026 {brand}</p>
         <nav aria-label="footer">
           <a href={`${prefix(lang)}/privacy`}>{c.footer.privacy}</a>
           <a href={`${prefix(lang)}/terms`}>{c.footer.terms}</a>
