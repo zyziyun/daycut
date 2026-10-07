@@ -1,0 +1,59 @@
+# Weekly numbers (Mondays): the GitHub snapshot (scripts/metrics/github_stats.py) and the app-usage summary
+# (scripts/metrics/usage.py) go to this run's summary; one CSV row each is appended to the "metrics-history"
+# artifact (the previous run's artifact is downloaded first, so the history carries on; kept 90 days after the
+# last run). Totals only: no install ids or any other per-user data are printed or stored here.
+#
+# Optional secrets: STATS_TOKEN (app usage; without it that part is skipped), METRICS_GH_TOKEN (a fine-grained token
+# with "Administration: read" on this repo, for views / clones / referrers; the workflow token cannot read traffic).
+name: Weekly metrics
+on:
+  schedule:
+    - cron: '0 2 * * 1' # Monday 02:00 UTC (10:00 Beijing)
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read # download the previous metrics-history artifact
+concurrency:
+  group: metrics-weekly
+  cancel-in-progress: false
+jobs:
+  metrics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts/metrics
+      - uses: actions/setup-python@v7
+        with: { python-version: '3.12' }
+
+      - name: Previous history (if any)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p history
+          id=$(gh api "repos/${{ github.repository }}/actions/artifacts?name=metrics-history&per_page=20" \
+                 --jq '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | last | .id // empty' || true)
+          if [ -n "$id" ]; then
+            gh api "repos/${{ github.repository }}/actions/artifacts/$id/zip" > history.zip && unzip -o -q history.zip -d history || true
+          fi
+          ls -la history
+
+      - name: GitHub snapshot
+        env:
+          GH_TOKEN: ${{ secrets.METRICS_GH_TOKEN || github.token }}
+        run: python scripts/metrics/github_stats.py history/github.csv --markdown >> "$GITHUB_STEP_SUMMARY"
+
+      - name: App usage (opt-in counts)
+        env:
+          STATS_TOKEN: ${{ secrets.STATS_TOKEN }}
+        run: |
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [ -z "$STATS_TOKEN" ]; then
+            echo "### App usage: skipped (no STATS_TOKEN secret)" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          python scripts/metrics/usage.py --markdown --csv history/usage.csv >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        with: { name: metrics-history, path: history/*.csv, retention-days: 90, if-no-files-found: warn }
