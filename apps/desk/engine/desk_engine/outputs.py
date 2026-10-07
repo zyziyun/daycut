@@ -210,7 +210,7 @@ def waveform(words, duration, n=None):
 
 # ------------------------------------------------------------------ listing (one clip per output)
 def _batch_clips(bdir):
-    """jobs/<id>/export/manifest.json of a batch (or a project's state/) -> clips."""
+    """jobs/<id>/export/[exports/]manifest.json of a batch (or a project's state/) -> clips."""
     import sqlite3
     states = {}
     try:
@@ -227,7 +227,9 @@ def _batch_clips(bdir):
     ids = list(states) or (sorted(os.listdir(jobs_dir)) if os.path.isdir(jobs_dir) else [])
     for jid in ids:
         jdir = os.path.join(jobs_dir, jid)
-        man = read_json(os.path.join(jdir, "export", "manifest.json"), None) or {}
+        # the export stage's manifest: export/exports/ (vstudio.batch stages today), export/ (batches made before)
+        man = read_json(os.path.join(jdir, "export", "exports", "manifest.json"), None) or \
+            read_json(os.path.join(jdir, "export", "manifest.json"), None) or {}
         job = read_json(os.path.join(jdir, "job.json"), None) or {}
         params = job.get("params") or {}
         files, cover, post = [], None, None

@@ -80,6 +80,9 @@ v0.4 (outputs.py, intake.py, inbox.py; engine command when available, desk imple
                                            {start, platforms, times, clips?}; .../plan {text, start, platforms, times,
                                            clips?} (preview only, never written); .../shorten
                                            {text, platform, max?} (「为 X 缩短」, nothing saved)
+  POST /api/weekplan {inputs[], text?, start, today, platforms, times, lang}  「一周的帖子」 -> plan (weekplan.py);
+                                           GET /api/weekplan (still going) | /api/weekplan/<id>; POST .../run |
+                                           .../reword {text} | .../confirm (scheduleMany, one undo) | .../dismiss
   GET  /api/inbox                          every decision waiting for the creator; POST /api/inbox/answer {keys,
                                            answer?}; POST /api/inbox/undo {keys}
 """
@@ -442,6 +445,9 @@ class Api:
         self.calendar = Calendar(engine.data_dir, self.history, self.outputs, bus, mode=engine.mode)
         from .workpkg import WorkPackages
         self.workpkg = WorkPackages(engine.data_dir, self.history, self.outputs)
+        from .weekplan import WeekPlans            # 「这周的素材 → 一周的帖子」 (intake + run + calendar.plan)
+        self.weekplans = WeekPlans(engine.data_dir, bus, self.intake, self.calendar, self.history,
+                                   runner if engine.mode == "real" else None)
         from .create import CreateApi              # Create page: idle until the desk calls /api/create (flag)
         self.create = CreateApi(engine.data_dir, bus, runner if engine.mode == "real" else None, engine.mode,
                                 history=self.history, calendar=self.calendar, outputs=self.outputs)
@@ -561,6 +567,24 @@ class Api:
             if len(parts) == 2 and method == "POST":
                 need(ID_RE.match(parts[1]), "bad post id")
                 return self.calendar.update(parts[1], b)
+        if parts[:1] == ["weekplan"]:
+            w = self.weekplans
+            if parts == ["weekplan"] and method == "GET":
+                return w.active()
+            if parts == ["weekplan"] and method == "POST":
+                need(isinstance(b.get("inputs"), list) and len(b["inputs"]) <= 200, "inputs: up to 200 files / folders")
+                return w.start(dict(b, inputs=[_abs_path(p, "inputs[]") for p in b["inputs"]]))
+            need(len(parts) >= 2 and ID_RE.match(parts[1]), "bad week plan id")
+            if len(parts) == 2 and method == "GET":
+                return w.get(parts[1])
+            if parts[2:] == ["run"] and method == "POST":
+                return w.run(parts[1])
+            if parts[2:] == ["reword"] and method == "POST":
+                return w.reword(parts[1], b.get("text") or "", today=b.get("today"), start=b.get("start"))
+            if parts[2:] == ["confirm"] and method == "POST":
+                return w.confirm(parts[1])
+            if parts[2:] == ["dismiss"] and method == "POST":
+                return w.dismiss(parts[1])
         if parts[:1] == ["inbox"]:
             if parts == ["inbox"] and method == "GET":
                 return self.inbox.list()

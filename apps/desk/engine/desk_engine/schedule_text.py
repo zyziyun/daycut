@@ -159,6 +159,34 @@ def _platforms(text):
     return out
 
 
+# 「一周的帖子」 default posting rule per platform when she says nothing about when (days Mon = 0, local time). The
+# account's own usual time (发布账号 › 时间) wins over the time here; a time she types wins over both.
+DEFAULT_RULES = {
+    "xiaohongshu": dict(days=[0, 1, 2, 3, 4, 5, 6], time="20:00"),
+    "douyin": dict(days=[0, 1, 2, 3, 4, 5, 6], time="18:00"),
+    "wechat-channels": dict(days=[0, 1, 2, 3, 4], time="12:00"),
+    "kuaishou": dict(days=[0, 1, 2, 3, 4, 5, 6], time="18:00"),
+    "bilibili": dict(days=[4, 5, 6], time="19:00"),
+    "weibo": dict(days=[0, 1, 2, 3, 4], time="12:00"),
+    "zhihu": dict(days=[0, 1, 2, 3, 4], time="21:00"),
+    "youtube-shorts": dict(days=[0, 1, 2, 3, 4, 5, 6], time="17:00"),
+    "youtube": dict(days=[2, 5], time="17:00"),
+    "tiktok": dict(days=[0, 1, 2, 3, 4, 5, 6], time="19:00"),
+    "instagram": dict(days=[0, 1, 2, 3, 4, 5, 6], time="18:00"),
+    "x": dict(days=[0, 1, 2, 3, 4], time="09:00"),
+    "linkedin": dict(days=[1, 2, 3], time="08:00"),
+    "facebook": dict(days=[0, 1, 2, 3, 4], time="13:00"),
+    "threads": dict(days=[0, 1, 2, 3, 4], time="12:00"),
+}
+FALLBACK_RULE = dict(days=[0, 1, 2, 3, 4, 5, 6], time="19:00")
+
+
+def default_rule(platform):
+    """The default posting rule of one platform -> {days, time} (a copy)."""
+    r = DEFAULT_RULES.get((platform or "").split(":")[0], FALLBACK_RULE)
+    return dict(days=list(r["days"]), time=r["time"])
+
+
 def parse(text):
     text = (text or "").strip()
     time_, tm = _time(text)

@@ -208,10 +208,12 @@ class Calendar:
         cache = {}
         scheduled = {(r["item"], r["clip"]) for r in allrows}
         out_queue = []
+        seen = set()            # a project is listed twice (the project, and its state/ batch): one set of clips
         for e in (self.history.list()["items"] if queue else []):
             if (e.get("live") or {}).get("state") in ("running", "waiting") or e.get("status") not in (
-                    "done", "delivered", "packaged"):
+                    "done", "delivered", "packaged") or e["id"] in seen:
                 continue
+            seen.add(e["id"])
             try:
                 cl = self.outputs.clips(e["id"])["clips"]
             except Exception:  # noqa: BLE001
@@ -449,17 +451,25 @@ class Calendar:
         return self.add_many(new)
 
     def plan(self, b):
-        """「一句话排期」 preview: text -> proposed rows (never written). Apply = add_many(drafts)."""
+        """「一句话排期」 preview: text -> proposed rows (never written). Apply = add_many(drafts).
+
+        ``platform_defaults`` (the week plan, weekplan.py): every connected platform, and what the words leave
+        open comes from each platform's default rule (schedule_text.DEFAULT_RULES: its days, and its time when the
+        account has no usual time); the text may then be empty."""
         need(isinstance(b, dict), "body must be an object")
-        text = b.get("text")
-        need(isinstance(text, str) and 0 < len(text.strip()) <= 300, "text: 1-300 chars")
+        defaults = b.get("platform_defaults") is True
+        text = b.get("text") if b.get("text") is not None or not defaults else ""
+        need(isinstance(text, str) and len(text.strip()) <= 300 and (defaults or text.strip()), "text: 1-300 chars")
         start, today, connected, times, clips = self._week_args(b)
         rule = schedule_text.parse(text)
         base = dict(text=text.strip(), rule=rule, drafts=[], adjustments=[], start=start)
-        if not rule["understood"]:
+        if not rule["understood"] and not (defaults and not text.strip()):
             return dict(base, ok=False, reason="not_understood")
-        pfs = rule["platforms"] or connected[:1] or ["xiaohongshu"]
-        days = rule["days"] if rule["days"] is not None else list(range(7))
+        pfs = rule["platforms"] or (connected if defaults else connected[:1]) or ["xiaohongshu"]
+        pf_rule = {pf: schedule_text.default_rule(pf) for pf in pfs} if defaults else {}
+        pf_days = {pf: r["days"] for pf, r in pf_rule.items()} if rule["days"] is None else {}
+        days = rule["days"] if rule["days"] is not None else (
+            sorted(set().union(*pf_days.values())) if pf_days else list(range(7)))
         wk = _day(start) + dt.timedelta(days=7 if rule["next_week"] else 0)
         d0 = max(wk, _day(today) + dt.timedelta(days=0 if rule["next_week"] else 1))
         if not rule["next_week"] and not any(wk + dt.timedelta(days=i) >= d0 and i in days for i in range(7)):
@@ -480,7 +490,9 @@ class Calendar:
                 c = src[k]
                 k += 1
                 for pf in pfs:
-                    at = f"{_iso(day)}T{rule['time'] or times.get(pf) or '19:00'}"
+                    if pf_days and i not in pf_days[pf]:
+                        continue
+                    at = f"{_iso(day)}T{rule['time'] or times.get(pf) or (pf_rule.get(pf) or {}).get('time') or '19:00'}"
                     if j:
                         at = _plus_hours(at, 2 * j)
                     first = at
@@ -491,9 +503,15 @@ class Calendar:
                     busy.add((pf, at))
                     drafts.append(dict(item=c["item"], clip=c["clip"], title=c.get("title"), cover=c.get("cover"),
                                        project=c.get("project"), platform=pf, at=at))
-        return dict(base, ok=bool(drafts), reason=None if drafts else "no_days", drafts=drafts, adjustments=adj,
-                    start=_iso(wk), platforms=pfs, time=rule["time"], days=days, per_day=rule["per_day"],
-                    clips=len({(d["item"], d["clip"]) for d in drafts}), from_selection=bool(clips))
+        used = {(d["item"], d["clip"]) for d in drafts}
+        out = dict(base, ok=bool(drafts), reason=None if drafts else "no_days", drafts=drafts, adjustments=adj,
+                   start=_iso(wk), platforms=pfs, time=rule["time"], days=days, per_day=rule["per_day"],
+                   clips=len(used), from_selection=bool(clips))
+        if defaults:                                # what each platform ended up with, for the preview's words
+            out["rules"] = [dict(platform=pf, days=pf_days.get(pf, days),
+                                 time=rule["time"] or times.get(pf) or pf_rule[pf]["time"]) for pf in pfs]
+            out["left"] = len([c for c in src if (c["item"], c["clip"]) not in used])
+        return out
 
     # ------------------------------------------------------------------ 「为 X 缩短」
     def shorten(self, b):
