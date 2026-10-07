@@ -1,8 +1,8 @@
 ---
 import '../styles/global.css';
-import { SITE } from '../config';
+import { SITE, discussionsUrl } from '../config';
 import Logo from '../components/Logo.astro';
-import { t, prefix, pathFor, type Lang } from '../i18n';
+import { t, prefix, pathFor, LANGS, type Lang } from '../i18n';
 
 interface Props {
   lang: Lang;
@@ -17,17 +17,16 @@ const brand = lang === 'zh' ? `${SITE.nameZh} ${SITE.name}` : SITE.name;
 const pageTitle = title ? `${title} · ${brand}` : c.meta.title;
 const desc = description ?? c.meta.description;
 const site = SITE.url.replace(/\/$/, '');
-const zhPath = pathFor('zh', page);
-const enPath = pathFor('en', page);
-const zhUrl = `${site}${zhPath}`;
-const enUrl = `${site}${enPath}`;
-const canonical = lang === 'zh' ? zhUrl : enUrl;
+const HREFLANG: Record<Lang, string> = { en: 'en', zh: 'zh-CN', fr: 'fr' };
+const LABEL: Record<Lang, string> = { en: 'EN', zh: '中文', fr: 'FR' };
+const urlFor = (l: Lang) => `${site}${pathFor(l, page)}`;
+const canonical = urlFor(lang);
 const nav = [
   ['how', c.nav.how],
+  ['uses', c.nav.uses],
+  ['app', c.nav.app],
   ['proof', c.nav.proof],
-  ['partner', c.nav.partner],
-  ['pricing', c.nav.pricing],
-  ['desktop', c.nav.desktop],
+  ['oss', c.nav.oss],
   ['faq', c.nav.faq],
 ] as const;
 ---
@@ -39,9 +38,8 @@ const nav = [
     <title>{pageTitle}</title>
     <meta name="description" content={desc} />
     <link rel="canonical" href={canonical} />
-    <link rel="alternate" hreflang="zh-CN" href={zhUrl} />
-    <link rel="alternate" hreflang="en" href={enUrl} />
-    <link rel="alternate" hreflang="x-default" href={enUrl} />
+    {LANGS.map((l) => <link rel="alternate" hreflang={HREFLANG[l]} href={urlFor(l)} />)}
+    <link rel="alternate" hreflang="x-default" href={urlFor('en')} />
     <link rel="icon" href="/favicon.ico" sizes="32x32" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
@@ -53,9 +51,9 @@ const nav = [
     <meta property="og:description" content={desc} />
     <meta property="og:url" content={canonical} />
     <meta property="og:image" content={`${site}/img/og.png`} />
-    <meta property="og:image:width" content="1200" />
-    <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="Daycut 日剪: Turn one recording into a month of short videos" />
+    <meta property="og:image:width" content="1280" />
+    <meta property="og:image:height" content="640" />
+    <meta property="og:image:alt" content="Reelfold 千剪: Describe the batch. Fold one recording into every cut, for every platform." />
     <meta name="twitter:card" content="summary_large_image" />
     {page !== '' && <meta name="robots" content="noindex" />}
   </head>
@@ -71,11 +69,18 @@ const nav = [
         </nav>
         <div class="header-actions">
           <div class="lang-switch" role="group" aria-label={c.nav.langGroup}>
-            <a href={enPath} hreflang="en" lang="en" aria-current={lang === 'en' ? 'page' : undefined} data-keep-hash>EN</a>
-            <span aria-hidden="true">/</span>
-            <a href={zhPath} hreflang="zh-CN" lang="zh-CN" aria-current={lang === 'zh' ? 'page' : undefined} data-keep-hash>中文</a>
+            {LANGS.map((l, i) => (
+              <Fragment>
+                {i > 0 && <span aria-hidden="true">·</span>}
+                <a href={pathFor(l, page)} hreflang={HREFLANG[l]} lang={HREFLANG[l]} aria-current={lang === l ? 'page' : undefined} data-keep-hash>{LABEL[l]}</a>
+              </Fragment>
+            ))}
           </div>
-          <a class="btn btn-sm" href={`${home}#apply`}>{c.nav.cta}</a>
+          {SITE.downloadReady ? (
+            <a class="btn btn-sm" href={SITE.downloadUrl} rel="noopener">{c.cta.download}</a>
+          ) : (
+            <a class="btn btn-sm" href={SITE.githubUrl} rel="noopener">{c.cta.star}</a>
+          )}
         </div>
       </div>
     </header>
@@ -90,6 +95,7 @@ const nav = [
           <a href={`${prefix(lang)}/terms`}>{c.footer.terms}</a>
           <a href={`mailto:${SITE.contactEmail}`}>{SITE.contactEmail}</a>
           <a href={SITE.githubUrl} rel="noopener">GitHub</a>
+          <a href={discussionsUrl} rel="noopener">{c.footer.feedback}</a>
         </nav>
         <p class="muted small">{c.footer.note}</p>
       </div>

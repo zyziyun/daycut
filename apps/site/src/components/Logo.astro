@@ -1,6 +1,6 @@
 ---
-// Daycut logo: split-sun symbol (on-light colours) + "daycut" wordmark (outlined Inter, fill = currentColor),
-// inlined from assets/brand at build time; the Chinese name follows on the 中文 pages.
+// Reelfold logo: fan-of-cards symbol (on-light colours) + "reelfold" wordmark (outlined, fill = currentColor),
+// inlined from assets/brand at build time; the Chinese name 千剪 follows on the 中文 pages.
 import symbol from '../../assets/brand/symbol-on-light.svg?raw';
 import word from '../../assets/brand/wordmark-text-only.svg?raw';
 import { SITE } from '../config';
@@ -10,9 +10,10 @@ interface Props {
 }
 const { zh = false } = Astro.props;
 const inner = (svg: string) => svg.replace(/^<svg[^>]*>/, '').replace(/<\/svg>\s*$/, '');
-const sym = inner(symbol).replace(/id="(dc[ab]\d+)"/g, 'id="logo-$1"').replace(/url\(#(dc[ab]\d+)\)/g, 'url(#logo-$1)');
+// prefix mask/gradient ids so they cannot clash with other inline SVGs on the page
+const sym = inner(symbol).replace(/id="([^"]+)"/g, 'id="logo-$1"').replace(/url\(#([^)]+)\)/g, 'url(#logo-$1)');
 const wordInner = inner(word).replace(/fill="#[0-9A-Fa-f]+"/, 'fill="currentColor"');
 ---
-<svg class="logo-symbol" aria-hidden="true" viewBox="0 0 588 528" width="28" height="25" set:html={sym} />
-<svg class="logo-word" aria-hidden="true" viewBox="32 32 630 187" height="20" width="67" set:html={wordInner} />
+<svg class="logo-symbol" aria-hidden="true" viewBox="32 27 604 345" width="40" height="23" set:html={sym} />
+<svg class="logo-word" aria-hidden="true" viewBox="36 24 685 156" height="21" width="92" set:html={wordInner} />
 {zh && <span class="logo-zh">{SITE.nameZh}</span>}

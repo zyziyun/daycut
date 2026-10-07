@@ -9,93 +9,56 @@ const mail = SITE.contactEmail;
 <article class="legal wrap narrow">
   {lang === 'zh' ? (
     <Fragment>
-      <h1>服务条款</h1>
+      <h1>使用条款</h1>
       <div class="draft-banner" role="note"><strong>{c.legal.draft}</strong><br />{c.legal.draftBody}</div>
-      <p class="muted small">{c.legal.updated}：2026-10-06</p>
+      <p class="muted small">{c.legal.updated}：2026-10-07</p>
 
-      <h2>1. 服务内容</h2>
-      <p>［运营主体名称，待填］（下称「我们」）把你提供的长视频素材剪辑成短视频，并提供封面、发布文案和质检报告。每一单的具体交付物、平台、数量和价格，以双方书面确认（邮件或聊天记录均可）为准。</p>
+      <h2>1. 开源软件</h2>
+      <p>千剪 Reelfold（桌面应用、video-studio 技能和本网站）免费，按 MIT 许可开源（见仓库中的 LICENSE）。软件按现状提供，不附带任何形式的担保；桌面应用目前是预览版，功能可能变化。</p>
 
-      <h2>2. 交付时间</h2>
-      <p>交付时间从素材到齐、需求确认之后开始计算，目标为 72 小时。如果会延迟，我们会提前通知你。</p>
-
-      <h2>3. 你的责任</h2>
+      <h2>2. 你的责任</h2>
       <ul>
-        <li>你对提供的素材拥有使用权，并已获得素材中其他人（嘉宾、学员等）对肖像和声音使用的同意；没有同意的部分，你会告诉我们遮挡或删除。</li>
-        <li>素材内容合法，不侵犯他人权利。</li>
-        <li>发布由你自己完成。你负责遵守各平台规则，包括按平台要求标注 AI 生成或 AI 处理的内容。</li>
+        <li>你对素材拥有使用权，并已得到画面中其他人（嘉宾、学员）对出镜和声音使用的同意；没有同意的部分，请遮挡或删除。</li>
+        <li>你自己发布视频，并遵守各平台的规则，包括按要求标注 AI 生成或 AI 处理过的内容。千剪只帮你填写发布内容，不会替你点发布。</li>
+        <li>你使用第三方 AI 服务（Claude Code、Codex、各家 API 或模型）时，需要遵守对应服务商的条款，费用由你和服务商结算。</li>
       </ul>
 
-      <h2>4. 版权和授权</h2>
-      <ul>
-        <li>素材和成片的版权归你。</li>
-        <li>你授权我们为完成服务处理素材，包括第 5 条所述把部分文本和截图发给 AI 服务商。</li>
-        <li>案例展示只在你书面同意的范围内进行，可以匿名；你可以撤回授权，对之后的使用生效。</li>
-      </ul>
+      <h2>3. AI 处理的局限</h2>
+      <p>剪辑、字幕和文案由 AI 生成并经过自动检查，但仍可能有错，例如字幕听错词。发布前请自己看一遍。</p>
 
-      <h2>5. AI 处理的局限</h2>
-      <p>剪辑、字幕和文案由 AI 生成并经过自动质检和人工抽查，但仍可能有错误，例如字幕听错词。请在发布前自己看一遍。交付后 7 天内，你可以就明显错误提出一轮免费修改。</p>
+      <h2>4. 第三方组件</h2>
+      <p>字体、模型和其他第三方组件遵循各自的许可（例如 SIL OFL 1.1、Apache-2.0），详见仓库中的许可说明。</p>
 
-      <h2>6. 设计伙伴计划</h2>
-      <p>设计伙伴免费获得一批视频（1 期素材 → 10 条，1–2 个平台），交换条件是：案例展示授权（可匿名）、发布后 7 天回传数据、15 分钟反馈访谈、提前约定第二批价格。是否购买第二批由你决定。免费服务按现状提供。</p>
-
-      <h2>7. 费用</h2>
-      <p>网站上的价格为早期定价，可能调整；以每单书面确认的价格为准。付款方式和退款规则：［待定］。</p>
-
-      <h2>8. 桌面版和开源软件</h2>
-      <p>桌面版为预览版，按现状提供，功能可能变化。开源技能 video-studio 按 MIT 许可提供，适用其许可条款。使用第三方 AI 服务时，你需要遵守对应服务商的条款。</p>
-
-      <h2>9. 责任限制</h2>
-      <p>在法律允许的范围内，我们对单笔服务的赔偿责任以该笔服务你实际支付的费用为限。</p>
-
-      <h2>10. 适用法律和联系</h2>
-      <p>适用法律和争议解决方式：［待定］。问题请联系 <a href={`mailto:${mail}`}>{mail}</a>。</p>
+      <h2>5. 联系</h2>
+      <p>问题和建议请在 GitHub 上提 issue 或参与讨论，也可以发邮件到 <a href={`mailto:${mail}`}>{mail}</a>。</p>
       <p><a href={`${prefix(lang)}/`}>{c.legal.back}</a></p>
     </Fragment>
   ) : (
-    <Fragment>
-      <h1>Terms of service</h1>
+    <div lang={lang === 'fr' ? 'en' : undefined}>
+      {lang === 'fr' && <p class="draft-banner" lang="fr" role="note">Cette page n’est disponible qu’en anglais pour le moment.</p>}
+      <h1>Terms of use</h1>
       <div class="draft-banner" role="note"><strong>{c.legal.draft}</strong><br />{c.legal.draftBody}</div>
-      <p class="muted small">{c.legal.updated}: 2026-10-06</p>
+      <p class="muted small">{c.legal.updated}: 2026-10-07</p>
 
-      <h2>1. The service</h2>
-      <p>[Operating entity, to be filled in] ("we") edits long recordings you provide into short videos, with covers, post copy and a QC report. The deliverables, platforms, quantity and price of each order are whatever we both confirm in writing (email or chat is fine).</p>
+      <h2>1. Open-source software</h2>
+      <p>Reelfold (the desktop app, the video-studio skill and this website) is free and open source under the MIT licence (see LICENSE in the repository). It is provided as is, without warranty of any kind; the desktop app is a preview and may change.</p>
 
-      <h2>2. Delivery time</h2>
-      <p>Delivery time starts once all footage has arrived and the brief is confirmed; the target is 72 hours. If we are going to be late, we tell you in advance.</p>
-
-      <h2>3. Your responsibilities</h2>
+      <h2>2. Your responsibilities</h2>
       <ul>
-        <li>You have the rights to the footage and the consent of other people in it (guests, students) to use their face and voice; where you do not, you tell us to mask or remove them.</li>
-        <li>The footage is lawful and does not infringe anyone’s rights.</li>
-        <li>You publish the videos yourself and follow each platform’s rules, including labelling AI-generated or AI-edited content where required.</li>
+        <li>You have the rights to your footage and the consent of other people in it (guests, students) to use their face and voice; where you do not, mask or remove them.</li>
+        <li>You publish the videos yourself and follow each platform’s rules, including labelling AI-generated or AI-edited content where required. Reelfold fills in the post; it never presses publish for you.</li>
+        <li>When you use third-party AI services (Claude Code, Codex, any API or model), you follow their terms and settle any fees with them.</li>
       </ul>
 
-      <h2>4. Ownership and permissions</h2>
-      <ul>
-        <li>You own your footage and the finished clips.</li>
-        <li>You let us process the footage to provide the service, including sending some text and screenshots to AI providers as described in section 5.</li>
-        <li>Case studies are shown only as far as you agreed in writing, and can be anonymous. You can withdraw permission for future use.</li>
-      </ul>
+      <h2>3. Limits of AI processing</h2>
+      <p>Edits, captions and copy are produced by AI and checked automatically, but may still contain errors such as misheard caption words. Please watch before posting.</p>
 
-      <h2>5. Limits of AI processing</h2>
-      <p>Edits, captions and copy are produced by AI, checked automatically and sampled by a person, but may still contain errors such as misheard caption words. Please watch before posting. Within 7 days of delivery you can ask for one free round of fixes for clear errors.</p>
+      <h2>4. Third-party components</h2>
+      <p>Fonts, models and other third-party components keep their own licences (for example SIL OFL 1.1 and Apache-2.0); see the licence notes in the repository.</p>
 
-      <h2>6. Design-partner program</h2>
-      <p>Design partners get one free batch (1 recording → 10 clips, 1–2 platforms) in exchange for case-study permission (anonymous is fine), performance data 7 days after posting, a 15-minute feedback interview and an agreed second-batch price. Buying a second batch is your choice. The free batch is provided as is.</p>
-
-      <h2>7. Fees</h2>
-      <p>Prices on this site are early pricing and may change; the price confirmed in writing for each order applies. Payment and refund terms: [to be decided].</p>
-
-      <h2>8. Desktop app and open-source software</h2>
-      <p>The desktop app is a preview provided as is and may change. The open-source video-studio skill is provided under the MIT licence. When you use third-party AI services you follow their terms.</p>
-
-      <h2>9. Limitation of liability</h2>
-      <p>To the extent permitted by law, our liability for any order is limited to the fees you actually paid for that order.</p>
-
-      <h2>10. Governing law and contact</h2>
-      <p>Governing law and dispute resolution: [to be decided]. Questions: <a href={`mailto:${mail}`}>{mail}</a>.</p>
+      <h2>5. Contact</h2>
+      <p>Questions and suggestions: open an issue or a discussion on GitHub, or email <a href={`mailto:${mail}`}>{mail}</a>.</p>
       <p><a href={`${prefix(lang)}/`}>{c.legal.back}</a></p>
-    </Fragment>
+    </div>
   )}
 </article>

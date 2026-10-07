@@ -2,34 +2,29 @@
 // Edit here, run `npm run build`, done. Nothing else in the codebase hard-codes these.
 
 export const SITE = {
-  /** Public URL of the deployed site (used for canonical/hreflang/OG tags). Change when you pick a domain. */
+  /** Public URL of the deployed site (used for canonical/hreflang/OG tags). */
   url: 'https://reelfold.com',
 
-  /** Brand name shown in the header and titles (logo: assets/brand, favicons + OG: scripts/brand.mjs). */
-  name: 'Daycut',
-  /** Chinese name, shown next to the wordmark on the 中文 pages. */
-  nameZh: '日剪',
+  /** Brand name shown in titles (logo: assets/brand, favicons + OG: scripts/brand.mjs). */
+  name: 'Reelfold',
+  /** Chinese name, shown next to the wordmark on the 中文 pages. French pages use `name`. */
+  nameZh: '千剪',
 
-  /** Contact email. Placeholder until you set a real inbox. */
+  /** Contact email (footer, legal pages). Placeholder until you set a real inbox. */
   contactEmail: 'hello@example.com',
 
-  /**
-   * Design-partner form backend. Empty string = no backend: the form is shown as a preview
-   * and visitors are asked to email `contactEmail` instead. See README "Form backend options".
-   * Example values: 'https://formspree.io/f/xxxxxxx' or your own Worker URL.
-   */
-  formEndpoint: '',
+  /** Open-source repository (the desktop app, the video-studio skill + engine, and this site). */
+  githubUrl: 'https://github.com/zyziyun/reelfold',
+
+  /** macOS download: the latest GitHub release of the main repo. */
+  downloadUrl: 'https://github.com/zyziyun/reelfold/releases/latest',
 
   /**
-   * Desktop app download page (one URL for macOS and Windows; GitHub "latest release" page).
-   * Proposed public releases repo for Daycut; create it before publishing (the desk app's update feed uses the same
-   * repo, see apps/desk/electron-builder.config.cjs DESK_RELEASES_REPO).
+   * false until the first macOS release is published. While false, every "Download for macOS" button is replaced by
+   * a "coming soon" state that points to "Star on GitHub" and "Build from source" instead of a dead link
+   * (hero, header and the Mac app section). Set to true once the release exists.
    */
-  downloadUrl: 'https://github.com/zyziyun/daycut-releases/releases/latest',
-
-  /** Open-source engine (the video-studio skill) repository. */
-  githubUrl: 'https://github.com/zyziyun/daycut',
-
-  /** Design-partner program size. */
-  partnerSlots: 30,
+  downloadReady: false,
 } as const;
+
+export const discussionsUrl = `${SITE.githubUrl}/discussions`;

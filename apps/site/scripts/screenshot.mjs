@@ -17,6 +17,8 @@ const shots = [
   ['home-en-mobile', '/', 390, 844, 1],
   ['home-zh-desktop', '/zh/', 1440, 900, 1],
   ['home-zh-mobile', '/zh/', 390, 844, 1],
+  ['home-fr-desktop', '/fr/', 1440, 900, 1],
+  ['home-fr-mobile', '/fr/', 390, 844, 1],
   ['privacy-mobile', '/privacy', 390, 844, 1],
 ];
 const browser = await chromium.launch({ channel: 'chrome' });
@@ -27,7 +29,10 @@ for (const [name, path, width, height, dpr] of shots) {
   await page.evaluate(async () => {
     document.querySelectorAll('img[loading=lazy]').forEach((i) => (i.loading = 'eager'));
     await Promise.all([...document.images].map((i) => i.complete || new Promise((r) => (i.onload = i.onerror = r))));
+    // decode before capture, or large AVIFs can still paint black in the full-page shot
+    await Promise.all([...document.images].map((i) => i.decode().catch(() => {})));
   });
+  await page.waitForTimeout(300);
   await page.screenshot({ path: `screenshots/${name}.png`, fullPage: true });
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   console.log(name, 'horizontal overflow px:', overflow);

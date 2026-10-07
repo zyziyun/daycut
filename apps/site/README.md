@@ -1,17 +1,18 @@
-# video-studio-site (apps/site)
+# Reelfold website (apps/site)
 
-Lives in `apps/site/` of the [video-studio](https://github.com/zyziyun/daycut) monorepo; MIT like the rest of
+Lives in `apps/site/` of the [Reelfold](https://github.com/zyziyun/reelfold) monorepo; MIT like the rest of
 the repo (see `LICENSE`). `npm install` works here or at the repo root (one npm workspace for all apps).
 
-Product website (官网) for the video-studio AI video studio: English (default) at `/`, `/privacy`, `/terms`;
-中文 at `/zh/`, `/zh/privacy`, `/zh/terms`. The old `/en/*` URLs are static redirect pages to the English
-equivalents (`redirects` in `astro.config.mjs`).
+Product website (官网) for Reelfold (千剪), the free, open-source (MIT) batch video app for macOS: English (default) at `/`,
+`/privacy`, `/terms`; 中文 at `/zh/`, `/zh/privacy`, `/zh/terms`; Français at `/fr/`, `/fr/privacy`, `/fr/terms`
+(the French legal pages show the English text with a note until a reviewed translation exists). The old `/en/*`
+URLs are static redirect pages to the English equivalents (`redirects` in `astro.config.mjs`).
 Static Astro build, no cookies, no analytics, no third-party fonts (system font stack). The only JavaScript is a
 four-line inline script that keeps the current `#section` when you switch language; without it the switcher still
 opens the same page in the other language.
 
-SEO: every page has `<html lang>` (`en` / `zh-CN`), a canonical URL, and hreflang alternates `en`, `zh-CN` and
-`x-default` (= English). There is no sitemap.
+SEO: every page has `<html lang>` (`en` / `zh-CN` / `fr`), a canonical URL, and hreflang alternates `en`, `zh-CN`,
+`fr` and `x-default` (= English). There is no sitemap.
 
 Not deployed. Everything the creator must decide is listed at the bottom.
 
@@ -31,50 +32,39 @@ node scripts/screenshot.mjs   # full-page screenshots into screenshots/ (needs `
 ## Structure
 
 ```
-src/config.ts              ← the only place for URL, contact email, FORM_ENDPOINT, download URL, GitHub URL
-src/i18n/en.ts, zh.ts      ← all copy (same shape; en.ts is type-checked against zh.ts)
-src/i18n/index.ts          ← prefix() / pathFor(): '' for English, '/zh' for 中文
-src/components/Home.astro  ← all home sections: hero, how, proof, deliverables, partner + form, pricing,
-                             desktop app, open source, FAQ, contact
+src/config.ts              ← the only place for URL, contact email, GitHub URL, download URL and `downloadReady`
+src/i18n/en.ts, zh.ts, fr.ts ← all copy (same shape; en.ts and fr.ts are type-checked against zh.ts)
+src/i18n/index.ts          ← LANGS, prefix() / pathFor(): '' for English, '/zh' for 中文, '/fr' for Français
+src/components/Home.astro  ← all home sections: hero, how, who it's for, Mac app, proof, deliverables,
+                             local-first, Create (coming), open source (skill + build from source), FAQ
+src/components/Cta.astro   ← download / Star on GitHub / Build from source buttons (follows `downloadReady`)
 src/components/Privacy.astro, Terms.astro   ← legal drafts (both languages), marked "draft, review before publishing"
-src/layouts/Base.astro     ← header/footer, EN / 中文 switcher, hreflang, OG tags
-src/styles/global.css      ← Notebook Light theme (DESIGN.md §3 ②)
-src/pages/{index,privacy,terms}.astro (English), src/pages/zh/... (中文)
+src/components/Logo.astro  ← Reelfold symbol + wordmark, inlined from assets/brand
+src/layouts/Base.astro     ← header/footer, EN · 中文 · FR switcher, hreflang, OG tags
+src/styles/global.css      ← Reelfold light theme: warm paper, ink, brand teal
+src/pages/{index,privacy,terms}.astro (English), src/pages/zh/... (中文), src/pages/fr/... (Français)
+assets/brand/              ← Reelfold symbol / wordmark / Windows icon SVGs and the 1280x640 social preview
+                             (copies of the brand masters; `node scripts/brand.mjs` regenerates favicons + OG)
 public/img/                ← optimised images (committed); sources in assets/demos/
-scripts/                   ← optimize-images.sh, check-copy.mjs, screenshot.mjs
-screenshots/               ← home-en-*, home-zh-* (desktop + mobile) and privacy-mobile
+scripts/                   ← brand.mjs, optimize-images.sh, check-copy.mjs, screenshot.mjs
+screenshots/               ← home-en-*, home-zh-*, home-fr-* (desktop + mobile) and privacy-mobile
 ```
 
 ## Config (`src/config.ts`)
 
 | Key | Default | Notes |
 |---|---|---|
-| `url` | `https://example.com` | Your domain; used for canonical, hreflang and OG tags. `astro.config.mjs` reads it. |
+| `url` | `https://reelfold.com` | The domain; used for canonical, hreflang and OG tags. `astro.config.mjs` reads it. |
 | `contactEmail` | `hello@example.com` | Placeholder. Used in the contact section, footer, legal pages and the mailto fallback. |
-| `formEndpoint` | `''` | Empty = form is shown disabled with an "online form not open yet, email us" notice and a mailto button. Set a URL = the form POSTs there (standard `application/x-www-form-urlencoded`). |
-| `downloadUrl` | `https://github.com/zyziyun/daycut-releases/releases/latest` | Both macOS and Windows buttons point here (the Daycut releases repo; installs from before the rename also read `video-studio-desk-releases`). |
-| `githubUrl` | `https://github.com/zyziyun/daycut` | Open-source section, contact, footer. |
-
-## Form backend options (creator decides)
-
-The form fields are: `name`, `contact`, `profile`, `content_type`, `hours`, `platforms` (multiple), `sample`, `notes`,
-three consent checkboxes, a hidden `lang`, and a honeypot `_gotcha` (Formspree's name; other services ignore it or
-you can rename it). It works as a plain HTML POST, so any of these can receive it:
-
-| Option | How | Privacy notes | Fit |
-|---|---|---|---|
-| **Formspree** | Create a form, paste `https://formspree.io/f/<id>` into `formEndpoint`. | US company; submissions stored on their servers and emailed to you; free tier has limits. Mention them as processor in the privacy policy. Visitors in mainland China may find it slow or blocked. | Fastest for overseas visitors. |
-| **Tally** | Build the form in Tally and link/embed it instead of this form (Tally does not take arbitrary POSTs). | EU-hosted (Belgium); GDPR-oriented. Embedding loads Tally's script, which breaks the "no third-party scripts" rule; linking out does not. | Good if you want Tally's dashboard; replace the form with a link. |
-| **Cloudflare Workers + D1** | A ~40-line Worker that validates fields, checks the honeypot, inserts into a D1 table and emails you (e.g. via Cloudflare Email Routing / MailChannels). Put the Worker URL in `formEndpoint`. | You own the data; nothing leaves your Cloudflare account. You must handle deletion requests yourself (it's one SQL `DELETE`). | Best control; pairs naturally with Cloudflare Pages hosting. |
-| **飞书问卷 / 腾讯问卷** | Create the questionnaire and replace the form with a link (or a QR code for 小红书 visitors). | Data stored in China by ByteDance / Tencent under their terms; good access from mainland China. Requires a 飞书/QQ account. | Most visitors come from 小红书 on phones in China: lowest friction there. |
-
-Whichever you pick: update section 3 of the privacy policy ("where it is stored") in both languages.
+| `githubUrl` | `https://github.com/zyziyun/reelfold` | Star on GitHub, open-source section, footer (Discussions link = `githubUrl` + `/discussions`). |
+| `downloadUrl` | `https://github.com/zyziyun/reelfold/releases/latest` | "Download for macOS" target (Windows is shown as "later"). |
+| `downloadReady` | `false` | `false` until the first macOS release exists: no download link anywhere; the hero and Mac-app section show "Star on GitHub" + "Build from source" and a "coming soon" note, and the header button is "Star on GitHub". Set `true` to switch every one of them to "Download for macOS". |
 
 ## Deploy (not done; pick one)
 
 `npm run build` produces a plain static folder `dist/`. Any static host works.
 
-**Cloudflare Pages** (recommended: free, fast, can pair with Workers + D1 for the form)
+**Cloudflare Pages** (recommended: free and fast)
 1. Push this repo to GitHub (or use `npx wrangler pages deploy dist` without Git).
 2. Cloudflare dashboard → Workers & Pages → Create → Pages → connect the repo.
 3. Build command `npm run build`, output directory `dist`, Node 20+.
@@ -110,20 +100,17 @@ Enforced by `npm run check:copy` on the built HTML:
 
 ## Images
 
-The demo frames and contact sheets in `assets/demos/` come from `video-studio/docs/demos/` (approved by the
+The demo frames and contact sheets in `assets/demos/` come from the repo's `docs/demos/` (approved by the
 creator for public use). `scripts/optimize-images.sh` writes AVIF + WebP at 800/1600 px plus six single-frame
-tiles and a 1200×630 `og.jpg`. Total image weight on the home page is roughly 100–300 KB (AVIF) depending on screen width; nothing above the fold is larger than 13 KB.
+tiles. The Open Graph image `public/img/og.png` (1280×640) is the launch social preview, copied by `scripts/brand.mjs`. Total image weight on the home page is roughly 100–300 KB (AVIF) depending on screen width; nothing above the fold is larger than 13 KB.
 
 ## What the creator must decide before publishing
 
-1. **Domain** → `SITE.url`, then DNS per host above.
-2. **Form backend** → `SITE.formEndpoint` (or swap the form for a Tally / 飞书 / 腾讯问卷 link), and update privacy §3.
-3. **Contact email** → `SITE.contactEmail` (currently `hello@example.com`).
-4. **Legal review** of `/privacy` and `/terms` (both languages): operating entity name, governing law, payment and
-   refund terms, retention periods (30 days after delivery is a proposal), cross-border transfer consent wording
-   (PIPL), and the AI-label rules per platform. Remove the draft banner only after review.
-5. **Desktop downloads**: create the `daycut-releases` repo (or change `downloadUrl`), and confirm the
-   note about MediaPipe usage statistics matches what the app actually shows.
-6. **Promises on the page**: 72-hour delivery, "we reply to everyone", 7-day deletion turnaround, one free round of
-   fixes (terms §5), early prices. Keep or edit; they are commitments once live.
-7. **视频号**: the engine has no dedicated 视频号 platform profile yet; the site says it is delivered as 9:16.
+1. **Domain**: `reelfold.com` is set in `SITE.url`; point its DNS at the host (see Deploy above).
+2. **Contact email** → `SITE.contactEmail` (currently `hello@example.com`).
+3. **Legal review** of `/privacy` and `/terms` (zh and en; fr shows the English text): maintainer / entity name and
+   the AI-label rules per platform. Remove the draft banner only after review.
+4. **First macOS release**: publish it on `github.com/zyziyun/reelfold/releases`, then set `SITE.downloadReady = true`;
+   confirm the note about MediaPipe usage statistics matches what the app actually shows.
+5. **GitHub Discussions**: enable them on the repo (the footer links there).
+6. **视频号**: the engine has no dedicated 视频号 platform profile yet; the site says it is delivered as 9:16.

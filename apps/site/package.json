@@ -1,12 +1,12 @@
 {
-  "name": "video-studio-site",
+  "name": "reelfold-site",
   "private": true,
   "type": "module",
   "version": "0.1.0",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/zyziyun/daycut.git",
+    "url": "https://github.com/zyziyun/reelfold.git",
     "directory": "apps/site"
   },
   "scripts": {

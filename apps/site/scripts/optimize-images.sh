@@ -28,7 +28,7 @@ for i in 0 1 2 3 4 5; do
   enc "$tmp/frame-$((i+1)).png" "frame-$((i+1))"
 done
 
-# Open Graph image (public/img/og.png): scripts/brand.mjs
+# Open Graph image (public/img/og.png, 1280x640 social preview): scripts/brand.mjs
 
 rm -rf "$tmp"
 ls -la "$OUT" | awk '{print $5, $9}'
