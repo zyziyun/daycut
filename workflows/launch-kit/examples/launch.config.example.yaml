@@ -45,7 +45,8 @@ features:                                  # 3-6, in the order the demo shows th
     kicker: {en: Capture, zh: 记录}
     caption: {en: "Type anything. It's 【filed】 before you finish.", zh: "随手写，写完就【归好档】"}
     trim: [0.5, 8.0]                       # seconds of the shot to use (default: all)
-    # rate: 1.25                           # play the recording faster
+    # rate: 1.25                           # play the recording faster (idle waits already play at 4x)
+    # still_at: 4.2                        # the gallery still: this second of the shot (default: its poster frame)
     # post: {en: {hook: ..., body: ..., tags: [...]}, zh: {...}}   # this clip's post (default: caption + one-liner)
   - id: links
     kicker: {en: Links, zh: 关联}

@@ -131,7 +131,14 @@ def feature_still(cfg, shot, feat, lang, out, workdir, size=PH):
     W, H = size
     kick = C.text(feat.get("kicker"), lang)
     head = C.text(feat.get("headline"), lang) or C.text(feat.get("caption"), lang)
-    img = _img(shot.get("still") or shot["file"], workdir)
+    if feat.get("still_at") is not None and shot.get("kind") == "video":
+        from vstudio import media
+        os.makedirs(os.path.join(workdir, "assets", "img"), exist_ok=True)
+        grab = os.path.join(workdir, "assets", "img", f"{shot['id']}-{float(feat['still_at']):.2f}.png")
+        media.grab_frame(shot["file"], float(feat["still_at"]), grab)
+        img = "assets/img/" + os.path.basename(grab)
+    else:
+        img = _img(shot.get("still") or shot["file"], workdir)
     note = C.text(g.get("note"), lang)
     top = 150 if W > 1240 else 140
     box_w, vis = W - 160, H - top
