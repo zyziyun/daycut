@@ -393,6 +393,32 @@ def srt_write(cues, path, which="text", wrap=None, no_overlap=True, trailing_new
     return n
 
 
+def vtt_ts(t):
+    """WebVTT time 'HH:MM:SS.mmm' (same integer-ms rounding as ``srt_ts``)."""
+    return srt_ts(t).replace(",", ".")
+
+
+def vtt_write(cues, path, which="text", wrap=None, no_overlap=True):
+    """Write a WebVTT file (YouTube / web players). ``which`` / ``wrap`` as in ``srt_write``; markup stripped.
+    Returns the number of cues written."""
+    n, blocks = 0, []
+    for a, b, c in _clean_times(cues, no_overlap):
+        parts = []
+        if which in ("text", "both") and c.text.strip():
+            t = strip_markup(c.text).strip()
+            parts += wrap_cjk(t, wrap) if wrap else [t]
+        if which in ("alt", "both") and c.alt.strip():
+            parts += [strip_markup(c.alt).strip()]
+        parts = [p.replace("-->", "->") for p in parts if p.strip()]
+        if not parts:
+            continue
+        n += 1
+        blocks.append(f"{n}\n{vtt_ts(a)} --> {vtt_ts(b)}\n" + "\n".join(parts) + "\n")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("WEBVTT\n\n" + "\n".join(blocks))
+    return n
+
+
 _SRT_T = re.compile(r"(\d+):(\d+):(\d+)[,.](\d+)\s*-->\s*(\d+):(\d+):(\d+)[,.](\d+)")
 
 
@@ -539,7 +565,7 @@ def cues_from_words(words, max_chars=None, max_gap=0.45, linger=0.3, fixes=None)
         s = ""
         for t, _, _ in items:
             t = t.strip()
-            if s and re.match(r"[A-Za-z0-9]", t[:1]) and (
+            if s and re.match(r"[\"'“‘(]?[A-Za-z0-9]", t[:2]) and (
                     re.match(r"[A-Za-z0-9%]", s[-1])
                     or (s[-1] in ",.!?;:)]" and not (len(s) > 1 and s[-2].isdigit() and s[-1] in ",." and t[:1].isdigit()))):
                 s += " "                      # latin words (also after latin punctuation: "everyone, welcome")

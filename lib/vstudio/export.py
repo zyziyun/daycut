@@ -185,7 +185,7 @@ def caption_overlay(prof, cues, fps, role="cjk-bold", fill=(255, 255, 255, 255),
             if c.alt and c.alt.strip():
                 fa = draw.load_font("cjk", max(16, int(fit["size"] * 0.66)))
                 alt_lines = draw.wrap(c.alt.strip(), fa, x1 - x0, balance=True, max_lines=2)
-                sec = _lines_layer(alt_lines, fa, (226, 232, 240, 255), max(2, stroke * 2 // 3))
+                sec = _lines_layer(alt_lines, fa, _alt_fill(st), max(2, stroke * 2 // 3))
                 w = max(prim.width, sec.width)
                 from PIL import Image
                 im = Image.new("RGBA", (w, prim.height + sec.height - 8), (0, 0, 0, 0))
@@ -227,6 +227,19 @@ def caption_overlay(prof, cues, fps, role="cjk-bold", fill=(255, 255, 255, 255),
                 break
         return img
     return overlay
+
+
+def _alt_fill(style=None):
+    """Colour of the second (translated) caption line: the cue's ``style.alt_fill``, else the theme's secondary ink
+    over video (``over_ink2``), so a bilingual pair reads as one main line + a quieter translation."""
+    from . import draw
+    if (style or {}).get("alt_fill"):
+        return draw.rgba(style["alt_fill"])
+    try:
+        from . import theme as TH
+        return TH.rgba(TH.current(), "over_ink2")
+    except Exception:                                   # noqa: BLE001 - themes optional
+        return (226, 226, 222, 255)
 
 
 def _lines_layer(lines, f, fill, stroke, hl_fill=None):

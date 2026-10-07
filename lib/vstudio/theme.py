@@ -43,6 +43,7 @@ _BASE = dict(
     emph_per_line=1,                               # at most this many emphasised runs per line (0 = unlimited)
     card="#FFFDF8", card_alpha=0.96, card_ink="#1D1B18",
     over_ink="#FFFFFF", over_emph="#F3D3AE", over_stroke="#141414", over_stroke_w=0.05, over_shadow=110,
+    over_ink2="#E4DED4",                           # secondary line over video (bilingual captions: the translation)
     # type
     font_title="cjk-serif-bold", font_strong="cjk-bold", font_body="cjk", font_quote="cjk-serif-bold",
     font_caption="cjk-bold", font_label="cjk-bold", label_track=0.12,
@@ -81,21 +82,21 @@ PRESETS = {
         paper="#F3F3F1", ink="#111111", ink2="#646464", rule="#D4D4D0", accent="#111111", accent_ink="#FFFFFF",
         marker="#EFE59A", card="#FFFFFF", card_alpha=0.97, card_ink="#111111", over_emph="#F3E7A0",
         font_title="cjk-bold", font_quote="cjk-bold", radius=6, shadow=(12, 4, 30),
-        stamp=dict(color="ink"), progress=dict(fill="ink")),
+        stamp=dict(color="ink"), progress=dict(fill="ink"), over_ink2="#DCDCDA"),
     "soft": _p(
         label="Soft", label_zh="低饱和柔和",
         desc_zh="石灰白 + 鼠尾草绿，圆角更大、阴影更轻；适合生活方式 / 温和的分享",
         paper="#F1F0EA", ink="#2A2B2E", ink2="#64666B", rule="#DAD8CF", accent="#56766A", accent_ink="#FFFFFF",
         marker="#C8DCCB", card="#FCFCF9", card_alpha=0.95, card_ink="#2A2B2E", over_emph="#CFE4D3",
         font_title="cjk-bold", font_quote="cjk-bold", radius=26, shadow=(26, 8, 28),
-        stamp=dict(color="accent")),
+        stamp=dict(color="accent"), over_ink2="#DCE6DE"),
     "night": _p(
         label="Night", label_zh="夜间",
         desc_zh="深炭色底 + 暖琥珀色；关键词直接用琥珀色字，适合夜聊 / 情绪向",
         paper="#141518", ink="#F2EDE4", ink2="#A29D94", rule="#30323A", accent="#E0A458", accent_ink="#141518",
         marker="#E0A458", marker_alpha=0.32, emphasis="color", card="#1E2025", card_alpha=0.94, card_ink="#F2EDE4",
         over_emph="#E8B86D", font_title="cjk-serif-bold", font_quote="cjk-serif-bold", shadow=(22, 8, 90),
-        stamp=dict(color="accent")),
+        stamp=dict(color="accent"), over_ink2="#E9D9BF"),
     "xhs-pop": _p(
         label="XHS pop", label_zh="小红书红（克制版）",
         desc_zh="保留小红书红，但只给一个关键词用；白卡片、细线、无黑框",
@@ -120,7 +121,7 @@ ALIASES = {"default": "editorial", "高级": "editorial", "编辑": "editorial",
            "黑白": "mono", "黑白灰": "mono", "极简": "mono", "柔和": "soft", "低饱和": "soft", "温柔": "soft",
            "夜间": "night", "深色": "night", "暗色": "night", "小红书": "xhs-pop", "小红书红": "xhs-pop",
            "xhs": "xhs-pop", "旧版": "classic", "legacy": "classic"}
-COLOR_TOKENS = ("paper", "ink", "ink2", "rule", "accent", "accent_ink", "marker", "card", "card_ink", "over_ink",
+COLOR_TOKENS = ("paper", "ink", "ink2", "rule", "accent", "accent_ink", "marker", "card", "card_ink", "over_ink", "over_ink2",
                 "over_emph", "over_stroke")
 
 _EXPLICIT = contextvars.ContextVar("vstudio_theme", default=None)
