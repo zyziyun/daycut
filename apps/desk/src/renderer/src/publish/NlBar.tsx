@@ -40,11 +40,13 @@ export const NlBar = forwardRef<
     onPreview: () => void;
     onApply: () => void;
     onCancel: () => void;
+    /** a week made from dropped footage (WeekPlan): its own words, and "Schedule n posts" */
+    week?: { label: string; apply: string; left: number };
   }
->(function NlBar({ text, setText, busy, plan, onPreview, onApply, onCancel }, ref) {
+>(function NlBar({ text, setText, busy, plan, onPreview, onApply, onCancel, week }, ref) {
   const open = busy || !!plan;
   return (
-    <div className={`pb-nl ${open ? 'open' : ''}`} data-testid="pb-nl">
+    <div className={`pb-nl ${open ? 'open' : ''}`} data-testid="pb-nl" data-week={week ? '1' : undefined}>
       <div className="pb-nlrow">
         <Sparkles className="ico accent" />
         <input
@@ -73,12 +75,12 @@ export const NlBar = forwardRef<
           </span>
           {plan.ok ? (
             <div className="col" style={{ gap: 4, minWidth: 0, flex: 1 }}>
-              <b data-testid="pb-nl-summary">{planSummary(plan)}</b>
+              <b data-testid="pb-nl-summary">{week ? week.label : planSummary(plan)}</b>
               <span className="pb-nlsub">
                 {(plan.platforms ?? []).slice(0, 1).map((p) => (
                   <PlatformIcon key={p} id={p} size={16} />
                 ))}
-                <span>{t(plan.from_selection ? 'pb.nl.fromSel' : 'pb.nl.fromQueue', { n: plan.clips ?? 0 })}</span>
+                <span>{week ? (week.left ? t('wp.left', { n: week.left }) : t('wp.clipsVal', { n: plan.clips ?? 0 })) : t(plan.from_selection ? 'pb.nl.fromSel' : 'pb.nl.fromQueue', { n: plan.clips ?? 0 })}</span>
                 <span>{t('pb.nl.dashed')}</span>
                 {plan.adjustments.slice(0, 2).map((a) => (
                   <span key={a.frm + a.platform} className="pb-amber">
@@ -101,7 +103,7 @@ export const NlBar = forwardRef<
                 {t('pb.nl.edit')}
               </button>
               <button className="btn primary" onClick={onApply} data-testid="pb-nl-apply" title={fmtDate(plan.start)}>
-                {t('pb.nl.apply', { n: plan.drafts.length })}
+                {week ? week.apply : t('pb.nl.apply', { n: plan.drafts.length })}
               </button>
             </>
           )}

@@ -26,6 +26,12 @@ the earlier history lives in the commit log (formerly `video-studio` and `Daycut
   - First-run wizard with queued model downloads; bundled Python runtime and LGPL ffmpeg; auto-update.
   - UI in English, 中文 and Français.
   - Create page (behind a setting): series studio with formats, bible, storyboard and a spend gate.
+  - A week of posts in one step: drop this week's footage on Home or Publish; Reelfold plans and makes every clip,
+    then lays them out over the week (your words, else each account's usual time, else the platform's rhythm) as a
+    preview you confirm with one button.
+  - Send feedback (Help menu, Settings, empty states) and Report this problem (failed jobs, crashes): a redacted
+    report you read first, opened as a prefilled GitHub Discussion or Issue. Nothing is sent by the app; automatic
+    crash reports are off by default.
 - **Engine**:
   - `vstudio.intake`: one sentence plus the material becomes a validated plan (rule fallback when no model is set).
   - `vstudio.project`: every workflow is a recipe with checkpoints, series, inbox and publishing calendar.

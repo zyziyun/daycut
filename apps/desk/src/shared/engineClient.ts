@@ -36,6 +36,7 @@ import type {
 } from './v02';
 import type { AskContext, ChatTurn, ExportJob } from './chatEdit';
 import type { StripInfo, TranscribeState } from './timeline';
+import type { WeekPlan, WeekPlanStart } from './weekPlan';
 import type { AskResult, CalendarDoc, CalendarPost, ClipsDoc, NewPost, SchedulePlan, EditOp, EffectDef, EngineMsg, InboxDoc, IntakeJob, IntakePlan, OutputDoc, PreviewEdl, ProjectAskJob, Retimed } from './v04';
 
 import { CreateClient } from './create';
@@ -477,6 +478,22 @@ export class EngineClient {
   /** preview only: nothing is written */
   planSchedule(body: { text: string; start: string; platforms: string[]; times: Record<string, string>; clips?: { item: string; clip: string }[]; today?: string }) {
     return this.req<SchedulePlan>('POST', '/api/calendar/plan', body);
+  }
+  // 「一周的帖子」 (weekplan.py)
+  startWeekPlan(body: WeekPlanStart) {
+    return this.req<WeekPlan>('POST', '/api/weekplan', { ...body, text: (body.text ?? '').slice(0, 300) });
+  }
+  weekPlans() {
+    return this.req<{ plans: WeekPlan[] }>('GET', '/api/weekplan');
+  }
+  weekPlan(id: string) {
+    return this.req<WeekPlan>('GET', `/api/weekplan/${bid(id)}`);
+  }
+  weekPlanAct(id: string, verb: 'run' | 'confirm' | 'dismiss') {
+    return this.req<WeekPlan & { ids?: string[] }>('POST', `/api/weekplan/${bid(id)}/${verb}`, {});
+  }
+  rewordWeekPlan(id: string, text: string, today?: string) {
+    return this.req<WeekPlan & { ok: boolean; reason?: string }>('POST', `/api/weekplan/${bid(id)}/reword`, { text: text.slice(0, 300), ...(today ? { today } : {}) });
   }
   confirmWeek(start: string) {
     return this.req<{ ok: boolean; ready: number }>('POST', '/api/calendar/confirm', { start });

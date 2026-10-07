@@ -1,7 +1,7 @@
 // 发布 = direction A of ux/publish-redesign: a week board (one card per clip per slot) with the clips still to
 // schedule on the left, one sentence to schedule many, a drawer for one card, month and data views. One layer you
 // see, one layer you open; one primary button per screen (Confirm n posts, or Apply while a plan is previewed).
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import type { SchedulePlan } from '../../../shared/v04';
 import { fmtDate, fmtList, t } from '../i18n';
@@ -21,6 +21,8 @@ import { NlBar } from './NlBar';
 import { PublishOnboarding } from './Onboarding';
 import { clipKey, QueuePanel } from './Queue';
 import { useAccounts, usePublishData } from './usePublish';
+import { useWeekPlan } from '../weekplan/useWeekPlan';
+import { ruleLines, WeekPlanCard } from '../weekplan/WeekPlanCard';
 import './publish.css';
 
 type View = 'week' | 'month' | 'data';
@@ -59,12 +61,20 @@ export function PublishBoard() {
   const [planBusy, setPlanBusy] = useState(false);
   const [pick, setPick] = useState<{ day: string; time: string; x: number; y: number } | null>(null);
   const nlRef = useRef<HTMLInputElement>(null);
+  // 「一周的帖子」: footage dropped here (or on Home) becomes a week; once its clips are made the week shows here as a
+  // preview (the same dashed cards as a one-sentence plan) with one primary: Schedule n posts
+  const wp = useWeekPlan();
+  const week = wp.plan?.state === 'preview' && wp.plan.preview?.ok ? wp.plan : null;
+  useEffect(() => {
+    if (week && !plan) setNl(week.text);
+  }, [week?.id, week?.text]); // eslint-disable-line react-hooks/exhaustive-deps
+  const shown: SchedulePlan | null = plan ?? week?.preview ?? null;
 
   const now = new Date();
   const today = iso(now);
   const start = useMemo(() => weekStart(new Date(), off), [off]);
   const month = useMemo(() => new Date(now.getFullYear(), now.getMonth() + off, 1), [off]); // eslint-disable-line react-hooks/exhaustive-deps
-  const planWeek = plan?.ok ? weekStart(new Date(`${plan.start}T12:00`)) : null;
+  const planWeek = shown?.ok ? weekStart(new Date(`${shown.start}T12:00`)) : null;
   const shownStart = planWeek ?? start;
   const days = useMemo(() => Array.from({ length: 7 }, (_, k) => addDays(shownStart, k)), [shownStart]);
   const range: [string, string] = view === 'month' ? [iso(month), iso(new Date(month.getFullYear(), month.getMonth() + 1, 0))] : [iso(days[0]), iso(days[6])];
@@ -84,9 +94,9 @@ export function PublishBoard() {
   const countOn = (pf: string) => inRange.reduce((n, g) => n + g.on.filter((p) => base(p.platform) === pf).length, 0);
   const noAccounts = data !== null && channels.length === 0 && adapters.length > 0;
 
-  const proposed: Proposed[] | null = plan?.ok
+  const proposed: Proposed[] | null = shown?.ok
     ? Object.values(
-        plan.drafts.reduce<Record<string, Proposed>>((acc, d) => {
+        shown.drafts.reduce<Record<string, Proposed>>((acc, d) => {
           const k = `${d.item}/${d.clip}/${d.at.slice(0, 10)}`;
           const p = (acc[k] ??= { key: `p:${k}`, day: d.at.slice(0, 10), time: d.at.slice(11, 16), title: d.title ?? d.clip, cover: d.cover ?? null, platforms: [] });
           if (!p.platforms.includes(base(d.platform))) p.platforms.push(base(d.platform));
@@ -95,7 +105,7 @@ export function PublishBoard() {
         }, {}),
       )
     : null;
-  const offDays = new Set(plan?.ok ? days.filter((d) => !(plan.days ?? []).includes((d.getDay() + 6) % 7)).map(iso) : []);
+  const offDays = new Set(shown?.ok ? days.filter((d) => !(shown.days ?? []).includes((d.getDay() + 6) % 7)).map(iso) : []);
 
   const times = useCallback(() => Object.fromEntries(accounts.connected.map((pf) => [pf, accounts.timeOf(pf)])), [accounts]);
   const selClips = () => selected.map((k) => queue.find((q) => clipKey(q) === k)).filter(Boolean).map((q) => ({ item: q!.item, clip: q!.clip }));
@@ -109,6 +119,11 @@ export function PublishBoard() {
     } else ui.toast(t('pb.q.needPlatform'));
   };
   const preview = async () => {
+    if (week && !plan) {
+      const r = await wp.actions.reword(week.id, nl.trim());
+      if (r && r.ok === false) ui.toast(t('wp.notUnderstood'), { error: true });
+      return;
+    }
     if (!client || !nl.trim()) return;
     setPlanBusy(true);
     try {
@@ -121,6 +136,16 @@ export function PublishBoard() {
     }
   };
   const apply = async () => {
+    if (week && !plan) {
+      const r = await wp.actions.confirm(week.id, reload);
+      if (r) {
+        const w = weekStart(new Date(`${week.preview!.start}T12:00`));
+        setOff(Math.round((w.getTime() - weekStart(new Date()).getTime()) / (7 * 86400000)));
+        setNl('');
+        reload();
+      }
+      return;
+    }
     if (!plan?.ok) return;
     const r = await actions.add(
       plan.drafts.map((d) => ({ item: d.item, clip: d.clip, platform: d.platform, at: d.at })),
@@ -143,7 +168,7 @@ export function PublishBoard() {
 
   const subtitle = () => {
     if (view === 'data') return <span>{t('pb.sub.data')}</span>;
-    if (plan?.ok) return <span>{t('pb.sub.range', { n: inRange.length, range: `${fmtDate(days[0])} – ${fmtDate(days[6])}` })} · {t('pb.sub.waiting', { n: queue.length })}</span>;
+    if (shown?.ok) return <span>{t('pb.sub.range', { n: inRange.length, range: `${fmtDate(days[0])} – ${fmtDate(days[6])}` })} · {t('pb.sub.waiting', { n: queue.length })}</span>;
     if (!posts.length) return <span>{t('pb.sub.nothing', { n: queue.length })}</span>;
     const main =
       view === 'month'
@@ -169,7 +194,21 @@ export function PublishBoard() {
   };
 
   return (
-    <div className="scroll pb" data-testid="calendar">
+    <div
+      className="scroll pb"
+      data-testid="calendar"
+      data-own-drop
+      onDragOver={(e) => {
+        if ([...e.dataTransfer.types].includes('Files')) e.preventDefault();
+      }}
+      onDrop={(e) => {
+        if (![...e.dataTransfer.types].includes('Files')) return;
+        e.preventDefault();
+        const paths = [...e.dataTransfer.files].map((f) => window.desk.pathForFile?.(f) ?? '').filter(Boolean);
+        if (paths.length) void wp.actions.start(paths, nl.trim()).then((r) => r && (setNl(''), setPlan(null)));
+      }}
+    >
+
       <div className="pb-page">
         <header className="pb-header">
           <div>
@@ -201,7 +240,7 @@ export function PublishBoard() {
               {t('pb.connect')}
             </a>
           )}
-          {view !== 'data' && !plan && toConfirm > 0 && (
+          {view !== 'data' && !shown && wp.plan?.state !== 'ready' && toConfirm > 0 && (
             <button className="btn primary lg" onClick={() => void actions.confirm(iso(view === 'month' ? weekStart(new Date()) : start))} data-testid="pub-confirm" title={t('pb.confirmHint')}>
               <Check className="ico" />
               {t('pb.confirm', { n: toConfirm })}
@@ -211,7 +250,24 @@ export function PublishBoard() {
 
         <DueBanner />
         {view !== 'data' && (
-          <NlBar ref={nlRef} text={nl} setText={setNl} busy={planBusy} plan={plan} onPreview={() => void preview()} onApply={() => void apply()} onCancel={() => setPlan(null)} />
+          <>
+            {wp.plan && wp.plan.state !== 'preview' && <WeekPlanCard wp={wp} where="publish" />}
+            <NlBar
+              ref={nlRef}
+              text={nl}
+              setText={setNl}
+              busy={planBusy || (!!week && wp.busy)}
+              plan={shown}
+              onPreview={() => void preview()}
+              onApply={() => void apply()}
+              onCancel={() => (week && !plan ? void wp.actions.dismiss(week.id).then(() => setNl('')) : setPlan(null))}
+              week={
+                week && !plan
+                  ? { label: [t('wp.preview'), ...ruleLines(week)].join(' · '), apply: t('wp.confirm', { n: week.preview!.drafts.length }), left: week.preview!.left ?? 0 }
+                  : undefined
+              }
+            />
+          </>
         )}
 
         {view === 'data' ? (

@@ -8,7 +8,7 @@
 //   quiet     - "All clear" + Continue tiles; first run - six starting points
 // Every project / clip / post on the page is the same link as everywhere else (lib/nav).
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, Check, ChevronDown, ChevronRight, File as FileIcon, FileText, Film, Folder, FolderOpen, Image as ImageIcon, Lightbulb, MessageSquare, Mic, MoreHorizontal, Music, Paperclip, Plus, Repeat, Sparkles, Video, X } from 'lucide-react';
+import { ArrowRight, CalendarDays, Check, ChevronDown, ChevronRight, File as FileIcon, FileText, Film, Folder, FolderOpen, Image as ImageIcon, Lightbulb, MessageSquare, Mic, MoreHorizontal, Music, Paperclip, Plus, Repeat, Sparkles, Video, X } from 'lucide-react';
 import type { HistoryItem } from '../../../shared/v02';
 import type { CalendarPost, InboxItem, IntakeJob } from '../../../shared/v04';
 import { fmtAgo, fmtTime, getLang, t, tk, type MessageKey } from '../i18n';
@@ -27,6 +27,9 @@ import { FailureActions } from './Failure';
 import { PlatformIcon } from './PlatformIcon';
 import { PlatformPicker } from './PlatformPicker';
 import { useUi } from './ui';
+import { WEEK_WORDS } from '../../../shared/weekPlan';
+import { useWeekPlan } from '../weekplan/useWeekPlan';
+import { WeekPlanCard } from '../weekplan/WeekPlanCard';
 import '../theme/uxcore.css';
 
 /** First run: six starting points (title, what it does, the request it fills in). */
@@ -84,6 +87,7 @@ export function Home() {
   const ta = useRef<HTMLTextAreaElement | null>(null);
   const { data: recent } = useLoad((c) => c.recentPrompts(), [jobId]);
   const firstRun = !!hist && hist.items.length === 0;
+  const wp = useWeekPlan();
 
   useEffect(() => {
     sessionStorage.setItem(DRAFT, JSON.stringify({ prompt, files, job: jobId }));
@@ -129,8 +133,18 @@ export function Home() {
   }, [client, jobId]);
 
   const ready = !!(prompt.trim() || files.length);
+  /** 「这周的素材 → 一周的帖子」: the files (+ her words) go the week-plan way (plan, make, lay out the week) */
+  const startWeek = async () => {
+    if (!files.length || wp.busy) return;
+    const r = await wp.actions.start(files, prompt.trim());
+    if (r) {
+      setPrompt('');
+      setFiles([]);
+    }
+  };
   const submit = async () => {
     if (!client || busy || !ready) return;
+    if (files.length && WEEK_WORDS.test(prompt)) return void startWeek();
     setBusy(true);
     try {
       const r = await client.startIntake(prompt.trim(), files, platforms ?? undefined);
@@ -275,6 +289,15 @@ export function Home() {
             </div>
           )}
         </div>
+        {!planning && files.length > 0 && !wp.plan && (
+          <div className="ux-weekrow">
+            <button className="ux-weekchip" onClick={() => void startWeek()} disabled={wp.busy} title={t('wp.makeHint')} data-testid="home-week">
+              <CalendarDays className="ico" />
+              {t('wp.make')}
+            </button>
+          </div>
+        )}
+        {!planning && wp.plan && <WeekPlanCard wp={wp} where="home" />}
         {!planning && !firstRun && (
           <div className="ux-ideas" data-testid="home-ideas">
             {ideas.map((x) => (

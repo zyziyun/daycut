@@ -304,4 +304,5 @@ export type StreamEvent =
   | { type: 'output-render'; item: string; clip: string; job: string; event: 'target-start' | 'stage-done' | 'target-done' | 'render-done' | 'stopped' | 'failed'; target?: string; stage?: string; progress?: number; file?: string; error?: string; simulated?: boolean; ts: number }
   | { type: 'intake'; id: string; state: string; ts: number }
   | { type: 'inbox'; ts: number }
-  | { type: 'calendar'; ts: number };
+  | { type: 'calendar'; ts: number }
+  | { type: 'weekplan'; id: string; state: string; ts: number };

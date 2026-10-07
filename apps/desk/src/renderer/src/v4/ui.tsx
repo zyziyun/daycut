@@ -232,7 +232,8 @@ export function UiProvider({
       {children}
       {over && (
         <div className="dropzone" data-testid="dropzone">
-          <div>{t('home.dropHere')}</div>
+          {/* 发布: dropped footage becomes a week of posts (publish/PublishBoard.tsx) */}
+          <div>{t(location.hash.startsWith('#/publish') ? 'wp.dropHere' : 'home.dropHere')}</div>
         </div>
       )}
       {menu && (
