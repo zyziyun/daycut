@@ -43,6 +43,15 @@ describe('chips and lists built from Chinese-first input render international fi
     const f = planFacts({ projects: [{ params: { platforms: ['douyin', 'xiaohongshu:vertical', 'tiktok'] } }] } as never);
     expect(f.plats).toEqual(['TikTok', 'Xiaohongshu', 'Douyin']);
   });
+  it('plan card counts only what the plan says (vstudio.intake leaves items.count out when it is not fixed)', async () => {
+    const { planFacts } = await import('../../src/renderer/src/v4/PlanCard');
+    const pf = (projects: unknown[]) => planFacts({ projects } as never);
+    // a talking head for TikTok + Shorts: one clip, sizes left to the platforms
+    expect(pf([{ items: { method: 'per-file', count: 1 }, params: { platforms: ['tiktok', 'youtube-shorts'] } }])).toMatchObject({ clips: 1, sizes: 0 });
+    // the segment planner picks how many clips at run time
+    expect(pf([{ items: { method: 'planner' }, params: {} }]).clips).toBeNull();
+    expect(pf([{ items: { method: 'single' } }, { items: { method: 'focus', rows: [{}, {}] }, params: { aspects: ['9:16', '3:4'] } }])).toMatchObject({ clips: 3, sizes: 2 });
+  });
 });
 
 // ------------------------------------------------ lint: no hand-ordered platform lists in components

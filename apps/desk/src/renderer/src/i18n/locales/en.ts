@@ -111,6 +111,8 @@ export const v04En = {
   'plan.source': 'From {t}',
   'plan.make': 'Output',
   'plan.makeVal': '{n, plural, one {# clip} other {# clips}} × {a, plural, one {# size} other {# sizes}}',
+  'plan.makeClips': '{n, plural, one {# clip} other {# clips}}',
+  'plan.makeAuto': 'Clips picked when it runs',
   'plan.to': 'Publish to',
   'plan.time': 'Takes about',
   'plan.cost': 'Cost',

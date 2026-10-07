@@ -38,7 +38,7 @@ export function WeekPlanCard({ wp, where }: { wp: ReturnType<typeof useWeekPlan>
   useEffect(() => setWords(p?.text ?? ''), [p?.id, p?.text]);
   if (!p) return null;
   if (where === 'publish' && p.state === 'preview') return null; // the board itself shows the week
-  const n = p.plan ? planFacts(p.plan).clips : p.want;
+  const n = (p.plan ? planFacts(p.plan).clips : null) ?? p.want;
   const plats = (
     <span className="wp-pfs">
       {p.platforms.map((pf) => (

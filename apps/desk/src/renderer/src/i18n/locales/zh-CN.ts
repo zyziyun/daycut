@@ -112,6 +112,8 @@ const v04Zh: Record<keyof typeof v04En, string> = {
   'plan.source': '原片 {t}',
   'plan.make': '做出',
   'plan.makeVal': '{n} 条 × {a} 个尺寸',
+  'plan.makeClips': '{n} 条',
+  'plan.makeAuto': '条数运行时再定',
   'plan.to': '发到',
   'plan.time': '大约要',
   'plan.cost': '花费',

@@ -796,6 +796,8 @@ const v04Fr: Record<keyof typeof v04En, string> = {
   'plan.source': 'À partir de {t}',
   'plan.make': 'Sortie',
   'plan.makeVal': '{n, plural, one {# clip} other {# clips}} × {a, plural, one {# format} other {# formats}}',
+  'plan.makeClips': '{n, plural, one {# clip} other {# clips}}',
+  'plan.makeAuto': 'Clips choisis à l’exécution',
   'plan.to': 'Publier sur',
   'plan.time': 'Durée estimée',
   'plan.cost': 'Coût',

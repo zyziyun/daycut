@@ -17,10 +17,20 @@ import { AnsweredBy, FallbackNote } from './AiChip';
 import { openReport } from '../support/Support';
 import { orderPlatforms } from '../../../shared/platforms';
 
+/** How many clips a sub-project makes: its count, its rows, one for a single video; null when the engine picks
+ * the number at run time (a segment planner or a focus with no count in the request). */
+function clipCount(p: IntakePlan['projects'][number]): number | null {
+  if (p.items?.count) return p.items.count;
+  if (p.items?.rows?.length) return p.items.rows.length;
+  return !p.items || p.items.method === 'single' ? 1 : null;
+}
+
 export function planFacts(plan: IntakePlan) {
   const projects = plan.projects ?? [];
-  const clips = projects.reduce((n, p) => n + (p.items?.count ?? p.items?.rows?.length ?? 1), 0);
-  const sizes = Math.max(1, ...projects.map((p) => (p.params?.aspects as string[] | undefined)?.length ?? 1));
+  const counts = projects.map(clipCount);
+  const clips = counts.some((n) => n == null) ? null : counts.reduce<number>((n, c) => n + (c ?? 0), 0);
+  // sizes only when the plan names them (aspects); otherwise each platform's own size is used
+  const sizes = Math.max(0, ...projects.map((p) => (p.params?.aspects as string[] | undefined)?.length ?? 0));
   const plats = [...new Set(orderPlatforms(projects.flatMap((p) => (p.params?.platforms as string[] | undefined) ?? [])).map(platformName))];
   const wall = plan.estimate?.wall_min ?? projects.reduce((n, p) => n + (p.estimate?.wall_min ?? 0), 0);
   const usd = plan.estimate?.api_usd ?? projects.reduce((n, p) => n + (p.estimate?.api_usd ?? 0), 0);
@@ -195,7 +205,7 @@ export function PlanCard({ job, jobId, onRevise, onRetry, onReset, onStarted, sa
       <div className="facts" data-testid="plan-facts">
         <div>
           <span>{t('plan.make')}</span>
-          <b>{t('plan.makeVal', { n: f.clips, a: f.sizes })}</b>
+          <b data-testid="plan-make">{f.clips == null ? t('plan.makeAuto') : f.sizes ? t('plan.makeVal', { n: f.clips, a: f.sizes }) : t('plan.makeClips', { n: f.clips })}</b>
         </div>
         <div>
           <span>{t('plan.to')}</span>
