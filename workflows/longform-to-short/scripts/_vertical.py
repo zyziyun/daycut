@@ -25,6 +25,7 @@ the screen stops above the caption box, so captions sit in their own lower band 
 """
 import math
 import os
+import re
 import subprocess
 
 import cv2
@@ -1022,6 +1023,18 @@ def hook_box(lines, width, P):
 
 
 # ----------------------------------------------------------------------------------- captions
+def _join_lines(lines):
+    """Wrapped lines back into one caption: CJK lines meet directly, but a latin word on both sides of a break
+    keeps its space (用 Claude / Code 来做 -> 用 Claude Code 来做, never ClaudeCode)."""
+    out = ""
+    for ln in lines:
+        ln = ln.strip()
+        if out and ln and ord(out[-1]) < 0x2E80 and ord(ln[0]) < 0x2E80 and ln[0] not in ",.!?;:)]%…":
+            out += " "
+        out += ln
+    return out
+
+
 def relayout_cues(cues, prof, role="cjk-bold"):
     """Split cues so every one fits the profile's caption box in <= max_lines at a size inside its range
     (vstudio.platform.fit_text_size); time is shared in proportion to text length."""
@@ -1038,8 +1051,7 @@ def relayout_cues(cues, prof, role="cjk-bold"):
         per = cap["max_chars_zh"] if draw.has_cjk(text) else cap["max_chars_en"]
         lines = balanced_wrap(text, per)
         n = int(cap.get("max_lines", 2))
-        chunks = ["".join(lines[i:i + n]) if draw.has_cjk(text) else " ".join(lines[i:i + n])
-                  for i in range(0, len(lines), n)]
+        chunks = [_join_lines(lines[i:i + n]) for i in range(0, len(lines), n)]
         final = []
         for ch in chunks:              # rare: pixel width still too wide -> halve
             stack = [ch]
@@ -1052,8 +1064,7 @@ def relayout_cues(cues, prof, role="cjk-bold"):
                     if len(halves) < 2:
                         halves = [s[:len(s) // 2], s[len(s) // 2:]]
                     j = len(halves) // 2
-                    sep = "" if draw.has_cjk(s) else " "
-                    stack[:0] = [sep.join(halves[:j]), sep.join(halves[j:])]
+                    stack[:0] = [_join_lines(halves[:j]), _join_lines(halves[j:])]
         tot = sum(max(1.0, text_width(s)) for s in final)
         t = c.start
         for s in final:

@@ -119,6 +119,78 @@ def test_build_subs_keeps_words_straddling_a_zoom_split(tmp_path):
     assert text == "我们准备面试的时候要讲"
 
 
+def _run_build_subs(tmp_path, segments, tl):
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / "audio16k.json").write_text(json.dumps({"segments": segments}, ensure_ascii=False))
+    (work / "timeline.json").write_text(json.dumps(tl))
+    (work / "config.json").write_text(json.dumps({"src": "x.mp4", "out": str(tmp_path / "out")}))
+    subprocess.run([sys.executable, str(LFS / "build_subs.py"), str(work / "config.json")], check=True,
+                   capture_output=True)
+    return json.loads((work / "cues.json").read_text(encoding="utf-8"))
+
+
+def test_build_subs_splits_long_english_segment_on_word_boundaries(tmp_path):
+    """A long English segment used to be cut every n characters ("...the database anywa" / "y."): every
+    piece must hold whole words and the pieces must read back as the segment."""
+    said = (" And then this filter hits the database anyway, because the cache was never warmed up. If the"
+            " account was deleted we just skip it and move on to the next one in the queue, which is fine.")
+    cues = _run_build_subs(tmp_path, [{"start": 0.0, "end": 12.0, "text": said}],
+                           [{"kind": "clip", "t0": 0.0, "t1": 12.0, "speed": 1.0, "final_t0": 0.0}])
+    assert len(cues) >= 2
+    words = set(said.split())
+    for c in cues:
+        assert c["text"] == c["text"].strip() and set(c["text"].split()) <= words, c["text"]
+    assert " ".join(c["text"] for c in cues) == said.strip()
+
+
+def test_build_subs_mixed_text_keeps_latin_words_and_cjk_unchanged(tmp_path):
+    from vstudio.subs import text_width
+    mixed = "我们今天用ClaudeCode来做一个很长的视频剪辑流程演示然后把filter和database都讲清楚再看看cache怎么warmup最后把这些都串起来"
+    zh = "我们今天来做一个很长很长的视频剪辑流程演示然后把每一个步骤都讲清楚再看看缓存怎么预热最后把这些都串起来给大家看"
+    cues = _run_build_subs(tmp_path, [{"start": 0.0, "end": 8.0, "text": mixed}, {"start": 9.0, "end": 17.0, "text": zh}],
+                           [{"kind": "clip", "t0": 0.0, "t1": 17.0, "speed": 1.0, "final_t0": 0.0}])
+    m = [c["text"] for c in cues if c["start"] < 8.5]
+    assert len(m) >= 2 and "".join(m) == mixed and all(text_width(t) <= 44 for t in m)
+    for latin in ("ClaudeCode", "filter", "database", "cache", "warmup"):
+        assert any(latin in t for t in m), latin
+    z = [c["text"] for c in cues if c["start"] >= 8.5]
+    assert z == [zh[i:i + 44] for i in range(0, len(zh), 44)]          # CJK: unchanged, every 44 characters
+
+
+def test_build_subs_short_english_piece_keeps_its_space(tmp_path):
+    """A word left alone between two cuts joins the caption next to it with a space (the database)."""
+    words = [(" So", 0.0, 0.3), (" we", 0.3, 0.6), (" query", 0.6, 1.0), (" the", 1.0, 1.2), (" database", 1.2, 1.9),
+             (" again.", 1.9, 2.4)]
+    seg = {"start": 0.0, "end": 2.4, "text": "".join(w for w, _, _ in words),
+           "words": [{"word": w, "start": a, "end": b} for w, a, b in words]}
+    cues = _run_build_subs(tmp_path, [seg], [{"kind": "clip", "t0": 0.0, "t1": 1.1, "speed": 1.0, "final_t0": 0.0},
+                                             {"kind": "clip", "t0": 1.1, "t1": 1.25, "speed": 1.0, "final_t0": 1.1},
+                                             {"kind": "clip", "t0": 1.25, "t1": 2.4, "speed": 1.0, "final_t0": 1.25}])
+    assert " ".join(c["text"].strip() for c in cues) == "So we query the database again."
+
+
+def test_relayout_cues_never_splits_or_glues_latin_words():
+    V = _import(LFS, "_vertical")
+    from vstudio import platform as PF
+    from vstudio.subs import Cue
+    prof = PF.parse_targets(["xiaohongshu:vertical"])[0]
+    en = ("And then this filter hits the database anyway, because the cache was never warmed up. If the account "
+          "was deleted we just skip it and move on to the next one in the queue.")
+    mixed = "我们今天用 Claude Code 来做一个很长很长的视频剪辑流程演示，然后把 filter 和 database 都讲清楚，再看看 cache 怎么预热"
+    out = V.relayout_cues([Cue(0, 6, en), Cue(6, 12, mixed)], prof)
+    e = [c.text for c in out if c.start < 6 - 1e-6]
+    m = [c.text for c in out if c.start >= 6 - 1e-6]
+    assert len(e) >= 2 and " ".join(e) == en
+    assert len(m) >= 2
+    joined = "".join(m)
+    for w in ("Claude Code", "filter", "database", "cache"):
+        assert w in joined or w in " ".join(m), w
+    assert "ClaudeCode" not in joined
+    for t in e + m:
+        assert set(w for w in t.split() if w.isascii()) <= set(en.split()) | set(mixed.split()), t
+
+
 def test_per_episode_hook_opens_its_episode(tmp_path):
     work = tmp_path / "work"
     work.mkdir()

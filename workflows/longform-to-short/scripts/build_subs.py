@@ -34,6 +34,8 @@ import _lfc
 from vstudio import asr, subs
 
 FILLER_ONLY = re.compile(r"[嗯啊哦呃哈OK好的。，\s]*")
+# a latin word (with the punctuation glued to it) or one other character, plus the spaces after it
+WORD_TOK = re.compile(r"[A-Za-z0-9'’.\-]+[^\sA-Za-z0-9\u2e80-\U0010ffff]*\s*|\S\s*|\s+")
 
 cfg, _ = _lfc.load(description=__doc__)
 PROF = _lfc.primary_horizontal(cfg)       # None unless targets were set explicitly
@@ -79,11 +81,28 @@ for it in timeline:
             short.append((a, b, txt))    # SAID, so it joins the caption next to it below
             continue
         n = MAX_LINE * 2
-        chunks = [txt] if len(txt) <= n else [txt[i:i + n] for i in range(0, len(txt), n)]
+        if re.search(r"[A-Za-z]{2}", txt):   # latin / mixed: measure by width, never cut inside a word
+            chunks, cur = [], ""
+            for tok in WORD_TOK.findall(txt):
+                if cur.strip() and subs.text_width(cur + tok) > n and tok[0] not in "，。、！？；：,.!?;:)）】」』》…":
+                    chunks.append(cur.strip()); cur = ""
+                cur += tok
+            if cur.strip():
+                chunks.append(cur.strip())
+        else:
+            chunks = [txt] if len(txt) <= n else [txt[i:i + n] for i in range(0, len(txt), n)]
         step = (b - a) / len(chunks)
         events += [(a + i * step, a + (i + 1) * step, c) for i, c in enumerate(chunks)]
 
 events.sort()
+
+
+def _join(x, y):
+    """``x`` then ``y``; latin words on both sides keep a space between them (the database, not thedatabase)."""
+    x, y = x.rstrip(), y.lstrip()
+    return x + (" " if re.search(r"[A-Za-z0-9,.!?;:]$", x) and re.match(r"[A-Za-z0-9]", y) else "") + y
+
+
 OPENERS = ("另外", "然后", "所以", "但是", "而且", "因为", "就是", "那么", "还有", "或者", "如果")
 for a, b, txt in sorted(short):           # captions match the audio: a short piece joins its neighbour (an
     prev = max((k for k, e in enumerate(events) if e[1] <= a + 0.05), key=lambda k: events[k][1], default=None)
@@ -94,10 +113,10 @@ for a, b, txt in sorted(short):           # captions match the audio: a short pi
         events.append((a, max(b, a + 0.25), txt))
     elif nxt is not None and (gn < gp or txt.strip().startswith(OPENERS) and gn <= 0.5):
         e = events[nxt]
-        events[nxt] = (a, e[1], txt + e[2])
+        events[nxt] = (a, e[1], _join(txt, e[2]))
     else:
         e = events[prev]
-        events[prev] = (e[0], b, e[2] + txt)
+        events[prev] = (e[0], b, _join(e[2], txt))
     events.sort()
 for i in range(1, len(events)):
     pa, pb, pt = events[i - 1]
