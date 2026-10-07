@@ -198,6 +198,8 @@ stages:
   - {id: verify, resource: asr, from_batch: true, produces: [heard.json]}
   - {id: glossary, resource: cpu, from_batch: true, produces: [glossary.json (shared)]}
   - {id: proofread, resource: cpu, from_batch: true, produces: [proofread.json, cues.json]}
+  - {id: copy, resource: cpu, from_batch: true, produces: [copy.json (post title + body drafted from the final captions when not given)],
+     preview: {kind: json, path: "out:copy"}}
   - {id: export, resource: cpu-render, from_batch: true, produces: ["exports/<platform>-<orientation>.mp4 + cover + post.md"],
      preview: {kind: video, path: "out:files"}}
   - {id: qc, resource: cpu, from_batch: true, produces: [qc.json], preview: {kind: json, path: "out:report"}}
@@ -257,7 +259,7 @@ checkpoints:
     kind: publish
     scope: item
     after: preview
-    needs: [export, qc]
+    needs: [export, qc, copy]
     labels: {zh: "审片发布", en: "Review and publish"}
     payload: vstudio.project.adapters.common:publish_payload
     apply: vstudio.project.adapters.common:publish_apply

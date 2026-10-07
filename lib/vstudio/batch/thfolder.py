@@ -313,7 +313,9 @@ def th_stages():
               units=lambda j, s: dur(j, s) * 3, params=_compose_params, purge=("*.mp4", "out/*.mp4"), version=4),
         Stage("verify", "asr", _no_verify, deps=("compose",), enabled=lambda j, s: False),
         base["proofread"],
-        Stage("export", ST._export_resource, ST.run_export, deps=("compose", "proofread"), params=ST._export_params,
+        ST.copy_stage(),                              # post title + body drafted from the final captions
+        Stage("export", ST._export_resource, ST.run_export, deps=("compose", "proofread", "copy"),
+              params=ST._export_params,
               units=lambda j, s: dur(j, s) * max(1, len(j["params"].get("platforms") or [])),
               purge=("exports/*.mp4",)),
         Stage("qc", "cpu", ST.run_qc, deps=("compose", "export", "verify"),

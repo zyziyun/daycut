@@ -17,6 +17,15 @@ from .util import read_json, sha1_json
 REVIEW_STATES = ("done", "approved", "needs-replan", "packaged", "failed")
 
 
+def _copy_drafted(p, rows):
+    """Which post-copy fields the copy stage drafted (still unedited) and from what: {keys, source, notes}."""
+    from .edits import drafted_copy
+    d, src = drafted_copy(rows)
+    keys = [k for k in d if not p.get(k)]
+    return dict(keys=keys, source=src, notes=list(((rows.get("copy") or {}).get("out") or {}).get("notes") or [])) \
+        if keys else None
+
+
 def recipes():
     from . import recipes as R
     return [R.REGISTRY[n].meta() for n in R.names()]
@@ -165,7 +174,7 @@ def job_detail(batch_dir, jid, words=True):
     from .metrics import review_seconds
     edit = dict(range=p.get("range"), hook=p.get("hook"), hook_pick=p.get("hook_pick"),
                 hook_candidates=ED.hook_candidates(p), cover=p.get("cover") if isinstance(p.get("cover"), dict) else None,
-                copy=ED.effective_copy(p), caption_overrides=p.get("caption_overrides") or [],
+                copy=ED.effective_copy(p, rows), copy_drafted=_copy_drafted(p, rows), caption_overrides=p.get("caption_overrides") or [],
                 caption_overrides_missed=ov_missed, history=hist,
                 pending=pending, review_s=review_seconds(timing))
     return dict(

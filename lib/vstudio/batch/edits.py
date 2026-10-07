@@ -198,8 +198,19 @@ def locked_cues(cues, overrides):
     return sorted(out)
 
 
-def effective_copy(p):
-    return dict(title=p.get("title") or "", body=p.get("body") or "", tags=list(p.get("tags") or []))
+def drafted_copy(rows):
+    """The post copy the ``copy`` stage drafted for what the creator left empty -> ({key: text}, source)."""
+    out = _rows_out(rows or {}, "copy")
+    return {k: out.get(k) or "" for k in out.get("drafted") or []}, out.get("source")
+
+
+def effective_copy(p, rows=None):
+    """The post copy as published: the creator's, else (``rows`` given) the drafted one the posts carry."""
+    d = dict(title=p.get("title") or "", body=p.get("body") or "", tags=list(p.get("tags") or []))
+    for k, v in drafted_copy(rows)[0].items():
+        if not d.get(k):
+            d[k] = v
+    return d
 
 
 def key_copy(p, k):
@@ -345,8 +356,10 @@ def _post_body_of(recipe_name, p):
 
 def _rewrite_posts(rows, recipe_name, old_p, new_p):
     ex = _rows_out(rows, "export").get("exports") or []
-    old = dict(effective_copy(old_p), body=_post_body_of(recipe_name, old_p))
-    new = dict(effective_copy(new_p), body=_post_body_of(recipe_name, new_p))
+    old = effective_copy(old_p, rows)
+    new = effective_copy(new_p, rows)
+    if recipe_name == "longform-split":
+        old["body"], new["body"] = _post_body_of(recipe_name, old_p), _post_body_of(recipe_name, new_p)
     done = []
     for e in ex:
         pp = e.get("post")
@@ -732,7 +745,7 @@ def _op_copy(ctx, a):
     p = ctx["params"]
     if a.get("title") is None and a.get("body") is None and a.get("tags") is None:
         raise EditError("copy: --title / --body / --tags")
-    cur = effective_copy(p)
+    cur = effective_copy(p, ctx["rows"])                 # a drafted title / body is the baseline (kept unless edited)
     new = dict(cur)
     if a.get("title") is not None:
         new["title"] = str(a["title"]).strip()

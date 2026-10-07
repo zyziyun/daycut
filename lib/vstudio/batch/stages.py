@@ -301,10 +301,77 @@ def draft_title(post, cues_path, platforms, notes_path=None, complete=None):
     return dict(title=dr["title"], platform=pl, limit=limit, note=dr["title_note"], source=dr["source"])
 
 
+def copy_route(spec):
+    """(provider, model) of the post-copy drafter: the spec's injected ``copy.call`` (tests / custom), else the
+    routed ``copy`` task of vstudio.llm ("none" = the extractive transcript picker)."""
+    c = spec.get("copy") or {}
+    if c.get("call"):
+        return f"call:{c['call']}", None
+    from vstudio import llm
+    r = llm.route("copy")
+    return r.provider, r.model
+
+
+def _copy_resource(job, spec):
+    prov = copy_route(spec)[0]
+    return "cpu" if prov == "none" or prov.startswith("call:") else f"api:{prov}"
+
+
+def _copy_params(job, spec):
+    from .edits import key_copy
+    prov, model = copy_route(spec)
+    d = _keyp("platforms")(job, spec)
+    d.update({k: key_copy(_p(job), k) for k in ("title", "body")})
+    return dict(d, provider=prov, model=model)
+
+
+def cue_sentences(cues_path):
+    """The final captions (``cues.json``, the hook cold open left out: it repeats the body) -> sentences."""
+    from vstudio import clipcopy
+    d = read_json(cues_path, {}) if cues_path and os.path.exists(cues_path) else {}
+    cues = d.get("cues") if isinstance(d, dict) else d
+    return clipcopy.sentences_from_cues([c for c in cues or [] if (c.get("meta") or {}).get("kind") != "hook"])
+
+
+def run_copy(ctx):
+    """Post title + body for a talking-head short the creator left without copy, drafted from its final captions
+    (proofread's cues when it ran) by vstudio.clipcopy.draft_post: the routed ``copy`` model, else the spoken lines
+    (said in ``notes``; the publish checkpoint shows the copy and its source for editing). The creator's own
+    title / body are kept. A 记笔记 title drafted at compose (talkinghead-folder ``notes.json``) is the title."""
+    from vstudio import clipcopy
+    p, c = ctx.params, ctx.inputs["compose"]
+    title, body = p.get("title") or "", p.get("body") or ""
+    nd = read_json(c["notes"], {}) if c.get("notes") and os.path.exists(c["notes"]) else {}
+    from_notes = not title and bool(nd.get("title"))
+    if from_notes:
+        title = nd["title"]
+    pr = ctx.inputs.get("proofread") or {}
+    cues_path = pr.get("cues") or c.get("cues")
+    call = import_ref((ctx.spec.get("copy") or {})["call"]) if (ctx.spec.get("copy") or {}).get("call") else None
+    d = clipcopy.draft_post(cue_sentences(cues_path), p.get("platforms") or _plats(ctx.job), title=title, body=body,
+                            complete=call)
+    if from_notes:
+        d["title"], d["title_note"] = clipcopy.fit_title_every(d["title"], p.get("platforms") or _plats(ctx.job))
+        d["drafted"] = ["title"] + [k for k in d["drafted"] if k != "title"]
+        d["title_source"] = nd.get("source")
+        if d["source"] == "given":                    # she wrote the body; only the notes title is drafted
+            d["source"] = nd.get("source")
+    for k in d["drafted"]:
+        ctx.log(f"{k} drafted ({d['source']}): {d[k]!r}")
+    for n in d["notes"] + d["warnings"]:
+        ctx.log(n)
+    path = write_json(ctx.path("copy.json"), d)
+    return dict(d, copy=path, files=[path])
+
+
 def run_export(ctx):
     from vstudio import export as X
     p, c = ctx.params, ctx.inputs["compose"]
     post = read_json(c["post"])
+    cp = ctx.inputs.get("copy") or {}
+    for k in cp.get("drafted") or []:                 # copy the creator left empty, drafted from the captions
+        if not post.get(k):
+            post[k] = cp.get(k) or ""
     if p.get("_copy_orig"):                           # copy edited in review: the post says the new copy
         post.update(title=p.get("title") or "", body=p.get("body") or "", tags=p.get("tags") or None)
     post = entity_post(post, (ctx.inputs.get("proofread") or {}).get("entity_fixes"))
@@ -343,8 +410,11 @@ def run_export(ctx):
                 e.pop("loudness", None)
         write_json(ctx.path("exports", "manifest.json"), man)
     out = dict(manifest=ctx.path("exports", "manifest.json"), files=files, exports=exports,
-               warnings=man["warnings"], length_fit=fit, title=post.get("title") or "",
-               title_source=drafted["source"] if drafted else ("given" if post.get("title") else None))
+               warnings=man["warnings"], length_fit=fit, title=post.get("title") or "", body=post.get("body") or "",
+               title_source=drafted["source"] if drafted else (cp.get("source") if "title" in (cp.get("drafted") or [])
+                                                                else "given" if post.get("title") else None),
+               body_source=cp.get("source") if "body" in (cp.get("drafted") or []) else
+               "given" if post.get("body") else None)
     if getattr(ctx, "caption_edits", None):
         out["caption_overrides"] = ctx.caption_edits
     return out
@@ -722,8 +792,17 @@ def _verify_on(job, spec):
     return (spec.get("qc") or {}).get("verify", True) is not False
 
 
-def speech_stages():
-    return [
+def copy_stage():
+    """Post title + body drafted from the final captions (run_copy); the talking-head recipes run it before
+    export."""
+    return Stage("copy", _copy_resource, run_copy, deps=("compose", "proofread"), params=_copy_params,
+                 units=lambda j, s: 1.0, cost=lambda j, s: 0.01 if _copy_resource(j, s).startswith("api:") else 0.0)
+
+
+def speech_stages(copy=False):
+    """The speech pipeline; ``copy`` = the talking-head recipes: drafted post copy (copy_stage) feeds export."""
+    exp_deps = ("compose", "proofread", "copy") if copy else ("compose", "proofread")
+    st = [
         Stage("probe", "io", probe, shared=True, params=_stat_params, units=lambda j, s: 1.0, retries=1),
         Stage("extract", "io", extract, deps=("probe",), shared=True, params=lambda j, s: dict(sr=16000),
               units=_src_dur, enabled=_no_given, purge=("*.wav",)),
@@ -744,7 +823,7 @@ def speech_stages():
         Stage("proofread", _proofread_resource, run_proofread, deps=("compose", "verify", "glossary"),
               params=_proofread_params, enabled=_proofread_on, units=lambda j, s: 1.0, version=2,
               cost=lambda j, s: 0.02 if proofread_opts(s)["provider"] != "none" else 0.0),
-        Stage("export", _export_resource, run_export, deps=("compose", "proofread"),
+        Stage("export", _export_resource, run_export, deps=exp_deps,
               params=_export_params,
               units=lambda j, s: _dur(j, s) * max(1, len(_plats(j))), purge=("exports/*.mp4", "exports/*.mov")),
         Stage("verify", "asr", run_verify, deps=("apply",), params=lambda j, s: hear_opts(j, s), units=_dur,
@@ -754,6 +833,9 @@ def speech_stages():
               units=lambda j, s: _dur(j, s) * max(1, len(_plats(j)))),
         Stage("preview", "cpu-render", run_preview, deps=("export",), units=lambda j, s: 1.0),
     ]
+    if copy:
+        st.insert(next(k for k, x in enumerate(st) if x.name == "export"), copy_stage())
+    return st
 
 
 # --------------------------------------------------------------------------- expansion
@@ -845,7 +927,7 @@ register(Recipe("longform-slices", speech_stages(), expand_longform,
                              help="lecture / webinar / podcast video (read-only, never copied)"),
                         IN_SEGMENTS, IN_TRANSCRIPT],
                 row_keys=COMMON_ROW))
-register(Recipe("talkinghead-clips", speech_stages(), expand_clips,
+register(Recipe("talkinghead-clips", speech_stages(copy=True), expand_clips,
                 "a folder of raw 口播 clips -> one cleaned, captioned short per clip per platform",
                 label="口播 clips -> shorts",
                 inputs=[dict(key="inputs.folder", label="Clip folder", kind="dir", required=True,

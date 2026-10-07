@@ -87,6 +87,9 @@ the earlier history lives in the commit log (formerly `video-studio` and `Daycut
 - Post titles fit each platform's title limit when they are written (deterministic shortener, reported in the
   export warnings); exports draft a title when none is given, and the first-pass check no longer reads the hashtag
   line as the title.
+- Talking-head posts are no longer empty when you write no copy: a title and a short body are drafted from the final
+  captions (your AI account in your voice, else lines you say), fitted to every platform's title limit and shown in
+  the review as a draft to edit. Your own title and body are kept.
 
 ### Security
 
