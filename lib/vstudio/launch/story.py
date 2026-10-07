@@ -23,7 +23,7 @@ MERGE = 0.6                   # actions closer than this share one camera move
 # posted to (config.CANVAS_PLATFORMS; asserted in tests); the product window may run under platform UI.
 LAYOUTS = {
     "16:9": dict(text=(120, 64, 1800, 196), kicker_px=24, caption_px=(56, 40), caption_lines=1,
-                 win=(328, 214, 1264, 776), base_zoom=1.0, punch=1.45, title_px=124, oneliner_px=44),
+                 win=(288, 212, 1344, 840), base_zoom=1.0, punch=1.45, title_px=124, oneliner_px=44),
     "1:1": dict(text=(72, 62, 1008, 288), kicker_px=22, caption_px=(50, 36), caption_lines=2,
                 win=(60, 318, 960, 640), base_zoom=1.0, punch=1.5, title_px=104, oneliner_px=38),
     "9:16": dict(text=(72, 300, 920, 660), kicker_px=30, caption_px=(84, 56), caption_lines=3,
