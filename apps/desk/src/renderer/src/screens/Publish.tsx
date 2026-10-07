@@ -20,6 +20,7 @@ import { SCHEDULE_PLATFORMS } from '../v4/PlatformIcon';
 import { PlatformPicker } from '../v4/PlatformPicker';
 import { sortAdapters, useConnectedPlatforms } from '../v4/Channels';
 import { trackUsage } from '../lib/usage';
+import { placeBrowser } from '../lib/slotBounds';
 
 /** YYYY-MM-DD of tomorrow, local time (the first publishing day by default). */
 function tomorrowIso(): string {
@@ -118,18 +119,16 @@ export function Publish({ batch }: { batch: string }) {
   useLayoutEffect(() => {
     const el = slot.current;
     if (!el) return;
-    const send = () => {
-      const r = el.getBoundingClientRect();
-      const show = browserOpen && !overlay;
-      void window.desk.publish.setBounds(show ? { x: Math.round(r.left), y: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height) } : { x: 0, y: 0, width: 0, height: 0 });
-    };
+    const send = () => placeBrowser(el, browserOpen && !overlay);
     send();
     const ro = new ResizeObserver(send);
     ro.observe(el);
     window.addEventListener('resize', send);
+    window.addEventListener('scroll', send, true); // the slot moves with the page
     return () => {
       ro.disconnect();
       window.removeEventListener('resize', send);
+      window.removeEventListener('scroll', send, true);
     };
   }, [browserOpen, overlay]);
 

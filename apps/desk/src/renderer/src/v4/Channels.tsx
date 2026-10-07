@@ -16,6 +16,7 @@ import { sortPlatforms } from '../../../shared/platforms';
 import { PlatformIcon } from './PlatformIcon';
 import { useUi } from './ui';
 import { capturePage } from '../publish/BrowserPane';
+import { placeBrowser } from '../lib/slotBounds';
 
 export const adapterName = (a: Adapter) => (getLang() === 'zh-CN' ? a.nameZh : a.name);
 
@@ -110,18 +111,16 @@ export function Channels() {
   useLayoutEffect(() => {
     const el = slot.current;
     if (!el) return;
-    const send = () => {
-      const r = el.getBoundingClientRect();
-      const show = browserOpen && !overlay;
-      void window.desk.publish.setBounds(show ? { x: Math.round(r.left), y: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height) } : { x: 0, y: 0, width: 0, height: 0 });
-    };
+    const send = () => placeBrowser(el, browserOpen && !overlay);
     send();
     const ro = new ResizeObserver(send);
     ro.observe(el);
     window.addEventListener('resize', send);
+    window.addEventListener('scroll', send, true); // the slot moves with the page
     return () => {
       ro.disconnect();
       window.removeEventListener('resize', send);
+      window.removeEventListener('scroll', send, true);
     };
   }, [browserOpen, overlay]);
 
