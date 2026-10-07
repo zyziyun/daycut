@@ -12,7 +12,7 @@
   },
   "scripts": {
     "dev": "ASTRO_TELEMETRY_DISABLED=1 astro dev",
-    "gen": "python3 scripts/gen_reference.py && python3 scripts/subset_zh_font.py",
+    "gen": "python3 scripts/gen_reference.py && python3 scripts/subset_fonts.py",
     "build": "ASTRO_TELEMETRY_DISABLED=1 astro build",
     "preview": "ASTRO_TELEMETRY_DISABLED=1 astro preview",
     "check:links": "node scripts/check-links.mjs"
@@ -21,7 +21,7 @@
     "@astrojs/sitemap": "^3.7.4",
     "@astrojs/starlight": "^0.42.5",
     "@fontsource-variable/inter": "^5.3.0",
-    "@fontsource/instrument-serif": "^5.3.0",
+    "@fontsource-variable/newsreader": "^5.3.0",
     "@fontsource/jetbrains-mono": "^5.3.0",
     "astro": "^7.3.6",
     "sharp": "^0.35.5"

@@ -1,6 +1,6 @@
 import { defineRouteMiddleware } from '@astrojs/starlight/route-data';
 import ZH_SERIF from './assets/fonts/noto-serif-sc-sub.woff2?url';
-import INSTRUMENT from '@fontsource/instrument-serif/files/instrument-serif-latin-400-normal.woff2?url';
+import NEWSREADER from './assets/fonts/newsreader-normal.woff2?url';
 
 // Per-locale Open Graph image, Twitter card, og:locale and a preload of the display font for that locale.
 const OG: Record<string, string> = { en: 'og-en.png', 'zh-CN': 'og-zh.png', fr: 'og-en.png', es: 'og-en.png' };
@@ -37,7 +37,7 @@ export const onRequest = defineRouteMiddleware((context) => {
     tag: 'link',
     attrs: lang === 'zh-CN'
       ? { rel: 'preload', as: 'font', type: 'font/woff2', href: ZH_SERIF, crossorigin: '' }
-      : { rel: 'preload', as: 'font', type: 'font/woff2', href: INSTRUMENT, crossorigin: '' },
+      : { rel: 'preload', as: 'font', type: 'font/woff2', href: NEWSREADER, crossorigin: '' },
     content: '',
   });
 });

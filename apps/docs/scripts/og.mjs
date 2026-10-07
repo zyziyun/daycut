@@ -8,8 +8,8 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const root = fileURLToPath(new URL('..', import.meta.url));
 const b64 = (p) => readFileSync(p).toString('base64');
-const serif = b64(require.resolve('@fontsource/instrument-serif/files/instrument-serif-latin-400-normal.woff2'));
-const serifI = b64(require.resolve('@fontsource/instrument-serif/files/instrument-serif-latin-400-italic.woff2'));
+const serif = b64(require.resolve('@fontsource-variable/newsreader/files/newsreader-latin-opsz-normal.woff2'));
+const serifI = b64(require.resolve('@fontsource-variable/newsreader/files/newsreader-latin-opsz-italic.woff2'));
 const inter = b64(require.resolve('@fontsource-variable/inter/files/inter-latin-wght-normal.woff2'));
 const zh = b64(`${root}src/assets/fonts/noto-serif-sc-sub.woff2`);
 const logo = readFileSync(`${root}src/assets/wordmark-on-light.svg`, 'utf8');
@@ -19,15 +19,15 @@ const copy = {
   zh: { k: '使用文档', h: '一条素材，<br><em>千条成片。</em>', s: '安装 Mac 版或 Claude Code 技能，一条素材剪成各个平台的成片。' },
 };
 const html = (c, lang) => `<!doctype html><html lang="${lang}"><style>
-@font-face{font-family:IS;src:url(data:font/woff2;base64,${serif})}
-@font-face{font-family:IS;font-style:italic;src:url(data:font/woff2;base64,${serifI})}
+@font-face{font-family:IS;font-weight:200 800;src:url(data:font/woff2;base64,${serif})}
+@font-face{font-family:IS;font-style:italic;font-weight:200 800;src:url(data:font/woff2;base64,${serifI})}
 @font-face{font-family:Inter;src:url(data:font/woff2;base64,${inter});font-weight:100 900}
 @font-face{font-family:ZH;src:url(data:font/woff2;base64,${zh});font-weight:700}
 body{margin:0;width:1200px;height:630px;background:#F4F0E8;color:#1C1A17;font-family:Inter,sans-serif;position:relative;overflow:hidden}
 .logo{position:absolute;left:80px;top:72px;width:220px}.logo svg{width:100%;height:auto}
 .k{position:absolute;left:80px;top:190px;font:500 18px/1 Inter;letter-spacing:.14em;text-transform:uppercase;color:#6B6359;display:flex;gap:14px;align-items:center}
 .k:before{content:"";width:34px;height:1px;background:#6B6359}
-h1{position:absolute;left:76px;top:222px;margin:0;font:400 112px/.96 IS,serif;letter-spacing:-.025em}
+h1{position:absolute;left:76px;top:226px;margin:0;font:400 96px/1.04 IS,serif;letter-spacing:-.022em}
 h1 em{font-style:italic}
 .zh h1{font:700 88px/1.2 ZH,serif;letter-spacing:.02em}.zh h1 em{font-style:normal;color:#0A7266}.zh .k{letter-spacing:.3em}
 p{position:absolute;left:80px;bottom:70px;margin:0;width:640px;font:400 23px/1.5 Inter,"PingFang SC",sans-serif;color:#4F4943}

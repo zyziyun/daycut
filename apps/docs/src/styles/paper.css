@@ -10,7 +10,7 @@
   --rf-ink3: #6b6359;
   --rf-rule: rgba(28, 26, 23, 0.13);
   --rf-teal: #0a7266;
-  --rf-serif: 'Instrument Serif', 'Instrument Serif Fallback', Georgia, serif;
+  --rf-serif: 'Newsreader', 'Newsreader Fallback', Georgia, serif;
 
   --sl-font: 'Inter Variable', Inter, 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans SC', system-ui, -apple-system,
     'Segoe UI', sans-serif;
@@ -21,8 +21,8 @@
   --sl-sidebar-width: 17.5rem;
   --sl-nav-height: 4rem;
   --sl-text-h1: 2.9rem;
-  --sl-text-h2: 2rem;
-  --sl-text-h3: 1.45rem;
+  --sl-text-h2: 1.85rem;
+  --sl-text-h3: 1.35rem;
   --sl-text-h4: 1.1rem;
   --sl-text-title: 2.75rem;
 }
@@ -130,8 +130,9 @@ h1#_top,
   color: var(--sl-color-white);
 }
 h1#_top {
-  font-size: clamp(2.3rem, 4.4vw, var(--sl-text-title));
-  line-height: 1.04;
+  font-size: clamp(2.1rem, 3.8vw, 2.6rem);
+  line-height: 1.08;
+  letter-spacing: -0.02em;
 }
 .sl-markdown-content h2 {
   line-height: 1.12;
@@ -249,7 +250,7 @@ h1#_top {
 }
 .card .title {
   font-family: var(--rf-serif);
-  font-size: 1.45rem !important;
+  font-size: 1.35rem !important;
   font-weight: 400;
 }
 :root[lang='zh-CN'] .card .title {
@@ -293,9 +294,9 @@ h1#_top {
   justify-content: center !important;
 }
 .hero h1#_top {
-  font-size: clamp(3rem, 7vw, 5.6rem);
-  line-height: 0.96;
-  letter-spacing: -0.025em;
+  font-size: clamp(2.75rem, 6vw, 5.25rem);
+  line-height: 1.04;
+  letter-spacing: -0.022em;
 }
 .hero h1 em {
   font-style: italic;
@@ -381,7 +382,7 @@ h1#_top {
 /* Example-prompt tables: the prompt column reads as quoted speech */
 .rf-prompts td:nth-child(2) {
   font-family: var(--rf-serif);
-  font-size: 1.2rem;
+  font-size: 1.08rem;
   line-height: 1.4;
   color: var(--sl-color-white);
 }
@@ -436,7 +437,7 @@ h1#_top {
 }
 .pagination-links a .link-title {
   font-family: var(--rf-serif);
-  font-size: 1.3rem;
+  font-size: 1.2rem;
 }
 :root[lang='zh-CN'] .pagination-links a .link-title {
   font-weight: 600;

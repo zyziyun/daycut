@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
-"""Subset Noto Serif SC (OFL 1.1) to the glyphs the Chinese docs use in serif display text.
+"""Subset the display fonts (both SIL OFL 1.1) so headings cost ~50 KB instead of ~10 MB.
 
-    python3 apps/docs/scripts/subset_zh_font.py
+    python3 apps/docs/scripts/subset_fonts.py
+
+1. Newsreader (the site's display serif), from @fontsource-variable/newsreader: weight pinned to 400, optical sizes
+   16-72 kept, Latin only -> src/assets/fonts/newsreader-{normal,italic}.woff2 (~50 KB each, vs ~140 KB).
+2. Noto Serif SC, to the glyphs the Chinese docs use in serif display text:
 
 Collects every character of the zh page titles, headings, card titles and sidebar group labels, and writes
 src/assets/fonts/noto-serif-sc-sub.woff2 (~tens of KB instead of ~10 MB). Re-run after adding Chinese pages
@@ -41,8 +45,33 @@ def collect() -> str:
     return "".join(sorted(chars))
 
 
+NEWSREADER = DOCS.parents[1] / "node_modules" / "@fontsource-variable" / "newsreader" / "files"
+LATIN = "U+0020-007E,U+00A0-00FF,U+0131,U+0152-0153,U+2010-2027,U+2030-203A,U+2122,U+2190-2193,U+2212"
+
+
+def newsreader() -> None:
+    from fontTools import subset
+    from fontTools.ttLib import TTFont
+    from fontTools.varLib import instancer
+
+    for style in ("normal", "italic"):
+        font = TTFont(str(NEWSREADER / f"newsreader-latin-opsz-{style}.woff2"))
+        font = instancer.instantiateVariableFont(font, {"wght": 400, "opsz": (16, 72)})
+        opts = subset.Options()
+        opts.flavor = "woff2"
+        opts.layout_features = ["kern", "liga", "calt", "onum", "lnum", "tnum", "pnum"]
+        sub = subset.Subsetter(opts)
+        sub.populate(unicodes=subset.parse_unicodes(LATIN))
+        sub.subset(font)
+        out = OUT.parent / f"newsreader-{style}.woff2"
+        subset.save_font(font, str(out), opts)
+        print(f"wrote {out.relative_to(DOCS)}: {out.stat().st_size // 1024} KB")
+
+
 def main() -> None:
     from fontTools import subset
+
+    newsreader()
 
     src = Path(os.environ.get("NOTO_SERIF_SC", CACHE / "NotoSerifSC-Bold.otf"))
     if not src.exists():
