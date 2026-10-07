@@ -184,8 +184,20 @@ def test_output_edit_renders_studio_sound_and_builtin_music(tmp_path, monkeypatc
                              dict(op="effect_add", effect="music-bed", start=0, params=dict(mood="calm"))])
     kinds = {e["effect"]: e["params"] for e in r["state"]["effects"]}
     assert kinds["studio-sound"]["strength"] == "strong" and kinds["music-bed"]["mood"] == "calm"
-    res = R.render(str(w), oid, quality="preview")
+    res = R.render(str(w), oid, quality="final")
     out = res["targets"][0]["file"]
     p = media.probe(out)
     assert p["has_audio"] and abs(p["duration"] - 5.0) < 0.3
     assert abs(A.measure_loudness(out)["input_i"] - (-14.0)) < 1.5
+    # audio-only edit: the picture is the original's video stream, copied (no frame pass)
+    rec, doc = O._load(str(w), oid)
+    tg = R.targets_of(rec, doc.state())[0]
+    assert R.plan(rec, doc, doc.state(), tg, "final")["final"]["op"] == "remux"
+
+    def packets(f):
+        return subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "packet=size",
+                               "-of", "csv=p=0", f], capture_output=True, text=True).stdout.split()
+    assert packets(out) == packets(str(w / "final" / "clip.mp4"))
+    O.edit(str(w), oid, dict(op="effect_add", effect="pop-words", start=1.0, params=dict(text="重点")))
+    rec, doc = O._load(str(w), oid)
+    assert R.plan(rec, doc, doc.state(), tg, "final")["final"]["op"] == "frames"   # a visual edit: frames again

@@ -135,8 +135,12 @@ def plan(rec, doc, st, tg, quality):
     vis = visual_spec(rec, st, tl, tg, band)
     final = dict(visual=vis, quality=quality, canvas=[tg["w"], tg["h"]],
                  encode=(prof.encode if prof is not None and quality == "final" else None))
-    final["op"] = "frames" if (vis["layers"] or vis["captions"] or vis["title"] or vis["mask"] or vis["band"] or
-                               vis["dips"] or (canvas["op"] == "none" and not same and not band)) else "encode"
+    if picture_untouched(rec, st, tg, full):
+        # audio-only edit (studio sound, music, SFX, loudness): the output's own picture, stream-copied
+        final["op"], final["picture"] = "remux", OUT.file_sig(rec["file"])
+    else:
+        final["op"] = "frames" if (vis["layers"] or vis["captions"] or vis["title"] or vis["mask"] or vis["band"] or
+                                   vis["dips"] or (canvas["op"] == "none" and not same and not band)) else "encode"
     final["key"] = sha1_json(["final", timeline["key"], audio["key"], final], 16)
     cover = None
     if st.get("cover"):
@@ -145,6 +149,23 @@ def plan(rec, doc, st, tg, quality):
         cover["key"] = sha1_json(["cover", timeline["key"], cover, rec["mode"]], 16)
     return dict(target=tg["target"], quality=quality, canvas=canvas, timeline=timeline, audio=audio, final=final,
                 cover=cover, tl=tl, band=band)
+
+
+def picture_untouched(rec, st, tg, full):
+    """True when the edit changes nothing in the picture of the output's own canvas: no trim / cut / speed / grade /
+    end fade / transition, no frame effect, captions / title / theme as the output came. Then the original file's
+    video is exactly the answer and only the audio is new."""
+    if tg["target"] != "primary" or not full or float(st.get("speed") or 1.0) != 1.0:
+        return False
+    if st.get("title") or st.get("theme"):
+        return False
+    for e in st["effects"]:
+        if FX.SPECS[e["effect"]]["stage"] != "audio":
+            return False
+    c = st["captions"]
+    if c["style"] or c["overrides"] or c["removed"] or c["added"] or c.get("placement"):
+        return False
+    return bool(c["enabled"]) == bool(rec.get("captions_on"))
 
 
 def _cover_size(tg):
@@ -684,6 +705,19 @@ def _frame_pass(src, out, audio_wav, vis, tg, fps, quality, final_encode, beat):
     return out
 
 
+def run_remux(picture, out, audio_wav):
+    """The original output's video stream + the new audio stem (AAC); no frame is decoded."""
+    m = _media()
+    if not audio_wav:
+        shutil.copy(picture, out)
+        return out
+    from vstudio import audio as A
+    m.run(["ffmpeg", "-y", "-v", "error", "-i", picture, "-i", audio_wav, "-map", "0:v:0", "-map", "1:a:0",
+           "-c:v", "copy", "-c:a", "aac", "-b:a", A._persona_export_bitrate(), "-ar", str(A.SR), "-shortest",
+           "-movflags", "+faststart", out])
+    return out
+
+
 def run_encode(src, out, audio_wav, quality, final_encode, tg):
     m = _media()
     info = m.probe(src)
@@ -811,7 +845,9 @@ def render(d, output, quality="preview", targets=None, on_event=None, with_ops=N
                 fps = _media().probe(src)["fps"] or rec["info"]["fps"]
 
                 def fin(o, s=src, w=wav):
-                    if p["final"]["op"] == "frames":
+                    if p["final"]["op"] == "remux":
+                        run_remux(rec["file"], o, w)
+                    elif p["final"]["op"] == "frames":
                         frame_pass(s, o, w, p["final"]["visual"], tg, fps, quality, p["final"]["encode"],
                                    lambda prog: status.beat("frames", progress=round((n_t + prog) / len(tgs), 3)))
                     else:
