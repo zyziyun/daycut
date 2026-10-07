@@ -8,8 +8,11 @@ App releases are tagged `v*`; engine-only releases are tagged `engine-v*`.
 
 ## [Unreleased]
 
-Planned as **0.2.0**, the first public macOS release (Apple Silicon). Nothing before it was published as a release;
-the earlier history lives in the commit log (formerly `video-studio` and `Daycut`).
+## [0.2.0] - 2026-10-07
+
+The first public release: the macOS app for Apple silicon, signed with a Developer ID and notarized by Apple, plus
+an unsigned Windows x64 preview installer. Nothing before it was published as a release; the earlier history lives
+in the commit log (formerly `video-studio` and `Daycut`).
 
 ### Added
 
@@ -32,6 +35,14 @@ the earlier history lives in the commit log (formerly `video-studio` and `Daycut
   - Send feedback (Help menu, Settings, empty states) and Report this problem (failed jobs, crashes): a redacted
     report you read first, opened as a prefilled GitHub Discussion or Issue. Nothing is sent by the app; automatic
     crash reports are off by default.
+  - First run in minutes: a built-in sample recording (CC0) and a path that works without any AI account.
+  - Transcript editing: cut by words in the transcript, suggestions in the chat, space plays a selection.
+  - Publish as a week board with a drawer, plain-language planning, reminders and fill-in of each upload page.
+  - Plugins on the Create page: board importers (HyperFrames, CSV / JSON shot lists) and agent runners that make
+    shots in parallel lanes, each in its own job folder, with takes and Inbox items for failures.
+  - Optional anonymous usage counts, asked once and off until you agree.
+- **Windows x64 preview** (unsigned NSIS installer, not attached to the release yet): the app, its engine sidecar
+  and the bundled runtime run on Windows (Media Foundation or OpenH264 for H.264, faster-whisper for speech).
 - **Engine**:
   - `vstudio.intake`: one sentence plus the material becomes a validated plan (rule fallback when no model is set).
   - `vstudio.project`: every workflow is a recipe with checkpoints, series, inbox and publishing calendar.
@@ -51,6 +62,12 @@ the earlier history lives in the commit log (formerly `video-studio` and `Daycut
     clips that open on the question, tight answers, speakers by role, optional face masks).
   - Bilingual captions (`vstudio.bilingual`): the spoken line plus a translated second line in the theme's
     secondary ink, or the translation only; glossary enforced; per-language SRT / VTT with every export.
+  - Launch kits (`vstudio.launch`, `launch-kit` recipe): product launch videos from screen recordings and a
+    Playwright capture, with idle stretches speed-ramped, gallery stills, a music bed and per-platform post copy.
+  - Studio sound (speech clean-up) and a license-free music library shared by every recipe.
+  - Share for review: a page a client can comment on, and the feedback imported back as edits.
+  - Plugin registry (`vstudio.plugins`): manifests, permissions, cost kinds; paid plugins only run through the
+    spend gate.
 - **Platforms**: 20 profiles, each with its own canvas, safe zones, caption box, length, loudness, cover and copy
   limits: YouTube, YouTube Shorts, TikTok, Instagram, X, Facebook, LinkedIn, Threads, Reddit, Pinterest, Snapchat
   Spotlight, Dailymotion, Kwai, 小红书, 抖音, 视频号, B站, 快手, 微博, 知乎.
@@ -75,6 +92,19 @@ the earlier history lives in the commit log (formerly `video-studio` and `Daycut
 
 ### Fixed
 
+- The bundled macOS runtime ships every engine dependency: babel, pypinyin and jsonschema were missing, so in the
+  app the named-entity check found nothing and plan / recipe validation fell back to key checks. The runtime build
+  and the packaged-app tests now check every package of `requirements.txt`.
+- Agent-runner lanes no longer shrink to one on machines with few cores.
+- Projects resume after their last Inbox answer; a run waiting at a checkpoint is listed once; waiting and
+  interrupted jobs show on the project board.
+- The engine is restarted when it dies after start (never while the app quits), and engine errors are translated
+  instead of shown raw.
+- Media is served with byte ranges (seeking works), also through symlinked folders.
+- English transcripts keep spaces after punctuation and between English words; English sub-word tokens are joined in
+  Chinese transcripts; captions split on word boundaries with one shared line breaker.
+- Proofreading needs ASR evidence before changing an English word and keeps the glossary off common words.
+- Cover runs close their face landmarkers (no deadlock); captions stay clear of talking-head note cards.
 - AI fallback works on every path (segment planning, proofreading, chat edit), Codex gets a strict JSON schema,
   and an all-attempts error says what was tried.
 - Chat edits always answer; the capability probe no longer misses `--context`.
@@ -93,5 +123,7 @@ the earlier history lives in the commit log (formerly `video-studio` and `Daycut
 - Electron fuses on the packaged app (no run-as-node, no `NODE_OPTIONS` / `--inspect`, asar integrity), hardened
   runtime and notarization.
 - API keys in the OS keychain; every IPC call validated; the local engine needs a per-session token.
+- No silent mock engine or demo mode in the product: a packaged app always runs the real engine.
 
-[Unreleased]: https://github.com/zyziyun/reelfold/commits/main
+[Unreleased]: https://github.com/zyziyun/reelfold/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/zyziyun/reelfold/releases/tag/v0.2.0
