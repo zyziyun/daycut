@@ -216,8 +216,8 @@ def html_to_png(html, out, size=(1080, 1920), scale=1, wait=2000, query="", use_
                 r = subprocess.run(args + [url], capture_output=True, timeout=120)
             except subprocess.TimeoutExpired:
                 print(f"  {chrome} timed out; trying next"); continue
-            if r.returncode == 0 and png.exists():
-                return str(png)
+            if png.exists() and (r.returncode == 0 or b"bytes written to file" in (r.stderr or b"")):
+                return str(png)          # macOS Chrome can exit 2 on a teardown watchdog after writing the file
             print(f"  {chrome} failed (exit {r.returncode}); trying next")
         try:
             from playwright.sync_api import sync_playwright

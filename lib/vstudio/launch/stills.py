@@ -10,7 +10,6 @@ three facts (``gallery.facts``: only numbers the creator can stand behind).
 """
 import html
 import os
-import time
 
 from PIL import Image
 
@@ -72,14 +71,7 @@ def _render(page_html, out, size, workdir):
     with open(src, "w", encoding="utf-8") as f:
         f.write(page_html)
     big = out[:-4] + ".2x.png"
-    for attempt in range(3):                     # headless Chrome sometimes exits 2 on a busy machine
-        try:
-            R.html_to_png(src, big, size=size, scale=2, wait=1500, use_persona=False, fonts=False)
-            break
-        except Exception:                        # noqa: BLE001 - re-raised on the last attempt
-            if attempt == 2:
-                raise
-            time.sleep(2)
+    R.html_to_png(src, big, size=size, scale=2, wait=1500, use_persona=False, fonts=False)
     with Image.open(big) as im:
         im.convert("RGB").resize(size, Image.LANCZOS).save(out, optimize=True)
     os.remove(big)
