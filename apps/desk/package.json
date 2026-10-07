@@ -19,6 +19,8 @@
     "test:engine": "python3 -m unittest discover -s engine/tests",
     "test:e2e": "npm run build && playwright test",
     "release:mac": "bash scripts/release-mac.sh",
+    "release:mas": "bash scripts/release-mas.sh",
+    "mas:local": "bash scripts/mas-local.sh",
     "dist:mac:unsigned": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --config electron-builder.config.cjs --mac --arm64 --publish never -c.mac.notarize=false",
     "dist:win": "npm run build && electron-builder --config electron-builder.config.cjs --win nsis --x64 --publish never",
     "dist:appx": "npm run build && electron-builder --config electron-builder.config.cjs --win appx --x64 --publish never",

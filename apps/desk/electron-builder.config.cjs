@@ -10,6 +10,10 @@
 //                     else a PFX via WIN_CSC_LINK + WIN_CSC_KEY_PASSWORD; else unsigned.
 //   Store:            appx identity from MS_STORE_IDENTITY_NAME / MS_STORE_PUBLISHER / MS_STORE_PUBLISHER_NAME
 //                     (Partner Center -> Product identity). Placeholders otherwise.
+//   Mac App Store:    target `mas` (scripts/release-mas.sh, built with BUILD_EDITION=mas): signed with "Apple Distribution"
+//                     (or "3rd Party Mac Developer Application"), the .pkg with "3rd Party Mac Developer Installer";
+//                     profile from MAS_PROVISIONING_PROFILE (default packaging/mac/Reelfold_Mac_App_Store.provisionprofile,
+//                     git-ignored). See docs/MAS.md.
 // See docs/RELEASING.md.
 const env = process.env;
 
@@ -38,6 +42,11 @@ const RUNTIME_NON_CODE = String.raw`/Contents/Resources/runtime/(?!.*\.(so|dylib
 // version from apps/desk: give it the exact one that is installed (resolved from here).
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- CommonJS config file
 const electronVersion = require(require.resolve('electron/package.json', { paths: [__dirname] })).version;
+
+// Mac App Store provisioning profile (developer.apple.com -> Profiles -> Mac App Store Connect, app.reelfold.desk)
+const fs = require('node:fs'); // eslint-disable-line @typescript-eslint/no-require-imports -- CommonJS config file
+const path = require('node:path'); // eslint-disable-line @typescript-eslint/no-require-imports -- CommonJS config file
+const MAS_PROFILE = env.MAS_PROVISIONING_PROFILE || path.join(__dirname, 'packaging/mac/Reelfold_Mac_App_Store.provisionprofile');
 
 /** @type {import('electron-builder').Configuration} */
 module.exports = {
@@ -103,6 +112,32 @@ module.exports = {
     extraResources: [
       { from: 'packaging/mac/zh_CN.lproj/InfoPlist.strings', to: 'zh_CN.lproj/InfoPlist.strings' },
       { from: 'packaging/mac/zh_CN.lproj/InfoPlist.strings', to: 'zh-Hans.lproj/InfoPlist.strings' },
+    ],
+  },
+  // Mac App Store (Lite) build: App Sandbox, every nested binary with app-sandbox + inherit only, no hardened runtime
+  // (not required by the Mac App Store; the sandboxed children could not carry its extra entitlements), no updater
+  // (src/main/updater.ts), no node-pty (no in-app terminal: the Lite build has no CLI sign-in). The app itself must be
+  // built with BUILD_EDITION=mas (src/shared/edition.ts); scripts/release-mas.sh does both.
+  mas: {
+    type: 'distribution',
+    hardenedRuntime: false,
+    entitlements: 'packaging/mac/entitlements.mas.plist',
+    entitlementsInherit: 'packaging/mac/entitlements.mas.inherit.plist',
+    entitlementsLoginHelper: 'packaging/mac/entitlements.mas.loginhelper.plist',
+    ...(fs.existsSync(MAS_PROFILE) ? { provisioningProfile: MAS_PROFILE } : {}),
+    files: ['!**/node_modules/node-pty/**'],
+    extendInfo: {
+      ElectronTeamID: 'ZH47R7RVKB',
+      // HTTPS / TLS only (standard protocols, no proprietary encryption): exempt, no export compliance documents
+      ITSAppUsesNonExemptEncryption: false,
+      LSHasLocalizedDisplayName: true,
+      NSCameraUsageDescription: 'Reelfold uses the camera only while you record in Create.',
+      NSMicrophoneUsageDescription: 'Reelfold uses the microphone only while you record in Create.',
+    },
+    extraResources: [
+      { from: 'packaging/mac/zh_CN.lproj/InfoPlist.strings', to: 'zh_CN.lproj/InfoPlist.strings' },
+      { from: 'packaging/mac/zh_CN.lproj/InfoPlist.strings', to: 'zh-Hans.lproj/InfoPlist.strings' },
+      { from: 'packaging/mac/PrivacyInfo.xcprivacy', to: 'PrivacyInfo.xcprivacy' },
     ],
   },
   dmg: {

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Mac App Store (Lite) build, main app: App Sandbox. See docs/MAS.md.
+  application-groups          Electron's MAS build needs TEAMID.<bundle id> for its helpers' shared memory / IPC
+                              (@electron/osx-sign also inserts com.apple.application-identifier and
+                              com.apple.developer.team-identifier from the provisioning profile).
+  files.user-selected.*       recordings / folders she picks in an open panel (and the engine child reads them)
+  files.bookmarks.app-scope   keep those picks across launches (security-scoped bookmarks, src/main/access.ts)
+  network.client              API model providers, model downloads, the built-in publishing browser, YouTube API
+  network.server              the engine sidecar and the HTML renderer listen on 127.0.0.1 (random port + token)
+  device.camera / microphone  the Create page recorder, only after she presses Allow (NS*UsageDescription)
+  cs.allow-jit                V8 (inert without the hardened runtime; harmless with it)
+-->
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.app-sandbox</key>
+  <true/>
+  <key>com.apple.security.application-groups</key>
+  <array>
+    <string>ZH47R7RVKB.app.reelfold.desk</string>
+  </array>
+  <key>com.apple.security.files.user-selected.read-write</key>
+  <true/>
+  <key>com.apple.security.files.bookmarks.app-scope</key>
+  <true/>
+  <key>com.apple.security.network.client</key>
+  <true/>
+  <key>com.apple.security.network.server</key>
+  <true/>
+  <key>com.apple.security.device.camera</key>
+  <true/>
+  <key>com.apple.security.device.microphone</key>
+  <true/>
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+</dict>
+</plist>
