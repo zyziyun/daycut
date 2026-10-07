@@ -1,0 +1,17 @@
+<!doctype html><html><head><meta charset="utf-8"><title>mock 视频号助手 发表视频</title><script src="_common.js"></script></head><body>
+<!-- 视频号助手 renders the post page inside a micro-frontend's shadow root -->
+<div id="host"></div>
+<script>
+  const root = document.getElementById('host').attachShadow({ mode: 'open' });
+  root.innerHTML = `<div class="ant-upload"><input type="file" accept="video/mp4,video/x-m4v,video/*" id="f"></div>
+  <div id="form" style="display:none">
+    <div class="input-editor" contenteditable="true" data-placeholder="添加描述"></div>
+    <div class="short-title-wrap"><input placeholder="概括视频主要内容，字数建议6-16个字符"></div>
+    <label><input type="checkbox" id="orig"> 声明原创</label>
+    <div class="form-btns"><button class="weui-desktop-btn weui-desktop-btn_primary" id="pub">发表</button></div>
+  </div>`;
+  const f = root.getElementById('f');
+  f.addEventListener('change', () => { window.__file = f.files[0] && f.files[0].name; setTimeout(() => (root.getElementById('form').style.display = 'block'), 300); });
+  root.getElementById('pub').addEventListener('click', () => (window.__clicked = true));
+  window.__state = () => ({ file: window.__file, title: root.querySelector('.short-title-wrap input').value, desc: root.querySelector('.input-editor').innerText, original: root.getElementById('orig').checked, clicked: __clicked, outline: root.getElementById('pub').style.outline });
+</script></body></html>

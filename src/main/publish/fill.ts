@@ -9,7 +9,7 @@ import type { EngineClient } from '../../shared/engineClient';
 import { hostAllowed, type Adapter } from '../../shared/publish/adapterSchema';
 import { planFill } from '../../shared/publish/fillPlan';
 import { checkFill, resolveInside, type FillRequest, type GateReason } from '../../shared/publish/gating';
-import { parsePostCopy } from '../../shared/publish/postCopy';
+import { copyForPlatform } from '../../shared/publish/postCopy';
 import type { PublishBrowser } from './browser';
 import { runFill, type StepResult } from './cdpFill';
 import type { PublishStore } from './store';
@@ -70,11 +70,7 @@ export async function assistedFill(
   const cover = item.files.cover ? resolveInside(dir, item.files.cover, path.sep) : null;
   const postPath = item.files.post ? resolveInside(dir, item.files.post, path.sep) : null;
   const md = postPath && fs.existsSync(postPath) ? fs.readFileSync(postPath, 'utf8') : '';
-  const copy = parsePostCopy(md, item.title, { keepFirstLine: adapter.fields.title === null });
-  // no title field (X, Instagram): the title is the hook - the first line of the post text
-  if (adapter.fields.title === null && copy.title && !copy.description.startsWith(copy.title)) {
-    copy.description = copy.description ? `${copy.title}\n\n${copy.description}` : copy.title;
-  }
+  const copy = copyForPlatform(md, item.title, adapter.fields.title !== null);
 
   const entry = deps.browser.open(adapter, req.account, 'upload');
   const wc = entry.view.webContents;

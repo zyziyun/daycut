@@ -74,6 +74,7 @@ export const channelsEn = {
   'pkg.open': 'Package & publish',
   'pkg.none': 'Nothing finished to package yet.',
   'pub.postedCal': 'Marked as posted (also on the calendar).',
+  'pub.listConfirmed': 'List confirmed',
 };
 
 export const channelsZh: Record<keyof typeof channelsEn, string> = {
@@ -148,4 +149,5 @@ export const channelsZh: Record<keyof typeof channelsEn, string> = {
   'pkg.open': '打包发布',
   'pkg.none': '还没有做好的片段可以打包。',
   'pub.postedCal': '已标记为已发布（日历也同步了）。',
+  'pub.listConfirmed': '清单已确认',
 };

@@ -1,0 +1,10 @@
+<!doctype html><html><head><meta charset="utf-8"><title>mock TikTok Studio upload</title><script src="_common.js"></script></head><body>
+<input type="file" accept="video/*" id="f">
+<div id="form" style="display:none">
+  <div data-e2e="caption_container"><div class="public-DraftEditor-content" contenteditable="true">A_换圈子_9x16</div></div>
+  <button data-e2e="post_video_button" onclick="window.__clicked = true">Post</button>
+</div>
+<script>
+  __reveal(document.getElementById('f'), 'form');
+  window.__state = () => ({ file: window.__file, desc: __text('.public-DraftEditor-content'), clicked: __clicked, outline: document.querySelector('[data-e2e=post_video_button]').style.outline });
+</script></body></html>

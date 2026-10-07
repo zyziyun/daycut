@@ -37,6 +37,16 @@ export function parsePostCopy(md: string, manifestTitle = '', opts: { keepFirstL
   return { title, description, tags };
 }
 
+/** The copy assisted fill types into one platform: post.md parsed; no title field (X, Instagram) -> the title is
+ * the hook, the first line of the post text. */
+export function copyForPlatform(md: string, manifestTitle: string, hasTitleField: boolean): PostCopy {
+  const copy = parsePostCopy(md, manifestTitle, { keepFirstLine: !hasTitleField });
+  if (!hasTitleField && copy.title && !copy.description.startsWith(copy.title)) {
+    copy.description = copy.description ? `${copy.title}\n\n${copy.description}` : copy.title;
+  }
+  return copy;
+}
+
 export function formatTags(tags: string[], format = '#{tag} ', max?: number): string {
   return tags
     .slice(0, max ?? tags.length)

@@ -1,0 +1,10 @@
+<!doctype html><html><head><meta charset="utf-8"><title>mock X compose</title><script src="_common.js"></script></head><body>
+<div role="dialog">
+  <div data-testid="tweetTextarea_0" contenteditable="true" role="textbox"></div>
+  <input data-testid="fileInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime" multiple id="f">
+  <button data-testid="tweetButton" onclick="window.__clicked = true">Post</button>
+</div>
+<script>
+  __reveal(document.getElementById('f'), null);
+  window.__state = () => ({ file: window.__file, desc: __text('[data-testid=tweetTextarea_0]'), clicked: __clicked, outline: document.querySelector('[data-testid=tweetButton]').style.outline });
+</script></body></html>

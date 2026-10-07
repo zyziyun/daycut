@@ -36,6 +36,7 @@ export function Publish({ batch }: { batch: string }) {
   const [fill, setFill] = useState<FillResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null); // success notes (not errors)
   const [modal, setModal] = useState<null | 'confirm' | 'account' | 'posted'>(null);
   const [perDay, setPerDay] = useState(1);
   const [start, setStart] = useState('');
@@ -122,6 +123,7 @@ export function Publish({ batch }: { batch: string }) {
 
   async function guard(fn: () => Promise<unknown>) {
     setMsg(null);
+    setInfo(null);
     setBusy(true);
     try {
       await fn();
@@ -150,13 +152,18 @@ export function Publish({ batch }: { batch: string }) {
       <div className="topbar">
         <h1>{t('pub.title')}</h1>
         {m && <span className="badge mono">{m.confirmation_code}</span>}
-        {m && (confirmed ? <span className="badge accent">{t('pub.confirmed')}</span> : <span className="badge danger">{t('pub.notConfirmed')}</span>)}
+        {m && (confirmed ? <span className="badge accent">{t('pub.listConfirmed')}</span> : <span className="badge danger">{t('pub.notConfirmed')}</span>)}
         <div className="sp" />
       </div>
       <div className="page">
         <div className="pub">
           <div className="left">
             <ErrorBox error={man.error ?? msg} />
+            {info && (
+              <div className="notice accent small" data-testid="pub-info">
+                {info}
+              </div>
+            )}
             {adapterErrors.map((e) => (
               <div key={e.file} className="err small">
                 {t('pub.adapterError')}: {e.file}: {e.error}
@@ -295,7 +302,7 @@ export function Publish({ batch }: { batch: string }) {
                       guard(async () => {
                         const c = await window.desk.publish.caption(batch, item.job, item.platform);
                         await window.desk.copyText([c.title, c.description, c.tags.map((x) => `#${x}`).join(' ')].filter(Boolean).join('\n\n'));
-                        setMsg(t('pub.copied'));
+                        setInfo(t('pub.copied'));
                       })
                     }
                   >
@@ -445,7 +452,7 @@ export function Publish({ batch }: { batch: string }) {
                   await window.desk.publish.confirmPackage(batch, m.confirmation_code);
                   setModal(null);
                   await refreshLocal();
-                  if (isWork && client) setMsg(t('pkg.calendared', { n: await toCalendar(client, batch, m.items) }));
+                  if (isWork && client) setInfo(t('pkg.calendared', { n: await toCalendar(client, batch, m.items) }));
                 })
               }
             >
@@ -482,7 +489,7 @@ export function Publish({ batch }: { batch: string }) {
                 const base = basePlatform(item.platform);
                 const p = cal.posts.find((x) => x.item === batch && x.clip === item.job && x.platform.split(':')[0] === base && x.state !== 'posted');
                 if (p) await client.updatePost(p.id, { state: 'posted' });
-                setMsg(t('pub.postedCal'));
+                setInfo(t('pub.postedCal'));
               }
             })
           }
