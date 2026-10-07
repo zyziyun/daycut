@@ -223,11 +223,12 @@ def _wav_sample(src, dst, start, dur):
     return dst
 
 
-def _transcribe(wav, language=None):
+def _transcribe(wav, language=None, words=True):
+    """words=False: sentence timing only (the sample passes: no word alignment, which costs a JIT compile + DTW)."""
     if TRANSCRIBE is not None:
         return TRANSCRIBE(wav, language)
     from vstudio import asr
-    return asr.transcribe(wav, language=language, cache=False)
+    return asr.transcribe(wav, language=language, cache=False, word_timestamps=words)
 
 
 def _rms_speechiness(wav):
@@ -279,13 +280,14 @@ def speech_facts(src, dur, has_audio, mode, cache_root, key, language=None):
                            chars_per_min=round(len(text) / max(dur / 60, 0.1)), language=tr.get("language"),
                            excerpt=D.excerpt(text, 160))
                 return out
-            fracs = [0.5] if dur <= 75 else [0.15, 0.5, 0.85]
+            fracs = [0.5] if dur <= 180 else [0.15, 0.5, 0.85]       # one sample says enough about a short clip
             texts, langs, words = [], [], 0
             for k, fr in enumerate(fracs):
                 ln = min(SAMPLE_S, dur) if dur > 0 else SAMPLE_S
                 st = max(0.0, dur * fr - ln / 2) if dur > ln else 0.0
                 wav = _wav_sample(src, os.path.join(tmp, f"s{k}.wav"), st, ln)
-                tr = _transcribe(wav, language)
+                tr = _transcribe(wav, language, words=False)
+                language = language or tr.get("language")          # detected once, then reused for the next samples
                 t = "".join((s.get("text") or "") for s in tr.get("segments") or []).strip()
                 words += len(tr.get("words") or []) or len(t)
                 if t:

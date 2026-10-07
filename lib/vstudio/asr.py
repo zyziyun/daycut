@@ -284,6 +284,56 @@ def _run_compatible(wav, language, prompt, word_timestamps, model, hst=None, gre
                        base_url=sc["base_url"], key=key or "not-needed")
 
 
+def _detect_mlx(wav, model):
+    import mlx_whisper
+    r = mlx_whisper.transcribe(wav, path_or_hf_repo=model or MLX_REPO, language=None, word_timestamps=False,
+                               condition_on_previous_text=False, verbose=None)
+    return r.get("language")
+
+
+def _detect_faster(wav, model):
+    from faster_whisper import WhisperModel
+    m = WhisperModel(model or FW_MODEL, device="auto", compute_type="auto")
+    _segs, info = m.transcribe(wav, language=None)          # segments are lazy: only the detection runs
+    return getattr(info, "language", None)
+
+
+_DETECT = {"mlx": _detect_mlx, "faster": _detect_faster}
+
+
+def detect_language(path, backend="auto", model=None, seconds=30.0):
+    """Spoken language of ``path`` (ISO code such as "en" / "zh") from its first ``seconds`` of audio, or None
+    when the backend cannot tell (the cloud backends) or detection fails. Local backends only."""
+    be = _backend(backend)
+    fn = _DETECT.get(be)
+    if fn is None:
+        return None
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            wav = os.path.join(tmp, "lang16.wav")
+            media.run([media.ffmpeg_bin(), "-v", "error", "-y", "-i", str(path), "-t", f"{seconds:.1f}", "-vn",
+                       "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", wav])
+            lang = fn(wav, model)
+        return str(lang).lower() if lang else None
+    except Exception:  # noqa: BLE001 - detection is a hint; the caller falls back to its default
+        return None
+
+
+def _persona_language():
+    try:
+        from .config import persona
+        return (persona().get("creator") or {}).get("language") or "zh"
+    except Exception:  # noqa: BLE001
+        return "zh"
+
+
+def default_language():
+    """The language ``transcribe(language=None)`` uses: $VSTUDIO_ASR_LANGUAGE (e.g. "auto" = detect per file, what
+    the desk app sets for a creator without a persona), else persona ``creator.language``, else "zh"."""
+    env = (os.environ.get("VSTUDIO_ASR_LANGUAGE") or "").strip().lower()
+    return env or _persona_language()
+
+
 _RUN = {"mlx": _run_mlx, "faster": _run_faster, "openai": _run_openai, "openai-compatible": _run_compatible}
 
 
@@ -332,7 +382,8 @@ def transcribe(path, language=None, prompt=None, word_timestamps=True, model=Non
     """Transcribe audio/video ``path`` with word timestamps.
 
     Args:
-      language: ISO code (default persona creator.language, else "zh").
+      language: ISO code, or "auto" = detect it from the audio (local backends; else the persona's); default
+        ``default_language()`` ($VSTUDIO_ASR_LANGUAGE, persona creator.language, else "zh").
       prompt: initial_prompt with domain terms (fixes English terms in Chinese speech).
       model: backend model id (mlx HF repo / faster-whisper size / openai model).
       backend: "auto" | "mlx" | "faster" | "openai" | "openai-compatible" (a self-hosted whisper server).
@@ -351,11 +402,7 @@ def transcribe(path, language=None, prompt=None, word_timestamps=True, model=Non
     from .batch.livestatus import heartbeat
     heartbeat("asr", message=os.path.basename(str(path)))          # desk 进行中 lane (no-op outside a job folder)
     if language is None:
-        try:
-            from .config import persona
-            language = (persona().get("creator") or {}).get("language") or "zh"
-        except Exception:
-            language = "zh"
+        language = default_language()
     be = _backend(backend)
     if skip_silence == "auto":
         try:
@@ -381,6 +428,8 @@ def transcribe(path, language=None, prompt=None, word_timestamps=True, model=Non
     with tempfile.TemporaryDirectory() as tmp:
         wav = os.path.join(tmp, "a16.wav")
         media.extract_wav(path, wav, sr=16000, channels=1)
+        if language == "auto":
+            language = detect_language(wav, be, model) or _persona_language()
         segs = _RUN[be](wav, language, prompt, word_timestamps, model, hst)
         if be not in ("openai", "openai-compatible") and loop_score(segs):
             # Temperature fallback (up to 1.0) on hard audio - short cut files, mumbles - can end in a

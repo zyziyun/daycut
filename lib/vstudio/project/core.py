@@ -512,7 +512,9 @@ class Project:
                 return dict(status="busy", exit_code=EXIT["busy"], error=str(e))
             pend = self.pending()
             todo = [p for p in pend if self._auto_answerable(p, pol)]
-            if not todo or rounds >= max_rounds or res["status"] in ("paused", "over-budget", "pilot-review"):
+            # a pilot that stopped at an auto-answerable checkpoint ends its batch run as "pilot-review" too: answer
+            # and go on (the next round re-runs the same pilot jobs), else a desk pilot never gets past its first one
+            if not todo or rounds >= max_rounds or res["status"] in ("paused", "over-budget"):
                 break
             for p in todo:
                 target = "*" if p["scope"] == "project" else p["item"]
@@ -528,8 +530,9 @@ class Project:
             code = EXIT["paused"]
         elif res["status"] == "over-budget":
             code = EXIT["refused"]
-        elif res["status"] == "pilot-review":
-            code = EXIT["pilot"]
+        elif res["status"] == "pilot-review" and not (s["items"] and not pend and not failed
+                                                      and all(i["state"] == "done" for i in s["items"])):
+            code = EXIT["pilot"]                # a pilot that already made every item (a 1-item project) is done
         elif failed:
             code = EXIT["failed"]
         elif pend:

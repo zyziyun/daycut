@@ -343,6 +343,23 @@ def test_talkinghead_auto_policy_runs_through_to_publish(tmp_path, synth, monkey
     assert r["exit_code"] == 0 or qc == "red"
 
 
+@media
+def test_talkinghead_pilot_answers_auto_checkpoints_too(tmp_path, synth, monkeypatch):
+    """The desk starts every project as `run --pilot 1` with hook/filler/cover on auto: a pilot that stops at an
+    auto-answerable checkpoint must answer it and go on (it used to end as "pilot-review" at the hook, and the first
+    batch of a new user never got past it)."""
+    monkeypatch.setenv("VSTUDIO_TEST_TRUTH", synth["truth"])
+    p = Project.create(str(tmp_path / "th3"), recipe="talkinghead", inputs=dict(video=[synth["video"]]),
+                       params=dict(preset="ultrafast", speed=1.0), auto=["hook", "filler", "cover"],
+                       spec=dict(plugins=["vstudio.project.registry", "_batch_helpers"],
+                                 asr=dict(transcriber="_batch_helpers:fake_transcriber"),
+                                 proofread=dict(enabled=False)))
+    seen = []
+    r = p.run(pilot=1, on_event=lambda ev: ev["event"] == "auto-answer" and seen.append(ev["checkpoint"]))
+    assert "hook" in seen and "cover" in seen, seen
+    assert [x["id"] for x in r["pending"]] in (["publish"], []), r
+
+
 # --------------------------------------------------------------------------- series / inbox / calendar
 def test_series_inbox_bulk_and_calendar(tmp_path):
     HM.new_series("daily", "preproduction", name="每日一题", params=dict(platforms=["xiaohongshu"], format="short"),
