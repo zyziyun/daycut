@@ -1,0 +1,73 @@
+{
+  "id": "kuaishou",
+  "name": "Kuaishou creator center",
+  "nameZh": "快手创作者服务平台",
+  "status": "unverified",
+  "lastVerified": null,
+  "packagePlatforms": [
+    "kuaishou"
+  ],
+  "uploadUrl": "https://cp.kuaishou.com/article/publish/video",
+  "loginUrl": "https://passport.kuaishou.com/pc/account/login",
+  "allowedHosts": [
+    "kuaishou.com",
+    "*.kuaishou.com",
+    "*.kwaicdn.com",
+    "*.yximgs.com",
+    "*.kspkg.com"
+  ],
+  "fields": {
+    "file": {
+      "selectors": [
+        "input[type=\"file\"][accept*=\"video\"]",
+        "input[type=\"file\"]"
+      ],
+      "timeoutMs": 30000
+    },
+    "title": null,
+    "description": {
+      "selectors": [
+        "div#work-description-edit[contenteditable=\"true\"]",
+        "div[contenteditable=\"true\"][placeholder*=\"描述\"]",
+        "div[contenteditable=\"true\"]"
+      ],
+      "kind": "contenteditable",
+      "clear": true,
+      "timeoutMs": 60000,
+      "maxLength": 500
+    },
+    "tags": {
+      "mode": "append-to-description",
+      "format": "#{tag} ",
+      "max": 4
+    },
+    "cover": null
+  },
+  "publishButton": null,
+  "disclosure": {
+    "zh": "含 AI 生成内容时，在「作者声明」里选「内容为 AI 生成」（2025-09-01 起的标识办法要求自己声明，平台说声明不影响流量）。正文不放站外链接（导流会被处罚）。",
+    "en": "If the video has AI-generated content, choose 作者声明 → 内容为AI生成 (required by the labeling rules since 2025-09-01; Kuaishou says it does not reduce traffic). No off-site links in the text (导流 is penalised)."
+  },
+  "guide": {
+    "zh": "打开「发布视频」页，应用放入视频、填好作品描述和 #话题。封面、可见范围由你定，再点「发布」。",
+    "en": "On the publish-video page the app adds the video and types the description with #topics. Set the cover and visibility, then press Publish yourself."
+  },
+  "herChoices": {
+    "zh": [
+      "作者声明（含 AI 生成）",
+      "可见范围 / 评论 / 下载",
+      "封面",
+      "定时发布"
+    ],
+    "en": [
+      "Author statement (incl. AI-generated)",
+      "Visibility / comments / downloads",
+      "Cover",
+      "Scheduled time"
+    ]
+  },
+  "notes": [
+    "UNVERIFIED selectors (written 2026-10 without a logged-in session): check them on the live page, then set status to verified + lastVerified.",
+    "Web upload: 15 min / 4 GB (help centre). QR login on cp.kuaishou.com."
+  ]
+}

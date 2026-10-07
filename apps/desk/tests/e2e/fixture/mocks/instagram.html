@@ -1,0 +1,9 @@
+<!doctype html><html><head><meta charset="utf-8"><title>mock Create new post - Instagram</title><script src="_common.js"></script></head><body>
+<!-- Create -> Post dialog (the creator opens it herself); caption box appears after Next -->
+<div role="dialog"><form enctype="multipart/form-data" method="POST" role="presentation"><input type="file" accept="image/jpeg,image/png,video/mp4,video/quicktime" multiple id="f"></form>
+  <div id="form" style="display:none"><div aria-label="Write a caption..." contenteditable="true" role="textbox"></div><div role="button" id="share" onclick="window.__clicked = true">Share</div></div>
+</div>
+<script>
+  __reveal(document.getElementById('f'), 'form');
+  window.__state = () => ({ file: window.__file, desc: __text('[aria-label="Write a caption..."]'), clicked: __clicked });
+</script></body></html>

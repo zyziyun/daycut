@@ -1,0 +1,54 @@
+{
+  "id": "instagram",
+  "name": "Instagram",
+  "nameZh": "Instagram",
+  "status": "unverified",
+  "lastVerified": null,
+  "packagePlatforms": ["instagram"],
+  "uploadUrl": "https://www.instagram.com/",
+  "loginUrl": "https://www.instagram.com/accounts/login/",
+  "allowedHosts": ["instagram.com", "*.instagram.com", "*.cdninstagram.com", "*.fbcdn.net", "facebook.com", "*.facebook.com"],
+  "fields": {
+    "file": {
+      "selectors": [
+        "div[role=\"dialog\"] form[enctype=\"multipart/form-data\"] input[type=\"file\"]",
+        "div[role=\"dialog\"] input[type=\"file\"][accept*=\"video\"]",
+        "form[enctype=\"multipart/form-data\"] input[type=\"file\"]"
+      ],
+      "timeoutMs": 120000
+    },
+    "title": null,
+    "description": {
+      "selectors": [
+        "div[role=\"dialog\"] div[aria-label=\"Write a caption...\"][contenteditable=\"true\"]",
+        "div[role=\"dialog\"] div[aria-label=\"撰写说明文字…\"][contenteditable=\"true\"]",
+        "div[role=\"dialog\"] div[contenteditable=\"true\"][role=\"textbox\"]"
+      ],
+      "kind": "contenteditable",
+      "maxLength": 2200,
+      "clear": true,
+      "timeoutMs": 120000
+    },
+    "tags": { "mode": "append-to-description", "format": "#{tag} ", "max": 5, "hardMax": true },
+    "cover": null
+  },
+  "publishButton": null,
+  "disclosure": {
+    "zh": "视频以 Reels 发布。含逼真的 AI 生成或修改内容时，在「高级设置」里打开「添加 AI 标签」（Meta 也可能自动标注「AI 信息」）。每条最多 5 个话题标签（说明文字和评论合计）。",
+    "en": "Video posts are shared as Reels. For photorealistic AI-made or edited content, turn on \"Add AI label\" under Advanced settings (Meta may also add \"AI info\" itself). At most 5 hashtags per post (caption and comments together)."
+  },
+  "guide": {
+    "zh": "在 Instagram 页面左侧点「创建」→「帖子」：应用等待最多 2 分钟，看到「从电脑中选择」就自动放入视频。之后你点两次「下一步」（裁剪、编辑；选 9:16 原比例、选封面），说明文字会自动填入。最后由你点「分享」。",
+    "en": "In Instagram, click Create -> Post: the app waits up to 2 minutes and adds the video once \"Select from computer\" shows. Then press Next twice yourself (crop: keep the original 9:16; edit: pick the cover); the caption is typed when its box appears. Press Share yourself."
+  },
+  "herChoices": {
+    "zh": ["裁剪比例（选原始 9:16）", "封面帧 / 网格裁剪", "AI 标签", "是否同时分享到主页网格"],
+    "en": ["Crop (keep the original 9:16)", "Cover frame / grid crop", "AI label", "Also share to the profile grid"]
+  },
+  "notes": [
+    "UNVERIFIED selectors (written without a logged-in session, 2026-10): Instagram's web markup changes often; check them on the live page and set status to verified + lastVerified.",
+    "There is no direct upload URL on desktop web: the create dialog is opened by the creator (Create -> Post); the fill waits for its file input (timeoutMs 120000) and for the caption box after her two Next clicks.",
+    "The Share button has no stable selector (a div with text), so it is not highlighted - and never clicked.",
+    "The Content Publishing API (Professional account + reviewed Meta app + public video URL) is the engine's optional instagram-api uploader, not this adapter."
+  ]
+}

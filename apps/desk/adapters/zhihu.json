@@ -1,0 +1,78 @@
+{
+  "id": "zhihu",
+  "name": "Zhihu video",
+  "nameZh": "知乎视频",
+  "status": "unverified",
+  "lastVerified": null,
+  "packagePlatforms": [
+    "zhihu"
+  ],
+  "uploadUrl": "https://www.zhihu.com/zvideo/upload-video",
+  "loginUrl": "https://www.zhihu.com/signin",
+  "allowedHosts": [
+    "zhihu.com",
+    "*.zhihu.com",
+    "*.zhimg.com"
+  ],
+  "fields": {
+    "file": {
+      "selectors": [
+        "input[type=\"file\"][accept*=\"video\"]",
+        "input[type=\"file\"]"
+      ],
+      "timeoutMs": 30000
+    },
+    "title": {
+      "selectors": [
+        "input[placeholder*=\"标题\"]",
+        "textarea[placeholder*=\"标题\"]"
+      ],
+      "kind": "input",
+      "clear": true,
+      "timeoutMs": 60000,
+      "maxLength": 30
+    },
+    "description": {
+      "selectors": [
+        "textarea[placeholder*=\"简介\"]",
+        "div[contenteditable=\"true\"][placeholder*=\"简介\"]",
+        "textarea"
+      ],
+      "kind": "input",
+      "clear": true,
+      "timeoutMs": 30000,
+      "maxLength": 300
+    },
+    "tags": null,
+    "cover": null
+  },
+  "publishButton": null,
+  "disclosure": {
+    "zh": "含 AI 内容时，在「发布设置 → 创作声明」里选「包含 AI 辅助创作」。标题必填（≤ 30 字），简介 ≤ 300 字；话题在单独的「话题」栏里选，不写 #。站外导流会失去优质视频资格。",
+    "en": "If AI was used, choose 发布设置 → 创作声明 → 包含AI辅助创作. Title required (<= 30), intro <= 300; topics go in the separate topic field (no #). Off-site links cost the 优质 status."
+  },
+  "guide": {
+    "zh": "打开上传视频页，应用放入视频、填好标题和简介。领域、话题、原创 / 转载、是否投稿到问题由你选，再点「发布」。",
+    "en": "On the upload page the app adds the video and types the title and intro. Pick the field (领域), topics, original / repost and whether to answer a question, then press Publish yourself."
+  },
+  "herChoices": {
+    "zh": [
+      "领域",
+      "话题",
+      "原创 / 转载",
+      "创作声明（含 AI）",
+      "投稿到问题（≥ 1 分钟）"
+    ],
+    "en": [
+      "Field (领域)",
+      "Topics",
+      "Original / repost",
+      "Creation statement (incl. AI)",
+      "Answer a question (videos >= 1 min)"
+    ]
+  },
+  "notes": [
+    "UNVERIFIED selectors (written 2026-10 without a logged-in session): check them on the live page, then set status to verified + lastVerified.",
+    "Upload URL is the convention (no source confirmed it); 创作中心 → 上传视频 is the documented path."
+  ]
+}

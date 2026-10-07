@@ -1,0 +1,48 @@
+/* v0.2 screens (clients, segment review, in-review edits, delivery, metrics, first run). Studio Dark tokens only. */
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* funnel stepper (client engagement) */
+.funnel { display: flex; flex-wrap: wrap; gap: 4px; }
+.funnel .step { padding: 3px 10px; font-size: 12px; border-radius: 12px; border: 1px solid var(--border); background: none; cursor: pointer; color: var(--text-muted); }
+.funnel .step.on { color: var(--text); border-color: color-mix(in srgb, var(--accent) 60%, var(--border)); }
+.funnel .step.cur { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+.funnel .step.lost.cur { background: var(--danger); border-color: var(--danger); color: #fff; }
+a.item { color: var(--text); text-decoration: none; }
+
+/* segment review */
+.overview { position: relative; height: 34px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 14px; }
+.overview .blk { position: absolute; top: 5px; bottom: 5px; border-radius: 3px; border: 1px solid var(--border); background: var(--surface-2); cursor: pointer; padding: 0; }
+.overview .blk.acc { background: color-mix(in srgb, var(--accent) 45%, var(--surface)); border-color: var(--accent); }
+.overview .blk.on { outline: 2px solid var(--text); z-index: 1; }
+.overview .blk.over { border-color: var(--warn); }
+.overview .tick { position: absolute; top: 100%; font-size: 10px; color: var(--text-muted); font-family: var(--font-mono); }
+.overview .tick.l { left: 0; }
+.overview .tick.r { right: 0; }
+.seglist { display: flex; flex-direction: column; gap: 6px; max-height: 64vh; overflow: auto; padding-right: 4px; }
+.segitem { border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 8px; cursor: pointer; background: var(--surface); display: flex; flex-direction: column; gap: 2px; }
+.segitem.on { border-color: var(--accent); background: var(--highlight); }
+.segitem.rej { opacity: .55; }
+.edgetrack { position: relative; height: 38px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; touch-action: none; }
+.edgetrack .wtick { position: absolute; top: 12px; height: 14px; background: color-mix(in srgb, var(--text-muted) 45%, transparent); border-radius: 2px; min-width: 1px; }
+.edgetrack .sel { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--accent) 22%, transparent); border-left: 1px solid var(--accent); border-right: 1px solid var(--accent); pointer-events: none; }
+.edgetrack .hdl { position: absolute; top: 0; bottom: 0; width: 10px; margin-left: -5px; cursor: ew-resize; background: var(--accent); opacity: .85; border-radius: 3px; }
+.edgetrack .hdl:hover, .edgetrack .hdl:focus-visible { opacity: 1; }
+.transcript .w.out { color: var(--text-muted); opacity: .55; }
+.transcript .w { cursor: pointer; }
+
+/* in-review edits */
+.rerunbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 6px 8px; border: 1px dashed var(--border); border-radius: var(--radius); }
+.rerunbar.on { border-style: solid; border-color: var(--accent); background: var(--highlight); }
+.cue .input { height: 28px; }
+.input.bad { border-color: var(--danger); }
+details summary { cursor: pointer; }
+
+/* metrics */
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.tile { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 10px 12px; }
+.tile .v { font-size: 22px; font-weight: 650; margin-top: 2px; }
+table.weekly th, table.weekly td { white-space: nowrap; }
+
+/* first run */
+.firstrun { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: var(--bg); z-index: 5; padding: 40px 16px 16px; -webkit-app-region: drag; overflow: auto; }
+.frcard { width: min(720px, 100%); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px; box-shadow: var(--shadow); gap: 14px; -webkit-app-region: no-drag; max-height: 100%; overflow: auto; }

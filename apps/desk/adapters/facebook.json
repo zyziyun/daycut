@@ -1,0 +1,74 @@
+{
+  "id": "facebook",
+  "name": "Facebook",
+  "nameZh": "Facebook",
+  "status": "unverified",
+  "lastVerified": null,
+  "packagePlatforms": [
+    "facebook"
+  ],
+  "uploadUrl": "https://www.facebook.com/",
+  "loginUrl": "https://www.facebook.com/login/",
+  "allowedHosts": [
+    "facebook.com",
+    "*.facebook.com",
+    "*.fbcdn.net",
+    "fb.com",
+    "*.fb.com",
+    "fb.me"
+  ],
+  "fields": {
+    "file": {
+      "selectors": [
+        "div[role=\"dialog\"] input[type=\"file\"][accept*=\"video\"]",
+        "div[role=\"dialog\"] input[type=\"file\"]",
+        "input[type=\"file\"][accept*=\"video\"]",
+        "input[type=\"file\"]"
+      ],
+      "timeoutMs": 120000
+    },
+    "title": null,
+    "description": {
+      "selectors": [
+        "div[role=\"dialog\"] div[contenteditable=\"true\"][role=\"textbox\"]",
+        "div[role=\"dialog\"] div[contenteditable=\"true\"]"
+      ],
+      "kind": "contenteditable",
+      "clear": true,
+      "timeoutMs": 120000,
+      "softMax": 2200
+    },
+    "tags": {
+      "mode": "append-to-description",
+      "format": "#{tag} ",
+      "max": 5
+    },
+    "cover": null
+  },
+  "publishButton": null,
+  "disclosure": {
+    "zh": "Meta 的「AI 信息」标签：视频是逼真的 AI 生成或修改时，在发布页打开「AI 信息」（或在文字里说明）。Reel 竖屏 9:16；动态视频 4:5 或 16:9。正文里的链接在动态里可点，在 Reel 文案里不一定。",
+    "en": "Meta \"AI info\": when the video is realistic AI-made or AI-altered, turn on the AI label on the post page (or say so in the text). Reels 9:16; feed video 4:5 or 16:9. Links in the text are clickable in feed posts, not reliably in Reels captions."
+  },
+  "guide": {
+    "zh": "在 Facebook 首页点「Reel」或「照片/视频」（主页请用 Meta Business Suite → 创建 Reel），出现上传框后应用会放入视频并填好文字。检查受众和封面，再由你点「分享 / 发布」。",
+    "en": "On Facebook click Reel or Photo/video (Pages: Meta Business Suite → Create reel). When the upload box appears the app adds the video and types the text. Check the audience and cover, then press Share / Post yourself."
+  },
+  "herChoices": {
+    "zh": [
+      "受众（公开 / 好友）",
+      "AI 信息标签",
+      "发布到个人主页还是公共主页"
+    ],
+    "en": [
+      "Audience (Public / Friends)",
+      "AI info label",
+      "Profile or Page"
+    ]
+  },
+  "notes": [
+    "UNVERIFIED selectors (written 2026-10 without a logged-in session): check them on the live page, then set status to verified + lastVerified.",
+    "Desktop Reel upload may be Pages-only for some accounts (3P, unconfirmed); the composer on the home page always takes a video post.",
+    "No API fill: the Graph API posts Reels for Pages only (see the engine's references/PUBLISHING.md)."
+  ]
+}

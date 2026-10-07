@@ -1,0 +1,53 @@
+{
+  "id": "wechat-channels",
+  "name": "WeChat Channels",
+  "nameZh": "视频号",
+  "status": "unverified",
+  "lastVerified": null,
+  "packagePlatforms": ["wechat-channels"],
+  "uploadUrl": "https://channels.weixin.qq.com/platform/post/create",
+  "loginUrl": "https://channels.weixin.qq.com/login.html",
+  "allowedHosts": ["channels.weixin.qq.com", "weixin.qq.com", "*.weixin.qq.com", "*.qq.com", "*.qpic.cn", "*.wechat.com"],
+  "fields": {
+    "file": {
+      "selectors": ["input[type=\"file\"][accept*=\"video\"]", ".ant-upload input[type=\"file\"]", ".upload-content input[type=\"file\"]"],
+      "timeoutMs": 30000
+    },
+    "title": {
+      "selectors": ["input[placeholder*=\"6-16\"]", ".short-title-wrap input", "input[placeholder*=\"短标题\"]"],
+      "kind": "input",
+      "maxLength": 16,
+      "clear": true,
+      "timeoutMs": 60000
+    },
+    "description": {
+      "selectors": [".input-editor[contenteditable=\"true\"]", "div.input-editor", "div[contenteditable=\"true\"][data-placeholder*=\"描述\"]"],
+      "kind": "contenteditable",
+      "maxLength": 1000,
+      "clear": true,
+      "timeoutMs": 60000
+    },
+    "tags": { "mode": "append-to-description", "format": "#{tag} ", "max": 5 },
+    "cover": null
+  },
+  "publishButton": {
+    "selectors": [".form-btns button.weui-desktop-btn_primary", "button.weui-desktop-btn_primary"]
+  },
+  "disclosure": {
+    "zh": "视频号没有个人可用的发布 API，这里用视频号助手网页（微信扫码登录）。内容含 AI 生成 / 合成的画面或声音时，按《人工智能生成合成内容标识办法》在发表页的声明里标注（若有「内容由 AI 生成」选项请勾选）。原创声明、位置、合集、活动由你决定。",
+    "en": "WeChat Channels has no publishing API for individuals, so this uses the Channels Assistant web page (log in by scanning the QR code with WeChat). If the video contains AI-generated or synthesized images or audio, label it in the declaration on the publish page (China's AI-content labelling rules). Original declaration, location, collection and events are your choice."
+  },
+  "guide": {
+    "zh": "打开「发表视频」页，应用放入视频、填短标题和描述（#话题 在描述末尾）。封面在视频上传后由你选。最后由你点「发表」。",
+    "en": "On the Post video page the app adds the video, the short title and the description (#topics at the end). Choose the cover yourself after the upload, then press 发表 (Post) yourself."
+  },
+  "herChoices": {
+    "zh": ["封面", "原创声明", "AI 生成声明", "位置 / 合集 / 活动", "定时发表"],
+    "en": ["Cover", "Original declaration", "AI-content declaration", "Location / collection / event", "Scheduled time"]
+  },
+  "notes": [
+    "UNVERIFIED selectors (written without a logged-in session, 2026-10): the assistant renders inside a micro-frontend (shadow DOM); the fill searches open shadow roots. Check selectors on the live page and set status to verified + lastVerified.",
+    "Short title limit 16 is from third-party guides; the page shows the real limit.",
+    "Typing # in the description may open a topic picker; the tags are typed as plain #text at the end."
+  ]
+}

@@ -1,0 +1,14 @@
+<!doctype html><html><head><meta charset="utf-8"><title>mock YouTube Studio upload</title><script src="_common.js"></script></head><body>
+<ytcp-uploads-file-picker><input type="file" name="Filedata" id="f"></ytcp-uploads-file-picker>
+<div id="form" style="display:none">
+  <ytcp-social-suggestions-textbox id="title-textarea"><div id="textbox" contenteditable="true">A_换圈子_9x16</div></ytcp-social-suggestions-textbox>
+  <ytcp-social-suggestions-textbox id="description-textarea"><div id="textbox" contenteditable="true"></div></ytcp-social-suggestions-textbox>
+  <ytcp-thumbnails-compact-editor-uploader><input id="file-loader" type="file" accept="image/jpeg,image/png"></ytcp-thumbnails-compact-editor-uploader>
+  <label><input type="radio" name="kids" id="kids"> made for kids</label>
+  <ytcp-button id="done-button" onclick="window.__clicked = true">Publish</ytcp-button>
+</div>
+<script>
+  __reveal(document.getElementById('f'), 'form');
+  __reveal(document.getElementById('file-loader'), null, '__cover');
+  window.__state = () => ({ file: window.__file, cover: window.__cover, title: __text('#title-textarea #textbox'), desc: __text('#description-textarea #textbox'), kids: document.getElementById('kids').checked, clicked: __clicked, outline: document.getElementById('done-button').style.outline });
+</script></body></html>

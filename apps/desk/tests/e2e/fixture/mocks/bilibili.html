@@ -1,0 +1,18 @@
+<!doctype html><html><head><meta charset="utf-8"><title>mock 投稿 - B站</title><script src="_common.js"></script></head><body>
+<!-- structure the bilibili adapter expects (member.bilibili.com/platform/upload/video/frame) -->
+<div class="bcc-upload"><input type="file" accept=".mp4,.flv" id="f"></div>
+<div id="form" style="display:none">
+  <div class="video-title"><input maxlength="80" placeholder="请输入稿件标题" value="A_换圈子_9x16"></div>
+  <div class="video-desc"><div class="ql-editor" contenteditable="true"></div></div>
+  <div class="tag-input-wrp"><span id="chips"></span><input placeholder="按回车键Enter创建标签" id="tag"></div>
+  <div class="cover-upload"><input type="file" accept="image/*" id="cv"></div>
+  <select id="zone"><option value="">请选择分区</option><option>生活</option></select>
+  <span class="submit-add" onclick="window.__clicked = true">立即投稿</span>
+</div>
+<script>
+  __reveal(document.getElementById('f'), 'form');
+  __reveal(document.getElementById('cv'), null, '__cover');
+  window.__tags = [];
+  document.getElementById('tag').addEventListener('keydown', (e) => { if (e.key === 'Enter') { const v = e.target.value.trim(); if (v) { __tags.push(v); e.target.value = ''; } } });
+  window.__state = () => ({ file: window.__file, cover: window.__cover, title: __text('.video-title input'), desc: __text('.ql-editor'), tags: __tags, zone: document.getElementById('zone').value, clicked: __clicked, outline: document.querySelector('.submit-add').style.outline });
+</script></body></html>
