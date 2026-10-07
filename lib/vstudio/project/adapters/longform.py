@@ -37,6 +37,30 @@ def _rows_from_file(path):
     return out
 
 
+class PlanItemsError(ValueError):
+    """plan-segments failed: ``attempts`` (every AI provider tried, its code and error) when the --json reply has
+    them, ``info`` {code, params, message, message_zh} for the project status / inbox."""
+
+    def __init__(self, rc, stdout, stderr):
+        d = {}
+        for cand in ((stdout or "").strip(), ((stdout or "").strip().splitlines() or [""])[-1]):
+            try:
+                d = json.loads(cand)
+                break
+            except ValueError:
+                continue
+        d = d if isinstance(d, dict) else {}
+        self.attempts = d.get("attempts") or []
+        self.code = d.get("code") or "failed"
+        self.returncode = rc
+        err = d.get("error") or (stdout + stderr)[-800:]
+        super().__init__(f"plan-segments failed (exit {rc}): {err}")
+        from vstudio import messages as MSG
+        tried = ", ".join(str(a.get("provider")) for a in self.attempts) or "-"
+        self.info = MSG.msg("plan-segments-failed", code_=self.code, providers=tried, error=str(err)[:300],
+                            attempts=self.attempts)
+
+
 def plan_items(project, provider=None, count=None, min_s=None, max_s=None):
     ins = project.data.get("inputs") or {}
     P = project.params()
@@ -64,7 +88,7 @@ def plan_items(project, provider=None, count=None, min_s=None, max_s=None):
     e["PYTHONPATH"] = os.path.join(M.ROOT, "lib") + (os.pathsep + e["PYTHONPATH"] if e.get("PYTHONPATH") else "")
     r = subprocess.run(cmd, capture_output=True, text=True, env=e)
     if r.returncode != 0:
-        raise ValueError(f"plan-segments failed (exit {r.returncode}): {(r.stdout + r.stderr)[-800:]}")
+        raise PlanItemsError(r.returncode, r.stdout, r.stderr)
     d = json.loads(r.stdout)
     rows = []
     for s in d.get("segments") or []:

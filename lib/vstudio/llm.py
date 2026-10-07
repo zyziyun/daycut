@@ -525,10 +525,83 @@ def _claude_code(system, prompt, model, schema, max_tokens, timeout, opts):
     return text, usage, model or (mu[0] if mu else "claude-code-default")
 
 
+def _nullable(s):
+    s = dict(s)
+    t = s.get("type")
+    if isinstance(t, str):
+        s["type"] = [t, "null"] if t != "null" else t
+    elif isinstance(t, list):
+        s["type"] = t if "null" in t else t + ["null"]
+    elif "anyOf" in s:
+        s["anyOf"] = list(s["anyOf"]) + [{"type": "null"}]
+    else:
+        return {"anyOf": [s, {"type": "null"}]}
+    if isinstance(s.get("enum"), list) and None not in s["enum"]:
+        s["enum"] = s["enum"] + [None]
+    return s
+
+
+def strict_schema(schema):
+    """A JSON schema -> a copy that OpenAI strict structured output accepts (``codex --output-schema``): every
+    object gets ``additionalProperties: false`` and ``required`` = all its properties (optional ones become
+    nullable), recursively (properties, items, anyOf, $defs). None when the schema cannot be strict (a free-form
+    object without ``properties``, or one that allows extra keys): the caller then asks for JSON by instruction."""
+    if not isinstance(schema, dict):
+        return None
+    s = dict(schema)
+    t = s.get("type")
+    types = t if isinstance(t, list) else [t]
+    if "object" in types or "properties" in s:
+        props = s.get("properties")
+        if not isinstance(props, dict) or not props or s.get("additionalProperties") not in (None, False):
+            return None
+        req = set(s.get("required") or [])
+        newp = {}
+        for k, v in props.items():
+            sv = strict_schema(v)
+            if sv is None:
+                return None
+            newp[k] = sv if k in req else _nullable(sv)
+        s.update(properties=newp, required=list(props), additionalProperties=False)
+    if "items" in s:
+        s["items"] = strict_schema(s["items"])
+        if s["items"] is None:
+            return None
+    for key in ("anyOf",):
+        if isinstance(s.get(key), list):
+            alts = [strict_schema(x) for x in s[key]]
+            if any(x is None for x in alts):
+                return None
+            s[key] = alts
+    for key in ("$defs", "definitions"):
+        if isinstance(s.get(key), dict):
+            d = {k: strict_schema(v) for k, v in s[key].items()}
+            if any(v is None for v in d.values()):
+                return None
+            s[key] = d
+    return s
+
+
+SCHEMA_REJECTED = re.compile(r"invalid_json_schema|invalid schema|output.?schema|additionalProperties|"
+                             r"response_format", re.I)
+
+
 def _codex(system, prompt, model, schema, max_tokens, timeout, opts):
+    """``codex exec``; a dict schema goes in as ``--output-schema`` only in its strict form (``strict_schema``):
+    otherwise (and once more when Codex rejects the schema) the schema is in the prompt instruction only."""
     exe = find_cli("codex", opts)
     if not exe:
         raise LLMError("provider codex needs the Codex CLI (`codex`) on PATH")
+    strict = strict_schema(schema) if isinstance(schema, dict) else None
+    try:
+        return _codex_run(exe, system, prompt, model, strict, timeout, opts)
+    except LLMError as e:
+        if strict is not None and SCHEMA_REJECTED.search(str(e)):
+            return _codex_run(exe, system, prompt, model, None, timeout, opts)
+        raise
+
+
+def _codex_run(exe, system, prompt, model, schema, timeout, opts):
     with tempfile.TemporaryDirectory(prefix="vstudio-llm-") as tmp:
         last = os.path.join(tmp, "last.txt")
         cmd = [exe, "exec", "--json", "--sandbox", "read-only", "--skip-git-repo-check", "--cd", tmp,
@@ -620,53 +693,168 @@ def failure_code(err):
     return "failed"
 
 
+class AllProvidersFailed(LLMError):
+    """Every provider of the route's chain failed. ``attempts``: [{provider, code, error, seconds, cached?}] in
+    order; ``tried`` / ``errors`` / ``codes`` are the same as lists; ``info``: {code: "llm-all-failed", params,
+    message, message_zh} for the desk ("Claude Code login expired; Codex also failed: ...")."""
+
+    def __init__(self, attempts):
+        self.attempts = list(attempts)
+        txt = "; ".join(f"{a['provider']} [{a['code']}]: {a['error']}" for a in self.attempts)
+        super().__init__(f"every AI provider failed - {txt}")
+        names_ = ", ".join(str(a["provider"]) for a in self.attempts)
+        self.info = dict(code="llm-all-failed", params=dict(attempts=self.attempts, providers=names_),
+                         message=f"Every AI provider failed ({names_})",
+                         message_zh=f"所有 AI 模型都失败了（{names_}）")
+
+    @property
+    def tried(self):
+        return [a["provider"] for a in self.attempts]
+
+    @property
+    def errors(self):
+        return [a["error"] for a in self.attempts]
+
+    @property
+    def codes(self):
+        return [a["code"] for a in self.attempts]
+
+    @property
+    def code(self):
+        return self.attempts[0]["code"] if self.attempts else "failed"
+
+
+def attempts_of(err):
+    """The attempts list of a failed ``complete`` (every LLMError it raises carries one), for JSON outputs."""
+    a = getattr(err, "attempts", None)
+    if a:
+        return list(a)
+    return [dict(provider=None, code=failure_code(err), error=str(err)[:300])]
+
+
+def error_info(err):
+    """A failed ``complete`` -> {error, code, tried, errors, codes, attempts} (the --json error fields)."""
+    a = attempts_of(err)
+    return dict(error=str(err)[:600], code=a[0]["code"] if a else failure_code(err),
+                tried=[x["provider"] for x in a], errors=[x["error"] for x in a], codes=[x["code"] for x in a],
+                attempts=a)
+
+
+CLI_PROVIDERS = ("claude-code", "codex")
+
+
+def _cli_timeout(cli_timeout):
+    v = cli_timeout if cli_timeout is not None else os.environ.get("VSTUDIO_LLM_CLI_TIMEOUT")
+    try:
+        return float(v) if v not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
 def complete(task, system, prompt, schema=None, provider=None, model=None, max_tokens=16000, timeout=600,
              config=None, effort=None, temperature=None, retries=2, repair=True, prices=None, on_fallback=None,
-             **opts):
+             fallback=None, cli_timeout=None, **opts):
     """``complete`` with a provider fallback chain: a route entry may list ``fallback: [codex, ...]`` (persona /
     client ``llm.tasks.<task>`` or ``llm.default``, the desk's routes file, env ``VSTUDIO_LLM_<TASK>_FALLBACK``);
     when the routed provider fails (auth expired, CLI missing, outage), the next one is tried and the result says
-    so: ``fallback_from`` (error texts) and ``fallback`` = {from, to, code, error, tried}. An explicit ``provider=``
-    argument disables the chain. ``on_fallback(info)`` is told {from, to, code, error} before each fallback
-    attempt (live progress: "Claude Code timed out, trying Codex")."""
-    kw = dict(schema=schema, model=model, max_tokens=max_tokens, timeout=timeout, config=config, effort=effort,
-              temperature=temperature, retries=retries, repair=repair, prices=prices, **opts)
-    routed = None if provider else route(task, None, None, config)
-    chain = list(routed.opts.get("fallback") or []) if routed else []
-    try:
-        return _complete(task, system, prompt, provider=provider, **kw)
-    except LLMError as first:
-        errors = [str(first)]
-        tried = [routed.provider] if routed else []
-        for fb in chain:
-            name = fb.get("provider") if isinstance(fb, dict) else fb
+    so: ``fallback_from`` (error texts), ``fallback`` = {from, to, code, error, tried} and ``failed_attempts``.
+
+    The chain applies when ``provider`` is None / "auto" OR names the routed provider itself (a caller that
+    resolved the route for display and passes it back keeps the fallback). A different explicit provider, or
+    ``fallback=False``, disables it; ``fallback=[...]`` replaces it. A CLI login known to be expired
+    (``vstudio.llm_auth`` cache) is skipped at once. ``cli_timeout`` (or env VSTUDIO_LLM_CLI_TIMEOUT, or a route
+    entry's ``timeout``): seconds per CLI provider attempt (an expired ``claude -p`` otherwise hangs ~3 minutes).
+    When every provider fails: ``AllProvidersFailed`` (``attempts`` / ``tried`` / ``errors`` / ``codes``); a
+    single provider's own error is re-raised with ``.attempts`` set. ``on_fallback(info)`` is told
+    {from, to, code, error} before each fallback attempt (live progress: "Claude Code timed out, trying Codex")."""
+    kw = dict(schema=schema, max_tokens=max_tokens, timeout=timeout, config=config, effort=effort,
+              temperature=temperature, retries=retries, repair=repair, prices=prices,
+              cli_timeout=_cli_timeout(cli_timeout), **opts)
+    p_arg = canonical(provider)
+    routed = route(task, None, None, config)
+    if fallback is False:
+        chain = []
+    elif isinstance(fallback, (list, tuple)):
+        chain = list(fallback)
+    elif p_arg is None or p_arg == routed.provider:
+        chain = list(routed.opts.get("fallback") or [])
+    else:
+        chain = []
+    cands = [(provider if p_arg else None, p_arg or routed.provider, model)]
+    for fb in chain:
+        name = fb.get("provider") if isinstance(fb, dict) else fb
+        cands.append((name, None, fb.get("model") if isinstance(fb, dict) else None))
+    attempts, last = [], None
+    for i, (name, cname, mdl) in enumerate(cands):
+        if cname is None:
             try:
-                if canonical(name) in tried:
-                    continue
+                cname = canonical(name)
             except ValueError:
-                errors.append(f"{name}: unknown provider")
+                attempts.append(dict(provider=str(name), code="failed", error=f"{name}: unknown provider",
+                                     seconds=0.0))
                 continue
-            if on_fallback:
-                try:
-                    on_fallback({"from": tried[-1] if tried else None, "to": canonical(name),
-                                 "code": failure_code(errors[-1]), "error": str(errors[-1])[:300]})
-                except Exception:  # noqa: BLE001  (a progress callback never breaks the call)
-                    pass
+        if cname in [a["provider"] for a in attempts] or (i and cname == cands[0][1]):
+            continue
+        if attempts and on_fallback:
             try:
-                out = _complete(task, system, prompt, provider=name,
-                                **dict(kw, model=fb.get("model") if isinstance(fb, dict) else None))
-                out["fallback_from"] = errors
-                out["fallback"] = dict(**{"from": routed.provider}, to=out.get("provider") or canonical(name),
-                                       code=failure_code(first), error=str(first)[:300], tried=tried)
-                return out
-            except LLMError as e:
-                tried.append(canonical(name))
-                errors.append(f"{name}: {e}")
-        raise
+                on_fallback({"from": attempts[-1]["provider"], "to": cname, "code": attempts[-1]["code"],
+                             "error": attempts[-1]["error"]})
+            except Exception:  # noqa: BLE001  (a progress callback never breaks the call)
+                pass
+        if cname in CLI_PROVIDERS and _known_expired(cname):
+            err = LLMError(f"{cname}: the login is known to be expired (checked earlier; log in again, then "
+                           f"`python -m vstudio.llm auth status --refresh`) - 401")
+            last = err
+            attempts.append(dict(provider=cname, code="auth-expired", error=str(err)[:300], seconds=0.0,
+                                 cached=True))
+            continue
+        t0 = time.time()
+        try:
+            out = _complete(task, system, prompt, provider=name if i else (provider if p_arg else None),
+                            **dict(kw, model=mdl))
+        except LLMError as e:
+            last = e
+            code = failure_code(e)
+            attempts.append(dict(provider=cname, code=code, error=str(e)[:300], seconds=round(time.time() - t0, 1)))
+            if cname in CLI_PROVIDERS and code in ("auth-expired", "not-logged-in"):
+                _remember(cname, "expired" if code == "auth-expired" else "not-logged-in", str(e))
+            continue
+        if cname in CLI_PROVIDERS:
+            _remember(cname, "logged-in")
+        if attempts:
+            first = attempts[0]
+            out["fallback_from"] = [a["error"] for a in attempts]
+            out["fallback"] = dict(**{"from": first["provider"]}, to=out.get("provider") or cname,
+                                   code=first["code"], error=first["error"], tried=[a["provider"] for a in attempts])
+            out["failed_attempts"] = attempts
+        return out
+    if last is None:
+        last = LLMError(f"no usable provider for task {task}")
+    if len(attempts) <= 1:
+        last.attempts = attempts
+        raise last
+    raise AllProvidersFailed(attempts) from last
+
+
+def _known_expired(provider):
+    try:
+        from . import llm_auth
+        return llm_auth.known_expired(provider)
+    except Exception:  # noqa: BLE001 - the cache never breaks a call
+        return False
+
+
+def _remember(provider, state, detail=None):
+    try:
+        from . import llm_auth
+        llm_auth.remember(provider, state, detail)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _complete(task, system, prompt, schema=None, provider=None, model=None, max_tokens=16000, timeout=600,
-              config=None, effort=None, temperature=None, retries=2, repair=True, prices=None, **opts):
+              config=None, effort=None, temperature=None, retries=2, repair=True, prices=None, cli_timeout=None,
+              **opts):
     """One LLM call. Returns dict(text, json, usage {input, output}, cost_usd, provider, model, route, attempts).
 
     task: routing key (segment_plan | proofread | glossary | copy | script | ...); schema: None (text), True (any
@@ -684,6 +872,11 @@ def _complete(task, system, prompt, schema=None, provider=None, model=None, max_
     if temperature is not None:
         o["temperature"] = temperature
     p = r.provider
+    t_route = o.pop("timeout", None)
+    if t_route:
+        timeout = float(t_route)
+    elif p in CLI_PROVIDERS and cli_timeout:
+        timeout = float(cli_timeout)
     mdl = r.model or default_model(p, o)
     out = dict(text="", json=None, usage=dict(input=0, output=0), cost_usd=0.0, provider=p, model=mdl,
                route=r.source, attempts=0)
@@ -744,7 +937,9 @@ def call_fn(task, provider=None, schema=True, config=None, **kw):
     """Adapter for the older ``fn(system, prompt, model) -> (text, usage)`` call sites (proofread, segplan)."""
     def fn(system, prompt, model):
         r = complete(task, system, prompt, schema=schema, provider=provider, model=model, config=config, **kw)
+        fn.results.append({k: r.get(k) for k in ("provider", "model", "fallback", "cost_usd", "route")})
         return r["text"], dict(r["usage"])
+    fn.results = []            # one {provider, model, fallback, cost_usd} per call: who really answered
     return fn
 
 
@@ -870,7 +1065,7 @@ def main(argv=None):
     pt.add_argument("--provider", required=True)
     pt.add_argument("--model")
     pt.add_argument("--base-url")
-    pt.add_argument("--timeout", type=float, default=180)
+    pt.add_argument("--timeout", type=float, default=60)
     a = ap.parse_args(argv)
     if a.cmd == "providers":
         from . import asr, tts
@@ -899,7 +1094,8 @@ def main(argv=None):
     try:
         r = complete("test", "You are a connectivity check. Reply with JSON only.",
                      'Return exactly {"ok": true, "sum": <2+2 as a number>}.', schema=True, provider=a.provider,
-                     model=a.model, max_tokens=2000, timeout=a.timeout, retries=0, base_url=a.base_url)
+                     model=a.model, max_tokens=2000, timeout=a.timeout, retries=0, base_url=a.base_url,
+                     fallback=False)
     except (LLMError, ValueError) as e:
         print(json.dumps(dict(ok=False, provider=a.provider, error=str(e)[:400]), ensure_ascii=False))
         return 1
@@ -909,7 +1105,7 @@ def main(argv=None):
     return 0 if ok else 2
 
 
-__all__ = ["complete", "route", "failure_code", "find_cli", "strip_env", "Route", "check", "providers", "parse_json", "cost_usd", "price_of", "canonical",
+__all__ = ["complete", "route", "failure_code", "AllProvidersFailed", "attempts_of", "error_info", "strict_schema", "find_cli", "strip_env", "Route", "check", "providers", "parse_json", "cost_usd", "price_of", "canonical",
            "names", "default_model", "call_fn", "LLMError", "TransientError", "PRESETS", "PRICES", "DEFAULT_MODELS"]
 
 if __name__ == "__main__":

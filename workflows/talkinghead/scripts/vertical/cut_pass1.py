@@ -22,7 +22,8 @@ if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help"): print(__doc__); sys.exi
 import os, importlib.util
 from vstudio import cleanup
 from bodycut import F, PAUSE_KINDS, cleanup_overrides, cut_sources, edl_name, intersect, save_stage
-spec = importlib.util.spec_from_file_location('el', sys.argv[1]); el = importlib.util.module_from_spec(spec); spec.loader.exec_module(el)
+from vstudio.config import load_py
+el = load_py(sys.argv[1], 'el')            # from source (never a stale .pyc of an edit list rewritten in the same second)
 E = el.E
 PROFILE = getattr(el, 'PROFILE', None); OV = cleanup_overrides(el)
 REPLY = cleanup.parse_reply(getattr(el, 'REPLY', '') or '')

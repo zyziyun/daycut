@@ -608,8 +608,11 @@ def summary_zh(plan):
 
 
 # --------------------------------------------------------------------------- the model call
+DEFAULT_CLI_TIMEOUT = 120      # s per CLI provider attempt (claude-code / codex), then the next one in the chain
+
+
 def _call_model(prompt, analysis, ctx, transcripts, provider=None, model=None, current=None, instruction=None,
-                call=None):
+                call=None, timeout=None):
     route = LLM.route(TASK, provider, model, ctx.get("llm_config"))
     info = dict(provider=route.provider, model=route.model, route=route.source)
     if route.provider == "none" and call is None:
@@ -622,11 +625,16 @@ def _call_model(prompt, analysis, ctx, transcripts, provider=None, model=None, c
         if call is not None:
             res = call(system, body)
         else:
+            ct = timeout if timeout is not None else (None if os.environ.get("VSTUDIO_LLM_CLI_TIMEOUT")
+                                                      else DEFAULT_CLI_TIMEOUT)
             res = LLM.complete(TASK, system, body, schema=True, provider=provider, model=model,
-                               config=ctx.get("llm_config"), max_tokens=12000, timeout=600)
+                               config=ctx.get("llm_config"), max_tokens=12000, timeout=600, cli_timeout=ct)
     except Exception as e:  # noqa: BLE001 - auth / network / CLI errors: fall back, say why
         info.update(fallback=True, reason=f"{type(e).__name__}: {str(e)[:240]}", seconds=round(time.time() - t0, 1),
                     failure=LLM.failure_code(e))
+        if isinstance(e, LLM.LLMError):
+            ei = LLM.error_info(e)
+            info.update(attempts=ei["attempts"], tried=ei["tried"], codes=ei["codes"])
         return None, info
     info.update(model=res.get("model") or info["model"], cost_usd=res.get("cost_usd", 0.0),
                 usage=res.get("usage"), seconds=round(time.time() - t0, 1), routed=route.provider,
@@ -715,7 +723,7 @@ def _plan_id(prompt):
 
 
 def make_plan(prompt, inputs=None, client=None, provider=None, model=None, analysis=None, asr="auto", auto=None,
-              call=None, echo=None, language=None):
+              call=None, echo=None, language=None, timeout=None):
     """-> plan dict. ``call(system, prompt) -> {json, model, cost_usd}`` replaces the model (tests)."""
     if analysis is None:
         if not inputs:
@@ -729,7 +737,7 @@ def make_plan(prompt, inputs=None, client=None, provider=None, model=None, analy
         if need:
             analysis = _upgrade_transcripts(analysis, need, language, echo)
     transcripts = _transcripts(analysis) if intent.get("extract") else {}
-    js, info = _call_model(prompt, analysis, ctx, transcripts, provider, model, call=call)
+    js, info = _call_model(prompt, analysis, ctx, transcripts, provider, model, call=call, timeout=timeout)
     warn = []
     questions, risks, summary = [], [], None
     raw_projects = None
@@ -812,7 +820,7 @@ def _norm_questions(qs, projects):
     return out
 
 
-def revise(plan, instruction, provider=None, model=None, call=None, client=None, echo=None):
+def revise(plan, instruction, provider=None, model=None, call=None, client=None, echo=None, timeout=None):
     """Follow-up instruction -> updated plan (model first, rules as the fallback). The analysis is re-read from
     the cache (no media work unless the cache was cleared)."""
     plan = copy.deepcopy(plan)
@@ -830,7 +838,7 @@ def revise(plan, instruction, provider=None, model=None, call=None, client=None,
             intent_now[k] = follow[k]
     transcripts = _transcripts(analysis) if intent.get("extract") else {}
     js, info = _call_model(plan["prompt"], analysis, ctx, transcripts, provider, model, current=plan,
-                           instruction=instruction, call=call)
+                           instruction=instruction, call=call, timeout=timeout)
     warn, notes = [], []
     projects = []
     summary = None

@@ -45,8 +45,10 @@ import time
 from .util import write_json
 
 from vstudio import llm as LLM
+from vstudio import messages as MSG
 
 MODELS = {"claude": "claude-opus-5-5", "openai": "gpt-4.1"}
+DEFAULT_CLI_TIMEOUT = 120        # s per CLI provider attempt (claude-code / codex): a long transcript needs > 60 s
 PRICES = LLM.PRICES
 _CJK = re.compile(r"[㐀-鿿豈-﫿]")
 _LAT = re.compile(r"[A-Za-z][A-Za-z0-9+#.\-]*[A-Za-z0-9+#]|[A-Za-z]{2,}")
@@ -520,7 +522,7 @@ def _call_openai(system, prompt, model):
         raise PlanError("provider openai needs OPENAI_API_KEY")
     try:
         r = LLM.complete("segment_plan", system, prompt, schema=True, provider="openai", model=model,
-                         max_tokens=16000, temperature=0.2, repair=False)
+                         max_tokens=16000, temperature=0.2, repair=False, fallback=False)
     except LLM.LLMError as e:
         raise PlanError(str(e)) from e
     return r["text"], dict(r["usage"])
@@ -536,18 +538,21 @@ def _call_claude(system, prompt, model):
         raise PlanError(str(e)) from e
 
 
-def _call_llm(provider, config=None):
-    """Any other ``vstudio.llm`` provider as ``fn(system, prompt, model) -> (text, usage)``."""
-    if provider in CALLS:
+def _call_llm(provider, config=None, routed=False, timeout=None):
+    """Any other ``vstudio.llm`` provider as ``fn(system, prompt, model) -> (text, usage)``. ``routed``: the
+    provider came from the route ("auto"): call with provider=None so the route's fallback chain applies (never
+    pinned); ``timeout``: seconds per CLI provider. ``fn.results``: who really answered each call."""
+    if provider in CALLS and not routed:
         return CALLS[provider]
-    inner = LLM.call_fn("segment_plan", provider=provider, schema=True, config=config, temperature=0.2,
-                        repair=False)
+    inner = LLM.call_fn("segment_plan", provider=None if routed else provider, schema=True, config=config,
+                        temperature=0.2, repair=False, max_tokens=16000, cli_timeout=timeout)
 
     def fn(system, prompt, model):
         try:
             return inner(system, prompt, model)
         except LLM.LLMError as e:
             raise PlanError(str(e)) from e
+    fn.results = inner.results
     return fn
 
 
@@ -569,7 +574,7 @@ def _parse(text):
 
 
 def llm_plan(provider, model, sents, count, min_s, max_s, limit, platform, lang, style="", tags=(), call=None,
-             chunk_chars=150000, config=None):
+             chunk_chars=150000, config=None, routed=False, timeout=None, meta=None):
     """-> ([(k0, k1, fields)], usage, raw replies)."""
     unit = "characters" if lang == "zh" else "characters"
     rule = "CJK and full-width count 1, latin letters / digits / spaces 0.5" if platform in ("xiaohongshu", "xhs") \
@@ -585,7 +590,9 @@ def llm_plan(provider, model, sents, count, min_s, max_s, limit, platform, lang,
     if cur:
         chunks.append(cur)
     total = sum(sents[c[-1]]["te"] - sents[c[0]]["t"] for c in chunks) or 1.0
-    fn = call or _call_llm(provider, config)
+    fn = call or _call_llm(provider, config, routed=routed, timeout=timeout)
+    if meta is not None:
+        meta["results"] = getattr(fn, "results", None)
     picks, usage, raws = [], dict(input=0, output=0), []
     for c in chunks:
         share = (sents[c[-1]]["te"] - sents[c[0]]["t"]) / total
@@ -642,7 +649,11 @@ def length_window(platforms, min_s=None, max_s=None):
 
 
 def plan_segments(source, transcript=None, client=None, count=None, min_s=None, max_s=None, platforms=None,
-                  provider="auto", model=None, out=None, language=None, echo=True, call=None, write=True):
+                  provider="auto", model=None, out=None, language=None, echo=True, call=None, write=True,
+                  timeout=None):
+    """``provider`` "auto": the segment_plan route WITH its fallback chain (claude-code -> codex ...); the doc says
+    who answered (``provider``), what was routed (``routed``) and any ``fallback``. ``timeout``: seconds per CLI
+    provider attempt (default ``DEFAULT_CLI_TIMEOUT``)."""
     t_start = time.time()
     eff = {}
     cdir = None
@@ -653,10 +664,15 @@ def plan_segments(source, transcript=None, client=None, count=None, min_s=None, 
     platforms = list(platforms or eff.get("platforms") or ["xiaohongshu:full"])
     prov = (provider or "auto").lower()
     llm_cfg = {"llm": eff.get("llm")} if eff.get("llm") else None
+    routed = prov == "auto" and call is None
+    chain = []
     if prov == "auto":
-        prov = LLM.route("segment_plan", config=llm_cfg).provider
-        prov = "claude" if prov == "anthropic" else prov
-    if prov == "claude" and not os.environ.get("ANTHROPIC_API_KEY") and call is None:
+        rt = LLM.route("segment_plan", config=llm_cfg)
+        chain = list(rt.opts.get("fallback") or [])
+        prov = "claude" if rt.provider == "anthropic" else rt.provider
+    if routed and chain and prov != "none":
+        pass                         # a fallback chain: the first provider may be down, the chain decides at call time
+    elif prov == "claude" and not os.environ.get("ANTHROPIC_API_KEY") and call is None:
         raise PlanError("provider claude needs ANTHROPIC_API_KEY (or use --provider none)")
     if prov == "openai" and not os.environ.get("OPENAI_API_KEY") and call is None:
         raise PlanError("provider openai needs OPENAI_API_KEY (or use --provider none)")
@@ -667,10 +683,11 @@ def plan_segments(source, transcript=None, client=None, count=None, min_s=None, 
             raise PlanError(f"provider {provider!r}: auto | claude | openai | none | "
                             + " | ".join(n for n in LLM.names() if n not in ("anthropic", "openai", "none"))) from None
         prov = "claude" if prov == "anthropic" else prov
-        if prov not in ("claude", "openai", "none") and call is None:
+        if prov not in ("claude", "openai", "none") and call is None and not (routed and chain):
             chk = LLM.check(prov, LLM.route("segment_plan", prov, config=llm_cfg).opts)
             if not chk["ready"]:
                 raise PlanError(f"provider {prov}: {chk['detail']} (or use --provider none)")
+    explicit_model = bool(model)
     if not model and prov != "none":
         r = LLM.route("segment_plan", "anthropic" if prov == "claude" else prov, config=llm_cfg)
         model = r.model or MODELS.get(prov) or LLM.default_model(r.provider, r.opts)
@@ -699,12 +716,33 @@ def plan_segments(source, transcript=None, client=None, count=None, min_s=None, 
     ranked = rank_windows(W, sents, per, idf, bounds, chapters, mn, mx, lang, prefer)
     chap_of = {k: c for c in chapters for k in range(c["k0"], c["k1"] + 1)}
     usage, raws, warnings = dict(input=0, output=0), [], []
+    fallback_info, api_cost, notices = None, None, []
+
+    def warn(code, **params):
+        m = MSG.msg(code, **params)
+        notices.append(m)
+        warnings.append(m["message"])
     rows = []
     if prov == "none":
         picks = [(a, b, None, sc, parts) for sc, a, b, parts in select(ranked, count, len(chapters))]
     else:
-        lp, usage, raws = llm_plan(prov, model, sents, count, mn, mx, limit, lim_pf, lang, eff.get("style") or "",
-                                   prefer, call=call, config=llm_cfg)
+        meta = {}
+        lp, usage, raws = llm_plan(prov, model if (explicit_model or not routed) else None, sents, count, mn, mx,
+                                   limit, lim_pf, lang, eff.get("style") or "", prefer, call=call, config=llm_cfg,
+                                   routed=routed, timeout=timeout if timeout is not None else (
+                                       None if os.environ.get("VSTUDIO_LLM_CLI_TIMEOUT") else DEFAULT_CLI_TIMEOUT),
+                                   meta=meta)
+        res = [x for x in meta.get("results") or [] if x]
+        if res:
+            used = res[-1]
+            routed_prov, prov = prov, ("claude" if used.get("provider") == "anthropic" else used.get("provider")
+                                       or prov)
+            model = used.get("model") or model
+            fb = next((x.get("fallback") for x in res if x.get("fallback")), None)
+            if fb:
+                fallback_info = dict(fb, routed=routed_prov)
+                warn("plan-fallback", frm=fb.get("from"), to=fb.get("to"), why=fb.get("code"))
+            api_cost = sum(float(x.get("cost_usd") or 0) for x in res)
         picks, taken = [], []
         sc_of = {(a, b): (sc, parts) for sc, a, b, parts in ranked}
         for a, b, f in sorted(lp, key=lambda x: -float((x[2] or {}).get("score") or 0)):
@@ -715,8 +753,7 @@ def plan_segments(source, transcript=None, client=None, count=None, min_s=None, 
             sc, parts = sc_of.get((a, b), (None, {}))
             picks.append((a, b, f, sc, parts))
         if len(picks) < count:
-            warnings.append(f"{prov} returned {len(picks)} usable segment(s); {count - len(picks)} filled by the "
-                            "rule-based ranking")
+            warn("plan-short-filled", provider=prov, n=len(picks), missing=count - len(picks))
             for sc, a, b, parts in ranked:
                 if len(picks) >= count:
                     break
@@ -738,7 +775,7 @@ def plan_segments(source, transcript=None, client=None, count=None, min_s=None, 
             if f.get("title"):
                 t = str(f["title"]).strip().strip("\"“”「」")
                 if title_len(t, lim_pf) > limit:
-                    warnings.append(f"s{n + 1:03d}: {prov} title over {limit}: {t}")
+                    warn("plan-title-too-long", id=f"s{n + 1:03d}", provider=prov, limit=limit, title=t)
                     t = shorten(t, limit, lim_pf)
                 title = t or title
             chapter = str(f.get("chapter") or chapter)
@@ -774,8 +811,10 @@ def plan_segments(source, transcript=None, client=None, count=None, min_s=None, 
                          hook=hk[0] if hk else None, hook_candidates=hk, notes=notes, tags=tags, why=why, risk=risk,
                          score=score))
     cost = 0.0
-    if prov != "none" and (call is not None or LLM.canonical("anthropic" if prov == "claude" else prov)
-                           not in LLM.LOCAL):
+    if api_cost is not None:
+        cost = round(api_cost, 4)
+    elif prov != "none" and (call is not None or LLM.canonical("anthropic" if prov == "claude" else prov)
+                             not in LLM.LOCAL):
         pin, pout = LLM.price_of(model)[0]
         cost = round((usage["input"] * pin + usage["output"] * pout) / 1e6, 4)
     doc = dict(ok=True, provider=prov, model=model if prov != "none" else None, source=os.path.abspath(source)
@@ -783,7 +822,7 @@ def plan_segments(source, transcript=None, client=None, count=None, min_s=None, 
                language=lang, count=count, min=mn, max=mx, platforms=platforms, title_max=limit,
                chapters=[dict(start=round(sents[c["k0"]]["t"], 2), end=round(sents[c["k1"]]["te"], 2), name=c["name"])
                          for c in chapters], segments=rows, cost_usd=cost, usage=usage, warnings=warnings,
-               client=cdir, seconds=round(time.time() - t_start, 2))
+               notices=notices, client=cdir, seconds=round(time.time() - t_start, 2), fallback=fallback_info)
     if write:
         od = os.path.abspath(out or os.path.join(os.path.dirname(os.path.abspath(source or tr_path or ".")),
                                                  "plan-" + os.path.splitext(os.path.basename(source or "source"))[0]))

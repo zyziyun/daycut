@@ -355,7 +355,7 @@ def cmd_output(a):
             raise O.OutputError("bad-param", "--instruction is required", "需要 --instruction", name="instruction")
         _out(a, O.ai(proj, a.output, a.instruction, apply=a.apply, provider=a.provider, model=a.model,
                      use_asr=not a.no_asr, context=json.loads(a.context) if a.context else None,
-                     record=not a.no_record))
+                     record=not a.no_record, timeout=a.timeout))
         return 0
     # edit
     if a.ops:
@@ -563,6 +563,7 @@ def build_parser():
     p.add_argument("--context", help='ai: what the creator points at, JSON {"range": [a, b], "cues": [..], '
                    '"effect": "fx2"}')
     p.add_argument("--no-record", action="store_true", help="ai: do not add the turn to the chat transcript")
+    p.add_argument("--timeout", type=float, help="ai: seconds per CLI provider attempt before the fallback (60)")
     p.add_argument("--step", help="revert: the history step id to cancel (later steps stay)")
     p.add_argument("--turn", help="edit: the chat turn the ops come from (marked applied); chat: the turn to patch")
     p.add_argument("--add", help="chat: append a turn (JSON)")
@@ -644,7 +645,11 @@ def main(argv=None):
     except (ProjectError, SeriesError, ManifestError, CalendarError, KeyError, FileNotFoundError, ValueError) as e:
         msg = str(e.args[0]) if isinstance(e, KeyError) and e.args else str(e)
         if getattr(a, "json", False) or getattr(a, "json_events", False):
-            print(json.dumps(dict(ok=False, error=msg, type=type(e).__name__), ensure_ascii=False))
+            extra = {}
+            if getattr(e, "info", None):              # e.g. plan-segments failed: every AI provider tried
+                extra = dict(e.info, attempts=getattr(e, "attempts", None) or [])
+            print(json.dumps(dict(ok=False, error=msg, type=type(e).__name__, **extra), ensure_ascii=False,
+                             default=str))
         else:
             print(f"error: {msg}", file=sys.stderr)
         return 5

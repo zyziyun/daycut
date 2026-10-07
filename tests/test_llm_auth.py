@@ -74,7 +74,15 @@ def test_status_expired_even_when_status_says_logged_in(monkeypatch):
     probe = next(c for c in calls if "-p" in c["cmd"])
     assert probe["cmd"][probe["cmd"].index("--tools") + 1] == "" and "--no-session-persistence" in probe["cmd"]
     assert "must-not-leak" not in json.dumps(rows)
-    # no probe: the status command alone (not verified)
+    # the expired login is cached: the next check (even without a probe) says so at once, no 3-minute probe
+    n = len(calls)
+    r = A.status(["claude-code"])[0]
+    assert r["state"] == "expired" and r["probe"]["cached"] and not any("-p" in c["cmd"] for c in calls[n:])
+    # --refresh (after a login) probes again
+    r = A.status(["claude-code"], refresh=True)[0]
+    assert r["probe"]["ran"] and any("-p" in c["cmd"] for c in calls[n:])
+    # no probe, nothing cached: the status command alone (not verified)
+    A.forget()
     r = A.status(["claude-code"], probe=False)[0]
     assert r["state"] == "logged-in" and r["verified"] is False
 

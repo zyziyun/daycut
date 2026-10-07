@@ -134,7 +134,9 @@ class ClaudePlanner:
         return True
 
     def rows(self, spec):
-        if not self.available():
+        from vstudio import llm
+        routed = self.sync and llm.route("planner").provider not in ("none", "anthropic")
+        if not routed and not self.available():
             raise PlannerUnavailable(
                 "claude planner needs `pip install anthropic` and ANTHROPIC_API_KEY. Without them write the job list "
                 "yourself (or let a Claude Code agent write segments.yaml from the transcript) and use --planner file.")
@@ -146,12 +148,14 @@ class ClaudePlanner:
         out_path = os.path.join(spec["_dir"], "segments.claude.yaml")
         if self.sync:                                     # pilot / interactive: regular API
             rows = []
-            from vstudio import llm
             for r in reqs:                                # same request through vstudio.llm (system prompt cached)
                 pr = r["params"]
+                # the "planner" route (claude-code -> codex ...) with its fallback chain when one is configured;
+                # else the Anthropic API (a route to anthropic keeps its chain too: same provider = not pinned)
                 res = llm.complete("planner", pr["system"][0]["text"], pr["messages"][0]["content"], schema=True,
-                                   provider="anthropic", model=pr["model"], max_tokens=pr["max_tokens"],
-                                   effort=(pr.get("output_config") or {}).get("effort"), cache=True, repair=False)
+                                   provider=None if routed else "anthropic", model=None if routed else pr["model"],
+                                   max_tokens=pr["max_tokens"], effort=(pr.get("output_config") or {}).get("effort"),
+                                   cache=True, repair=False)
                 rows += parse_reply(res["text"])
             return self._write(out_path, rows)
         import anthropic                                  # Message Batches: an Anthropic-only API (50 % price)

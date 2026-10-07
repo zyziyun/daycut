@@ -10,4 +10,5 @@ where = ["lib"]
 [tool.pytest.ini_options]
 # engine tests only; the desk sidecar's tests (apps/desk/engine/tests) run with `npm run test:engine` in apps/desk
 testpaths = ["tests"]
+pythonpath = ["lib"]
 norecursedirs = ["apps", "node_modules", ".git"]

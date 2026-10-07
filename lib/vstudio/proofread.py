@@ -140,24 +140,29 @@ def _cue_dict(c):
 
 
 # ------------------------------------------------------------------ providers
-def _call_claude(system, prompt, model):
-    """Anthropic API through ``vstudio.llm`` (effort low, JSON parsed / retried by the caller)."""
-    r = llm.complete("proofread", system, prompt, schema=True, provider="anthropic", model=model, max_tokens=16000,
+def _call_claude(system, prompt, model, task="proofread"):
+    """Anthropic API through ``vstudio.llm`` (effort low, JSON parsed / retried by the caller). The route's
+    fallback chain applies when the task is routed to anthropic (``llm.complete``: same provider = not pinned)."""
+    r = llm.complete(task, system, prompt, schema=True, provider="anthropic", model=model, max_tokens=16000,
                      effort="low", repair=False)
     return r["text"], dict(r["usage"])
 
 
-def _call_openai(system, prompt, model):
+def _call_openai(system, prompt, model, task="proofread"):
     """OpenAI Chat Completions (JSON mode, temperature 0) through ``vstudio.llm``."""
-    r = llm.complete("proofread", system, prompt, schema=True, provider="openai", model=model, max_tokens=8000,
+    r = llm.complete(task, system, prompt, schema=True, provider="openai", model=model, max_tokens=8000,
                      temperature=0, repair=False)
     return r["text"], dict(r["usage"])
 
 
 def _call_llm(prov, task="proofread"):
-    """``fn(system, prompt, model) -> (text, usage)`` for any other ``vstudio.llm`` provider."""
+    """``fn(system, prompt, model) -> (text, usage)`` for any ``vstudio.llm`` provider. A provider that is the
+    task's own route keeps the route's fallback chain (``llm.complete``: the routed provider is never pinned), so
+    "auto" -> claude-code still falls back to codex; ``fn.results``: who really answered."""
     if prov in CALLS:
-        return CALLS[prov]
+        f = CALLS[prov]
+        return f if task == "proofread" or f not in (_call_claude, _call_openai) else \
+            (lambda s, p, m: f(s, p, m, task=task))
     return llm.call_fn(task, provider=prov, schema=True, temperature=0, repair=False)
 
 
@@ -979,7 +984,9 @@ def proofread(cues, term_fixes=None, provider="auto", model=None, context=None, 
                 changes.append(dict(i=i, start=c["start"], end=c["end"], before=before, after=c["text"],
                                     source="llm-propagated", why=f"same fix as elsewhere: {o} -> {n}"))
     flag_guesses(changes, glossary, context)
-    return dict(cues=C, changes=changes, rejected=rejected, warnings=warnings, low_confidence=low,
+    fb = next((x.get("fallback") for x in getattr(fn, "results", None) or [] if x and x.get("fallback")), None) \
+        if prov != "none" and C else None
+    return dict(cues=C, changes=changes, rejected=rejected, warnings=warnings, low_confidence=low, fallback=fb,
                 fillers_left=caption_fillers(C), provider=prov, model=mdl if prov != "none" else None, usage=usage,
                 cost_usd=cost_usd(mdl, usage, prices, prov) if prov not in ("none",) else 0.0,
                 glossary=dict(fixes=len(gfix), terms=len((glossary or {}).get("terms") or [])), cache=cstat,

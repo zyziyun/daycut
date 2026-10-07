@@ -305,7 +305,16 @@ def cmd_bench(a):
 
 def _fail(a, e, code=1):
     if getattr(a, "json", False):
-        _out(dict(ok=False, error=str(e)))
+        from vstudio import llm as LLM
+        cause = e if isinstance(e, LLM.LLMError) else e.__cause__
+        extra = {}
+        if isinstance(cause, LLM.LLMError):            # an AI step: every provider tried, with its error and code
+            info = LLM.error_info(cause)
+            extra = dict(code=info["code"], tried=info["tried"], errors=info["errors"], codes=info["codes"],
+                         attempts=info["attempts"])
+            if getattr(cause, "info", None):
+                extra["message"] = cause.info
+        _out(dict(ok=False, error=str(e), **extra))
     else:
         print(f"[{a.cmd}] {e}", file=sys.stderr)
     return code
@@ -368,7 +377,7 @@ def cmd_plan_segments(a):
         r = segplan.plan_segments(
             a.source, transcript=a.transcript, client=a.client, count=a.count, min_s=a.min, max_s=a.max,
             platforms=[x.strip() for x in a.platforms.split(",")] if a.platforms else None, provider=a.provider,
-            model=a.model, out=a.out, language=a.language, echo=not a.json)
+            model=a.model, out=a.out, language=a.language, echo=not a.json, timeout=a.timeout)
     except (segplan.PlanError, FileNotFoundError, ValueError) as e:
         return _fail(a, e, 5 if isinstance(e, segplan.PlanError) else 1)
     if a.json:
@@ -635,6 +644,8 @@ def main(argv=None):
                         "ollama | lmstudio | vllm | llamacpp | gemini | claude-code | codex | none")
     p.add_argument("--model")
     p.add_argument("--language")
+    p.add_argument("--timeout", type=float, help="seconds per CLI provider attempt (claude-code / codex; default 120, "
+                                                 "env VSTUDIO_LLM_CLI_TIMEOUT)")
     p.add_argument("--out", help="output folder (default <source dir>/plan-<source stem>)")
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_plan_segments, batch=None)

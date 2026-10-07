@@ -10,6 +10,7 @@ on:
       - 'references/**'
       - 'SKILL.md'
       - 'requirements.txt'
+      - 'tests/requirements.txt'
       - 'pyproject.toml'
       - '.github/workflows/engine.yml'
   push:
@@ -22,6 +23,7 @@ on:
       - 'references/**'
       - 'SKILL.md'
       - 'requirements.txt'
+      - 'tests/requirements.txt'
       - 'pyproject.toml'
       - '.github/workflows/engine.yml'
   workflow_dispatch:
@@ -38,10 +40,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: '3.12', cache: pip }
-      - name: ffmpeg
-        run: sudo apt-get update -q && sudo apt-get install -yq ffmpeg
-      - name: Python deps
-        run: python -m pip install -r requirements.txt pytest
+      - name: ffmpeg + GL runtime (mediapipe needs libEGL / libGLESv2)
+        run: sudo apt-get update -q && sudo apt-get install -yq ffmpeg libegl1 libgles2
+      - name: Python deps (runtime + tests/requirements.txt)
+        run: python -m pip install -r tests/requirements.txt
+      - name: deps are importable (fail here, not as 8 odd test errors)
+        run: python -c "import yaml, jsonschema, numpy, cv2, mediapipe; print('deps ok')"
       - name: check_skill (frontmatter, personal paths, secrets - also scans apps/)
         run: python scripts/check_skill.py
       - name: pytest

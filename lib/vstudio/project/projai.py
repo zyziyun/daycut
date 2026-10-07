@@ -437,16 +437,14 @@ def plan(d, instruction, outputs=None, context=None, provider=None, model=None, 
             r, j = None, {}
             try:
                 r = llm.complete("output_edit", SYSTEM, prompt, schema=SCHEMA, provider=provider, model=model,
-                                 max_tokens=8000, timeout=timeout,
+                                 max_tokens=8000, timeout=timeout, cli_timeout=timeout,
                                  on_fallback=lambda fb: emit(event="fallback", **fb))
                 j = r.get("json") if isinstance(r.get("json"), dict) else {}
                 if not isinstance(j.get("groups"), list):
                     raise O.OutputError("llm-bad-json", "the model did not return {groups: [...]}",
                                         "模型没有返回分组修改", provider=r.get("provider"))
             except Exception as e:  # noqa: BLE001
-                fail = e if isinstance(e, O.OutputError) else O.OutputError(
-                    "llm-failed", f"the model call failed: {str(e)[:200]}", "模型调用失败", provider=route.provider,
-                    error=str(e)[:200], code_hint=llm.failure_code(e))
+                fail = e if isinstance(e, O.OutputError) else O.llm_failed(e, route.provider)
                 if not (needs or groups):
                     raise fail from e
                 warns.append(fail.info)               # keep what the rule check answered

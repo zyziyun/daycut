@@ -65,14 +65,16 @@ def cmd_analyze(a):
 def cmd_plan(a):
     analysis = _load(a.analysis) if a.analysis else None
     p = PL.make_plan(a.prompt, a.inputs, client=a.client, provider=a.provider, model=a.model, analysis=analysis,
-                     asr=a.asr, auto=[x for x in (a.auto or "").split(",") if x], echo=_echo(a), language=a.language)
+                     asr=a.asr, auto=[x for x in (a.auto or "").split(",") if x], echo=_echo(a), language=a.language,
+                     timeout=a.timeout)
     _save(a.out, p)
     _out(a, p, _plan_text(p))
     return 0
 
 
 def cmd_revise(a):
-    p = PL.revise(_load(a.plan), a.prompt, provider=a.provider, model=a.model, client=a.client, echo=_echo(a))
+    p = PL.revise(_load(a.plan), a.prompt, provider=a.provider, model=a.model, client=a.client, echo=_echo(a),
+                  timeout=a.timeout)
     _save(a.out or (a.plan if a.in_place else None), p)
     _out(a, p, _plan_text(p))
     return 0
@@ -120,6 +122,8 @@ def build_parser():
     p.add_argument("--client", help="client folder or slug (defaults, llm routes)")
     p.add_argument("--provider", help="LLM provider for task intake (default: the route; none = rules only)")
     p.add_argument("--model")
+    p.add_argument("--timeout", type=float, help="seconds per CLI provider attempt (default 120, env "
+                                                 "VSTUDIO_LLM_CLI_TIMEOUT); then the route's fallback")
     p.add_argument("--asr", default="auto", choices=["off", "sample", "auto", "full"],
                    help="auto: full transcript only for videos the request selects content from (<= 45 min)")
     p.add_argument("--language")
@@ -132,6 +136,7 @@ def build_parser():
     p.add_argument("--client")
     p.add_argument("--provider")
     p.add_argument("--model")
+    p.add_argument("--timeout", type=float, help="seconds per CLI provider attempt (default 120)")
     p.add_argument("--out")
     p.add_argument("--in-place", action="store_true", help="overwrite --plan")
 

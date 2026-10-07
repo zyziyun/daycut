@@ -1,7 +1,7 @@
 """Login status of every LLM provider, and the exact commands to log in / out. The engine never handles credentials:
 it reads what the CLIs report, whether a key variable is present (never its value), and whether local servers answer.
 
-    python -m vstudio.llm auth status [--provider P ...] [--json] [--no-probe] [--deep]
+    python -m vstudio.llm auth status [--provider P ...] [--json] [--no-probe] [--deep] [--refresh] [--timeout S]
     python -m vstudio.llm auth login  --provider claude-code|codex [--json] [--variant device]
     python -m vstudio.llm auth logout --provider claude-code|codex [--json]
 
@@ -16,16 +16,25 @@ OAuth token has expired (the probe then answers 401). codex: ``codex login statu
 exec``). Every CLI runs with ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN / ANTHROPIC_BASE_URL (claude) or OPENAI_* /
 CODEX_API_KEY (codex) removed from its environment, so the user's own subscription login is what is checked.
 
+Cache: every CLI probe result is kept in ``$VSTUDIO_AUTH_CACHE`` (default ``$VSTUDIO_HOME/auth-cache.json``) with a
+fingerprint of the login (CLI path + mtime, the ``auth status`` / ``login status`` output, the credentials file's
+mtime). A login known to be expired (same fingerprint, younger than ``VSTUDIO_AUTH_CACHE_TTL`` s, default 3600) is
+reported instantly (``probe.cached``) instead of a probe that an expired ``claude -p`` drags out for ~3 minutes, and
+``vstudio.llm.complete`` skips that provider at once (straight to the fallback). ``--refresh`` (the desk's
+"check again", after a login) ignores the cache. Probes time out after ``--timeout`` (default 60 s).
+
 ``login`` / ``logout`` only print the command (absolute CLI path + args) and the variables to remove; the desk runs it
 in a terminal so the browser / code-paste flow happens with the user, not through this engine.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import subprocess
 import tempfile
+import time
 
 from . import llm as L
 
@@ -61,6 +70,7 @@ MSG = {   # code -> (en, zh); {params} filled from the row
     "auth-api-key-login": ("Logged in with an API key (API billing, not the subscription)",
                            "用 API 密钥登录（按 API 计费，不走订阅）"),
     "auth-error": ("Could not check the login: {error}", "无法检查登录状态：{error}"),
+    "auth-timeout": ("The login check did not answer in {seconds} s", "登录检查 {seconds} 秒内没有响应"),
     "key-configured": ("{key_env} is set", "已配置 {key_env}"),
     "key-missing": ("{key_env} is not set", "未配置 {key_env}"),
     "package-missing": ("Needs the Python package: {command}", "需要安装 Python 包：{command}"),
@@ -177,8 +187,109 @@ def parse_codex_probe(rc, out, err):
     return "error", (text.strip() or f"exit {rc}")[:200]
 
 
+# ------------------------------------------------------------------ cache (known-expired logins)
+PROBE_TIMEOUT = 60
+CRED_FILES = {"claude-code": ("~/.claude/.credentials.json",), "codex": ("~/.codex/auth.json",)}
+
+
+def cache_path():
+    f = os.environ.get("VSTUDIO_AUTH_CACHE")
+    if f:
+        return os.path.expanduser(f)
+    home = os.path.expanduser(os.environ.get("VSTUDIO_HOME") or "~/.config/vstudio")
+    return os.path.join(home, "auth-cache.json")
+
+
+def cache_ttl():
+    try:
+        return float(os.environ.get("VSTUDIO_AUTH_CACHE_TTL") or 3600)
+    except ValueError:
+        return 3600.0
+
+
+def _read_cache():
+    try:
+        with open(cache_path(), encoding="utf-8") as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _write_cache(d):
+    p = cache_path()
+    try:
+        os.makedirs(os.path.dirname(p) or ".", exist_ok=True)
+        tmp = p + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False, indent=1)
+        os.replace(tmp, p)
+    except OSError:
+        pass                                   # a read-only home never breaks a status check / an AI call
+
+
+def _mtime(p):
+    try:
+        return os.stat(os.path.expanduser(p)).st_mtime
+    except OSError:
+        return None
+
+
+def fingerprint(provider, status_out=None):
+    """A hash that changes when the login changes (re-login, other CLI, other account); no secret is read.
+    ``status_out``: the ``auth status`` / ``login status`` output when the caller already has it."""
+    if provider not in CLIS:
+        return None
+    exe = L.find_cli(CLIS[provider]["exe"])
+    if not exe:
+        return None
+    if status_out is None:
+        args = ["auth", "status", "--json"] if provider == "claude-code" else ["login", "status"]
+        rc, out, err = _run([exe, *args], cli_env(provider), 20)
+        status_out = f"{rc}|{out}|{err}"
+    parts = [os.path.realpath(exe), _mtime(exe), status_out] + [_mtime(f) for f in CRED_FILES.get(provider, ())]
+    return hashlib.sha1(json.dumps(parts, default=str).encode()).hexdigest()[:16]
+
+
+def remember(provider, state, detail=None, fp=None):
+    """Record a CLI login state (probe result, or an AI call that failed with an auth error / succeeded)."""
+    if provider not in CLIS:
+        return
+    d = _read_cache()
+    if state == "logged-in" and provider not in d:
+        return                                  # nothing to clear: the common path stays file-free
+    d[provider] = dict(state=state, at=time.time(), detail=(detail or "")[:200] or None,
+                       fp=fp if fp is not None else fingerprint(provider))
+    _write_cache(d)
+
+
+def forget(provider=None):
+    d = _read_cache()
+    for p in [provider] if provider else list(d):
+        d.pop(p, None)
+    _write_cache(d)
+
+
+def known_state(provider, fp=None):
+    """The cached entry {state, at, detail} when it is still valid (same fingerprint, within the TTL), else None."""
+    e = _read_cache().get(provider)
+    if not isinstance(e, dict) or time.time() - float(e.get("at") or 0) > cache_ttl():
+        return None
+    if (fp if fp is not None else fingerprint(provider)) != e.get("fp"):
+        return None
+    return e
+
+
+def known_expired(provider):
+    """True when ``provider``'s login is known to be expired / logged out (checked without a probe)."""
+    if provider not in CLIS or not os.path.exists(cache_path()):
+        return False
+    e = known_state(provider)
+    return bool(e and e.get("state") in ("expired", "not-logged-in"))
+
+
 # ------------------------------------------------------------------ per provider
-def _claude_code(probe=True, timeout=60):
+def _claude_code(probe=True, timeout=PROBE_TIMEOUT, refresh=False):
     row = _base_row("claude-code", "subscription-cli")
     exe = L.find_cli("claude")
     if not exe:
@@ -186,6 +297,7 @@ def _claude_code(probe=True, timeout=60):
     env = cli_env("claude-code")
     row.update(installed=True, exe=exe, version=L._cli_version(exe), can_login=True, can_logout=True)
     rc, out, err = _run([exe, "auth", "status", "--json"], env, 20)
+    fp = fingerprint("claude-code", f"{rc}|{out}|{err}")
     st = parse_claude_status(out)
     if st is None:
         # older CLIs have no `auth status`: the probe alone decides
@@ -194,18 +306,31 @@ def _claude_code(probe=True, timeout=60):
     if st["logged_in"] is False:
         return dict(row, state="not-logged-in", message=msg("auth-not-logged-in"))
     state, detail = ("logged-in", None) if st["logged_in"] else ("error", (err or out).strip()[:200] or None)
+    known = None if refresh else known_state("claude-code", fp)
+    if known and known.get("state") in ("expired", "not-logged-in"):
+        state, detail = known["state"], known.get("detail")
+        row["probe"] = dict(ran=False, cached=True, state=state, at=known.get("at"))
+        return dict(row, state=state, ready=False, verified=True, detail=detail, message=_cli_msg(state, row, detail))
     if probe:
+        t0 = time.time()
         prc, pout, perr = _run([exe, "-p", "--output-format", "json", "--tools", "", "--no-session-persistence",
                                 "--strict-mcp-config", "--model", "haiku"], env, timeout, input="Reply with: ok")
         state, detail = parse_claude_probe(prc, pout, perr)
+        if prc == -1 and "timed out" in perr:
+            state, detail = "error", perr
+            row["probe"] = dict(ran=True, state="timeout", seconds=round(time.time() - t0, 1))
+            return dict(row, state=state, ready=False, verified=False, detail=detail,
+                        message=msg("auth-timeout", seconds=timeout))
         row["probe"] = dict(ran=True, state=state)
+        if state in ("expired", "not-logged-in", "logged-in"):
+            remember("claude-code", state, detail, fp)
     else:
         row["probe"] = dict(ran=False)       # "logged-in" from `auth status` alone: an expired token looks the same
     return dict(row, state=state, ready=state == "logged-in", verified=bool(probe), detail=detail,
                 message=_cli_msg(state, row, detail))
 
 
-def _codex(probe=False, timeout=120):
+def _codex(probe=False, timeout=PROBE_TIMEOUT, refresh=False):
     row = _base_row("codex", "subscription-cli")
     exe = L.find_cli("codex")
     if not exe:
@@ -213,17 +338,25 @@ def _codex(probe=False, timeout=120):
     env = cli_env("codex")
     row.update(installed=True, exe=exe, version=L._cli_version(exe), can_login=True, can_logout=True)
     rc, out, err = _run([exe, "login", "status"], env, 20)
+    fp = fingerprint("codex", f"{rc}|{out}|{err}")
     st = parse_codex_status(rc, out, err)
     row["account"] = dict(email=None, plan=None, auth_method=st["auth_method"], org=None)
     if not st["logged_in"]:
         return dict(row, state="not-logged-in", message=msg("auth-not-logged-in"), probe=dict(ran=False))
     state, detail = "logged-in", None
+    known = None if refresh else known_state("codex", fp)
+    if known and known.get("state") in ("expired", "not-logged-in"):
+        state, detail = known["state"], known.get("detail")
+        row["probe"] = dict(ran=False, cached=True, state=state, at=known.get("at"))
+        return dict(row, state=state, ready=False, detail=detail, message=_cli_msg(state, row, detail))
     if probe:
         with tempfile.TemporaryDirectory(prefix="vstudio-auth-") as tmp:
             prc, pout, perr = _run([exe, "exec", "--json", "--sandbox", "read-only", "--skip-git-repo-check",
                                     "--cd", tmp, "-"], env, timeout, input="Reply with: ok")
         state, detail = parse_codex_probe(prc, pout, perr)
         row["probe"] = dict(ran=True, state=state)
+        if state in ("expired", "not-logged-in", "logged-in"):
+            remember("codex", state, detail, fp)
     else:
         row["probe"] = dict(ran=False)
     m = _cli_msg(state, row, detail)
@@ -274,16 +407,17 @@ def _local(p, probe=True):
     return dict(row, state="server-down", message=msg("local-down", base_url=base))
 
 
-def status(providers=None, probe=True, deep=False):
-    """One row per provider (see module doc). ``probe``: the claude-code round-trip; ``deep``: also codex's."""
+def status(providers=None, probe=True, deep=False, refresh=False, timeout=PROBE_TIMEOUT):
+    """One row per provider (see module doc). ``probe``: the claude-code round-trip; ``deep``: also codex's;
+    ``refresh``: ignore the cached known-expired state; ``timeout``: seconds per probe."""
     out = []
     for p in providers or ORDER:
         p = L.canonical(p) or p
         try:
             if p == "claude-code":
-                out.append(_claude_code(probe=probe))
+                out.append(_claude_code(probe=probe, timeout=timeout, refresh=refresh))
             elif p == "codex":
-                out.append(_codex(probe=probe and deep))
+                out.append(_codex(probe=probe and deep, timeout=timeout, refresh=refresh))
             elif p in API:
                 out.append(_api(p))
             elif p in LOCALS:
@@ -340,6 +474,9 @@ def main(argv):
     s.add_argument("--json", action="store_true")
     s.add_argument("--no-probe", action="store_true", help="skip the tiny claude round-trip and local probes")
     s.add_argument("--deep", action="store_true", help="also probe codex with a tiny round-trip")
+    s.add_argument("--refresh", action="store_true", help="ignore the cached known-expired state (after a login)")
+    s.add_argument("--timeout", type=float, default=PROBE_TIMEOUT, help="seconds per probe (default 60)")
+    sub.add_parser("forget", help="clear the cached login states")
     for name in ("login", "logout"):
         x = sub.add_parser(name, help=f"print the command that {name}s (the engine runs nothing)")
         x.add_argument("--provider", required=True)
@@ -347,12 +484,16 @@ def main(argv):
         x.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
     if a.cmd == "status":
-        rows = status(a.provider, probe=not a.no_probe, deep=a.deep)
+        rows = status(a.provider, probe=not a.no_probe, deep=a.deep, refresh=a.refresh, timeout=a.timeout)
         if a.json:
             print(json.dumps(dict(providers=rows), indent=2, ensure_ascii=False))
         else:
             for r in rows:
                 print(f"  {r['state']:<14} {r['provider']:<12} {(r.get('message') or {}).get('message', '')}")
+        return 0
+    if a.cmd == "forget":
+        forget()
+        print(json.dumps(dict(ok=True)))
         return 0
     d = command(a.provider, a.cmd, a.variant)
     if a.json:

@@ -8,6 +8,7 @@ mediapipe>=0.10.14; sys_platform != "darwin" or platform_machine != "x86_64"
 scipy
 soundfile
 PyYAML
+jsonschema
 fonttools[woff]
 openai
 # local whisper (ASR): MLX on Apple silicon, CTranslate2 elsewhere (vstudio.asr picks what is installed)

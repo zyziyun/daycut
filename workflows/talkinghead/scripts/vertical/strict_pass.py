@@ -27,8 +27,8 @@ from vstudio import cleanup
 
 def _mod(path):
     sys.path[:0] = [os.path.dirname(os.path.abspath(path)), os.getcwd()]
-    spec = importlib.util.spec_from_file_location('st', path); m = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(m); return m
+    from vstudio.config import load_py      # from source: a REPLY rewritten in the same second is never stale
+    return load_py(path, 'st')
 
 
 def _pass1():

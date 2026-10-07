@@ -75,13 +75,9 @@ def yaml_path(cdir):
 
 # --------------------------------------------------------------------------- yaml io
 def _load_yaml(path):
+    from vstudio.config import load_yaml_text
     with open(path, encoding="utf-8") as f:
-        txt = f.read()
-    try:
-        import yaml
-        return yaml.safe_load(txt) or {}
-    except ImportError:
-        return json.loads(txt)
+        return load_yaml_text(f.read(), path)
 
 
 def _dump_yaml(obj):

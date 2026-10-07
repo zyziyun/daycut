@@ -138,16 +138,47 @@ def model(name: str) -> str:
     return p
 
 
-def _load(path):
+class YAMLUnavailable(RuntimeError):
+    """A YAML file must be read but PyYAML is not installed (never silently read as JSON)."""
+
+
+def load_yaml_text(txt, path="<yaml>"):
+    """YAML text -> data. Without PyYAML only JSON-compatible text is accepted; anything else raises
+    ``YAMLUnavailable`` with the fix, instead of a confusing JSONDecodeError (or silently empty settings)."""
+    try:
+        import yaml  # PyYAML
+    except ImportError:
+        try:
+            return json.loads(txt) if txt.strip() else {}
+        except ValueError:
+            raise YAMLUnavailable(f"{path} is YAML but PyYAML is not installed: pip install pyyaml "
+                                  "(or pip install -r requirements.txt)") from None
+    return yaml.safe_load(txt) or {}
+
+
+def load_yaml(path):
+    """A YAML file -> data (``load_yaml_text``); None when the file does not exist."""
     if not os.path.exists(path):
         return None
     with open(path, encoding="utf-8") as f:
-        txt = f.read()
-    try:
-        import yaml  # PyYAML
-        return yaml.safe_load(txt) or {}
-    except ImportError:
-        return json.loads(txt)
+        return load_yaml_text(f.read(), path)
+
+
+_load = load_yaml
+
+
+def load_py(path, name="cfg"):
+    """Run a Python config / reply file (``strict.py``, ``edit_list.py`` ...) as a module, always from its source.
+    importlib's .pyc check (mtime in whole seconds + size) cannot see a file rewritten within the same second
+    with the same size, so a cached bytecode would silently replay the previous REPLY."""
+    import types
+    path = os.path.abspath(path)
+    m = types.ModuleType(name)
+    m.__file__ = path
+    with open(path, encoding="utf-8") as f:
+        src = f.read()
+    exec(compile(src, path, "exec"), m.__dict__)  # noqa: S102 - the creator's own config file
+    return m
 
 
 def _merge(a, b):

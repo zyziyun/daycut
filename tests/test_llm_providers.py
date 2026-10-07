@@ -264,7 +264,8 @@ def test_codex_cli(monkeypatch):
                   dict(type="turn.completed", usage=dict(input_tokens=30, cached_input_tokens=10, output_tokens=6))]
         return subprocess.CompletedProcess(cmd, 0, "\n".join(json.dumps(e) for e in events), "")
     monkeypatch.setattr(llm.subprocess, "run", run)
-    r = llm.complete("copy", "SYS", "P", provider="codex", schema={"type": "object"})
+    r = llm.complete("copy", "SYS", "P", provider="codex", schema={"type": "object",
+                                                                   "properties": {"c": {"type": "integer"}}})
     c = calls[0]
     assert c["cmd"][:3] == ["/opt/bin/codex", "exec", "--json"] and c["cmd"][-1] == "-"
     assert c["cmd"][c["cmd"].index("--sandbox") + 1] == "read-only" and "--skip-git-repo-check" in c["cmd"]

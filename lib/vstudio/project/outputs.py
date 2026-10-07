@@ -66,6 +66,25 @@ def _err(code, en, zh=None, **params):
     return OutputError(code, en, zh, **params)
 
 
+def llm_failed(e, provider=None):
+    """A failed ``vstudio.llm.complete`` -> OutputError ``llm-failed`` whose params list EVERY provider tried
+    (``tried`` / ``errors`` / ``codes`` / ``attempts``), so the desk can say "Claude Code expired; Codex also
+    failed: ..." instead of only the first error."""
+    from vstudio import llm
+    ei = llm.error_info(e) if isinstance(e, llm.LLMError) else dict(
+        code=llm.failure_code(e), tried=[provider], errors=[str(e)[:300]], codes=[llm.failure_code(e)], attempts=[])
+    names_ = ", ".join(str(x) for x in ei["tried"] if x) or str(provider or "")
+    many = len([x for x in ei["tried"] if x]) > 1
+    en = (f"every AI provider failed ({names_}): " if many else "the model call failed: ") + str(e)[:200]
+    zh = f"所有 AI 模型都失败了（{names_}）" if many else "模型调用失败"
+    return OutputError("llm-failed", en, zh, provider=provider or (ei["tried"][0] if ei["tried"] else None),
+                       error=str(e)[:300], code_hint=ei["code"], tried=ei["tried"], errors=ei["errors"],
+                       codes=ei["codes"], attempts=ei["attempts"])
+
+
+AI_CLI_TIMEOUT = 60.0     # s per CLI provider attempt for output ai (an expired claude -p hangs ~3 min otherwise)
+
+
 # --------------------------------------------------------------------------- owners and outputs
 def owner_kind(d):
     d = os.path.abspath(d)
@@ -1491,7 +1510,8 @@ def _rule_ops(text, dur, ctx=None):
     return out
 
 
-def ai(d, output, instruction, apply=False, provider=None, model=None, use_asr=True, context=None, record=True):
+def ai(d, output, instruction, apply=False, provider=None, model=None, use_asr=True, context=None, record=True,
+       timeout=None):
     """Natural language -> validated ops (task ``output_edit`` of vstudio.llm). Every proposed op is checked by the
     same validator as ``edit``; unknown ops / effects / params are dropped with a reason, never invented.
     -> {ok, proposed [{op, describe}], dropped [{op, error}], summary, provider, model, cost_usd, applied?}."""
@@ -1524,11 +1544,12 @@ def ai(d, output, instruction, apply=False, provider=None, model=None, use_asr=T
         schema = {"type": "object", "properties": {"ops": {"type": "array", "items": {"type": "object"}},
                                                    "summary": {"type": "string"}}, "required": ["ops"]}
         try:
+            ct = timeout if timeout is not None else (None if os.environ.get("VSTUDIO_LLM_CLI_TIMEOUT")
+                                                      else AI_CLI_TIMEOUT)
             r = llm.complete("output_edit", AI_SYSTEM, prompt, schema=schema, provider=provider, model=model,
-                             max_tokens=6000)
+                             max_tokens=6000, cli_timeout=ct)
         except Exception as e:  # noqa: BLE001
-            raise _err("llm-failed", f"the model call failed: {str(e)[:200]}", "模型调用失败",
-                       provider=route.provider, error=str(e)[:200]) from e
+            raise llm_failed(e, route.provider) from e
         j = r.get("json") or {}
         raw_ops = j.get("ops") if isinstance(j, dict) else None
         if not isinstance(raw_ops, list):

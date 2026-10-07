@@ -1,0 +1,7 @@
+# Engine test dependencies (CI: .github/workflows/engine.yml; locally: pip install -r tests/requirements.txt).
+# The runtime list plus what the tests themselves need. PyYAML and jsonschema are listed again on purpose: without
+# them persona / client / manifest files and answer validation cannot work (vstudio.config.load_yaml fails loudly).
+-r ../requirements.txt
+pytest
+PyYAML
+jsonschema
