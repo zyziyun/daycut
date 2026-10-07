@@ -274,6 +274,33 @@ def entity_post(post, fixes=None):
     return ENT.fix_post(post, fx)
 
 
+def draft_title(post, cues_path, platforms, notes_path=None, complete=None):
+    """No title given: the one compose drafted with the 记笔记 cards (``notes.json``), else one drafted from the
+    burned captions (vstudio.clipcopy: the routed ``copy`` model, else the most title-like spoken clause) - fitted
+    to the tightest title limit of the job's platforms at generation time (publish.fit_title; every export
+    re-checks its own platform). -> {title, platform, limit, note, source} or None (a title is given / nothing
+    to draft from)."""
+    if (post or {}).get("title"):
+        return None
+    from vstudio import clipcopy, publish
+    limit, pl = publish.title_limit(platforms)
+    nd = read_json(notes_path, {}) if notes_path and os.path.exists(notes_path) else {}
+    if nd.get("title"):
+        t, note = publish.fit_title_all(nd["title"], platforms)
+        return dict(title=t, platform=pl, limit=limit, note=note, source=nd.get("source"))
+    if not cues_path or not os.path.exists(cues_path):
+        return None
+    d = read_json(cues_path, {}) or {}
+    cues = d.get("cues") if isinstance(d, dict) else d
+    sents = clipcopy.sentences_from_cues([c for c in cues or [] if (c.get("meta") or {}).get("kind") != "hook"])
+    if not sents:
+        return None
+    dr = clipcopy.draft(sents, platforms, complete=complete)
+    if not dr["title"]:
+        return None
+    return dict(title=dr["title"], platform=pl, limit=limit, note=dr["title_note"], source=dr["source"])
+
+
 def run_export(ctx):
     from vstudio import export as X
     p, c = ctx.params, ctx.inputs["compose"]
@@ -281,12 +308,23 @@ def run_export(ctx):
     if p.get("_copy_orig"):                           # copy edited in review: the post says the new copy
         post.update(title=p.get("title") or "", body=p.get("body") or "", tags=p.get("tags") or None)
     post = entity_post(post, (ctx.inputs.get("proofread") or {}).get("entity_fixes"))
+    cues_path = caption_cues(ctx) if p.get("captions", True) else None
+    call = import_ref((ctx.spec.get("copy") or {})["call"]) if (ctx.spec.get("copy") or {}).get("call") else None
+    try:
+        drafted = draft_title(post, cues_path or c.get("cues"), _plats(ctx.job), c.get("notes"), complete=call)
+    except Exception as e:                            # noqa: BLE001 - reported; the export goes on without a title
+        drafted = None
+        ctx.log(f"title not drafted: {type(e).__name__}: {str(e)[:300]}")
+    if drafted:
+        post["title"] = drafted["title"]
+        ctx.log(f"title drafted ({drafted['source']}, {drafted['platform']} <= {drafted['limit']:g}): "
+                f"{drafted['title']}" + (f" [{drafted['note']}]" if drafted.get("note") else ""))
     covers = p.get("cover")
     if isinstance(covers, dict):                      # `job edit --op cover`: {t, text, file}
         covers = [covers["file"]] if covers.get("file") else None
     ctx.caption_edits = None
     man = X.export(c["master"], _plats(ctx.job), out_dir=ctx.path("exports"),
-                   cues=caption_cues(ctx) if p.get("captions", True) else None, covers=covers, post=post,
+                   cues=cues_path, covers=covers, post=post,
                    mode=p.get("layout") or "pad-blur", preset=p.get("preset") or "medium",
                    captions=bool(p.get("captions", True)),
                    **({"crop_bottom": float(p.get("crop_bottom", 0.28))} if p.get("layout") == "band" else {}))
@@ -305,7 +343,8 @@ def run_export(ctx):
                 e.pop("loudness", None)
         write_json(ctx.path("exports", "manifest.json"), man)
     out = dict(manifest=ctx.path("exports", "manifest.json"), files=files, exports=exports,
-               warnings=man["warnings"], length_fit=fit)
+               warnings=man["warnings"], length_fit=fit, title=post.get("title") or "",
+               title_source=drafted["source"] if drafted else ("given" if post.get("title") else None))
     if getattr(ctx, "caption_edits", None):
         out["caption_overrides"] = ctx.caption_edits
     return out

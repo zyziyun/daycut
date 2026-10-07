@@ -83,6 +83,74 @@ def check_title(title: str, platform: str = None, suggest=None):
     return False, n, list(hints or [])
 
 
+_SEP = r"[｜|：:—–]+|\s+-\s+"
+
+
+def fit_title(title: str, platform: str = None):
+    """Shorten a title to the platform's title limit, deterministically (same input -> same output) and visibly:
+    -> (title, note). note is None when it already fits, else says what was done ("小红书 35.5 -> 19.5: ...") so the
+    caller logs / shows it - a title is never cut silently. Steps, each only while still too long: spaces next to
+    CJK (小红书 counts a space 0.5), parentheticals, trailing / repeated punctuation, one side of a separator
+    (｜ ： — : the side that fits and says most), then the most informative clause (vstudio.batch.segplan.shorten),
+    then a hard cut at a word boundary."""
+    pl = platform_name(platform)
+    tmax = title_max(pl)
+    t0 = (title or "").strip()
+    if not tmax or not t0 or title_len(t0, pl) <= tmax:
+        return t0, None
+    t, steps = t0, []
+
+    def fits(x):
+        return title_len(x, pl) <= tmax
+
+    def step(name, x):
+        nonlocal t
+        x = re.sub(r"\s{2,}", " ", x).strip(" ，,、:：|｜-—")
+        if x and x != t:
+            t = x
+            steps.append(name)
+    if pl in ("xiaohongshu", "xhs"):
+        step("spaces", re.sub(r"(?<=[^\x00-\x7f])\s+|\s+(?=[^\x00-\x7f])", "", t))
+    if not fits(t):
+        step("parenthetical", re.sub(r"\s*[（(【\[][^）)】\]]*[）)】\]]\s*", "", t))
+    if not fits(t):
+        step("punctuation", re.sub(r"([！!？?。…~～])[！!？?。…~～]+", r"\1", re.sub(r"[！!。…~～\s]+$", "", t)))
+    if not fits(t):
+        parts = [x.strip() for x in re.split(_SEP, t) if x.strip()]
+        if len(parts) > 1:
+            ok = [x for x in parts if fits(x)]
+            best = max(ok, key=lambda x: title_len(x, pl)) if ok else None
+            if best and title_len(best, pl) >= tmax / 2:      # a stub side ("学习新模式") says too little
+                step("one side of the separator", best)
+    if not fits(t):
+        from .batch.segplan import shorten
+        r = shorten(t, tmax, pl)
+        if r and t.startswith(r) and re.search(r"[A-Za-z0-9]$", r) and re.match(r"[A-Za-z0-9]", t[len(r):]) \
+                and " " in r:
+            r = r.rsplit(" ", 1)[0]                   # a hard cut never ends on half a latin word
+        cut = t.startswith(r) and not re.match(r"[\s，,；;。.！!？?、]", t[len(r):])
+        step("cut at the limit" if cut else "main clause", r)
+    return t, f"{pl} title {title_len(t0, pl):g} -> {title_len(t, pl):g}/{tmax:g} ({', '.join(steps)}): {t}"
+
+
+def title_limit(platforms):
+    """(limit, platform) of the tightest title among ``platforms`` (targets like "xiaohongshu:full"); platforms
+    without a title field are skipped. (20, "xiaohongshu") when none has one."""
+    lims = []
+    for t in platforms or []:
+        pl = platform_name(str(t).split(":")[0])
+        n = title_max(pl)
+        if n:
+            lims.append((n, pl))
+    return min(lims) if lims else (title_max("xiaohongshu"), "xiaohongshu")
+
+
+def fit_title_all(title, platforms):
+    """The title fitted to the tightest title limit among ``platforms`` -> (title, note); see fit_title."""
+    _, pl = title_limit(platforms)
+    return fit_title(title, pl)
+
+
 # ---------------------------------------------------------------- timestamps
 def _ms(t):
     return max(0, int(round(float(t) * 1000)))
@@ -224,9 +292,9 @@ def post_body(hook, body, chapters=None, links=None, tags=None, platform=None, t
                 warn(f"{pl}: no chapters; timeline left out of the post text")
             chapters = None
     if title:
-        ok, n, hints = check_title(title, pl)
-        if not ok and warn:
-            warn(f"title {n:g}/{title_max(pl)}: " + "; ".join(hints))
+        title, note = fit_title(title, pl)            # the platform's own limit, at generation time
+        if note and warn:
+            warn("title shortened: " + note)
         out += [title, ""]
     if hook:
         out += [hook, ""]
@@ -385,10 +453,17 @@ def copy_prompt(platform, source, lang="en", bilingual=False):
     lo, hi = (prof.hashtags.get("recommend") or [1, prof.hashtags.get("max") or 5])
     language = "English first, then the same in Chinese" if bilingual else {"en": "English", "zh": "Simplified Chinese"}.get(lang, lang)
     rules = " ".join(_p("voice.rules", []) or [])
+    tmax = 0 if pl in NO_TITLE else title_max(pl)
+    if tmax:
+        count = ("CJK / full-width characters count 1, Latin letters, digits and spaces 0.5" if pl == "xiaohongshu"
+                 else "characters")
+        tline = (f"Title: <= {tmax:g} ({count}); the title field is separate from the post text, so do not repeat "
+                 f"it as the first line. ")
+    else:
+        tline = "No title field on this platform: put everything in hook + body. "
     system = (f"You write social post copy for {prof.label}. Language: {language}. Whole post <= {prof.desc_max} {unit} "
               f"including hashtags. First line = the hook (what the viewer gets, no clickbait). {lo}-{hi} specific "
-              f"hashtags, no generic ones. No title field on this platform: put everything in hook + body. "
-              + (f"Voice rules: {rules}" if rules else ""))
+              f"hashtags, no generic ones. " + tline + (f"Voice rules: {rules}" if rules else ""))
     prompt = f"Write the post for this video.\n\nSOURCE:\n{source.strip()[:6000]}"
     return system, prompt
 
@@ -400,13 +475,24 @@ def generate_copy(platform, source, lang="en", bilingual=False, provider=None, c
     if complete is None:
         from .llm import complete
     system, prompt = copy_prompt(platform, source, lang, bilingual)
-    r = complete("copy", system, prompt, schema=COPY_SCHEMA, provider=provider)
+    pl = platform_name(platform)
+    has_title = pl not in NO_TITLE and bool(title_max(pl))
+    schema = COPY_SCHEMA if not has_title else dict(
+        COPY_SCHEMA, properties=dict(COPY_SCHEMA["properties"], title={"type": "string"}),
+        required=["title"] + COPY_SCHEMA["required"])
+    r = complete("copy", system, prompt, schema=schema, provider=provider)
     j = (r or {}).get("json")
     if not j:
         return None
     from . import entities as ENT                     # names spelled like the captions (宏都拉斯 -> 洪都拉斯)
     j = ENT.fix_post(j, ENT.verify(source + "\n" + "\n".join(str(v) for v in j.values() if isinstance(v, str)))["fixes"])
+    if has_title and j.get("title"):
+        j["title"], note = fit_title(j["title"], pl)   # models miscount CJK / 0.5-width chars: the rule decides
+        if note:
+            j["title_note"] = note
+            if warn:
+                warn("title shortened: " + note)
     text = post_body(j.get("hook", ""), j.get("body", ""), tags=j.get("tags"), platform=platform, warn=warn,
-                     use_persona_tags=False)
+                     use_persona_tags=False, title=j.get("title") if has_title else None)
     text = fit_copy(text, platform, warn=warn)
     return dict(j, text=text, lang="en+zh" if bilingual else lang)

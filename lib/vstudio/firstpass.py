@@ -74,7 +74,10 @@ def load_post(path):
             body = "\n".join(str(d.get(k) or "") for k in ("body", "text", "description", "caption"))
             return str(d.get("title") or ""), (str(d.get("title") or "") + "\n" + body).strip()
     lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
-    title = re.sub(r"^(#+\s*|标题[:：]\s*|title:\s*)", "", lines[0], flags=re.I) if lines else ""
+    first = lines[0] if lines else ""
+    if re.fullmatch(r"(#[^\s#]+#?\s*)+", first):       # a hashtag line is the tags, not a title (no title written)
+        return "", raw
+    title = re.sub(r"^(#+\s+|标题[:：]\s*|title:\s*)", "", first, flags=re.I)
     return title, raw
 
 
@@ -198,6 +201,9 @@ def check_cover(cover, info, fmt=None):
 
 def check_post(title, text, prof, fmt=None):
     out = []
+    if not title and text and prof.title_max and fmt is not None:
+        out.append(_item("title", False, f"有标题（{prof.name} 的发布页要填标题）", f"a title for {prof.name}",
+                         severity="warn", fix_zh="post.json 写 title，或让导出按字幕起草（≤ 平台上限）"))
     if title:
         from vstudio import publish
         ok, n, hints = publish.check_title(title, "youtube" if prof.name == "youtube-shorts" else prof.name)
