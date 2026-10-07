@@ -5,7 +5,8 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Notification, protocol, session, shell, type IpcMainInvokeEvent } from 'electron';
 import { EngineClient } from '../shared/engineClient';
-import { validateIpc, type IpcChannel, type IpcPayload } from '../shared/ipc';
+import { channelKey, listChannels } from '../shared/channels';
+import { partitionFor, validateIpc, type IpcChannel, type IpcPayload } from '../shared/ipc';
 import { hostAllowed, type Adapter } from '../shared/publish/adapterSchema';
 import { resolveInside } from '../shared/publish/gating';
 import { parsePostCopy } from '../shared/publish/postCopy';
@@ -389,7 +390,7 @@ function createWindow() {
       if (isSafeExternal(url)) void shell.openExternal(url);
     }
   });
-  browser = new PublishBrowser(win, (s) => win?.webContents.send('publish:state', s));
+  browser = new PublishBrowser(win, (s) => win?.webContents.send('publish:state', s), noteLogin);
   // Load once the engine is up (or failed / is slow) so the page's CSP already carries the engine port;
   // startEngine() reloads the page if the port changes later.
   const url = IS_DEV ? DEV_URL! : 'app://desk/index.html';
@@ -416,6 +417,21 @@ function handle<C extends IpcChannel>(channel: C, fn: (p: IpcPayload<C>, e: IpcM
 function needClient(): EngineClient {
   if (!client) throw new Error('engine not running');
   return client;
+}
+
+function channelList() {
+  const st = settings.get();
+  return listChannels(st.accounts, st.channels, adapters.adapters.map((a) => a.id));
+}
+
+/** The built-in browser saw an account's page: remember signed in / signed out (no cookies, only the state). */
+function noteLogin(adapterId: string, account: string, state: 'in' | 'out') {
+  const st = settings.get();
+  if (!(st.accounts[adapterId] ?? []).includes(account)) return;
+  const key = channelKey(adapterId, account);
+  const cur = st.channels?.[key] ?? {};
+  if (cur.login?.state === state && Date.now() - Date.parse(cur.login.at) < 60_000) return;
+  settings.set({ channels: { ...(st.channels ?? {}), [key]: { ...cur, login: { state, at: new Date().toISOString() } } } });
 }
 
 function adapterById(id: string): Adapter {
@@ -491,6 +507,31 @@ function registerIpc() {
     list.add(p.account);
     acc[p.adapterId] = [...list];
     return settings.set({ accounts: acc }).accounts;
+  });
+  handle('publish:channels', async () => channelList());
+  handle('publish:updateChannel', async (p) => {
+    adapterById(p.adapterId);
+    const st = settings.get();
+    if (!(st.accounts[p.adapterId] ?? []).includes(p.account)) throw new Error('unknown account');
+    const key = channelKey(p.adapterId, p.account);
+    const cur = st.channels?.[key] ?? {};
+    const next = { ...cur, ...(p.name !== undefined ? { name: p.name.trim() || undefined } : {}), ...(p.times ? { times: [...new Set(p.times)].sort() } : {}) };
+    settings.set({ channels: { ...(st.channels ?? {}), [key]: next } });
+    return channelList();
+  });
+  handle('publish:removeAccount', async (p) => {
+    const st = settings.get();
+    const acc = { ...st.accounts, [p.adapterId]: (st.accounts[p.adapterId] ?? []).filter((x) => x !== p.account) };
+    if (!acc[p.adapterId].length) delete acc[p.adapterId];
+    const ch = { ...(st.channels ?? {}) };
+    delete ch[channelKey(p.adapterId, p.account)];
+    settings.set({ accounts: acc, channels: ch });
+    // sign out = forget this account's built-in browser session (its own partition only)
+    if (p.signOut) {
+      browser?.forget(p.adapterId, p.account);
+      await session.fromPartition(partitionFor(p.adapterId, p.account)).clearStorageData().catch(() => undefined);
+    }
+    return channelList();
   });
   handle('publish:open', async (p) => {
     const acc = settings.get().accounts[p.adapterId] ?? [];

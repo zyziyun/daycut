@@ -1,6 +1,7 @@
 // 简体中文。Record<MessageKey, string>: a key missing here is a type error.
 import { legacyZh } from '../legacy/zh';
 import { aiaccZh } from './aiacc';
+import { channelsZh } from './channels';
 import { chatEditZh } from './chatEdit';
 import { projectAiZh } from './projectAi';
 import { legacyZhV02 } from '../legacy/v02';
@@ -12,8 +13,6 @@ const v04Zh: Record<keyof typeof v04En, string> = {
   'nav.inbox': '收件箱',
   'nav.projects': '全部项目',
   'nav.publishTop': '发布',
-  'nav.workspace': '自己的账号',
-  'nav.workspaceHint': '工作区',
   'engine.ready': '本机就绪',
   'engine.demo': '演示模式',
 
@@ -460,9 +459,6 @@ const v04Zh: Record<keyof typeof v04En, string> = {
   'set.accent.red': '小红书红',
   'set.language': '界面语言',
   'set.languageHint': 'App 的语言。字幕和发布文案保持每个项目自己的语言。',
-  'set.workspaces': '工作区和客户',
-  'set.workspacesHint': '每个客户的风格、平台和术语表。',
-  'set.openClients': '管理工作区',
   'set.data': '数据',
   'set.openMetrics': '打开数据',
   'ai.nothing': '这句没有可以改的，换个说法试试。',
@@ -569,4 +565,4 @@ const v04Zh: Record<keyof typeof v04En, string> = {
   'editor.zoomFit': '全部',
 };
 
-export const zhCN: Record<MessageKey, string> = { ...legacyZh, ...legacyZhV02, ...v04Zh, ...aiaccZh, ...publishPlatformsZh, ...chatEditZh, ...projectAiZh };
+export const zhCN: Record<MessageKey, string> = { ...legacyZh, ...legacyZhV02, ...v04Zh, ...aiaccZh, ...publishPlatformsZh, ...chatEditZh, ...channelsZh, ...projectAiZh };

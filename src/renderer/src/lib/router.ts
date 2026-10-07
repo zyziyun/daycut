@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 // Hash routes (v0.4): #/ home · #/inbox · #/projects · #/p/<id>[/<tab>] · #/p/<id>/clip/<clip> (editor)
-//   · #/p/<id>/focus (full-screen review) · #/publish · #/settings · #/new[/recording]
+//   · #/p/<id>/focus (full-screen review) · #/publish · #/publish/accounts (publishing accounts) · #/settings · #/new[/recording]
 // Kept for the per-batch tools: #/b/<id>/board|review|deliver|publish · #/b/<id>/job/<job> · #/clients[/<slug>]
 //   · #/metrics · #/welcome. Old #/work[/<id>] and #/batches links land on the new pages.
 export type ProjectTab = 'clips' | 'review' | 'deliver' | 'history' | 'files';
@@ -13,6 +13,7 @@ export type Route =
   | { name: 'clip'; id: string; clip: string }
   | { name: 'focus'; id: string }
   | { name: 'calendar' }
+  | { name: 'channels' }
   | { name: 'new'; mode?: 'recording' }
   | { name: 'settings' }
   | { name: 'aiAccounts'; focus?: string }
@@ -46,7 +47,7 @@ export function parseRoute(hash: string): Route {
     if (p[2] === 'focus') return { name: 'focus', id: p[1] };
     return { name: 'project', id: p[1], tab: TABS.includes(p[2] as ProjectTab) ? (p[2] as ProjectTab) : undefined };
   }
-  if (p[0] === 'publish') return { name: 'calendar' };
+  if (p[0] === 'publish') return p[1] === 'accounts' ? { name: 'channels' } : { name: 'calendar' };
   if (p[0] === 'new') return p[1] === 'recording' ? { name: 'new', mode: 'recording' } : { name: 'new' };
   if (p[0] === 'settings') return p[1] === 'ai' ? { name: 'aiAccounts', focus: p[2] } : { name: 'settings' };
   if (p[0] === 'metrics') return { name: 'metrics' };
@@ -75,6 +76,8 @@ export function href(r: Route): string {
       return `#/${r.name}`;
     case 'calendar':
       return '#/publish';
+    case 'channels':
+      return '#/publish/accounts';
     case 'aiAccounts':
       return r.focus ? `#/settings/ai/${encodeURIComponent(r.focus)}` : '#/settings/ai';
     case 'new':

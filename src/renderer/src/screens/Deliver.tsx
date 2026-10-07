@@ -2,12 +2,12 @@
 // 交付说明.md, manifest (sha256) and a zip; the batch becomes "delivered". Source cleanup is off by default, never
 // for the own workspace, and only ever happens through a confirmation dialog listing the exact files (Trash).
 import { useEffect, useState } from 'react';
-import { ErrorBox, Field } from '../components/ui';
+import { ErrorBox } from '../components/ui';
 import { t } from '../i18n';
 import { useEngine, useLoad } from '../lib/engine';
 import { bytes, hms } from '../lib/format';
 import { href } from '../lib/router';
-import { ClientSelect } from './NewBatch';
+import { ClientField } from './NewBatch';
 
 export function Deliver({ batch }: { batch: string }) {
   const { client } = useEngine();
@@ -98,9 +98,7 @@ export function Deliver({ batch }: { batch: string }) {
             </span>
             {open.length > 0 && <a href={href({ name: 'review', batch })}>{t('deliver.toReview')}</a>}
           </div>
-          <Field label={t('new.client')}>
-            <ClientSelect value={clientSlug} onChange={setClientSlug} />
-          </Field>
+          <ClientField value={clientSlug} onChange={setClientSlug} />
           <label className="row small">
             <input type="checkbox" checked={zip} onChange={(e) => setZip(e.target.checked)} /> {t('deliver.zip')}
           </label>

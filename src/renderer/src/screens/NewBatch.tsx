@@ -6,6 +6,7 @@ import { ErrorBox, Field } from '../components/ui';
 import { t, tk } from '../i18n';
 import { useEngine, useLoad } from '../lib/engine';
 import { bytes, hms, usd } from '../lib/format';
+import { agencyMode, useAgencyMode } from '../lib/prefs';
 import { go } from '../lib/router';
 import { NewFromRecording } from './NewFromRecording';
 
@@ -81,7 +82,18 @@ export function Stat({ label, value, sub }: { label: string; value: string; sub?
 
 /** Client preselected from a client page ("+ new batch") or the last choice. */
 export function initialClient(): string {
-  return sessionStorage.getItem('newClient') ?? '';
+  return agencyMode() ? (sessionStorage.getItem('newClient') ?? '') : ''; // solo: everything is her own
+}
+
+/** The client picker, only for agencies (Settings -> 「我在帮别人做视频」); hidden otherwise (= her own). */
+export function ClientField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const agency = useAgencyMode();
+  if (!agency) return null;
+  return (
+    <Field label={t('new.client')}>
+      <ClientSelect value={value} onChange={onChange} />
+    </Field>
+  );
 }
 
 export function ClientSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
@@ -262,9 +274,7 @@ function ClassicNewBatch({ tabs }: { tabs: ReactNode }) {
                 </Field>
               </>
             )}
-            <Field label={t('new.client')}>
-              <ClientSelect value={clientSlug} onChange={setClientSlug} />
-            </Field>
+            <ClientField value={clientSlug} onChange={setClientSlug} />
             <Field label={t('new.name')} hint={t('new.nameHint')}>
               <input className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={64} />
             </Field>

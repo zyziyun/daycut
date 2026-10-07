@@ -299,6 +299,19 @@ class History:
             write_json(self.path, c)
         return dict(ok=True, dir=rp, name=name.strip())
 
+    def set_client(self, path, client):
+        """Agency mode: which client a project is for (a desk-side label; '' / None = her own). Nothing in the
+        folder changes; an explicit '' also hides a client the folder itself names."""
+        need(client is None or (isinstance(client, str) and len(client) <= 80 and "\0" not in client), "client: max 80 chars")
+        rp = os.path.realpath(path)
+        with self._lock:
+            c = self._cfg()
+            cl = c.get("clients") if isinstance(c.get("clients"), dict) else {}
+            cl[rp] = (client or "").strip()
+            c["clients"] = cl
+            write_json(self.path, c)
+        return dict(ok=True, dir=rp, client=(client or "").strip() or None)
+
     def unhide_all(self):
         with self._lock:
             c = self._cfg()
@@ -361,6 +374,7 @@ class History:
         cfg = self._cfg()
         hidden = set(cfg.get("hidden") or [])
         names = cfg.get("names") if isinstance(cfg.get("names"), dict) else {}
+        clients = cfg.get("clients") if isinstance(cfg.get("clients"), dict) else {}
         cands, series = self._candidates()
         seen, rows = set(), []
         reg_ids = {b["id"] for b in self.reg.all()}
@@ -399,6 +413,8 @@ class History:
             live = live_status(d) or (live_status(store_dir) if store_dir != d else None)
             if names.get(rp):
                 info["name"] = names[rp]
+            if rp in clients:
+                info["client"] = clients[rp] or None
             row = dict(info, kind=kind_, dir=d, real=rp, sources=[src], id=bid, live=live,
                        opened=bid in reg_ids,
                        openable=kind_ != "work" and os.path.exists(os.path.join(store_dir, "batch.db")),

@@ -6,6 +6,36 @@ import { ErrorBox, Field } from '../components/ui';
 import { LANGS, LOCALES, t } from '../i18n';
 import { useEngine } from '../lib/engine';
 import { PlatformPicker } from './Clients';
+import { adapterName, LoginPill, useChannels } from '../v4/Channels';
+import { PlatformIcon } from '../v4/PlatformIcon';
+
+/** Settings -> 发布账号: her accounts with their login state; managed on 发布 -> 账号 (built-in browser there). */
+function ChannelsCard() {
+  const { adapters, channels } = useChannels();
+  return (
+    <div className="card col" data-testid="settings-channels">
+      <b>{t('set.channels')}</b>
+      <span className="muted small">{t('set.channelsHint')}</span>
+      {!channels.length && <span className="muted small">{t('set.channelsNone')}</span>}
+      {channels.map((c) => {
+        const a = adapters.find((x) => x.id === c.adapterId);
+        return (
+          <div key={`${c.adapterId}/${c.account}`} className="row small" style={{ gap: 8 }} data-testid="settings-channel">
+            {a && <PlatformIcon id={a.packagePlatforms[0]} size={14} />}
+            <span style={{ minWidth: 120 }}>{a ? adapterName(a) : c.adapterId}</span>
+            <span className="clamp1" style={{ flex: 1 }}>{c.name}</span>
+            <LoginPill c={c} />
+          </div>
+        );
+      })}
+      <div className="row">
+        <a className="btn" href="#/publish/accounts" data-testid="open-channels">
+          {t('set.channelsManage')}
+        </a>
+      </div>
+    </div>
+  );
+}
 
 export function Settings({ onChange }: { onChange: (s: SettingsMsg) => void }) {
   const { info, error: engineError } = useEngine();
@@ -73,18 +103,7 @@ export function Settings({ onChange }: { onChange: (s: SettingsMsg) => void }) {
             </div>
           </Field>
         </div>
-        <div className="card col">
-          <b>{t('set.workspaces')}</b>
-          <span className="muted small">{t('set.workspacesHint')}</span>
-          <div className="row">
-            <a className="btn" href="#/clients">
-              {t('set.openClients')}
-            </a>
-            <a className="btn ghost" href="#/metrics">
-              {t('set.openMetrics')}
-            </a>
-          </div>
-        </div>
+        <ChannelsCard />
         <div className="card col">
           <b>{t('settings.engine')}</b>
           <div className="small">
@@ -185,6 +204,26 @@ export function Settings({ onChange }: { onChange: (s: SettingsMsg) => void }) {
               {t('settings.rerunWizard')}
             </button>
           </div>
+        </div>
+        <div className="card col" data-testid="settings-advanced">
+          <b>{t('set.advanced')}</b>
+          <label className="row" style={{ gap: 8, alignItems: 'flex-start' }}>
+            <input type="checkbox" checked={!!s.agencyMode} onChange={(e) => (setS({ ...s, agencyMode: e.target.checked }), void save({ agencyMode: e.target.checked }))} data-testid="agency-toggle" style={{ marginTop: 3 }} />
+            <span className="col" style={{ gap: 2 }}>
+              <span>{t('set.agency')}</span>
+              <span className="muted small">{t('set.agencyHint')}</span>
+            </span>
+          </label>
+          {s.agencyMode && (
+            <div className="row">
+              <a className="btn" href="#/clients" data-testid="open-clients">
+                {t('set.clientsManage')}
+              </a>
+              <a className="btn ghost" href="#/metrics">
+                {t('set.openMetrics')}
+              </a>
+            </div>
+          )}
         </div>
         <div className="card col small">
           <b>{t('settings.privacy')}</b>

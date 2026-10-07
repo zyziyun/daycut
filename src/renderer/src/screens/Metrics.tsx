@@ -8,6 +8,7 @@ import { t } from '../i18n';
 import { useEngine, useLoad } from '../lib/engine';
 import { usd } from '../lib/format';
 import { href } from '../lib/router';
+import { useAgencyMode } from '../lib/prefs';
 import { StageBadge } from './Clients';
 
 type Scope = { kind: 'all' } | { kind: 'client'; slug: string } | { kind: 'batch'; id: string };
@@ -41,6 +42,7 @@ export function Metrics() {
   const { client } = useEngine();
   const [scope, setScope] = useState<Scope>({ kind: 'all' });
   const clients = useLoad((c) => c.clients(), []);
+  const agency = useAgencyMode(); // clients only for agencies
   const batches = useLoad((c) => c.batches(), []);
   const m = useLoad((c) => c.metrics(scope.kind === 'client' ? { client: scope.slug } : scope.kind === 'batch' ? { batch: scope.id } : {}), [JSON.stringify(scope)]);
   const weekly = useLoad((c) => c.weekly(), []);
@@ -88,14 +90,16 @@ export function Metrics() {
             {t('common.all')}
           </button>
         </div>
-        <select className="input" aria-label={t('metrics.client')} value={scope.kind === 'client' ? scope.slug : ''} onChange={(e) => setScope(e.target.value ? { kind: 'client', slug: e.target.value } : { kind: 'all' })}>
-          <option value="">{t('metrics.client')}…</option>
-          {(clients.data ?? []).map((c) => (
-            <option key={c.slug} value={c.slug}>
-              {c.name}
-            </option>
-          ))}
-        </select>
+        {agency && (
+          <select className="input" aria-label={t('metrics.client')} value={scope.kind === 'client' ? scope.slug : ''} onChange={(e) => setScope(e.target.value ? { kind: 'client', slug: e.target.value } : { kind: 'all' })}>
+            <option value="">{t('metrics.client')}…</option>
+            {(clients.data ?? []).map((c) => (
+              <option key={c.slug} value={c.slug}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        )}
         <select className="input" aria-label={t('metrics.batch')} value={scope.kind === 'batch' ? scope.id : ''} onChange={(e) => setScope(e.target.value ? { kind: 'batch', id: e.target.value } : { kind: 'all' })}>
           <option value="">{t('metrics.batch')}…</option>
           {(batches.data ?? []).map((b) => (
@@ -176,7 +180,7 @@ export function Metrics() {
             </table>
           </div>
         )}
-        {d?.clients && (
+        {agency && d?.clients && (
           <div className="card col">
             <b>{t('metrics.funnel')}</b>
             {d.clients.length === 0 && <Empty>{t('clients.empty')}</Empty>}

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { AiRoutes } from '../shared/aiRoutes';
+import type { ChannelPrefs } from '../shared/channels';
 
 export interface Settings {
   enginePath?: string;
@@ -23,9 +24,13 @@ export interface Settings {
   cleanupMigrated?: boolean;
   /** AI accounts & models: default provider, per-task overrides, fallback lists (unset: the persona's routes) */
   aiRoutes?: AiRoutes;
+  /** publishing accounts: "<adapterId>/<label>" -> display name, default post times, last seen login state */
+  channels?: Record<string, ChannelPrefs>;
+  /** 「我在帮别人做视频」: shows clients (filter in 全部项目, client field, delivery). Off: everything is her own. */
+  agencyMode?: boolean;
 }
 
-const DEFAULTS: Settings = { lang: 'en', accent: 'teal', theme: 'studio-dark', accounts: {}, defaultPlatforms: ['xiaohongshu:full'], cleanupDays: 0 };
+const DEFAULTS: Settings = { lang: 'en', accent: 'teal', theme: 'studio-dark', accounts: {}, channels: {}, agencyMode: false, defaultPlatforms: ['xiaohongshu:full'], cleanupDays: 0 };
 
 export class SettingsStore {
   private file: string;
@@ -36,7 +41,7 @@ export class SettingsStore {
     this.data = { ...DEFAULTS };
     try {
       const raw = JSON.parse(fs.readFileSync(this.file, 'utf8'));
-      if (raw && typeof raw === 'object') this.data = { ...DEFAULTS, ...raw, accounts: { ...(raw.accounts ?? {}) } };
+      if (raw && typeof raw === 'object') this.data = { ...DEFAULTS, ...raw, accounts: { ...(raw.accounts ?? {}) }, channels: { ...(raw.channels ?? {}) } };
       if ((this.data.lang as string) === 'zh') this.data.lang = 'zh-CN'; // pre-v0.4 code
       if (this.data.lang !== 'en' && this.data.lang !== 'zh-CN') this.data.lang = 'en';
     } catch {

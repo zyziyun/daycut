@@ -2,10 +2,12 @@
 // session partition `persist:<platform>-<account>`. The creator signs in herself inside the page; the app never
 // sees, stores or exports passwords or cookies. Platform pages get no preload, run sandboxed with context
 // isolation, cannot reach the local engine, get no device permissions and cannot download.
-import { shell, WebContentsView, type BrowserWindow, type Session, session as electronSession } from 'electron';
+import { app, shell, WebContentsView, type BrowserWindow, type Session, session as electronSession } from 'electron';
 import { partitionFor } from '../../shared/ipc';
 import { hostAllowed, type Adapter } from '../../shared/publish/adapterSchema';
+import { loginState, PAGE_SIGNALS_JS, type PageSignals } from '../../shared/channels';
 import { isLocalEngineRequest, isSafeExternal, REMOTE_ALLOWED_PERMISSIONS } from '../security';
+import { cleanUserAgent } from './ua';
 
 /** Sign-in providers platforms open in popups (kept in the same partition so the login sticks). */
 const LOGIN_HOSTS = [
@@ -40,6 +42,8 @@ function hardenSession(ses: Session) {
   ses.setDevicePermissionHandler(() => false);
   ses.on('will-download', (e) => e.preventDefault());
   ses.webRequest.onBeforeRequest((details, cb) => cb({ cancel: isLocalEngineRequest(details.url) }));
+  // the real Chrome version without the app / Electron tokens (x.com, Instagram and Google sign-in refuse those)
+  ses.setUserAgent(cleanUserAgent(ses.getUserAgent(), [app.getName(), 'video-studio-desk', 'video-studio desk']));
 }
 
 interface Entry {
@@ -58,6 +62,7 @@ export class PublishBrowser {
   constructor(
     private win: BrowserWindow,
     private onState: (s: PublishState) => void,
+    private onLogin: (adapterId: string, account: string, state: 'in' | 'out') => void = () => undefined,
   ) {}
 
   private create(adapter: Adapter, account: string): Entry {
@@ -78,6 +83,7 @@ export class PublishBrowser {
       },
     });
     const wc = view.webContents;
+    const entry: Entry = { key: partition, adapter, account, view };
     const allowedPopup = (url: string) => {
       try {
         const u = new URL(url);
@@ -106,10 +112,30 @@ export class PublishBrowser {
     });
     wc.on('will-attach-webview', (e) => e.preventDefault());
     const emit = () => this.emit();
+    // login state: the URL first, then what the page shows a moment after it settled (SPAs redirect late)
+    let check: NodeJS.Timeout | null = null;
+    const seen = () => {
+      if (check) clearTimeout(check);
+      const url = wc.getURL();
+      const quick = loginState(url, entry.adapter, null);
+      if (quick) this.onLogin(entry.adapter.id, account, quick);
+      check = setTimeout(async () => {
+        if (wc.isDestroyed()) return;
+        let page: PageSignals | null = null;
+        try {
+          page = (await wc.executeJavaScriptInIsolatedWorld(1001, [{ code: PAGE_SIGNALS_JS }])) as PageSignals;
+        } catch {
+          /* navigated away */
+        }
+        const st = loginState(wc.getURL(), entry.adapter, page);
+        if (st) this.onLogin(entry.adapter.id, account, st);
+      }, 2500);
+    };
+    wc.on('did-stop-loading', seen);
+    wc.on('did-navigate-in-page', seen);
     for (const ev of ['did-navigate', 'did-navigate-in-page', 'page-title-updated', 'did-start-loading', 'did-stop-loading'] as const) {
       wc.on(ev as 'did-navigate', emit);
     }
-    const entry = { key: partition, adapter, account, view };
     this.entries.set(partition, entry);
     return entry;
   }
@@ -174,6 +200,22 @@ export class PublishBrowser {
       canGoForward: wc?.navigationHistory.canGoForward() ?? false,
       visible: this.visible,
     });
+  }
+
+  /** Close an account's view (before its session storage is cleared). */
+  forget(adapterId: string, account: string) {
+    const key = partitionFor(adapterId, account);
+    const e = this.entries.get(key);
+    if (!e) return;
+    try {
+      this.win.contentView.removeChildView(e.view);
+    } catch {
+      /* not attached */
+    }
+    e.view.webContents.close();
+    this.entries.delete(key);
+    if (this.current === e) this.current = null;
+    this.emit();
   }
 
   destroy() {

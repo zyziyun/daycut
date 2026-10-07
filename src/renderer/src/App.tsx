@@ -6,7 +6,8 @@ import { setLang, t, type MessageKey } from './i18n';
 import { EngineProvider, useEngine } from './lib/engine';
 import { HistoryProvider, useHistory } from './lib/history';
 import { InboxProvider, useInbox } from './lib/inbox';
-import { go, href, useRoute, type Route } from './lib/router';
+import { agencyMode, setPrefs } from './lib/prefs';
+import { href, useRoute, type Route } from './lib/router';
 import { Board } from './screens/Board';
 import { ClientDetail } from './screens/ClientDetail';
 import { Clients } from './screens/Clients';
@@ -21,6 +22,7 @@ import { Settings } from './screens/Settings';
 import { AIAccounts } from './v4/AIAccounts';
 import { applyTheme, type AccentName, type ThemeName } from './theme/tokens';
 import { CalendarScreen } from './v4/Calendar';
+import { Channels } from './v4/Channels';
 import { Focus } from './v4/Focus';
 import { Home } from './v4/Home';
 import { InboxScreen } from './v4/Inbox';
@@ -86,15 +88,20 @@ function Shell({ onSettings }: { onSettings: (s: SettingsMsg) => void }) {
   if (r.name === 'focus') return <Focus key={r.id} id={r.id} />;
   return (
     <div className={`v4 app ${r.name === 'clip' ? 'rail' : ''}`}>
-      <nav className="side" aria-label={t('nav.workspaceHint')}>
-        <button className="ws" onClick={() => go({ name: 'clients' })} data-tip={t('nav.workspaceHint')} data-testid="workspace">
-          <span className="av" />
-          <b>{t('nav.workspace')}</b>
-        </button>
+      <nav className="side" aria-label={t('nav.main')}>
+        {/* solo creator first: the app itself, no workspace / account switcher */}
+        <div className="ws brand" data-testid="app-brand" title={t('app.name')}>
+          <span className="av" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="14" height="14">
+              <path d="M8 5.5v13l10.5-6.5z" fill="currentColor" />
+            </svg>
+          </span>
+          <b>{t('app.name')}</b>
+        </div>
         {nav({ name: 'home' }, 'nav.home', r.name === 'home' || r.name === 'new', <HomeIcon className="ico" />, 'nav-home', running > 0 ? <span className="count run" data-testid="running-badge">{running}</span> : null)}
         {nav({ name: 'inbox' }, 'nav.inbox', r.name === 'inbox', <InboxIcon className="ico" />, 'nav-inbox', nIn > 0 ? <span className="count you" data-testid="inbox-badge">{nIn}</span> : null)}
         {nav({ name: 'projects' }, 'nav.projects', r.name === 'projects' || inProject, <LayoutGrid className="ico" />, 'nav-projects')}
-        {nav({ name: 'calendar' }, 'nav.publishTop', r.name === 'calendar' || r.name === 'publish' || r.name === 'metrics', <Calendar className="ico" />, 'nav-publish')}
+        {nav({ name: 'calendar' }, 'nav.publishTop', r.name === 'calendar' || r.name === 'publish' || r.name === 'metrics' || r.name === 'channels', <Calendar className="ico" />, 'nav-publish')}
         <div className="grow" />
         <UpdateBadge />
         {nav({ name: 'settings' }, 'nav.settings', r.name === 'settings' || r.name === 'aiAccounts' || r.name === 'clients' || r.name === 'client', <SettingsIcon className="ico" />, 'nav-settings')}
@@ -164,9 +171,11 @@ function Screen({ r, onSettings }: { r: Route; onSettings: (s: SettingsMsg) => v
     case 'deliver':
       return <Deliver key={r.batch} batch={r.batch} />;
     case 'clients':
-      return <Clients />;
+      return agencyMode() ? <Clients /> : <Settings onChange={onSettings} />;
     case 'client':
-      return <ClientDetail key={r.slug} slug={r.slug} />;
+      return agencyMode() ? <ClientDetail key={r.slug} slug={r.slug} /> : <Settings onChange={onSettings} />;
+    case 'channels':
+      return <Channels />;
     case 'metrics':
       return <Metrics />;
     case 'welcome':
@@ -192,6 +201,7 @@ export function App() {
   const [settings, setSettings] = useState<SettingsMsg | null>(null);
   const apply = useCallback((s: SettingsMsg) => {
     setLang(s.lang);
+    setPrefs(s);
     applyTheme(s.theme as ThemeName, document.documentElement, (s.accent ?? 'teal') as AccentName);
     setSettings(s);
     force((n) => n + 1);

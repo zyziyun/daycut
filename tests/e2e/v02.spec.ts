@@ -1,4 +1,4 @@
-// v0.2 happy path in mock mode (no keys, no network): first-run wizard -> client workspace -> new batch from a
+// v0.2 happy path in mock mode (no keys, no network): first-run wizard -> client (agency mode) -> new batch from a
 // raw recording (AI segment planning, segment review) -> estimate -> pilot -> full run -> in-review edits
 // (caption fix with faithful check, hook swap, trim, undo, re-render affected) -> delivery package -> metrics
 // + weekly_metrics.csv export. Native dialogs are stubbed in the main process.
@@ -69,7 +69,10 @@ test('first-run wizard: keys card, models, default platforms, finish', async () 
 });
 
 test('client workspace: create, edit client.yaml fields', async () => {
-  await page.getByTestId('workspace').click(); // the workspace switcher (客户 moved out of the sidebar)
+  // clients are an agency feature: Settings -> 「我在帮别人做视频」 -> 客户管理 (a solo creator never sees them)
+  await page.evaluate(() => (location.hash = '#/settings'));
+  await page.getByTestId('agency-toggle').check();
+  await page.getByTestId('open-clients').click();
   await page.getByTestId('new-client').click();
   await page.locator('.modal input').first().fill('E2E 讲师');
   await page.locator('.modal input').nth(1).fill('e2e');

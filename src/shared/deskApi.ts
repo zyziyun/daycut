@@ -1,6 +1,7 @@
 // The API the preload exposes as window.desk.
 import type { AiRoutes, AuthStatusMsg, KeyName } from './aiRoutes';
 import type { AssetsStatusMsg } from './assets';
+import type { ChannelMsg, ChannelPrefs } from './channels';
 import type { Adapter } from './publish/adapterSchema';
 import type { Confirmation } from './publish/gating';
 import type { EngineInfo } from './types';
@@ -51,6 +52,8 @@ export interface SettingsMsg {
   personaPath?: string;
   cleanupDays?: number;
   aiRoutes?: AiRoutes;
+  channels?: Record<string, ChannelPrefs>;
+  agencyMode?: boolean;
 }
 
 export type SecretName = KeyName;
@@ -109,7 +112,7 @@ export interface DeskApi {
   showItem(path: string): Promise<void>;
   copyText(text: string): Promise<void>;
   getSettings(): Promise<SettingsMsg>;
-  setSettings(patch: Partial<Pick<SettingsMsg, 'enginePath' | 'python' | 'lang' | 'theme' | 'accent' | 'defaultPlatforms' | 'cleanupDays'>>): Promise<SettingsMsg>;
+  setSettings(patch: Partial<Pick<SettingsMsg, 'enginePath' | 'python' | 'lang' | 'theme' | 'accent' | 'defaultPlatforms' | 'cleanupDays' | 'agencyMode'>>): Promise<SettingsMsg>;
   openFiles(kind: 'video' | 'any'): Promise<string[]>;
   /** absolute path of a file dropped on the window (Electron webUtils; '' when unavailable) */
   pathForFile(file: File): string;
@@ -131,6 +134,9 @@ export interface DeskApi {
   publish: {
     adapters(): Promise<{ adapters: Adapter[]; errors: { file: string; error: string }[] }>;
     accounts(): Promise<Record<string, string[]>>;
+    channels(): Promise<ChannelMsg[]>;
+    updateChannel(adapterId: string, account: string, patch: { name?: string; times?: string[] }): Promise<ChannelMsg[]>;
+    removeAccount(adapterId: string, account: string, signOut: boolean): Promise<ChannelMsg[]>;
     addAccount(adapterId: string, account: string): Promise<Record<string, string[]>>;
     open(adapterId: string, account: string, page: 'upload' | 'login'): Promise<void>;
     setBounds(b: { x: number; y: number; width: number; height: number }): Promise<void>;

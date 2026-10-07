@@ -1,6 +1,7 @@
 // English (source of truth and fallback). Product copy: short, friendly, no engine jargon.
 import { legacyEn } from '../legacy/en';
 import { aiaccEn } from './aiacc';
+import { channelsEn } from './channels';
 import { chatEditEn } from './chatEdit';
 import { projectAiEn } from './projectAi';
 import { legacyEnV02 } from '../legacy/v02';
@@ -11,8 +12,6 @@ export const v04En = {
   'nav.inbox': 'Inbox',
   'nav.projects': 'All projects',
   'nav.publishTop': 'Publish',
-  'nav.workspace': 'My account',
-  'nav.workspaceHint': 'Workspace',
   'engine.ready': 'Ready on this Mac',
   'engine.demo': 'Demo mode',
 
@@ -459,9 +458,6 @@ export const v04En = {
   'set.accent.red': 'Xiaohongshu red',
   'set.language': 'Language',
   'set.languageHint': 'The app’s language. Captions and post copy keep each project’s own language.',
-  'set.workspaces': 'Workspaces and clients',
-  'set.workspacesHint': 'Style, platforms and glossary per client.',
-  'set.openClients': 'Manage workspaces',
   'set.data': 'Numbers',
   'set.openMetrics': 'Open the numbers',
   'ai.nothing': 'Nothing to change for that. Try saying it another way.',
@@ -568,5 +564,5 @@ export const v04En = {
   'editor.zoomFit': 'Fit',
 };
 
-export const en = { ...legacyEn, ...legacyEnV02, ...v04En, ...aiaccEn, ...publishPlatformsEn, ...chatEditEn, ...projectAiEn };
+export const en = { ...legacyEn, ...legacyEnV02, ...v04En, ...aiaccEn, ...publishPlatformsEn, ...chatEditEn, ...channelsEn, ...projectAiEn };
 export type MessageKey = keyof typeof en;

@@ -1,7 +1,9 @@
 // 全部项目: a thumbnail grid (whole card clickable), one filter row (全部 / 运行中 / 需要你 / 已完成), search, type,
 // multi-select with bulk actions, inline rename, right-click menu, and the watched folders folded at the bottom.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CheckSquare, Copy, Eye, FolderOpen, FolderPlus, Pencil, Plus, Square, Trash2 } from 'lucide-react';
+import { CheckSquare, Copy, Eye, FolderOpen, FolderPlus, Pencil, Plus, Square, Trash2, Users } from 'lucide-react';
+import { PromptModal } from '../components/ui';
+import { useAgencyMode } from '../lib/prefs';
 import type { HistoryItem } from '../../../shared/v02';
 import { t, tk } from '../i18n';
 import { useEngine, useLoad } from '../lib/engine';
@@ -13,6 +15,7 @@ import { Empty, More, Seg, SkGrid } from './kit';
 import { useUi } from './ui';
 
 type F = 'all' | 'running' | 'you' | 'done';
+const OWN = '\u0000own';
 const TYPES = ['talkinghead', 'slices', 'explainer', 'photo-story', 'vlog', 'podcast', 'aigc', 'script', 'batch', 'promo', 'slides', 'other'];
 
 export function Projects() {
@@ -25,6 +28,10 @@ export function Projects() {
   const [selecting, setSelecting] = useState(false);
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [renaming, setRenaming] = useState<string | null>(null);
+  // agency mode only (Settings -> 「我在帮别人做视频」): filter by client, set a project's client
+  const agency = useAgencyMode();
+  const [clientF, setClientF] = useState(''); // '' all · OWN her own · else the client name
+  const [clientFor, setClientFor] = useState<HistoryItem | null>(null);
   useEffect(() => sessionStorage.setItem('v4.pf', f), [f]);
   const items = useMemo(() => data?.items ?? [], [data]);
   const counts = useMemo(() => {
@@ -35,7 +42,16 @@ export function Projects() {
     }
     return c;
   }, [items]);
-  const shown = items.filter((i) => (f === 'all' || bucket(i) === f) && (!type || (i.type ?? 'other') === type) && (!q || `${i.name} ${i.recipe ?? ''} ${i.client ?? ''}`.toLowerCase().includes(q.toLowerCase())));
+  const clientNames = useMemo(() => [...new Set(items.map((i) => i.client).filter((c): c is string => !!c))].sort(), [items]);
+  const clientOk = (i: HistoryItem) => !agency || !clientF || (clientF === OWN ? !i.client : i.client === clientF);
+  const shown = items.filter((i) => (f === 'all' || bucket(i) === f) && (!type || (i.type ?? 'other') === type) && clientOk(i) && (!q || `${i.name} ${i.recipe ?? ''} ${agency ? (i.client ?? '') : ''}`.toLowerCase().includes(q.toLowerCase())));
+  const saveClient = async (i: HistoryItem, name: string) => {
+    setClientFor(null);
+    if (!client) return;
+    await client.setHistoryClient(i.dir, name.trim());
+    reload();
+    ui.toast(t('editor.saved'));
+  };
 
   const remove = async (list: HistoryItem[]) => {
     if (!client || !list.length) return;
@@ -71,6 +87,7 @@ export function Projects() {
       { label: t('c.open'), icon: <Eye className="ico" />, run: () => go({ name: 'project', id: i.id }) },
       { label: t('c.rename'), icon: <Pencil className="ico" />, run: () => setRenaming(i.id), testId: 'menu-rename' },
       { label: t('projects.again'), icon: <Copy className="ico" />, run: () => again(i) },
+      ...(agency ? [{ label: t('projects.setClient'), icon: <Users className="ico" />, run: () => setClientFor(i), testId: 'menu-client' }] : []),
       { label: t('c.reveal'), icon: <FolderOpen className="ico" />, run: () => window.desk.showItem(i.dir) },
       { label: '', sep: true, run: () => undefined },
       { label: t('c.remove'), icon: <Trash2 className="ico" />, run: () => remove([i]), testId: 'menu-remove' },
@@ -104,6 +121,17 @@ export function Projects() {
           />
           <span className="sp" />
           <input className="inp" data-search value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('projects.search')} aria-label={t('c.search')} data-testid="projects-search" />
+          {agency && (
+            <select className="inp" value={clientF} onChange={(e) => setClientF(e.target.value)} aria-label={t('projects.client')} data-testid="projects-client">
+              <option value="">{t('projects.clientAll')}</option>
+              <option value={OWN}>{t('projects.clientOwn')}</option>
+              {clientNames.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          )}
           <select className="inp" value={type} onChange={(e) => setType(e.target.value)} aria-label={t('projects.type')} data-testid="projects-type">
             <option value="">{t('projects.anyType')}</option>
             {TYPES.map((ty) => (
@@ -170,6 +198,9 @@ export function Projects() {
         )}
         <Watched />
       </div>
+      {clientFor && (
+        <PromptModal title={t('projects.setClientTitle', { name: clientFor.name })} placeholder={clientFor.client || t('projects.setClientNone')} okLabel={t('ch.save')} onOk={(v) => void saveClient(clientFor, v)} onCancel={() => setClientFor(null)} />
+      )}
     </div>
   );
 }

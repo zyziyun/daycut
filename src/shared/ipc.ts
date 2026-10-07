@@ -4,7 +4,8 @@ import { z } from 'zod';
 import { AI_TASK_IDS, KEY_NAMES, PROVIDER_IDS } from './aiRoutes';
 
 const batchId = z.string().regex(/^[0-9a-f]{12}$/);
-const jobId = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/);
+/** batch job ids, and work-folder clip ids (file stems like A_换圈子: letters / digits of any script, . _ -) */
+const jobId = z.string().regex(/^[\p{L}\p{N}][\p{L}\p{N}._-]{0,127}$/u);
 const code = z.string().regex(/^[0-9a-f]{12}$/);
 const adapterId = z.string().regex(/^[a-z][a-z0-9-]{1,30}$/);
 /** Becomes part of a session partition name: persist:<adapter>-<account>. */
@@ -59,6 +60,7 @@ export const ipcSchemas = {
     accent: z.enum(['teal', 'red']).optional(),
     defaultPlatforms: z.array(platformId).min(1).max(8).optional(),
     cleanupDays: z.number().int().min(0).max(365).optional(),
+    agencyMode: z.boolean().optional(),
   }),
   // ---------------- v0.2: first run, keys (OS keychain via safeStorage), persona, exports
   'firstRun:complete': z.strictObject({ defaultPlatforms: z.array(platformId).min(1).max(8), skipped: z.boolean().optional() }),
@@ -71,6 +73,14 @@ export const ipcSchemas = {
   'publish:adapters': z.undefined(),
   'publish:accounts': z.undefined(),
   'publish:addAccount': z.strictObject({ adapterId, account: accountName }),
+  'publish:channels': z.undefined(),
+  'publish:updateChannel': z.strictObject({
+    adapterId,
+    account: accountName,
+    name: z.string().max(60).refine((v) => !/\p{Cc}/u.test(v), 'name').optional(),
+    times: z.array(z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/)).max(6).optional(),
+  }),
+  'publish:removeAccount': z.strictObject({ adapterId, account: accountName, signOut: z.boolean() }),
   'publish:open': z.strictObject({ adapterId, account: accountName, page: z.enum(['upload', 'login']) }),
   'publish:setBounds': z.strictObject({
     x: z.number().int().min(0).max(20000),

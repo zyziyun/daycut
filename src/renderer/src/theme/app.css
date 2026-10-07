@@ -28,6 +28,8 @@ button { cursor: pointer; }
 .v4 .side > * { -webkit-app-region: no-drag; }
 .v4 .ws { display: flex; align-items: center; gap: var(--s1); padding: var(--s1); border-radius: var(--radius); margin-bottom: var(--s2); border: 1px solid var(--border); color: var(--text); background: transparent; text-align: left; width: 100%; }
 .v4 .ws .av { width: 24px; height: 24px; border-radius: 7px; background: var(--accent); opacity: 0.9; flex: none; }
+.v4 .ws.brand { border-color: transparent; cursor: default; user-select: none; }
+.v4 .ws.brand .av { display: inline-flex; align-items: center; justify-content: center; color: var(--bg, #0E1113); opacity: 1; }
 .v4 .ws b { font-weight: 500; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .v4 .nav { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 12px; border-radius: var(--radius); color: var(--text-muted); text-decoration: none; transition: background var(--t) var(--ease), color var(--t) var(--ease); }
 .v4 .nav:hover { background: var(--surface-2); color: var(--text); }

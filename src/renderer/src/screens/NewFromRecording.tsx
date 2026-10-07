@@ -10,7 +10,7 @@ import { t, tk } from '../i18n';
 import { useEngine } from '../lib/engine';
 import { go } from '../lib/router';
 import { PlatformPicker } from './Clients';
-import { ClientSelect, defaultName, EstimateView, initialClient } from './NewBatch';
+import { ClientField, defaultName, EstimateView, initialClient } from './NewBatch';
 
 type Step = 'source' | 'plan' | 'segments' | 'estimate' | 'pilot';
 const STEPS: Step[] = ['source', 'plan', 'segments', 'estimate', 'pilot'];
@@ -215,9 +215,7 @@ export function NewFromRecording({ tabs }: { tabs: ReactNode }) {
                 </button>
               </div>
             </Field>
-            <Field label={t('new.client')}>
-              <ClientSelect value={clientSlug} onChange={setClientSlug} />
-            </Field>
+            <ClientField value={clientSlug} onChange={setClientSlug} />
             <Field label={t('new.name')} hint={t('new.nameHint')}>
               <input className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={64} data-testid="batch-name" />
             </Field>
