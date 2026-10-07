@@ -2,8 +2,8 @@
 import fs from 'node:fs';
 import { createServer as createNetServer, type AddressInfo } from 'node:net';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { app, BrowserWindow, clipboard, dialog, ipcMain, net, Notification, protocol, session, shell, type IpcMainInvokeEvent } from 'electron';
+import { Readable } from 'node:stream';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Notification, protocol, session, shell, type IpcMainInvokeEvent } from 'electron';
 import { EngineClient } from '../shared/engineClient';
 import { validateIpc, type IpcChannel, type IpcPayload } from '../shared/ipc';
 import { hostAllowed, type Adapter } from '../shared/publish/adapterSchema';
@@ -14,7 +14,7 @@ import type { AssetManifest } from '../shared/assets';
 import { AssetManager, defaultHfHub, sharedEngineCache } from './assets';
 import { registerAiIpc, syncRoutesFile } from './aiAccounts';
 import { defaultEnginePath, EngineProcess, engineProcessEnv, findPython } from './engine';
-import { isAllowedMediaPath, pathFromMediaUrl } from './media';
+import { isAllowedMediaPath, mediaMime, parseRange, pathFromMediaUrl } from './media';
 import { loadAdapters } from './publish/adapters';
 import { PublishBrowser } from './publish/browser';
 import { assistedFill } from './publish/fill';
@@ -308,7 +308,12 @@ function registerProtocols() {
   });
   protocol.handle('vsmedia', async (req) => {
     const p = pathFromMediaUrl(req.url);
-    const roots = await mediaRoots();
+    let roots = await mediaRoots();
+    // a file the engine allowed a moment ago (e.g. a freshly made timeline sprite): refresh the cached roots once
+    if (p && !isAllowedMediaPath(p, roots) && Date.now() - rootsCache.at > 300) {
+      rootsCache.at = 0;
+      roots = await mediaRoots();
+    }
     if (!p || !isAllowedMediaPath(p, roots)) return new Response('forbidden', { status: 403 });
     let real: string;
     try {
@@ -317,10 +322,24 @@ function registerProtocols() {
       return new Response('not found', { status: 404 });
     }
     if (!isAllowedMediaPath(real, roots)) return new Response('forbidden', { status: 403 });
-    const headers: Record<string, string> = {};
-    const range = req.headers.get('range');
-    if (range) headers.range = range;
-    return net.fetch(pathToFileURL(real).toString(), { headers });
+    // ranges answered here (206): file:// fetches ignore Range, and without it a video can only seek inside what is
+    // already buffered (long outputs could not be scrubbed)
+    const size = await fs.promises.stat(real).then((st) => st.size, () => -1);
+    if (size < 0) return new Response('not found', { status: 404 });
+    const type = mediaMime(real);
+    const r = parseRange(req.headers.get('range'), size);
+    if (r === 'invalid') return new Response(null, { status: 416, headers: { 'content-range': `bytes */${size}` } });
+    const span = r ?? { start: 0, end: size - 1 };
+    const body = size ? (Readable.toWeb(fs.createReadStream(real, { start: span.start, end: span.end })) as unknown as ReadableStream) : null;
+    return new Response(body, {
+      status: r ? 206 : 200,
+      headers: {
+        'content-type': type,
+        'accept-ranges': 'bytes',
+        'content-length': String(size ? span.end - span.start + 1 : 0),
+        ...(r ? { 'content-range': `bytes ${span.start}-${span.end}/${size}` } : {}),
+      },
+    });
   });
 }
 

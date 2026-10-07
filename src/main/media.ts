@@ -30,3 +30,41 @@ export function isAllowedMediaPath(p: string, roots: string[], pathImpl: typeof 
     return norm === root || norm.startsWith(root + pathImpl.sep);
   });
 }
+
+const MEDIA_MIME: Record<string, string> = {
+  '.mp4': 'video/mp4',
+  '.m4v': 'video/mp4',
+  '.mov': 'video/quicktime',
+  '.webm': 'video/webm',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+};
+
+export function mediaMime(p: string, pathImpl: typeof path = path): string {
+  return MEDIA_MIME[pathImpl.extname(p).toLowerCase()] ?? 'application/octet-stream';
+}
+
+/** An HTTP Range header against a file of `size` bytes -> the byte span to send (inclusive), 'invalid' (416), or
+ * null (no / unsupported range: send the whole file). Only single ranges; "bytes=-N" is the last N bytes. Video
+ * elements need 206 answers to seek in files that are not fully buffered. */
+export function parseRange(header: string | null | undefined, size: number): { start: number; end: number } | 'invalid' | null {
+  if (!header) return null;
+  const m = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
+  if (!m || (m[1] === '' && m[2] === '')) return null;
+  let start: number;
+  let end: number;
+  if (m[1] === '') {
+    const n = Number(m[2]);
+    if (!n) return 'invalid';
+    start = Math.max(0, size - n);
+    end = size - 1;
+  } else {
+    start = Number(m[1]);
+    end = m[2] === '' ? size - 1 : Math.min(Number(m[2]), size - 1);
+  }
+  if (start >= size || end < start) return 'invalid';
+  return { start, end };
+}
