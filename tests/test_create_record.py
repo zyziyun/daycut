@@ -81,3 +81,13 @@ def test_session_must_be_inside_recordings(home, tmp_path):
         RE.need_session(str(tmp_path / "elsewhere"))
     with pytest.raises(CreateError):
         RE.need_session(os.path.join(store.recordings_root(), "..", "series"))
+
+
+def test_recorder_transcript_words_reads_words_of_keys(monkeypatch):
+    from vstudio import asr
+    from vstudio.create import providers
+    monkeypatch.setattr(providers, "fake_mode", lambda: False)
+    monkeypatch.setattr(asr, "transcribe", lambda p, language=None: dict(segments=[dict(words=[
+        dict(word=" 你好", start=0.4, end=0.8), dict(word="世界", start=0.9, end=1.5)])]))
+    w = RE.transcript_words("x.mp4")
+    assert w == [dict(word="你好", start=0.4, end=0.8), dict(word="世界", start=0.9, end=1.5)]

@@ -170,8 +170,9 @@ def transcript_words(path, language=None):
     try:
         from vstudio import asr
         tr = asr.transcribe(path, language=language)
-        return [dict(word=w.get("word"), start=float(w["start"]), end=float(w["end"]))
-                for w in asr.words_of(tr) if w.get("start") is not None]
+        # asr.words_of -> [{w, t, te}] (not whisper's word / start / end)
+        return [dict(word=w.get("w"), start=float(w["t"]), end=float(w["te"]))
+                for w in asr.words_of(tr) if w.get("t") is not None]
     except Exception:  # noqa: BLE001  (no ASR installed: the marks alone decide)
         return None
 
