@@ -94,7 +94,9 @@ Nothing is applied: the desk applies a group with `output edit` (one undo step p
 targets, paths [{kind rerender-scripts {files [{file, line, text}], scripts, prompt} | regenerate {items, command} |
 re-export, message, actions [{kind copy-prompt {prompt} | open-file {file, line} | regenerate {items} | reveal
 {file}, label}]}]}`. `--json-events`: `{event: stage, stage: read|check|ask|plan, n, provider?, elapsed}`,
-`{event: fallback, from, to, code, error}`, then `{event: done, result}` (or `{event: failed, code, ...}`, exit 5).
+`{event: partial, needs_rerender, groups}` (the rule answer, sent BEFORE the model call so the desk shows it at
+once), `{event: fallback, from, to, code, error}`, then `{event: done, result}` (or `{event: failed, code, ...}`,
+exit 5). A failed model call keeps the rule answer (warning `llm-failed`, `failed {provider, code}`).
 
 ## 4. Effects (`output effects --json [--no-thumbs]`)
 

@@ -194,3 +194,24 @@ def test_unknown_output_and_cli_events(tmp_path, clip):
     p = subprocess.run([sys.executable, "-m", "vstudio.project", "ai", "--project", w, "--instruction", "x",
                         "--outputs", "nope", "--json-events"], capture_output=True, text=True, env=env, timeout=60)
     assert p.returncode == 5 and json.loads(p.stdout.splitlines()[-1])["code"] == "unknown-output"
+
+
+def test_rule_answer_survives_a_failed_model_call_and_is_sent_early(tmp_path, clip, monkeypatch):
+    """Mixed project: two flattened clips carry the burned text, the third SAYS it (its cached transcript), so the
+    model must plan that one; the model fails -> the needs_rerender answer is still returned, and it was announced
+    as a ``partial`` event before the call."""
+    w = _fuye(tmp_path, clip)
+    with open(os.path.join(w, "final", f"{NAMES[2]}.mp4.asr.json"), "w", encoding="utf-8") as f:
+        json.dump(dict(segments=[dict(words=[dict(word="我的副业复盘", start=0.1, end=0.9)])]), f, ensure_ascii=False)
+    monkeypatch.setenv("VSTUDIO_LLM_OUTPUT_EDIT_PROVIDER", "claude-code")
+
+    def fail(*a, **k):
+        raise llm.LLMError("claude CLI timed out after 120 s")
+    monkeypatch.setattr(llm, "complete", fail)
+    events = []
+    r = PA.plan(w, "把副业复盘01，02，03都去掉", on_event=events.append)
+    assert r["answer"] == "needs_rerender" and r["model_called"]
+    assert sorted(r["needs_rerender"]["outputs"]) == [f"final/{n}.mp4" for n in NAMES[:2]]
+    assert any(x["code"] == "llm-failed" for x in r["warnings"]) and r["failed"]["code"] == "timeout"
+    ev = [e["event"] for e in events]
+    assert "partial" in ev and ev.index("partial") < max(i for i, e in enumerate(ev) if e == "stage")

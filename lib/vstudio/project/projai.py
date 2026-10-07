@@ -14,6 +14,7 @@ One request for every output of a project / work folder ("remove the series labe
                grouped per output and every op is validated against that output's capabilities (``normalize``).
   4. plan      -> {answer changes | needs_rerender | mixed | nothing, groups [{output, proposed, dropped}],
                needs_rerender {...}, apply_all {outputs, ops}, provider, fallback, seconds, model_called}
+               The rule answer is sent as a `partial` event before the model call and kept if the call fails.
 
 ``timeout`` (default 120 s) bounds each provider; a timed-out / failed provider falls back along the route's chain
 (``llm.complete``), reported live (``on_event`` {event: fallback}) and in the result (``fallback``).
@@ -422,6 +423,8 @@ def plan(d, instruction, outputs=None, context=None, provider=None, model=None, 
             warns.append(O.msg("no-model", "no model is configured for task output_edit: only literal phrases were "
                                "understood", "没有配置 output_edit 模型，只理解了字面指令"))
         else:
+            if needs or groups:                      # the rule answer shows right away; the model works on the rest
+                emit(event="partial", needs_rerender=needs, groups=[g["output"] for g in groups])
             emit(event="stage", stage="ask", n=len(ask), provider=route.provider)
             fx = [dict(id=r["id"], zh=r["label"]["zh"], en=r["label"]["en"], stage=r["stage"],
                        params=sorted(r["params"])) for r in O.FX.catalogue()]
@@ -431,25 +434,34 @@ def plan(d, instruction, outputs=None, context=None, provider=None, model=None, 
             prompt = (f"Instruction from the creator (applies to the whole project):\n{instruction}\n\nContext (JSON):\n"
                       + json.dumps(ctx, ensure_ascii=False, default=str))
             model_called = True
+            r, j = None, {}
             try:
                 r = llm.complete("output_edit", SYSTEM, prompt, schema=SCHEMA, provider=provider, model=model,
                                  max_tokens=8000, timeout=timeout,
                                  on_fallback=lambda fb: emit(event="fallback", **fb))
+                j = r.get("json") if isinstance(r.get("json"), dict) else {}
+                if not isinstance(j.get("groups"), list):
+                    raise O.OutputError("llm-bad-json", "the model did not return {groups: [...]}",
+                                        "模型没有返回分组修改", provider=r.get("provider"))
             except Exception as e:  # noqa: BLE001
-                raise O.OutputError("llm-failed", f"the model call failed: {str(e)[:200]}", "模型调用失败",
-                                    provider=route.provider, error=str(e)[:200],
-                                    code_hint=llm.failure_code(e)) from e
-            emit(event="stage", stage="plan", n=len(ask))
-            j = r.get("json") if isinstance(r.get("json"), dict) else {}
-            if not isinstance(j.get("groups"), list):
-                raise O.OutputError("llm-bad-json", "the model did not return {groups: [...]}", "模型没有返回分组修改",
-                                    provider=r.get("provider"))
-            summary = j.get("summary")
-            cost = r.get("cost_usd") or 0.0
-            used = dict(provider=r.get("provider"), model=r.get("model"), routed=route.provider,
-                        fallback=r.get("fallback"))
+                fail = e if isinstance(e, O.OutputError) else O.OutputError(
+                    "llm-failed", f"the model call failed: {str(e)[:200]}", "模型调用失败", provider=route.provider,
+                    error=str(e)[:200], code_hint=llm.failure_code(e))
+                if not (needs or groups):
+                    raise fail from e
+                warns.append(fail.info)               # keep what the rule check answered
+                used = dict(provider=(r or {}).get("provider") or route.provider, model=(r or {}).get("model"),
+                            routed=route.provider, fallback=(r or {}).get("fallback"),
+                            failed=dict(provider=route.provider, code=llm.failure_code(e)))
+                r = None
+            if r is not None:
+                emit(event="stage", stage="plan", n=len(ask))
+                summary = j.get("summary")
+                cost = r.get("cost_usd") or 0.0
+                used = dict(provider=r.get("provider"), model=r.get("model"), routed=route.provider,
+                            fallback=r.get("fallback"))
             by_id = {rec["id"]: (rec, doc, st) for rec, doc, st in ask}
-            for g in j["groups"]:
+            for g in j.get("groups") or []:
                 if not isinstance(g, dict):
                     continue
                 hit = by_id.get(g.get("output")) or next(
