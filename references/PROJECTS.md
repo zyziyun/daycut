@@ -60,7 +60,7 @@ answer-derived overrides; params with `x-spec` go into a batch spec section (`as
 | `id`, `version`, `workflow`, `labels {zh, en}`, `description {zh, en}`, `category` | identity (category: edit / slice / generate / write / package / batch) |
 | `inputs [{key, kind, labels, required, multiple, accept, scope, help}]` | kind: video / folder / photos / audio / text / script / file / url-free; scope item / project |
 | `items {sources, from_input, planner, per_item, shared, variants, share_cache}` | how items form; which params / stages are per item vs shared |
-| `params` | JSON Schema object; every property has `title`, `x-zh`, `default`, ranges / enums; `x-scope: item`, `x-spec`, `x-map` |
+| `params` | JSON Schema object; every property has `title`, `x-zh`, `default`, ranges / enums; `x-scope: item`, `x-spec`, `x-map`; `x-format: speed.body` instead of `default` = the value of the recipe's `vstudio.formats` entry (persona `formats.<id>` merged), so the pipeline, `formats show` and `vstudio.firstpass` share one number |
 | `engine {batch_recipe, expand, batch_inputs, spec}` | reuse a vstudio.batch recipe's stages (`batch_recipe: name` or `{param, map}` for engine variants) |
 | `stages [{id, resource, fn \| run \| from_batch, deps, extra_deps, keys, watch, when, paid, units, produces, preview}]` | the graph; `fn` = adapter `module:fn(env)`, `run` = a workflow script through the generic script adapter |
 | `checkpoints [...]` | section 3 |

@@ -62,21 +62,26 @@ params:
       type: number
       minimum: 0.8
       maximum: 1.6
-      default: 1.1
-      title: Body speed (pitch kept; zh intelligible up to 1.4)
+      x-format: speed.body
+      title: Body speed (pitch kept; zh intelligible up to 1.4; default = the 口播 format's)
       x-zh: 正文语速
     hook_speed:
       type: number
       minimum: 0.8
       maximum: 1.8
-      default: 1.3
-      title: Hook speed
+      x-format: speed.hook
+      title: Hook speed (default = the 口播 format's)
       x-zh: hook 语速
     cleanup_profile:
       enum: [gentle, standard, tight, "off"]
-      default: standard
-      title: Pause / filler cleanup
+      x-format: cleanup
+      title: Pause / filler cleanup (default = the 口播 format's)
       x-zh: 去气口力度
+    cover_canvas:
+      enum: [video, platform]
+      x-format: cover.aspect
+      title: Cover size (video = same canvas as the export, the platform's cover shape previewed as its feed crop)
+      x-zh: 封面尺寸（video 与正片同尺寸；platform 平台封面比例）
     layout:
       enum: [face, center, pad-blur, letterbox, band]
       default: pad-blur

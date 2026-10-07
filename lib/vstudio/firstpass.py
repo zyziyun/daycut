@@ -25,6 +25,7 @@ import os
 import re
 import sys
 
+TAGS_LINE_RE = re.compile(r"^(#[^\s#]+#?\s*)+$")   # a hashtag line (#tag, 微博 #话题#), not a "# heading"
 SERIES_RE = re.compile(r"(?<![\d.:])0\d\s*/\s*0?\d{1,2}(?![\d.:])|^\s*\d{1,2}\s*/\s*\d{1,2}\s*$"
                        r"|[\u4e00-\u9fff]\s*0\d(?!\d)|第\s*[0-9一二三四五六七八九十]+\s*[集期篇话]"
                        r"|\bPART\s*\d+\b|\bEP\s*\.?\s*\d+\b|\bEpisode\s*\d+\b", re.I | re.M)
@@ -74,7 +75,10 @@ def load_post(path):
             body = "\n".join(str(d.get(k) or "") for k in ("body", "text", "description", "caption"))
             return str(d.get("title") or ""), (str(d.get("title") or "") + "\n" + body).strip()
     lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
-    title = re.sub(r"^(#+\s*|标题[:：]\s*|title:\s*)", "", lines[0], flags=re.I) if lines else ""
+    first = lines[0] if lines else ""
+    if TAGS_LINE_RE.match(first):                       # "#tag #tag": the post has no title line at all
+        return "", raw
+    title = re.sub(r"^(#+\s+|标题[:：]\s*|title:\s*)", "", first, flags=re.I)
     return title, raw
 
 
@@ -192,11 +196,15 @@ def check_cover(cover, info, fmt=None):
     return out
 
 
-def check_post(title, text, prof, fmt=None):
+def check_post(title, text, prof, fmt=None, post_given=False):
+    from vstudio import publish
     out = []
+    pl = "youtube" if prof.name == "youtube-shorts" else prof.name
+    if post_given and not title and publish.title_max(pl):
+        out.append(_item("title", False, f"文案有标题（{prof.name} 有标题栏）", f"the post has a title ({prof.name} has a "
+                         "title field)", fix_zh="post.json 没有标题：给条目填 title（<= 平台上限），再 job rerun 导出"))
     if title:
-        from vstudio import publish
-        ok, n, hints = publish.check_title(title, "youtube" if prof.name == "youtube-shorts" else prof.name)
+        ok, n, hints = publish.check_title(title, pl)
         out.append(_item("title", ok, f"标题长度在 {prof.name} 上限内（{n:g}）", f"title within the {prof.name} limit ({n:g})",
                          value=n, fix_zh="; ".join(hints[:2])))
     if text and fmt is not None and fmt.get("series_labels") is False:
@@ -255,7 +263,7 @@ def run(video, fmt=None, platform=None, sources=(), speed=None, cues=None, cover
     items += check_captions(load_cues(cues), f, locale)
     items += check_cover(cover, info, f)
     t, txt = load_post(post)
-    items += check_post(title or t, txt, prof, f)
+    items += check_post(title or t, txt, prof, f, post_given=bool(post or title))
     items += check_style(f, hook_seconds)
     ok = not any(i["ok"] is False and i["severity"] == "red" for i in items)
     return dict(ok=ok, video=os.fspath(video), format=(f or {}).get("id"), summary=F.summary(f) if f else None,

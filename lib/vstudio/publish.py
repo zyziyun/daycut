@@ -3,6 +3,7 @@ and SRT/ASS-safe timestamps.
 
     from vstudio.publish import check_title, chapter_lines, post_body, srt_ts
     ok, n, hints = check_title("学习新模式｜让AI给你做3b1b讲解视频", "xiaohongshu")   # (True, 17.0, [])
+    fit_title(long_title, "xiaohongshu")   # shortened as the hints say (post_body does this before writing)
     chapter_lines([(0, "开场"), (42.5, "方法")])         -> ["00:00 开场", "00:42 方法"]
     post_body(hook, body, chapters, links, platform="youtube")
 
@@ -81,6 +82,52 @@ def check_title(title: str, platform: str = None, suggest=None):
         return True, n, []
     hints = (suggest or _default_hints)(title, n, tmax, pl)
     return False, n, list(hints or [])
+
+
+_CJK = r"[\u3000-\u303f\u3400-\u9fff\uff00-\uffef]"
+
+
+def fit_title(title, platform=None):
+    """``title`` shortened to the platform's limit along the ``check_title`` hints, stopping at the first step
+    that fits: drop parentheticals, trim repeated / trailing punctuation, drop spaces next to CJK (小红书 counts
+    them), keep the longest side of a separator (｜ : -) that fits, keep the leading clauses that fit, and only
+    then cut at the limit (never inside a latin word). Unchanged when it already fits or there is no title field."""
+    pl = platform_name(platform)
+    tmax = title_max(pl)
+    t = (title or "").strip()
+
+    def fits(x):
+        return title_len(x, pl) <= tmax
+
+    if not tmax or fits(t):
+        return t
+    steps = [lambda x: re.sub(r"\s*[（(][^（()）]*[）)]\s*", "", x).strip(),
+             lambda x: re.sub(r"([！!？?。，,~～…])\1+", r"\1", x).rstrip("！!。，,~～… "),
+             lambda x: re.sub(rf"(?<={_CJK})\s+|\s+(?={_CJK})", "", x)]
+    for step in steps:
+        t = step(t) or t
+        if fits(t):
+            return t
+    sides = [x.strip() for x in re.split(r"\s*[｜|：:]\s*|\s+[-–—]\s+", t) if x.strip()]
+    if len(sides) > 1 and any(fits(x) for x in sides):
+        return max((x for x in sides if fits(x)), key=lambda x: title_len(x, pl))
+    t = max(sides, key=lambda x: title_len(x, pl)) if len(sides) > 1 else t
+    clauses = re.findall(r"[^，,；;。！!？?、]+[，,；;。！!？?、]?", t)
+    out = ""
+    for c in clauses:
+        if not fits((out + c).rstrip("，,；;。、 ")):
+            break
+        out += c
+    out = out.rstrip("，,；;。、 ")
+    if out:
+        return out
+    for ch in t:
+        if not fits(out + ch):
+            break
+        out += ch
+    if re.search(r"[A-Za-z0-9]$", out) and re.match(r"[A-Za-z0-9]", t[len(out):]):
+        out = re.sub(r"[A-Za-z0-9]+$", "", out).strip() or out     # never half a latin word (unless it's all one)
+    return out.strip()
 
 
 # ---------------------------------------------------------------- timestamps
@@ -225,8 +272,12 @@ def post_body(hook, body, chapters=None, links=None, tags=None, platform=None, t
             chapters = None
     if title:
         ok, n, hints = check_title(title, pl)
-        if not ok and warn:
-            warn(f"title {n:g}/{title_max(pl)}: " + "; ".join(hints))
+        if not ok:                        # never write an over-limit title: the platform rejects / truncates it
+            short = fit_title(title, pl)
+            if warn:
+                warn(f"title {n:g}/{title_max(pl)} shortened to 「{short}」 ({'; '.join(hints[:2])}) - "
+                     f"rewrite it if the short one reads wrong")
+            title = short
         out += [title, ""]
     if hook:
         out += [hook, ""]

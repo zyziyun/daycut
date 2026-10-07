@@ -89,13 +89,13 @@ params:
       type: number
       minimum: 0.8
       maximum: 1.6
-      default: 1.2
-      title: Body speed
+      x-format: speed.body
+      title: Body speed (default = the lecture-slices format's)
       x-zh: 语速
     cleanup_profile:
       enum: [gentle, standard, tight, "off"]
-      default: standard
-      title: Pause / filler cleanup
+      x-format: cleanup
+      title: Pause / filler cleanup (default = the lecture-slices format's)
       x-zh: 去气口力度
     privacy_exclude:
       type: array

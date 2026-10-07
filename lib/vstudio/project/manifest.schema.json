@@ -632,6 +632,10 @@
        "x-config": {
         "type": "string"
        },
+       "x-format": {
+        "type": "string",
+        "description": "path in the recipe's vstudio.formats entry (speed.body, cover.aspect) that supplies the default"
+       },
        "x-map": {
         "type": "object",
         "description": "value -> what goes into the x-spec section (presets)"

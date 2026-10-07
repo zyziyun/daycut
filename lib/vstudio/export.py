@@ -18,7 +18,9 @@ Per target (vstudio.platform profile):
   5. cover: a per-target ``--cover platform[:orientation]=path`` wins; else the --cover whose aspect is
      closest - cover-cropped when the aspect matches, otherwise FITTED on a blurred pad of itself (a
      centre crop would cut the headline off) with a warning to supply a per-target cover; else a frame
-     of the export. Covers shown as a centre crop in the feed also get a ``.feed.jpg`` preview;
+     of the export. Covers shown as a centre crop in the feed also get a ``.feed.jpg`` preview.
+     ``--cover-canvas video`` sizes every cover like its export (xiaohongshu:full -> 1080x1920, the 3:4
+     upload shape then previewed as the feed crop) - a format's ``cover.aspect: video``;
   6. post stub via publish.post_body when --title / --post is given;
 and ``manifest.json`` with files, durations, measured loudness, reframe stats and warnings.
 
@@ -463,10 +465,11 @@ def _scale_only(master, dst, prof, info, start, dur, vargs, fps_out):
 
 def export_one(master, prof, out_dir, cues=None, covers=None, post=None, mode="face", fallback="pad-blur",
                start=0.0, dur=None, workdir=None, encoder=None, preset="medium", captions=True,
-               cover_targets=None, post_lang=None, **reframe_opts):
+               cover_targets=None, post_lang=None, cover_canvas="platform", **reframe_opts):
     """Export ``master`` for one Profile. Returns the manifest entry (dict).
     captions=False: never burn ``cues`` (the master already has them). cover_targets: {target: path}
-    per-target covers (see make_cover)."""
+    per-target covers (see make_cover). cover_canvas="video": the cover has the export's canvas (a format's
+    ``cover.aspect: video``), the platform's cover shape is previewed as its feed crop."""
     from . import audio
     info = media.probe(master)
     stem = f"{prof.name}-{prof.orientation}"
@@ -556,7 +559,8 @@ def export_one(master, prof, out_dir, cues=None, covers=None, post=None, mode="f
     capr = prof.extra.get("captions") or {}
     if capr.get("burn") == "recommended" and not cue_list and captions:
         warnings.append(f"{prof.name}: {capr.get('reason', 'burned captions recommended')} (pass --cues)")
-    cover_path, notes = make_cover(prof, covers, out_mp4, os.path.join(out_dir, stem + ".cover.jpg"),
+    cprof = P.video_canvas_cover(prof) if cover_canvas == "video" else prof
+    cover_path, notes = make_cover(cprof, covers, out_mp4, os.path.join(out_dir, stem + ".cover.jpg"),
                                    per_target=cover_targets, warnings=warnings)
     entry = dict(platform=prof.name, orientation=prof.orientation, label=prof.label, file=os.path.basename(out_mp4),
                  w=oinfo["w"], h=oinfo["h"], fps=round(oinfo["fps"], 3), duration=round(oinfo["duration"], 3),
@@ -566,7 +570,7 @@ def export_one(master, prof, out_dir, cues=None, covers=None, post=None, mode="f
                      switches=pl.get("switches"), stats=pl.get("stats"), plan=os.path.basename(crop_json),
                      **({"band": band} if band else {})),
                  captions=len(cue_list), keepouts=len(kos), captions_moved_frames=cap_report.get("moved", 0),
-                 cover=os.path.basename(cover_path), cover_size=list(P.cover_size(prof)),
+                 cover=os.path.basename(cover_path), cover_size=list(P.cover_size(cprof)),
                  notes=notes, safe_box=list(P.safe_box(prof)), caption_box=list(P.caption_box(prof)))
     if prof.feed_crop:
         entry["notes"].append(f"{prof.label} feed shows a centre {prof.feed_crop} crop of the video "
@@ -631,6 +635,8 @@ def main(argv=None):
     ap.add_argument("--cover", action="append", default=[],
                     help="cover image(s): a path (closest aspect wins; another aspect is fitted on a blurred pad) "
                          "or platform[:orientation]=path for one target, e.g. --cover xiaohongshu=c34.png")
+    ap.add_argument("--cover-canvas", default="platform", choices=["platform", "video"],
+                    help="cover size: the platform's cover shape, or the export's own canvas (feed crop previewed)")
     ap.add_argument("--no-captions", action="store_true",
                     help="do not burn --cues (the master already carries its captions)")
     ap.add_argument("--title", help="post title (checked against each platform's limit)")
@@ -664,7 +670,8 @@ def main(argv=None):
         post = dict(post, _lang=a.lang, _bilingual=a.bilingual or None)
     man = export(a.master, targets, a.out, cues=a.cues, covers=a.cover, post=post, account=a.account,
                  mode=a.mode, fallback=a.fallback,
-                 start=a.start, dur=a.dur, encoder=a.encoder, preset=a.preset, captions=not a.no_captions)
+                 start=a.start, dur=a.dur, encoder=a.encoder, preset=a.preset, captions=not a.no_captions,
+                 cover_canvas=a.cover_canvas)
     for e in man["exports"]:
         print(f"{e['file']:32s} {e['w']}x{e['h']} {e['duration']:.1f}s "
               f"{(e['loudness'] or {}).get('i', '-')} LUFS  reframe={e['reframe']['mode_used']}")

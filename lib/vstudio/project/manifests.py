@@ -46,6 +46,34 @@ def load(path):
     if not isinstance(m, dict):
         raise ManifestError(f"{path}: not a mapping")
     m["_path"] = os.path.abspath(path)
+    format_defaults(m)
+    return m
+
+
+def format_defaults(m):
+    """Params with ``x-format: <path>`` (``speed.body``, ``cover.aspect``) take their default from the recipe's
+    ``vstudio.formats`` entry (persona ``formats.<id>`` merged) - one number for the pipeline, ``formats show``
+    and ``vstudio.firstpass``. Such a param must not also hard-code a default."""
+    props = (m.get("params") or {}).get("properties") or {}
+    keyed = {k: sch for k, sch in props.items() if isinstance(sch, dict) and sch.get("x-format")}
+    if not keyed:
+        return m
+    from vstudio import formats as F
+    fid = F.canonical(m.get("id")) or F.canonical(m.get("workflow"))
+    if not fid:
+        raise ManifestError(f"{m.get('id')}: x-format params {sorted(keyed)} but no vstudio.formats entry for the "
+                            f"recipe or workflow")
+    f = F.get(fid)
+    for k, sch in keyed.items():
+        if "default" in sch:
+            raise ManifestError(f"{m.get('id')}: params.{k} has both x-format and a default")
+        v = f
+        for part in sch["x-format"].split("."):
+            if not isinstance(v, dict) or part not in v:
+                raise ManifestError(f"{m.get('id')}: params.{k}: x-format {sch['x-format']!r} not in format {fid!r}")
+            v = v[part]
+        sch["default"] = v
+    m["_format"] = fid
     return m
 
 
