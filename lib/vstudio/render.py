@@ -10,12 +10,15 @@ and persona CSS variables for HTML / HyperFrames projects.
 CLI:  python -m vstudio.render page.html -o out.png [--size 1080x1920] [--scale 1] [--wait 2000]
 """
 import argparse
+import json
 import os
 import pathlib
 import platform
 import shutil
 import subprocess
 import tempfile
+import urllib.error
+import urllib.request
 
 from .config import FONT_DIR, FONTS, MissingAsset, font, persona
 
@@ -47,7 +50,11 @@ def _works(path, timeout=15):
 
 
 def chrome_candidates():
-    """Every plausible binary, $CHROME first, then PATH names, then per-OS install paths (unverified)."""
+    """Every plausible binary, $CHROME first, then PATH names, then per-OS install paths (unverified).
+    None when VSTUDIO_NO_CHROME=1 (the desk's sandboxed Mac App Store build: it cannot run another browser and renders
+    HTML itself, see VSTUDIO_HTML_RENDER_URL)."""
+    if os.environ.get("VSTUDIO_NO_CHROME") == "1":
+        return []
     out = []
     env = os.environ.get("CHROME")
     if env and os.path.exists(env):
@@ -207,6 +214,8 @@ def html_to_png(html, out, size=(1080, 1920), scale=1, wait=2000, query="", use_
     url = page.as_uri() + (f"?{query}" if query else "")
     png = pathlib.Path(out).resolve(); png.parent.mkdir(parents=True, exist_ok=True); png.unlink(missing_ok=True)
     try:
+        if os.environ.get("VSTUDIO_HTML_RENDER_URL"):
+            return _host_render(page, png, w, h, scale, wait, query, transparent)
         for chrome in find_chromes():
             args = [chrome, "--headless=new", "--disable-gpu", "--hide-scrollbars", f"--force-device-scale-factor={scale}",
                     f"--window-size={w},{h}", f"--virtual-time-budget={wait}", f"--screenshot={png}"]
@@ -235,6 +244,29 @@ def html_to_png(html, out, size=(1080, 1920), scale=1, wait=2000, query="", use_
             page.unlink(missing_ok=True)
         if tmpdir:
             shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def _host_render(page, png, w, h, scale, wait, query, transparent):
+    """Render through the host app (the Reelfold desk's own Chromium: VSTUDIO_HTML_RENDER_URL + _TOKEN)."""
+    body = json.dumps(dict(file=str(page), out=str(png), width=w, height=h, scale=scale, wait=wait,
+                           transparent=bool(transparent), **({"query": query} if query else {}))).encode()
+    req = urllib.request.Request(os.environ["VSTUDIO_HTML_RENDER_URL"], data=body, method="POST", headers={
+        "content-type": "application/json",
+        "authorization": f"Bearer {os.environ.get('VSTUDIO_HTML_RENDER_TOKEN', '')}"})
+    try:
+        with urllib.request.urlopen(req, timeout=180) as r:
+            doc = json.loads(r.read().decode() or "{}")
+    except urllib.error.HTTPError as e:
+        try:
+            msg = json.loads(e.read().decode() or "{}").get("error")
+        except ValueError:
+            msg = None
+        raise RuntimeError(f"HTML render failed in the app: {msg or e.code}") from e
+    except (urllib.error.URLError, OSError) as e:
+        raise RuntimeError(f"HTML render failed in the app: {e}") from e
+    if not doc.get("ok") or not png.exists():
+        raise RuntimeError(f"HTML render failed in the app: {doc.get('error') or 'no image'}")
+    return str(png)
 
 
 def main():

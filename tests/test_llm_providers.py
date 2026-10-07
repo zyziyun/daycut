@@ -126,10 +126,12 @@ def test_anthropic_refusal_and_sdk_without_fallback_param(monkeypatch):
     assert seen[-1]["system"][0]["cache_control"] == {"type": "ephemeral"} and "_betas" not in seen[-1]
 
 
-def test_anthropic_missing_sdk_says_how_to_install(monkeypatch):
+def test_anthropic_missing_sdk_without_key_says_what_is_missing(monkeypatch):
+    # no SDK: plain HTTPS to the Messages API (tests/test_sandboxed_host.py); without a key it says so
     monkeypatch.setitem(sys.modules, "anthropic", None)
-    with pytest.raises(RuntimeError, match="pip install anthropic"):
-        llm.complete("copy", "s", "p", provider="anthropic")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    with pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY"):
+        llm.complete("copy", "s", "p", provider="anthropic", retries=0)
 
 
 # --------------------------------------------------------------------------- openai + compatible presets

@@ -327,12 +327,36 @@ def _with_instruction(system, schema):
 
 
 # ------------------------------------------------------------------ backends
-def _anthropic(system, prompt, model, schema, max_tokens, timeout, opts):
+def _anthropic_http(kw, timeout):
+    """The Messages API over plain HTTPS (stdlib) when the ``anthropic`` package is not installed - the desk's bundled
+    runtime ships without it. Same request body as the SDK call; ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL."""
+    key = os.environ.get("ANTHROPIC_API_KEY")
+    if not key:
+        raise LLMError("provider anthropic needs ANTHROPIC_API_KEY")
+    base = (os.environ.get("ANTHROPIC_BASE_URL") or "https://api.anthropic.com").rstrip("/")
+    req = urllib.request.Request(f"{base}/v1/messages", data=json.dumps(kw).encode(), method="POST", headers={
+        "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"})
     try:
-        import anthropic
-    except ImportError as e:
-        raise LLMError("provider anthropic (claude) needs the anthropic package: pip install anthropic") from e
-    client = anthropic.Anthropic(timeout=timeout) if timeout else anthropic.Anthropic()
+        with urllib.request.urlopen(req, timeout=timeout or 600) as r:
+            doc = json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        try:
+            err = (json.loads(e.read().decode() or "{}").get("error") or {}).get("message") or ""
+        except ValueError:
+            err = ""
+        word = {401: "unauthorized (401): check the API key", 429: "rate limit (429)", 529: "overloaded (529)"}
+        raise LLMError(f"anthropic API {word.get(e.code, f'error {e.code}')}: {err}"[:500]) from e
+    except (urllib.error.URLError, OSError) as e:
+        raise LLMError(f"anthropic API: {getattr(e, 'reason', e)}") from e
+    if doc.get("stop_reason") == "refusal":
+        raise LLMError("the model declined the request (stop_reason refusal)")
+    text = "".join(b.get("text", "") for b in doc.get("content") or [] if b.get("type") == "text")
+    u = doc.get("usage") or {}
+    return text, dict(input=u.get("input_tokens", 0) or 0, output=u.get("output_tokens", 0) or 0), \
+        doc.get("model") or kw.get("model")
+
+
+def _anthropic(system, prompt, model, schema, max_tokens, timeout, opts):
     oc = {"effort": opts["effort"]} if opts.get("effort") else {}
     if isinstance(schema, dict):
         oc["format"] = {"type": "json_schema", "schema": schema}
@@ -343,6 +367,11 @@ def _anthropic(system, prompt, model, schema, max_tokens, timeout, opts):
         kw["system"] = sysp
     if oc:
         kw["output_config"] = oc
+    try:
+        import anthropic
+    except ImportError:
+        return _anthropic_http(kw, timeout)
+    client = anthropic.Anthropic(timeout=timeout) if timeout else anthropic.Anthropic()
     try:
         try:                                      # server-side refusal fallback (beta) when the SDK knows it
             resp = client.beta.messages.create(betas=["server-side-fallback-2026-07-01"], fallbacks="default", **kw)
@@ -724,8 +753,10 @@ def _classify(e):
 # ------------------------------------------------------------------ public
 def failure_code(err):
     """Why a provider failed, from its error text: auth-expired | not-logged-in | not-installed | key-missing |
-    rate-limited | timeout | failed (the desk turns this into "Claude 登录已过期，这次用了 Codex")."""
+    rate-limited | timeout | unavailable | failed (the desk turns this into "Claude 登录已过期，这次用了 Codex")."""
     m = str(err or "")
+    if re.search(r"not available in this app build", m):
+        return "unavailable"
     if re.search(r"not logged in|not authenticated|login required|no credentials|please (log ?in|sign in)", m, re.I):
         return "not-logged-in"
     if re.search(r"\b401\b|token (has )?expired|expired token|oauth.*expired|invalid_grant|refresh token|"
@@ -792,6 +823,12 @@ def error_info(err):
 CLI_PROVIDERS = ("claude-code", "codex")
 
 
+def cli_allowed():
+    """False when the host cannot run the user's own CLIs: env VSTUDIO_LLM_NO_CLI=1 (the desk's sandboxed Mac App
+    Store build). Routes naming claude-code / codex then fail at once as "unavailable" and the fallback answers."""
+    return os.environ.get("VSTUDIO_LLM_NO_CLI") != "1"
+
+
 def _cli_timeout(cli_timeout):
     v = cli_timeout if cli_timeout is not None else os.environ.get("VSTUDIO_LLM_CLI_TIMEOUT")
     try:
@@ -850,6 +887,12 @@ def complete(task, system, prompt, schema=None, provider=None, model=None, max_t
                              "error": attempts[-1]["error"]})
             except Exception:  # noqa: BLE001  (a progress callback never breaks the call)
                 pass
+        if cname in CLI_PROVIDERS and not cli_allowed():
+            err = LLMError(f"{cname}: not available in this app build (it cannot run command-line tools) - use an "
+                           f"API key or a local model")
+            last = err
+            attempts.append(dict(provider=cname, code="unavailable", error=str(err)[:300], seconds=0.0))
+            continue
         if cname in CLI_PROVIDERS and i < len(cands) - 1 and _known_unresponsive(cname):
             err = LLMError(f"{cname}: timed out on a call a few minutes ago and has not answered since - skipped "
                            f"(the next provider answers instead)")

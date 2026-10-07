@@ -124,6 +124,67 @@ def _resolve(cmd):
     return cmd
 
 
+# GPL-only video filters the recipes use for the finishing grade: an LGPL ffmpeg (the desk's bundled one) has none of
+# them. They only polish the picture, so they become a pass-through there instead of failing the whole render.
+GPL_POLISH_FILTERS = ("hqdn3d", "eq")
+_FILTER_ARGS = ("-vf", "-filter:v", "-filter_complex")
+
+
+def _split_top(s, sep):
+    """Split ``s`` on ``sep`` outside quotes, brackets and backslash escapes (filtergraph syntax)."""
+    out, cur, quote, depth, i = [], [], False, 0, 0
+    while i < len(s):
+        c = s[i]
+        if c == "\\" and i + 1 < len(s):
+            cur.append(s[i:i + 2]); i += 2; continue
+        if c == "'":
+            quote = not quote
+        elif not quote and c in "[(":
+            depth += 1
+        elif not quote and c in "])":
+            depth -= 1
+        if c == sep and not quote and depth == 0:
+            out.append("".join(cur)); cur = []
+        else:
+            cur.append(c)
+        i += 1
+    out.append("".join(cur))
+    return out
+
+
+def portable_graph(graph, available):
+    """``graph`` with every GPL polish filter that ``available`` (a set of filter names) lacks replaced by ``null``
+    (input / output pad labels kept). -> (graph, [dropped names])."""
+    dropped, chains = [], []
+    for chain in _split_top(graph, ";"):
+        parts = []
+        for f in _split_top(chain, ","):
+            m = re.match(r"^(\s*(?:\[[^\]]*\]\s*)*)([A-Za-z0-9_]+)(.*?)((?:\s*\[[^\]]*\])*\s*)$", f, re.S)
+            if m and m.group(2) in GPL_POLISH_FILTERS and m.group(2) not in available:
+                dropped.append(m.group(2))
+                f = f"{m.group(1)}null{m.group(4)}"
+            parts.append(f)
+        chains.append(",".join(parts))
+    return ";".join(chains), dropped
+
+
+def _portable_cmd(cmd):
+    """Rewrite -vf / -filter_complex values for this ffmpeg (see GPL_POLISH_FILTERS)."""
+    if not os.path.basename(cmd[0]).startswith("ffmpeg") or not any(a in cmd for a in _FILTER_ARGS):
+        return cmd
+    have = _filters(cmd[0])
+    if not have or all(f in have for f in GPL_POLISH_FILTERS):
+        return cmd
+    out = list(cmd)
+    for i, a in enumerate(out[:-1]):
+        if a in _FILTER_ARGS:
+            out[i + 1], dropped = portable_graph(out[i + 1], have)
+            if dropped:
+                print(f"!! video-studio: this ffmpeg has no {', '.join(sorted(set(dropped)))} (GPL): "
+                      f"skipped in the finishing grade", file=sys.stderr)
+    return out
+
+
 def run(cmd, capture=False, check=True, quiet=True, input=None):
     """Run a command; a leading "ffmpeg"/"ffprobe" is replaced by the discovered binary.
 
@@ -132,7 +193,7 @@ def run(cmd, capture=False, check=True, quiet=True, input=None):
     Raises FFmpegError (with the stderr tail) on failure when check=True.
     From promo-recut ``common.run``, polish ``polish.run``, call-clips ``build_clips.sh``.
     """
-    cmd = _resolve(cmd)
+    cmd = _portable_cmd(_resolve(cmd))
     if quiet and os.path.basename(cmd[0]).startswith("ffmpeg") and not ({"-v", "-loglevel"} & set(cmd)):
         cmd[1:1] = ["-v", "error"]
     if os.path.basename(cmd[0]).startswith("ffmpeg") and "-nostdin" not in cmd and input is None:

@@ -224,7 +224,7 @@ def test_provider_resolution_and_mocked_sdks(monkeypatch):
     assert seen["openai"] == "gpt-x" and r2["provider"] == "openai"
 
 
-def test_claude_provider_without_sdk_says_how_to_install(monkeypatch):
+def test_claude_provider_without_sdk_needs_a_key(monkeypatch):
     import builtins
     real = builtins.__import__
 
@@ -233,7 +233,9 @@ def test_claude_provider_without_sdk_says_how_to_install(monkeypatch):
             raise ImportError("no anthropic")
         return real(name, *a, **k)
     monkeypatch.setattr(builtins, "__import__", no_anthropic)
-    with pytest.raises(RuntimeError, match="pip install anthropic"):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    # no SDK: the Messages API over plain HTTPS, which needs the key
+    with pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY"):
         PR._call_claude("s", "p", "claude-opus-5-5")
 
 

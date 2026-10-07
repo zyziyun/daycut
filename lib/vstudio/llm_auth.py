@@ -8,7 +8,7 @@ it reads what the CLIs report, whether a key variable is present (never its valu
 ``status`` rows: {provider, kind (subscription-cli | api | local), state, ready, installed, version, account
 {email, plan, auth_method, org}, key_env, base_url, models, probe, can_login, can_logout, message {code, params,
 message, message_zh}}. States: logged-in | expired | not-logged-in | not-installed | configured | not-configured |
-server-down | no-models | ready | error.
+server-down | no-models | ready | error | unavailable (VSTUDIO_LLM_NO_CLI=1: the host cannot run CLIs).
 
 claude-code: ``claude auth status --json`` (loggedIn, authMethod, subscriptionType, email) and, unless --no-probe, a
 real tiny ``claude -p`` round-trip on the cheapest model, because the status command says "loggedIn" even when the
@@ -67,6 +67,8 @@ MSG = {   # code -> (en, zh); {params} filled from the row
     "auth-expired": ("The login has expired: log in again", "登录已过期，请重新登录"),
     "auth-not-logged-in": ("Not logged in", "未登录"),
     "auth-not-installed": ("{exe} is not installed", "未安装 {exe}"),
+    "auth-unavailable": ("Not available in this version of the app (it cannot run {exe})",
+                         "这个版本的应用不能使用（无法运行 {exe}）"),
     "auth-api-key-login": ("Logged in with an API key (API billing, not the subscription)",
                            "用 API 密钥登录（按 API 计费，不走订阅）"),
     "auth-error": ("Could not check the login: {error}", "无法检查登录状态：{error}"),
@@ -409,7 +411,8 @@ def _api(p):
     else:
         key_env, pkg = KEY_ENV[p], PKG.get(p, "openai")
     has_key = bool(os.environ.get(key_env)) or (p == "gemini" and bool(os.environ.get("GOOGLE_API_KEY")))
-    row.update(key_env=key_env, installed=L._has(pkg))
+    # anthropic works without its SDK too (vstudio.llm falls back to the Messages API over plain HTTPS)
+    row.update(key_env=key_env, installed=p == "anthropic" or L._has(pkg))
     if not has_key:
         return dict(row, state="not-configured", message=msg("key-missing", key_env=key_env))
     if not row["installed"]:
@@ -437,7 +440,10 @@ def status(providers=None, probe=True, deep=False, refresh=False, timeout=PROBE_
     for p in providers or ORDER:
         p = L.canonical(p) or p
         try:
-            if p == "claude-code":
+            if p in CLIS and not L.cli_allowed():         # sandboxed host (VSTUDIO_LLM_NO_CLI=1): nothing is run
+                out.append(dict(_base_row(p, "subscription-cli"), state="unavailable", installed=False,
+                                message=msg("auth-unavailable", exe=CLIS[p]["exe"])))
+            elif p == "claude-code":
                 out.append(_claude_code(probe=probe, timeout=timeout, refresh=refresh))
             elif p == "codex":
                 out.append(_codex(probe=probe and deep, timeout=timeout, refresh=refresh))
@@ -456,6 +462,8 @@ def command(provider, action="login", variant=None):
     if p not in CLIS:
         return dict(ok=False, provider=provider, action=action,
                     message=msg("login-unsupported", provider=provider))
+    if not L.cli_allowed():
+        return dict(ok=False, provider=p, action=action, message=msg("auth-unavailable", exe=CLIS[p]["exe"]))
     exe = L.find_cli(CLIS[p]["exe"])
     if not exe:
         return dict(ok=False, provider=p, action=action, install=INSTALL[p],
