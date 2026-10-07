@@ -573,8 +573,10 @@ class Outputs:
         file = main["path"] if main else None
         info = probe(file) if file else {}
         dur = (main or {}).get("duration") or info.get("duration") or c.get("duration") or 0
+        from .timeline import transcript_path            # 「听一遍这条片子」 keeps its words in the desk data dir
         words = _asr_for(file, c.get("workdir") or (os.path.join(e["dir"], "work", "clips", c.get("letter") or "")
-                                                     if c.get("letter") else None)) if file else []
+                                                     if c.get("letter") else None),
+                         extra=[transcript_path(os.path.dirname(self.dir), file)]) if file else []
         dur = dur or (words[-1]["te"] if words else 0)
         jobdir = c.get("jobdir")
         captions, mode = [], "flattened"

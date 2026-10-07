@@ -61,6 +61,8 @@ v0.4 (outputs.py, intake.py, inbox.py; engine command when available, desk imple
                                            GET /api/project-ask/<job> {state, stages, notices, elapsed, result};
                                            POST /api/project-ask/<job>/stop (kills the engine + model CLI);
                                            POST /api/outputs/<item>/regenerate {items} (needs_rerender action)
+  GET  /api/outputs/<item>/<clip>/strip    timeline filmstrip sprite + audio peaks (timeline.py, cached);
+                                           POST|GET .../transcribe 「听一遍」 -> output-transcribe events
   GET  /api/effects                        effects catalogue (zh labels, params, preview kind)
   POST /api/intake {prompt, inputs[]}      -> {id}; GET /api/intake/<id>; POST .../revise {prompt}; POST .../apply
                                            {plan?, run?}; GET /api/intake/recent
@@ -420,6 +422,8 @@ class Api:
         self.outputs = Outputs(engine.data_dir, self.history, runner if engine.mode == "real" else None, bus)
         from .projask import ProjectAsk
         self.project_ask = ProjectAsk(self.outputs, bus)
+        from .timeline import Strips
+        self.strips = Strips(engine.data_dir, self.outputs, self.history, bus, mock=engine.mode != "real")
         self.intake = Intake(engine.data_dir, bus, runner, engine.mode, probe=probe)
         self.inbox = Inbox(engine.data_dir, self.history, runner, engine.mode, bus)
         from .calendar import Calendar
@@ -454,6 +458,9 @@ class Api:
             if parts[2] == "regenerate":
                 return self.project_ask.regenerate(parts[1], b.get("items"))
             return self.project_ask.start(parts[1], b.get("prompt"), clips=b.get("clips"), context=b.get("context"))
+        if parts[:1] == ["outputs"] and len(parts) == 4 and parts[3] in ("strip", "transcribe"):
+            need(ID_RE.match(parts[1]), "bad item id")
+            return self.strips.route(method, parts[1], unquote(parts[2]), parts[3])
         if parts[:1] == ["outputs"] and len(parts) >= 2:
             need(ID_RE.match(parts[1]), "bad item id")
             if len(parts) == 2 and method == "GET":
