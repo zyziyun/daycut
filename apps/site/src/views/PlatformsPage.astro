@@ -1,0 +1,71 @@
+---
+import Base from '../layouts/Base.astro';
+import Crumbs from '../components/Crumbs.astro';
+import Faq from '../components/Faq.astro';
+import Related from '../components/Related.astro';
+import FinalCta from '../components/home/FinalCta.astro';
+import { t, fmtDate, type Lang } from '../i18n';
+import { PLATFORMS, CHECKED, type Platform } from '../data/platforms';
+import { PLATFORMS_COPY } from '../content/platforms';
+import { heading } from '../lib/zhHeading';
+import { breadcrumbs, faqPage } from '../lib/schema';
+import { platformsDocUrl } from '../config';
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+const c = t(lang);
+const p = PLATFORMS_COPY[lang];
+const date = fmtDate(lang, CHECKED);
+const nf = new Intl.NumberFormat(lang === 'zh' ? 'zh-CN' : lang);
+const dur = (s: number | null | undefined) => {
+  if (s == null) return '';
+  if (s < 60) return `${nf.format(s)} ${p.unit.s}`;
+  if (s < 3600) return `${nf.format(Math.round((s / 60) * 10) / 10)} ${p.unit.min}`;
+  return `${nf.format(Math.round((s / 3600) * 10) / 10)} ${p.unit.h}`;
+};
+const range = (a?: number[] | null) => (a && a.length === 2 ? `${dur(a[0])} – ${dur(a[1])}` : '');
+const groups = (['global', 'zh', 'other'] as const).map((g) => ({ g, rows: PLATFORMS.filter((x) => (x.group === 'intl' ? 'other' : x.group) === g) })).filter((x) => x.rows.length);
+const covers = (x: Platform) => [...new Set(x.orientations.filter((o) => o.cover).map((o) => `${o.cover!.w}×${o.cover!.h}`))];
+const jsonld = [breadcrumbs(lang, [[p.kicker, 'platforms']]), faqPage(p.faq)];
+---
+<Base {lang} page="platforms" title={p.title} description={p.description} {jsonld}>
+  <Crumbs {lang} trail={[[p.kicker, null]]} />
+  <div class="wrap phero">
+    <p class="kick">{p.kicker}</p>
+    <h1 set:html={heading(p.h1, lang)} />
+    <p class="lede">{p.intro}</p>
+    <p class="fine">{c.page.lastChecked} <time datetime={CHECKED}>{date}</time></p>
+  </div>
+  {groups.map(({ g, rows }) => (
+    <section class="wrap sec" style="padding-top:clamp(56px,7vw,96px)" aria-labelledby={`g-${g}`}>
+      <h2 id={`g-${g}`} class="h2wide" style="font-size:clamp(30px,3.4vw,44px)">{p.groups[g]}</h2>
+      <div class="tblwrap" tabindex="0" role="region" aria-labelledby={`g-${g}`}>
+        <table class="tbl">
+          <thead><tr>
+            <th scope="col">{p.cols.platform}</th><th scope="col">{p.cols.canvas}</th><th scope="col">{p.cols.cover}</th>
+            <th scope="col">{p.cols.length}</th><th scope="col">{p.cols.sweet}</th><th scope="col">{p.cols.text}</th><th scope="col">{p.cols.links}</th>
+          </tr></thead>
+          <tbody>
+            {rows.map((x) => (
+              <tr id={x.id}>
+                <th scope="row">{c.platformNames[x.id]}</th>
+                <td>{x.orientations.map((o) => <div><span class="mono">{o.w}×{o.h}</span> {o.aspect} <span class="muted">{p.orient[o.name] ?? o.name}</span></div>)}</td>
+                <td><span class="mono">{covers(x).join(' / ')}</span></td>
+                <td>{dur(x.length.max)}</td>
+                <td>{range(x.length.sweet)}</td>
+                <td>{x.titleMax ? p.titleChars.replace('{n}', String(x.titleMax)) : p.noTitle}{x.descMax ? <><br />{p.textChars.replace('{n}', nf.format(x.descMax))}</> : null}</td>
+                <td>{x.linksClickable ? p.yes : p.no}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  ))}
+  <div class="wrap">
+    <p class="note" style="margin-top:40px">{p.note}</p>
+    <p class="src"><a href={platformsDocUrl} rel="noopener">{p.sourceLabel}</a></p>
+  </div>
+  <Faq {lang} kicker={c.page.faqT} title={c.faq.t} items={p.faq} id="questions" />
+  <Related {lang} pages={['course-slicing', 'talking-head', 'compare/opus-clip']} />
+  <FinalCta {lang} title={c.page.getStarted} lede={c.page.getStartedL} />
+</Base>

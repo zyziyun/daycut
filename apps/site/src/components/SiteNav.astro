@@ -1,0 +1,40 @@
+---
+import { SITE, DOCS_PATH } from '../config';
+import { t, pathFor, LANGS, HREFLANG, HTML_LANG, LANG_NAME, type Lang } from '../i18n';
+import Icon from './Icon.astro';
+import Logo from './Logo.astro';
+interface Props { lang: Lang; page: string }
+const { lang, page } = Astro.props;
+const c = t(lang);
+const home = pathFor(lang);
+const name = lang === 'zh' ? SITE.nameZh : SITE.name;
+const anchors = [['how', c.nav.how], ['batch', c.nav.batch], ['open-source', c.nav.oss], ['faq', c.nav.faq]] as const;
+// on the home page the anchors are local (#how); elsewhere they point to the home page of the same language
+const base = page === '' && Astro.url.pathname === home ? '' : home;
+---
+<a class="skip" href="#main">{c.nav.skip}</a>
+<header class="nav">
+  <div class="wrap">
+    <a class="logo" href={home} aria-label={lang === 'zh' ? `${SITE.nameZh} ${SITE.name}` : SITE.name}><Logo idPrefix="nav" />{name}</a>
+    <nav class="links" aria-label={c.nav.main}>
+      {anchors.map(([id, label]) => <a href={`${base}#${id}`}>{label}</a>)}
+      <a href={DOCS_PATH[lang]}>{c.nav.docs}</a>
+    </nav>
+    <div class="right">
+      <details class="langsel">
+        <summary aria-label={`${c.nav.lang}: ${LANG_NAME[lang]}`}><span lang={HTML_LANG[lang]}>{LANG_NAME[lang]}</span><Icon name="chev" class="chev" /></summary>
+        <ul>
+          {LANGS.map((l) => (
+            <li><a href={pathFor(l, page)} hreflang={HREFLANG[l]} lang={HTML_LANG[l]} aria-current={l === lang ? 'page' : undefined} data-keep-hash>{LANG_NAME[l]}</a></li>
+          ))}
+        </ul>
+      </details>
+      <a href={SITE.githubUrl} class="hide-m"><Icon name="github" />GitHub</a>
+      {SITE.downloadReady ? (
+        <a class="btn ink sm" href={SITE.downloadUrl}><Icon name="apple" />{c.cta.downloadShort}</a>
+      ) : (
+        <a class="btn ink sm" href={SITE.githubUrl}><Icon name="star" />{c.cta.starShort}</a>
+      )}
+    </div>
+  </div>
+</header>

@@ -1,0 +1,16 @@
+---
+import Base from '../layouts/Base.astro';
+import Privacy from '../components/Privacy.astro';
+import Terms from '../components/Terms.astro';
+import { t, type Lang } from '../i18n';
+import { SITE } from '../config';
+interface Props { lang: Lang; kind: 'privacy' | 'terms' }
+const { lang, kind } = Astro.props;
+const c = t(lang);
+const name = lang === 'zh' ? SITE.nameZh : SITE.name;
+const title = `${kind === 'privacy' ? c.legal.privacyTitle : c.legal.termsTitle} | ${name}`;
+---
+<!-- Draft legal text: noindex and left out of the sitemap until reviewed. -->
+<Base {lang} page={kind} {title} description={c.meta.description} noindex>
+  {kind === 'privacy' ? <Privacy {lang} /> : <Terms {lang} />}
+</Base>

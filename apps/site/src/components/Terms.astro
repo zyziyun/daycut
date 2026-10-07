@@ -1,6 +1,6 @@
 ---
 import { SITE } from '../config';
-import { t, prefix, type Lang } from '../i18n';
+import { t, pathFor, type Lang } from '../i18n';
 interface Props { lang: Lang }
 const { lang } = Astro.props;
 const c = t(lang);
@@ -31,11 +31,11 @@ const mail = SITE.contactEmail;
 
       <h2>5. 联系</h2>
       <p>问题和建议请在 GitHub 上提 issue 或参与讨论，也可以发邮件到 <a href={`mailto:${mail}`}>{mail}</a>。</p>
-      <p><a href={`${prefix(lang)}/`}>{c.legal.back}</a></p>
+      <p><a href={pathFor(lang)}>{c.legal.back}</a></p>
     </Fragment>
   ) : (
-    <div lang={lang === 'fr' ? 'en' : undefined}>
-      {lang === 'fr' && <p class="draft-banner" lang="fr" role="note">Cette page n’est disponible qu’en anglais pour le moment.</p>}
+    <div lang={lang !== 'en' ? 'en' : undefined}>
+      {lang !== 'en' && <p class="draft-banner" lang={lang} role="note">{c.legal.englishOnly}</p>}
       <h1>Terms of use</h1>
       <div class="draft-banner" role="note"><strong>{c.legal.draft}</strong><br />{c.legal.draftBody}</div>
       <p class="muted small">{c.legal.updated}: 2026-10-07</p>
@@ -58,7 +58,7 @@ const mail = SITE.contactEmail;
 
       <h2>5. Contact</h2>
       <p>Questions and suggestions: open an issue or a discussion on GitHub, or email <a href={`mailto:${mail}`}>{mail}</a>.</p>
-      <p><a href={`${prefix(lang)}/`}>{c.legal.back}</a></p>
+      <p><a href={pathFor(lang)}>{c.legal.back}</a></p>
     </div>
   )}
 </article>

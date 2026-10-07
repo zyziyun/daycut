@@ -1,0 +1,17 @@
+---
+import { t, pathFor, type Lang } from '../../i18n';
+import { heading } from '../../lib/zhHeading';
+import Icon from '../Icon.astro';
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+const c = t(lang);
+---
+<section class="wrap" aria-labelledby="who-h">
+  <p class="kick">{c.who.k}</p>
+  <h2 id="who-h" class="h2wide" set:html={heading(c.who.t, lang)} />
+  <div class="who">
+    {c.who.items.map((x) => (
+      <a href={pathFor(lang, x.slug)}><h3>{x.t}</h3><p>{x.b}</p><span class="more">{x.more} <Icon name="arrow" /></span></a>
+    ))}
+  </div>
+</section>

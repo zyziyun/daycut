@@ -3,114 +3,108 @@
 Lives in `apps/site/` of the [Reelfold](https://github.com/zyziyun/reelfold) monorepo; MIT like the rest of
 the repo (see `LICENSE`). `npm install` works here or at the repo root (one npm workspace for all apps).
 
-Product website (官网) for Reelfold (千剪), the free, open-source (MIT) batch video app for macOS: English (default) at `/`,
-`/privacy`, `/terms`; 中文 at `/zh/`, `/zh/privacy`, `/zh/terms`; Français at `/fr/`, `/fr/privacy`, `/fr/terms`
-(the French legal pages show the English text with a note until a reviewed translation exists). The old `/en/*`
-URLs are static redirect pages to the English equivalents (`redirects` in `astro.config.mjs`).
-Static Astro build, no cookies, no analytics, no third-party fonts (system font stack). The only JavaScript is a
-four-line inline script that keeps the current `#section` when you switch language; without it the switcher still
-opens the same page in the other language.
+Product site for Reelfold (千剪), the free, open-source (MIT) batch video app for macOS. Design: direction F
+("Paper", editorial calm) from the 2026-10 redesign (`site-redesign/` in the design repo: README, IMPLEMENTATION.md,
+reference HTML and PNGs). Static Astro build served by a Cloudflare Worker on reelfold.com. No cookies, no analytics,
+no third-party requests: fonts are self-hosted (SIL OFL, licences in `public/fonts/`). About 1 KB of inline JS
+(scrolled-nav hairline, fade-in on scroll, language switch keeps `#section`); everything works without it.
 
-SEO: every page has `<html lang>` (`en` / `zh-CN` / `fr`), a canonical URL, and hreflang alternates `en`, `zh-CN`,
-`fr` and `x-default` (= English). There is no sitemap.
+## Pages (every page in 4 languages)
 
-Not deployed. Everything the creator must decide is listed at the bottom.
+| Page | en | 中文 | Français | Español |
+|---|---|---|---|---|
+| Home | `/` | `/zh/` | `/fr/` | `/es/` |
+| Use cases | `/podcast-clips/`, `/interview-clips/`, `/course-slicing/`, `/talking-head/`, `/studios/` | `/zh/…` | `/fr/…` | `/es/…` |
+| Platform specs | `/platforms/` (anchor per platform, e.g. `/platforms/#xiaohongshu`) | `/zh/platforms/` | … | … |
+| Comparisons | `/compare/opus-clip/`, `/compare/descript/`, `/compare/capcut/` | `/zh/compare/…` | … | … |
+| Legal drafts (noindex) | `/privacy/`, `/terms/` | 中文 | English text + note | English text + note |
+
+`/docs/` (nav + footer) is the separate Starlight docs site (`apps/docs`), copied into `dist/docs` at deploy time;
+this site never builds anything under `/docs`. Old `/en/*` URLs are static redirect pages.
 
 ## Run
 
 ```bash
 npm install
-npm run dev        # http://localhost:4321
-npm run build      # static site in dist/
-npm run preview    # serve dist/ locally
-npm run check:copy # copy rules (see below) on the built HTML
-npm run images     # re-generate WebP/AVIF from assets/demos (needs magick, cwebp, avifenc)
-node scripts/screenshot.mjs   # full-page screenshots into screenshots/ (needs `npm run preview` running
-                              # and Playwright; uses the installed Google Chrome, no browser download)
+npm run dev          # http://localhost:4321
+npm run build        # static site in dist/ (+ sitemap-index.xml)
+npm run check        # copy rules + site checks on dist/ (below)
+npm run preview      # serve dist/
+npm run screenshots  # node scripts/screenshot.mjs <baseUrl> [name-regex]: full-page PNGs into screenshots/
+npm run deploy       # build + wrangler deploy (Cloudflare Worker, see wrangler.jsonc). First time: npx wrangler login
 ```
+
+Generators (outputs are committed, so `npm run build` needs only Node):
+
+| Command | Writes | When |
+|---|---|---|
+| `npm run fonts:zh` | `public/fonts/noto-serif-sc-600-{core,extra}.woff2`, `src/styles/zh-font.css`, `src/data/zh-font.json` | after changing 中文 headings (build first). Needs `pip install fonttools brotli` |
+| `npm run og` | `public/og/{en,zh,fr,es}.png` (1200×630) | after changing the hero copy. Needs Playwright + Chrome, ImageMagick |
+| `npm run platforms` | `src/data/platforms.json` from `lib/vstudio/platform.py` | after the engine's platform profiles change |
+| `python3 scripts/fr-typo.py` | narrow no-break spaces in French strings (before `: ; ? !` and inside `« »`) | after editing French copy |
+| `node scripts/brand.mjs` | favicons, app icons, `site.webmanifest` | after a logo change |
 
 ## Structure
 
 ```
-src/config.ts              ← the only place for URL, contact email, GitHub URL, download URL and `downloadReady`
-src/i18n/en.ts, zh.ts, fr.ts ← all copy (same shape; en.ts and fr.ts are type-checked against zh.ts)
-src/i18n/index.ts          ← LANGS, prefix() / pathFor(): '' for English, '/zh' for 中文, '/fr' for Français
-src/components/Home.astro  ← all home sections: hero, how, who it's for, Mac app, proof, deliverables,
-                             local-first, Create (coming), open source (skill + build from source), FAQ
-src/components/Cta.astro   ← download / Star on GitHub / Build from source buttons (follows `downloadReady`)
-src/components/Privacy.astro, Terms.astro   ← legal drafts (both languages), marked "draft, review before publishing"
-src/components/Logo.astro  ← Reelfold symbol + wordmark, inlined from assets/brand
-src/layouts/Base.astro     ← header/footer, EN · 中文 · FR switcher, hreflang, OG tags
-src/styles/global.css      ← Reelfold light theme: warm paper, ink, brand teal
-src/pages/{index,privacy,terms}.astro (English), src/pages/zh/... (中文), src/pages/fr/... (Français)
-assets/brand/              ← Reelfold symbol / wordmark / Windows icon SVGs and the 1280x640 social preview
-                             (copies of the brand masters; `node scripts/brand.mjs` regenerates favicons + OG)
-public/img/                ← optimised images (committed); sources in assets/demos/
-scripts/                   ← brand.mjs, optimize-images.sh, check-copy.mjs, screenshot.mjs
-screenshots/               ← home-en-*, home-zh-*, home-fr-* (desktop + mobile) and privacy-mobile
+src/config.ts               URL, GitHub / download URLs, docs paths, skill command, and `downloadReady` (below)
+src/i18n/{en,zh,fr,es}.ts   home + shared UI copy; zh/fr/es are typed against en (a missing key fails the build)
+src/i18n/index.ts           LANGS, HTML_LANG, HREFLANG (en, zh-Hans, fr, es), prefix(), pathFor()
+src/content/usecases.ts     the 5 use-case pages, written per language
+src/content/compare.ts      the 3 comparison pages: values, notes, sources, CHECKED date
+src/content/platforms.ts    /platforms/ copy; numbers come from src/data/platforms.json
+src/data/batch.ts           the real batch on the home page (72-min lecture, 24 clips, timecodes, QC result)
+src/layouts/Base.astro      <html lang>, head (Seo), fonts preload, nav, footer, the inline script
+src/components/             Seo, SiteNav, SiteFooter, Ctas, Print, Img (AVIF+WebP <picture>), Faq, Crumbs, Related,
+                            Icon, Logo, home/* (Hero, Steps, Audiences, Batch, Platforms, ThreeUp, CreateTeaser,
+                            OpenSource, FinalCta), Privacy, Terms
+src/views/                  page templates (HomePage, UseCasePage, ComparePage, PlatformsPage, LegalPage)
+src/pages/                  thin route files: / , /[slug]/, /compare/[tool]/, /platforms/, … and the same under zh/ fr/ es/
+src/lib/                    zhHeading (中文 clause-safe line breaks), images (screenshot registry), schema (JSON-LD)
+src/assets/                 app screenshots (re-rendered with the Reelfold name), batch covers, demo sheets
+src/styles/global.css       tokens + all component styles (ported from the F prototype)
+scripts/                    check-copy, check-site, subset-zh-font.py, og, export-platforms.py, fr-typo.py, screenshot, brand
+docs/SEO_SUBMIT.md          Google Search Console, Bing Webmaster, 百度站长 steps
 ```
 
-## Config (`src/config.ts`)
+## The "coming soon" switch
 
-| Key | Default | Notes |
-|---|---|---|
-| `url` | `https://reelfold.com` | The domain; used for canonical, hreflang and OG tags. `astro.config.mjs` reads it. |
-| `contactEmail` | `hello@example.com` | Placeholder. Used in the contact section, footer, legal pages and the mailto fallback. |
-| `githubUrl` | `https://github.com/zyziyun/reelfold` | Star on GitHub, open-source section, footer (Discussions link = `githubUrl` + `/discussions`). |
-| `downloadUrl` | `https://github.com/zyziyun/reelfold/releases/latest` | "Download for macOS" target (Windows is shown as "later"). |
-| `downloadReady` | `false` | `false` until the first macOS release exists: no download link anywhere; the hero and Mac-app section show "Star on GitHub" + "Build from source" and a "coming soon" note, and the header button is "Star on GitHub". Set `true` to switch every one of them to "Download for macOS". |
+`SITE.downloadReady` in `src/config.ts` (default `false`, because no macOS release exists yet). While `false`, every
+CTA on every page and language is **Star on GitHub** + **Build from source**, the fine print says the macOS app is
+coming soon, the header button is "Star", and the JSON-LD has no `downloadUrl`. Set it to `true` once
+`https://github.com/zyziyun/reelfold/releases/latest` has a release: everything switches to **Download for macOS**.
 
-## Deploy (not done; pick one)
+## SEO
 
-`npm run build` produces a plain static folder `dist/`. Any static host works.
-
-**Cloudflare Pages** (recommended: free and fast)
-1. Push this repo to GitHub (or use `npx wrangler pages deploy dist` without Git).
-2. Cloudflare dashboard → Workers & Pages → Create → Pages → connect the repo.
-3. Build command `npm run build`, output directory `dist`, Node 20+.
-4. Custom domain: Pages project → Custom domains → add `yourdomain.com`; if the domain's DNS is on Cloudflare
-   the record is created for you, otherwise add the CNAME it shows (`<project>.pages.dev`).
-
-**GitHub Pages**
-1. Push to GitHub. Settings → Pages → Source: GitHub Actions; use the official Astro workflow
-   (`withastro/action`).
-2. If serving from `https://<user>.github.io/<repo>/` you must also set `base: '/<repo>'` in `astro.config.mjs`
-   and the image paths need the base prefix; a custom domain avoids that.
-3. Custom domain: Settings → Pages → Custom domain; at your DNS add a CNAME `www` → `<user>.github.io`,
-   and for the apex domain A records `185.199.108.153`, `.109.153`, `.110.153`, `.111.153`. Tick "Enforce HTTPS".
-
-**Vercel**
-1. Import the repo; framework preset Astro is detected (build `npm run build`, output `dist`).
-2. Custom domain: Project → Settings → Domains → add; set the A / CNAME records Vercel shows.
-
-After choosing a domain, set `SITE.url` in `src/config.ts` and rebuild.
-
-**Mainland China note:** sites hosted on a mainland server need ICP 备案. The hosts above serve from outside
-the mainland (no 备案 needed) but speed from China varies; test from a phone on a Chinese network before sharing
-links on 小红书.
+- Per page and language: `<title>`, description, self canonical, hreflang `en` / `zh-Hans` / `fr` / `es` / `x-default`,
+  `og:*` (locale + alternates, 1200×630 image per language), Twitter card.
+- JSON-LD: home = SoftwareApplication (price 0, MIT, macOS) + Organization + FAQPage; use-case, compare and platform
+  pages = BreadcrumbList + FAQPage. FAQ JSON-LD is built from the same arrays as the visible `<details>`.
+- `sitemap-index.xml` (`@astrojs/sitemap`, all 40 indexable URLs with `xhtml:link` alternates); `robots.txt` points to it.
+  Legal drafts are `noindex` and not in the sitemap.
+- `npm run check` (scripts/check-site.mjs) fails on: not exactly one h1, skipped heading levels, missing
+  title/description, non-absolute or wrong canonical, incomplete or non-reciprocal hreflang, JSON-LD that does not
+  parse, missing OG image, `<img>` without alt/width/height, broken internal links or `#anchors`, third-party
+  resources, and 中文 heading characters missing from the font subset.
 
 ## Copy rules
 
-Enforced by `npm run check:copy` on the built HTML:
-- No em-dashes.
-- No hype words: 最, 第一, 100%, 首个, 唯一, 顶级, 极致, 颠覆, 爆款, 保证; best, ultimate, guaranteed, 10x, seamless, etc.
-- Honest claims only. The proof numbers are from one internal batch on our own 72-minute lecture
-  (24 clips × 4 platforms = 96 files, $0.73 API cost, 21/24 green on automatic QC) and are labelled as such,
-  together with what is not good enough yet (caption accuracy, ~15 filler cuts per clip needing confirmation).
+Enforced by `npm run check:copy` on the built HTML: no em-dashes; no hype words (最, 第一, 100%, 首个, 唯一, 顶级, 极致,
+颠覆, 爆款, 保证; best, ultimate, guaranteed, 10x, seamless …). Honest claims only: the numbers are one real batch
+(72-minute lecture → 24 clips × 4 formats = 96 files, $0.73 AI cost, 21/24 passed the automatic checks); the
+comparison tables say "Not verified" where a primary source did not confirm a fact, and show the date they were checked.
+Only the creator's own face appears in images.
 
-## Images
+## Lighthouse (2026-10-07, local build)
 
-The demo frames and contact sheets in `assets/demos/` come from the repo's `docs/demos/` (approved by the
-creator for public use). `scripts/optimize-images.sh` writes AVIF + WebP at 800/1600 px plus six single-frame
-tiles. The Open Graph image `public/img/og.png` (1280×640) is the launch social preview, copied by `scripts/brand.mjs`. Total image weight on the home page is roughly 100–300 KB (AVIF) depending on screen width; nothing above the fold is larger than 13 KB.
+Mobile and desktop for `/`, `/zh/`, `/fr/`, `/es/`: Performance 98–100, Accessibility 100, Best Practices 100, SEO 100
+(mobile LCP 2.2–2.3 s, CLS 0, TBT 0). `/podcast-clips/`, `/compare/descript/`, `/zh/platforms/` mobile: 99–100 / 100 / 100 / 100.
 
-## What the creator must decide before publishing
+## Before publishing
 
-1. **Domain**: `reelfold.com` is set in `SITE.url`; point its DNS at the host (see Deploy above).
-2. **Contact email** → `SITE.contactEmail` (currently `hello@example.com`).
-3. **Legal review** of `/privacy` and `/terms` (zh and en; fr shows the English text): maintainer / entity name and
-   the AI-label rules per platform. Remove the draft banner only after review.
-4. **First macOS release**: publish it on `github.com/zyziyun/reelfold/releases`, then set `SITE.downloadReady = true`;
-   confirm the note about MediaPipe usage statistics matches what the app actually shows.
-5. **GitHub Discussions**: enable them on the repo (the footer links there).
-6. **视频号**: the engine has no dedicated 视频号 platform profile yet; the site says it is delivered as 9:16.
+1. `SITE.contactEmail` (legal pages) is a placeholder.
+2. Legal review of `/privacy` and `/terms`, then remove the draft banners and `noindex`.
+3. First macOS release, then `downloadReady: true`.
+4. Enable GitHub Discussions (linked from the open-source section and footer).
+5. Re-check `src/content/compare.ts` before changing `CHECKED`; prices and features of other tools change.
+6. Submit the site to search engines: `docs/SEO_SUBMIT.md`.

@@ -1,0 +1,14 @@
+---
+import Base from '../layouts/Base.astro';
+import { t } from '../i18n';
+const c = t('en');
+---
+<Base lang="en" page="" title={`${c.notFound.title} | Reelfold`} description={c.notFound.l} noindex>
+  <div class="wrap legal" style="text-align:center;margin:0 auto">
+    <p class="kick" style="justify-content:center">404</p>
+    <h1>{c.notFound.t}</h1>
+    <p class="lede" style="margin:22px auto 0">{c.notFound.l}</p>
+    <p lang="zh-CN" class="lede" style="margin:12px auto 0">页面不存在。<a href="/zh/">回到中文首页</a></p>
+    <div class="ctas"><a class="btn ink" href="/">{c.notFound.home}</a></div>
+  </div>
+</Base>

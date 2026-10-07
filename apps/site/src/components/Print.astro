@@ -1,0 +1,15 @@
+---
+// A screenshot "print": card mat, hairline, optional "Fig. n" caption.
+import type { ImageMetadata } from 'astro';
+import Img from './Img.astro';
+interface Props {
+  src: ImageMetadata; alt: string; widths: number[]; sizes: string;
+  fig?: string; caption?: string; priority?: boolean; reveal?: boolean; class?: string;
+  mobile?: ImageMetadata; mobileWidths?: number[];
+}
+const { src, alt, widths, sizes, fig, caption, priority = false, reveal = true, class: cls = '', mobile, mobileWidths } = Astro.props;
+---
+<figure class={`${reveal ? 'reveal ' : ''}${cls}`}>
+  <div class="print"><Img {src} {alt} {widths} {sizes} {priority} {mobile} {mobileWidths} /></div>
+  {caption && <figcaption>{fig && <b>{fig}</b>}<span>{caption}</span></figcaption>}
+</figure>

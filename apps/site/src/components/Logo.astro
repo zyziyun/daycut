@@ -1,19 +1,11 @@
 ---
-// Reelfold logo: fan-of-cards symbol (on-light colours) + "reelfold" wordmark (outlined, fill = currentColor),
-// inlined from assets/brand at build time; the Chinese name 千剪 follows on the 中文 pages.
+// Reelfold mark (fan of cards, on-light colours) inlined from assets/brand; the name is set in Inter as in design F.
 import symbol from '../../assets/brand/symbol-on-light.svg?raw';
-import word from '../../assets/brand/wordmark-text-only.svg?raw';
-import { SITE } from '../config';
-
-interface Props {
-  zh?: boolean;
-}
-const { zh = false } = Astro.props;
-const inner = (svg: string) => svg.replace(/^<svg[^>]*>/, '').replace(/<\/svg>\s*$/, '');
-// prefix mask/gradient ids so they cannot clash with other inline SVGs on the page
-const sym = inner(symbol).replace(/id="([^"]+)"/g, 'id="logo-$1"').replace(/url\(#([^)]+)\)/g, 'url(#logo-$1)');
-const wordInner = inner(word).replace(/fill="#[0-9A-Fa-f]+"/, 'fill="currentColor"');
+interface Props { idPrefix?: string; width?: number }
+const { idPrefix = 'lg', width = 30 } = Astro.props;
+const inner = symbol.replace(/^[\s\S]*?<svg[^>]*>/, '').replace(/<\/svg>\s*$/, '');
+// prefix ids so several marks on one page cannot clash
+const sym = inner.replace(/id="([^"]+)"/g, `id="${idPrefix}-$1"`).replace(/url\(#([^)]+)\)/g, `url(#${idPrefix}-$1)`);
+const h = Math.round((width * 345) / 604);
 ---
-<svg class="logo-symbol" aria-hidden="true" viewBox="32 27 604 345" width="40" height="23" set:html={sym} />
-<svg class="logo-word" aria-hidden="true" viewBox="36 24 685 156" height="21" width="92" set:html={wordInner} />
-{zh && <span class="logo-zh">{SITE.nameZh}</span>}
+<svg class="mark-svg" aria-hidden="true" focusable="false" viewBox="32 27 604 345" width={width} height={h} set:html={sym} />

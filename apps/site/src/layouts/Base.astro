@@ -1,110 +1,68 @@
 ---
 import '../styles/global.css';
-import { SITE, discussionsUrl } from '../config';
-import Logo from '../components/Logo.astro';
-import { t, prefix, pathFor, LANGS, type Lang } from '../i18n';
+import zhFontCss from '../styles/zh-font.css?raw';
+import Seo from '../components/Seo.astro';
+import SiteNav from '../components/SiteNav.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+import { t, HTML_LANG, type Lang } from '../i18n';
+import zhFont from '../data/zh-font.json';
 
 interface Props {
   lang: Lang;
-  page?: '' | 'privacy' | 'terms';
-  title?: string;
-  description?: string;
+  /** '' = home; 'podcast-clips', 'compare/descript', 'platforms', 'privacy', ... (same id in every language) */
+  page: string;
+  title: string;
+  description: string;
+  jsonld?: Record<string, unknown>[];
+  noindex?: boolean;
 }
-const { lang, page = '', title, description } = Astro.props;
+const { lang, page, title, description, jsonld, noindex } = Astro.props;
 const c = t(lang);
-const home = prefix(lang) + '/';
-const brand = lang === 'zh' ? `${SITE.nameZh} ${SITE.name}` : SITE.name;
-const pageTitle = title ? `${title} · ${brand}` : c.meta.title;
-const desc = description ?? c.meta.description;
-const site = SITE.url.replace(/\/$/, '');
-const HREFLANG: Record<Lang, string> = { en: 'en', zh: 'zh-CN', fr: 'fr' };
-const LABEL: Record<Lang, string> = { en: 'EN', zh: '中文', fr: 'FR' };
-const urlFor = (l: Lang) => `${site}${pathFor(l, page)}`;
-const canonical = urlFor(lang);
-const nav = [
-  ['how', c.nav.how],
-  ['uses', c.nav.uses],
-  ['app', c.nav.app],
-  ['proof', c.nav.proof],
-  ['oss', c.nav.oss],
-  ['faq', c.nav.faq],
-] as const;
 ---
 <!doctype html>
-<html lang={c.htmlLang}>
+<html lang={HTML_LANG[lang]} class={`lang-${lang}`}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{pageTitle}</title>
-    <meta name="description" content={desc} />
-    <link rel="canonical" href={canonical} />
-    {LANGS.map((l) => <link rel="alternate" hreflang={HREFLANG[l]} href={urlFor(l)} />)}
-    <link rel="alternate" hreflang="x-default" href={urlFor('en')} />
+    <Seo {lang} {page} {title} {description} {jsonld} {noindex} ogAlt={c.meta.ogAlt} />
     <link rel="icon" href="/favicon.ico" sizes="32x32" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
-    <meta name="theme-color" content="#FAF6EE" />
-    <meta property="og:type" content="website" />
-    <meta property="og:site_name" content={brand} />
-    <meta property="og:title" content={pageTitle} />
-    <meta property="og:description" content={desc} />
-    <meta property="og:url" content={canonical} />
-    <meta property="og:image" content={`${site}/img/og.png`} />
-    <meta property="og:image:width" content="1280" />
-    <meta property="og:image:height" content="640" />
-    <meta property="og:image:alt" content="Reelfold 千剪: Describe the batch. Fold one recording into every cut, for every platform." />
-    <meta name="twitter:card" content="summary_large_image" />
-    {page !== '' && <meta name="robots" content="noindex" />}
+    <meta name="theme-color" content="#F4F0E8" />
+    {lang === 'zh' ? (
+      <>
+        <link rel="preload" href={`/fonts/${zhFont.core}`} as="font" type="font/woff2" crossorigin />
+        <style is:inline set:html={zhFontCss} />
+      </>
+    ) : (
+      <link rel="preload" href="/fonts/instrument-serif-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin />
+    )}
+    <link rel="preload" href="/fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
   </head>
   <body>
-    <a class="skip" href="#main">{c.nav.skip}</a>
-    <header class="site-header">
-      <div class="wrap header-row">
-        <a class="logo" href={home} aria-label={brand}>
-          <Logo zh={lang === 'zh'} />
-        </a>
-        <nav class="main-nav" aria-label="primary">
-          {nav.map(([id, label]) => <a href={`${home}#${id}`}>{label}</a>)}
-        </nav>
-        <div class="header-actions">
-          <div class="lang-switch" role="group" aria-label={c.nav.langGroup}>
-            {LANGS.map((l, i) => (
-              <Fragment>
-                {i > 0 && <span aria-hidden="true">·</span>}
-                <a href={pathFor(l, page)} hreflang={HREFLANG[l]} lang={HREFLANG[l]} aria-current={lang === l ? 'page' : undefined} data-keep-hash>{LABEL[l]}</a>
-              </Fragment>
-            ))}
-          </div>
-          {SITE.downloadReady ? (
-            <a class="btn btn-sm" href={SITE.downloadUrl} rel="noopener">{c.cta.download}</a>
-          ) : (
-            <a class="btn btn-sm" href={SITE.githubUrl} rel="noopener">{c.cta.star}</a>
-          )}
-        </div>
-      </div>
-    </header>
-    <main id="main">
-      <slot />
-    </main>
-    <footer class="site-footer">
-      <div class="wrap footer-row">
-        <p>© 2026 {brand}</p>
-        <nav aria-label="footer">
-          <a href={`${prefix(lang)}/privacy`}>{c.footer.privacy}</a>
-          <a href={`${prefix(lang)}/terms`}>{c.footer.terms}</a>
-          <a href={`mailto:${SITE.contactEmail}`}>{SITE.contactEmail}</a>
-          <a href={SITE.githubUrl} rel="noopener">GitHub</a>
-          <a href={discussionsUrl} rel="noopener">{c.footer.feedback}</a>
-        </nav>
-        <p class="muted small">{c.footer.note}</p>
-      </div>
-    </footer>
+    <SiteNav {lang} {page} />
+    <main id="main"><slot /></main>
+    <SiteFooter {lang} {page} />
     <script is:inline>
-      // Language switcher keeps the current section (#hash). Without JS it still opens the same page.
-      document.querySelectorAll('a[data-keep-hash]').forEach(function (a) {
-        a.addEventListener('click', function () { if (location.hash) a.href = a.getAttribute('href') + location.hash; });
-      });
+      document.documentElement.classList.add('js');
+      (function () {
+        var nav = document.querySelector('.nav');
+        addEventListener('scroll', function () { nav.classList.toggle('scrolled', scrollY > 8); }, { passive: true });
+        if ('IntersectionObserver' in window) {
+          var io = new IntersectionObserver(function (es) {
+            es.forEach(function (x) { if (x.isIntersecting) { x.target.classList.add('in'); io.unobserve(x.target); } });
+          }, { rootMargin: '0px 0px -8% 0px' });
+          document.querySelectorAll('.reveal').forEach(function (el) { io.observe(el); });
+        } else document.querySelectorAll('.reveal').forEach(function (el) { el.classList.add('in'); });
+        // the language switch keeps the current section (#hash); without JS it still opens the same page
+        document.querySelectorAll('a[data-keep-hash]').forEach(function (a) {
+          a.addEventListener('click', function () { if (location.hash) a.href = a.getAttribute('href') + location.hash; });
+        });
+        var ls = document.querySelector('.langsel');
+        document.addEventListener('click', function (e) { if (ls && ls.open && !ls.contains(e.target)) ls.open = false; });
+        document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && ls && ls.open) { ls.open = false; ls.querySelector('summary').focus(); } });
+      })();
     </script>
   </body>
 </html>

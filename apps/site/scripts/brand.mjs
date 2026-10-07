@@ -2,7 +2,7 @@
 // (masters: brand/round3/reelfold in the private design repo; social preview: gtm/launch/social-preview-1280x640.png).
 //   node scripts/brand.mjs
 // Writes (committed): public/favicon.svg, public/favicon.ico (16/32/48), public/apple-touch-icon.png (180),
-// public/icon-192.png, public/icon-512.png, public/site.webmanifest, public/img/og.png (1280x640).
+// public/icon-192.png, public/icon-512.png, public/site.webmanifest.
 // Needs rsvg-convert + magick (Homebrew).
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -50,8 +50,8 @@ fs.writeFileSync(
         { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
         { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
       ],
-      theme_color: '#FAF6EE',
-      background_color: '#FAF6EE',
+      theme_color: '#F4F0E8',
+      background_color: '#F4F0E8',
       display: 'browser',
     },
     null,
@@ -59,8 +59,7 @@ fs.writeFileSync(
   ) + '\n',
 );
 
-// Open Graph 1280x640: the launch social preview (symbol + wordmark + tagline, EN with the 千剪 line).
-fs.copyFileSync(path.join(A, 'social-preview-1280x640.png'), path.join(P, 'img/og.png'));
+// Open Graph images (1200x630 per language) are made by scripts/og.mjs from the site design.
 
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log('brand assets written to public/');

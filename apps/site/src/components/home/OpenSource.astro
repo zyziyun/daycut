@@ -1,0 +1,25 @@
+---
+import { SITE, discussionsUrl, contributingUrl, SKILL_CMD } from '../../config';
+import { t, type Lang } from '../../i18n';
+import { heading } from '../../lib/zhHeading';
+import Icon from '../Icon.astro';
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+const c = t(lang);
+const hrefs = [SITE.githubUrl, discussionsUrl, contributingUrl];
+---
+<div class="os" id="open-source">
+  <section class="wrap" aria-labelledby="os-h">
+    <div class="head2">
+      <div><p class="kick">{c.os.k}</p><h2 id="os-h" set:html={heading(c.os.t, lang)} /></div>
+      <p class="lede">{c.os.l}</p>
+    </div>
+    <ul class="oslinks">
+      {c.os.links.map((x, i) => <li><a href={hrefs[i]}><b>{x.t}</b><span>{x.b}</span><Icon name="ne" /></a></li>)}
+    </ul>
+    <div class="skill">
+      <p><b>{c.os.skillT}</b> {c.os.skillL}</p>
+      <pre class="code" tabindex="0" aria-label={c.os.skillL}><code><span class="c"># Claude Code skill: video-studio</span>{'\n'}{SKILL_CMD.join('\n')}</code></pre>
+    </div>
+  </section>
+</div>

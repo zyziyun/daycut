@@ -1,0 +1,14 @@
+---
+import { type Lang } from '../../i18n';
+import { heading } from '../../lib/zhHeading';
+import Ctas from '../Ctas.astro';
+import Logo from '../Logo.astro';
+interface Props { lang: Lang; title: string; lede?: string }
+const { lang, title, lede } = Astro.props;
+---
+<div class="final">
+  <span class="mark"><Logo idPrefix="fin" width={64} /></span>
+  <h2 set:html={heading(title, lang)} />
+  {lede && <p class="lede">{lede}</p>}
+  <Ctas {lang} />
+</div>

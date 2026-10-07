@@ -1,0 +1,33 @@
+---
+import { t, type Lang } from '../../i18n';
+import { heading } from '../../lib/zhHeading';
+import { clipImg } from '../../lib/images';
+import { CLIPS, tc } from '../../data/batch';
+import Img from '../Img.astro';
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+const c = t(lang);
+const b = c.batch;
+---
+<section class="wrap" id="batch" aria-labelledby="num-h">
+  <div class="head2">
+    <div><p class="kick">{b.k}</p><h2 id="num-h" set:html={heading(b.t, lang)} /></div>
+    <p class="lede">{b.l}</p>
+  </div>
+  <dl class="nums">
+    {b.nums.map((n, i) => (
+      <div class={`num${i === 4 ? ' hi' : ''}`}><dt>{n.l}</dt><dd>{n.v}{n.u && <small>{n.u}</small>}</dd></div>
+    ))}
+  </dl>
+  <p class="numfoot">{b.foot}</p>
+  <ul class="sheet reveal">
+    {CLIPS.map((x) => (
+      <li class={x.flagged ? 'flag' : undefined}>
+        <Img src={clipImg(x.id)} alt={b.clipAlt.replace('{n}', String(x.n)).replace('{title}', x.title[lang])} widths={[220, 450]}
+          sizes="(max-width: 900px) calc((100vw - 2 * var(--pad) - 30px) / 4), 136px" />
+        <span><time datetime={`PT${Math.floor(x.start)}S`}>{tc(x.start)}</time><em class={x.flagged ? 'f' : undefined}>{x.flagged ? b.flagged : b.passed}</em></span>
+      </li>
+    ))}
+  </ul>
+  <p class="sheetcap">{b.cap}</p>
+</section>

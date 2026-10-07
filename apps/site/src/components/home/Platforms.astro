@@ -1,0 +1,19 @@
+---
+import { t, pathFor, type Lang } from '../../i18n';
+import { heading } from '../../lib/zhHeading';
+import { PLATFORMS, ratios } from '../../data/platforms';
+import Icon from '../Icon.astro';
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+const c = t(lang);
+const spec = pathFor(lang, 'platforms');
+---
+<section class="wrap" aria-labelledby="pl-h">
+  <p class="kick">{c.plat.k}</p>
+  <h2 id="pl-h" class="h2wide" set:html={heading(c.plat.t, lang)} />
+  <p class="lede">{c.plat.l}</p>
+  <ul class="plats">
+    {PLATFORMS.map((p) => <li><a href={`${spec}#${p.id}`}>{c.platformNames[p.id]}</a><sup>{ratios(p)}</sup></li>)}
+  </ul>
+  <a class="more" href={spec}>{c.plat.more} <Icon name="arrow" /></a>
+</section>

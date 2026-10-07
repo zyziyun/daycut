@@ -1,0 +1,26 @@
+---
+import { t, type Lang } from '../../i18n';
+import { heading } from '../../lib/zhHeading';
+import { img } from '../../lib/images';
+import Print from '../Print.astro';
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+const c = t(lang);
+const ROMAN = ['i', 'ii', 'iii', 'iv', 'v'];
+const half = '(max-width: 900px) calc(100vw - 2 * var(--pad)), 560px';
+---
+<section class="wrap" id="how" aria-labelledby="how-h">
+  <div class="head2">
+    <div><p class="kick">{c.how.k}</p><h2 id="how-h" set:html={heading(c.how.t, lang)} /></div>
+    <p class="lede">{c.how.l}</p>
+  </div>
+  <ol class="steps">
+    {c.how.steps.map((s, i) => (
+      <li class="step"><div class="n" aria-hidden="true">{ROMAN[i]}.</div><h3><small>{s.label}</small>{s.t}</h3><p>{s.b}</p></li>
+    ))}
+  </ol>
+  <div class="pair">
+    <Print src={img('review', lang)} alt={c.how.figReviewAlt} widths={[700, 1400]} sizes={half} fig={`${c.fig} 2`} caption={c.how.figReview} />
+    <Print src={img('publish', lang)} alt={c.how.figPublishAlt} widths={[700, 1400]} sizes={half} fig={`${c.fig} 3`} caption={c.how.figPublish} />
+  </div>
+</section>

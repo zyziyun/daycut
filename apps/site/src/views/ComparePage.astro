@@ -1,0 +1,70 @@
+---
+import Base from '../layouts/Base.astro';
+import Crumbs from '../components/Crumbs.astro';
+import Ctas from '../components/Ctas.astro';
+import Faq from '../components/Faq.astro';
+import Related from '../components/Related.astro';
+import FinalCta from '../components/home/FinalCta.astro';
+import { t, fmtDate, type Lang } from '../i18n';
+import { compare, compareEntry, COMPARE, ROWS, LABELS, REELFOLD, REELFOLD_NOTES, CHECKED } from '../content/compare';
+import { heading } from '../lib/zhHeading';
+import { breadcrumbs, faqPage } from '../lib/schema';
+import { SITE } from '../config';
+interface Props { lang: Lang; slug: string }
+const { lang, slug } = Astro.props;
+const c = t(lang);
+const x = compare(slug, lang);
+const src = compareEntry(slug).sources;
+const L = LABELS[lang];
+const page = `compare/${slug}`;
+const vs = c.footer.vs.replace('{name}', x.name);
+const name = lang === 'zh' ? SITE.nameZh : SITE.name;
+const date = fmtDate(lang, CHECKED);
+const rUs = REELFOLD_NOTES[lang];
+const others = COMPARE.filter((s) => s !== slug).map((s) => `compare/${s}`);
+const jsonld = [breadcrumbs(lang, [[c.page.compare, null], [vs, page]]), faqPage(x.faq)];
+---
+<Base {lang} {page} title={x.title} description={x.description} {jsonld}>
+  <Crumbs {lang} trail={[[c.page.compare, null], [vs, null]]} />
+  <div class="wrap phero">
+    <p class="kick">{x.kicker}</p>
+    <h1 set:html={heading(x.h1, lang)} />
+    <p class="lede">{x.intro}</p>
+    <p class="fine">{c.page.lastChecked} <time datetime={CHECKED}>{date}</time></p>
+  </div>
+  <section class="wrap" aria-labelledby="cmp-h">
+    <div class="cols2" style="margin-top:0">
+      <div><h2 id="cmp-h" class="h2wide" style="font-size:clamp(30px,3.4vw,44px)" set:html={heading(x.theyT, lang)} /><ul>{x.they.map((i) => <li><b>{i.t}.</b> {i.b}</li>)}</ul></div>
+      <div><h2 class="h2wide" style="font-size:clamp(30px,3.4vw,44px)" set:html={heading(x.weT, lang)} /><ul>{x.we.map((i) => <li><b>{i.t}.</b> {i.b}</li>)}</ul></div>
+    </div>
+  </section>
+  <section class="wrap" aria-labelledby="tbl-h">
+    <h2 id="tbl-h" class="h2wide">{`${name} · ${x.name}`}</h2>
+    <div class="tblwrap" tabindex="0" role="region" aria-labelledby="tbl-h">
+      <table class="tbl cmp">
+        <caption>{L.tableCaption.replace('{date}', date)}</caption>
+        <thead><tr><th scope="col">{L.feature}</th><th scope="col">{name}</th><th scope="col">{x.name}</th></tr></thead>
+        <tbody>
+          {ROWS.map((r) => (
+            <tr>
+              <th scope="row">{L[r]}</th>
+              <td class={REELFOLD[r]}>{L[REELFOLD[r]]}{rUs[r] && <small>{rUs[r]}</small>}</td>
+              <td class={x.values[r]}>{L[x.values[r]]}{x.notes[r] && <small>{x.notes[r]}</small>}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+    <div class="src">
+      <p>{c.page.sources} ({c.page.lastChecked} {date}):</p>
+      <ol>{src.map((s) => <li><a href={s.url} rel="noopener">{s.label}</a></li>)}</ol>
+    </div>
+  </section>
+  <section class="wrap" aria-labelledby="ch-h">
+    <h2 id="ch-h" class="h2wide" set:html={heading(x.chooseT, lang)} />
+    <div class="three two">{x.choose.map((i) => <div><h3>{i.t}</h3><p>{i.b}</p></div>)}</div>
+  </section>
+  <Faq {lang} kicker={c.page.faqT} title={c.faq.t} items={x.faq} id="questions" />
+  <Related {lang} pages={[...others, 'platforms']} />
+  <FinalCta {lang} title={c.page.getStarted} lede={c.page.getStartedL} />
+</Base>

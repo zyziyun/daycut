@@ -1,0 +1,25 @@
+---
+// The two main buttons + fine print. Follows SITE.downloadReady (the single "coming soon" switch in config.ts):
+// ready: [Download for macOS] [Star on GitHub]; coming soon: [Star on GitHub] [Build from source].
+import { SITE, buildFromSourceUrl } from '../config';
+import { t, type Lang } from '../i18n';
+import Icon from './Icon.astro';
+interface Props { lang: Lang; fine?: boolean; class?: string }
+const { lang, fine = true, class: cls = '' } = Astro.props;
+const c = t(lang);
+const ready = SITE.downloadReady;
+---
+<div class={`ctas ${cls}`}>
+  {ready ? (
+    <>
+      <a class="btn ink" href={SITE.downloadUrl}><Icon name="apple" />{c.cta.download}</a>
+      <a class="btn line" href={SITE.githubUrl}><Icon name="star" />{c.cta.star}</a>
+    </>
+  ) : (
+    <>
+      <a class="btn ink" href={SITE.githubUrl}><Icon name="star" />{c.cta.star}</a>
+      <a class="btn line" href={buildFromSourceUrl}><Icon name="code" />{c.cta.source}</a>
+    </>
+  )}
+</div>
+{fine && <p class="fine">{ready ? c.cta.fine : c.cta.fineSoon}</p>}

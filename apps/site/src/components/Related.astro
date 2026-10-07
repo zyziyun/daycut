@@ -1,0 +1,22 @@
+---
+// Internal links to sibling landing pages (use cases, comparisons, platform specs).
+import { t, pathFor, type Lang } from '../i18n';
+import { useCase, USE_CASES } from '../content/usecases';
+import { compare } from '../content/compare';
+import { PLATFORMS_COPY } from '../content/platforms';
+interface Props { lang: Lang; pages: string[] }
+const { lang, pages } = Astro.props;
+const c = t(lang);
+const info = (p: string): [string, string] => {
+  if ((USE_CASES as readonly string[]).includes(p)) { const u = useCase(p, lang); return [u.nav, u.h1]; }
+  if (p.startsWith('compare/')) { const x = compare(p.slice(8), lang); return [c.footer.vs.replace('{name}', x.name), x.h1]; }
+  if (p === 'platforms') return [PLATFORMS_COPY[lang].kicker, PLATFORMS_COPY[lang].h1];
+  throw new Error(`Related: unknown page ${p}`);
+};
+---
+<section class="wrap" aria-labelledby="rel-h">
+  <p class="kick" id="rel-h">{c.page.related}</p>
+  <div class="related">
+    {pages.map((p) => { const [b, s] = info(p); return <a href={pathFor(lang, p)}><b>{b}</b><span>{s}</span></a>; })}
+  </div>
+</section>

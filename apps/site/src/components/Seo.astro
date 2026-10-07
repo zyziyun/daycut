@@ -1,0 +1,38 @@
+---
+// <head> SEO: title, description, canonical, hreflang (en, zh-Hans, fr, es, x-default), OG + Twitter, JSON-LD.
+// Every page exists in all four languages, so every alternate is listed (reciprocal by construction).
+import { SITE, site } from '../config';
+import { pathFor, LANGS, HREFLANG, OG_LOCALE, type Lang } from '../i18n';
+interface Props {
+  lang: Lang; page: string; title: string; description: string;
+  jsonld?: Record<string, unknown>[]; noindex?: boolean; ogAlt: string;
+}
+const { lang, page, title, description, jsonld = [], noindex = false, ogAlt } = Astro.props;
+if (!title || !description) throw new Error(`Seo: missing title/description for ${lang}:${page}`);
+const url = (l: Lang) => `${site}${pathFor(l, page)}`;
+const og = `${site}/og/${lang}.png`;
+const siteName = lang === 'zh' ? `${SITE.nameZh} ${SITE.name}` : SITE.name;
+---
+<title>{title}</title>
+<meta name="description" content={description} />
+<link rel="canonical" href={url(lang)} />
+{!noindex && LANGS.map((l) => <link rel="alternate" hreflang={HREFLANG[l]} href={url(l)} />)}
+{!noindex && <link rel="alternate" hreflang="x-default" href={url('en')} />}
+{noindex && <meta name="robots" content="noindex" />}
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content={siteName} />
+<meta property="og:locale" content={OG_LOCALE[lang]} />
+{LANGS.filter((l) => l !== lang).map((l) => <meta property="og:locale:alternate" content={OG_LOCALE[l]} />)}
+<meta property="og:title" content={title} />
+<meta property="og:description" content={description} />
+<meta property="og:url" content={url(lang)} />
+<meta property="og:image" content={og} />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content={ogAlt} />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content={title} />
+<meta name="twitter:description" content={description} />
+<meta name="twitter:image" content={og} />
+<meta name="twitter:image:alt" content={ogAlt} />
+{jsonld.map((x) => <script type="application/ld+json" set:html={JSON.stringify(x).replace(/</g, '\\u003c')} />)}

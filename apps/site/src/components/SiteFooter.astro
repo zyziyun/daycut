@@ -1,0 +1,46 @@
+---
+import { SITE, DOCS_PATH, discussionsUrl, releasesUrl, licenseUrl } from '../config';
+import { t, pathFor, LANGS, HREFLANG, HTML_LANG, LANG_NAME, type Lang } from '../i18n';
+import { USE_CASES, useCase } from '../content/usecases';
+import { COMPARE, compare } from '../content/compare';
+import Logo from './Logo.astro';
+interface Props { lang: Lang; page: string }
+const { lang, page } = Astro.props;
+const c = t(lang);
+const f = c.footer;
+const p = (x: string) => pathFor(lang, x);
+const cols: { h: string; items: [string, string][] }[] = [
+  { h: f.product, items: [
+    SITE.downloadReady ? [c.cta.download, SITE.downloadUrl] : [c.cta.source, `${SITE.githubUrl}#install`],
+    [c.nav.docs, DOCS_PATH[lang]],
+    [f.skill, `${p('')}#open-source`],
+    [f.releases, releasesUrl],
+    [f.specs, p('platforms')],
+  ] },
+  { h: f.useCases, items: USE_CASES.map((s) => [useCase(s, lang).nav, p(s)] as [string, string]) },
+  { h: f.compare, items: COMPARE.map((s) => [f.vs.replace('{name}', compare(s, lang).name), p(`compare/${s}`)] as [string, string]) },
+  { h: f.project, items: [['GitHub', SITE.githubUrl], [f.discussions, discussionsUrl], [f.privacy, p('privacy')], [f.terms, p('terms')], [f.license, licenseUrl]] },
+];
+const name = lang === 'zh' ? SITE.nameZh : SITE.name;
+---
+<footer>
+  <div class="wrap">
+    <div class="fgrid">
+      <div><a class="logo" href={p('')}><Logo idPrefix="ft" />{name}</a><p class="ftag">{f.tag}</p></div>
+      {cols.map((col, i) => (
+        <nav aria-labelledby={`fcol-${i}`}>
+          <h2 id={`fcol-${i}`}>{col.h}</h2>
+          <ul>{col.items.map(([label, href]) => <li><a href={href}>{label}</a></li>)}</ul>
+        </nav>
+      ))}
+    </div>
+    <div class="fbase">
+      <span>© 2026 Reelfold · MIT</span>
+      <nav class="langs" aria-label={c.nav.lang}>
+        {LANGS.map((l) => (
+          <a href={pathFor(l, page)} hreflang={HREFLANG[l]} lang={HTML_LANG[l]} aria-current={l === lang ? 'page' : undefined} data-keep-hash>{LANG_NAME[l]}</a>
+        ))}
+      </nav>
+    </div>
+  </div>
+</footer>

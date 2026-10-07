@@ -1,0 +1,44 @@
+---
+// <picture> with AVIF + WebP at explicit widths (astro:assets / sharp), real width/height, lazy unless `priority`.
+// Optional art direction: `mobile` = a different crop used below `mobileMedia`.
+import { getImage } from 'astro:assets';
+import type { ImageMetadata } from 'astro';
+
+interface Props {
+  src: ImageMetadata;
+  alt: string;
+  widths: number[];
+  sizes: string;
+  priority?: boolean;
+  mobile?: ImageMetadata;
+  mobileWidths?: number[];
+  mobileMedia?: string;
+  class?: string;
+}
+const { src, alt, widths, sizes, priority = false, mobile, mobileWidths = [], mobileMedia = '(max-width: 700px)', class: cls } = Astro.props;
+const FORMATS = ['avif', 'webp'] as const;
+const QUALITY = { avif: 55, webp: 76 } as const;
+
+async function srcset(img: ImageMetadata, ws: number[], format: 'avif' | 'webp') {
+  const list = ws.filter((w) => w <= img.width);
+  if (!list.length) list.push(img.width);
+  const out = await Promise.all(list.map((w) => getImage({ src: img, width: w, format, quality: QUALITY[format] })));
+  return out.map((o, i) => `${o.src} ${list[i]}w`).join(', ');
+}
+const main = await Promise.all(FORMATS.map((f) => srcset(src, widths, f)));
+const mob = mobile ? await Promise.all(FORMATS.map((f) => srcset(mobile, mobileWidths.length ? mobileWidths : [mobile.width], f))) : null;
+const fallback = await getImage({ src, width: Math.min(widths[0], src.width), format: 'webp', quality: QUALITY.webp });
+---
+<picture class={cls}>
+  {mob && FORMATS.map((f, i) => <source type={`image/${f}`} media={mobileMedia} srcset={mob[i]} sizes="100vw" width={mobile!.width} height={mobile!.height} />)}
+  {FORMATS.map((f, i) => <source type={`image/${f}`} srcset={main[i]} sizes={sizes} />)}
+  <img
+    src={fallback.src}
+    alt={alt}
+    width={src.width}
+    height={src.height}
+    loading={priority ? 'eager' : 'lazy'}
+    decoding={priority ? 'sync' : 'async'}
+    fetchpriority={priority ? 'high' : undefined}
+  />
+</picture>

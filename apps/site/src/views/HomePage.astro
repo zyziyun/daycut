@@ -1,0 +1,12 @@
+---
+import Base from '../layouts/Base.astro';
+import Home from '../components/Home.astro';
+import { t, type Lang } from '../i18n';
+import { softwareApp, organization, faqPage } from '../lib/schema';
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+const c = t(lang);
+---
+<Base {lang} page="" title={c.meta.title} description={c.meta.description} jsonld={[softwareApp(lang), organization(), faqPage(c.faq.items)]}>
+  <Home {lang} />
+</Base>

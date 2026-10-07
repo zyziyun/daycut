@@ -16,6 +16,8 @@ const walk = (d) => readdirSync(d).forEach((f) => {
   statSync(p).isDirectory() ? walk(p) : p.endsWith('.html') && files.push(p);
 });
 walk('dist');
+// dist/docs (the docs site, copied in at deploy time) has its own copy rules
+for (let i = files.length - 1; i >= 0; i--) if (files[i].startsWith('dist/docs/')) files.splice(i, 1);
 let bad = 0;
 for (const f of files) {
   const text = readFileSync(f, 'utf8').replace(/<style[\s\S]*?<\/style>/g, '').replace(/<[^>]+>/g, ' ');

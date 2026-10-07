@@ -1,0 +1,12 @@
+---
+import { t, pathFor, type Lang } from '../i18n';
+interface Props { lang: Lang; trail: [string, string | null][] }
+const { lang, trail } = Astro.props;
+const c = t(lang);
+const all: [string, string | null][] = [[c.page.home, ''], ...trail];
+---
+<nav class="wrap crumbs" aria-label={c.nav.breadcrumb}>
+  <ol>
+    {all.map(([name, page]) => <li>{page !== null ? <a href={pathFor(lang, page)}>{name}</a> : <span aria-current="page">{name}</span>}</li>)}
+  </ol>
+</nav>

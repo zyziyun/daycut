@@ -1,0 +1,6 @@
+---
+import ComparePage from '../../../views/ComparePage.astro';
+import { COMPARE } from '../../../content/compare';
+export const getStaticPaths = () => COMPARE.map((tool) => ({ params: { tool } }));
+---
+<ComparePage lang="fr" slug={Astro.params.tool!} />

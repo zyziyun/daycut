@@ -1,232 +1,157 @@
-// English copy. Writing rules: see README "Copy rules"; `npm run check:copy` enforces them.
-import type { zh } from './zh';
+// English copy (the shape every other language follows: zh.ts, fr.ts, es.ts are typed as `Dict`).
+// Writing rules: README "Copy rules"; `npm run check:copy` enforces them on the built HTML.
 
-type Widen<T> = T extends string
-  ? string
-  : T extends readonly (infer U)[]
-    ? readonly Widen<U>[]
-    : T extends object
-      ? { readonly [K in keyof T]: Widen<T[K]> }
-      : T;
-
-export const en: Widen<typeof zh> = {
-  lang: 'en',
-  htmlLang: 'en',
+export const en = {
   meta: {
-    title: 'Reelfold · One recording, folded out to every platform',
+    title: 'Reelfold: turn one recording into clips for 20 platforms (free, open source, Mac)',
     description:
-      'Reelfold is a free, open-source (MIT) Mac app that turns one recording into platform-ready clips. Describe the batch, AI plans it, the edits run on your Mac, you review only what the checks flag, and it fills in each post for YouTube, TikTok, Instagram, X, LinkedIn, Xiaohongshu, Douyin, Bilibili and more. You press publish.',
+      'Free, open-source Mac app that turns one long video into platform-ready clips for YouTube Shorts, TikTok, Instagram, Xiaohongshu, Douyin, Bilibili and more. Runs locally with the AI you choose.',
+    ogAlt: 'Reelfold. One recording. Every platform. Free and open source, for Apple Silicon Macs.',
   },
   nav: {
+    skip: 'Skip to content',
+    docs: 'Docs',
+    main: 'Main',
     how: 'How it works',
-    uses: 'Who it’s for',
-    app: 'Mac app',
-    proof: 'Real numbers',
-    local: 'Local-first',
+    batch: 'A real batch',
     oss: 'Open source',
     faq: 'FAQ',
-    langGroup: 'Language',
-    skip: 'Skip to content',
+    lang: 'Language',
+    footer: 'Footer',
+    breadcrumb: 'Breadcrumb',
   },
   cta: {
     download: 'Download for macOS',
-    soon: 'macOS app: coming soon',
-    soonNote: 'The first macOS release is coming soon. Until then, build it from source or use the engine as a Claude Code skill.',
+    downloadShort: 'Download',
     star: 'Star on GitHub',
+    starShort: 'Star',
     source: 'Build from source',
-    windows: 'Windows: later',
+    fine: 'Apple Silicon · MIT licensed · also installs as a Claude Code skill',
+    fineSoon: 'macOS app coming soon · MIT licensed · works today as a Claude Code skill',
   },
   hero: {
-    eyebrow: 'Free and open source (MIT) · macOS app · Apple Silicon',
-    titleA: 'Describe it. Drop the footage.',
-    titleB: 'Get every cut, for every platform.',
-    sub: 'One recording, folded out to every platform. Say what you want in plain words and drop in an interview, a podcast, a lecture or a client batch. AI plans the clips, the whole batch runs on your Mac, and you review only what the checks flag. Every platform gets its own video, cover and post copy; you press publish.',
-    points: [
-      'Your footage stays on your Mac',
-      'You review only the clips the checks flag',
-      'Assisted publishing: it fills in the post, you press publish',
-    ],
-    stickerA: 'Xiaohongshu 3:4',
-    stickerB: 'QC passed',
-    stickerC: '1 recording → 96 files',
-    frameAlts: [
-      'Talking-head short with captions and a notes panel',
-      'Lecture slice showing code with a title band about hybrid retrieval',
-      'Knowledge video with two speakers and a notes panel',
-    ],
+    eyebrow: 'Free and open source · for Apple Silicon Macs',
+    h1a: 'One recording.',
+    h1b: 'Every platform.',
+    sub: 'Reelfold turns a long video into clips ready for twenty platforms. Describe what you want in a sentence. It plans the cuts, runs the whole batch on your Mac, and only asks you about the clips its checks flag.',
+    fig: 'Home. Six things need you, about fourteen minutes.',
+    figAlt: 'The Reelfold home screen: a request box, an inbox of six items that need a person, and the batches running on this Mac.',
   },
+  fig: 'Fig.',
   how: {
-    kicker: 'How it works',
-    title: 'One recording in, a whole batch out',
+    k: 'How it works',
+    t: 'You describe it. Reelfold does the batch.',
+    l: 'Five steps from one recording to a week of posts. You stay in charge of two of them.',
     steps: [
-      {
-        title: 'Describe',
-        body: 'Drop in a recording (an interview, podcast, lecture, livestream replay or a client’s footage) and say in plain words how many clips you want, for which platforms, in what style.',
-      },
-      {
-        title: 'AI plans',
-        body: 'AI picks the segments by topic and writes a plan you can read and change: which part becomes which clip, its title, and where it goes.',
-      },
-      {
-        title: 'Batch runs',
-        body: 'The whole batch runs in parallel on your Mac: pauses, filler words and repeats removed; captions, title bands, code zooms and notes panels added.',
-      },
-      {
-        title: 'Review exceptions',
-        body: 'Every file is checked for loudness, audio/video sync, missing caption words, text under app buttons, clip length and title length. Only the red ones land in your review grid; fix them in the transcript and re-render just those.',
-      },
-      {
-        title: 'Assisted publishing',
-        body: 'Each platform gets its own export, cover, title, caption, tags and a reminder to add the AI-content label. Reelfold fills in the upload page; you check it and press publish. It never posts on its own.',
-      },
+      { label: 'Describe', t: 'Say what you want.', b: '“Cut this lecture into two-minute clips for Xiaohongshu and Shorts, keep the code readable.” Drop in a file, or a whole folder.' },
+      { label: 'Plan', t: 'See the plan before anything runs.', b: 'Reelfold proposes the clips, formats and an AI cost estimate. Change a line, or approve it.' },
+      { label: 'Batch', t: 'It runs on your Mac.', b: 'Cutting, captions, covers, loudness and one export per platform, all rendered locally.' },
+      { label: 'Review', t: 'Look only at what’s flagged.', b: 'Every clip goes through automatic checks for length, captions, framing and loudness. You see the few that need a person.' },
+      { label: 'Publish', t: 'You press publish.', b: 'Reelfold fills in each platform’s upload page, cover and copy included. It never posts on its own.' },
     ],
-    platformsLabel: 'Platforms',
-    platforms: ['YouTube 16:9 + Shorts 9:16', 'TikTok 9:16', 'Instagram Reels 9:16 + feed 4:5', 'X 16:9 / 1:1 / 9:16', 'Facebook Reels 9:16 + feed 4:5', 'LinkedIn 16:9 / 1:1', 'Threads 9:16', 'Reddit 16:9', 'Pinterest 9:16', 'Snapchat Spotlight 9:16', 'Xiaohongshu 3:4', 'Douyin 9:16', 'WeChat Channels 9:16', 'Bilibili 16:9', 'Kuaishou 9:16', 'Weibo 16:9', 'Zhihu 16:9', 'Dailymotion 16:9', 'Kwai 9:16'],
+    figReview: 'Review. Only what the checks flagged.',
+    figReviewAlt: 'Review screen: four suggested cuts in one clip, each with a before and after preview and a checkbox.',
+    figPublish: 'Publish. A week, scheduled; you press publish.',
+    figPublishAlt: 'Publish screen: a week calendar with clips placed per day and per platform, each marked ready, draft or posted.',
   },
-  uses: {
-    kicker: 'Who it’s for',
-    title: 'For people who cut in batches and post everywhere',
-    lede: 'One engine, many kinds of footage. Each workflow was tested on real recordings.',
+  who: {
+    k: 'Made for',
+    t: 'People who post the same idea in many places.',
     items: [
-      { title: 'Batch creators', body: 'Record once, publish all week. One session becomes a set of clips, each exported in the shape, length and loudness every platform you post on expects.' },
-      { title: 'Interviews and podcasts', body: 'Pull many clips out of one long conversation, with captions and speaker framing, and a separate export per platform. Guests can be masked and name labels blurred.' },
-      { title: 'Studios doing client batches', body: 'Run several clients’ batches side by side on one board. Keep each client’s style and glossary, with a QC report for every batch.' },
-      { title: 'Talking-head', body: 'Remove pauses, filler words and repeats, then add captions, keyword pops, a chapter progress bar and a cover.' },
-      { title: 'Course slicing', body: 'Turn a long lecture into vertical slices or episodes, with title bands, code crops that follow the text and chapter cards. Student voices can be changed.' },
-      { title: 'Explainers', body: '3Blue1Brown-style explainers with AI narration, animated scenes and bilingual captions, made from a script or a topic.' },
+      { slug: 'course-slicing', t: 'Course and lecture creators', b: 'Turn a recorded class into a series of short lessons, code and slides kept readable.', more: 'Course slicing' },
+      { slug: 'podcast-clips', t: 'Podcast and interview clips', b: 'Pull the strongest answers from a long conversation, with captions and faces handled.', more: 'Podcast clips' },
+      { slug: 'studios', t: 'Studios with client batches', b: 'Run the same treatment across many recordings and hand back one folder per platform.', more: 'Batch workflows' },
     ],
   },
-  app: {
-    kicker: 'Desktop app',
-    title: 'Reelfold for Mac',
-    lede: 'Describe the batch in plain words. Reelfold plans it, runs the jobs in parallel on your own computer and tracks them on a board. Review clips in a grid and cut by editing the transcript. When it’s time to post, it fills in each platform’s upload page in a built-in browser, and you press publish yourself.',
-    note: 'Free and open source (MIT). Apple Silicon Macs only for now. AI runs on your own Claude Code or Codex subscription, your API keys, or a local model.',
-    board: {
-      cols: ['Queued', 'Rendering', 'QC', 'Review', 'Approved'],
-      cards: ['ep03 · RRF ranks only', 'ep06 · small chunks', 'ep11 · which metric first', 'ep14 · parent-child', 'ep19 · reranking'],
-      green: 'green',
-      red: 'red · word may be lost at seam',
-      caption: 'Illustration of the batch board (not a screenshot).',
-    },
+  batch: {
+    k: 'A real batch',
+    t: 'One lecture, measured.',
+    l: 'A 72-minute recorded lecture, run once, start to finish. Your numbers will vary with length and model.',
+    nums: [
+      { v: '72', u: 'min', l: 'one recorded lecture in' },
+      { v: '24', u: '', l: 'clips planned and cut' },
+      { v: '96', u: '', l: 'files out, 24 clips × 4 formats' },
+      { v: '$0.73', u: '', l: 'total AI cost for the run' },
+      { v: '21', u: '/24', l: 'passed every check on their own' },
+    ],
+    foot: 'The other three were flagged for a person to look at. Everything else was ready to post.',
+    passed: 'passed',
+    flagged: 'flagged',
+    cap: '8 of the 24 clips, with where each starts in the lecture',
+    clipAlt: 'Cover of clip {n} of 24: “{title}”',
   },
-  proof: {
-    kicker: 'Real numbers',
-    title: 'One real batch with the open-source tool',
-    lede: 'We ran one of our own 72-minute lectures through it as a single batch. Here is what worked and what didn’t.',
-    stats: [
-      { value: '96', label: 'finished files', note: '24 clips × 4 platform formats, each with a cover and post copy' },
-      { value: '$0.73', label: 'AI API cost for the batch', note: 'About $0.03 per clip; transcription ran locally' },
-      { value: '21 / 24', label: 'clips passed automatic QC', note: 'All 3 red clips were at edit seams and went to the review grid' },
-      { value: '3–4 h', label: 'first-run machine time', note: 'After a fix, re-running just the 13 affected clips took 18 minutes' },
-    ],
-    caveatsTitle: 'What isn’t good enough yet',
-    caveats: [
-      'Chinese captions still get some words wrong. A glossary fixes some of them; you catch the rest in review.',
-      'Filler-word cuts still ask you too many yes/no questions (about 15 per clip in this batch). We’re working on letting the low-risk ones through automatically.',
-      'When on-screen text in the source is small, it’s hard to read after a vertical crop.',
-    ],
-    stripCaption: 'Frames from six kinds of edits made with the same tools: talking head, lecture slices, photo story, travel vlog, podcast with face masking and explainer.',
-    stripAlts: [
-      'Talking-head short with captions and a notes panel',
-      'Lecture slice with code and a title band',
-      'Photo story comparing a draft and the finished painting',
-      'Travel vlog with a place tag and confetti effect',
-      'Podcast clip with two speakers and a notes panel',
-      'Explainer animating CUDA thread indexing with bilingual captions',
-    ],
-    sheets: [
-      {
-        img: 'longform-slices',
-        alt: 'Contact sheet of lecture slices: title bands, cropped code screenshots, notes panels and chapter cards',
-        caption: 'Lecture slices: vertical clips cut from the 72-minute lecture. Title bands, code crops that follow the text, notes panels, chapter cards.',
-      },
-      {
-        img: 'talkinghead',
-        alt: 'Contact sheet of a talking-head edit: chapter progress bar, notes panels, keyword pops',
-        caption: 'Talking-head edit: chapter progress bar, notes panels, keyword pops.',
-      },
-      {
-        img: 'explainer-vertical',
-        alt: 'Contact sheet of an explainer: animated scenes with English and Chinese captions',
-        caption: 'Explainer: AI narration, English and Chinese captions, animated scenes.',
-      },
-    ],
-  },
-  deliverables: {
-    kicker: 'Every batch',
-    title: 'What every clip comes with',
-    items: [
-      { title: 'Per-platform videos', body: 'YouTube long-form 16:9 and Shorts 9:16; TikTok, Instagram and Facebook Reels, Snapchat and Pinterest 9:16; X, LinkedIn and Reddit in the shape closest to your video; Xiaohongshu 3:4; Douyin, WeChat Channels and Kuaishou 9:16; Bilibili, Weibo, Zhihu and Dailymotion 16:9. Each one is exported separately at that platform’s loudness level, with copy that follows its rules.' },
-      { title: 'Captions', body: 'Burned-in captions that stay clear of each app’s buttons and title area. SRT files too, if you want them.' },
-      { title: 'Covers', body: 'One per clip, sized and cropped for each platform’s feed.' },
-      { title: 'Post copy', body: 'A title, caption and tags for every clip, within each platform’s limits and ready for you to edit.' },
-      { title: 'QC report', body: 'Results for every file: what passed, why anything was marked red, and what you changed.' },
-      { title: 'Publishing checklist', body: 'A suggested posting schedule and a reminder to tick the AI-content label on each platform.' },
-    ],
+  plat: {
+    k: 'Platforms',
+    t: 'Twenty platforms, each in its own shape.',
+    l: 'Right aspect ratio, loudness, cover size and copy limits for every one, including the Chinese platforms most tools skip.',
+    more: 'Every size and limit',
   },
   local: {
-    kicker: 'Local-first',
-    title: 'Runs on your Mac, with the AI you choose',
+    k: 'Local first',
+    t: 'Your Mac. Your AI. Your accounts.',
     items: [
-      { title: 'Footage stays local', body: 'Video and audio files stay on your computer; transcription and rendering run there too. Your footage never reaches us.' },
-      { title: 'Bring your own AI', body: 'Use the Claude Code or Codex subscription you already have, API keys for Anthropic, OpenAI, DeepSeek, Qwen, Kimi and others, or a local model through Ollama. Only transcript text, a few keyframes and titles go to the AI you pick.' },
-      { title: 'Costs you can see', body: 'About $0.03 of AI cost per clip in our test batch. With a subscription or a local model there is no separate API bill.' },
+      { t: 'Runs on your Mac', b: 'Video is cut, captioned and rendered on your own machine. No upload queue, no render credits.' },
+      { t: 'Bring your own AI', b: 'Use the Claude Code or Codex subscription you already pay for, an API key, or a local model.' },
+      { t: 'You press publish', b: 'You sign in to each platform yourself, inside the app. Reelfold never posts without you pressing publish.' },
     ],
   },
   create: {
-    kicker: 'Create',
-    badge: 'Coming',
-    title: 'From an idea to an AI video',
-    body: 'Next up is a Create page: generate video from a script or idea (Kling, Seedance, MiniMax) with a shot list, a credit budget and take review, then export it per platform like any other batch. The engine’s ai-video workflow already works today.',
+    k: 'Coming next',
+    t: 'Create.',
+    l: 'AI video for the things you can’t film: series ads with the same cast every episode, sketches, product spots. Plus a recording studio with a teleprompter and automatic retake cleanup.',
+    tag: 'In development',
+    alt: 'Create, in development: a home screen for AI series, sketches and product spots.',
   },
-  oss: {
-    kicker: 'Open source',
-    title: 'All of it is open source, MIT',
-    lede: 'The desktop app, this site and the editing engine live in one repository. The engine also works on its own as a Claude Code skill called video-studio: describe the edit in English or Chinese. It covers 12 workflows, including talking-head shorts, lecture slices, podcast clips with face masking, explainers and vlogs, plus covers, captions, loudness and multi-platform export.',
-    tested: 'Each workflow was tested on real footage. Known issues are listed in VALIDATION.md in the repo.',
-    button: 'View on GitHub',
-    skillLabel: 'Use it as a Claude Code skill',
-    sourceLabel: 'Run the Mac app from source',
+  os: {
+    k: 'Open source',
+    t: 'MIT licensed. Built in the open.',
+    l: 'The app and the engine underneath it are on GitHub. Read the code, file an issue, or teach it a new workflow.',
+    links: [
+      { t: 'Star on GitHub', b: 'Follow releases and the roadmap' },
+      { t: 'Discussions', b: 'Ask questions, share batches' },
+      { t: 'Contribute', b: 'Workflows, platforms, translations' },
+    ],
+    skillT: 'Prefer the terminal?',
+    skillL: 'The same engine runs as a Claude Code skill.',
   },
   faq: {
-    kicker: 'FAQ',
-    title: 'Questions',
+    k: 'FAQ',
+    t: 'Questions, answered plainly.',
     items: [
-      {
-        q: 'Is it free?',
-        a: 'Yes. Reelfold is open source under the MIT licence: the desktop app, the engine and this site are all on GitHub. You only pay for the AI service you choose, or nothing extra if you use a subscription you already have or a local model.',
-      },
-      {
-        q: 'Which AI does it use?',
-        a: 'Your choice: your logged-in Claude Code or Codex subscription (no API key needed), API keys for Anthropic, OpenAI, DeepSeek, Qwen, Kimi, GLM, OpenRouter, Gemini and others, or local models through Ollama, LM Studio or vLLM. You can pick a different one per task.',
-      },
-      {
-        q: 'Where does my footage go?',
-        a: 'Video and audio stay on your computer; transcription and rendering run locally. To pick segments, write titles and proofread captions, transcript text, a few keyframe screenshots and titles are sent to the AI service you configure, under its data policy. AI voiceover or AI video generation sends text and reference images to that vendor. The MediaPipe component used by the engine may send anonymous usage statistics to Google; the app explains how to turn that off.',
-      },
-      {
-        q: 'Does it post for me?',
-        a: 'No. Reelfold opens each platform’s own upload page in a built-in browser and fills in the video, cover, title, caption and tags. You press publish.',
-      },
-      {
-        q: 'Windows?',
-        a: 'Apple Silicon Macs only for now; Windows comes later. The engine on its own (the Claude Code skill) runs on macOS and Linux.',
-      },
-      {
-        q: 'Do I need to label AI content when posting?',
-        a: 'YouTube, TikTok, Instagram, Facebook, Xiaohongshu, Douyin, WeChat Channels, Bilibili and others have disclosure rules for AI-generated or AI-edited content; follow each platform’s current rules. The publishing checklist reminds you to tick the AI-content label by default.',
-      },
-      {
-        q: 'What about other people in my videos (guests, students)?',
-        a: 'Get their consent to use their face and voice first. Where you don’t have it, you can cover faces with stickers, blur name labels, change students’ voices, or leave that part out.',
-      },
+      { q: 'Is it really free?', a: 'Yes. Reelfold is MIT licensed and free to use. The only cost is the AI you connect: the 72-minute lecture above used $0.73. With a subscription you already have, or a local model, there’s no extra bill.' },
+      { q: 'What do I need?', a: 'A Mac with Apple Silicon, and an AI: a Claude Code or Codex subscription, an API key, or a local model. A Windows version comes later.' },
+      { q: 'Does my video leave my Mac?', a: 'Cutting and rendering happen on your Mac. The AI you connect sees what it needs to plan, such as the transcript, under that provider’s terms. With a local model, nothing leaves.' },
+      { q: 'Will it post for me?', a: 'No. It prepares each upload page with the video, cover and copy filled in. You check it and press publish.' },
+      { q: 'How is it different from Opus Clip or Descript?', a: 'Reelfold is built for batches: one recording into many clips across twenty platforms, rendered locally, with the AI you choose. It’s open source and free. Descript is a great editor for one video at a time; Reelfold is for the week of posts after it.' },
+      { q: 'Do I need to label AI content?', a: 'Many platforms ask you to disclose AI-edited or AI-generated content. Reelfold’s publishing checklist reminds you on each one.' },
     ],
   },
+  final: { t: 'Make the week from one recording.' },
   footer: {
-    feedback: 'Feedback · GitHub Discussions',
+    tag: 'Turns one recording into many platform-ready clips. Free and open source.',
+    product: 'Product',
+    useCases: 'Use cases',
+    compare: 'Compare',
+    project: 'Project',
+    skill: 'Claude Code skill',
+    releases: 'Releases',
+    specs: 'Platform specs',
+    discussions: 'Discussions',
     privacy: 'Privacy',
     terms: 'Terms',
-    note: 'This site uses no cookies, analytics scripts or third-party fonts.',
+    license: 'MIT License',
+    vs: 'vs {name}',
+  },
+  page: {
+    home: 'Home',
+    useCases: 'Use cases',
+    compare: 'Compare',
+    related: 'Related',
+    faqT: 'Questions',
+    lastChecked: 'Last checked',
+    sources: 'Sources',
+    getStarted: 'Try it on your next recording.',
+    getStartedL: 'Free and open source. Your video stays on your Mac.',
   },
   legal: {
     draft: 'Draft, review before publishing',
@@ -235,5 +160,27 @@ export const en: Widen<typeof zh> = {
     back: 'Back to home',
     privacyTitle: 'Privacy policy',
     termsTitle: 'Terms of use',
+    englishOnly: '',
   },
+  notFound: {
+    title: 'Page not found',
+    t: 'This page isn’t here.',
+    l: 'The link may be old, or the page moved when the site was rebuilt.',
+    home: 'Go to the home page',
+  },
+  platformNames: {
+    youtube: 'YouTube', 'youtube-shorts': 'YouTube Shorts', tiktok: 'TikTok', instagram: 'Instagram', x: 'X',
+    facebook: 'Facebook', linkedin: 'LinkedIn', threads: 'Threads', reddit: 'Reddit', pinterest: 'Pinterest',
+    snapchat: 'Snapchat', xiaohongshu: 'Xiaohongshu', douyin: 'Douyin', 'wechat-channels': 'WeChat Channels',
+    bilibili: 'Bilibili', kuaishou: 'Kuaishou', weibo: 'Weibo', zhihu: 'Zhihu', dailymotion: 'Dailymotion', kwai: 'Kwai',
+  } as Record<string, string>,
 };
+
+type Widen<T> = T extends string
+  ? string
+  : T extends readonly (infer U)[]
+    ? Widen<U>[]
+    : T extends object
+      ? { [K in keyof T]: Widen<T[K]> }
+      : T;
+export type Dict = Widen<typeof en>;

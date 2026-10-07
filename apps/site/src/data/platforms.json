@@ -1,0 +1,877 @@
+{
+ "checked": "2026-10-06",
+ "source": "lib/vstudio/platform.py",
+ "platforms": [
+  {
+   "id": "youtube",
+   "group": "global",
+   "label": "YouTube (long-form)",
+   "orientations": [
+    {
+     "name": "horizontal",
+     "w": 1920,
+     "h": 1080,
+     "aspect": "16:9",
+     "cover": {
+      "w": 1280,
+      "h": 720,
+      "aspect": "16:9"
+     }
+    }
+   ],
+   "length": {
+    "min": 1,
+    "max": 43200,
+    "sweet": [
+     420,
+     1200
+    ]
+   },
+   "titleMax": 100,
+   "descMax": 5000,
+   "hashtagsMax": 15,
+   "linksClickable": true,
+   "chapters": true,
+   "lufs": -14.0
+  },
+  {
+   "id": "youtube-shorts",
+   "group": "global",
+   "label": "YouTube Shorts",
+   "orientations": [
+    {
+     "name": "vertical",
+     "w": 1080,
+     "h": 1920,
+     "aspect": "9:16",
+     "cover": {
+      "w": 1080,
+      "h": 1920,
+      "aspect": "9:16"
+     }
+    }
+   ],
+   "length": {
+    "min": 3,
+    "max": 180,
+    "sweet": [
+     20,
+     60
+    ]
+   },
+   "titleMax": 100,
+   "descMax": 5000,
+   "hashtagsMax": 3,
+   "linksClickable": false,
+   "chapters": false,
+   "lufs": -14.0
+  },
+  {
+   "id": "tiktok",
+   "group": "global",
+   "label": "TikTok",
+   "orientations": [
+    {
+     "name": "vertical",
+     "w": 1080,
+     "h": 1920,
+     "aspect": "9:16",
+     "cover": {
+      "w": 1080,
+      "h": 1920,
+      "aspect": "9:16"
+     }
+    }
+   ],
+   "length": {
+    "min": 3,
+    "max": 3600,
+    "sweet": [
+     21,
+     60
+    ]
+   },
+   "titleMax": 55,
+   "descMax": 4000,
+   "hashtagsMax": 30,
+   "linksClickable": false,
+   "chapters": false,
+   "lufs": -14.0
+  },
+  {
+   "id": "instagram",
+   "group": "global",
+   "label": "Instagram",
+   "orientations": [
+    {
+     "name": "reels",
+     "w": 1080,
+     "h": 1920,
+     "aspect": "9:16",
+     "cover": {
+      "w": 1080,
+      "h": 1920,
+      "aspect": "9:16"
+     }
+    },
+    {
+     "name": "feed",
+     "w": 1080,
+     "h": 1350,
+     "aspect": "4:5",
+     "cover": {
+      "w": 1080,
+      "h": 1350,
+      "aspect": "4:5"
+     }
+    }
+   ],
+   "length": {
+    "min": 3,
+    "max": 1200,
+    "sweet": [
+     15,
+     90
+    ]
+   },
+   "titleMax": null,
+   "descMax": 2200,
+   "hashtagsMax": 5,
+   "linksClickable": false,
+   "chapters": false,
+   "lufs": -14.0
+  },
+  {
+   "id": "x",
+   "group": "global",
+   "label": "X (Twitter)",
+   "orientations": [
+    {
+     "name": "horizontal",
+     "w": 1920,
+     "h": 1080,
+     "aspect": "16:9",
+     "cover": {
+      "w": 1920,
+      "h": 1080,
+      "aspect": "16:9"
+     }
+    },
+    {
+     "name": "square",
+     "w": 1080,
+     "h": 1080,
+     "aspect": "1:1",
+     "cover": {
+      "w": 1080,
+      "h": 1080,
+      "aspect": "1:1"
+     }
+    },
+    {
+     "name": "vertical",
+     "w": 1080,
+     "h": 1920,
+     "aspect": "9:16",
+     "cover": {
+      "w": 1080,
+      "h": 1920,
+      "aspect": "9:16"
+     }
+    }
+   ],
+   "length": {
+    "min": 0.5,
+    "max": 140,
+    "sweet": [
+     15,
+     90
+    ]
+   },
+   "titleMax": null,
+   "descMax": 280,
+   "hashtagsMax": 2,
+   "linksClickable": true,
+   "chapters": false,
+   "lufs": -14.0
+  },
+  {
+   "id": "facebook",
+   "group": "global",
+   "label": "Facebook",
+   "orientations": [
+    {
+     "name": "reels",
+     "w": 1080,
+     "h": 1920,
+     "aspect": "9:16",
+     "cover": {
+      "w": 1080,
+      "h": 1920,
+      "aspect": "9:16"
+     }
+    },
+    {
+     "name": "feed",
+     "w": 1080,
+     "h": 1350,
+     "aspect": "4:5",
+     "cover": {
+      "w": 1080,
+      "h": 1350,
+      "aspect": "4:5"
+     }
+    },
+    {
+     "name": "horizontal",
+     "w": 1920,
+     "h": 1080,
+     "aspect": "16:9",
+     "cover": {
+      "w": 1920,
+      "h": 1080,
+      "aspect": "16:9"
+     }
+    }
+   ],
+   "length": {
+    "min": 3,
+    "max": 14400,
+    "sweet": [
+     15,
+     90
+    ]
+   },
+   "titleMax": null,
+   "descMax": 2200,
+   "hashtagsMax": 5,
+   "linksClickable": true,
+   "chapters": false,
+   "lufs": -14.0
+  },
+  {
+   "id": "linkedin",
+   "group": "global",
+   "label": "LinkedIn",
+   "orientations": [
+    {
+     "name": "horizontal",
+     "w": 1920,
+     "h": 1080,
+     "aspect": "16:9",
+     "cover": {
+      "w": 1920,
+      "h": 1080,
+      "aspect": "16:9"
+     }
+    },
+    {
+     "name": "square",
+     "w": 1080,
+     "h": 1080,
+     "aspect": "1:1",
+     "cover": {
+      "w": 1080,
+      "h": 1080,
+      "aspect": "1:1"
+     }
+    },
+    {
+     "name": "feed",
+     "w": 1080,
+     "h": 1350,
+     "aspect": "4:5",
+     "cover": {
+      "w": 1080,
+      "h": 1350,
+      "aspect": "4:5"
+     }
+    }
+   ],
+   "length": {
+    "min": 3,
+    "max": 900,
+    "sweet": [
+     30,
+     120
+    ]
+   },
+   "titleMax": null,
+   "descMax": 3000,
+   "hashtagsMax": 3,
+   "linksClickable": true,
+   "chapters": false,
+   "lufs": -14.0
+  },
+  {
+   "id": "threads",
+   "group": "global",
+   "label": "Threads",
+   "orientations": [
+    {
+     "name": "vertical",
+     "w": 1080,
+     "h": 1920,
+     "aspect": "9:16",
+     "cover": {
+      "w": 1080,
+      "h": 1920,
+      "aspect": "9:16"
+     }
+    },
+    {
+     "name": "horizontal",
+     "w": 1920,
+     "h": 1080,
+     "aspect": "16:9",
+     "cover": {
+      "w": 1920,
+      "h": 1080,
+      "aspect": "16:9"
+     }
+    }
+   ],
+   "length": {
+    "min": 1,
+    "max": 300,
+    "sweet": [
+     15,
+     90
+    ]
+   },
+   "titleMax": null,
+   "descMax": 500,
+   "hashtagsMax": 1,
+   "linksClickable": true,
+   "chapters": false,
+   "lufs": -14.0
+  },
+  {
+   "id": "reddit",
+   "group": "global",
+   "label": "Reddit",
+   "orientations": [
+    {
+     "name": "horizontal",
+     "w": 1920,
+     "h": 1080,
+     "aspect": "16:9",
+     "cover": {
+      "w": 1920,
+      "h": 1080,
+      "aspect": "16:9"
+     }
+    },
+    {
+     "name": "square",
+     "w": 1080,
+     "h": 1080,
+     "aspect": "1:1",
+     "cover": {
+      "w": 1080,
+      "h": 1080,
+      "aspect": "1:1"
+     }
+    },
+    {
+     "name": "vertical",
+     "w": 1080,
+     "h": 1920,
+     "aspect": "9:16",
+     "cover": {
+      "w": 1080,
+      "h": 1920,
+      "aspect": "9:16"
+     }
+    }
+   ],
+   "length": {
+    "min": 1,
+    "max": 900,
+    "sweet": [
+     15,
+     120
+    ]
+   },
+   "titleMax": 300,
+   "descMax": 40000,
+   "hashtagsMax": 0,
+   "linksClickable": true,
+   "chapters": false,
+   "lufs": -14.0
+  },
+  {
+   "id": "pinterest",
+   "group": "global",
+   "label": "Pinterest",
+   "orientations": [
+    {
+     "name": "vertical",
+     "w": 1080,
+     "h": 1920,
+     "aspect": "9:16",
+     "cover": {
+      "w": 1080,
+      "h": 1920,
+      "aspect": "9:16"
+     }
+    },
+    {
+     "name": "feed",
+     "w": 1000,
+     "h": 1500,
+     "aspect": "2:3",
+     "cover": {
+      "w": 1000,
+      "h": 1500,
+      "aspect": "2:3"
+     }
+    },
+    {
+     "name": "square",
+     "w": 1080,
+     "h": 1080,
+     "aspect": "1:1",
+     "cover": {
+      "w": 1080,
+      "h": 1080,
+      "aspect": "1:1"
+     }
+    }
+   ],
+   "length": {
+    "min": 4,
+    "max": 900,
+    "sweet": [
+     6,
+     60
+    ]
+   },
+   "titleMax": 100,
+   "descMax": 500,
+   "hashtagsMax": 0,
+   "linksClickable": false,
+   "chapters": false,
+   "lufs": -14.0
+  },
+  {
+   "id": "snapchat",
+   "group": "global",
+   "label": "Snapchat Spotlight",
+   "orientations": [
+    {
+     "name": "vertical",
+     "w": 1080,
+     "h": 1920,
+     "aspect": "9:16",
+     "cover": {
+      "w": 1080,
+      "h": 1920,
+      "aspect": "9:16"
+     }
+    }
+   ],
+   "length": {
+    "min": 5,
+    "max": 60,
+    "sweet": [
+     10,
+     60
+    ]
+   },
+   "titleMax": null,
+   "descMax": 160,
+   "hashtagsMax": 3,
+   "linksClickable": false,
+   "chapters": false,
+   "lufs": -14.0
+  },
+  {
+   "id": "xiaohongshu",
+   "group": "zh",
+   "label": "小红书 RedNote",
+   "orientations": [
+    {
+     "name": "vertical",
+     "w": 1080,
+     "h": 1440,
+     "aspect": "3:4",
+     "cover": {
+      "w": 1080,
+      "h": 1440,
+      "aspect": "3:4"
+     }
+    },
+    {
+     "name": "full",
+     "w": 1080,
+     "h": 1920,
+     "aspect": "9:16",
+     "cover": {
+      "w": 1080,
+      "h": 1440,
+      "aspect": "3:4"
+     }
+    },
+    {
+     "name": "horizontal",
+     "w": 1920,
+     "h": 1080,
+     "aspect": "16:9",
+     "cover": {
+      "w": 1920,
+      "h": 1080,
+      "aspect": "16:9"
+     }
+    }
+   ],
+   "length": {
+    "min": 5,
+    "max": 900,
+    "sweet": [
+     30,
+     180
+    ]
+   },
+   "titleMax": 20,
+   "descMax": 1000,
+   "hashtagsMax": 10,
+   "linksClickable": false,
+   "chapters": false,
+   "lufs": -14.0
+  },
+  {
+   "id": "douyin",
+   "group": "zh",
+   "label": "抖音 Douyin",
+   "orientations": [
+    {
+     "name": "vertical",
+     "w": 1080,
+     "h": 1920,
+     "aspect": "9:16",
+     "cover": {
+      "w": 1080,
+      "h": 1920,
+      "aspect": "9:16"
+     }
+    },
+    {
+     "name": "horizontal",
+     "w": 1920,
+     "h": 1080,
+     "aspect": "16:9",
+     "cover": {
+      "w": 1920,
+      "h": 1080,
+      "aspect": "16:9"
+     }
+    }
+   ],
+   "length": {
+    "min": 3,
+    "max": 900,
+    "sweet": [
+     15,
+     60
+    ]
+   },
+   "titleMax": 55,
+   "descMax": 1000,
+   "hashtagsMax": 10,
+   "linksClickable": false,
+   "chapters": false,
+   "lufs": -14.0
+  },
+  {
+   "id": "wechat-channels",
+   "group": "zh",
+   "label": "视频号 WeChat Channels",
+   "orientations": [
+    {
+     "name": "vertical",
+     "w": 1080,
+     "h": 1920,
+     "aspect": "9:16",
+     "cover": {
+      "w": 1080,
+      "h": 1440,
+      "aspect": "3:4"
+     }
+    },
+    {
+     "name": "horizontal",
+     "w": 1920,
+     "h": 1080,
+     "aspect": "16:9",
+     "cover": {
+      "w": 1920,
+      "h": 1080,
+      "aspect": "16:9"
+     }
+    }
+   ],
+   "length": {
+    "min": 3,
+    "max": 28800,
+    "sweet": [
+     15,
+     120
+    ]
+   },
+   "titleMax": 16,
+   "descMax": 1000,
+   "hashtagsMax": 10,
+   "linksClickable": false,
+   "chapters": false,
+   "lufs": -14.0
+  },
+  {
+   "id": "bilibili",
+   "group": "zh",
+   "label": "B站 Bilibili",
+   "orientations": [
+    {
+     "name": "horizontal",
+     "w": 1920,
+     "h": 1080,
+     "aspect": "16:9",
+     "cover": {
+      "w": 1146,
+      "h": 717,
+      "aspect": "16:10"
+     }
+    },
+    {
+     "name": "vertical",
+     "w": 1080,
+     "h": 1920,
+     "aspect": "9:16",
+     "cover": {
+      "w": 1080,
+      "h": 1440,
+      "aspect": "3:4"
+     }
+    }
+   ],
+   "length": {
+    "min": 10,
+    "max": 36000,
+    "sweet": [
+     180,
+     900
+    ]
+   },
+   "titleMax": 80,
+   "descMax": 2000,
+   "hashtagsMax": 10,
+   "linksClickable": false,
+   "chapters": true,
+   "lufs": -14.0
+  },
+  {
+   "id": "kuaishou",
+   "group": "zh",
+   "label": "快手 Kuaishou",
+   "orientations": [
+    {
+     "name": "vertical",
+     "w": 1080,
+     "h": 1920,
+     "aspect": "9:16",
+     "cover": {
+      "w": 1080,
+      "h": 1920,
+      "aspect": "9:16"
+     }
+    },
+    {
+     "name": "horizontal",
+     "w": 1920,
+     "h": 1080,
+     "aspect": "16:9",
+     "cover": {
+      "w": 1920,
+      "h": 1080,
+      "aspect": "16:9"
+     }
+    }
+   ],
+   "length": {
+    "min": 3,
+    "max": 900,
+    "sweet": [
+     15,
+     90
+    ]
+   },
+   "titleMax": null,
+   "descMax": 500,
+   "hashtagsMax": 4,
+   "linksClickable": false,
+   "chapters": false,
+   "lufs": -14.0
+  },
+  {
+   "id": "weibo",
+   "group": "zh",
+   "label": "微博 Weibo",
+   "orientations": [
+    {
+     "name": "horizontal",
+     "w": 1920,
+     "h": 1080,
+     "aspect": "16:9",
+     "cover": {
+      "w": 1920,
+      "h": 1080,
+      "aspect": "16:9"
+     }
+    },
+    {
+     "name": "vertical",
+     "w": 1080,
+     "h": 1920,
+     "aspect": "9:16",
+     "cover": {
+      "w": 1080,
+      "h": 1920,
+      "aspect": "9:16"
+     }
+    }
+   ],
+   "length": {
+    "min": 3,
+    "max": 900,
+    "sweet": [
+     30,
+     300
+    ]
+   },
+   "titleMax": 30,
+   "descMax": 2000,
+   "hashtagsMax": 3,
+   "linksClickable": true,
+   "chapters": false,
+   "lufs": -14.0
+  },
+  {
+   "id": "zhihu",
+   "group": "zh",
+   "label": "知乎 Zhihu",
+   "orientations": [
+    {
+     "name": "horizontal",
+     "w": 1920,
+     "h": 1080,
+     "aspect": "16:9",
+     "cover": {
+      "w": 1920,
+      "h": 1080,
+      "aspect": "16:9"
+     }
+    },
+    {
+     "name": "vertical",
+     "w": 1080,
+     "h": 1920,
+     "aspect": "9:16",
+     "cover": {
+      "w": 1080,
+      "h": 1920,
+      "aspect": "9:16"
+     }
+    }
+   ],
+   "length": {
+    "min": 1,
+    "max": 3600,
+    "sweet": [
+     60,
+     600
+    ]
+   },
+   "titleMax": 30,
+   "descMax": 300,
+   "hashtagsMax": 5,
+   "linksClickable": false,
+   "chapters": false,
+   "lufs": -14.0
+  },
+  {
+   "id": "dailymotion",
+   "group": "intl",
+   "label": "Dailymotion",
+   "orientations": [
+    {
+     "name": "horizontal",
+     "w": 1920,
+     "h": 1080,
+     "aspect": "16:9",
+     "cover": {
+      "w": 1280,
+      "h": 720,
+      "aspect": "16:9"
+     }
+    },
+    {
+     "name": "vertical",
+     "w": 1080,
+     "h": 1920,
+     "aspect": "9:16",
+     "cover": {
+      "w": 1080,
+      "h": 1920,
+      "aspect": "9:16"
+     }
+    }
+   ],
+   "length": {
+    "min": 1,
+    "max": 7200,
+    "sweet": [
+     60,
+     900
+    ]
+   },
+   "titleMax": 255,
+   "descMax": 3000,
+   "hashtagsMax": 15,
+   "linksClickable": true,
+   "chapters": false,
+   "lufs": -14.0
+  },
+  {
+   "id": "kwai",
+   "group": "intl",
+   "label": "Kwai",
+   "orientations": [
+    {
+     "name": "vertical",
+     "w": 1080,
+     "h": 1920,
+     "aspect": "9:16",
+     "cover": {
+      "w": 1080,
+      "h": 1920,
+      "aspect": "9:16"
+     }
+    }
+   ],
+   "length": {
+    "min": 3,
+    "max": 300,
+    "sweet": [
+     15,
+     60
+    ]
+   },
+   "titleMax": null,
+   "descMax": 500,
+   "hashtagsMax": 5,
+   "linksClickable": false,
+   "chapters": false,
+   "lufs": -14.0
+  }
+ ]
+}

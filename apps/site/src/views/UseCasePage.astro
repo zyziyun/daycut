@@ -1,0 +1,47 @@
+---
+import Base from '../layouts/Base.astro';
+import Crumbs from '../components/Crumbs.astro';
+import Ctas from '../components/Ctas.astro';
+import Print from '../components/Print.astro';
+import Faq from '../components/Faq.astro';
+import Related from '../components/Related.astro';
+import FinalCta from '../components/home/FinalCta.astro';
+import { t, type Lang } from '../i18n';
+import { useCase } from '../content/usecases';
+import { heading } from '../lib/zhHeading';
+import { img } from '../lib/images';
+import { breadcrumbs, faqPage } from '../lib/schema';
+interface Props { lang: Lang; slug: string }
+const { lang, slug } = Astro.props;
+const c = t(lang);
+const u = useCase(slug, lang);
+const trail: [string, string | null][] = [[c.page.useCases, null], [u.nav, null]];
+// "Use cases" has no index page of its own: it is plain text in the trail
+const jsonld = [breadcrumbs(lang, [[c.page.useCases, null], [u.nav, slug]]), faqPage(u.faq)];
+---
+<Base {lang} page={slug} title={u.title} description={u.description} {jsonld}>
+  <Crumbs {lang} {trail} />
+  <div class="wrap phero">
+    <p class="kick">{u.kicker}</p>
+    <h1 set:html={heading(u.h1, lang)} />
+    <p class="lede">{u.intro}</p>
+    <Ctas {lang} />
+    <Print class="pfig" src={img(u.img, lang)} alt={u.figAlt} widths={[800, 1200, 1800]} sizes="(max-width: 1300px) calc(100vw - 2 * var(--pad)), 1180px" fig={`${c.fig} 1`} caption={u.figCaption} reveal={false} />
+  </div>
+  <section class="wrap" aria-labelledby="pts-h">
+    <h2 id="pts-h" class="h2wide" set:html={heading(u.pointsT, lang)} />
+    <div class="three two">
+      {u.points.map((x) => <div><h3>{x.t}</h3><p>{x.b}</p></div>)}
+    </div>
+    {u.note && <div class="note" role="note"><h3>{u.note.t}</h3><p>{u.note.b}</p></div>}
+  </section>
+  <section class="wrap" aria-labelledby="st-h">
+    <h2 id="st-h" class="h2wide" set:html={heading(u.stepsT, lang)} />
+    <ol class="steps">
+      {u.steps.map((s, i) => <li class="step"><div class="n" aria-hidden="true">{['i', 'ii', 'iii', 'iv'][i]}.</div><h3>{s.t}</h3><p>{s.b}</p></li>)}
+    </ol>
+  </section>
+  <Faq {lang} kicker={c.page.faqT} title={c.faq.t} items={u.faq} id="questions" />
+  <Related {lang} pages={u.related} />
+  <FinalCta {lang} title={u.cta} lede={c.page.getStartedL} />
+</Base>
