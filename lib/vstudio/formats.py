@@ -115,8 +115,8 @@ FORMATS = {
         speed=dict(body=1.0, hook=1.0, inserts=1.0), hooks="none", cleanup="off", captions="en", tag_set="",
         audio="optional",
         cover=dict(aspect="video", style="title-card", retouch=False, min_luma=0.40, text="designed"),
-        rules=["真实的产品操作录屏，不放假数据当真实数字", "动态字幕 + 推近到操作处，默认无旁白、无配乐",
-               "配乐只用有授权的本地曲库；AI 配音要标注", "平台顺序：国际平台在前，中文平台在后"]),
+        rules=["真实的产品操作录屏，不放假数据当真实数字", "动态字幕 + 推近到操作处，默认无旁白，配内置曲库的轻背景音",
+               "配乐只用有授权的曲库（内置生成曲或写明授权的自有曲）；AI 配音要标注", "平台顺序：国际平台在前，中文平台在后"]),
 }
 # recipe / workflow id -> format (intake.rules recipe ids and workflow folder names)
 BY_RECIPE = {"talkinghead": "talking-head", "promo-recut": "promo", "call-clips": "call-clips",

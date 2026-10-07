@@ -7,7 +7,8 @@
 The look comes from the brand theme (vstudio.theme tokens: paper, ink, one accent, marker for the highlighted
 word) and the brand fonts. Motion: kinetic captions (words rise in, the 【term】 gets a marker sweep), the product
 window crossfades between scenes and its camera punches in on every action the capture recorded. No voice, no
-music unless the config adds them (music must carry a license; a TTS voice-over is labelled "AI voice").
+music bed from the shared library (vstudio.music: built-in beds generated in code, free for any use; or your
+own track with its license), no voice unless the config adds one (a TTS voice-over is labelled "AI voice").
 HyperFrames CLI: ``npx hyperframes`` (set $VSTUDIO_HYPERFRAMES to pin a version, e.g. hyperframes@0.8.130).
 """
 import html
@@ -100,11 +101,13 @@ def _music(cfg, proj, total):
     m = cfg.get("music")
     if not m:
         return None
+    from vstudio import music as MU
+    src = MU.resolve(m.get("file") or m["mood"], duration=total + 1.0, seed=int(m.get("seed", 0)))
     d = os.path.join(proj, "assets", "audio")
     os.makedirs(d, exist_ok=True)
     out = os.path.join(d, "music.m4a")
     fo = max(0.0, total - 1.6)
-    media.run(["ffmpeg", "-y", "-i", m["file"], "-t", f"{total:.3f}", "-af",
+    media.run(["ffmpeg", "-y", "-i", src, "-t", f"{total:.3f}", "-af",
                f"afade=t=in:d=0.4,afade=t=out:st={fo:.3f}:d=1.6", "-c:a", "aac", "-b:a", "192k", out])
     return os.path.relpath(out, proj)
 
@@ -351,7 +354,7 @@ def build(cfg, plan, proj, quiet=False):
         label = "AI 配音" if lang == "zh" else "AI voice"
         body.append(f'<div class="ailabel clip" data-start="0" data-duration="{_r(total)}" data-track-index="9" '
                     f'style="left:{L["text"][0]}px; bottom:{max(24, int(H * 0.03))}px">{label}</div>')
-    music = _music(cfg, proj, total)
+    music = None if plan["loop"] else _music(cfg, proj, total)       # a loop stays silent: no seam in the bed
     if music:
         vol = 0.22 if vo_on else 0.5
         body.append(f'<audio src="{music}" data-start="0" data-duration="{_r(total)}" data-track-index="7" '

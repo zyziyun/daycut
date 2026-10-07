@@ -59,7 +59,9 @@ end_card:
   cta: {en: "Free for personal use", zh: "个人免费"}
   sub: {en: "macOS · Windows · Linux"}
 
-# music: {file: audio/bed.m4a, license: "CC0, from <source>"}   # only license-safe tracks; default none
+music: auto                                # a built-in bed of the shared library (vstudio.music, generated, free to use);
+                                           # a mood (calm | warm | bright | tech | story), none, or your own track:
+                                           # {file: audio/bed.m4a, license: "CC0, from <source>"} (license required)
 # voiceover: {enabled: true, engine: auto}                      # TTS per feature (features[].vo), labelled "AI voice"
 
 gallery:                                   # Product Hunt stills (1270x760) + OG image (1200x630)

@@ -3,7 +3,7 @@ title: Launch videos for your product
 description: Turn a release of your app or site into a demo video, a README GIF, one clip per feature, Product Hunt stills, post copy in English and Chinese, and a posting schedule.
 ---
 
-You get everything a launch or an update post needs, made from the real product: a 30–60 second demo in 16:9, 9:16 and 1:1 (kinetic captions, the camera punching in on each click, a logo end card), a 15-second looping GIF for your README, a 10–20 second clip per feature for X, LinkedIn, Shorts, TikTok and 小红书, Product Hunt gallery stills and an OG image, post copy for every platform in English and 中文, and a schedule proposal. Nothing is posted for you.
+You get everything a launch or an update post needs, made from the real product: a 30–60 second demo in 16:9, 9:16 and 1:1 (kinetic captions, the camera punching in on each click, a logo end card, a soft music bed), a 15-second looping GIF for your README, a 10–20 second clip per feature for X, LinkedIn, Shorts, TikTok and 小红书, Product Hunt gallery stills and an OG image, post copy for every platform in English and 中文, and a schedule proposal. Nothing is posted for you.
 
 ## Before you start
 
@@ -50,7 +50,7 @@ The capture runs your product at 2× scale with a smooth cursor and writes, for 
 | `languages` | `[en]` | Add `zh` for Chinese-captioned versions and Chinese copy. |
 | `demo.max_seconds` | 60 | Scenes are squeezed to fit, never under 4 s each. |
 | `brand.theme` | editorial | The theme the brand colours sit on: paper, ink and one accent. |
-| `music` | none | A license-safe local track only; the config needs its license. |
+| `music` | auto | A built-in bed from the shared music library (generated, free to use). A mood, `none`, or your own track with its license. |
 | `voiceover` | off | A text-to-speech voice-over, labelled "AI voice" on screen. |
 | `schedule.accounts` | none | With `schedule --apply`, puts the schedule on the publish calendar as planned posts. |
 

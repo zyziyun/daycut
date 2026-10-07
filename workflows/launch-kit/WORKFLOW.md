@@ -11,7 +11,7 @@ or screenshots / recordings you already have, and the brand (logo, icon, colours
 
 | Folder | What |
 |---|---|
-| `demo/` | `demo-<lang>-16x9 / 9x16 / 1x1.mp4`, 30–60 s: title card, one scene per feature (kinetic caption + the product window, the camera punching in on each click and typed field), logo end card; a `.cover.jpg` per video |
+| `demo/` | `demo-<lang>-16x9 / 9x16 / 1x1.mp4`, 30–60 s: title card, one scene per feature (kinetic caption + the product window, the camera punching in on each click and typed field), logo end card, a soft music bed; a `.cover.jpg` per video |
 | `readme/` | `loop-<lang>.mp4` + `.gif`, 15 s, seamless (the last frame crossfades into the first) |
 | `clips/` | `<feature>-<lang>-1x1 / 9x16.mp4`, 10–20 s each, one feature + end card |
 | `stills/` | `ph-gallery-1-hero.png`, `ph-gallery-N-<feature>.png` (1270×760), `og-1200x630.png` |
@@ -74,9 +74,11 @@ Everything content-specific lives in ONE file, `launch.config.yaml`; start from
 
 ## Defaults and rules
 
-- **No voice, no music by default.** A music bed only from a license-safe local file (`music.file` + `music.license`
-  are both required). A TTS voice-over (`voiceover.enabled`, one `vo` line per feature) is labelled "AI voice" on
-  screen; say so in the post too.
+- **No voice by default; a license-safe music bed.** `music: auto` (default) takes a built-in bed from the shared
+  library (`vstudio.music`: generated in code, free for any use; mood `tech` for a product video). A mood name picks
+  another built-in bed, `none` turns it off, and your own track needs `music.file` + `music.license`. A TTS
+  voice-over (`voiceover.enabled`, one `vo` line per feature) is labelled "AI voice" on screen; say so in the post
+  too. With audio the delivery is loudness-normalised to −14 LUFS.
 - **Real product, real data you may show.** Numbers in the gallery `facts` must be ones you can stand behind;
   sample data gets `gallery.note` ("Sample data").
 - **International platforms first, Chinese after**, everywhere platforms are listed (copy, schedule, captions).
