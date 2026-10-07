@@ -15,7 +15,7 @@ from vstudio.batch import hygiene, planner, review
 from vstudio.batch import spec as S
 from vstudio.batch.package import package
 from vstudio.batch.plan import plan_batch
-from vstudio.batch.run import is_transient, run_batch, TransientError, default_limits, parse_limits
+from vstudio.batch.run import is_transient, run_batch, TransientError, default_limits, limit_for, parse_limits
 from vstudio.batch.store import Store
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -367,6 +367,10 @@ def test_claude_planner_stub_offline(tmp_path, monkeypatch):
 def test_limits_and_bench_update(tmp_path):
     lim = default_limits(cores=10, mem_gb=32)
     assert lim["asr"] == 1 and lim["cpu-render"] == 3 and lim["cpu"] == 5 and lim["face"] == 2
+    # agent runners wait on their model: their lanes do not shrink on a small machine (3 cores -> cpu 1)
+    small = default_limits(cores=3, mem_gb=7)
+    assert small["cpu"] == 1 and limit_for(small, "agent:fake-agent") == 4 and limit_for(small, "api:kling") == 4
+    assert limit_for(small, "ffmpeg") == 1
     assert parse_limits("asr=2, cpu-render=4") == {"asr": 2, "cpu-render": 4}
     bdir, _ = plan_run(tmp_path, jobs_n(1), test=dict(sleep=dict(render=0.05)))
     st = Store(bdir)

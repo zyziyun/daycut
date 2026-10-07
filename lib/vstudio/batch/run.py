@@ -39,7 +39,7 @@ from . import recipes as RC
 from .store import Store
 from .util import du, now, sha1_json
 
-RESOURCES = ("asr", "cpu", "cpu-render", "browser", "face", "io", "api:*")
+RESOURCES = ("asr", "cpu", "cpu-render", "browser", "face", "io", "api:*", "agent:*")
 
 
 class TransientError(RuntimeError):
@@ -59,12 +59,14 @@ def _mem_gb():
 
 def default_limits(cores=None, mem_gb=None):
     """Concurrency per resource class. 10 cores / 32 GB -> asr 1, cpu 5, cpu-render 3, browser 2, face 2, io 4,
-    api:* 4. ffmpeg / x264 is itself multi-threaded, so cpu-render stays at cores / 3; whisper (mlx) owns the GPU,
-    so one ASR at a time; MediaPipe / headless Chrome are memory-bound."""
+    api:* 4, agent:* 4. ffmpeg / x264 is itself multi-threaded, so cpu-render stays at cores / 3; whisper (mlx) owns
+    the GPU, so one ASR at a time; MediaPipe / headless Chrome are memory-bound. An agent runner (agent:<id>, an AI
+    coding CLI) waits on its model, like api:*, so its lanes do not shrink with the core count (a 3-core machine
+    would otherwise get one lane: cpu = cores / 2)."""
     cores = cores or os.cpu_count() or 4
     mem = mem_gb if mem_gb is not None else _mem_gb()
     return {"asr": 1, "cpu": max(1, cores // 2), "cpu-render": max(1, cores // 3),
-            "browser": 2 if mem >= 16 else 1, "face": 2 if mem >= 24 else 1, "io": 4, "api:*": 4}
+            "browser": 2 if mem >= 16 else 1, "face": 2 if mem >= 24 else 1, "io": 4, "api:*": 4, "agent:*": 4}
 
 
 def parse_limits(text):
@@ -88,6 +90,8 @@ def limit_for(limits, res):
         return limits[res]
     if res.startswith("api:"):
         return limits.get("api:*", 4)
+    if res.startswith("agent:"):
+        return limits.get("agent:*", 4)
     return limits.get("cpu", 2)
 
 

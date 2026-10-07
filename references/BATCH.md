@@ -275,7 +275,8 @@ of regenerable outputs), `version`.
   compose -> export -> qc -> preview of that job; a new cleanup reply re-cuts from `apply`; the shared ASR is
   never repeated for the same source and settings.
 * **Resource classes** (defaults from the machine; 10 cores / 32 GB gives): `asr` 1 (whisper owns the GPU),
-  `cpu` 5, `cpu-render` 3 (x264 is itself multi-threaded), `browser` 2, `face` 2, `io` 4, `api:*` 4. Override
+  `cpu` 5, `cpu-render` 3 (x264 is itself multi-threaded), `browser` 2, `face` 2, `io` 4, `api:*` 4,
+  `agent:*` 4 (agent-runner lanes; like `api:*`, not scaled by cores). Override
   in the spec (`concurrency:`) or per run (`--concurrency cpu-render=2`).
 * **Retries**: transient only (timeouts, connection resets, 429 / 5xx, `TransientError`), exponential backoff;
   deterministic errors fail the job at once; `paid` stages never retry.
