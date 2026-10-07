@@ -54,6 +54,7 @@ interface App {
   page: Page;
   env: Record<string, string>;
   close(): Promise<void>;
+  pending(): string[];
 }
 
 async function launch(extra: Record<string, string>, args: string[] = [], opts: { realKeychain?: boolean } = {}): Promise<App> {
@@ -86,21 +87,61 @@ async function launch(extra: Record<string, string>, args: string[] = [], opts: 
   }
   if (!page) throw new Error('no app://desk/ window');
   await page.waitForURL(/^app:\/\/desk\//, { timeout: 60000 });
+  // engine requests the renderer started and that never finished (a hang shows which ones pile up)
+  const pending = new Map<object, string>();
+  page.on('request', (r) => {
+    if (r.url().startsWith('http://127.0.0.1')) pending.set(r, `${new Date().toISOString().slice(11, 19)} ${r.method()} ${new URL(r.url()).pathname}`);
+  });
+  page.on('requestfinished', (r) => pending.delete(r));
+  page.on('requestfailed', (r) => pending.delete(r));
   const close = async () => {
     await browser!.close().catch(() => undefined);
     proc.kill('SIGTERM');
     await new Promise((r) => setTimeout(r, 1500));
     if (proc.exitCode === null) proc.kill('SIGKILL');
   };
-  return { proc, browser, page, env, close };
+  return { proc, browser, page, env, close, pending: () => [...pending.values()] };
+}
+
+/** The engine asked from this (Node) process, not the renderer: tells a renderer-side queue from an engine hang. */
+async function nodeGet(app: App, p: string) {
+  const info = await app.page.evaluate(() => window.desk.engineInfo());
+  const t0 = Date.now();
+  try {
+    const r = await fetch(info.baseUrl + p, { headers: { Authorization: `Bearer ${info.token}`, Origin: 'app://desk' }, signal: AbortSignal.timeout(20000) });
+    return `${p} ${r.status} in ${Date.now() - t0} ms`;
+  } catch (e) {
+    return `${p} ${(e as Error).message} (${String((e as { cause?: { code?: string } }).cause?.code ?? '')}) after ${Date.now() - t0} ms`;
+  }
 }
 
 async function health(app: App) {
+  try {
+    return await rendererHealth(app);
+  } catch (e) {
+    const node = [];
+    for (const p of ['/api/health', '/api/recipes', '/api/inbox']) node.push(await nodeGet(app, p));
+    const mainLog = path.join(app.env.DESK_USER_DATA, 'logs', 'main.log');
+    const log = fs.existsSync(mainLog) ? fs.readFileSync(mainLog, 'utf8').split('\n').filter((l) => /engine/i.test(l)).slice(-15).join('\n') : '(no main.log)';
+    throw new Error(`${(e as Error).message}\nfrom node: ${node.join('; ')}\nrenderer requests still open: ${app.pending().join(', ') || 'none'}\nmain.log (engine lines):\n${log}`, { cause: e });
+  }
+}
+
+async function rendererHealth(app: App) {
   const page = app.page;
+  // each step bounded, so a hang names its step instead of running into the test timeout
   return page.evaluate(async () => {
-    const info = await window.desk.engineInfo();
-    const res = await fetch(info.baseUrl + '/api/health', { headers: { Authorization: `Bearer ${info.token}` } });
-    return { mode: info.mode, note: info.note, health: await res.json() };
+    const t0 = Date.now();
+    const within = <T,>(what: string, p: Promise<T>, ms = 45000) =>
+      Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error(`${what}: no answer in ${ms / 1000} s`)), ms))]);
+    const info = await within('engineInfo', window.desk.engineInfo());
+    const get = (p: string) => within(p, fetch(info.baseUrl + p, { headers: { Authorization: `Bearer ${info.token}` } }).then((r) => r.json()));
+    try {
+      return { mode: info.mode, note: info.note, health: await get('/api/health'), ms: Date.now() - t0 };
+    } catch (e) {
+      const recipes = await get('/api/recipes').then((r) => `recipes answer (${(r as unknown[]).length})`, (e2: Error) => e2.message);
+      throw new Error(`${(e as Error).message}; ${recipes}`, { cause: e });
+    }
   });
 }
 
@@ -153,6 +194,64 @@ test('real engine starts from the bundle (vstudio, Python and ffmpeg inside the 
     expect(recipes).toBeGreaterThan(0);
   } finally {
     await app.close();
+  }
+});
+
+// Windows once wedged here: numpy's DLLs loaded in a warm-up thread while request threads were being created (server.py
+// preload). The process stayed alive and said ready, so the app showed Ready while nothing answered.
+test('the bundled engine sidecar, started as the app starts it, keeps answering (stacks dumped if it hangs)', async () => {
+  test.setTimeout(180000);
+  const res = resourcesDir(appExecutable());
+  const rt = path.join(res, 'runtime');
+  const win = process.platform === 'win32';
+  const exe = win ? '.exe' : '';
+  const py = win ? path.join(rt, 'python', 'python.exe') : path.join(rt, 'python', 'bin', 'python3');
+  const server = path.join(res, 'engine', 'server.py');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vsdesk-sidecar-'));
+  const token = 'f'.repeat(64);
+  const env = {
+    ...cleanEnv({}),
+    PYTHONNOUSERSITE: '1', PYTHONDONTWRITEBYTECODE: '1', PYTHONUNBUFFERED: '1', PYTHONUTF8: '1',
+    VSTUDIO_ENGINE_PATH: path.join(rt, 'vstudio'), PYTHONPATH: path.join(rt, 'vstudio', 'lib'),
+    VSTUDIO_FFMPEG: path.join(rt, 'ffmpeg', 'bin', `ffmpeg${exe}`), VSTUDIO_FFPROBE: path.join(rt, 'ffmpeg', 'bin', `ffprobe${exe}`),
+    VSTUDIO_H264_ENCODER: win ? 'h264_mf' : 'h264_videotoolbox', VSTUDIO_CACHE: path.join(tmp, 'cache'),
+    DESK_TOKEN: token, DESK_ALLOWED_ORIGINS: 'app://desk', DESK_DATA_DIR: path.join(tmp, 'data'),
+  };
+  // faulthandler's watchdog prints every thread's stack even when the process is wedged (GIL held)
+  const boot = 'import faulthandler, runpy, sys; faulthandler.dump_traceback_later(45, exit=False); sys.argv = [sys.argv[1]]; runpy.run_path(sys.argv[0], run_name="__main__")';
+  const child = spawn(py, ['-c', boot, server], { env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+  let out = '';
+  let err = '';
+  child.stdout!.on('data', (d) => (out += d));
+  child.stderr!.on('data', (d) => (err += d));
+  try {
+    let port = 0;
+    for (let i = 0; i < 600 && !port; i++) {
+      const m = out.match(/"port": (\d+)/);
+      if (m) port = Number(m[1]);
+      else await new Promise((r) => setTimeout(r, 100));
+    }
+    expect(port, `no ready line\nstdout: ${out}\nstderr: ${err}`).toBeGreaterThan(0);
+    const fails: string[] = [];
+    const t0 = Date.now();
+    while (Date.now() - t0 < 20000) {
+      for (const p of ['/api/health', '/api/inbox', '/api/history', '/api/calendar', '/api/intake/recent', '/api/weekplan']) {
+        try {
+          const r = await fetch(`http://127.0.0.1:${port}${p}`, { headers: { Authorization: `Bearer ${token}`, Origin: 'app://desk' }, signal: AbortSignal.timeout(10000) });
+          if (!r.ok) fails.push(`${((Date.now() - t0) / 1000).toFixed(0)} s ${p} ${r.status}`);
+          await r.arrayBuffer();
+        } catch (e) {
+          fails.push(`${((Date.now() - t0) / 1000).toFixed(0)} s ${p} ${(e as Error).message} ${String((e as { cause?: { code?: string } }).cause?.code ?? '')}`);
+        }
+      }
+      if (fails.length) break;
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+    if (fails.length) await new Promise((r) => setTimeout(r, Math.max(0, 50000 - (Date.now() - t0)))); // let the watchdog dump
+    expect(fails, `alive=${child.exitCode === null}\nstderr:\n${err.slice(-12000)}`).toEqual([]);
+  } finally {
+    child.stdin!.end();
+    child.kill();
   }
 });
 
