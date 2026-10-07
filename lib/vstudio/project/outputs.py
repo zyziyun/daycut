@@ -1575,6 +1575,8 @@ def ai(d, output, instruction, apply=False, provider=None, model=None, use_asr=T
                              warnings=w))
     out = dict(ok=True, instruction=instruction, context=focus, proposed=proposed, ops=[p["op"] for p in proposed],
                dropped=dropped, summary=summary, warnings=warns, cost_usd=cost, seconds=round(time.time() - t0, 2),
+               summary_info=None if not summary else dict(code="ai-summary", params=dict(text=str(summary)),
+                                                          message=str(summary), message_zh=str(summary)),
                **used)
     turn = None
     if record:

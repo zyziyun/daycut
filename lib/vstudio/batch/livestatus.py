@@ -72,6 +72,17 @@ def write(d, status, stage=None, progress=None, message=None, eta=None, needs_yo
             if status == "done":
                 rec["progress"] = 1.0
         rec.update({k: v for k, v in extra.items() if v is not None})
+        try:                                    # code + params for the desk (references/MESSAGES.md)
+            from vstudio import messages as MSG
+            rec["status_info"] = MSG.state("status", status)
+            if rec.get("stage"):
+                rec["stage_info"] = MSG.stage(rec["stage"])
+            if message is not None or extra.get("message_code"):
+                mc = extra.get("message_code")
+                rec["message_info"] = MSG.msg(mc, None, None, **(extra.get("message_params") or {})) if mc \
+                    else MSG.coded("status-text", str(message))
+        except Exception:  # noqa: BLE001 - a status write never fails on its labels
+            pass
         p = status_path(d)
         os.makedirs(os.path.dirname(p), exist_ok=True)
         tmp = f"{p}.tmp{os.getpid()}"

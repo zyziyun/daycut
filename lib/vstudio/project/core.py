@@ -30,6 +30,7 @@ import time
 
 import yaml
 
+from vstudio import messages as MSG
 from vstudio.batch import recipes as RC
 from vstudio.batch.run import BatchBusy, Runner, runner_active
 from vstudio.batch.store import DB_NAME, Store
@@ -634,7 +635,8 @@ class Project:
         base = dict(dir=self.dir, name=self.data.get("name"), recipe=self.data["recipe"],
                     labels=self.manifest["labels"], series=self.data.get("series"), client=self.data.get("client"))
         if not os.path.exists(os.path.join(self.state_dir, DB_NAME)):
-            return dict(base, state="new", items=[], progress=dict(done=0, total=0))
+            return dict(base, state="new", state_info=MSG.state("project-state", "new"), items=[],
+                        progress=dict(done=0, total=0))
         st = Store(self.state_dir)
         try:
             recipe = self.recipe()
@@ -661,7 +663,12 @@ class Project:
                 state = j["state"]
                 if waiting and state != "running":
                     state = "waiting"
+                if not brief:
+                    for sx in stages:
+                        sx["label_info"] = MSG.stage(sx["id"][len(M.GATE_PREFIX):] if sx["gate"] else sx["id"])
                 items.append(dict(id=j["id"], state=state, qc=j.get("qc"), review=j.get("review"),
+                                  state_info=MSG.state("job-state", "waiting" if state == "waiting" else state),
+                                  qc_info=MSG.state("qc-state", j.get("qc")),
                                   waiting=waiting, progress=dict(done=n_done, total=len(stages)),
                                   stages=[] if brief else stages, cost=j.get("cost") or 0.0,
                                   title=(j["params"] or {}).get("title")))
@@ -681,7 +688,8 @@ class Project:
                 state = "done"
             else:
                 state = "planned"
-            return dict(base, state=state, batch_state=st.state(), pause_reason=st.meta("pause_reason"),
+            return dict(base, state=state, state_info=MSG.state("project-state", state), batch_state=st.state(),
+                        pause_reason=st.meta("pause_reason"),
                         running=active, items=items, pending=sum(len(i["waiting"]) for i in items),
                         progress=dict(done=done_all, total=total_all))
         finally:
@@ -906,6 +914,7 @@ def _csv_items(path, known):
 def public_manifest(m):
     d = {k: v for k, v in m.items() if not k.startswith("_")}
     d["path"] = m.get("_path")
+    d["messages"] = MSG.recipe(m)          # recipe.<id>.label / .description codes (references/MESSAGES.md)
     return d
 
 

@@ -17,6 +17,8 @@ import os
 import re
 import time
 
+from vstudio import messages as MSG
+
 from vstudio import llm as LLM
 from vstudio.project import manifests as M
 
@@ -260,10 +262,10 @@ def normalize_project(raw, idx, analysis, intent, ctx, warn):
     try:
         m = M.get(rid)
     except KeyError:
-        warn.append(f"dropped a sub-project with unknown recipe {rid!r} (never invented: only catalog recipes run)")
+        warn.append(MSG.cs("intake.warning.unknown-recipe", "en", recipe=repr(rid)))
         return None
     if rid == "batch":
-        warn.append("recipe batch is an engine board; use the deliverable recipe instead (dropped)")
+        warn.append(MSG.cs("intake.warning.batch-recipe", "en"))
         return None
     props = m["params"]["properties"]
     known_inputs = {i["key"]: i for i in m["inputs"]}
@@ -273,7 +275,7 @@ def normalize_project(raw, idx, analysis, intent, ctx, warn):
     ins = {}
     for k, v in (raw.get("inputs") or {}).items():
         if k not in known_inputs:
-            warn.append(f"{p['id']} {rid}: unknown input {k!r} dropped")
+            warn.append(MSG.cs("intake.warning.unknown-input", "en", project=p["id"], recipe=rid, key=repr(k)))
             continue
         inp = known_inputs[k]
         if inp["kind"] in ("text", "url-free"):
@@ -282,13 +284,15 @@ def normalize_project(raw, idx, analysis, intent, ctx, warn):
         paths = _resolve_refs(v, analysis)
         bad = [x for x in paths if not _accepts(inp, x)]
         if bad:
-            warn.append(f"{p['id']} {rid}: input {k} does not accept {', '.join(os.path.basename(b) for b in bad)}")
+            warn.append(MSG.cs("intake.warning.input-not-accepted", "en", project=p["id"], recipe=rid, key=k,
+                                  files=", ".join(os.path.basename(b) for b in bad)))
         paths = [x for x in paths if x not in bad]
         if not paths:
             continue
         ins[k] = paths if inp.get("multiple") else paths[0]
         if not inp.get("multiple") and len(paths) > 1:
-            warn.append(f"{p['id']} {rid}: input {k} takes one file; kept {os.path.basename(paths[0])}")
+            warn.append(MSG.cs("intake.warning.input-single", "en", project=p["id"], recipe=rid, key=k,
+                                  file=os.path.basename(paths[0])))
     # ---- items
     it = dict(raw.get("items") or {})
     method = it.get("method") if it.get("method") in METHODS else None
@@ -333,7 +337,7 @@ def normalize_project(raw, idx, analysis, intent, ctx, warn):
                 if b - a >= 3:
                     rp["range"] = [round(a, 2), round(b, 2)]
                 else:
-                    warn.append(f"{p['id']} row {k + 1}: range {rng} too short / outside the media, dropped")
+                    warn.append(MSG.cs("intake.warning.range-dropped", "en", project=p["id"], row=k + 1, range=rng))
                     continue
         rins = {}
         for kk, vv in (r.get("inputs") or {}).items():
@@ -365,7 +369,7 @@ def normalize_project(raw, idx, analysis, intent, ctx, warn):
     orient = raw_params.pop("_orientation", None) or intent.get("orientation")
     for k, v in raw_params.items():
         if k not in props:
-            warn.append(f"{p['id']} {rid}: unknown param {k!r} dropped")
+            warn.append(MSG.cs("intake.warning.unknown-param", "en", project=p["id"], recipe=rid, key=repr(k)))
             continue
         params[k], sources[k] = v, "planner"
     _apply_ctx_defaults(m, params, sources, ctx, ins, analysis)
@@ -386,7 +390,8 @@ def normalize_project(raw, idx, analysis, intent, ctx, warn):
             if n and n not in fixed:
                 fixed.append(n)
             elif not n:
-                warn.append(f"{p['id']} {rid}: platform {x!r} not supported by this recipe (dropped)")
+                warn.append(MSG.cs("intake.warning.platform-unsupported", "en", project=p["id"], recipe=rid,
+                                      platform=repr(x)))
         if not fixed:
             fixed = [d for d in (props["platforms"].get("default") or [])][:1] or (m["outputs"].get("platforms") or [])[:1]
             sources["platforms"] = "recipe"
@@ -396,7 +401,8 @@ def normalize_project(raw, idx, analysis, intent, ctx, warn):
         sources.setdefault("count", "prompt" if intent.get("count") else "planner")
     for k in list(params):
         if not _valid(params[k], props[k]):
-            warn.append(f"{p['id']} {rid}: param {k}={params[k]!r} invalid for the recipe (reset to default)")
+            warn.append(MSG.cs("intake.warning.param-invalid", "en", project=p["id"], recipe=rid, key=k,
+                              value=repr(params[k])))
             params.pop(k)
             sources.pop(k, None)
     if "min_s" in params and "max_s" in params and params["min_s"] > params["max_s"]:
@@ -408,7 +414,8 @@ def normalize_project(raw, idx, analysis, intent, ctx, warn):
             if fill:
                 ins[inp["key"]] = fill if inp.get("multiple") else fill[0]
             else:
-                warn.append(f"{p['id']} {rid}: required input {inp['key']} has no material (sub-project dropped)")
+                warn.append(MSG.cs("intake.warning.required-input-missing", "en", project=p["id"], recipe=rid,
+                                      key=inp["key"]))
                 return None
     if method == "per-file":
         items["count"] = len(ins.get(fi) or []) if isinstance(ins.get(fi), list) else 1
@@ -748,7 +755,7 @@ def resolve_focus(p, analysis, intent, warn):
                            [dict(topic=it.get("focus") or "", terms=[it.get("focus") or ""], where=None)],
                            count=it.get("count"), min_s=min(20, mx / 2), max_s=mx)
     if not picks:
-        warn.append(f"{p['id']}: no transcript passage matched the focus; ranges will be chosen at the segments step")
+        warn.append(MSG.cs("intake.warning.focus-unmatched", "en", project=p["id"]))
         return p
     rows = []
     for k, x in enumerate(picks):
@@ -813,7 +820,7 @@ def make_plan(prompt, inputs=None, client=None, provider=None, model=None, analy
     for p in projects:
         resolve_focus(p, analysis, intent, warn)
     if intent.get("unsupported_platforms"):
-        risks.append(f"{'、'.join(intent['unsupported_platforms'])} 还没有导出预设：先按最接近的平台导出")
+        risks.append(MSG.cs("intake.risk.unsupported-platform", platforms="、".join(intent["unsupported_platforms"])))
     auto_ids = list(auto or [])
     for p in projects:
         enrich(p, analysis, ctx, auto_ids)
@@ -828,7 +835,34 @@ def make_plan(prompt, inputs=None, client=None, provider=None, model=None, analy
     plan["summary_zh"] = summary if (summary and not info.get("fallback")) else summary_zh(plan)
     errs = validate(plan)
     if errs:
-        plan["warnings"] = warn + [f"schema: {e}" for e in errs]
+        plan["warnings"] = warn + [MSG.Coded(f"schema: {e}", MSG.msg("intake.warning.schema", error=e)) for e in errs]
+    return _messages(plan)
+
+
+def _messages(plan):
+    """code + params next to every engine text the desk shows (references/MESSAGES.md): risks_info,
+    warnings_info, questions[].message, checkpoints[].label_info, planner.message, summary_info. The plain
+    string lists stay as they were (older desks, the CLI)."""
+    plan["risks_info"] = [MSG.info_of(r, "intake.risk") for r in plan.get("risks") or []]
+    plan["warnings_info"] = [MSG.info_of(w, "intake.warning") for w in plan.get("warnings") or []]
+    for q in plan.get("questions") or []:
+        q["message"] = MSG.info_of(q.get("text_info") or q.get("text"), "intake.question")
+        q.pop("text_info", None)
+    for p in plan.get("projects") or []:
+        for c in p.get("checkpoints") or []:
+            c["label_info"] = MSG.checkpoint(c.get("kind"))["label"]
+        p["recipe_info"] = MSG.recipe(M.get(p["recipe"]))["label"]
+    pl = plan.get("planner") or {}
+    if pl.get("fallback"):
+        why = pl.get("reason") or "rule planner"
+        if pl.get("failure"):                         # the model call failed (every provider tried: pl.attempts)
+            pl["message"] = MSG.msg("intake-model-fallback", reason=pl["failure"], error=why, tried=pl.get("tried"))
+        elif pl.get("provider") == "none":
+            pl["message"] = MSG.msg("intake-no-model")
+        else:
+            pl["message"] = MSG.msg("intake-rule-plan", reason=why)
+    plan["summary_info"] = MSG.coded("intake.summary" if pl.get("fallback") else "ai-summary",
+                                     plan.get("summary_zh") or "")
     return plan
 
 
@@ -860,7 +894,7 @@ def _norm_questions(qs, projects):
         pi = q.get("project")
         pid = projects[pi]["id"] if isinstance(pi, int) and 0 <= pi < len(projects) else (
             pi if isinstance(pi, str) and any(p["id"] == pi for p in projects) else None)
-        out.append(dict(id=f"q{k + 1}", project=pid, text=str(q["text"])[:200],
+        out.append(dict(id=f"q{k + 1}", project=pid, text=str(q["text"])[:200], text_info=getattr(q["text"], "info", None),
                         options=[str(o) for o in (q.get("options") or [])][:6], default=q.get("default")))
     return out
 
@@ -909,7 +943,7 @@ def revise(plan, instruction, provider=None, model=None, call=None, client=None,
                 projects.append(p)
         info["fallback"] = True
         if not notes:
-            warn.append(f"没看懂这条修改：{instruction}（计划未变）")
+            warn.append(MSG.cs("intake.warning.revise-not-understood", instruction=instruction))
     else:
         summary = js.get("summary_zh") if isinstance(js.get("summary_zh"), str) else None
         plan["questions"] = _norm_questions([q for q in js.get("questions") or [] if isinstance(q, dict) and
@@ -928,7 +962,7 @@ def revise(plan, instruction, provider=None, model=None, call=None, client=None,
     plan["warnings"] = warn
     plan["estimate"] = EST.total(projects)
     plan["summary_zh"] = summary if (summary and not info.get("fallback")) else summary_zh(plan)
-    return plan
+    return _messages(plan)
 
 
 def _only_explicit(follow, instruction=""):

@@ -9,6 +9,8 @@ import copy
 import os
 import re
 
+from vstudio import messages as MSG
+
 from . import docs as D
 from . import inventory as I
 
@@ -407,7 +409,7 @@ def rule_projects(intent, analysis, ctx):
             src = _pick_source(analysis, prefs) or _pick_source(analysis, ("talking-head", "finished-edit", "lecture",
                                                                              "screen-recording", "call"))
             if not src:
-                risks.append(f"{rid}: 没有找到可切的长录音/录屏")
+                risks.append(MSG.cs("intake.risk.no-source", recipe=rid))
                 continue
             p["materials"] = [src["id"]]
             p["inputs"] = {"source": src["path"]}
@@ -415,14 +417,14 @@ def rule_projects(intent, analysis, ctx):
             if rid == "longform-to-short":
                 p["params"]["layout_mode"] = "split" if src.get("screen_share") else "reframe"
                 if src.get("burned_captions"):
-                    risks.append(f"{src['rel']} 已有烧录字幕：竖屏切片会再叠一层新字幕，建议在选段后检查")
+                    risks.append(MSG.cs("intake.risk.burned-longform", file=src["rel"]))
             if rid == "call-clips":
                 if intent.get("mask") is False:
                     p["params"]["no_mask"] = True
                 if intent.get("trio"):
                     p["params"]["renderer"] = "render_trio.py"
                 if intent.get("mask") is not False:
-                    questions.append(dict(project=len(projects), text="要遮哪几位的脸？（默认：除你以外的所有嘉宾）",
+                    questions.append(dict(project=len(projects), text=MSG.cs("intake.question.mask-faces"),
                                           options=["除我以外全部遮", "都不遮（已获同意）", "我来指定"], default="除我以外全部遮"))
             p["why"] = f"{src['rel']}（{_fmt_dur(src.get('duration'))}，{_role_zh(rmap[src['id']])}）→ {'选段' if not intent['extract'] else '按你说的内容截取'}"
             p["items"] = dict(method="focus" if intent["extract"] and intent.get("focus") else "planner", count=cnt,
@@ -438,7 +440,7 @@ def rule_projects(intent, analysis, ctx):
             if not fs:
                 fs = [f for f in _by_kind(analysis, "video") if f["id"] not in used]
             if not fs:
-                risks.append(f"{rid}: 没有找到视频素材")
+                risks.append(MSG.cs("intake.risk.no-video", recipe=rid))
                 continue
             if rid == "longform-course":
                 fs = fs[:8]
@@ -499,16 +501,16 @@ def rule_projects(intent, analysis, ctx):
                 dict(id=f"ep{k + 1:02d}", inputs={"premise": f"第 {k + 1} 集" + (f"（剧本：{base}）" if base else "")},
                      params=dict(title=f"第{k + 1}集")) for k in range(n)])
             p["why"] = f"{'按剧本 ' + base if base else '按你的设定'}做 {n} 集 AI 短剧，生成前先锁剧本和预算"
-            risks.append("AI 视频按积分计费：生成前会在“预算”检查点停下等你批准")
+            risks.append(MSG.cs("intake.risk.aigc-credits"))
         elif rid in ("photo-story", "vlog"):
             imgs = [f for f in _by_kind(analysis, "image") if f["id"] not in used]
             clips = [f for f in _by_kind(analysis, "video") if f["id"] not in used and rmap[f["id"]] in ("footage", "talking-head")]
             music = [f for f in _by_kind(analysis, "audio") if rmap[f["id"]] == "music"]
             if rid == "vlog" and not clips:
-                risks.append("vlog: 没有找到视频素材")
+                risks.append(MSG.cs("intake.risk.no-video", recipe="vlog"))
                 continue
             if rid == "photo-story" and not (imgs or clips):
-                risks.append("photo-story: 没有找到照片或视频")
+                risks.append(MSG.cs("intake.risk.no-photos", recipe="photo-story"))
                 continue
             used |= {f["id"] for f in imgs + clips + music[:1]}
             p["materials"] = [f["id"] for f in imgs + clips + music[:1]]
@@ -531,7 +533,7 @@ def rule_projects(intent, analysis, ctx):
             p["why"] = f"{len(imgs)} 张照片 + {len(clips)} 段视频" + ("（带配乐）" if music else "") + \
                 ("做成一条文艺片" if rid == "photo-story" else "剪成一条 vlog")
             if rid == "photo-story" and p["params"].get("mode") != "music" and not music:
-                questions.append(dict(project=len(projects), text="文艺片要旁白（AI 配音读你的文案）还是纯音乐卡点？",
+                questions.append(dict(project=len(projects), text=MSG.cs("intake.question.narration"),
                                       options=["旁白", "纯音乐"], default="旁白"))
         else:
             continue

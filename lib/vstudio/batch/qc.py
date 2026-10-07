@@ -31,8 +31,15 @@ def opts(spec, recipe=None):
     return o
 
 
-def _c(name, ok, value=None, reason="", severity="red", target=None):
-    return dict(name=name, ok=ok, value=value, reason=reason if ok is False else "", severity=severity, target=target)
+def _c(name, ok, value=None, reason="", severity="red", target=None, **params):
+    """One check; a failed one carries ``message`` {code qc.<name>, params, message, message_zh} (MESSAGES.md)."""
+    d = dict(name=name, ok=ok, value=value, reason=reason if ok is False else "", severity=severity, target=target)
+    if ok is False:
+        from vstudio import messages as MSG
+        code = f"qc.{name}" if f"qc.{name}" in MSG.CATALOG else "qc.other"
+        pv = value if not isinstance(value, list) else len(value)
+        d["message"] = MSG.msg(code, None, None, name=name, value=pv, reason=reason, target=target, **params)
+    return d
 
 
 # --------------------------------------------------------------------------- individual checks
@@ -45,10 +52,11 @@ def check_loudness(path, target, measured=None, lufs_tol=1.0, tp_tol=0.5, label=
     out = []
     i_ok = m["i"] is not None and abs(m["i"] - target["lufs"]) <= lufs_tol
     out.append(_c("loudness", i_ok, round(m["i"], 2) if m["i"] is not None else None,
-                  f"integrated {m['i']:.1f} LUFS vs target {target['lufs']} (±{lufs_tol})", target=label))
+                  f"integrated {m['i']:.1f} LUFS vs target {target['lufs']} (±{lufs_tol})", target=label,
+                  lufs=target["lufs"]))
     tp_ok = m["tp"] <= target["tp"] + tp_tol
     out.append(_c("true-peak", tp_ok, round(m["tp"], 2), f"true peak {m['tp']:.1f} dBTP over {target['tp']}",
-                  target=label))
+                  target=label, tp=target["tp"]))
     return out
 
 
@@ -97,10 +105,12 @@ def check_black_frozen(path, o, label=None, allow=()):
     black, frz = detect_black_frozen(path, o["black_min"], o["black_pix"], o["freeze_min"])
     black = [(a, b) for a, b in black if not any(x - 0.15 <= a and b <= y + 0.15 for x, y in allow or ())]
     out = [_c("black-frames", not black, [[round(a, 2), round(b, 2)] for a, b in black],
-              "black " + ", ".join(f"{a:.1f}-{b:.1f}s" for a, b in black), target=label)]
+              "black " + ", ".join(f"{a:.1f}-{b:.1f}s" for a, b in black), target=label,
+              spans=", ".join(f"{a:.1f}-{b:.1f}s" for a, b in black))]
     out.append(_c("frozen-frames", not frz, [[round(a, 2), round(d, 2)] for a, d in frz],
                   "frozen " + ", ".join(f"{a:.1f}s for {d:.1f}s" for a, d in frz),
-                  severity="red" if o["freeze"] == "red" else "warn", target=label))
+                  severity="red" if o["freeze"] == "red" else "warn", target=label,
+                  spans=", ".join(f"{a:.1f}s ({d:.1f}s)" for a, d in frz)))
     return out
 
 
@@ -121,7 +131,7 @@ def check_title(title, platform, required=False, label=None):
                   target=label)
     pl = "youtube" if platform == "youtube-shorts" else platform
     ok, n, hints = publish.check_title(title, pl)
-    return _c("title", ok, n, f"title {n:g} over the {pl} limit: " + "; ".join(hints[:2]), target=label)
+    return _c("title", ok, n, f"title {n:g} over the {pl} limit: " + "; ".join(hints[:2]), target=label, platform=pl)
 
 
 def check_safe_zone(entry, prof, label=None):
@@ -222,4 +232,5 @@ def run_gates(job, spec, ins, extra=()):
     fmt = lambda c: (f"[{c['target']}] " if c.get("target") else "") + f"{c['name']}: {c['reason']}"  # noqa: E731
     status = "red" if red else "green"
     return dict(status=status, reasons=[fmt(c) for c in red], warnings=[fmt(c) for c in warn], checks=checks,
+                reasons_info=[c.get("message") for c in red], warnings_info=[c.get("message") for c in warn],
                 suggestions=sug, sample=status == "green" and sampled(job["id"], o["sample_pct"], o["seed"]))

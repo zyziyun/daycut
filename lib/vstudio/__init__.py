@@ -16,7 +16,9 @@ Core (audio/video pipeline)
   subs     Cue, wrap_cjk / balanced_wrap, highlight markup, SRT/ASS writers, bilingual, retime
   tts      synth() via OpenAI / Kokoro / Edge / clone / self-hosted server / ElevenLabs, content-addressed cache
   llm      complete(): one LLM interface (API providers, local servers, Claude Code / Codex CLIs, none), routing,
-           JSON repair, cost; ``python -m vstudio.llm providers`` (references/PROVIDERS.md)
+           JSON repair, cost, fallback chains; ``python -m vstudio.llm providers`` (references/PROVIDERS.md)
+  entities named-entity verification of transcripts (CLDR place names, glossary / model spellings)
+  messages engine text as code + params + message / message_zh (references/MESSAGES.md)
 
 Face and look
   face     MediaPipe landmarker + landmark index sets
@@ -32,6 +34,7 @@ Effects
   xfade    cross-engine transition bridge: one name -> HyperFrames GSAP (``hf_transitions``),
            ffmpeg xfade (``ffmpeg_transition`` / ``ffmpeg_expr``), numpy per-frame (``blend``)
 """
+__version__ = "0.2.0"
 
 import os as _os
 

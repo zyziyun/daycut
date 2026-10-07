@@ -25,6 +25,8 @@ import os
 import re
 import time
 
+from vstudio import messages as MSG
+
 from vstudio.batch.util import read_json
 
 from . import outputs as O
@@ -321,8 +323,9 @@ def _validate(doc, st, raw_ops):
             dropped.append(dict(op=op, error=e.info))
             continue
         cur = O.fold(cur, n)
-        proposed.append(dict(op=clean, normalized=n, describe=O.describe(n), why=op.get("why") or op.get("reason"),
-                             warnings=w))
+        why = op.get("why") or op.get("reason")
+        proposed.append(dict(op=clean, normalized=n, describe=O.describe(n), why=why, warnings=w,
+                             why_info=MSG.coded("ai-why", str(why)) if why else None))
     return proposed, dropped
 
 
@@ -493,6 +496,7 @@ def plan(d, instruction, outputs=None, context=None, provider=None, model=None, 
     groups.sort(key=lambda g: order.get(g["output"], 1e9))
     for g in groups:
         g["ops"] = [p["op"] for p in g["proposed"]]
+        g["summary_info"] = MSG.coded("ai-summary", str(g["summary"])) if g.get("summary") else None
     has = [g for g in groups if g["proposed"]]
     answer = "mixed" if has and needs else "changes" if has else "needs_rerender" if needs else "nothing"
     return dict(ok=True, scope="project", dir=d, kind=kind, instruction=instruction, answer=answer,
@@ -500,4 +504,5 @@ def plan(d, instruction, outputs=None, context=None, provider=None, model=None, 
                 groups=groups, needs_rerender=needs,
                 apply_all=dict(outputs=[g["output"] for g in has], ops=sum(len(g["proposed"]) for g in has)),
                 classified=cls["kind"], model_called=model_called, summary=summary, warnings=warns, cost_usd=cost,
+                summary_info=MSG.coded("ai-summary", str(summary)) if summary else None,
                 seconds=round(time.time() - t0, 2), **used)

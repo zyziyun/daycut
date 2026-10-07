@@ -166,4 +166,7 @@ def listing(start=None, end=None, account=None):
     counts = {}
     for p in posts:
         counts[p["state"]] = counts.get(p["state"], 0) + 1
-    return dict(start=s.isoformat(), end=e.isoformat(), accounts=d["accounts"], posts=posts, gaps=gaps, counts=counts)
+    from vstudio import messages as MSG                # code + params per state (references/MESSAGES.md)
+    posts = [dict(p, state_info=MSG.state("post-state", p["state"])) for p in posts]
+    return dict(start=s.isoformat(), end=e.isoformat(), accounts=d["accounts"], posts=posts, gaps=gaps, counts=counts,
+                states={k: MSG.state("post-state", k) for k in STATES})

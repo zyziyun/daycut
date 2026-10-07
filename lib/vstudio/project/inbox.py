@@ -8,6 +8,8 @@ aggregated - plus bulk groups (``batch_by``: filler confirms grouped by edit kin
 """
 import os
 
+from vstudio import messages as MSG
+
 from .core import Project, ProjectError, _brief_pending
 from . import home as H
 
@@ -20,6 +22,9 @@ def _entry(p, pay):
     for k in ("exports", "qc", "copy", "file", "exists", "content", "estimate", "kinds"):
         if k in pay:
             e[k] = pay[k]
+    cm = MSG.checkpoint(e.get("kind"), n=e.get("n_options") or len(pay.get("options") or []) or "")
+    e["label_info"], e["reason"] = cm["label"], pay.get("reason") if isinstance(pay.get("reason"), dict) \
+        and pay["reason"].get("code") else cm["reason"]
     return e
 
 
