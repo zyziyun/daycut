@@ -120,7 +120,8 @@ test('switching the default provider is explicit and shows up where AI runs', as
   expect(file.tasks.output_edit.provider).toBe('codex');
 
   await hash('#/');
-  await expect(page.getByTestId('composer-provider-chip')).toHaveAttribute('data-provider', 'codex');
+  await expect(page.getByTestId('composer')).toBeVisible();
+  await expect(page.getByTestId('composer-provider-chip')).toHaveCount(0); // Home: where AI runs lives in Settings now
   await page.getByTestId('nav-projects').click();
   await page.getByTestId('project-card').filter({ hasText: 'aiwork' }).click();
   await expect(page.getByTestId('clip-card')).toHaveCount(1);

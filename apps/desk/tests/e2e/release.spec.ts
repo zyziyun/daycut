@@ -84,8 +84,11 @@ test('a failed pilot is visible: project, inbox, all projects; retry with Codex 
   await expect(item).toHaveCount(1, { timeout: 15000 });
   await expect(page.getByTestId('inbox-item').first()).toHaveAttribute('data-kind', 'failed');
   await expect(item.getByTestId('inbox-failed-reason')).toBeVisible();
-  await expect(item.getByTestId('fail-login')).toBeVisible();
-  await expect(item.getByTestId('fail-retry-other')).toBeVisible();
+  await item.click();
+  const pv = page.getByTestId('inbox-preview');
+  await expect(pv).toHaveAttribute('data-kind', 'failed');
+  await expect(pv.getByTestId('fail-login')).toBeVisible();
+  await expect(pv.getByTestId('fail-retry-other')).toBeVisible();
   await shot('03-inbox-failed');
 
   // all projects: a Failed count
@@ -95,7 +98,8 @@ test('a failed pilot is visible: project, inbox, all projects; retry with Codex 
 
   // 换 Codex 重试 from the inbox: the pilot runs again and reaches "needs you"; the failure is gone
   await page.getByTestId('nav-inbox').click();
-  await item.getByTestId('fail-retry-other').click();
+  await item.click();
+  await page.getByTestId('inbox-preview').getByTestId('fail-retry-other').click();
   await expect(page.locator('[data-testid="inbox-item"][data-kind="failed"]')).toHaveCount(0, { timeout: 30000 });
   await page.getByTestId('nav-projects').click();
   await expect(page.getByTestId('projects-filter')).not.toContainText(/Failed|失败/, { timeout: 30000 });

@@ -1,0 +1,123 @@
+/* Text-based editing + the resizable editor split (ux/text-edit). Pending cut = red strike-through (still there),
+   caption fix = teal underline, unsure word = dotted underline, filler = grey chip, pause = dashed chip. */
+
+/* ---------------------------------------------------------------- editor frame: triage bar, breadcrumb, split */
+.ce-wrap { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.ce-wrap > .ce { flex: 1; height: auto; min-height: 0; }
+.ce-top .ce-crumbs { flex: 0 1 auto; min-width: 0; }
+.ce-top .ce-crumbs h1 { font-size: 15px; font-weight: 600; margin: 0; min-width: 0; }
+.ce-top .meta .arrow { color: var(--danger); font-weight: 500; }
+.ce-main.ce-split3 { display: grid; grid-template-columns: minmax(0, 1fr); min-height: 0; }
+.ce-split3 > .ce-stage { min-height: 0; position: relative; padding: 12px var(--s3) 6px; }
+.ce-split3 .ce-stage .pl .stage { container-type: size; min-height: 120px; background: transparent; }
+.ce-split3 .ce-stage .pl .frame video { max-height: 100cqh; max-width: 100cqw; min-height: 0; }
+.ce-hsplit { position: relative; cursor: row-resize; display: flex; align-items: center; justify-content: center; border-top: 1px solid var(--border); touch-action: none; }
+.ce-hsplit i { width: 40px; height: 4px; border-radius: 2px; background: var(--border-strong); transition: background var(--t) var(--ease), width var(--t) var(--ease); }
+.ce-hsplit:hover i, .ce-hsplit.on i { background: var(--accent); width: 56px; }
+.ce-flash { position: absolute; left: 50%; top: 42%; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 14px; border-radius: 17px; background: rgba(20, 18, 16, 0.78); color: #fff; font-size: 14px; font-weight: 500; pointer-events: none; animation: ce-flash 1.2s var(--ease) forwards; z-index: 3; }
+@keyframes ce-flash { 0% { opacity: 0; transform: translate(-50%, 4px); } 12% { opacity: 1; transform: translate(-50%, 0); } 75% { opacity: 1; } 100% { opacity: 0; } }
+.ce.cc-folded .ce-split { pointer-events: none; }
+.cc.cc-rail { align-items: center; padding-top: 8px; gap: 4px; border-left: 1px solid var(--border); }
+.cc-rail .btn { position: relative; }
+.cc-dot { position: absolute; right: 6px; top: 6px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.cc-ai > .av.me { background: var(--surface-3); color: var(--text-muted); }
+.cc-from { font-size: 13px; }
+
+/* ---------------------------------------------------------------- lower pane */
+.lp { display: flex; flex-direction: column; min-height: 0; position: relative; background: var(--bg); }
+.lp-bar { display: flex; align-items: center; gap: 10px; height: 52px; padding: 0 var(--s3); flex: none; }
+.seg.lp-tabs { background: var(--surface-2); border: 0; padding: 3px; border-radius: 10px; gap: 2px; }
+.seg.lp-tabs button { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 14px; border-radius: 8px; font-size: 14px; font-weight: 500; }
+.seg.lp-tabs button + button { border-left: 0; }
+.seg.lp-tabs button.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); }
+.lp-div { width: 1px; height: 22px; background: var(--border-strong); }
+.lp-presets { display: flex; gap: 2px; }
+.lp-presets .btn.ghost.on { background: var(--accent-soft); color: var(--accent); }
+.lp-find { display: flex; align-items: center; gap: 6px; }
+.lp-find.open { height: 34px; padding: 0 4px 0 10px; border-radius: 9px; border: 1px solid var(--border-strong); background: var(--surface); }
+.lp-find input { border: 0; outline: 0; background: transparent; color: var(--text); font: inherit; font-size: 14px; width: 180px; user-select: text; }
+.lp-body { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }
+.lp-body > .ce-tl { flex: 1; min-height: 0; overflow: auto; border-top: 0; }
+
+/* ---------------------------------------------------------------- filter chips + their menus */
+.tp-chips { display: inline-flex; gap: 8px; position: relative; }
+.chip.tp-chip { height: 32px; font-size: 14px; color: var(--text); gap: 6px; border-radius: 16px; }
+.chip.tp-chip b { font-weight: 600; }
+.chip.tp-chip .ico { width: 13px; height: 13px; color: var(--text-muted); }
+.tp-menu { position: absolute; left: 0; top: calc(100% + 8px); z-index: 20; width: 380px; max-height: 360px; overflow: auto; padding: 8px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border-strong); box-shadow: var(--shadow); font-size: 14px; }
+.tp-menu .hd { padding: 6px 10px 8px; font-size: 13px; }
+.tp-menu .row1 { display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 10px; border-radius: 8px; border: 0; background: transparent; color: var(--text); text-align: left; font: inherit; font-size: 14px; }
+.tp-menu .grp:hover { background: var(--surface-2); }
+.tp-menu .grp .link { border: 0; background: none; color: var(--accent); font: inherit; font-size: 13px; font-weight: 500; padding: 0; visibility: hidden; }
+.tp-menu .grp:hover .link { visibility: visible; }
+.tp-menu .ft { display: flex; align-items: center; gap: 8px; padding: 10px 10px 4px; margin-top: 6px; border-top: 1px solid var(--border); }
+
+/* ---------------------------------------------------------------- the transcript */
+.tp { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.tp-empty { align-items: center; justify-content: center; }
+.tp-mini { position: relative; height: 14px; margin: 2px var(--s3) 4px 88px; cursor: pointer; flex: none; }
+.tp-mini i { position: absolute; top: 4px; height: 6px; border-radius: 3px; }
+.tp-mini .track { left: 0; right: 0; background: var(--surface-3); }
+.tp-mini .view { top: 2px; height: 10px; border-radius: 5px; background: color-mix(in srgb, var(--text-faint) 18%, transparent); box-shadow: inset 0 0 0 1px var(--border-strong); }
+.tp-mini .cut.a { background: color-mix(in srgb, var(--text-faint) 45%, transparent); }
+.tp-mini .cut.p { background: repeating-linear-gradient(135deg, var(--danger) 0 2px, transparent 2px 4px); }
+.tp-mini .head { top: 0; width: 2px; height: 14px; margin-left: -1px; border-radius: 1px; background: var(--accent); }
+.tp-body { flex: 1; min-height: 0; overflow-y: auto; padding: 12px var(--s3) 96px; position: relative; outline: none; user-select: none; -webkit-user-select: none; scroll-behavior: smooth; }
+.tp-body:focus-visible { outline: none; }
+.para { display: grid; grid-template-columns: 64px minmax(0, 820px); gap: 0; margin-bottom: 18px; content-visibility: auto; contain-intrinsic-size: auto 60px; }
+.para .pt { border: 0; background: none; padding: 5px 0 0; text-align: left; font-family: var(--font-mono); font-size: 13px; color: var(--text-faint); cursor: pointer; align-self: start; }
+.para.on .pt { color: var(--accent); font-weight: 600; }
+.para p { margin: 0; font-size: 17px; line-height: 1.95; color: var(--text); }
+.w { position: relative; border-radius: 4px; padding: 2px 0; cursor: text; transition: background 80ms linear; }
+.w:hover { background: var(--surface-2); }
+.w.f { color: var(--text-muted); background: var(--surface-2); border-radius: 7px; padding: 2px 7px; margin: 0 3px; font-size: 0.86em; }
+.w.lc { text-decoration: underline dotted color-mix(in srgb, var(--warn) 85%, transparent); text-decoration-thickness: 2px; text-underline-offset: 5px; }
+.w.fx { text-decoration: underline solid var(--accent); text-decoration-thickness: 2px; text-underline-offset: 5px; }
+.w.hit { background: color-mix(in srgb, var(--warn) 30%, transparent); }
+.w.p { color: var(--text-faint); background: color-mix(in srgb, var(--danger) 8%, transparent); text-decoration: line-through; text-decoration-color: var(--danger); text-decoration-thickness: 2px; }
+.w.sel { background: color-mix(in srgb, var(--accent) 16%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent); }
+.w.cur { background: var(--accent); color: var(--accent-text); text-decoration: none; }
+.w.cur.p { background: color-mix(in srgb, var(--danger) 45%, transparent); color: var(--text); text-decoration: line-through; }
+.w .restore { position: absolute; left: 0; top: -30px; display: none; align-items: center; gap: 4px; height: 26px; padding: 0 9px; border-radius: 7px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); font-size: 13px; font-weight: 500; white-space: nowrap; box-shadow: var(--shadow); z-index: 4; text-decoration: none; line-height: 1; }
+.w .restore .ico { width: 12px; height: 12px; }
+.w.p:hover .restore { display: inline-flex; }
+.gap { display: inline-flex; align-items: center; height: 22px; padding: 0 7px; margin: 0 4px; border-radius: 11px; border: 1px dashed var(--border-strong); background: transparent; color: var(--text-faint); font-family: var(--font-mono); font-size: 12px; vertical-align: 2px; cursor: pointer; }
+.gap:hover { border-color: var(--text-faint); color: var(--text-muted); }
+.gap.p { border-color: var(--danger); color: var(--danger); text-decoration: line-through; }
+.cutmark { position: relative; display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; margin: 0 4px; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent); color: var(--danger); font-family: var(--font-mono); font-size: 12.5px; vertical-align: 2px; cursor: default; }
+.cutmark .ico { width: 12px; height: 12px; }
+.cutmark .cm-pop { position: absolute; left: -6px; bottom: calc(100% + 6px); display: none; align-items: center; gap: 12px; padding: 8px 10px 8px 14px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border-strong); box-shadow: var(--shadow); color: var(--text-muted); font-family: var(--font); font-size: 14px; white-space: nowrap; z-index: 5; }
+.cutmark .cm-pop s { text-decoration-color: var(--danger); max-width: 360px; overflow: hidden; text-overflow: ellipsis; }
+.cutmark .cm-pop button { display: inline-flex; align-items: center; gap: 4px; border: 0; background: none; color: var(--text); font: inherit; font-weight: 500; }
+.cutmark:hover .cm-pop { display: inline-flex; }
+.tp-selbar { position: absolute; z-index: 6; display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border-strong); box-shadow: var(--shadow); font-size: 14px; white-space: nowrap; }
+.tp-selbar button { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border-radius: 8px; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 14px; }
+.tp-selbar button:hover { background: var(--surface-2); }
+.tp-selbar button.danger { color: var(--danger); background: color-mix(in srgb, var(--danger) 7%, transparent); }
+.tp-selbar button:disabled { opacity: 0.45; }
+.tp-selbar .sep { width: 1px; height: 20px; background: var(--border); margin: 0 6px; }
+.tp-selbar .muted { padding-right: 8px; }
+.tp-fix { position: absolute; z-index: 7; width: 300px; display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border-strong); box-shadow: var(--shadow); user-select: text; }
+.tp-fix .lbl { font-weight: 600; font-size: 14px; }
+.tp-fix .was { color: var(--text-muted); font-size: 15px; }
+.tp-fix .was s { text-decoration-color: var(--text-faint); }
+.tp-fix .inp { flex: 1; height: 34px; font-size: 15px; }
+.tp-pending { position: absolute; left: var(--s3); right: var(--s3); bottom: 14px; z-index: 8; display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 18px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border-strong); box-shadow: var(--shadow); font-size: 14px; animation: ce-in 180ms var(--ease); }
+.tp-pending .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--danger); }
+.tp-pending b { font-weight: 600; }
+.tp-pending .minus { color: var(--danger); font-weight: 600; }
+.tp-pending .warn { color: var(--warn); max-width: 280px; }
+.tp-pending .btn { height: 38px; }
+
+/* ---------------------------------------------------------------- applied cut card in the chat */
+.cutcard .chd .ic { color: var(--text); }
+.cutcard .ok-pill { display: inline-flex; align-items: center; gap: 4px; color: var(--accent); font-weight: 500; font-size: 13px; }
+.cutcard .ok-pill .ico { width: 14px; height: 14px; }
+.cutlist { display: flex; flex-direction: column; gap: 6px; }
+.cutrow { display: flex; align-items: baseline; gap: 10px; }
+.cutrow s { flex: 1; min-width: 0; color: var(--text-muted); text-decoration-color: var(--danger); font-size: 14px; }
+.cutfx { display: flex; flex-direction: column; gap: 6px; padding-top: 4px; font-size: 13.5px; color: var(--text-muted); }
+.cutfx > div { display: flex; align-items: center; gap: 8px; }
+.cutfx .ico { width: 14px; height: 14px; color: var(--accent); }
+.cutcard.muted2 { opacity: 0.7; }
+.cc-pinned { flex: none; max-height: 62%; overflow-y: auto; padding: 12px var(--s2) 0; }

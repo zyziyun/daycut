@@ -109,8 +109,12 @@ test('进行中: an external run shows live on Home, 出错 when its heartbeat s
   await expect(page.getByTestId('project-card').filter({ hasText: 'fuye' }).getByTestId('status')).toHaveText(/出错|Error/);
   heartbeat({ status: 'waiting', needs_you: true, message: 'checkpoint: hooks' });
   await page.getByTestId('nav-home').click();
-  await expect(lane.getByTestId('live-state')).toHaveText(/需要你|Needs you/, { timeout: 15000 });
-  await lane.getByTestId('live-row').first().click();
+  // parked at a checkpoint: not "running" any more - it waits in the Inbox (Home shows the top of it)
+  const row = page.getByTestId('home-inbox-row').filter({ hasText: 'fuye' });
+  await expect(row).toBeVisible({ timeout: 15000 });
+  await expect(lane).toHaveCount(0);
+  await row.getByTestId('home-inbox-act').click();
+  await page.getByTestId('inbox-preview').getByTestId('crumb-project').click();
   await expect(page.getByTestId('project-title')).toHaveText('fuye');
   await page.getByTestId('tab-files').click();
   await expect(page.getByTestId('log-tail')).toContainText('rendering clip B');

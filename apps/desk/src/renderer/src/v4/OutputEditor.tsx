@@ -1,24 +1,42 @@
-// 二次编辑, chat-first (ux/CHAT_EDIT.md direction C): the video is the hero, the timeline a compact strip under it
-// with draft (amber) / applied (teal) markers, and 「和 AI 一起改」 a fixed column on the right where every change is
-// a card. Today's panels (裁剪 / 字幕 / 效果 / 标题与封面 / 导出) live on in the optional 「精确编辑」 drawer (E).
-// One filled button on screen: the newest draft's 应用, else 导出.
+// 二次编辑, chat-first (ux/CHAT_EDIT.md direction C) + text-based editing (ux/text-edit): the video on top, the lower
+// pane under it - Transcript (Descript mode: select words, Delete = a pending cut, skipped while previewing, one Apply
+// = one step) or Timeline - with a resizable split (⌘1 / ⌘2 / ⌘3, drag, double-click), and 「和 AI 一起改」 a column on
+// the right (320-560 px, ⌘\ folds it) where every change is a card. A breadcrumb says where the clip lives; arriving
+// from the Inbox pins the question in the chat, and "Review all in a row" adds the triage bar. Today's panels
+// (裁剪 / 字幕 / 效果 / 标题与封面 / 导出) live on in the optional 「精确编辑」 drawer (E). One filled button on screen:
+// Apply cuts while cuts are pending, else the newest draft's 应用, else 导出.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Check, Contrast, GanttChart, Music, PanelRight, Redo2, Scissors, SlidersHorizontal, Sparkle, Sparkles, Square, Trash2, Type, Undo2, Upload, X, ZoomIn } from 'lucide-react';
+import { ArrowLeft, Check, ChevronRight, Contrast, GanttChart, Music, PanelRight, Redo2, Scissors, SkipForward, SlidersHorizontal, Sparkle, Sparkles, Square, Trash2, Type, Undo2, Upload, X, ZoomIn } from 'lucide-react';
 import type { ChatDoc } from '../../../shared/chatEdit';
+import { EngineError } from '../../../shared/engineClient';
 import type { ClipFile, EditOp, EffectDef, OutputDoc } from '../../../shared/v04';
 import { fmtClock, getLang, t, type MessageKey } from '../i18n';
 import { useEngine } from '../lib/engine';
+import { useHistory } from '../lib/history';
+import { useInbox } from '../lib/inbox';
 import { previewDoc } from '../lib/outputs';
 import { snapEdge } from '../lib/timeline';
-import { href } from '../lib/router';
+import { projectHref, triageStep, useTriageState } from '../lib/nav';
+import { useRouteQuery } from '../lib/router';
 import { markers, type Primary } from '../lib/chatEdit';
+import { useTextCuts, draftKey } from '../lib/textCuts';
+import { defaultTab, draftCount, draftOps, draftSpans, fixInCue, hasDrafts, joinWords, keepToCuts, keptSeconds, segments, wordRuns, type Drafts } from '../lib/transcript';
+import { useSplit, type LowerTab } from '../lib/useSplit';
 import { ChatPanel, type ChatApi } from './chat/ChatPanel';
-import { Empty, Sk } from './kit';
+import { Empty, media, Sk } from './kit';
+import { LowerPane } from './LowerPane';
 import { effectLabel, emsg, errText, setEffectLabels } from './msg';
+import { PinnedQuestion } from './PinnedQuestion';
 import { Player, type PlayerApi } from './Player';
 import { Timeline } from './Timeline';
+import { TriageBar } from './TriageBar';
+import { MarksChips } from './transcript/MarksMenu';
+import { PendingBar } from './transcript/PendingBar';
+import { TranscriptPane, type TranscriptApi } from './transcript/TranscriptPane';
 import { useStrip, useTranscribe } from '../lib/timelineMedia';
 import { isTyping, useUi } from './ui';
+import '../theme/uxcore.css';
+import './transcript/transcript.css';
 
 type Tab = 'trim' | 'captions' | 'effects' | 'cover' | 'export';
 const TABS: [Tab, MessageKey][] = [
@@ -30,9 +48,17 @@ const TABS: [Tab, MessageKey][] = [
 ];
 const TARGETS = ['3:4', '9:16', '16:9'] as const;
 
+function fixedKey(id: string, clip: string) {
+  return `ce.fixed.${id}/${clip}`;
+}
+
 export function OutputEditor({ id, clip }: { id: string; clip: string }) {
   const { client, subscribe } = useEngine();
   const ui = useUi();
+  const q = useRouteQuery();
+  const inbox = useInbox();
+  const hist = useHistory();
+  const triage = useTriageState();
   const [doc, setDoc] = useState<ChatDoc | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('trim');
@@ -47,11 +73,25 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [rendered, setRendered] = useState<{ simulated?: boolean } | null>(null);
   const [drawer, setDrawer] = useState(() => sessionStorage.getItem('ce.drawer') === '1');
-  const [chatW, setChatW] = useState(() => Math.min(520, Math.max(360, Number(localStorage.getItem('ce.chatW')) || 420)));
   const [effects, setEffects] = useState<EffectDef[]>([]);
+  const [flash, setFlash] = useState<{ secs: number; n: number } | null>(null);
+  const [edl, setEdl] = useState<{ key: string; keep: [number, number][] } | null>(null);
+  const [tsel, setTsel] = useState(false);
+  const [find, setFind] = useState({ open: false, q: '', k: -1 });
+  const [fixed, setFixed] = useState<Record<number, string>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(fixedKey(id, clip)) ?? '{}') as Record<number, string>;
+    } catch {
+      return {};
+    }
+  });
+  const split = useSplit();
+  const cuts = useTextCuts(draftKey(id, clip));
   const pl = useRef<PlayerApi | null>(null);
   const chat = useRef<ChatApi | null>(null);
+  const tp = useRef<TranscriptApi | null>(null);
   const stopAt = useRef<number | null>(null);
+  const seekedFromQuery = useRef(false);
   const [n, setN] = useState(0);
   const reload = useCallback(() => setN((x) => x + 1), []);
 
@@ -75,11 +115,55 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
   }, [client]);
   useEffect(() => subscribe((e) => (e.type === 'output-edit' && e.item === id && e.clip === clip ? reload() : undefined)), [subscribe, id, clip, reload]);
   useEffect(() => sessionStorage.setItem('ce.drawer', drawer ? '1' : '0'), [drawer]);
-  useEffect(() => localStorage.setItem('ce.chatW', String(chatW)), [chatW]);
+  useEffect(() => localStorage.setItem(fixedKey(id, clip), JSON.stringify(fixed)), [fixed, id, clip]);
   useEffect(() => {
     setSel(null);
     setFxSel(null);
   }, [clip]);
+  // arrived with ?t= (an inbox option, a calendar card, ⌘K): go there once the player is ready
+  useEffect(() => {
+    if (!doc || seekedFromQuery.current || q.t == null) return;
+    seekedFromQuery.current = true;
+    const at = Number(q.t);
+    if (Number.isFinite(at)) window.setTimeout(() => pl.current?.seek(Math.max(0, at - 0.5)), 120);
+  }, [doc, q.t]);
+
+  const odoc = doc as unknown as OutputDoc | null;
+  const lowerTab: LowerTab = split.layout.tab ?? (odoc ? defaultTab(odoc) : 'transcript');
+  const words = useMemo(() => odoc?.words ?? [], [odoc]);
+  const pending = hasDrafts(cuts.drafts);
+  const dkey = useMemo(() => JSON.stringify(cuts.drafts), [cuts.drafts]);
+
+  // ---------------------------------------------------------------- live skip preview of the pending cuts
+  useEffect(() => {
+    if (!client || !odoc || !pending) {
+      setEdl(null);
+      return;
+    }
+    const ac = new AbortController();
+    const tm = window.setTimeout(() => {
+      client
+        .previewEdl(id, clip, draftOps(odoc.words, cuts.drafts, odoc.words_sig), ac.signal)
+        .then((r) => setEdl({ key: dkey, keep: r.keep }))
+        .catch(() => undefined);
+    }, 100);
+    return () => {
+      window.clearTimeout(tm);
+      ac.abort();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client, id, clip, dkey, odoc?.words_sig, odoc?.cuts]);
+  const spans = useMemo(() => (odoc ? draftSpans(odoc.words, cuts.drafts) : []), [odoc, cuts.drafts]);
+  const appliedKeep = useMemo(() => (odoc ? segments(odoc.duration, odoc.cuts, odoc.trim) : []), [odoc]);
+  const keep = useMemo(() => {
+    if (!odoc) return [];
+    if (!pending) return appliedKeep;
+    if (edl?.key === dkey) return edl.keep;
+    return segments(odoc.duration, [...odoc.cuts, ...spans.map(([a, b]) => ({ start: a, end: b }))], odoc.trim);
+  }, [odoc, pending, appliedKeep, edl, dkey, spans]);
+  const speed = odoc?.speed || 1;
+  const durNow = keptSeconds(appliedKeep) / speed;
+  const durAfter = keptSeconds(keep) / speed;
 
   const edit = useCallback(
     async (ops: EditOp[], undoToast = false) => {
@@ -121,44 +205,150 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
     },
     [client, id, clip, reload, ui],
   );
-  // keys (§5.10): ⌘K composer, / tools, ⌘↵ apply the newest draft, ⌘Z / ⇧⌘Z, hold C original, E precise edit, Esc
+
+  // ---------------------------------------------------------------- Apply the pending cuts (one step + a chat card)
+  const applyCuts = useCallback(async () => {
+    if (!client || !odoc || !pending || busy) return;
+    const ops = draftOps(odoc.words, cuts.drafts, odoc.words_sig);
+    if (!ops.length) return cuts.clear();
+    setBusy('cuts');
+    try {
+      const r = await client.editOutput(id, clip, ops, null, { by: 'you', note: 'transcript' });
+      const said = wordRuns(cuts.drafts)
+        .map(([a, b]) => joinWords(odoc.words, a, b))
+        .join(' / ');
+      if (r.step?.id)
+        await client
+          .addChatTurn(id, clip, { role: 'user', card: 'transcript', status: 'applied', applied_step: r.step.id, applied_ops: ops.length, text: said.slice(0, 1800), reply: JSON.stringify({ before: Math.round(durNow * 10) / 10, after: Math.round(durAfter * 10) / 10, phrases: wordRuns(cuts.drafts).length, pauses: ops.length - wordRuns(cuts.drafts).length, secs: Math.round((durNow - durAfter) * 10) / 10 }) })
+          .catch(() => undefined);
+      cuts.clear();
+      setRendered(null);
+      reload();
+      const w = r.warnings?.find((x) => x.code !== 'source-changed');
+      if (w) ui.toast(emsg(w));
+    } catch (e) {
+      if (e instanceof EngineError && e.code === 'stale-words') {
+        cuts.clear();
+        reload();
+      }
+      ui.toast(errText(e), { error: true });
+    } finally {
+      setBusy(null);
+    }
+  }, [client, odoc, pending, busy, cuts, id, clip, durNow, durAfter, reload, ui]);
+  const restoreCut = useCallback(
+    async (index: number) => {
+      if (!client) return;
+      try {
+        await client.editOutput(id, clip, [{ op: 'cut_remove', index }], null, { by: 'you', note: 'transcript' });
+        reload();
+      } catch (e) {
+        ui.toast(errText(e), { error: true });
+      }
+    },
+    [client, id, clip, reload, ui],
+  );
+  const fixWord = useCallback(
+    async (i: number, text: string) => {
+      if (!odoc) return false;
+      const w = odoc.words[i];
+      const mid = (w.t + w.te) / 2;
+      const cue = odoc.captions.find((c) => !c.removed && !c.added && mid >= c.start - 0.05 && mid <= c.end + 0.05);
+      const next = cue ? fixInCue(cue.text, fixed[i] ?? w.w, text) : null;
+      if (!cue || next == null) {
+        ui.toast(t('te.fixNoCue'), { error: true });
+        return false;
+      }
+      const ok = await edit([{ op: 'caption_text', cue: cue.id, text: next, force: true } as unknown as EditOp], true);
+      if (ok) setFixed((f) => ({ ...f, [i]: text }));
+      return ok;
+    },
+    [odoc, fixed, edit, ui],
+  );
+
+  // ---------------------------------------------------------------- find (⌘F)
+  const hits = useMemo(() => {
+    const s = new Set<number>();
+    const needle = find.q.trim().toLowerCase();
+    if (!find.open || !needle) return s;
+    let text = '';
+    const owner: number[] = [];
+    words.forEach((w, i) => {
+      for (const ch of w.w.toLowerCase()) {
+        text += ch;
+        owner.push(i);
+      }
+    });
+    let k = text.indexOf(needle);
+    while (k >= 0) {
+      for (let j = k; j < k + needle.length; j++) s.add(owner[j]);
+      k = text.indexOf(needle, k + needle.length);
+    }
+    return s;
+  }, [find.open, find.q, words]);
+  const hitStarts = useMemo(() => [...hits].filter((i) => !hits.has(i - 1)).sort((a, b) => a - b), [hits]);
+
+  // keys (§5.10 + text-edit §3): ⌘1/2/3 layout, ⌘\ chat, ⌘E transcript / timeline, ⌘F find, ⌘↵ apply, ⌘Z / ⇧⌘Z,
+  // hold C original, E precise edit (fix text while words are selected), / the chat, Esc
+  const keysRef = useRef<(e: KeyboardEvent) => void>(() => undefined);
+  keysRef.current = (e: KeyboardEvent) => {
+    const mod = e.metaKey || e.ctrlKey;
+    const k = e.key.toLowerCase();
+    if (mod && !e.shiftKey && !e.altKey && ['1', '2', '3'].includes(e.key)) {
+      e.preventDefault();
+      e.stopImmediatePropagation(); // not the app's ⌘1-⌘4 navigation while editing
+      split.setPreset((['watch', 'balanced', 'edit'] as const)[Number(e.key) - 1]);
+      return;
+    }
+    if (mod && e.key === '\\') {
+      e.preventDefault();
+      split.toggleChat();
+      return;
+    }
+    if (mod && k === 'e' && !e.shiftKey) {
+      e.preventDefault();
+      split.setTab(lowerTab === 'transcript' ? 'timeline' : 'transcript');
+      return;
+    }
+    if (mod && k === 'f' && lowerTab === 'transcript' && words.length) {
+      e.preventDefault();
+      setFind((f) => ({ ...f, open: true }));
+      return;
+    }
+    if (mod && e.key === 'Enter') {
+      e.preventDefault();
+      if (pending) void applyCuts();
+      else chat.current?.applyLatest();
+      return;
+    }
+    if (document.querySelector('.scrim, .ctx')) return;
+    if (isTyping(e.target)) return;
+    if (mod && k === 'z') {
+      e.preventDefault();
+      if (e.shiftKey && cuts.canRedo) cuts.redo();
+      else if (!e.shiftKey && cuts.canUndo && pending) cuts.undo();
+      else void undo(1, e.shiftKey);
+    } else if (!mod && e.key === '/') {
+      e.preventDefault();
+      chat.current?.focus('/');
+    } else if (!mod && !e.altKey && k === 'e') {
+      if (tsel) return; // the transcript's fix-text
+      setDrawer((d) => !d);
+    } else if (!mod && !e.altKey && k === 'c' && !e.repeat) {
+      setHoldC(true);
+    } else if (e.key === 'Escape') {
+      if (tsel) return;
+      if (chat.current?.escape()) return;
+      if (drawer) setDrawer(false);
+      else {
+        setSel(null);
+        pl.current?.setSelection(null);
+        setFxSel(null);
+      }
+    }
+  };
   useEffect(() => {
-    const down = (e: KeyboardEvent) => {
-      const mod = e.metaKey || e.ctrlKey;
-      const k = e.key.toLowerCase();
-      if (mod && k === 'k') {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        chat.current?.focus();
-        return;
-      }
-      if (mod && e.key === 'Enter') {
-        e.preventDefault();
-        chat.current?.applyLatest();
-        return;
-      }
-      if (document.querySelector('.scrim, .ctx')) return;
-      if (isTyping(e.target)) return;
-      if (mod && k === 'z') {
-        e.preventDefault();
-        void undo(1, e.shiftKey);
-      } else if (!mod && e.key === '/') {
-        e.preventDefault();
-        chat.current?.focus('/');
-      } else if (!mod && !e.altKey && k === 'e') {
-        setDrawer((d) => !d);
-      } else if (!mod && !e.altKey && k === 'c' && !e.repeat) {
-        setHoldC(true);
-      } else if (e.key === 'Escape') {
-        if (chat.current?.escape()) return;
-        if (drawer) setDrawer(false);
-        else {
-          setSel(null);
-          pl.current?.setSelection(null);
-          setFxSel(null);
-        }
-      }
-    };
+    const down = (e: KeyboardEvent) => keysRef.current(e);
     const up = (e: KeyboardEvent) => {
       if (e.key.toLowerCase() === 'c') setHoldC(false);
     };
@@ -168,7 +358,7 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
       window.removeEventListener('keydown', down, true);
       window.removeEventListener('keyup', up);
     };
-  }, [undo, drawer]);
+  }, []);
 
   const render = async (quality: 'preview' | 'final' = 'preview', targets = 'primary') => {
     if (!client) return;
@@ -195,17 +385,35 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
       pl.current?.pause();
     }
   }, []);
+  const onSkip = useCallback((secs: number) => setFlash((f) => ({ secs, n: (f?.n ?? 0) + 1 })), []);
+  useEffect(() => {
+    if (!flash) return;
+    const tm = window.setTimeout(() => setFlash(null), 1200);
+    return () => window.clearTimeout(tm);
+  }, [flash]);
   const { strip, failed: stripFailed } = useStrip(client, id, clip, doc?.files[0]?.path ?? null);
   const transcribe = useTranscribe(client, subscribe, id, clip, reload);
   const onPreview = useCallback((v: { ops: EditOp[] | null; compare: boolean }) => setPreview(v), []);
+  const setTextDrafts = useCallback((f: (d: Drafts) => Drafts) => cuts.set(f), [cuts]);
+  const jumpWord = useCallback(
+    (i: number) => {
+      const w = odoc?.words[i];
+      if (!w) return;
+      pl.current?.seek(w.t);
+      tp.current?.reveal(i);
+    },
+    [odoc],
+  );
 
-  const odoc = doc as unknown as OutputDoc | null;
   const view = useMemo(() => (odoc ? previewDoc(odoc, holdC ? null : preview.ops) : null), [odoc, preview.ops, holdC]);
   const marks = useMemo(() => (odoc ? markers(odoc, drafts) : []), [odoc, drafts]);
+  const project = hist.data?.items.find((x) => x.id === id);
+  const pinItem = q.item ? inbox.items.find((x) => x.key === q.item) ?? null : null;
+  const triageItem = triage ? inbox.items.find((x) => x.key === triage.keys[triage.i]) ?? null : null;
   if (err && !doc)
     return (
       <div className="pg">
-        <a className="back" href={href({ name: 'project', id })}>
+        <a className="back" href={projectHref(id)}>
           <ArrowLeft className="ico" />
           {t('c.back')}
         </a>
@@ -214,7 +422,7 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
     );
   if (!doc || !view || !odoc)
     return (
-      <div className="ce" aria-busy="true" style={{ ['--ce-chat' as string]: `${chatW}px` }}>
+      <div className="ce" aria-busy="true" style={{ ['--ce-chat' as string]: `${split.layout.chatW}px` }}>
         <div className="ce-top">
           <Sk h={20} w={260} />
         </div>
@@ -238,193 +446,325 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
     );
 
   const fresh = doc.renders.filter((r) => r.fresh && !r.simulated);
-  const files: ClipFile[] = [
-    ...fresh.map((r) => ({ path: r.file, aspect: r.target === 'primary' ? (doc.files[0]?.aspect ?? '3:4') : r.target, label: t('editor.editedVersion') })),
-    ...doc.files.map((f) => (fresh.length ? { ...f, label: t('c.original') } : f)),
-  ];
+  // the transcript speaks in the original's seconds: while it is open (or cuts are pending) the player plays the
+  // original and previews every cut by skipping it; otherwise the newest render leads
+  const sourceTimes = lowerTab === 'transcript' || pending;
+  const useFresh = fresh.length > 0 && !sourceTimes;
+  const files: ClipFile[] = useFresh
+    ? [...fresh.map((r) => ({ path: r.file, aspect: r.target === 'primary' ? (doc.files[0]?.aspect ?? '3:4') : r.target, label: t('editor.editedVersion') })), ...doc.files.map((f) => ({ ...f, label: t('c.original') }))]
+    : doc.files;
+  const playerCuts = useFresh ? [] : [...view.cuts, ...(pending ? keepToCuts(keep, doc.duration).filter((c) => !view.cuts.some((v) => Math.abs(v.start - c.start) < 0.01 && Math.abs(v.end - c.end) < 0.01)) : [])];
   const dirty = doc.steps.length > 0 && !doc.renders.some((r) => r.fresh);
   const capsNote = doc.caps_notes.find((m) => m.code === 'captions-add-only') ?? doc.caps_notes.find((m) => m.code === 'flattened');
   const firstWord = doc.words.find((w) => w.w.length >= 2)?.w;
   const aspect = doc.files[0]?.aspect;
   const compare = preview.compare && !holdC && preview.ops ? { effects: odoc.effects, labels: [t('ce.before'), t('ce.after')] as [string, string] } : null;
+  const nPending = draftCount(cuts.drafts);
+  const canFix = !!doc.caps.caption_text && doc.captions.some((c) => !c.added);
+  const cutNote = doc.mode === 'flattened' && doc.caps.cut_strategy === 'snap_captions' ? t('te.note.snap') : null;
+  const stageRows = `minmax(0, ${split.stage}fr) 8px minmax(${180}px, ${1 - split.stage}fr)`;
 
   return (
-    <div className="ce" data-testid="editor" style={{ ['--ce-chat' as string]: `${chatW}px` }}>
-      <header className="ce-top">
-        <a className="btn ghost icon sm" href={href({ name: 'project', id })} aria-label={t('c.back')} data-testid="editor-back">
-          <ArrowLeft className="ico" />
-        </a>
-        <h1 className="clamp1" lang="zh-CN" data-testid="editor-title">
-          {doc.title}
-        </h1>
-        <span className="meta">{t('ce.clipMeta', { dur: fmtClock(doc.duration), aspect: /^\d+:\d+$/.test(aspect ?? '') ? aspect! : t('c.original') })}</span>
-        <span className="sp" />
-        <div className="grp">
-          <button className="btn ghost icon sm" disabled={!doc.undo} onClick={() => void undo()} aria-label={t('c.undo')} data-tip={`${t('c.undo')} · ⌘Z`} data-testid="editor-undo">
-            <Undo2 className="ico" />
+    <div className={`ce-wrap ${triage && q.triage ? 'triage' : ''}`}>
+      {triage && q.triage === '1' && <TriageBar item={triageItem} items={inbox.items} />}
+      <div className={`ce ${split.collapsed ? 'cc-folded' : ''}`} data-testid="editor" style={{ ['--ce-chat' as string]: `${split.collapsed ? 48 : split.layout.chatW}px` }}>
+        <header className="ce-top">
+          <a className="btn ghost icon sm" href={projectHref(id)} aria-label={t('c.back')} data-testid="editor-back">
+            <ArrowLeft className="ico" />
+          </a>
+          <nav className="ux-crumbs ce-crumbs" aria-label={t('nav.where')} data-testid="editor-breadcrumb">
+            <a className="crumb" href={projectHref(id)} data-testid="crumb-project">
+              {project?.name ?? t('nav.projects')}
+            </a>
+            <ChevronRight className="ico sep" />
+            <span className="crumb here">
+              {doc.cover && <img src={media(doc.cover)} alt="" />}
+              <h1 className="clamp1" lang="zh-CN" data-testid="editor-title">
+                {doc.title}
+              </h1>
+            </span>
+          </nav>
+          <span className="meta" data-testid="editor-length">
+            {pending && Math.abs(durNow - durAfter) > 0.05 ? (
+              <>
+                {fmtClock(durNow)} <span className="arrow">→ {fmtClock(durAfter)}</span>
+              </>
+            ) : (
+              fmtClock(durNow || doc.duration)
+            )}{' '}
+            · {/^\d+:\d+$/.test(aspect ?? '') ? aspect! : t('c.original')}
+          </span>
+          <span className="sp" />
+          <div className="grp">
+            <button className="btn ghost icon sm" disabled={!doc.undo && !(pending && cuts.canUndo)} onClick={() => (pending && cuts.canUndo ? cuts.undo() : void undo())} aria-label={t('c.undo')} data-tip={`${t('c.undo')} · ⌘Z`} data-testid="editor-undo">
+              <Undo2 className="ico" />
+            </button>
+            <button className="btn ghost icon sm" disabled={!doc.redo && !cuts.canRedo} onClick={() => (cuts.canRedo ? cuts.redo() : void undo(1, true))} aria-label={t('c.redo')} data-tip={`${t('c.redo')} · ⇧⌘Z`} data-testid="editor-redo">
+              <Redo2 className="ico" />
+            </button>
+          </div>
+          <button className={`btn ghost ${drawer ? 'toggle on' : ''}`} onClick={() => setDrawer(!drawer)} aria-pressed={drawer} data-tip={`${t('ce.preciseTip')} · E`} data-testid="toggle-precise">
+            <SlidersHorizontal className="ico" />
+            {t('ce.precise')}
           </button>
-          <button className="btn ghost icon sm" disabled={!doc.redo} onClick={() => void undo(1, true)} aria-label={t('c.redo')} data-tip={`${t('c.redo')} · ⇧⌘Z`} data-testid="editor-redo">
-            <Redo2 className="ico" />
+          <button className={`btn ${primary === 'export' && !pending ? 'primary' : ''}`} onClick={() => chat.current?.openCard('export')} disabled={doc.caps.export === false} data-testid="editor-export">
+            <Upload className="ico" />
+            {t('ce.export')}
           </button>
-        </div>
-        <button className={`btn ghost ${drawer ? 'toggle on' : ''}`} onClick={() => setDrawer(!drawer)} aria-pressed={drawer} data-tip={`${t('ce.preciseTip')} · E`} data-testid="toggle-precise">
-          <SlidersHorizontal className="ico" />
-          {t('ce.precise')}
-        </button>
-        <button className={`btn ${primary === 'export' ? 'primary' : ''}`} onClick={() => chat.current?.openCard('export')} disabled={doc.caps.export === false} data-testid="editor-export">
-          <Upload className="ico" />
-          {t('ce.export')}
-        </button>
-      </header>
-      <main className="ce-main">
-        <section className="ce-stage">
-          <Player
-            ref={pl}
-            key={files.map((f) => f.path).join('|')}
-            files={files}
-            fps={doc.fps}
-            duration={doc.duration}
-            captions={doc.captions.map((c) => ({ ...c }))}
-            captionStyle={doc.caption_style}
-            effects={view.effects}
-            cuts={fresh.length ? [] : view.cuts}
-            trim={fresh.length ? null : view.trim}
-            onTime={onTime}
-            onPlaying={setPlaying}
-            strip={strip}
-            ticks={marks.map((m) => ({ t: m.a, b: m.b, tone: m.tone }))}
-            onSelection={setSel}
-            compare={compare}
-            badge={holdC ? t('ce.original') : null}
-            testId="editor-player"
-          />
-        </section>
-        <section className="ce-tl">
-          <Timeline
-            doc={view}
-            time={time}
-            playing={playing}
-            selection={sel}
-            selectedFx={fxSel}
-            strip={strip}
-            stripFailed={stripFailed}
-            transcribe={transcribe}
-            defs={effects}
-            header={
-              marks.some((m) => m.tone === 'draft') || doc.steps.length ? (
-                <>
-                  <span className="lg">
-                    <i className="d" />
-                    {t('ce.legend.draft')}
-                  </span>
-                  <span className="lg">
-                    <i className="a" />
-                    {t('ce.legend.applied')}
-                  </span>
-                  {preview.compare && <span>{t('ce.holdC')}</span>}
-                </>
-              ) : doc.words.length ? (
-                <span>{t('ce.tlHint')}</span>
+        </header>
+        <main className="ce-main ce-split3" ref={split.ref} style={{ gridTemplateRows: stageRows }}>
+          <section className="ce-stage">
+            <Player
+              ref={pl}
+              key={files.map((f) => f.path).join('|')}
+              files={files}
+              fps={doc.fps}
+              duration={doc.duration}
+              captions={doc.captions.map((c) => ({ ...c }))}
+              captionStyle={doc.caption_style}
+              effects={view.effects}
+              cuts={playerCuts}
+              trim={useFresh ? null : view.trim}
+              onTime={onTime}
+              onPlaying={setPlaying}
+              onSkip={onSkip}
+              strip={strip}
+              ticks={[...marks.map((m) => ({ t: m.a, b: m.b, tone: m.tone })), ...spans.map(([a, b]) => ({ t: a, b, tone: 'draft' as const }))]}
+              onSelection={setSel}
+              compare={compare}
+              badge={holdC ? t('ce.original') : null}
+              testId="editor-player"
+            />
+            {flash && (
+              <div key={flash.n} className="ce-flash" data-testid="skip-flash">
+                <SkipForward className="ico" />
+                {t('te.skippedS', { s: flash.secs.toFixed(1) })}
+              </div>
+            )}
+          </section>
+          <div
+            className="ce-hsplit"
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label={t('te.dividerTip')}
+            data-tip={t('te.dividerTip')}
+            onPointerDown={split.dragDivider}
+            onDoubleClick={split.reset}
+            data-testid="split-divider"
+          >
+            <i />
+          </div>
+          <LowerPane
+            tab={lowerTab}
+            onTab={split.setTab}
+            preset={split.layout.preset}
+            onPreset={split.setPreset}
+            chips={words.length ? <MarksChips doc={odoc} drafts={cuts.drafts} setDrafts={setTextDrafts} onJump={jumpWord} /> : null}
+            search={
+              words.length
+                ? {
+                    open: find.open,
+                    q: find.q,
+                    n: hitStarts.length,
+                    setOpen: (v) => setFind((f) => ({ ...f, open: v, q: v ? f.q : '' })),
+                    setQ: (s) => setFind((f) => ({ ...f, q: s, k: -1 })),
+                    next: () => {
+                      if (!hitStarts.length) return;
+                      const k = (find.k + 1) % hitStarts.length;
+                      setFind((f) => ({ ...f, k }));
+                      jumpWord(hitStarts[k]);
+                    },
+                    cutAll: () => setTextDrafts((d) => ({ words: { ...d.words, ...Object.fromEntries([...hits].map((i) => [i, d.words[i] ?? 'transcript'])) }, gaps: d.gaps })),
+                  }
+                : null
+            }
+            footer={
+              pending ? (
+                <PendingBar n={nPending} secs={Math.max(0, durNow - durAfter)} tooShort={durAfter < 1} note={cutNote} busy={busy === 'cuts'} onDiscard={() => cuts.clear()} onApply={() => void applyCuts()} />
               ) : null
             }
-            markers={marks}
-            onMarker={(turn) => chat.current?.focusTurn(turn)}
-            onSeek={(x) => pl.current?.seek(x)}
-            onSelect={(s) => {
-              setSel(s);
-              pl.current?.setSelection(s);
-            }}
-            onSelectFx={(f) => {
-              setFxSel(f);
-              if (f) setTab('effects');
-            }}
-            onMoveFx={(fx, start, end) => void edit([{ op: 'effect_update', id: fx.id, start, end }])}
-            onTrim={(a, b) => void edit([{ op: 'trim', start: a, end: b }])}
-          />
-        </section>
-      </main>
-      <div
-        className="ce-split"
-        role="separator"
-        aria-orientation="vertical"
-        aria-label={t('ce.resize')}
-        onPointerDown={(e) => {
-          const x0 = e.clientX;
-          const w0 = chatW;
-          const el = e.currentTarget;
-          el.classList.add('on');
-          const mv = (ev: PointerEvent) => setChatW(Math.min(520, Math.max(360, w0 - (ev.clientX - x0))));
-          const up = () => {
-            el.classList.remove('on');
-            window.removeEventListener('pointermove', mv);
-            window.removeEventListener('pointerup', up);
-          };
-          window.addEventListener('pointermove', mv);
-          window.addEventListener('pointerup', up);
-        }}
-        onDoubleClick={() => setChatW(420)}
-        data-testid="chat-resize"
-      />
-      <ChatPanel
-        ref={chat}
-        item={id}
-        clip={clip}
-        doc={doc}
-        defs={effects}
-        time={time}
-        sel={sel}
-        fxSel={fxSel}
-        onClearSel={() => (setSel(null), pl.current?.setSelection(null))}
-        onClearFx={() => setFxSel(null)}
-        seek={(x) => pl.current?.seek(x)}
-        playRange={playRange}
-        reload={() => (setRendered(null), reload())}
-        onDrafts={setDrafts}
-        onPreview={onPreview}
-        onPrimary={setPrimary}
-      />
-      {drawer && (
-        <section className="ce-drawer" data-testid="edit-panel">
-          <div className="dh">
-            <b>{t('ce.drawer.title')}</b>
-            <span className="sp" />
-            <button className="btn ghost icon sm" onClick={() => setDrawer(false)} aria-label={t('ce.drawer.close')} data-testid="close-precise">
-              <X className="ico" />
-            </button>
-          </div>
-          <nav className="tabs4" role="tablist">
-            {TABS.map(([k, label]) => (
-              <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)} data-testid={`etab-${k}`}>
-                {t(label)}
+          >
+            {lowerTab === 'transcript' ? (
+              <TranscriptPane
+                doc={odoc}
+                time={time}
+                playing={playing}
+                drafts={cuts.drafts}
+                setDrafts={setTextDrafts}
+                seek={(x) => pl.current?.seek(x)}
+                playFrom={(x) => {
+                  pl.current?.seek(x);
+                  pl.current?.play();
+                }}
+                fixed={fixed}
+                canFix={canFix}
+                fixWhyNot={doc.mode === 'flattened' ? t('te.fixBurned') : t('te.fixNoCaptions')}
+                onFix={fixWord}
+                onRestoreCut={(i) => void restoreCut(i)}
+                transcribe={transcribe}
+                hits={find.open ? hits : undefined}
+                apiRef={tp}
+                onSelection={setTsel}
+                onDiscardAll={() => pending && window.confirm(t('te.discardAll')) && cuts.clear()}
+              />
+            ) : (
+              <div className="ce-tl">
+                <Timeline
+                  doc={view}
+                  time={time}
+                  playing={playing}
+                  selection={sel}
+                  selectedFx={fxSel}
+                  strip={strip}
+                  stripFailed={stripFailed}
+                  transcribe={transcribe}
+                  defs={effects}
+                  pending={spans}
+                  fill
+                  header={
+                    marks.some((m) => m.tone === 'draft') || doc.steps.length || pending ? (
+                      <>
+                        <span className="lg">
+                          <i className="d" />
+                          {t('ce.legend.draft')}
+                        </span>
+                        <span className="lg">
+                          <i className="a" />
+                          {t('ce.legend.applied')}
+                        </span>
+                        {preview.compare && <span>{t('ce.holdC')}</span>}
+                      </>
+                    ) : doc.words.length ? (
+                      <span>{t('ce.tlHint')}</span>
+                    ) : null
+                  }
+                  markers={marks}
+                  onMarker={(turn) => chat.current?.focusTurn(turn)}
+                  onSeek={(x) => pl.current?.seek(x)}
+                  onSelect={(s) => {
+                    setSel(s);
+                    pl.current?.setSelection(s);
+                  }}
+                  onSelectFx={(f) => {
+                    setFxSel(f);
+                    if (f) setTab('effects');
+                  }}
+                  onMoveFx={(fx, start, end) => void edit([{ op: 'effect_update', id: fx.id, start, end }])}
+                  onTrim={(a, b) => void edit([{ op: 'trim', start: a, end: b }])}
+                />
+              </div>
+            )}
+          </LowerPane>
+        </main>
+        <div
+          className="ce-split"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={t('ce.resize')}
+          onPointerDown={(e) => {
+            if (split.collapsed) return;
+            const x0 = e.clientX;
+            const w0 = split.layout.chatW;
+            const el = e.currentTarget;
+            el.classList.add('on');
+            const mv = (ev: PointerEvent) => split.setChatW(w0 - (ev.clientX - x0));
+            const up = () => {
+              el.classList.remove('on');
+              window.removeEventListener('pointermove', mv);
+              window.removeEventListener('pointerup', up);
+            };
+            window.addEventListener('pointermove', mv);
+            window.addEventListener('pointerup', up);
+          }}
+          onDoubleClick={() => split.setChatW(400)}
+          data-testid="chat-resize"
+        />
+        <ChatPanel
+          ref={chat}
+          item={id}
+          clip={clip}
+          doc={doc}
+          defs={effects}
+          time={time}
+          sel={sel}
+          fxSel={fxSel}
+          onClearSel={() => (setSel(null), pl.current?.setSelection(null))}
+          onClearFx={() => setFxSel(null)}
+          seek={(x) => pl.current?.seek(x)}
+          playRange={playRange}
+          reload={() => (setRendered(null), reload())}
+          onDrafts={setDrafts}
+          onPreview={onPreview}
+          onPrimary={setPrimary}
+          collapsed={split.collapsed}
+          onToggle={split.toggleChat}
+          onShowInTranscript={(x) => {
+            split.setTab('transcript');
+            pl.current?.seek(x);
+            window.setTimeout(() => {
+              const i = odoc.words.findIndex((w) => w.te >= x);
+              if (i >= 0) tp.current?.reveal(i);
+            }, 80);
+          }}
+          pinned={
+            pinItem ? (
+              <PinnedQuestion
+                key={pinItem.key}
+                item={pinItem}
+                items={inbox.items}
+                clip={clip}
+                seek={(x) => {
+                  pl.current?.seek(Math.max(0, x - 3));
+                  pl.current?.play();
+                }}
+                onSkip={() => (triage ? triageStep(inbox.items, 1) : history.back())}
+              />
+            ) : null
+          }
+        />
+        {drawer && (
+          <section className="ce-drawer" data-testid="edit-panel">
+            <div className="dh">
+              <b>{t('ce.drawer.title')}</b>
+              <span className="sp" />
+              <button className="btn ghost icon sm" onClick={() => setDrawer(false)} aria-label={t('ce.drawer.close')} data-testid="close-precise">
+                <X className="ico" />
               </button>
-            ))}
-          </nav>
-          <div className="body">
-            {tab === 'trim' && <TrimPanel doc={view} time={time} sel={sel} edit={edit} onClearSel={() => (setSel(null), pl.current?.setSelection(null))} />}
-            {tab === 'captions' && <CaptionsPanel doc={odoc} note={capsNote ? emsg(capsNote) : null} edit={edit} time={time} sel={sel} />}
-            {tab === 'effects' && <EffectsPanel doc={odoc} defs={effects} time={time} sel={sel} fxSel={fxSel} setFxSel={setFxSel} edit={edit} firstWord={firstWord} />}
-            {tab === 'cover' && <CoverPanel doc={odoc} time={time} edit={edit} />}
-            {tab === 'export' && <ExportPanel doc={odoc} edit={edit} onFinal={() => void render('final', 'all')} busy={busy === 'render'} />}
-            <Edits doc={odoc} onUndoTo={(k) => void undo(doc.steps.length - k)} />
-          </div>
-          <div className="foot">
-            <span className="muted sp" data-testid="render-state">
-              {busy === 'render'
-                ? t('editor.rendering')
-                : rendered?.simulated
-                  ? t('editor.simulated')
-                  : rendered
-                    ? t('editor.rendered', { v: doc.steps.length })
-                    : dirty
-                      ? t('editor.unrendered', { n: doc.steps.length })
-                      : t('editor.upToDate')}
-            </span>
-            <button className="btn" disabled={busy === 'render' || !doc.steps.length} onClick={() => void render()} data-testid="render">
-              {busy === 'render' ? t('editor.rendering') : t('editor.render')}
-            </button>
-          </div>
-        </section>
-      )}
+            </div>
+            <nav className="tabs4" role="tablist">
+              {TABS.map(([k, label]) => (
+                <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)} data-testid={`etab-${k}`}>
+                  {t(label)}
+                </button>
+              ))}
+            </nav>
+            <div className="body">
+              {tab === 'trim' && <TrimPanel doc={view} time={time} sel={sel} edit={edit} onClearSel={() => (setSel(null), pl.current?.setSelection(null))} />}
+              {tab === 'captions' && <CaptionsPanel doc={odoc} note={capsNote ? emsg(capsNote) : null} edit={edit} time={time} sel={sel} />}
+              {tab === 'effects' && <EffectsPanel doc={odoc} defs={effects} time={time} sel={sel} fxSel={fxSel} setFxSel={setFxSel} edit={edit} firstWord={firstWord} />}
+              {tab === 'cover' && <CoverPanel doc={odoc} time={time} edit={edit} />}
+              {tab === 'export' && <ExportPanel doc={odoc} edit={edit} onFinal={() => void render('final', 'all')} busy={busy === 'render'} />}
+              <Edits doc={odoc} onUndoTo={(k) => void undo(doc.steps.length - k)} />
+            </div>
+            <div className="foot">
+              <span className="muted sp" data-testid="render-state">
+                {busy === 'render'
+                  ? t('editor.rendering')
+                  : rendered?.simulated
+                    ? t('editor.simulated')
+                    : rendered
+                      ? t('editor.rendered', { v: doc.steps.length })
+                      : dirty
+                        ? t('editor.unrendered', { n: doc.steps.length })
+                        : t('editor.upToDate')}
+              </span>
+              <button className="btn" disabled={busy === 'render' || !doc.steps.length} onClick={() => void render()} data-testid="render">
+                {busy === 'render' ? t('editor.rendering') : t('editor.render')}
+              </button>
+            </div>
+          </section>
+        )}
+      </div>
     </div>
   );
 }

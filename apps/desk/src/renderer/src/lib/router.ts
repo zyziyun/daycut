@@ -33,8 +33,14 @@ export type Route =
 const ID = /^[0-9a-f]{12}$/;
 const TABS: ProjectTab[] = ['clips', 'review', 'deliver', 'history', 'files'];
 
+/** `#/p/<id>/clip/<clip>?t=2.5&triage=1` -> {t: '2.5', triage: '1'} (the part after `?`; routes ignore it). */
+export function routeQuery(hash: string = typeof location !== 'undefined' ? location.hash : ''): Record<string, string> {
+  const q = hash.indexOf('?');
+  return q < 0 ? {} : Object.fromEntries(new URLSearchParams(hash.slice(q + 1)));
+}
+
 export function parseRoute(hash: string): Route {
-  const p = hash.replace(/^#\/?/, '').split('/').filter(Boolean).map((x) => {
+  const p = hash.replace(/^#\/?/, '').replace(/\?.*$/, '').split('/').filter(Boolean).map((x) => {
     try {
       return decodeURIComponent(x);
     } catch {
@@ -112,9 +118,24 @@ export function go(r: Route) {
 export function useRoute(): Route {
   const [r, setR] = useState(() => parseRoute(location.hash));
   useEffect(() => {
-    const on = () => setR(parseRoute(location.hash));
+    const on = () =>
+      setR((prev) => {
+        const next = parseRoute(location.hash);
+        return JSON.stringify(next) === JSON.stringify(prev) ? prev : next; // a query change keeps the screen
+      });
     window.addEventListener('hashchange', on);
     return () => window.removeEventListener('hashchange', on);
   }, []);
   return r;
+}
+
+/** The query of the current hash, updated on every navigation. */
+export function useRouteQuery(): Record<string, string> {
+  const [q, setQ] = useState(() => routeQuery());
+  useEffect(() => {
+    const on = () => setQ(routeQuery());
+    window.addEventListener('hashchange', on);
+    return () => window.removeEventListener('hashchange', on);
+  }, []);
+  return q;
 }

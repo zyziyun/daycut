@@ -31,8 +31,8 @@ export interface ChatTurn {
   applied_step?: string | null;
   applied_ops?: number | null;
   reverted_by?: string | null;
-  /** a card she opened without the model (/trim, /captions ...) */
-  card?: CardKind | null;
+  /** a card she opened without the model (/trim, /captions ...); 'transcript' = cuts she made in the transcript */
+  card?: CardKind | 'transcript' | null;
   reply?: string | null;
 }
 

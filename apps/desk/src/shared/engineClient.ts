@@ -36,7 +36,7 @@ import type {
 } from './v02';
 import type { AskContext, ChatTurn, ExportJob } from './chatEdit';
 import type { StripInfo, TranscribeState } from './timeline';
-import type { AskResult, CalendarDoc, CalendarPost, ClipsDoc, EditOp, EffectDef, EngineMsg, InboxDoc, IntakeJob, IntakePlan, OutputDoc, ProjectAskJob } from './v04';
+import type { AskResult, CalendarDoc, CalendarPost, ClipsDoc, EditOp, EffectDef, EngineMsg, InboxDoc, IntakeJob, IntakePlan, OutputDoc, PreviewEdl, ProjectAskJob, Retimed } from './v04';
 
 import { CreateClient } from './create';
 
@@ -327,8 +327,16 @@ export class EngineClient {
     return this.req<TranscribeState>('GET', `/api/outputs/${bid(item)}/${clipId(clip)}/transcribe`);
   }
   /** turn: the chat card these ops come from (marked applied in the clip's transcript) */
-  editOutput(item: string, clip: string, ops: EditOp[], turn?: string | null) {
-    return this.req<{ ok: boolean; step?: { id: string; describe: EngineMsg[] }; warnings?: EngineMsg[] }>('POST', `/api/outputs/${bid(item)}/${clipId(clip)}/edit`, turn ? { ops, turn } : { ops });
+  editOutput(item: string, clip: string, ops: EditOp[], turn?: string | null, meta?: { by?: 'user' | 'you' | 'ai'; note?: string }) {
+    return this.req<{ ok: boolean; step?: { id: string; describe: EngineMsg[]; retimed?: Retimed | null }; warnings?: EngineMsg[] }>('POST', `/api/outputs/${bid(item)}/${clipId(clip)}/edit`, {
+      ops,
+      ...(turn ? { turn } : {}),
+      ...(meta ?? {}),
+    });
+  }
+  /** the kept ranges if these pending transcript cuts were applied (live skip preview; nothing is written) */
+  previewEdl(item: string, clip: string, ops: EditOp[], signal?: AbortSignal) {
+    return this.req<PreviewEdl>('POST', `/api/outputs/${bid(item)}/${clipId(clip)}/preview-edl`, { ops }, signal);
   }
   /** context: what she points at (timeline selection, caption cues, the open effect) */
   askOutput(item: string, clip: string, prompt: string, context?: AskContext | null) {
@@ -391,8 +399,9 @@ export class EngineClient {
   effects() {
     return this.req<{ effects: EffectDef[]; engine: string }>('GET', '/api/effects');
   }
-  startIntake(prompt: string, inputs: string[]) {
-    return this.req<{ id: string }>('POST', '/api/intake', { prompt: prompt.slice(0, 2000), inputs });
+  /** platforms: the composer's platform chip (used when the request itself names none) */
+  startIntake(prompt: string, inputs: string[], platforms?: string[]) {
+    return this.req<{ id: string }>('POST', '/api/intake', { prompt: prompt.slice(0, 2000), inputs, ...(platforms?.length ? { platforms } : {}) });
   }
   intake(id: string) {
     return this.req<IntakeJob>('GET', `/api/intake/${pid(id)}`);

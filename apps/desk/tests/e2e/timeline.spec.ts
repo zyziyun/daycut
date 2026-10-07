@@ -55,6 +55,7 @@ async function open(clip: string, lang: 'en' | 'zh-CN' = 'zh-CN') {
   await page.evaluate(async (l) => {
     localStorage.setItem('i18n.strict', '1');
     sessionStorage.removeItem('v4.tlzoom2');
+    localStorage.setItem('ce.layout', JSON.stringify({ tab: 'timeline' })); // this file is about the timeline tab
     await window.desk.setSettings({ lang: l });
   }, lang);
   await page.reload();

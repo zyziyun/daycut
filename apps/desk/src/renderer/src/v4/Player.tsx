@@ -54,6 +54,8 @@ export interface PlayerProps {
   compare?: { effects: EffectInstance[]; captions?: CaptionCue[]; labels: [string, string] } | null;
   /** a label pinned top-left of the frame (e.g. "Original" while C is held) */
   badge?: string | null;
+  /** playing over a cut: how many seconds were skipped (the editor flashes "Skipped 1.7 s") */
+  onSkip?: (secs: number) => void;
 }
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -154,10 +156,16 @@ export const Player = forwardRef<PlayerApi, PlayerProps>(function Player(p, ref)
             el.currentTime = back;
             tt = back;
           } else if (rate >= 0) {
-            const c = (p.cuts ?? []).find((x) => tt >= x.start && tt < x.end - 0.01);
+            // jump a frame early (rAF runs ~16 ms apart) so the cut never plays; the volume dips over the seek
+            // (a seek lands on a frame boundary, a little before the asked time: past the cut's last 50 ms = done)
+            const c = (p.cuts ?? []).find((x) => tt >= x.start - 0.03 && tt < x.end - 0.05);
             if (c) {
-              el.currentTime = c.end;
-              tt = c.end;
+              const vol = el.volume;
+              el.volume = 0;
+              el.currentTime = c.end + 0.01;
+              tt = c.end + 0.01;
+              el.addEventListener('seeked', () => (el.volume = vol), { once: true });
+              p.onSkip?.(c.end - c.start);
             } else if (p.trim && tt < p.trim.start - 0.05) {
               el.currentTime = p.trim.start;
               tt = p.trim.start;
@@ -179,7 +187,7 @@ export const Player = forwardRef<PlayerApi, PlayerProps>(function Player(p, ref)
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rate, loop, p.cuts, p.trim, p.onTime]);
+  }, [rate, loop, p.cuts, p.trim, p.onTime, p.onSkip]);
 
   useEffect(() => {
     const el = v.current;

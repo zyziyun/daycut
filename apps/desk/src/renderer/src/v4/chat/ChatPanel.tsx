@@ -2,7 +2,7 @@
 // review, adjust, compare and apply; applied cards collapse to one line and undo ON THEIR OWN (an older card is
 // reverted alone, the later ones stay). Slash commands open the tool cards without the model.
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { ArrowUp, Check, Crop, Image as ImageIcon, MessageSquare, Scissors, Sparkles, Square, Undo2, Upload, Wand2, X } from 'lucide-react';
+import { ArrowUp, Check, Crop, Image as ImageIcon, MessageSquare, PanelRightClose, PanelRightOpen, Scissors, Sparkles, Square, Undo2, Upload, Wand2, X } from 'lucide-react';
 import type { AskContext, CardKind, ChatDoc, ChatTurn } from '../../../../shared/chatEdit';
 import { providerName } from '../../../../shared/aiRoutes';
 import { EngineError } from '../../../../shared/engineClient';
@@ -16,6 +16,7 @@ import { Sk } from '../kit';
 import { effectLabel, emsg, errText } from '../msg';
 import { useUi } from '../ui';
 import { CaptionsCard, CARD_ICON, CoverCard, EffectCard, ExportCard, FallbackCard, primaryPlatform, TrimCard, type CardEnv, type ExportRun } from './cards';
+import { CutCard } from './CutCard';
 import './chat.css';
 
 export interface ChatApi {
@@ -43,6 +44,13 @@ interface Props {
   onDrafts: (d: { turn: string; ops: EditOp[] }[]) => void;
   onPreview: (p: { ops: EditOp[] | null; compare: boolean }) => void;
   onPrimary: (p: Primary) => void;
+  /** an inbox question pinned on top of the conversation (triage / arrived from the Inbox) */
+  pinned?: React.ReactNode;
+  /** the column folded to a 48 px rail (⌘\) */
+  collapsed?: boolean;
+  onToggle?: () => void;
+  /** a transcript cut card's "Show in transcript" */
+  onShowInTranscript?: (t: number) => void;
 }
 
 interface Local {
@@ -120,7 +128,7 @@ export const ChatPanel = forwardRef<ChatApi, Props>(function ChatPanel(p, ref) {
     return l.ops.filter((_, i) => l.checked[i]);
   }, [opsOf]);
   const states = useMemo(() => Object.fromEntries(turns.map((x) => [x.id, cardState(x, doc)])), [turns, doc]);
-  const isOpenCard = (x: ChatTurn) => !!x.card && states[x.id] === 'note' && !runs[x.id];
+  const isOpenCard = (x: ChatTurn) => !!x.card && x.card !== 'transcript' && states[x.id] === 'note' && !runs[x.id];
   const lastAi = [...turns].reverse().find((x) => x.role === 'ai');
   const offline = lastAi ? offlineFrom({ warnings: lastAi.warnings ?? [] }) : null;
   const primaryTurn = useMemo(() => {
@@ -568,7 +576,19 @@ export const ChatPanel = forwardRef<ChatApi, Props>(function ChatPanel(p, ref) {
   };
 
   const cardTurn = (x: ChatTurn) => {
-    const kind = x.card!;
+    if (x.card === 'transcript')
+      return (
+        <div className={`cc-ai ${hot === x.id ? 'hot' : ''}`} data-turn={x.id} data-testid="chat-cut-turn">
+          <span className="av me">
+            <Scissors className="ico" />
+          </span>
+          <div className="body">
+            <div className="cc-from muted">{t('te.card.from')}</div>
+            <CutCard turn={x} doc={doc} state={states[x.id]} onUndo={() => void undo(x)} onRestore={x.reverted_by ? () => void restore(x) : undefined} onShow={(tt) => p.onShowInTranscript?.(tt)} />
+          </div>
+        </div>
+      );
+    const kind = x.card as CardKind;
     const st = states[x.id];
     let body: React.ReactNode;
     if (runs[x.id] || st === 'note') body = toolCard(x, kind, [], (ops) => void apply(x, ops), () => void setStatus(x, 'discarded'));
@@ -612,12 +632,31 @@ export const ChatPanel = forwardRef<ChatApi, Props>(function ChatPanel(p, ref) {
   const placeholder = offline ? t('ce.placeholderOffline') : fx ? t('ce.placeholderFx') : t('ce.placeholder');
   const day = turns[0]?.at ? dayLabel(turns[0].at) : null;
 
+  if (p.collapsed)
+    return (
+      <aside className="cc cc-rail" data-testid="chat-panel" data-collapsed="1">
+        <button className="btn ghost icon" onClick={p.onToggle} aria-label={t('te.chatOpen')} data-tip={`${t('te.chatOpen')} · ⌘\\`} data-testid="chat-expand">
+          <PanelRightOpen className="ico" />
+        </button>
+        <button className="btn ghost icon" onClick={p.onToggle} aria-label={t('ce.chatTitle')}>
+          <MessageSquare className="ico" />
+          {(drafts.length > 0 || !!p.pinned) && <i className="cc-dot" data-testid="chat-rail-dot" />}
+        </button>
+      </aside>
+    );
   return (
     <aside className="cc" data-testid="chat-panel">
       <div className="cc-hd">
         <MessageSquare className="ico" />
         <b>{t('ce.chatTitle')}</b>
+        <span style={{ flex: 1 }} />
+        {p.onToggle && (
+          <button className="btn ghost icon sm" onClick={p.onToggle} aria-label={t('te.chatClose')} data-tip={`${t('te.chatClose')} · ⌘\\`} data-testid="chat-collapse">
+            <PanelRightClose className="ico" />
+          </button>
+        )}
       </div>
+      {p.pinned && <div className="cc-pinned">{p.pinned}</div>}
       <div className="cc-log" ref={log} data-testid="chat-log">
         {day && <div className="cc-day">{day}</div>}
         {!turns.length && !pending && (
@@ -654,7 +693,7 @@ export const ChatPanel = forwardRef<ChatApi, Props>(function ChatPanel(p, ref) {
         )}
         {turns.map((x) => (
           <div key={x.id} className="col" style={{ gap: 10 }}>
-            {x.role === 'ai' ? meBubble(x.text, x.context) : x.card ? meBubble(x.text) : null}
+            {x.role === 'ai' ? meBubble(x.text, x.context) : x.card && x.card !== 'transcript' ? meBubble(x.text) : null}
             {x.role === 'ai' ? aiTurn(x) : x.card ? cardTurn(x) : meBubble(x.text)}
           </div>
         ))}

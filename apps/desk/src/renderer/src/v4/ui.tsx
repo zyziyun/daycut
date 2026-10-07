@@ -1,10 +1,11 @@
 // App-wide overlays: undo toasts, right-click menus, the ⌘K command palette, the ? shortcut sheet, drop-anywhere
 // (files dropped on the window start a new request on Home), and the global keyboard shortcuts.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ArrowRight, Calendar, FolderOpen, Home, Inbox, Keyboard, Languages, LayoutGrid, Moon, Pause, Search, Settings, Sparkles, Sun, Undo2, Video } from 'lucide-react';
-import { LANGS, LOCALES, getLang, t, type MessageKey } from '../i18n';
+import { ArrowRight, Bot, Calendar, CalendarClock, FolderOpen, Home, Inbox, Keyboard, Languages, LayoutGrid, Moon, Pause, Search, Send, Settings, Sparkles, Sun, Undo2, Video } from 'lucide-react';
+import { LANGS, LOCALES, fmtTime as fmtTimeOf, getLang, t, type MessageKey } from '../i18n';
 import { useEngine } from '../lib/engine';
 import { useHistory } from '../lib/history';
+import { postHref, useBackForwardKeys } from '../lib/nav';
 import { go, type Route } from '../lib/router';
 
 // ---------------------------------------------------------------- toasts
@@ -144,6 +145,7 @@ export function UiProvider({
     };
   }, [setDropped]);
 
+  useBackForwardKeys();
   // global shortcuts
   useEffect(() => {
     const on = (e: KeyboardEvent) => {
@@ -289,7 +291,7 @@ export function isTyping(target: EventTarget | null): boolean {
 // ---------------------------------------------------------------- ⌘K
 interface Cmd {
   id: string;
-  group: 'go' | 'actions' | 'projects' | 'clips';
+  group: 'go' | 'actions' | 'projects' | 'clips' | 'posts' | 'settings';
   label: string;
   hint?: string;
   icon: ReactNode;
@@ -301,6 +303,18 @@ function Palette({ onClose, openSheet, theme, onTheme, onLang }: { onClose: () =
   const [i, setI] = useState(0);
   const { data } = useHistory();
   const { client } = useEngine();
+  const [posts, setPosts] = useState<{ id: string; title: string; at: string; platform: string }[]>([]);
+  useEffect(() => {
+    if (!client) return;
+    let alive = true;
+    void client
+      .calendar()
+      .then((c) => alive && setPosts(c.posts.slice(0, 60)))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [client]);
   const cmds = useMemo<Cmd[]>(() => {
     const goC = (id: string, key: MessageKey, r: Route, icon: ReactNode, hint?: string): Cmd => ({ id, group: 'go', label: t(key), icon, run: () => go(r), hint });
     const other = theme === 'studio-dark' ? 'notebook-light' : 'studio-dark';
@@ -324,14 +338,19 @@ function Palette({ onClose, openSheet, theme, onTheme, onLang }: { onClose: () =
       ...LANGS.filter((l) => l !== getLang()).map<Cmd>((l) => ({ id: `lang-${l}`, group: 'actions', label: t('palette.lang', { l: LOCALES[l].label }), icon: <Languages className="ico" />, run: () => onLang(l) })),
       { id: 'theme', group: 'actions', label: t('palette.theme', { th: t(other === 'studio-dark' ? 'set.theme.studio-dark' : 'set.theme.notebook-light') }), icon: other === 'studio-dark' ? <Moon className="ico" /> : <Sun className="ico" />, run: () => onTheme(other) },
       { id: 'keys', group: 'actions', label: t('palette.shortcuts'), icon: <Keyboard className="ico" />, hint: '?', run: openSheet },
+      { id: 'set-general', group: 'settings', label: t('palette.set.general'), icon: <Settings className="ico" />, hint: '⌘,', run: () => go({ name: 'settings' }) },
+      { id: 'set-ai', group: 'settings', label: t('palette.set.ai'), icon: <Bot className="ico" />, run: () => go({ name: 'aiAccounts' }) },
+      { id: 'set-accounts', group: 'settings', label: t('palette.set.accounts'), icon: <Send className="ico" />, run: () => go({ name: 'channels' }) },
     ];
+    for (const p of posts)
+      list.push({ id: `post-${p.id}`, group: 'posts', label: p.title, hint: `${fmtTimeOf(p.at)} · ${t(`pf.${p.platform.split(':')[0]}` as MessageKey)}`, icon: <CalendarClock className="ico" />, run: () => (location.hash = postHref(p.id)) });
     for (const it of data?.items ?? []) {
       if (it.live?.state === 'running' && it.openable && client)
         list.push({ id: `pause-${it.id}`, group: 'actions', label: t('palette.pause', { name: it.name }), icon: <Pause className="ico" />, run: () => client.cancel(it.id).catch(() => undefined) });
       list.push({ id: `p-${it.id}`, group: 'projects', label: it.name, icon: <FolderOpen className="ico" />, run: () => go({ name: 'project', id: it.id }) });
     }
     return list;
-  }, [data, client, theme, onTheme, onLang, openSheet]);
+  }, [data, client, theme, onTheme, onLang, openSheet, posts]);
   const [clipHits, setClipHits] = useState<Cmd[]>([]);
   useEffect(() => {
     // clip titles: search the recent finished projects' clips (lazy, only while typing)
@@ -347,7 +366,7 @@ function Palette({ onClose, openSheet, theme, onTheme, onLang }: { onClose: () =
       setClipHits(
         rows
           .flat()
-          .filter(({ c }) => c.title.toLowerCase().includes(ql))
+          .filter(({ c }) => c.title.toLowerCase().includes(ql) || c.id.toLowerCase().includes(ql))
           .slice(0, 8)
           .map(({ x, c }) => ({ id: `c-${x.id}-${c.id}`, group: 'clips', label: c.title, hint: x.name, icon: <Video className="ico" />, run: () => go({ name: 'clip', id: x.id, clip: c.id }) })),
       );
@@ -358,7 +377,7 @@ function Palette({ onClose, openSheet, theme, onTheme, onLang }: { onClose: () =
   }, [q, client, data]);
   const ql = q.trim().toLowerCase();
   const shown = [...cmds.filter((c) => !ql || c.label.toLowerCase().includes(ql) || c.id.includes(ql)), ...clipHits].slice(0, 40);
-  const groups: Cmd['group'][] = ['go', 'actions', 'projects', 'clips'];
+  const groups: Cmd['group'][] = ['go', 'projects', 'clips', 'posts', 'actions', 'settings'];
   const ordered = groups.flatMap((g) => shown.filter((c) => c.group === g));
   const pick = (c: Cmd | undefined) => {
     if (!c) return;
@@ -373,7 +392,7 @@ function Palette({ onClose, openSheet, theme, onTheme, onLang }: { onClose: () =
           <input
             autoFocus
             value={q}
-            placeholder={t('palette.placeholder')}
+            placeholder={t('palette.jump')}
             onChange={(e) => {
               setQ(e.target.value);
               setI(0);
@@ -422,6 +441,7 @@ function Palette({ onClose, openSheet, theme, onTheme, onLang }: { onClose: () =
 // ---------------------------------------------------------------- ? cheat sheet
 export const SHORTCUTS: [MessageKey, string][] = [
   ['keys.palette', '⌘K'],
+  ['keys.backForward', '⌘[ · ⌘]'],
   ['keys.help', '?'],
   ['keys.go', '⌘1 – ⌘4'],
   ['keys.newPrompt', '⌘N'],

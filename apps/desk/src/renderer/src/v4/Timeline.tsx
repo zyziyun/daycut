@@ -64,9 +64,20 @@ export interface TimelineProps {
   header?: ReactNode;
   /** ⌘+ / ⌘− / ⌘0 and pinch (off when another view owns the keyboard) */
   keys?: boolean;
+  /** pending transcript cuts (red hatch across every lane, the same as the transcript's strike-through) */
+  pending?: [number, number][];
+  /** grow the lanes with the space the lower pane gives (the editor's split); the base heights are the minimum */
+  fill?: boolean;
 }
 
 const GUTTER = 76;
+
+/** Seconds of [a, b] left after the cuts. */
+function keptOf(a: number, b: number, cuts: [number, number][]): number {
+  let cut = 0;
+  for (const [x, y] of cuts) cut += Math.max(0, Math.min(b, y) - Math.max(a, x));
+  return Math.max(0, b - a - cut);
+}
 const H = { ruler: 24, film: 46, wave: 40, words: 30, fxRow: 24 };
 const OVERSCAN = 240; // px drawn beyond each edge of the viewport
 
@@ -220,6 +231,19 @@ export function Timeline(p: TimelineProps) {
   const fx = useMemo(() => stackRows(doc.effects.map((e) => (drag?.kind === 'fx' && drag.fx.id === e.id ? { ...e, ...drag.cur } : e))), [doc.effects, drag]);
   const rows = Math.max(1, ...fx.map((e) => e.row + 1));
   const fxH = rows * H.fxRow + 8;
+  // lanes grow with the pane (up to 2.4x, words up to 1.5x): a tall lower pane is not empty space
+  const [avail, setAvail] = useState(0);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    const el = rootRef.current?.parentElement;
+    if (!p.fill || !el) return;
+    const ro = new ResizeObserver(() => setAvail(el.clientHeight));
+    ro.observe(el);
+    setAvail(el.clientHeight);
+    return () => ro.disconnect();
+  }, [p.fill]);
+  const sc = p.fill && avail ? Math.min(2.4, Math.max(1, (avail - 64 - H.ruler - fxH) / (H.film + H.wave + H.words))) : 1;
+  const L = { film: Math.round(H.film * sc), wave: Math.round(H.wave * sc), words: Math.round(H.words * Math.min(sc, 1.5)) };
   const trimA = drag?.kind === 'trim' && drag.edge === 'l' ? drag.cur : (doc.trim?.start ?? 0);
   const trimB = drag?.kind === 'trim' && drag.edge === 'r' ? drag.cur : (doc.trim?.end ?? D);
   const cats = useMemo(() => new Map((p.defs ?? []).map((d) => [d.id, d.category ?? 'other'])), [p.defs]);
@@ -238,10 +262,10 @@ export function Timeline(p: TimelineProps) {
   const tr = p.transcribe;
   const est = listenEstimate(D);
   const lanesTop = H.ruler;
-  const lanesH = H.film + H.wave + H.words + fxH;
+  const lanesH = L.film + L.wave + L.words + fxH;
 
   return (
-    <div className="tl2" data-testid="timeline" style={{ ['--tl-g' as string]: `${GUTTER}px` }}>
+    <div className="tl2" ref={rootRef} data-testid="timeline" style={{ ['--tl-g' as string]: `${GUTTER}px` }}>
       <div className="tl2-bar">
         <div className="lead">{p.header}</div>
         <div className="zm" role="group" aria-label={t('tl.fit')}>
@@ -259,9 +283,9 @@ export function Timeline(p: TimelineProps) {
       <div className="tl2-body">
         <div className="tl2-gutter" aria-hidden="true">
           <span style={{ height: H.ruler }} />
-          <span style={{ height: H.film }}>{t('tl.lane.video')}</span>
-          <span style={{ height: H.wave }}>{t('tl.lane.audio')}</span>
-          <span style={{ height: H.words }}>{t('tl.lane.words')}</span>
+          <span style={{ height: L.film }}>{t('tl.lane.video')}</span>
+          <span style={{ height: L.wave }}>{t('tl.lane.audio')}</span>
+          <span style={{ height: L.words }}>{t('tl.lane.words')}</span>
           <span style={{ height: fxH }}>{t('tl.lane.fx')}</span>
         </div>
         <div
@@ -306,17 +330,17 @@ export function Timeline(p: TimelineProps) {
                 ))}
             </div>
             {/* filmstrip */}
-            <div className="ln film" style={{ top: lanesTop, height: H.film }} onPointerDown={seekDown} data-testid="tl-film" data-ready={strip?.sprite ? '1' : '0'}>
-              <Film strip={strip ?? null} failed={!!p.stripFailed} pps={pps} W={W} from={scroll - OVERSCAN} to={scroll + width + OVERSCAN} h={H.film} />
+            <div className="ln film" style={{ top: lanesTop, height: L.film }} onPointerDown={seekDown} data-testid="tl-film" data-ready={strip?.sprite ? '1' : '0'}>
+              <Film strip={strip ?? null} failed={!!p.stripFailed} pps={pps} W={W} from={scroll - OVERSCAN} to={scroll + width + OVERSCAN} h={L.film} />
             </div>
             {/* waveform */}
-            <div className="ln wave" style={{ top: lanesTop + H.film, height: H.wave }} onPointerDown={seekDown} data-testid="tl-wave">
-              <Wave strip={strip ?? null} pps={pps} scroll={scroll} width={width} h={H.wave} time={time} />
+            <div className="ln wave" style={{ top: lanesTop + L.film, height: L.wave }} onPointerDown={seekDown} data-testid="tl-wave">
+              <Wave strip={strip ?? null} pps={pps} scroll={scroll} width={width} h={L.wave} time={time} />
             </div>
             {/* transcript */}
             <div
               className="ln words"
-              style={{ top: lanesTop + H.film + H.wave, height: H.words }}
+              style={{ top: lanesTop + L.film + L.wave, height: L.words }}
               onPointerDown={(e) => {
                 if (e.button !== 0 || (e.target as HTMLElement).closest('.listen')) return;
                 const wt = (e.target as HTMLElement).dataset?.t; // a click on a word seeks to its first frame
@@ -364,7 +388,7 @@ export function Timeline(p: TimelineProps) {
             {/* effects */}
             <div
               className="ln fxl"
-              style={{ top: lanesTop + H.film + H.wave + H.words, height: fxH }}
+              style={{ top: lanesTop + L.film + L.wave + L.words, height: fxH }}
               onPointerDown={(e) => {
                 if (e.target !== e.currentTarget) return;
                 onSelectFx(null);
@@ -389,13 +413,18 @@ export function Timeline(p: TimelineProps) {
                   const orig = doc.effects.find((y) => y.id === e.id)!;
                   setDrag({ kind: 'fx', fx: orig, edge, t0: edge === 'm' ? tAtClient(ev.clientX) : 0, cur: { start: e.start, end: e.end } });
                 };
+                // a pending transcript cut shortens / removes this effect: amber dashed, said in the tooltip
+                const kept = (p.pending ?? []).length ? keptOf(e.start, e.end, p.pending ?? []) : null;
+                const hit = kept != null && kept < e.end - e.start - 0.02;
+                const why = hit ? (kept < 0.4 ? t('te.fxRemoved') : t('te.fxShorter', { a: (e.end - e.start).toFixed(1), b: kept.toFixed(1) })) : '';
                 return (
                   <div
                     key={e.id}
-                    className={`fxb c-${cats.get(e.effect) ?? 'other'} ${selectedFx === e.id ? 'on' : ''} ${e.id.startsWith('preview') ? 'draft' : ''}`}
+                    className={`fxb c-${cats.get(e.effect) ?? 'other'} ${selectedFx === e.id ? 'on' : ''} ${e.id.startsWith('preview') || hit ? 'draft' : ''}`}
                     style={{ left, width: w, top: 4 + e.row * H.fxRow }}
                     onPointerDown={grab('m')}
-                    title={text ? `${name} · ${text}` : name}
+                    title={[text ? `${name} · ${text}` : name, why].filter(Boolean).join(' — ')}
+                    data-hit={hit ? '1' : undefined}
                     data-testid="fx-block"
                     data-fx={e.effect}
                   >
@@ -413,6 +442,9 @@ export function Timeline(p: TimelineProps) {
               {trimB < D - 0.01 && <div className="trimz" style={{ left: x(trimB), right: 0 }} />}
               {doc.cuts.map((c) => (
                 <div key={c.index} className="cutz" style={{ left: x(c.start), width: Math.max(2, x(c.end) - x(c.start)) }} />
+              ))}
+              {(p.pending ?? []).map(([a, b], k) => (
+                <div key={`p${k}`} className="cutz pend" style={{ left: x(a), width: Math.max(3, x(b) - x(a)) }} data-testid="tl-pending" />
               ))}
               {(markers ?? [])
                 .filter((m) => m.tone === 'draft' || m.kind === 'cut')

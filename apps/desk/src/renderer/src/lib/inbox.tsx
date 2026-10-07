@@ -7,6 +7,8 @@ import { useHistory } from './history';
 
 interface Ctx {
   items: InboxItem[];
+  /** answered today (Inbox "Done today" row) */
+  doneToday: number;
   loading: boolean;
   error: string | null;
   reload(): void;
@@ -30,7 +32,7 @@ export function InboxProvider({ children }: { children: ReactNode }) {
     if (hist) reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hist?.at]);
-  return <InboxCtx.Provider value={{ items: data?.items ?? [], loading: loading && !data, error, reload }}>{children}</InboxCtx.Provider>;
+  return <InboxCtx.Provider value={{ items: data?.items ?? [], doneToday: data?.done_today ?? 0, loading: loading && !data, error, reload }}>{children}</InboxCtx.Provider>;
 }
 
 export function useInbox(): Ctx {

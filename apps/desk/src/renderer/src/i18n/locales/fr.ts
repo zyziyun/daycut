@@ -15,6 +15,7 @@ import type { projectAiEn } from './projectAi';
 import type { publishPlatformsEn } from './publishPlatforms';
 import type { releaseEn } from './release';
 import { aboutFr } from './about';
+import { uxCoreFr } from './uxcore';
 
 // ---------------------------------------------------------------- ../legacy/en.ts
 const legacyFr: Record<keyof typeof legacyEn, string> = {
@@ -1809,4 +1810,4 @@ const releaseFr: Record<keyof typeof releaseEn, string> = {
   'set.developerHint': 'Pour travailler sur Reelfold lui-même. Rien de tout cela n’est nécessaire pour faire des vidéos.',
 };
 
-export const fr: Record<MessageKey, string> = { ...legacyFr, ...legacyFrV02, ...v04Fr, ...aiaccFr, ...publishPlatformsFr, ...chatEditFr, ...channelsFr, ...projectAiFr, ...aboutFr, ...releaseFr, ...createFr };
+export const fr: Record<MessageKey, string> = { ...legacyFr, ...legacyFrV02, ...v04Fr, ...aiaccFr, ...publishPlatformsFr, ...chatEditFr, ...channelsFr, ...projectAiFr, ...aboutFr, ...releaseFr, ...createFr, ...uxCoreFr };

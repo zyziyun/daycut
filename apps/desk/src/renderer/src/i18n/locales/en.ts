@@ -9,6 +9,7 @@ import { projectAiEn } from './projectAi';
 import { legacyEnV02 } from '../legacy/v02';
 import { publishPlatformsEn } from './publishPlatforms';
 import { releaseEn } from './release';
+import { uxCoreEn } from './uxcore';
 
 export const v04En = {
   'nav.home': 'Home',
@@ -568,5 +569,5 @@ export const v04En = {
   'editor.zoomFit': 'Fit',
 };
 
-export const en = { ...legacyEn, ...legacyEnV02, ...v04En, ...aiaccEn, ...publishPlatformsEn, ...chatEditEn, ...channelsEn, ...projectAiEn, ...aboutEn, ...releaseEn, ...createEn };
+export const en = { ...legacyEn, ...legacyEnV02, ...v04En, ...aiaccEn, ...publishPlatformsEn, ...chatEditEn, ...channelsEn, ...projectAiEn, ...aboutEn, ...releaseEn, ...createEn, ...uxCoreEn };
 export type MessageKey = keyof typeof en;

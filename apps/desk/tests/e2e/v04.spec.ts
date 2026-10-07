@@ -77,7 +77,8 @@ test('the inbox lists the folder’s edits to confirm; confirm with undo', async
   await page.getByTestId('nav-inbox').click();
   const item = page.getByTestId('inbox-item').filter({ hasText: 'fuye' });
   await expect(item).toBeVisible({ timeout: 30000 });
-  await item.getByTestId('inbox-confirm').click();
+  await item.click(); // the list on the left, the item on the right
+  await page.getByTestId('inbox-preview').getByTestId('inbox-confirm').click();
   await expect(item).toHaveCount(0);
   await page.getByTestId('toast-undo').click();
   await expect(page.getByTestId('inbox-item').filter({ hasText: 'fuye' })).toBeVisible();

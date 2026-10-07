@@ -165,12 +165,15 @@ for (const [lang, clip] of [['en', 'A_换圈子'], ['zh-CN', 'B_底气']] as con
     await noMissingKeys();
   });
 
-  test(`${lang}: slash commands open cards without the model; ⌘K; Esc`, async () => {
+  test(`${lang}: slash commands open cards without the model; / and ⌘K; Esc`, async () => {
     await page.getByTestId('editor-title').click();
-    await page.keyboard.press('Meta+k');
-    await expect(page.getByTestId('chat-input')).toBeFocused();
+    await page.keyboard.press('Meta+k'); // ⌘K is the app-wide jump palette, in the editor too
+    await expect(page.getByTestId('palette')).toBeVisible();
+    await page.keyboard.press('Escape');
     await expect(page.getByTestId('palette')).toHaveCount(0);
-    await page.keyboard.type('/');
+    await page.getByTestId('editor-title').click();
+    await page.keyboard.press('/'); // / talks to the chat: the tools
+    await expect(page.getByTestId('chat-input')).toBeFocused();
     await expect(page.getByTestId('slash-menu').locator('button')).toHaveCount(5);
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('slash-menu')).toHaveCount(0);

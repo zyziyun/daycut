@@ -55,6 +55,36 @@ export interface Word {
   w: string;
   t: number;
   te: number;
+  /** ASR confidence 0..1 when the transcript has it (low ones get a dotted underline) */
+  p?: number;
+}
+
+/** A filler / pause / low-confidence span of the transcript (the transcript's filter chips). */
+export interface TextMark {
+  kind: 'filler' | 'pause' | 'lowconf';
+  i0: number;
+  i1: number;
+  text: string;
+  save_s: number;
+  group: string;
+}
+
+/** What one transcript Apply did to the rest of the clip (the applied cut card). */
+export interface Retimed {
+  captions?: { retimed?: number; shortened?: number; removed?: number };
+  effects?: { trimmed?: { id: string; effect: string; label?: { en: string; zh: string }; from_s: number; to_s: number }[]; removed?: { id: string; effect: string; label?: { en: string; zh: string } }[] };
+  sfx_removed?: number;
+  targets?: string[];
+}
+
+/** Kept source ranges if pending cuts were applied (engine preview_edl: same snapping / segments as the render). */
+export interface PreviewEdl {
+  ok: boolean;
+  keep: [number, number][];
+  cuts: [number, number][];
+  duration: number;
+  source_duration?: number;
+  dropped?: { index: number; error: EngineMsg }[];
 }
 
 /** Every engine message: a code the desk localises + params, with the engine's own English / Chinese text. */
@@ -86,7 +116,7 @@ export interface EffectInstance {
 /** The engine's op vocabulary (OUTPUT_EDIT.md section 3); one edit call = one undo step. */
 export type EditOp =
   | { op: 'trim'; start?: number | null; end?: number | null }
-  | { op: 'cut'; start: number; end: number; why?: string }
+  | { op: 'cut'; start: number; end: number; why?: string; words?: [number, number]; gap?: number; keep?: number; sig?: string }
   | { op: 'cut_remove'; index: number }
   | { op: 'speed'; value: number }
   | { op: 'caption_text'; cue: string; text: string }
@@ -106,7 +136,9 @@ export interface Step {
   id: string;
   at?: string;
   by?: string;
+  note?: string | null;
   describe: EngineMsg[];
+  retimed?: Retimed | null;
 }
 
 export interface OutputCaps {
@@ -146,6 +178,9 @@ export interface OutputDoc {
   caps: OutputCaps;
   caps_notes: EngineMsg[];
   words: Word[];
+  /** signature of `words` (a cut by word index is refused as stale-words when it changed) */
+  words_sig?: string | null;
+  marks?: TextMark[];
   waveform: number[];
   captions: CaptionCue[];
   caption_style: { size?: number; color?: string; highlight?: string; keywords?: string[]; position?: string };
@@ -354,6 +389,34 @@ export interface IntakeJob {
 // ---------------------------------------------------------------- inbox
 export type InboxGroup = 'failed' | 'choose' | 'review' | 'spend' | 'other';
 
+/** One plain-language choice of an inbox item: what it is about (label / quote), what it saves, where to watch it. */
+export interface InboxOption {
+  id: string;
+  clip?: string | null;
+  /** the desk clip id (editor link + preview) and its title */
+  clip_id?: string | null;
+  clip_title?: string | null;
+  /** the engine's own note (kept for search; never shown when a label exists) */
+  text: string;
+  checked?: boolean;
+  kind?: string;
+  label?: EngineMsg | null;
+  detail?: EngineMsg | null;
+  quote?: string | null;
+  /** seconds this edit saves (negative) */
+  secs?: number | null;
+  approx?: boolean;
+  /** seconds in the clip where the cut sits (the after preview plays ±3 s around it) */
+  at?: number | null;
+  /** the source recording around the cut (before preview), when it is in the folder */
+  before?: { file: string; at: number } | null;
+  file?: string | null;
+  cover?: string | null;
+  choices?: { id: string; label: EngineMsg; secs?: number | null; recommended?: boolean }[] | null;
+  choice?: string | null;
+  recommended?: boolean;
+}
+
 export interface InboxItem {
   key: string;
   kind: string;
@@ -362,7 +425,8 @@ export interface InboxItem {
   code: string | null;
   params: Record<string, string | number>;
   text: string | null;
-  options?: { id: string; clip?: string | null; text: string; checked?: boolean }[];
+  label?: EngineMsg | null;
+  options?: InboxOption[];
   reasons?: { code: string; n: number }[];
   jobs?: string[];
   minutes?: number;
@@ -376,6 +440,8 @@ export interface InboxItem {
 export interface InboxDoc {
   items: InboxItem[];
   at: number;
+  /** answered today (the "Done today" row) */
+  done_today?: number;
 }
 
 // ---------------------------------------------------------------- calendar
