@@ -29,6 +29,7 @@ import { installMediaPermissions, registerRecorderIpc, type Recorder } from './r
 import { createFlagFrom } from '../shared/recIpc';
 import { SettingsStore } from './settings';
 import { HistoryWatcher } from './historyWatch';
+import { UsageReporter, usageAllowedByEnv } from './usage';
 import { APP_NAME, applyIdentity } from './identity';
 import { SecretStore } from './secrets';
 import { checkForUpdates, initUpdater, installUpdate } from './updater';
@@ -185,6 +186,9 @@ async function pickSessionPort(): Promise<number | null> {
 }
 
 let engineGen = 0;
+/** the running engine's mode: batches in the demo (mock) engine are never counted as usage */
+let engineMode: EngineInfo['mode'] | null = null;
+let usage: UsageReporter | null = null;
 function startEngine(): Promise<EngineInfo> {
   const gen = ++engineGen;
   const old = engine;
@@ -212,6 +216,7 @@ function startEngine(): Promise<EngineInfo> {
   });
   enginePromise = p.then((info) => {
     if (gen !== engineGen) throw new SupersededError();
+    engineMode = info.mode;
     client = new EngineClient(info.baseUrl, info.token);
     rootsCache = { at: 0, roots: [] };
     win?.webContents.send('engine:status', { ok: true, mode: info.mode, note: info.note });
@@ -532,6 +537,11 @@ function registerIpc() {
     await shell.openPath(dir);
   });
   handle('clipboard:write', async (p) => clipboard.writeText(p.text));
+  // ---------------- opt-in anonymous usage counts (main/usage.ts); no-ops while sharing is off
+  handle('usage:status', async () => usage!.status());
+  handle('usage:track', async (p) => usage?.track(p.ev, p.n));
+  handle('usage:resetId', async () => usage!.resetId());
+  handle('usage:delete', async () => usage!.deleteData());
   handle('settings:get', async () => settingsMsg());
   handle('settings:set', async (p) => {
     if (app.isPackaged && (p.enginePath !== undefined || p.python !== undefined)) throw new Error('engine path and Python are fixed in this build');
@@ -542,6 +552,7 @@ function registerIpc() {
     const before = settings.get();
     const next = settings.set(p);
     if (next.lang !== before.lang) menu();
+    if (p.usagePings !== undefined && p.usagePings !== before.usagePings) usage?.consentChanged(p.usagePings === 'on');
     // engine path / Python apply on the next engine start: Settings shows "Restart to apply" (one click)
     return { ...settingsMsg(), ...next, createPage: createOn(), firstRunDone: settingsMsg().firstRunDone, resolved: resolvedConfig(), packaged: app.isPackaged, platform: process.platform };
   });
@@ -721,6 +732,25 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     if (process.env.DESK_HIDE_WINDOW === '1') app.dock?.hide();
     settings = new SettingsStore(app.getPath('userData'));
+    usage = new UsageReporter({
+      dir: app.getPath('userData'),
+      consent: () => settings.get().usagePings === 'on',
+      allowed: usageAllowedByEnv(process.env, app.isPackaged),
+      version: app.getVersion(),
+      platform: process.platform,
+      arch: process.arch,
+      lang: () => settings.get().lang,
+      demo: () => process.env.DESK_ENGINE_MOCK === '1' || engineMode === 'mock',
+      base: devOnly('REELFOLD_USAGE_BASE'),
+      log: mainLog,
+    });
+    // at most one app_open per day (also when the app stays open past midnight); sends what waited offline
+    usage.track('app_open');
+    void usage.flush();
+    setInterval(() => {
+      usage?.track('app_open');
+      void usage?.flush();
+    }, 3600_000).unref();
     mainLog(`[main] ${APP_NAME} ${app.getVersion()} · profile ${app.getPath('userData')}${IDENTITY.migrated ? ` (migrated; keychain key "${IDENTITY.internalName} Safe Storage")` : ''}`);
     menu();
     // dev: the Dock (and the About panel, which uses the same NSApp icon) shows Reelfold, not the Electron atom. The

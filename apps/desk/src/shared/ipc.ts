@@ -39,6 +39,7 @@ const aiRoutes = z.strictObject({
   default: routeChoice,
   tasks: z.strictObject(Object.fromEntries(AI_TASK_IDS.map((k) => [k, routeChoice.optional()])) as Record<(typeof AI_TASK_IDS)[number], z.ZodOptional<typeof routeChoice>>),
 });
+const usageInt = z.number().int().min(0).max(100_000);
 const termId = z.string().regex(/^[0-9a-f]{12}$/);
 const termSize = z.number().int().min(10).max(500);
 const fileName = z.string().regex(/^[A-Za-z0-9\u4e00-\u9fff][A-Za-z0-9\u4e00-\u9fff ._()-]{0,79}\.(csv|md|txt)$/, 'file name');
@@ -66,7 +67,24 @@ export const ipcSchemas = {
     agencyMode: z.boolean().optional(),
     createPage: z.boolean().optional(),
     createLocalGen: z.boolean().optional(),
+    usagePings: z.enum(['on', 'off']).optional(),
   }),
+  // opt-in anonymous usage counts (main/usage.ts): small integers only, never text
+  'usage:status': z.undefined(),
+  'usage:track': z.strictObject({
+    ev: z.enum(['batch_done', 'export_done', 'publish_package']),
+    n: z
+      .strictObject({
+        clips: usageInt.optional(),
+        formats: usageInt.optional(),
+        minutes_in: usageInt.optional(),
+        count: usageInt.optional(),
+        platform_count: usageInt.optional(),
+      })
+      .optional(),
+  }),
+  'usage:resetId': z.undefined(),
+  'usage:delete': z.undefined(),
   // ---------------- v0.2: first run, keys (OS keychain via safeStorage), persona, exports
   'firstRun:complete': z.strictObject({ defaultPlatforms: z.array(platformId).min(1).max(8), skipped: z.boolean().optional() }),
   'secrets:status': z.undefined(),

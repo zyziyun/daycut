@@ -8,12 +8,14 @@ import { EngineProvider, useEngine } from './lib/engine';
 import { HistoryProvider, useHistory } from './lib/history';
 import { InboxProvider, useInbox } from './lib/inbox';
 import { agencyMode, setPrefs } from './lib/prefs';
+import { trackUsage } from './lib/usage';
 import { href, useRoute, type Route } from './lib/router';
 import { Board } from './screens/Board';
 import { ClientDetail } from './screens/ClientDetail';
 import { Clients } from './screens/Clients';
 import { Deliver } from './screens/Deliver';
 import { FirstRun } from './screens/FirstRun';
+import { UsageAsk } from './components/UsageConsent';
 import { JobDetail } from './screens/JobDetail';
 import { Metrics } from './screens/Metrics';
 import { NewBatch } from './screens/NewBatch';
@@ -53,6 +55,8 @@ function useRunNotifications() {
       const s = i.live?.state ?? '';
       next.set(i.id, s);
       const was = prev.current.get(i.id);
+      // opt-in usage counts: a run finished (numbers only; a no-op unless she turned sharing on)
+      if (prev.current.size && was === 'running' && s === 'done') trackUsage('batch_done', i.counts?.done || i.counts?.total ? { clips: i.counts.done || i.counts.total } : undefined);
       if (prev.current.size && was === 'running' && (s === 'done' || s === 'waiting')) {
         const you = s === 'waiting';
         void window.desk
@@ -128,6 +132,7 @@ function Shell({ onSettings }: { onSettings: (s: SettingsMsg) => void }) {
       </nav>
       <main className="main">
         <AssetsBanner />
+        <UsageAsk />
         {error ? (
           <div className="pg">
             <div className="banner">

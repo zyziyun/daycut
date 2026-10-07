@@ -8,6 +8,7 @@ import { useEngine, useLoad } from '../lib/engine';
 import { bytes, hms } from '../lib/format';
 import { href } from '../lib/router';
 import { ClientField } from './NewBatch';
+import { trackUsage } from '../lib/usage';
 
 export function Deliver({ batch }: { batch: string }) {
   const { client } = useEngine();
@@ -58,7 +59,8 @@ export function Deliver({ batch }: { batch: string }) {
     setErr(null);
     try {
       if (clientSlug && batches.data?.find((x) => x.id === batch)?.client !== clientSlug) await client.setBatchClient(batch, clientSlug);
-      await client.deliver(batch, { client: clientSlug || undefined, zip, cleanup_days: cleanup && !own ? days : 0 });
+      const rec = await client.deliver(batch, { client: clientSlug || undefined, zip, cleanup_days: cleanup && !own ? days : 0 });
+      trackUsage('export_done', { count: rec?.items ?? 0 });
       del.reload();
       batches.reload();
     } catch (e) {

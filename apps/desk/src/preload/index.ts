@@ -31,6 +31,12 @@ const api: DeskApi = {
   firstRun: {
     complete: (defaultPlatforms, skipped) => call('firstRun:complete', skipped === undefined ? { defaultPlatforms } : { defaultPlatforms, skipped }),
   },
+  usage: {
+    status: () => call('usage:status'),
+    track: (ev, n) => call('usage:track', n ? { ev, n } : { ev }),
+    resetId: () => call('usage:resetId'),
+    deleteData: () => call('usage:delete'),
+  },
   secrets: {
     status: () => call('secrets:status'),
     set: (name, value) => call('secrets:set', { name, value }),

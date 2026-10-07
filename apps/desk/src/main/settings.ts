@@ -32,6 +32,8 @@ export interface Settings {
   createPage?: boolean;
   /** Create: local draft generation on this Mac (second flag, on top of createPage) */
   createLocalGen?: boolean;
+  /** anonymous usage counts (main/usage.ts): 'on' only after she chose it; unset (never asked) = off */
+  usagePings?: 'on' | 'off';
 }
 
 const DEFAULTS: Settings = { lang: 'en', accent: 'teal', theme: 'studio-dark', accounts: {}, channels: {}, agencyMode: false, createPage: true, createLocalGen: false, defaultPlatforms: ['xiaohongshu:full'], cleanupDays: 0 };

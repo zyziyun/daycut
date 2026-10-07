@@ -8,6 +8,7 @@ import { useHistory } from '../lib/history';
 import { href } from '../lib/router';
 import { WatchFoldersField } from '../components/WatchFolders';
 import { CreateSettingsCard } from '../create';
+import { UsageSettingsGroup } from '../components/UsageConsent';
 import { PlatformPicker } from '../screens/Clients';
 import { PLATFORM_CHOICES } from '../screens/NewBatch';
 import { Group, Page, Row, Segmented, Sheet, Swatches, Toggle } from './kit';
@@ -148,6 +149,7 @@ export function GeneralSection({ settings: s, save, onChange }: SettingsCtx) {
       <div className="s2-group s2-labs">
         <CreateSettingsCard onChange={onChange} />
       </div>
+      <UsageSettingsGroup settings={s} save={save} />
       <p className="s2-foot" data-testid="settings-privacy">
         <Lock className="ico" />
         {t('s2.privacyLine')}

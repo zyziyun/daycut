@@ -19,6 +19,7 @@ import { basePlatform } from '../../../shared/publish/adapterSchema';
 import { SCHEDULE_PLATFORMS } from '../v4/PlatformIcon';
 import { PlatformPicker } from '../v4/PlatformPicker';
 import { sortAdapters, useConnectedPlatforms } from '../v4/Channels';
+import { trackUsage } from '../lib/usage';
 
 /** YYYY-MM-DD of tomorrow, local time (the first publishing day by default). */
 function tomorrowIso(): string {
@@ -233,7 +234,8 @@ export function Publish({ batch }: { batch: string }) {
                   disabled={busy}
                   onClick={() =>
                     guard(async () => {
-                      await client!.package(batch, { per_day: perDay, start: start || undefined, times: times.split(',').map((x) => x.trim()).filter(Boolean) });
+                      const pk = await client!.package(batch, { per_day: perDay, start: start || undefined, times: times.split(',').map((x) => x.trim()).filter(Boolean) });
+                      trackUsage('publish_package', pk?.jobs ? { platform_count: Math.round(pk.items / pk.jobs) } : undefined);
                       man.reload();
                     })
                   }
@@ -702,6 +704,7 @@ function WorkPackageCard({ batch, busy, onDone, guard }: { batch: string; busy: 
               times: times.split(/[,，\s]+/).map((x) => x.trim()).filter(Boolean),
               times_by_platform: byPf,
             });
+            trackUsage('publish_package', { platform_count: pfs.length });
             onDone();
           })
         }

@@ -60,7 +60,20 @@ export interface SettingsMsg {
   /** Create page flag (DESK_CREATE=1/0 overrides it) */
   createPage?: boolean;
   createLocalGen?: boolean;
+  /** anonymous usage counts: 'on' only after she chose it; unset (never asked) = off */
+  usagePings?: 'on' | 'off';
 }
+
+export interface UsageStatusMsg {
+  on: boolean;
+  /** this build may send (installed app; development builds and tests never send) */
+  allowed: boolean;
+  installId: string | null;
+  queued: number;
+  lastSentDay: string | null;
+  docs: string;
+}
+export type UsageNumbersMsg = Partial<Record<'clips' | 'formats' | 'minutes_in' | 'count' | 'platform_count', number>>;
 
 export type SecretName = KeyName;
 
@@ -122,7 +135,7 @@ export interface DeskApi {
   openLogs(): Promise<void>;
   copyText(text: string): Promise<void>;
   getSettings(): Promise<SettingsMsg>;
-  setSettings(patch: Partial<Pick<SettingsMsg, 'enginePath' | 'python' | 'lang' | 'theme' | 'accent' | 'defaultPlatforms' | 'cleanupDays' | 'agencyMode' | 'createPage' | 'createLocalGen'>>): Promise<SettingsMsg>;
+  setSettings(patch: Partial<Pick<SettingsMsg, 'enginePath' | 'python' | 'lang' | 'theme' | 'accent' | 'defaultPlatforms' | 'cleanupDays' | 'agencyMode' | 'createPage' | 'createLocalGen' | 'usagePings'>>): Promise<SettingsMsg>;
   openFiles(kind: 'video' | 'any'): Promise<string[]>;
   /** absolute path of a file dropped on the window (Electron webUtils; '' when unavailable) */
   pathForFile(file: File): string;
@@ -131,6 +144,13 @@ export interface DeskApi {
   saveText(defaultName: string, text: string): Promise<string | null>;
   firstRun: {
     complete(defaultPlatforms: string[], skipped?: boolean): Promise<SettingsMsg>;
+  };
+  /** opt-in anonymous usage counts (Settings › General › Privacy); every call is a no-op while sharing is off */
+  usage: {
+    status(): Promise<UsageStatusMsg>;
+    track(ev: 'batch_done' | 'export_done' | 'publish_package', n?: UsageNumbersMsg): Promise<void>;
+    resetId(): Promise<UsageStatusMsg>;
+    deleteData(): Promise<{ ok: boolean; deleted?: number; error?: string; status: UsageStatusMsg }>;
   };
   secrets: {
     status(): Promise<SecretsStatusMsg>;

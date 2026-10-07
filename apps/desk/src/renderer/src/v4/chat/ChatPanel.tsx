@@ -18,6 +18,7 @@ import { useUi } from '../ui';
 import { CaptionsCard, CARD_ICON, CoverCard, EffectCard, ExportCard, FallbackCard, primaryPlatform, TrimCard, type CardEnv, type ExportRun } from './cards';
 import { CutCard } from './CutCard';
 import './chat.css';
+import { trackUsage } from '../../lib/usage';
 
 export interface ChatApi {
   focus(text?: string): void;
@@ -285,6 +286,7 @@ export const ChatPanel = forwardRef<ChatApi, Props>(function ChatPanel(p, ref) {
       if (add.length) await client.editOutput(item, clip, add.map((tg) => ({ op: 'export_add', target: tg, layout: doc.mode === 'flattened' && tg.endsWith(':horizontal') ? 'band' : 'auto' })), x.id);
       else await client.updateChatTurn(item, clip, x.id, { status: 'applied' });
       const j = await client.exportOutput(item, clip, rt);
+      trackUsage('export_done', { count: rt.length });
       setRuns((rs) => ({ ...rs, [x.id]: { ...rs[x.id], job: j.job } }));
       p.reload();
     } catch (e) {

@@ -13,6 +13,7 @@ import { LANGS, LOCALES, setLang, t, tk } from '../i18n';
 import { refreshStatus, rowOf, useAi } from '../lib/ai';
 import { LoginTerminal, type LoginReq } from '../v4/LoginTerminal';
 import { PlatformPicker } from './Clients';
+import { UsageFirstRunCard } from '../components/UsageConsent';
 
 const ALL_STEPS = ['welcome', 'ai', 'models', 'platforms'] as const;
 type Step = (typeof ALL_STEPS)[number];
@@ -97,6 +98,7 @@ export function FirstRun({ settings, onDone }: { settings: SettingsMsg; onDone: 
               ))}
             </div>
             <div className="muted small">{t('settings.privacyBody')}</div>
+            <UsageFirstRunCard settings={settings} />
           </div>
         )}
         {step === 'ai' && <AiStep onKeys={() => setNeedsRestart(true)} />}
