@@ -53,7 +53,9 @@ Everything content-specific lives in ONE file, `launch.config.yaml`; start from
    profile), at 2× device scale, records the page with CDP screencast frames assembled at a constant 30 fps (not
    Playwright's low-bitrate recorder), draws a smooth cursor with a click ripple, and types at a human pace. It writes
    `capture/<shot>.mp4`, a still per shot, and `capture/shots.json` with the **focus boxes**: where and when each
-   click / typed field happened. The camera uses them for the punch-ins. Seed the product with sample data that is
+   click / typed field happened. An Electron app gets its throwaway profile through `capture.env` / `capture.env_json`
+   (`--env-json`); `examples/reelfold/` is a full example (Reelfold recording itself: `seed.py` builds a temp profile
+   with real engine data on a synthetic talk, `shots.yaml` drives Home → plan → project → transcript → chat → publish). The camera uses them for the punch-ins. Seed the product with sample data that is
    safe to show (no real names, emails, handles or other people). Already have screenshots? List them under
    `capture.images` with a focus box; the camera then makes a slow move to it.
 3. **Build + render.**
@@ -93,6 +95,14 @@ Everything content-specific lives in ONE file, `launch.config.yaml`; start from
 - **Red is not a brand accent here.** `brand.warnings` flags a reddish accent and low ink/paper contrast.
 - Demo length: scenes are 4.5–9 s; the total is squeezed into `demo.max_seconds` (never under 4 s per scene) or
   padded by holding each shot's last frame up to `demo.min_seconds`.
+
+## Speed ramps (what `timing` does)
+
+Real recordings wait: a plan being made, a render finishing. `ffmpeg freezedetect` (a very low noise threshold, so
+typing still counts as motion) finds the frozen stretches of each shot; they play at 4× after a 0.35 s lead-in at
+normal speed, the actions play at the feature's `rate`. When the scene is still shorter than the ramped take, every
+segment speeds up evenly. Each segment is its own back-to-back clip in the composition. Detection is cached next to
+the shot (`<shot>.mp4.idle.json`); `ramp: false` on a feature turns it off.
 
 ## Camera (what `story.camera` does)
 
