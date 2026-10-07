@@ -36,7 +36,7 @@ export function nextSlots(n: number, taken: string[], hour = '19:00', from = new
   return out;
 }
 
-export function Project({ id, tab }: { id: string; tab: ProjectTab }) {
+export function Project({ id, tab: asked }: { id: string; tab: ProjectTab }) {
   const { client, subscribe } = useEngine();
   const { data: hist, reload: reloadHist } = useHistory();
   const inbox = useInbox();
@@ -149,6 +149,9 @@ export function Project({ id, tab }: { id: string; tab: ProjectTab }) {
     ['history', t('project.tab.history'), null],
     ['files', t('project.tab.files'), null],
   ];
+  // a link to a tab this project does not have (#/p/<work>/review: Review / Deliver are batch tools) shows the clips
+  // instead of buttons into batch pages that answer "unknown batch"
+  const tab: ProjectTab = item && !tabs.some(([k]) => k === asked) ? 'clips' : asked;
   const primary = review ? (
     <button className="btn primary" onClick={() => go({ name: 'focus', id })} data-testid="project-primary">
       {t('project.reviewN', { n: review.params.n ?? 0, m: fmtMinutes(review.minutes ?? 1) })}
