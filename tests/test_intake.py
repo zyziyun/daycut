@@ -148,7 +148,7 @@ GOLDEN = [
                                             params={"count": 20, "layout_mode": "split", "platforms": ["xiaohongshu:vertical"]})),
     ("talk", "这段口播剪干净发小红书", dict(recipes=["talkinghead"], method="per-file",
                                           params={"platforms": ["xiaohongshu:vertical"], "cleanup_profile": "standard",
-                                                  "speed": 1.1})),
+                                                  "speed": 1.25})),     # the talking-head format, not the generic 1.1
     ("finished", "把后面自媒体的思考单独剪出来", dict(recipes=["talkinghead"], method="focus",
                                                       params={"layout": "band", "crop_bottom": 0.28, "captions": True,
                                                               "speed": 1.0, "cleanup_profile": "gentle"},

@@ -172,7 +172,7 @@ those stages. `state/` is never edited by hand; budget / consent answers are the
 
 | recipe | items | checkpoints | gaps (agent / manual today) |
 |---|---|---|---|
-| `talkinghead` 口播精剪 (engine fast = talkinghead-clips, vtrack = talkinghead-folder) | clips / folder | hook, filler, cover, publish | vtrack: no hook stage, panels / pops anchors in compose config; retouch_video / drop_pass not stages; H track not an engine |
+| `talkinghead` 口播精剪 (engine vtrack = talkinghead-folder, the default; fast = talkinghead-clips; defaults from the `talking-head` format) | clips / folder | hook, filler, cover (retouched), publish | vtrack: 记笔记 panels / chapters / keywords drafted by the copy model, pops anchors in compose config; retouch_video / drop_pass not stages; H track not an engine |
 | `longform-to-short` 长视频切片 (longform-split / longform-slices) | planned segments | segments (project), privacy (project), filler, publish | speaker region / screen knobs are spec sections |
 | `longform-course` 剪成课程 | recordings | keep (author config), filler, privacy (QA mosaics), publish | speaker aliases, transient / zoom targets, demo re-record by hand |
 | `call-clips` 播客 / 对话 (podcast-clips) | planned segments | segments, consent (project), masks, publish | tile rects asked in the wizard; build_clips filler review not a checkpoint; landscape EN two-pass |

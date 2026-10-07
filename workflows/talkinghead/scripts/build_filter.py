@@ -18,7 +18,9 @@ from vstudio.draw import brand
 from montage import Montage
 from layout import resolve_profile, pop_platform_arg, h_track_geo
 _PLAT, _ = pop_platform_arg(sys.argv)
-_PS = persona(); _SP = _PS.get("speed") or {}
+_PS = persona()
+from vstudio import formats as _FMT
+_SP = _FMT.get("talking-head")["speed"]          # the talking-head format (<- persona formats.talking-head)
 LIB = str(pathlib.Path(__file__).resolve().parents[3] / "lib")
 
 cfg = sys.argv[1] if len(sys.argv) > 1 else "config.py"
@@ -26,7 +28,7 @@ spec = importlib.util.spec_from_file_location("config", cfg); C = importlib.util
 WORK, SRC, OUT = C.WORK, C.SRC, C.OUT
 PROF = resolve_profile(_PLAT or getattr(C, "PLATFORM", None), natural="horizontal"); GEO = h_track_geo(PROF)
 LUFS, TP = PROF.loudness.get("lufs", (_PS.get("audio") or {}).get("loudness_lufs", -14)), PROF.loudness.get("tp", -1.5)
-HS = getattr(C, "HOOK_SPEED", _SP.get("hook", 1.3)); BS = getattr(C, "BODY_SPEED", _SP.get("body", 1.1))
+HS = getattr(C, "HOOK_SPEED", _SP["hook"]); BS = getattr(C, "BODY_SPEED", _SP["body"])
 X = getattr(C, "XFADE", 0.8); VOL = getattr(C, "HOOK_VOL_DB", 4); MAIN_DUR = C.MAIN_DUR
 BAR_X, BAR_W, BAR_Y = GEO["bar_x"], GEO["bar_w"], GEO["bar_y"]
 M = Montage(SRC, C.HOOKS, (0.0, MAIN_DUR), HS, BS, X, hook_gain_db=VOL, size=f"{GEO['W']}:{GEO['H']}")

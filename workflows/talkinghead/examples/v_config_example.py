@@ -14,7 +14,7 @@ OUT = "../my-talk_xhs.mp4"
 # SRC_UPSCALE = 1.8                   # picture enlargement of the source (prep.json has it); caps the punch-in
 # SEGS = "segs.json"                                   # default
 GRADE = "hqdn3d=1.2:1.2:3:3,eq=contrast=1.06:brightness=0.015:saturation=1.07:gamma=1.02,colorbalance=rs=-0.02:bs=0.015:rm=-0.01,cas=0.45"
-HOOK_SPEED = 1.3; BODY_SPEED = 1.1                    # omit to use persona speed.hook / speed.body; 加速 -> 1.5-1.65 / 1.25-1.35
+HOOK_SPEED = 1.5; BODY_SPEED = 1.25                   # omit to use the talking-head format (vstudio.formats <- persona formats); hook <= 1.6
 XF = 0.3; HOOK_VOL_DB = 2                             # hook dissolve length, extra hook gain
 KEYWORDS = ["关键词", "Keyword", "API"]                # coloured yellow in subtitles / titles / panels
 # HOOK_BADGE_TEXT = "精彩预告"; NOTES_TAG = "记笔记 ↓"  # copy on the hook badge and panel tag

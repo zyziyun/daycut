@@ -635,6 +635,10 @@
        "x-map": {
         "type": "object",
         "description": "value -> what goes into the x-spec section (presets)"
+       },
+       "x-format": {
+        "type": "string",
+        "description": "dotted key in the recipe's format (vstudio.formats), e.g. speed.body: the default comes from there"
        }
       }
      }
@@ -763,6 +767,10 @@
    "items": {
     "type": "string"
    }
+  },
+  "format": {
+   "type": "string",
+   "description": "vstudio.formats id whose defaults the params marked x-format read (one source of truth; persona formats.<id> overrides win)"
   }
  }
 }

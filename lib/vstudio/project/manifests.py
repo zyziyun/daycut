@@ -103,7 +103,11 @@ def _param_default_errors(m):
         import jsonschema
     except ImportError:
         return errs
-    for k, sch in ((m.get("params") or {}).get("properties") or {}).items():
+    try:
+        props = resolved_params(m, persona_formats={})       # the repo's format defaults must fit the schema
+    except (KeyError, ValueError) as e:
+        return [str(e)]
+    for k, sch in props.items():
         if "default" in sch:
             s = {kk: vv for kk, vv in sch.items() if not kk.startswith("x-")}
             try:
@@ -259,8 +263,43 @@ def label(m, lang="zh"):
     return (m.get("labels") or {}).get(lang) or m.get("id")
 
 
+def _format_value(f, path):
+    cur = f
+    for part in path.split("."):
+        if not isinstance(cur, dict) or part not in cur:
+            raise KeyError(part)
+        cur = cur[part]
+    return cur
+
+
+def resolved_params(m, persona_formats=None):
+    """params.properties with every ``x-format`` default read from the recipe's format (``format: talking-head``):
+    vstudio.formats defaults <- persona ``formats.<id>`` (persona_formats=None reads the persona; {} = repo only).
+    One source of truth: a recipe never repeats a number the format already decides (speed, cleanup, theme ...)."""
+    props = (m.get("params") or {}).get("properties") or {}
+    fid = m.get("format")
+    if not fid or not any("x-format" in v for v in props.values()):
+        return props
+    from vstudio import formats as F
+    f = F.get(fid, persona_formats=persona_formats)
+    out = {}
+    for k, v in props.items():
+        if "x-format" in v:
+            try:
+                v = dict(v, default=_format_value(f, v["x-format"]))
+            except KeyError:
+                raise ValueError(f"params.{k}: x-format {v['x-format']!r} is not a key of format {fid!r}") from None
+        out[k] = v
+    return out
+
+
 def param_defaults(m):
-    return {k: v["default"] for k, v in (m["params"].get("properties") or {}).items() if "default" in v}
+    return {k: v["default"] for k, v in resolved_params(m).items() if "default" in v}
+
+
+def public_params(m):
+    """params for a client (desk forms, intake catalog): the schema with the format defaults filled in."""
+    return dict(m["params"], properties=resolved_params(m))
 
 
 def param_scope(m, key):

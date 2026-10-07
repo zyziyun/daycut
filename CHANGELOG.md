@@ -68,6 +68,10 @@ the earlier history lives in the commit log (formerly `video-studio` and `Daycut
 - Source recordings are never deleted automatically; delivery cleanup is off by default.
 - One cache root, `~/.cache/video-studio` (the legacy `~/.cache/vstudio` is still read).
 - English is the default language for the app and the website.
+- Talking-head projects default to the creator's look: 记笔记 panels, progress-bar chapters and highlighted keywords
+  drafted from the clip by the routed text model, strict filler cleanup, 1.25x body / 1.5x hooks from the
+  `talking-head` format (one source for the recipe, intake, the desk and the compose scripts; persona
+  `formats:` overrides it), a retouched cover, and the hook menu on the default engine too.
 
 ### Fixed
 
@@ -78,6 +82,11 @@ the earlier history lives in the commit log (formerly `video-studio` and `Daycut
 - Filler cuts keep the word they trim in the captions; AABB reduplication (起起落落) is no longer cut as a stammer.
 - A dropped word's tail cut in promo recuts no longer runs into the next word.
 - Burned-in finished edits default to the band layout (old captions cropped, new ones below).
+- A 9:16 小红书 export gets a 9:16 cover (the 3:4 cover is only for the 3:4 version); the feed's centre 3:4 is
+  previewed.
+- Post titles fit each platform's title limit when they are written (deterministic shortener, reported in the
+  export warnings); exports draft a title when none is given, and the first-pass check no longer reads the hashtag
+  line as the title.
 
 ### Security
 

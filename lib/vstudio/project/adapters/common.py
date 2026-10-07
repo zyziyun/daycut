@@ -385,9 +385,33 @@ def cover_apply(a):
             raise ValueError(f"cover: pick {k} out of range")
         frame, t = opts[k]["image"], opts[k]["t"]
     text = v.get("text") or ""
-    out = a.answer_path(f"cover_{int(t * 1000)}_{sha1_json(text)[:8]}.jpg")
+    retouched = None
+    if a.params.get("cover_retouch"):                 # the format's cover rule: her face slimmed + light makeup
+        frame, retouched = retouch_cover_frame(frame, a.answer_path(f"cover_frame_{int(t * 1000)}.retouched.jpg"))
+    out = a.answer_path(f"cover_{int(t * 1000)}_{sha1_json([text, retouched])[:8]}.jpg")
     _text_cover(frame, text, out)
-    return dict(params=dict(cover=dict(file=out, t=t, text=text)))
+    cv = dict(file=out, t=t, text=text)
+    if retouched is not None:
+        cv["retouched"] = retouched
+    return dict(params=dict(cover=cv))
+
+
+def retouch_cover_frame(frame, out):
+    """vstudio.retouch on the picked cover frame (persona ``retouch.cover`` knobs over slim .05 / eye .04 /
+    makeup .5) -> (path, True) or (frame, False) when no face is found - said in the cover record, not hidden."""
+    from PIL import Image
+    from vstudio.config import persona
+    from vstudio.cover import _face_and_retouch
+    if os.path.exists(out) and os.path.getmtime(out) >= os.path.getmtime(frame):
+        return out, True
+    knobs = dict(((persona().get("retouch") or {}).get("cover")) or {}) or True
+    with Image.open(frame) as im:
+        photo = im.convert("RGB")
+    res, _fx = _face_and_retouch(photo, knobs, "auto")
+    if res is photo:                                  # no face / no face model: the frame as it is
+        return frame, False
+    res.save(out, quality=94)
+    return out, True
 
 
 # --------------------------------------------------------------------------- generic choice

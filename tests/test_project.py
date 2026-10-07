@@ -271,7 +271,7 @@ def test_talkinghead_checkpoints_resume_and_publish(tmp_path, synth, monkeypatch
     clips.mkdir()
     shutil.copy(synth["video"], clips / "c1.mp4")
     p = Project.create(str(tmp_path / "th"), recipe="talkinghead", folder=str(clips),
-                       params=dict(platforms=["xiaohongshu:full"], preset="ultrafast", speed=1.0, layout="pad-blur"),
+                       params=dict(pipeline="fast", platforms=["xiaohongshu:full"], preset="ultrafast", speed=1.0, layout="pad-blur"),
                        spec=dict(plugins=["vstudio.project.registry", "_batch_helpers"],
                                  asr=dict(transcriber="_batch_helpers:fake_transcriber"),
                                  proofread=dict(enabled=False)))
@@ -331,7 +331,7 @@ def test_talkinghead_auto_policy_runs_through_to_publish(tmp_path, synth, monkey
     only when QC is red (the default approve exists only for non-red items)."""
     monkeypatch.setenv("VSTUDIO_TEST_TRUTH", synth["truth"])
     p = Project.create(str(tmp_path / "th2"), recipe="talkinghead", inputs=dict(video=[synth["video"]]),
-                       params=dict(preset="ultrafast", speed=1.0), auto=["hook", "filler", "cover"],
+                       params=dict(pipeline="fast", preset="ultrafast", speed=1.0), auto=["hook", "filler", "cover"],
                        spec=dict(plugins=["vstudio.project.registry", "_batch_helpers"],
                                  asr=dict(transcriber="_batch_helpers:fake_transcriber"),
                                  proofread=dict(enabled=False)))

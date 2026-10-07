@@ -67,6 +67,7 @@ def context(client=None):
                 platforms=[x.split(":")[0] for x in (eff.get("platforms") or [])] or [plat_default],
                 speed=float((P.get("speed") or {}).get("body") or 1.1),
                 cleanup=(eff.get("cleanup_profile") or (P.get("cleanup") or {}).get("profile") or "standard"),
+                cleanup_client=bool(eff.get("cleanup_profile")),
                 language=eff.get("language") or (P.get("creator") or {}).get("language") or "zh",
                 style=eff.get("style") or "", source="client" if client else "persona")
 
@@ -77,7 +78,7 @@ def catalog():
     for rid, m in sorted(M.all_manifests().items()):
         if rid == "batch":                    # the batch board is an engine view, not a deliverable
             continue
-        props = m["params"]["properties"]
+        props = M.resolved_params(m)           # format defaults (speed, cleanup ...) as the creator gets them
         params = {}
         for k, v in props.items():
             d = {x: v[x] for x in ("type", "enum", "default", "minimum", "maximum") if x in v}
@@ -143,7 +144,7 @@ Return ONE JSON object:
 def _prompt_doc(prompt, analysis, ctx, transcripts, current=None, instruction=None):
     comp = I.compact(analysis)
     doc = dict(request=prompt, materials=comp,
-               defaults=dict(platforms=ctx["platforms"], speed=ctx["speed"], cleanup=ctx["cleanup"],
+               defaults=dict(platforms=ctx["platforms"], cleanup=ctx["cleanup"],      # speed: each recipe's own
                              language=ctx["language"], client=ctx.get("client_name"), style=ctx.get("style") or None),
                catalog=catalog())
     parts = []
@@ -490,11 +491,18 @@ def _apply_ctx_defaults(m, params, sources, ctx, ins, analysis):
     props = m["params"]["properties"]
     src = _src_file(ins, analysis)
     finished = bool(src and (src.get("burned_captions") or I.material_role(src) == "finished-edit"))
+    fmt = M.param_defaults(m) if m.get("format") else {}
+    from_format = {k for k, v in props.items() if "x-format" in v}     # the format decides these (vstudio.formats)
     if "speed" in props and "speed" not in params and m["id"] in ("talkinghead",) and not finished:
-        params["speed"], sources["speed"] = ctx["speed"], ctx["source"]
+        if "speed" in from_format:
+            params["speed"], sources["speed"] = fmt["speed"], "format"
+        else:
+            params["speed"], sources["speed"] = ctx["speed"], ctx["source"]
     if "cleanup_profile" in props and "cleanup_profile" not in params:
         if finished:
             params["cleanup_profile"], sources["cleanup_profile"] = "gentle", "material"
+        elif "cleanup_profile" in from_format and not ctx.get("cleanup_client"):
+            params["cleanup_profile"], sources["cleanup_profile"] = fmt["cleanup_profile"], "format"
         elif ctx["cleanup"] in ("gentle", "standard", "tight"):
             params["cleanup_profile"], sources["cleanup_profile"] = ctx["cleanup"], ctx["source"]
     if finished and m["id"] == "talkinghead":

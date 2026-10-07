@@ -58,7 +58,8 @@ On the V track the style is just the `STYLE` dict in the config, so switching la
   sentences repeating the previous one, hedges (「也可能这是我的感觉」), a second example of the same point.
   Then drop the agreed sentences by sid.
 - **Speed.** Defaults come from the `talking-head` format (`python -m vstudio.formats show talking-head`: body 1.25x,
-  hooks 1.5x; persona `formats.talking-head` overrides), else persona `speed.*`. On 加速: hooks up to 1.6x, body
+  hooks 1.5x; persona `formats.talking-head` overrides). The recipe (`recipe.yaml` `x-format`), intake, the desk and
+  the compose scripts all read that one place; 1.1x is only for inserted 精选 footage. On 加速: hooks up to 1.6x, body
   1.3-1.4x (`fast_hook` / `fast_body`). Chinese speech stays natural up to about 1.4x (`cjk_max_intelligible`); faster
   sounded fake (加速都假了). Always apply it and say the rates in the handover; `vstudio.firstpass` fails a render that
   is not sped up.

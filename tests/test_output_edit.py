@@ -89,7 +89,7 @@ def th(tmp_path_factory, synth):
     try:
         from vstudio.project.core import Project
         p = Project.create(str(d / "th"), recipe="talkinghead", inputs=dict(video=[synth["video"]]),
-                           params=dict(preset="ultrafast", speed=1.0, platforms=["xiaohongshu:full"]),
+                           params=dict(pipeline="fast", preset="ultrafast", speed=1.0, platforms=["xiaohongshu:full"]),
                            auto=["hook", "filler", "cover"],
                            spec=dict(plugins=["vstudio.project.registry", "_batch_helpers"],
                                      asr=dict(transcriber="_batch_helpers:fake_transcriber"),

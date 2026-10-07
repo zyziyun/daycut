@@ -4,6 +4,7 @@
 id: talkinghead
 version: 1
 workflow: talkinghead
+format: talking-head     # speed / hook speed / cleanup / hook menu defaults come from vstudio.formats (persona formats wins)
 labels: {zh: "口播精剪", en: "Talking-head edit"}
 description:
   zh: 口播素材（一条或一夹）→ 去气口 / filler / 重复 → hook 冷开场 → 字幕 → 封面 → 各平台导出与文案
@@ -35,9 +36,9 @@ params:
   properties:
     pipeline:
       enum: [fast, vtrack]
-      default: fast
-      title: Engine (fast = clean + captions; vtrack = V-track styles, face track, progress bar)
-      x-zh: 引擎（fast 快速精剪；vtrack 竖屏风格引擎：进度条 / 面板 / 弹字 / 跟脸）
+      default: vtrack
+      title: Engine (vtrack = her talking-head look - 记笔记 panels, keyword highlight, progress bar, face track; fast = clean + plain captions, quicker)
+      x-zh: 引擎（vtrack 默认：记笔记面板 / 关键词高亮 / 进度条 / 跟脸；fast 快速精剪：只有字幕）
     edit_style:
       enum: [notes, refined, mixed]
       default: mixed
@@ -48,6 +49,16 @@ params:
         notes: {zoom: false, pops: false, stamps: false, circles: false, cards: false, sfx: false, progress: classic, callouts: true, panels: true, hook_badge: true}
         refined: {zoom: true, pops: true, stamps: true, circles: true, cards: true, sfx: true, progress: refined, callouts: false, panels: false, hook_badge: false}
         mixed: {zoom: true, pops: true, stamps: true, circles: false, cards: true, sfx: true, progress: refined, callouts: false, panels: true, hook_badge: false}
+    notes:
+      type: boolean
+      x-format: notes
+      title: 记笔记 panels, progress-bar chapters and highlighted keywords drafted from the clip (vtrack)
+      x-zh: 记笔记面板 + 进度条章节 + 关键词高亮（从这条口播里自动起草，可改）
+    cover_retouch:
+      type: boolean
+      x-format: cover.retouch
+      title: Retouch the face on the cover (slim + light makeup)
+      x-zh: 封面修图（瘦脸 + 淡妆）
     theme:
       enum: [editorial, mono, soft, night, xhs-pop, classic]
       title: Look (design theme; empty = the persona's style.theme)
@@ -62,19 +73,19 @@ params:
       type: number
       minimum: 0.8
       maximum: 1.6
-      default: 1.1
-      title: Body speed (pitch kept; zh intelligible up to 1.4)
+      x-format: speed.body
+      title: Body speed (pitch kept; zh intelligible up to 1.4; default = the talking-head format)
       x-zh: 正文语速
     hook_speed:
       type: number
       minimum: 0.8
       maximum: 1.8
-      default: 1.3
+      x-format: speed.hook
       title: Hook speed
       x-zh: hook 语速
     cleanup_profile:
       enum: [gentle, standard, tight, "off"]
-      default: standard
+      x-format: cleanup
       title: Pause / filler cleanup
       x-zh: 去气口力度
     layout:
@@ -122,7 +133,7 @@ params:
       type: integer
       minimum: 0
       maximum: 12
-      default: 6
+      x-format: hook_menu
       title: Hook candidates shown
       x-zh: hook 候选条数
     hook_default:
@@ -167,7 +178,6 @@ stages:
     resource: cpu
     fn: vstudio.project.adapters.common:hook_candidates
     deps: [asr]
-    when: {pipeline: fast}
     keys: [hook_count, range]
     produces: [hooks.json]
     preview: {kind: json, path: "out:candidates"}
@@ -199,7 +209,6 @@ checkpoints:
     scope: item
     after: hooks
     blocks: [cleanup]
-    when: {pipeline: fast}
     labels: {zh: "选 hook", en: "Pick the hook"}
     help: {zh: "从逐字稿里排好的候选里选冷开场（-1 不加）", en: "Pick the cold open from the ranked transcript sentences (-1: none)"}
     payload: vstudio.project.adapters.common:hook_payload
@@ -269,7 +278,7 @@ agent:
     --job <item> --op caption|trim|hook|cover|copy, then job rerun (only the affected stages). Style / speed / platforms:
     edit project.yaml params, then refresh.
 gaps:
-  - "vtrack: the hook checkpoint is off (talkinghead-folder writes HOOKS = []); panels / pops / B-roll anchors are config-only (scripts/vertical/compose.py config) - an agent edits them."
+  - "vtrack: 记笔记 panels, progress-bar chapters and keywords are drafted from the clip (vstudio.clipcopy); pops / stamps / B-roll anchors are config-only (scripts/vertical/compose.py config) - an agent edits them. The lost-word re-hearing (verify) is manual (strict_pass.py verify)."
   - Per-frame retouch (retouch_video.py) and drop_pass (废话 sentences) are not stages yet (manual commands in WORKFLOW.md).
   - H track (horizontal 剪映 export) is not a recipe engine; use polish / promo-recut or the manual H steps.
 capabilities: [cleanup, filler-confirm, hook, captions, proofread, cover, export, qc, preview, batch-folder]

@@ -918,6 +918,7 @@ def _csv_items(path, known):
 
 def public_manifest(m):
     d = {k: v for k, v in m.items() if not k.startswith("_")}
+    d["params"] = M.public_params(m)       # x-format defaults resolved (vstudio.formats <- persona formats)
     d["path"] = m.get("_path")
     d["messages"] = MSG.recipe(m)          # recipe.<id>.label / .description codes (references/MESSAGES.md)
     return d

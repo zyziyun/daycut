@@ -16,6 +16,7 @@ options (anywhere after the config):
                                     + <OUT stem>.cues.json ({cues, keepouts}: captions with 【keyword】 markup,
                                     and the time-boxed panels / stamps / pops / callouts / PiP / hook title in
                                     master pixels), for `python -m vstudio.export --cues`
+  --clean-only                      like --clean-master, without the captioned OUT render (vstudio.batch uses it)
   cues                              only (re)write <OUT stem>.cues.json (no render)
 A body whose aspect differs from the canvas (9:16 body -> 3:4 or 16:9 canvas) is reframed once with
 vstudio.reframe (face mode, pad-blur fallback) into body_<W>x<H>.mp4; the face track follows it.
@@ -40,6 +41,8 @@ import broll as BR
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 _PLAT_ARG, CLEAN = pop_platform_arg(sys.argv)
+CLEAN_ONLY = '--clean-only' in sys.argv            # batch runs: only the caption-free master + cues (half the render)
+if CLEAN_ONLY: sys.argv.remove('--clean-only'); CLEAN = True
 FPS = 30
 CFG = os.path.abspath(sys.argv[1]); STAGE = sys.argv[2] if len(sys.argv) > 2 else 'all'
 os.chdir(os.path.dirname(CFG)); sys.path[:0] = [HERE, os.path.dirname(CFG)]
@@ -66,11 +69,13 @@ if ST['sub_y'] is None or not (L.cap[1] - 40 <= ST['sub_y'] <= L.cap[3] + 40):
         print(f"STYLE sub_y={ST['sub_y']} is outside the {PROF.key} caption band {L.cap[1]}..{L.cap[3]}; using {L.sub_y}")
     ST['sub_y'] = L.sub_y
 from vstudio.config import persona
-_PS = persona(); _SPEED = _PS.get('speed') or {}
+_PS = persona()
+from vstudio import formats as _FMT
+_SPEED = _FMT.get('talking-head')['speed']          # one source of truth: the talking-head format (<- persona formats)
 LUFS, TP = PROF.loudness.get('lufs', (_PS.get('audio') or {}).get('loudness_lufs', -14)), PROF.loudness.get('tp', -1.5)
 SEGJ = json.load(open(G('SEGS', 'segs.json')))
 SUBS = SEGJ['subs']; BODY_T = SEGJ['total']
-HOOKS = C.HOOKS; HS = G('HOOK_SPEED', _SPEED.get('hook', 1.3)); BS = G('BODY_SPEED', _SPEED.get('body', 1.1)); XF = G('XF', 0.3)
+HOOKS = C.HOOKS; HS = G('HOOK_SPEED', _SPEED['hook']); BS = G('BODY_SPEED', _SPEED['body']); XF = G('XF', 0.3)
 GRADE = G('GRADE', "hqdn3d=1.2:1.2:3:3,eq=contrast=1.06:brightness=0.015:saturation=1.07:gamma=1.02,colorbalance=rs=-0.02:bs=0.015:rm=-0.01,cas=0.45")
 
 # ---------------- source upscale (prep_sources.sh writes prep.json: how much the picture was enlarged) ----------------
@@ -692,7 +697,8 @@ if __name__ == '__main__':
           + (f"  source upscale x{UPSCALE:.2f}" if UPSCALE > 1.01 else ""))
     if STAGE in ('all', 'base'): build_base()
     if STAGE in ('all', 'comp'):
-        mix_audio(); render(C.OUT)
+        mix_audio()
+        if not CLEAN_ONLY: render(C.OUT)
         if CLEAN:
             stem = os.path.splitext(C.OUT)[0]
             render(stem + '.clean.mp4', captions=False)

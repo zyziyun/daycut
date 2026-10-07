@@ -14,8 +14,8 @@ COVER_OUT = "my-talk_cover.jpg"
 
 # ---- timing / speed ----
 MAIN_DUR   = 300.0   # real content end (whisper hallucinates over a silent tail)
-HOOK_SPEED = 1.3     # omit to use persona speed.hook
-BODY_SPEED = 1.1     # omit to use persona speed.body
+HOOK_SPEED = 1.5     # omit to use the talking-head format (vstudio.formats <- persona formats)
+BODY_SPEED = 1.25    # omit to use the talking-head format
 XFADE      = 0.8     # dissolve between hook clips and into main; it plays over muted pads, so each join adds ~2*XFADE
 HOOK_VOL_DB = 4      # extra gain on hook audio
 # HOOK_BADGE_TEXT = "高光预告 · 完整版在下面"; NOTES_TAG = "记笔记 ↓"
