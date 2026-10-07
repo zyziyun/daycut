@@ -100,7 +100,7 @@ const DATA: Record<CompareSlug, CompareEntry> = {
         weT: 'Where Reelfold is different',
         we: [
           { t: 'Local and private', b: 'Cutting and rendering happen on your Mac. There is no upload queue and no per-minute credit.' },
-          { t: 'Your own AI', b: 'Use a Claude Code or Codex subscription, an API key or a local model. The 72-minute batch on our home page cost $0.73.' },
+          { t: 'Your own AI', b: 'Use a Claude Code or Codex subscription, an API key or a local model. The 124-minute batch on our home page cost $0.29.' },
           { t: 'Chinese platforms', b: 'Profiles for Xiaohongshu, Douyin, WeChat Channels, Bilibili, Kuaishou, Weibo and Zhihu, plus Chinese captions and fillers.' },
           { t: 'Open source', b: 'MIT licensed. Read the code, change a workflow, or run the engine as a Claude Code skill.' },
         ],
@@ -164,7 +164,7 @@ const DATA: Record<CompareSlug, CompareEntry> = {
         weT: 'Ce qui distingue Reelfold',
         we: [
           { t: 'Local et privé', b: 'Coupes et rendu se font sur votre Mac. Pas de file d’envoi, pas de crédit à la minute.' },
-          { t: 'Votre propre IA', b: 'Un abonnement Claude Code ou Codex, une clé d’API ou un modèle local. Le lot de 72 minutes de notre page d’accueil a coûté 0,73 $.' },
+          { t: 'Votre propre IA', b: 'Un abonnement Claude Code ou Codex, une clé d’API ou un modèle local. Le lot de 124 minutes de notre page d’accueil a coûté 0,29 $.' },
           { t: 'Plateformes chinoises', b: 'Profils pour Xiaohongshu, Douyin, WeChat Channels, Bilibili, Kuaishou, Weibo et Zhihu, avec sous-titres et hésitations en chinois.' },
           { t: 'Open source', b: 'Licence MIT. Lisez le code, modifiez un workflow, ou utilisez le moteur comme skill Claude Code.' },
         ],
@@ -196,7 +196,7 @@ const DATA: Record<CompareSlug, CompareEntry> = {
         weT: 'En qué es distinto Reelfold',
         we: [
           { t: 'Local y privado', b: 'Los cortes y el renderizado se hacen en tu Mac. Sin colas de subida ni créditos por minuto.' },
-          { t: 'Tu propia IA', b: 'Una suscripción de Claude Code o Codex, una clave de API o un modelo local. El lote de 72 minutos de nuestra página de inicio costó 0,73 US$.' },
+          { t: 'Tu propia IA', b: 'Una suscripción de Claude Code o Codex, una clave de API o un modelo local. El lote de 124 minutos de nuestra página de inicio costó 0,29 US$.' },
           { t: 'Plataformas chinas', b: 'Perfiles para Xiaohongshu, Douyin, WeChat Channels, Bilibili, Kuaishou, Weibo y Zhihu, con subtítulos y muletillas en chino.' },
           { t: 'Código abierto', b: 'Licencia MIT. Lee el código, cambia un flujo de trabajo o usa el motor como skill de Claude Code.' },
         ],

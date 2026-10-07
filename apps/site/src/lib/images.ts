@@ -1,4 +1,5 @@
-// Image registry: per-language app screenshots (zh has its own UI language; fr/es use the English app).
+// Image registry: per-language app screenshots and demo sheets (zh has its own UI language and the Chinese
+// material; en/fr/es use the English app and the English demo batch).
 import type { ImageMetadata } from 'astro';
 import homeEn from '../assets/app/home-en.png';
 import homeZh from '../assets/app/home-zh.png';
@@ -14,6 +15,8 @@ import texteditZh from '../assets/app/textedit-zh.png';
 import typing from '../assets/app/typing.png';
 import longform from '../assets/demos/longform-slices.jpg';
 import talkinghead from '../assets/demos/talkinghead.jpg';
+import longformEn from '../assets/demos/longform-slices-en.jpg';
+import talkingheadEn from '../assets/demos/talkinghead-en.jpg';
 import type { Lang } from '../i18n';
 
 const SETS = {
@@ -24,8 +27,8 @@ const SETS = {
   create: { en: createEn, zh: createZh },
   textedit: { en: texteditEn, zh: texteditZh },
   typing: { en: typing, zh: typing },
-  longform: { en: longform, zh: longform },
-  talkinghead: { en: talkinghead, zh: talkinghead },
+  longform: { en: longformEn, zh: longform },
+  talkinghead: { en: talkingheadEn, zh: talkinghead },
 } satisfies Record<string, { en: ImageMetadata; zh: ImageMetadata }>;
 export type ImgKey = keyof typeof SETS;
 export const img = (key: ImgKey, lang: Lang): ImageMetadata => (lang === 'zh' ? SETS[key].zh : SETS[key].en);

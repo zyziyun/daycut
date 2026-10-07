@@ -2,12 +2,13 @@
 import { t, type Lang } from '../../i18n';
 import { heading } from '../../lib/zhHeading';
 import { clipImg } from '../../lib/images';
-import { CLIPS, tc } from '../../data/batch';
+import { CLIPS, CLIPS_EN, tc } from '../../data/batch';
 import Img from '../Img.astro';
 interface Props { lang: Lang }
 const { lang } = Astro.props;
 const c = t(lang);
 const b = c.batch;
+const clips = lang === 'zh' ? CLIPS : CLIPS_EN;
 ---
 <section class="wrap" id="batch" aria-labelledby="num-h">
   <div class="head2">
@@ -21,7 +22,7 @@ const b = c.batch;
   </dl>
   <p class="numfoot">{b.foot}</p>
   <ul class="sheet reveal">
-    {CLIPS.map((x) => (
+    {clips.map((x) => (
       <li class={x.flagged ? 'flag' : undefined}>
         <Img src={clipImg(x.id)} alt={b.clipAlt.replace('{n}', String(x.n)).replace('{title}', x.title[lang])} widths={[220, 450]}
           sizes="(max-width: 900px) calc((100vw - 2 * var(--pad) - 30px) / 4), 136px" />

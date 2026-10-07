@@ -47,7 +47,7 @@ const DATA: Record<UseCaseSlug, Record<Lang, UseCase>> = {
       ],
       faq: [
         { q: 'Does it work with audio-only podcasts?', a: 'Reelfold is built for video. For an audio-only show you need a video track first, such as a still image or a recorded camera feed.' },
-        { q: 'How long can the episode be?', a: 'Long recordings are the point. The batch on our home page started from a 72-minute recording and produced 24 clips.' },
+        { q: 'How long can the episode be?', a: 'Long recordings are the point. The batch on our home page started from a 124-minute recording and produced 9 clips.' },
         { q: 'Can it handle two speakers?', a: 'Yes. Clips can use a vertical, side-by-side or landscape layout, and faces or name labels can be masked if a guest wants that.' },
       ],
       cta: 'Clip your next episode on your own Mac.',
@@ -107,7 +107,7 @@ const DATA: Record<UseCaseSlug, Record<Lang, UseCase>> = {
       ],
       faq: [
         { q: 'Et les podcasts audio seulement ?', a: 'Reelfold est conçu pour la vidéo. Pour une émission audio, il faut d’abord une piste vidéo, par exemple une image fixe ou un plan filmé.' },
-        { q: 'Quelle durée d’épisode ?', a: 'Les longs enregistrements sont justement sa raison d’être. Le lot de la page d’accueil partait d’un enregistrement de 72 minutes et a donné 24 clips.' },
+        { q: 'Quelle durée d’épisode ?', a: 'Les longs enregistrements sont justement sa raison d’être. Le lot de la page d’accueil partait d’un enregistrement de 124 minutes et a donné 9 clips.' },
         { q: 'Et avec deux intervenants ?', a: 'Oui. Les clips peuvent être en vertical, côte à côte ou en paysage, et les visages ou noms d’un invité peuvent être masqués s’il le souhaite.' },
       ],
       cta: 'Découpez votre prochain épisode sur votre Mac.',
@@ -137,7 +137,7 @@ const DATA: Record<UseCaseSlug, Record<Lang, UseCase>> = {
       ],
       faq: [
         { q: '¿Sirve para podcasts solo de audio?', a: 'Reelfold está hecho para video. En un programa solo de audio hace falta primero una pista de video, como una imagen fija o una cámara grabada.' },
-        { q: '¿Cuánto puede durar el episodio?', a: 'Las grabaciones largas son justo su razón de ser. El lote de la página de inicio partió de una grabación de 72 minutos y dio 24 clips.' },
+        { q: '¿Cuánto puede durar el episodio?', a: 'Las grabaciones largas son justo su razón de ser. El lote de la página de inicio partió de una grabación de 124 minutos y dio 9 clips.' },
         { q: '¿Funciona con dos personas hablando?', a: 'Sí. Los clips pueden ir en vertical, lado a lado o en horizontal, y se pueden ocultar caras o rótulos con nombre si un invitado lo pide.' },
       ],
       cta: 'Corta tu próximo episodio en tu propio Mac.',
@@ -292,10 +292,10 @@ const DATA: Record<UseCaseSlug, Record<Lang, UseCase>> = {
       ],
       stepsT: 'A real example',
       steps: [
-        { t: '72 minutes in', b: 'One recorded lecture on retrieval-augmented generation, screen share plus voice.' },
-        { t: '24 clips planned', b: 'Each about a minute, picked for one clear point, with the off-topic parts left out.' },
-        { t: '96 files out', b: 'Four formats per clip: Xiaohongshu 3:4 and 9:16, Douyin and YouTube Shorts.' },
-        { t: '21 of 24 passed', b: 'Three were flagged for a person to check. The AI cost for the whole run was $0.73.' },
+        { t: '124 minutes in', b: 'One recorded backend class in English (auth, JWT, CORS, databases), screen share plus voice.' },
+        { t: '9 clips planned', b: 'Each about a minute, picked for one clear point, with the off-topic parts left out.' },
+        { t: '27 files out', b: 'Three formats per clip: YouTube Shorts, TikTok and Instagram Reels.' },
+        { t: '8 of 9 passed', b: 'One was flagged for a person to check. The AI cost for the whole run was $0.29.' },
       ],
       faq: [
         { q: 'Can I keep a long version too?', a: 'Yes. The same recording can become a cut course video with chapters as well as the short episodes.' },
@@ -352,10 +352,10 @@ const DATA: Record<UseCaseSlug, Record<Lang, UseCase>> = {
       ],
       stepsT: 'Un exemple réel',
       steps: [
-        { t: '72 minutes en entrée', b: 'Un cours enregistré sur le RAG (génération augmentée par la recherche), partage d’écran et voix.' },
-        { t: '24 clips planifiés', b: 'Environ une minute chacun, choisis pour une idée claire, sans les passages hors sujet.' },
-        { t: '96 fichiers en sortie', b: 'Quatre formats par clip : Xiaohongshu 3:4 et 9:16, Douyin et YouTube Shorts.' },
-        { t: '21 sur 24 validés', b: 'Trois ont été signalés pour une vérification humaine. Coût d’IA du lot entier : 0,73 $.' },
+        { t: '124 minutes en entrée', b: 'Un cours de backend enregistré en anglais (authentification, JWT, CORS, bases de données), partage d’écran et voix.' },
+        { t: '9 clips planifiés', b: 'Environ une minute chacun, choisis pour une idée claire, sans les passages hors sujet.' },
+        { t: '27 fichiers en sortie', b: 'Trois formats par clip : YouTube Shorts, TikTok et Instagram Reels.' },
+        { t: '8 sur 9 validés', b: 'Un a été signalé pour une vérification humaine. Coût d’IA du lot entier : 0,29 $.' },
       ],
       faq: [
         { q: 'Puis-je garder une version longue ?', a: 'Oui. Le même enregistrement peut devenir une vidéo de cours montée avec chapitres, en plus des épisodes courts.' },
@@ -382,10 +382,10 @@ const DATA: Record<UseCaseSlug, Record<Lang, UseCase>> = {
       ],
       stepsT: 'Un ejemplo real',
       steps: [
-        { t: '72 minutos de entrada', b: 'Una clase grabada sobre RAG (generación aumentada por recuperación), con pantalla compartida y voz.' },
-        { t: '24 clips planificados', b: 'De un minuto más o menos, cada uno elegido por una idea clara, sin las partes que se salen del tema.' },
-        { t: '96 archivos de salida', b: 'Cuatro formatos por clip: Xiaohongshu 3:4 y 9:16, Douyin y YouTube Shorts.' },
-        { t: '21 de 24 aprobados', b: 'Tres quedaron marcados para que los revisara una persona. El costo de IA de todo el lote fue de 0,73 US$.' },
+        { t: '124 minutos de entrada', b: 'Una clase de backend grabada en inglés (autenticación, JWT, CORS, bases de datos), con pantalla compartida y voz.' },
+        { t: '9 clips planificados', b: 'De un minuto más o menos, cada uno elegido por una idea clara, sin las partes que se salen del tema.' },
+        { t: '27 archivos de salida', b: 'Tres formatos por clip: YouTube Shorts, TikTok e Instagram Reels.' },
+        { t: '8 de 9 aprobados', b: 'Uno quedó marcado para que lo revisara una persona. El costo de IA de todo el lote fue de 0,29 US$.' },
       ],
       faq: [
         { q: '¿Puedo conservar también una versión larga?', a: 'Sí. La misma grabación puede convertirse en un video de curso editado con capítulos, además de los episodios cortos.' },
@@ -546,7 +546,7 @@ const DATA: Record<UseCaseSlug, Record<Lang, UseCase>> = {
         { t: 'Deliver', b: 'Review the flagged few, then hand over the folders or fill each upload page yourself.' },
       ],
       faq: [
-        { q: 'Is there a per-seat or per-minute fee?', a: 'No. Reelfold is free and MIT licensed. You pay only for the AI you connect: the 72-minute batch on our home page cost $0.73.' },
+        { q: 'Is there a per-seat or per-minute fee?', a: 'No. Reelfold is free and MIT licensed. You pay only for the AI you connect: the 124-minute batch on our home page cost $0.29.' },
         { q: 'Can my client publish themselves?', a: 'Yes. The delivery folder has the videos, covers, copy and a schedule. The publishing checklist reminds them to tick each platform’s AI label.' },
         { q: 'Can I script it?', a: 'Yes. The engine underneath is open source and runs from the command line or as a Claude Code skill.' },
       ],
@@ -606,7 +606,7 @@ const DATA: Record<UseCaseSlug, Record<Lang, UseCase>> = {
         { t: 'Livrez', b: 'Relisez les quelques clips signalés, puis remettez les dossiers ou remplissez vous-même chaque page de mise en ligne.' },
       ],
       faq: [
-        { q: 'Y a-t-il un tarif par poste ou à la minute ?', a: 'Non. Reelfold est gratuit et sous licence MIT. Vous ne payez que l’IA que vous branchez : le lot de 72 minutes de la page d’accueil a coûté 0,73 $.' },
+        { q: 'Y a-t-il un tarif par poste ou à la minute ?', a: 'Non. Reelfold est gratuit et sous licence MIT. Vous ne payez que l’IA que vous branchez : le lot de 124 minutes de la page d’accueil a coûté 0,29 $.' },
         { q: 'Mon client peut-il publier lui-même ?', a: 'Oui. Le dossier de livraison contient les vidéos, couvertures, textes et un calendrier. La liste de publication lui rappelle de cocher le label IA de chaque plateforme.' },
         { q: 'Puis-je l’automatiser ?', a: 'Oui. Le moteur est open source et tourne en ligne de commande ou comme skill Claude Code.' },
       ],
@@ -636,7 +636,7 @@ const DATA: Record<UseCaseSlug, Record<Lang, UseCase>> = {
         { t: 'Entrega', b: 'Revisa los pocos marcados y entrega las carpetas, o rellena tú mismo cada página de subida.' },
       ],
       faq: [
-        { q: '¿Se paga por puesto o por minuto?', a: 'No. Reelfold es gratis y tiene licencia MIT. Solo pagas la IA que conectes: el lote de 72 minutos de la página de inicio costó 0,73 US$.' },
+        { q: '¿Se paga por puesto o por minuto?', a: 'No. Reelfold es gratis y tiene licencia MIT. Solo pagas la IA que conectes: el lote de 124 minutos de la página de inicio costó 0,29 US$.' },
         { q: '¿Mi cliente puede publicar por su cuenta?', a: 'Sí. La carpeta de entrega trae los videos, las portadas, los textos y un calendario. La lista de publicación le recuerda marcar la etiqueta de IA de cada plataforma.' },
         { q: '¿Se puede automatizar?', a: 'Sí. El motor es de código abierto y funciona desde la línea de comandos o como skill de Claude Code.' },
       ],
