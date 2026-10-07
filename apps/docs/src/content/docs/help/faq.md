@@ -17,7 +17,7 @@ No. Publishing is assisted: the app opens the platform's own upload page in its 
 
 ## What leaves my Mac?
 
-Your video and audio stay on your Mac: transcription and rendering run locally. Only what an AI step needs goes to the AI provider you chose: text such as the transcript, captions and titles. With a local model, nothing leaves at all. Two exceptions you opt into: the OpenAI transcription backend sends audio, and OpenAI narration sends the script text. See [Privacy](/docs/concepts/privacy/).
+Your video and audio stay on your Mac: transcription and rendering run locally. Only what an AI step needs goes to the AI provider you chose: text such as the transcript, captions and titles. With a local model, nothing leaves at all. Two exceptions you opt into: the OpenAI transcription backend sends audio, and OpenAI narration sends the script text. The app can also share anonymous usage counts, only if you turn it on ([what is sent](/docs/concepts/usage-counts/)). See [Privacy](/docs/concepts/privacy/).
 
 ## Which AI do I need?
 

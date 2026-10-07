@@ -7,6 +7,8 @@ Everything ships from GitHub Actions; nobody deploys or builds a release by hand
 | `deploy-web.yml` (Deploy web) | PRs and pushes to `main` touching the site, docs or the docs generator inputs; `release: published`; manual | Regenerates the docs reference pages from the engine, builds site + docs (`scripts/build-web.sh`), runs the site + docs checks and `check_skill`. On `main` / a published release / a manual run it then deploys to the Cloudflare Worker `reelfold-site` (reelfold.com) and smoke-tests `/`, `/zh/`, `/docs/`. PRs never deploy. |
 | `desk-release.yml` (Desk release) | tag `v*`; manual (dry run by default) | Builds, signs, notarizes, staples and verifies the macOS arm64 app with `apps/desk/scripts/release-mac.sh`, then creates / updates a **draft** GitHub Release with the DMG, zip, blockmap, `latest-mac.yml` and release notes. Never publishes. |
 | `site.yml`, `engine.yml`, `desk-ci.yml` | PRs and pushes | Checks only (site build, engine pytest, desk lint / unit / e2e). |
+| `deploy-telemetry.yml` (Deploy telemetry) | PRs and pushes to `main` touching `apps/telemetry`; manual | Unit tests + typecheck. On `main`: finds or creates the D1 database `reelfold-usage`, applies `apps/telemetry/migrations`, deploys the Worker `reelfold-telemetry` on `t.reelfold.com`, sets `STATS_TOKEN`, smoke-tests `/api/v1/health`. |
+| `metrics-weekly.yml` (Weekly metrics) | Mondays 02:00 UTC; manual | `scripts/metrics/github_stats.py` + `scripts/metrics/usage.py` into the run summary, one CSV row each into the `metrics-history` artifact. Totals only. |
 
 The website's download buttons follow the releases by themselves: the site build asks the GitHub API whether a
 published release with a `.dmg` exists (`apps/site/src/lib/releaseStatus.ts`), and publishing a release triggers a
@@ -80,6 +82,48 @@ all set (`DRY_RUN=1` checks either mode without building).
 
 GitHub → *Settings* → *Environments* → `production` (created by the first deploy run) → *Required reviewers* → add
 yourself. Every deploy then waits for a click on *Review deployments*. Leave it off for fully automatic deploys.
+
+### 4. Usage counts (opt-in, anonymous; `apps/telemetry`)
+
+The desk app's "Share anonymous usage counts" (off by default) posts to the Worker `reelfold-telemetry` on
+`https://t.reelfold.com`, which stores rows in the D1 database `reelfold-usage` (what is stored:
+`apps/telemetry/migrations/0001_init.sql`; the public page: `apps/docs/src/content/docs/concepts/usage-counts.md`).
+It has its own custom domain because `reelfold.com` is a Custom Domain of the site Worker, and a Custom Domain
+takes precedence over any route on the same hostname (a `reelfold.com/api/*` route would never run).
+
+1. **D1 permission.** The "Edit Cloudflare Workers" token template has no D1 permission. dash.cloudflare.com →
+   *My Profile* → *API Tokens* → the token behind `CLOUDFLARE_API_TOKEN` → *Edit* → *Add more* → **Account → D1 →
+   Edit** → *Continue to summary* → *Update token* (the token value does not change; nothing to re-paste). Without
+   it, *Deploy telemetry* stops with "The Cloudflare token cannot use D1".
+2. **Stats token** (who may read the numbers): make a random secret, keep a copy on the Mac, store it in GitHub:
+   ```bash
+   mkdir -p ~/.config/reelfold && openssl rand -hex 32 > ~/.config/reelfold/stats_token && chmod 600 ~/.config/reelfold/stats_token
+   gh secret set STATS_TOKEN --repo zyziyun/reelfold < ~/.config/reelfold/stats_token
+   ```
+   then GitHub → Actions → *Deploy telemetry* → *Run workflow* (it puts the secret on the Worker).
+3. **Read the numbers:** `python3 scripts/metrics/usage.py` (reads `~/.config/reelfold/stats_token`).
+4. **Leave your own Mac out:** Settings › General › Privacy shows the anonymous ID once sharing is on;
+   `python3 scripts/metrics/usage.py mark-internal <that id> --note "my mac"`.
+
+The Worker keeps no IP addresses (Workers Logs are off in `wrangler.jsonc`), drops unknown fields, rate-limits per
+address (in memory) and per install (200 events a day), and a daily cron deletes raw rows after 13 months while
+keeping per-day totals without ids. By hand (rarely needed): `cd apps/telemetry && npx wrangler d1 migrations apply
+reelfold-usage --remote && npx wrangler deploy` with the database id in `wrangler.jsonc`.
+
+### 5. Site visits and GitHub traffic (no code in the app)
+
+- **Cloudflare Web Analytics** (cookieless): dash.cloudflare.com → *Analytics & Logs* → *Web Analytics* → *Add a
+  site* → `reelfold.com` → keep **Automatic setup** on. Cloudflare then adds its beacon to the pages it serves for
+  `reelfold.com` (site and `/docs`); numbers appear there after a few minutes. If automatic setup is not offered,
+  copy the site's token (the 32-character `token` in the snippet it shows) into the repository secret
+  `CF_BEACON_TOKEN`; the next *Deploy web* builds the beacon into every page (`apps/site/src/layouts/Base.astro`,
+  `apps/docs/astro.config.mjs`). Without the secret, no script is added.
+- **GitHub traffic** (views, clones, referrers) is kept by GitHub for 14 days only; *Weekly metrics* saves it every
+  Monday. The workflow token cannot read traffic: add a fine-grained token (repository `zyziyun/reelfold`,
+  permission *Administration: read-only*) as `METRICS_GH_TOKEN`, or run `python3 scripts/metrics/github_stats.py`
+  locally (uses your `gh` login). Stars and release downloads work without it.
+- The weekly run summary and the `metrics-history` artifact are visible to anyone who can see this public repo's
+  Actions: they hold totals only, never ids.
 
 ## How to release a new desk version
 

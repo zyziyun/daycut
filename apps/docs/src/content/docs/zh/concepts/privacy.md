@@ -36,7 +36,7 @@ Mac App 的引擎只监听 `127.0.0.1`，端口随机，每次启动生成新的
 
 ## 统计和更新
 
-我们查过 Mac App 和引擎的源代码：里面没有任何统计分析或遥测代码。安装版会定期（每隔几小时）检查 GitHub 上的公开版本有没有更新，首次运行时会下载字体和模型。设置 `DESK_DISABLE_UPDATES=1` 可以关掉更新检查。
+Mac App 只有一个可选功能会发送匿名使用次数（比如“一批 12 条切片完成”），默认关闭，只有你打开才会发送；发送的每个字段和删除方法见[隐私：千剪会发送什么](/docs/zh/concepts/usage-counts/)。引擎和 Claude Code 技能不发送任何使用数据。安装版会定期（每隔几小时）检查 GitHub 上的公开版本有没有更新，首次运行时会下载字体和模型。设置 `DESK_DISABLE_UPDATES=1` 可以关掉更新检查。
 
 ## 嘉宾和画面里的其他人
 
@@ -50,6 +50,7 @@ Mac App 的引擎只监听 `127.0.0.1`，端口随机，每次启动生成新的
 
 ## 相关
 
+- [隐私：千剪会发送什么](/docs/zh/concepts/usage-counts/)
 - [AI 模型](/docs/zh/concepts/ai-providers/)
 - [发布](/docs/zh/concepts/publishing/)
 - [播客和通话切片](/docs/zh/guides/podcast-clips/)

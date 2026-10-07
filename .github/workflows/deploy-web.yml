@@ -76,6 +76,8 @@ jobs:
       - name: Build site + docs (scripts/build-web.sh)
         env:
           GITHUB_TOKEN: ${{ github.token }} # releaseStatus.ts: is a desk release published? (download buttons)
+          # optional: Cloudflare Web Analytics beacon (cookieless); unset = no script (docs/CI_CD.md, Site visits)
+          CF_BEACON_TOKEN: ${{ secrets.CF_BEACON_TOKEN }}
         run: scripts/build-web.sh
       - name: Site checks (copy rules, SEO, links, privacy)
         run: npm run check -w apps/site

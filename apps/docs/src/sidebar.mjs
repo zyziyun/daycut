@@ -23,6 +23,7 @@ export const sidebar = [
     'concepts/ai-providers',
     'concepts/publishing',
     'concepts/privacy',
+    'concepts/usage-counts',
   ]),
   g('Guides', '使用指南', 'Guides', 'Guías', [
     'guides/talking-head',

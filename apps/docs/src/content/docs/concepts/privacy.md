@@ -36,7 +36,7 @@ A local model, local whisper or your cloned voice sends nothing. Transcripts can
 
 ## Analytics and updates
 
-We checked the Mac app's source and the engine: there is no analytics or telemetry code. Installed builds do check the public GitHub releases for updates (every few hours) and download fonts and models on first run. Setting `DESK_DISABLE_UPDATES=1` turns the update check off.
+The Mac app has one optional, opt-in feature that sends anonymous usage counts (such as "a batch of 12 clips finished"). It is off unless you turn it on; every field it sends, and how to delete it, is listed in [Privacy: what Reelfold sends](/docs/concepts/usage-counts/). The engine and the Claude Code skill send no usage data. Installed builds do check the public GitHub releases for updates (every few hours) and download fonts and models on first run. Setting `DESK_DISABLE_UPDATES=1` turns the update check off.
 
 ## Guests and other people in the frame
 
@@ -50,6 +50,7 @@ Reelfold is MIT-licensed. Everything on this page can be verified in the code: [
 
 ## Related
 
+- [Privacy: what Reelfold sends](/docs/concepts/usage-counts/)
 - [AI providers](/docs/concepts/ai-providers/)
 - [Publishing](/docs/concepts/publishing/)
 - [Podcast and call clips](/docs/guides/podcast-clips/)

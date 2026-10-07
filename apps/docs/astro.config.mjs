@@ -17,6 +17,9 @@ const slugs = (dir, base = '') =>
     if (statSync(new URL(dir + f, DOCS_DIR)).isDirectory()) return LOCALES.includes(rel) && !base ? [] : slugs(dir + f + '/', rel + '/');
     return /\.mdx?$/.test(f) ? [rel.replace(/(^|\/)index\.mdx?$/, '$1').replace(/\.mdx?$/, '/')] : [];
   });
+// Cloudflare Web Analytics (cookieless), only when the build has CF_BEACON_TOKEN (optional CI secret; see
+// apps/site/src/layouts/Base.astro and docs/CI_CD.md)
+const BEACON = /^[0-9a-f]{32}$/.test(process.env.CF_BEACON_TOKEN ?? '') ? process.env.CF_BEACON_TOKEN : '';
 const translated = (loc) => new Set(existsSync(new URL(loc + '/', DOCS_DIR)) ? slugs(loc + '/') : []);
 const fallbackUrls = new Set(
   LOCALES.flatMap((loc) => {
@@ -64,6 +67,9 @@ export default defineConfig({
       head: [
         { tag: 'meta', attrs: { name: 'theme-color', content: '#F4F0E8' } },
         { tag: 'link', attrs: { rel: 'apple-touch-icon', href: '/docs/apple-touch-icon.png' } },
+        ...(BEACON
+          ? [{ tag: 'script', attrs: { defer: true, src: 'https://static.cloudflareinsights.com/beacon.min.js', 'data-cf-beacon': JSON.stringify({ token: BEACON }) } }]
+          : []),
       ],
       sidebar,
       expressiveCode: {

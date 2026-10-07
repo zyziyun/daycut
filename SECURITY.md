@@ -45,3 +45,8 @@ Transcription and rendering run on your Mac. AI steps call the provider you choo
 your own API key, or a local model); what each step sends is listed in
 [references/PROVIDERS.md](references/PROVIDERS.md). Reelfold never publishes for you: it fills in the upload page
 and you press publish.
+
+The desktop app sends anonymous usage counts only if you turn on "Share anonymous usage counts" (off by default):
+a random install id, app version, OS, interface language, event name, day and a few small integers, never file
+names, text or footage. Every field, the server code (`apps/telemetry`) and how to delete the data are on
+[Privacy: what Reelfold sends](https://reelfold.com/docs/concepts/usage-counts/). The skill sends no usage data.

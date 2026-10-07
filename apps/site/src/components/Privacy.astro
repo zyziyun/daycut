@@ -18,7 +18,8 @@ const mail = SITE.contactEmail;
 
       <h2>2. 浏览本网站</h2>
       <ul>
-        <li>本站是静态网站，不使用 cookie，不加载统计或广告脚本，不从第三方加载字体，也没有表单。</li>
+        <li>本站是静态网站，不使用 cookie，不加载广告脚本，不从第三方加载字体，也没有表单。</li>
+        <li>我们可能用 Cloudflare Web Analytics 统计浏览量。它不使用 cookie，不保存 IP 地址等个人信息，只给出页面浏览量、来源等合计数。</li>
         <li>托管服务商（Cloudflare）可能按其政策记录访问日志，例如 IP 地址和浏览器信息。我们不会用这些日志识别个人。</li>
       </ul>
 
@@ -28,13 +29,14 @@ const mail = SITE.contactEmail;
         <li>为了选段、写标题和校对字幕，逐字稿文本、少量关键帧截图和标题会发给你自己配置的 AI 服务（你的 Claude Code / Codex 订阅、你的 API key，或本地模型）。用 AI 配音或 AI 视频生成时，文本和参考图会发给对应厂商。这些数据按你和该服务商之间的条款处理。</li>
         <li>引擎用到的 MediaPipe 组件可能会向 Google 上报匿名使用统计，应用里会说明这一点和关闭方法。</li>
         <li>检查更新时，应用会访问 GitHub 上的发布页面。</li>
+        <li>匿名使用次数（仅桌面应用，<strong>默认关闭，你主动打开才发送</strong>）：随机 ID、版本号、系统、界面语言、事件名、日期和几个小整数（比如一批跑完了多少条）。不发送文件名、文字或素材，服务器不保存 IP 地址；原始记录 13 个月后删除。在应用的“设置 › 通用 › 隐私”里可以随时关闭，或点“删除我的使用数据”删除已发送的记录。完整字段见<a href="/docs/zh/concepts/usage-counts/">隐私：千剪会发送什么</a>。技能不发送任何使用数据。</li>
       </ul>
 
       <h2>4. 联系我们和 GitHub</h2>
       <p>你发给我们的邮件只用于回复你。在 GitHub Discussions 或 Issues 里发的内容是公开的，按 GitHub 的条款处理，请不要贴出私人素材或密钥。</p>
 
       <h2>5. 你的权利</h2>
-      <p>你可以要求查看或删除你发给我们的邮件中的个人信息。发邮件到 <a href={`mailto:${mail}`}>{mail}</a>，我们会在 7 天内处理并回复确认。</p>
+      <p>匿名使用数据可以直接在应用里删除（设置 › 通用 › 隐私 › 删除我的使用数据）。你也可以要求查看或删除你发给我们的邮件中的个人信息。发邮件到 <a href={`mailto:${mail}`}>{mail}</a>，我们会在 7 天内处理并回复确认。</p>
 
       <h2>6. 变更</h2>
       <p>政策变更时，我们会更新本页日期。</p>
@@ -52,7 +54,8 @@ const mail = SITE.contactEmail;
 
       <h2>2. Visiting this website</h2>
       <ul>
-        <li>This is a static site. It sets no cookies, loads no analytics or ad scripts, loads no third-party fonts and has no forms.</li>
+        <li>This is a static site. It sets no cookies, loads no ad scripts, loads no third-party fonts and has no forms.</li>
+        <li>We may count page views with Cloudflare Web Analytics. It uses no cookies and stores no personal data such as IP addresses; we only see totals such as page views and referrers.</li>
         <li>The hosting provider (Cloudflare) may keep access logs, such as IP address and browser details, under its own policy. We do not use those logs to identify people.</li>
       </ul>
 
@@ -62,13 +65,14 @@ const mail = SITE.contactEmail;
         <li>To pick segments, write titles and proofread captions, transcript text, a few keyframe screenshots and titles are sent to the AI service you configure (your Claude Code or Codex subscription, your API keys, or a local model). AI voiceover or AI video generation sends text and reference images to that vendor. That is governed by your terms with the vendor.</li>
         <li>The MediaPipe component used by the engine may send anonymous usage statistics to Google; the app explains this and how to turn it off.</li>
         <li>When it checks for updates, the app contacts the release page on GitHub.</li>
+        <li>Anonymous usage counts (desktop app only, <strong>off unless you turn it on</strong>): a random ID, the app version, OS, interface language, the event name, the day and a few small integers (such as how many clips a batch made). No file names, text or footage; the server does not store IP addresses; raw records are deleted after 13 months. Turn it off at any time in Settings › General › Privacy, or press “Delete my usage data” to delete what was sent. Every field is listed in <a href="/docs/concepts/usage-counts/">Privacy: what Reelfold sends</a>. The skill sends no usage data.</li>
       </ul>
 
       <h2>4. Contacting us and GitHub</h2>
       <p>Emails you send us are used only to reply to you. Anything you post in GitHub Discussions or Issues is public and handled under GitHub’s terms; please don’t post private footage or keys there.</p>
 
       <h2>5. Your rights</h2>
-      <p>You can ask to see or delete personal data in emails you sent us. Email <a href={`mailto:${mail}`}>{mail}</a>; we act within 7 days and confirm by reply.</p>
+      <p>Anonymous usage data can be deleted from the app itself (Settings › General › Privacy › Delete my usage data). You can also ask to see or delete personal data in emails you sent us. Email <a href={`mailto:${mail}`}>{mail}</a>; we act within 7 days and confirm by reply.</p>
 
       <h2>6. Changes</h2>
       <p>We update the date on this page when the policy changes.</p>

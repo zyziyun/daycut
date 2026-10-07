@@ -87,6 +87,8 @@ for (const [url, { f, html }] of pages) {
   // third-party requests
   for (const m of html.matchAll(/<(script|link|img|source|iframe)\b[^>]*\s(src|href|srcset)="(https?:)?\/\/(?!reelfold\.com)[^"]*"[^>]*>/g)) {
     if (/rel="(canonical|alternate)"/.test(m[0]) || /<meta/.test(m[0])) continue;
+    // Cloudflare Web Analytics (cookieless), only in builds with CF_BEACON_TOKEN
+    if (/^<script\b[^>]*src="https:\/\/static\.cloudflareinsights\.com\/beacon\.min\.js"/.test(m[0])) continue;
     err(f, `third-party resource: ${m[0].slice(0, 100)}`);
   }
   if (/fonts\.googleapis|fonts\.gstatic|googletagmanager|google-analytics/.test(html)) err(f, 'third-party font/tracker');

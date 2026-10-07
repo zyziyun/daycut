@@ -18,6 +18,9 @@ interface Props {
 }
 const { lang, page, title, description, jsonld, noindex } = Astro.props;
 const c = t(lang);
+// Cloudflare Web Analytics (cookieless, no personal data), only when the build has CF_BEACON_TOKEN (an optional CI
+// secret). The usual way is the dashboard's one-click automatic setup, which needs no code (docs/CI_CD.md).
+const beacon = /^[0-9a-f]{32}$/.test(process.env.CF_BEACON_TOKEN ?? '') ? process.env.CF_BEACON_TOKEN : '';
 ---
 <!doctype html>
 <html lang={HTML_LANG[lang]} class={`lang-${lang}`}>
@@ -64,5 +67,6 @@ const c = t(lang);
         document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && ls && ls.open) { ls.open = false; ls.querySelector('summary').focus(); } });
       })();
     </script>
+    {beacon && <script is:inline defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon={JSON.stringify({ token: beacon })}></script>}
   </body>
 </html>
