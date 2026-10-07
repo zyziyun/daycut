@@ -1,6 +1,6 @@
 # Projects: every workflow as a recipe (`python -m vstudio.project`)
 
-The desk app (and an agent in a project folder) drives every workflow the same way: a **recipe manifest** per
+The Reelfold desktop app (`apps/desk`; and an agent in a project folder) drives every workflow the same way: a **recipe manifest** per
 workflow (`workflows/<name>/recipe.yaml`, extra ones as `recipe.<variant>.yaml`) says what the workflow needs,
 which params it takes, its stage graph, the human decisions (**checkpoints**) and its outputs; a generic
 **project runner** executes it. Code: `lib/vstudio/project/`. Schema: `lib/vstudio/project/manifest.schema.json`.

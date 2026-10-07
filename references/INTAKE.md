@@ -1,6 +1,6 @@
 # Intake: say what you want, drop the materials (`python -m vstudio.intake`)
 
-The desk app's "new batch" form asked for a recipe, a segments file and budgets. Intake replaces it: the creator
+The Reelfold desktop app's "new batch" form asked for a recipe, a segments file and budgets. Intake replaces it: the creator
 describes the job in plain language and drops any mix of files and folders (video, audio, photos, pdf / docx /
 pptx / md / srt). Intake inventories the materials, picks one or more recipes (mixed plans are fine), shows an
 editable **plan**, and creates the projects (`vstudio.project`, references/PROJECTS.md) ready for a pilot run.

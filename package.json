@@ -1,8 +1,9 @@
 {
   "name": "video-studio-monorepo",
   "private": true,
-  "description": "video-studio: the open-source video-editing skill + engine (repo root), the Daycut desktop app (apps/desk) and the website (apps/site).",
+  "description": "Reelfold (千剪): the open-source video-studio skill + engine (repo root), the Reelfold desktop app (apps/desk) and the website (apps/site).",
   "license": "MIT",
+  "homepage": "https://reelfold.com",
   "workspaces": [
     "apps/*"
   ],
@@ -17,7 +18,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/zyziyun/daycut.git"
+    "url": "https://github.com/zyziyun/reelfold.git"
   },
   "engines": {
     "node": ">=22"

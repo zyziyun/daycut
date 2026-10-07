@@ -2,7 +2,7 @@
 
 `vstudio.platform.publishing(name)` holds the same data as this page. The rules apply to every platform:
 
-1. **Assisted publishing is the default.** The desk app opens the platform's own upload page in its built-in browser,
+1. **Assisted publishing is the default.** The Reelfold desktop app (`apps/desk`) opens the platform's own upload page in its built-in browser,
    with one persistent login per account (the app never stores passwords or cookies itself). It sets the video file
    and types the title, text and tags where the page allows it. The creator checks everything, makes the choices only
    she should make (category, audience, AI label, subreddit, board ...), and **presses publish herself**. She then

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# video-studio installer: Python deps + open-licensed fonts and models into ~/.cache/video-studio.
+# video-studio installer (the open-source engine behind Reelfold): Python deps + open-licensed fonts and models into ~/.cache/video-studio.
 # Re-runnable; skips files that already exist. Override the location with VSTUDIO_CACHE.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"

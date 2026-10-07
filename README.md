@@ -1,17 +1,87 @@
-# video-studio
+<p align="center">
+  <a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.fr.md">Français</a>
+</p>
 
-One **Claude Code skill** for every kind of video edit: talking-head shorts, long recordings cut into episodes,
-call/interview clips with privacy masking, premium promo recuts, photo stories with effects, B-roll vlogs and
-3Blue1Brown-style explainers, plus covers, music, loudness, captions and publish copy for 小红书 / YouTube / B站.
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/wordmark-on-dark.svg">
+    <img alt="Reelfold" src="docs/brand/wordmark-on-light.svg" width="360">
+  </picture>
+</p>
 
-You talk to Claude ("cut the 气口 and speed it up 1.3×", "add a split screen with this screenshot and highlight the
-prompt", "make it 10 minutes, bilingual subtitles, 3b1b style"); the skill tells Claude which workflow to run and
-gives it tested scripts and a shared library to do it.
+<p align="center"><b>Describe it. Drop the footage. Get every cut, for every platform.</b><br>
+One recording, folded out to every platform. 千剪：一条素材，千条成片，一次发到各个平台。</p>
+
+<p align="center">
+  <a href="https://reelfold.com">reelfold.com</a> ·
+  <a href="https://github.com/zyziyun/reelfold/releases/latest">Download for macOS</a> ·
+  <a href="https://github.com/zyziyun/reelfold">Star on GitHub</a> ·
+  <a href="#install">Install the Claude Code skill</a> ·
+  <a href="LICENSE">MIT</a>
+</p>
+
+<p align="center"><sub>Free and open source (MIT). The first macOS release is coming soon; build from source meanwhile (see <a href="#install">Install</a>).</sub></p>
+
+**Reelfold** (千剪) is a free, open-source, local-first video orchestrator for people who cut in batches. Say what you want
+in plain language and drop in a recording; Reelfold plans the clips, runs the edits in parallel on your own computer,
+checks every file automatically and shows you only the exceptions. Each platform gets its own export, cover, title,
+caption and tags. Publishing is assisted: Reelfold fills in the platform's upload page, and you click publish. It
+never posts on its own.
+
+It comes in two forms built on the same engine:
+
+- **Reelfold for Mac** (`apps/desk`): the desktop app. Batches on a board, a review grid, transcript-based cuts,
+  assisted publishing. Free, MIT, Apple Silicon for now; Windows later.
+- **The `video-studio` skill for Claude Code** (this repo's root): the engine as a skill. Talk to Claude ("cut the 气口
+  and speed it up 1.3×", "slice this 70-minute lecture into 3 vertical episodes"), and the skill tells Claude which
+  workflow to run and gives it tested scripts and a shared library to do it.
 
 ![口播 · 切片 · 文艺片 · 卡点 vlog · 播客遮脸 · 讲解短片](docs/demos/strip.jpg)
-<sub>Frames from six demo edits made end to end with this skill; contact sheets below.</sub>
+<sub>Frames from six demo edits made end to end with the engine; contact sheets below.</sub>
 
-## What it covers
+## Use cases
+
+| Who | What Reelfold does |
+|---|---|
+| **Batch creators** | Record once, publish all week: one session becomes a set of clips, each in the shape, length and loudness every platform expects (`batch`). |
+| **Interviews and podcasts** | Many clips from one long conversation, with captions, speaker framing, guest face masking and name-label blur, exported per platform (`call-clips`, `batch` `podcast-clips`). |
+| **Studios doing client batches** | Client batches side by side, each client's style and glossary kept, a QC report for every batch (`batch`, projects). |
+| **Talking-head (口播)** | Pauses, filler words and repeats removed; captions, keyword pops, notes panels, progress bar, cover and post copy (`talkinghead`). |
+| **Course slicing** | Long lectures and webinars → vertical slices or episodes with title bands, readable code crops and chapter cards; student voices can be changed (`longform-to-short`). |
+| **AI video** | 3Blue1Brown-style explainers with AI narration and bilingual captions, or AI-generated series (Kling, Seedance, MiniMax) with a credit budget (`explainer`, `ai-video`). |
+
+Local-first and cost-friendly: transcription and rendering run on your machine; only transcript text, a few keyframes
+and titles go to the AI provider you choose (or none, through a local model or your own logged-in Claude Code / Codex
+CLI). In our internal test batch (one 72-minute lecture → 24 clips × 4 platforms = 96 files) the AI API cost was
+$0.73, about $0.03 per clip.
+
+## Install
+
+**Desktop app (macOS, Apple Silicon).** Free, MIT. Download it from
+[GitHub Releases](https://github.com/zyziyun/reelfold/releases/latest) once the first release is out (coming soon). AI runs on your own Claude Code or Codex
+subscription, your API keys, or a local model.
+
+Build from source while the first release is on its way (macOS, Apple Silicon; Node 22+, Python 3.10+, `ffmpeg`):
+
+```bash
+git clone https://github.com/zyziyun/reelfold && cd reelfold
+./install.sh && npm install
+npm run desk
+```
+
+**Claude Code skill.** The skill is still called `video-studio` and lives in `~/.claude/skills/video-studio`:
+
+```bash
+git clone https://github.com/zyziyun/reelfold ~/.claude/skills/video-studio
+~/.claude/skills/video-studio/install.sh
+cp ~/.claude/skills/video-studio/persona.example.yaml ~/.claude/skills/video-studio/persona.local.yaml
+```
+
+Already cloned it from the old repository? Point it at the new one:
+`git -C ~/.claude/skills/video-studio remote set-url origin https://github.com/zyziyun/reelfold`. Requirements and engine settings:
+[Engine setup](#engine-setup-skill).
+
+## What the engine covers
 
 | Workflow | Turns… into… |
 |---|---|
@@ -25,6 +95,10 @@ gives it tested scripts and a shared library to do it.
 | `polish` | any exported edit → optional 气口/filler cleanup (`--cleanup`, off by default), cover on first frame, −14 LUFS (or the platform's target), speed-up, delivery tags; one or many platforms |
 | `ai-video` | a script or idea → AI-generated video (可灵 Kling via MCP, Seedance/即梦, MiniMax): character bible, per-model prompts, dry-run credit plan with a budget cap, take review, assembly, multi-platform 投稿 packages; uploads only after a per-post confirmation |
 | `cover`, `slides`, `preproduction` | covers/thumbnails per platform size, square or full-canvas slides, script writing + lint per platform + pronunciation drills |
+
+Plus `batch` (many shorts at once: plan, pilot, resumable parallel runs, QC gates, an exception-only review page and
+publish packages; [`references/BATCH.md`](references/BATCH.md)) and `intake` (a plain-language request + any mix of
+files → the right recipe and an editable plan; [`references/INTAKE.md`](references/INTAKE.md)).
 
 Shared across workflows:
 
@@ -77,13 +151,9 @@ what broke along the way fed the fixes listed in [`references/VALIDATION.md`](re
 | **文艺片** (`photo-story`, music-only): 85 s; draft→final split, sketch→colour, loupe, composition overlay, film strip, cuts on bars ![](docs/demos/photo-story.jpg) | **快节奏旅游 vlog** (`vlog` fun): 50 s 9:16; beat-locked cuts, DAY stamps, place pins, route map, word pops, SFX ![](docs/demos/fun-vlog.jpg) |
 | **播客剪辑 + 遮脸** (`call-clips`): 51 s 9:16; guest face stickers + name-label blur (100 % coverage check), notes panel ![](docs/demos/call-clips.jpg) | **讲解短片** (`explainer` vertical): 98 s CUDA explainer; TTS narration, EN + 中文 captions, animated scenes ![](docs/demos/explainer-vertical.jpg) |
 
-## Install
+## Engine setup (skill)
 
-```bash
-git clone https://github.com/zyziyun/daycut ~/.claude/skills/video-studio
-~/.claude/skills/video-studio/install.sh
-cp ~/.claude/skills/video-studio/persona.example.yaml ~/.claude/skills/video-studio/persona.local.yaml
-```
+The install commands are under [Install](#install) above.
 
 `install.sh` installs the Python dependencies and downloads open-licensed fonts (Noto Sans SC, Noto Serif SC,
 STIX Two Text, JetBrains Mono — OFL) and the MediaPipe models (Apache-2.0: face landmarker, selfie segmenter and the selfie
@@ -154,10 +224,17 @@ lib/vstudio/              shared library (media, audio, asr, cut, subs, tts, fac
 references/               EFFECTS.md (generated catalogue), ADDING_EFFECTS, PLATFORMS, RETOUCH, SOUND,
                           AESTHETICS, VALIDATION (real-media test record)
 tests/                    pytest on synthetic media (python3 -m pytest tests -q)
-apps/desk/                Daycut (日剪) desktop app: Electron workbench on this engine (README there)
-apps/site/                product website (Astro static site)
+apps/desk/                Reelfold (千剪) desktop app: Electron workbench on this engine (README there)
+apps/site/                Reelfold website (Astro static site, EN / 中文 / FR)
 package.json              npm workspaces for apps/* (the skill itself needs no Node)
 ```
+
+## Formerly video-studio / Daycut
+
+Reelfold is the new name of this project. The open-source skill and engine were published as **video-studio**, and
+the desktop app was called **Daycut** (日剪 / 日更剪). The Claude Code skill keeps the name `video-studio`, the Python
+package stays `vstudio`, and existing installs in `~/.claude/skills/video-studio` keep working; only the repository
+URL moved to `github.com/zyziyun/reelfold`.
 
 ## Credits and licences
 

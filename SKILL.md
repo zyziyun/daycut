@@ -5,6 +5,9 @@ description: One video-editing skill for every kind of edit, for 小红书 / 抖
 
 # video-studio
 
+Part of [Reelfold](https://github.com/zyziyun/reelfold) (千剪): this skill is the open-source engine behind the Reelfold
+desktop app (`apps/desk`), and it works on its own in Claude Code.
+
 One entry point, many workflows, one shared library (`lib/vstudio`) and one creator persona.
 `$VSTUDIO` below = this folder. Run scripts from the **project folder** of the video being edited.
 
@@ -36,7 +39,7 @@ Identify the **main material** and the **deliverable**, then open that workflow'
 | Script / idea → AI-generated video (可灵 Kling, Seedance/即梦, MiniMax/海螺): shot list, prompts, credit plan, take review, assembly; AI series → 投稿 packages + per-post confirmed upload | `workflows/ai-video` |
 | Many videos at once (10s–100s): one long recording → N vertical slices, a folder of 口播 clips → cleaned shorts; pilot, resumable runs, QC gates, exception-only review page, publish packages | `workflows/batch` (`python -m vstudio.batch`, references/BATCH.md) |
 | A topic → published short, end to end (script → drill → slides → record → clean up → edit → cover → export → post) | `references/SOP_SHORT_VIDEO.md` |
-| Any workflow as a project of N items (desk app in apps/desk / an agent in the project folder): recipe manifests, checkpoints, inbox, series, publish calendar | `python -m vstudio.project` (references/PROJECTS.md) |
+| Any workflow as a project of N items (the Reelfold desktop app in apps/desk / an agent in the project folder): recipe manifests, checkpoints, inbox, series, publish calendar | `python -m vstudio.project` (references/PROJECTS.md) |
 | Second-pass edit of ANY finished clip (成片二次编辑: project exports and work-folder finals): trim / word-snapped cuts, captions, title band, a design theme (`theme` op), 20 effects (pop words, stamps, punch-in, quote / chapter cards, callouts, notes, stickers, SFX, transitions, progress bar, marker sweep, chapter rule, number counter, lower third ...), cover, speed, loudness, 3:4 / 9:16 / 16:9 re-layout, plain-language `ai` edits (with a selection / effect as context), undo + selective revert of one step, a per-clip chat transcript, cached preview / final renders + a before / after compare preview | `python -m vstudio.project output show / edit / render / undo / revert / ai / chat / effects` (references/OUTPUT_EDIT.md) |
 | A plain-language request + any mix of files / folders (video, audio, photos, pdf / docx / pptx / md) → the right recipe(s), mixed plans allowed: inventory, editable plan, follow-up edits, projects | `python -m vstudio.intake analyze / plan / revise / apply` (references/INTAKE.md) |
 
@@ -70,7 +73,7 @@ When the request is ambiguous, ask one question: what is the material, and where
 - **Verify by looking and listening**: snapshot frames at the busiest moment of each section and mid-transition; ASR the cut to confirm no clipped syllables; check loudness of the final file.
 - **Verify names after ASR**: always run proofread with entity verification (`vstudio.proofread.proofread` / the batch proofread stage; `vstudio.entities`) before burning captions or writing cards / post copy, and use its fixes for every text of the project (宏都拉斯 → 洪都拉斯). See [references/CAPTION_RULES.md](references/CAPTION_RULES.md).
 - **Delivery defaults**: H.264 High, bt709 tags, AAC 192k/48k, `+faststart`, two-pass loudnorm to `persona.audio.loudness_lufs` (−14).
-- **Register every job and report its status** so the desk app lists it (全部项目) and shows it live (进行中) without an import: at the start `python -m vstudio.project new` when a recipe fits, else `python -m vstudio.project touch <work folder> --status running --stage plan`; at each long step `touch <folder> --stage <s> --progress 0.4 --message ...`; at a question for the creator `--status waiting --needs-you`; at the end `touch <folder> --status done` (or `adopt <folder>` for an old folder). Scripts: `vstudio.project.touch(dir, recipe, title, outputs, status=..., stage=...)`. Only `<folder>/.vstudio/` is written; ASR / cleanup / export / AIGC polling heartbeat on their own inside a registered folder.
+- **Register every job and report its status** so the Reelfold desktop app lists it (全部项目) and shows it live (进行中) without an import: at the start `python -m vstudio.project new` when a recipe fits, else `python -m vstudio.project touch <work folder> --status running --stage plan`; at each long step `touch <folder> --stage <s> --progress 0.4 --message ...`; at a question for the creator `--status waiting --needs-you`; at the end `touch <folder> --status done` (or `adopt <folder>` for an old folder). Scripts: `vstudio.project.touch(dir, recipe, title, outputs, status=..., stage=...)`. Only `<folder>/.vstudio/` is written; ASR / cleanup / export / AIGC polling heartbeat on their own inside a registered folder.
 - **Public-safe**: fonts and models only through `vstudio.config.font()/model()`; no absolute personal paths in configs you commit.
 
 ## 3. Find a capability fast
