@@ -1,0 +1,13 @@
+# Free local renderer: a HyperFrames composition -> one MP4, with the project's own CLI (never an npx download).
+id: hyperframes
+kind: shot-provider
+name: HyperFrames
+version: 1.0.0
+api: 1
+entry: vstudio.plugins.builtin.hyperframes:HyperFramesProvider
+description: {en: "Renders motion-graphics shots from a HyperFrames composition on this Mac", zh: "在本机用 HyperFrames 合成渲染动态图形镜头", fr: "Rend les plans motion design d’une composition HyperFrames sur ce Mac"}
+homepage: https://hyperframes.heygen.com
+permissions: [read-files, write-job, "exec:hyperframes"]
+cost: {kind: local}
+concurrency: 2
+timeout_s: 1800

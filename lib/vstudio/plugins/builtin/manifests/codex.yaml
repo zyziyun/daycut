@@ -1,0 +1,11 @@
+id: codex
+kind: agent-runner
+name: Codex
+version: 1.0.0
+api: 1
+entry: vstudio.plugins.builtin.runners:CodexRunner
+description: {en: "`codex exec` in each shot's job folder (workspace-write sandbox)", zh: "在每个镜头的任务文件夹里运行 `codex exec`（只能写这个文件夹）", fr: "`codex exec` dans le dossier de chaque plan"}
+permissions: [write-job, "exec:codex"]
+cost: {kind: subscription, notes: {en: "Your own ChatGPT / Codex plan", zh: "你自己的 ChatGPT / Codex 套餐", fr: "Votre propre offre ChatGPT / Codex"}}
+concurrency: 2
+timeout_s: 1800

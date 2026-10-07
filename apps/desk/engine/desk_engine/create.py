@@ -20,6 +20,11 @@ Routes (GET / POST, Bearer auth like everything else):
        episodes/<eid>/stop   episodes/<eid>/takes/<no> {take}   episodes/<eid>/import {files[]}
        episodes/<eid>/handoff {languages[], schedule} -> {job}; done: {project_id, clip, posts}
        record/ingest {session_dir, target, series?} -> {job}    record/recover    spend/cap {cap_cny}
+  Plugins (docs/PLUGINS.md):
+  GET  plugins?lang=          POST plugins/<kind>:<id> {enabled?, settings?}
+  POST import {path, importer?, format?, lang?} -> {job}; done: {series, episode, n}     import/sniff {path}
+       episodes/<eid>/import-board {path, importer?} -> {job}
+       episodes/<eid>/make {only?, lanes?} -> {job} (plugin: / agent: shots in parallel lanes; stop = episodes/<eid>/stop)
 """
 import json
 import os
@@ -34,7 +39,9 @@ from .common import BadRequest, batch_id, need
 
 SID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,47}$")
 SHOT_RE = re.compile(r"^\d{2,3}$")
-SOURCE_RE = re.compile(r"^(cloud|manual|local):[a-z0-9-]+(/[\w.\-]+)?$|^(record|card)$|^reuse:[a-z0-9-]+/\d{2,3}$")
+SOURCE_RE = re.compile(r"^(cloud|manual|local):[a-z0-9-]+(/[\w.\-]+)?$|^(record|card)$|^reuse:[a-z0-9-]+/\d{2,3}$"
+                       r"|^(plugin|agent):[a-z][a-z0-9-]{1,40}$")
+PLUGIN_KEY_RE = re.compile(r"^(importer|shot-provider|agent-runner):[a-z][a-z0-9-]{1,40}$")
 CODE_RE = re.compile(r"^[0-9a-f]{8}$")
 EST_RE = re.compile(r"^est-[0-9a-f]{10}$")
 JOB_RE = re.compile(r"^[0-9a-f]{12}$")
@@ -298,6 +305,16 @@ class CreateApi:
                                   code="create.pick-takes", params=dict(n=r["pick"], title=r.get("title") or ""),
                                   text=None, minutes=max(1, r["pick"]), source="create", href=href + "/takes",
                                   at=time.time()))
+            for f in (r.get("make") or {}).get("failed") or []:
+                items.append(dict(key=key(r["id"], "make", f["no"], f.get("code")), kind="create", group="other",
+                                  project=proj, code=f.get("code") or "create.agent.failed",
+                                  params={k: str(v) for k, v in (f.get("params") or {}).items()}, text=None,
+                                  minutes=1, source="create", href=href + "/storyboard", at=time.time()))
+            for w in (r.get("make") or {}).get("waiting") or []:
+                items.append(dict(key=key(r["id"], "wait", w["no"]), kind="create", group="choose", project=proj,
+                                  code=w.get("code") or "create.plugin.external",
+                                  params={k: str(v) for k, v in (w.get("params") or {}).items()}, text=None,
+                                  minutes=2, source="create", href=href + "/storyboard", at=time.time()))
             if r.get("paused"):
                 items.append(dict(key=key(r["id"], "paused"), kind="create", group="spend", project=proj,
                                   code="create.hard-shots-failed", params=r["paused"].get("params") or {}, text=None,
@@ -353,6 +370,10 @@ class CreateApi:
                 return self.call(["spend"] + (["--series", _sid(s)] if s else []))
             if len(p) == 2 and p[0] == "jobs":
                 return self.get_job(p[1])
+            if p == ["plugins"]:
+                lang = q("lang") or "en"
+                need(lang in LANGS, "lang")
+                return self.call(["plugins", "list", "--lang", lang])
         if method != "POST":
             raise KeyError("not found")
         if p == ["plan"]:
@@ -377,6 +398,38 @@ class CreateApi:
                 need(b["mode"] in ("auto", "template"), "mode: auto | template")
                 args += ["--mode", b["mode"]]
             return self.job("plan", args, limit=PLAN_LIMIT_S)
+        if len(p) == 2 and p[0] == "plugins":
+            need(PLUGIN_KEY_RE.match(p[1] or ""), "plugin: <kind>:<id>")
+            out = None
+            if "settings" in b:
+                st = b["settings"]
+                need(isinstance(st, dict) and len(json.dumps(st)) < 4000, "settings: an object")
+                cmd = st.get("command")
+                need(cmd is None or (isinstance(cmd, list) and 0 < len(cmd) <= 30 and
+                                     all(isinstance(x, str) and 0 < len(x) < 500 and "\0" not in x for x in cmd)),
+                     "settings.command: [argv...]")
+                lanes = st.get("lanes")
+                need(lanes is None or (isinstance(lanes, int) and 1 <= lanes <= 8), "settings.lanes: 1..8")
+                out = self.call(["plugins", "set", p[1], "--settings-json", json.dumps(st)])
+            if "enabled" in b:
+                need(isinstance(b["enabled"], bool), "enabled: true | false")
+                out = self.call(["plugins", "enable" if b["enabled"] else "disable", p[1]])
+            need(out is not None, "enabled or settings")
+            return out
+        if p == ["import", "sniff"]:
+            return self.call(["import", _abs(b.get("path"), "path"), "--sniff"])
+        if p == ["import"]:
+            args = ["import", _abs(b.get("path"), "path")]
+            if b.get("importer"):
+                need(PROVIDER_RE.match(str(b["importer"])), "importer")
+                args += ["--importer", b["importer"]]
+            if b.get("format"):
+                need(b["format"] in FORMATS, "format")
+                args += ["--format", b["format"]]
+            if b.get("lang"):
+                need(b["lang"] in LANGS, "lang")
+                args += ["--lang", b["lang"]]
+            return self.job("import", args, meta=dict(name=os.path.basename(args[1])), limit=300)
         if p == ["series"]:
             d = b.get("draft")
             need(isinstance(d, dict) and d.get("format") in FORMATS and isinstance(d.get("bible"), dict),
@@ -450,6 +503,22 @@ class CreateApi:
                 return self.job("run", args, meta=dict(episode=eid, stage=stage))
             if p[2:] == ["stop"]:
                 return self.call(["stop", eid])
+            if p[2:] == ["import-board"]:
+                args = ["import", _abs(b.get("path"), "path"), "--into", eid]
+                if b.get("importer"):
+                    need(PROVIDER_RE.match(str(b["importer"])), "importer")
+                    args += ["--importer", b["importer"]]
+                return self.job("import", args, meta=dict(episode=eid), limit=300)
+            if p[2:] == ["make"]:
+                args = ["make", eid]
+                only = b.get("only")
+                if only is not None:
+                    need(isinstance(only, list) and 0 < len(only) <= 300, "only: shot numbers")
+                    args += ["--only", ",".join(_shot(x) for x in only)]
+                if b.get("lanes") is not None:
+                    need(isinstance(b["lanes"], int) and 1 <= b["lanes"] <= 8, "lanes: 1..8")
+                    args += ["--lanes", str(b["lanes"])]
+                return self.job("make", args, meta=dict(episode=eid))
             if len(p) == 4 and p[2] == "takes":
                 take = b.get("take")
                 need(isinstance(take, str) and 0 < len(take) < 4096 and "\0" not in take, "take")

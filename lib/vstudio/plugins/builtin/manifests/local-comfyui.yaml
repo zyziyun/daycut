@@ -1,0 +1,9 @@
+id: local-comfyui
+kind: shot-provider
+name: {en: ComfyUI on your network, zh: 局域网 ComfyUI, fr: ComfyUI sur votre réseau}
+version: 1.0.0
+api: 1
+entry: vstudio.create.providers.local_comfyui:ComfyUI
+permissions: [network]
+cost: {kind: local}
+concurrency: 1

@@ -14,6 +14,9 @@ exit code 2). ``--json-events``: progress as JSON lines (``{"event": ...}``) bef
     handoff EID [--languages zh,en,fr] [--no-schedule]
     record ingest DIR --target project:talkinghead|shot:EID/NO [--series SID] | record recover
     spend [--series SID] [--set-cap CNY]
+    plugins [list | enable KEY | disable KEY | set KEY --settings-json J]     (KEY = <kind>:<id>; docs/PLUGINS.md)
+    import PATH [--into EID] [--importer ID] [--format F]   a board (HyperFrames, shot list, EDL / OTIO / XML)
+    make EID [--only 01,02] [--lanes N]       plugin: / agent: shots in parallel lanes (job folders, QC, takes)
 Global: --home DIR (store root instead of $VSTUDIO_HOME), --fake (fake services, no model calls).
 """
 import argparse
@@ -120,6 +123,22 @@ def parser():
     s = sub.add_parser("spend")
     s.add_argument("--series")
     s.add_argument("--set-cap", type=float)
+    s = sub.add_parser("plugins")
+    s.add_argument("action", nargs="?", default="list", choices=["list", "enable", "disable", "set"])
+    s.add_argument("key", nargs="?")
+    s.add_argument("--settings-json")
+    s.add_argument("--lang", default="en")
+    s = sub.add_parser("import")
+    s.add_argument("path")
+    s.add_argument("--into")
+    s.add_argument("--importer")
+    s.add_argument("--format")
+    s.add_argument("--lang", default="en")
+    s.add_argument("--sniff", action="store_true", help="only say which importer reads it")
+    s = sub.add_parser("make")
+    s.add_argument("eid")
+    s.add_argument("--only")
+    s.add_argument("--lanes", type=int)
     return ap
 
 
@@ -228,7 +247,33 @@ def dispatch(a, on_event=None):
         if a.set_cap is not None:
             costs.set_cap(a.set_cap)
         return costs.summary(store.need_sid(a.series) if a.series else None)
+    if c == "plugins":
+        return _plugins(a)
+    if c == "import":
+        from vstudio.plugins import importing as IM
+        if a.sniff:
+            return dict(importers=IM.sniff(a.path))
+        if a.into:
+            return IM.into_episode(store.need_eid(a.into), a.path, a.importer)
+        return IM.into_new_series(a.path, a.importer, a.format, a.lang)
+    if c == "make":
+        from vstudio.plugins import lanes
+        return lanes.make(store.need_eid(a.eid), only=_csv(a.only) or None, lanes=a.lanes, on_event=on_event)
     raise CreateError("bad-input", field="command")
+
+
+def _plugins(a):
+    from vstudio.plugins import registry as R
+    try:
+        if a.action == "list":
+            return R.listing(a.lang)
+        if not a.key:
+            raise CreateError("bad-input", field="key")
+        if a.action in ("enable", "disable"):
+            return dict(plugin=R.set_enabled(a.key, a.action == "enable"))
+        return dict(plugin=R.set_settings(a.key, json.loads(a.settings_json or "{}")))
+    except R.PluginError as e:
+        raise CreateError(e.code, status=404 if e.code.endswith("not-found") else 409, **e.params) from e
 
 
 def main(argv=None):

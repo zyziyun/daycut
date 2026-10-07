@@ -1,0 +1,11 @@
+id: hyperframes
+kind: importer
+name: HyperFrames
+version: 1.0.0
+api: 1
+entry: vstudio.plugins.builtin.hyperframes:HyperFramesImporter
+description: {en: "A HyperFrames project (STORYBOARD.md frames, or the index.html compositions) -> a storyboard", zh: "把 HyperFrames 项目（STORYBOARD.md 或 index.html 合成）导入为分镜", fr: "Un projet HyperFrames -> un storyboard"}
+homepage: https://hyperframes.heygen.com
+permissions: [read-files]
+cost: {kind: free}
+exts: [.md, .html]

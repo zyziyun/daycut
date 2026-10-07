@@ -1,7 +1,8 @@
 """Per-shot routing: policy + overrides -> one route per shot (SPEC §1.3), cheapest-first, character lock.
 
 Source strings:  cloud:<provider>[/<model>]  manual:<site>  local:<runtime>|local:auto  record  card
-                 reuse:<eid>/<shot>  (+ policy-only words: cheapest, placeholder)
+                 reuse:<eid>/<shot>  plugin:<render provider>  agent:<runner>  (+ policy-only: cheapest, placeholder)
+plugin: / agent: shots are made by ``make`` (vstudio.plugins.lanes) in parallel lanes, not by the finals run.
 Policy (series spec.create.routing, defaults from the format): faces, no_faces, drafts, stills,
 one_model_per_character.
 """
@@ -11,7 +12,8 @@ from . import costs
 from .i18n import CreateError, msg
 
 SOURCE_RE = re.compile(r"^(cloud|manual|local):[a-z0-9-]+(/[\w.\-]+)?$|^(record|card|cheapest|placeholder)$"
-                       r"|^reuse:[a-z0-9][a-z0-9-]{0,47}/\d{2,3}$")
+                       r"|^reuse:[a-z0-9][a-z0-9-]{0,47}/\d{2,3}$|^(plugin|agent):[a-z][a-z0-9-]{1,40}$")
+MADE_BY_PLUGINS = ("plugin", "agent")
 DEFAULT_MODEL = {"kling-mcp": "kling-video-v3_0_omni", "minimax": "MiniMax-Hailuo-02", "veo": "veo-3.1-fast",
                  "seedance-ark": "seedance-2", "jimeng": "seedance-2"}
 MANUAL_SITES = {"jimeng": "jimeng", "seedance": "jimeng", "即梦": "jimeng"}
@@ -35,6 +37,9 @@ def parse(src):
     if src.startswith("reuse:"):
         eid, no = src[6:].split("/")
         return dict(source=src, kind="reuse", provider=None, model=None, ref=dict(episode=eid, shot=no))
+    if src.startswith(("plugin:", "agent:")):
+        kind, pid = src.split(":", 1)
+        return dict(source=src, kind=kind, provider=pid, model=None)
     kind, rest = src.split(":", 1)
     prov, _, model = rest.partition("/")
     if kind == "manual":
@@ -113,6 +118,8 @@ def resolve(ep, series_doc, fmt, connected=None):
         price = None
         if r["kind"] in ("cloud", "mcp", "manual"):
             price = costs.price_job(r["provider"], r["model"], shot.get("dur") or 2)
+        elif r["kind"] in MADE_BY_PLUGINS:
+            price = dict(label=plugin_label(r), cny=0, native_units=None)
         routes.append(dict(r, no=no, why=why, hard=False, hard_score=hard_score(shot),
                            cny=None if price is None else price["cny"],
                            credits=None if price is None else price["native_units"],
@@ -194,6 +201,36 @@ def options(shot, connected=None, local=False):
                         label=(price or {}).get("label"), cny=(price or {}).get("cny"),
                         credits=(price or {}).get("native_units"), note=note,
                         connected=(r["provider"] in (connected or [])) if r["kind"] in ("cloud", "mcp") else True))
+    return out + plugin_options(shot)
+
+
+def plugin_label(r):
+    try:
+        from vstudio.plugins import registry as R
+        return R.display_name(R.find(r["provider"], "agent-runner" if r["kind"] == "agent" else "shot-provider"))
+    except Exception:  # noqa: BLE001
+        return r["provider"]
+
+
+def plugin_options(shot):
+    """Enabled agent runners (any shot) and render providers (the shots whose ``ref`` they can read) as options."""
+    out = []
+    try:
+        from vstudio.plugins import registry as R
+        for row in R.rows("agent-runner", enabled_only=True):
+            st = R.instance(row["key"]).status()
+            out.append(dict(source=f"agent:{row['id']}", kind="agent", provider=row["id"], model=None,
+                            label=R.display_name(row), cny=0 if row["cost"]["kind"] != "paid" else None, credits=None,
+                            note="create.option.agent", connected=bool(st.get("ready")), cost=row["cost"]["kind"]))
+        ref = (shot.get("ref") or {}).get("kind")
+        for row in R.rows("shot-provider", enabled_only=True):
+            cls = R.instance(row["key"])
+            if (getattr(cls, "info", {}) or {}).get("kind") == "render" and ref == row["id"]:
+                out.append(dict(source=f"plugin:{row['id']}", kind="plugin", provider=row["id"], model=None,
+                                label=R.display_name(row), cny=0, credits=None, note="create.option.plugin",
+                                connected=True, cost=row["cost"]["kind"]))
+    except Exception:  # noqa: BLE001  (a broken plugin never breaks the storyboard)
+        pass
     return out
 
 

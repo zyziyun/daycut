@@ -1,0 +1,10 @@
+id: veo
+kind: shot-provider
+name: {en: Google Veo, zh: Google Veo, fr: Google Veo}
+version: 1.0.0
+api: 1
+entry: vstudio.create.providers.veo:Veo
+description: {en: "Veo 3.1 through the Gemini API", zh: "通过 Gemini API 调用 Veo 3.1", fr: "Veo 3.1 via l’API Gemini"}
+permissions: [network, spend]
+cost: {kind: paid, notes: {en: "Billed per second on your Gemini key", zh: "按秒计费（你的 Gemini 密钥）", fr: "Facturé à la seconde sur votre clé Gemini"}}
+concurrency: 4

@@ -36,11 +36,25 @@ def load_rates():
 
 
 def entry(provider, model):
-    return ((load_rates().get("providers") or {}).get(provider) or {}).get(model)
+    """The rate card of provider/model: rates.json, else the plugin manifest's own ``rates`` (a shot-provider
+    plugin declares its prices in the same shape, so the spend gate prices it like a built-in)."""
+    e = ((load_rates().get("providers") or {}).get(provider) or {}).get(model)
+    if e is None and provider:
+        e = (plugin_rates(provider) or {}).get(model)
+    return e
+
+
+def plugin_rates(provider):
+    try:
+        from vstudio.plugins import registry as R
+        row = R.find(provider, "shot-provider")
+        return row["_m"].get("rates") if row["origin"] != "builtin" else None
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def models_for(provider):
-    return list(((load_rates().get("providers") or {}).get(provider) or {}).keys())
+    return list(((load_rates().get("providers") or {}).get(provider) or plugin_rates(provider) or {}).keys())
 
 
 def snap(e, seconds, resolution=None):

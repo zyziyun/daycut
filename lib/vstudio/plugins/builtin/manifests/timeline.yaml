@@ -1,0 +1,10 @@
+id: timeline
+kind: importer
+name: {en: Editor timeline, zh: 剪辑时间线, fr: Timeline de montage}
+version: 1.0.0
+api: 1
+entry: vstudio.plugins.builtin.timeline:TimelineImporter
+description: {en: "EDL, OpenTimelineIO, Premiere / Final Cut XML: one shot per clip", zh: "EDL、OpenTimelineIO、Premiere / Final Cut XML：每个片段一个镜头", fr: "EDL, OpenTimelineIO, XML Premiere / Final Cut : un plan par clip"}
+permissions: [read-files]
+cost: {kind: free}
+exts: [.edl, .otio, .xml, .fcpxml]

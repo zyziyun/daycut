@@ -1,0 +1,11 @@
+# Built-in shot provider. Paid: every run goes through the finals estimate + confirm code (the spend gate).
+id: kling-mcp
+kind: shot-provider
+name: {en: Kling, zh: 可灵, fr: Kling}
+version: 1.0.0
+api: 1
+entry: vstudio.create.providers.aivideo:KlingMCP
+description: {en: "Kling 3.0 through the official MCP server; best faces and character lock", zh: "通过官方 MCP 调用可灵 3.0，人脸和角色一致性最好", fr: "Kling 3.0 via le serveur MCP officiel"}
+permissions: [network, spend]
+cost: {kind: paid, notes: {en: "Spends your Kling membership credits", zh: "消耗你的可灵会员点数", fr: "Utilise vos crédits Kling"}}
+concurrency: 5

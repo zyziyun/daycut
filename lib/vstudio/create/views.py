@@ -5,7 +5,7 @@ import time
 from . import costs, formats as F, jobs, providers as PR, routing, store
 
 CELL = {"done": "ok", "running": "run", "submitting": "run", "queued": "q", "failed": "bad", "unknown-charge": "bad",
-        "manual-waiting": "you", "skipped": "q", "stopped": "q"}
+        "manual-waiting": "you", "skipped": "q", "stopped": "q"}     # finals units and make (plugin / agent) units
 
 
 def _public(ep):
@@ -93,6 +93,14 @@ def next_step(ep, est):
         return dict(step="making")
     if lad.get("stills") != "done":
         return dict(step="stills")
+    mk = ep.get("make") or {}
+    if mk.get("state") == "running":
+        return dict(step="making")
+    pend = [no for no, v in ((est or {}).get("shots") or {}).items()
+            if v.get("kind") in routing.MADE_BY_PLUGINS and not (ep.get("takes") or {}).get(no)
+            and ((mk.get("units") or {}).get(no) or {}).get("state") != "manual-waiting"]
+    if pend:
+        return dict(step="make", n=len(pend))
     if lad.get("animatic") != "done":
         return dict(step="animatic")
     if jobs.needs_pick(ep):
@@ -137,10 +145,13 @@ def making(sid=None):
     for x in sids:
         for ep in store.list_episodes(x):
             run = ep.get("run") or {}
-            if not run and not ep.get("takes"):
+            mk = ep.get("make") or {}
+            if not run and not ep.get("takes") and not mk:
                 continue
             units = run.get("units") or {}
             by_shot = {no: u for u in units.values() for no in u.get("shots") or []}
+            for no, u in (mk.get("units") or {}).items():            # plugin / agent shots made in lanes
+                by_shot[no] = dict(u, provider=f"{u.get('kind')}:{u.get('runner')}")
             cells = []
             for sh in ep.get("shots") or []:
                 tk = (ep.get("takes") or {}).get(sh["no"]) or []
@@ -173,8 +184,19 @@ def making(sid=None):
                 alerts.append(dict(a, episode=ep["id"], episode_no=ep.get("no"), series=x))
             n_pick = sum(1 for c in cells if c["state"] == "pick")
             done = sum(1 for c in cells if c["state"] == "ok")
-            rows.append(dict(id=ep["id"], series=x, no=ep.get("no"), title=ep.get("title"), stage=run.get("stage"),
-                             state=run.get("state") or "done", cells=cells, spent=ep_spent, pick=n_pick,
+            mku = mk.get("units") or {}
+            make = dict(state=mk.get("state"), lanes=mk.get("lanes") or {}, total=len(mku),
+                        done=sum(1 for u in mku.values() if u.get("state") == "done"),
+                        failed=[dict(no=no, code=u.get("code"), params=u.get("params") or {})
+                                for no, u in sorted(mku.items()) if u.get("state") == "failed"],
+                        waiting=[dict(no=no, code=u.get("code"), params=u.get("params") or {})
+                                 for no, u in sorted(mku.items()) if u.get("state") == "manual-waiting"]) if mk else None
+            state = run.get("state") or "done"
+            if mk.get("state") == "running":
+                state = "running"
+            rows.append(dict(id=ep["id"], series=x, no=ep.get("no"), title=ep.get("title"),
+                             stage=run.get("stage") or ("make" if mk else None), make=make,
+                             state=state, cells=cells, spent=ep_spent, pick=n_pick,
                              done=done, total=len(cells), paused=run.get("paused"),
                              eta_min=max(1, round((len(cells) - done) * 1.5)) if run.get("state") == "running" else None))
     live = [r for r in runs if r[3]] or sorted(runs)[-1:]       # the runs going now, else the latest one

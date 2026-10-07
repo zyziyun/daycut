@@ -1,0 +1,11 @@
+id: claude-code
+kind: agent-runner
+name: Claude Code
+version: 1.0.0
+api: 1
+entry: vstudio.plugins.builtin.runners:ClaudeCodeRunner
+description: {en: "Headless `claude -p` in each shot's job folder (it can use your HyperFrames / ffmpeg skills)", zh: "在每个镜头的任务文件夹里无界面运行 `claude -p`", fr: "`claude -p` sans interface dans le dossier de chaque plan"}
+permissions: [write-job, "exec:claude"]
+cost: {kind: subscription, notes: {en: "Your own Claude subscription", zh: "你自己的 Claude 订阅", fr: "Votre propre abonnement Claude"}}
+concurrency: 2
+timeout_s: 1800

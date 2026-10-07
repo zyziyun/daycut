@@ -6,15 +6,36 @@ FakeProvider with the real one's metadata; nothing leaves this machine.
 import os
 
 from ..i18n import CreateError
-from .aivideo import Jimeng, KlingMCP, MiniMax, SeedanceArk
 from .base import Provider, SubmitTimeout  # noqa: F401
 from .fake import FakeProvider
-from .local_comfyui import ComfyUI
-from .local_rapidmlx import RapidMLX
-from .veo import Veo
 
-CLASSES = {c.info["id"]: c for c in (KlingMCP, MiniMax, Veo, Jimeng, SeedanceArk, RapidMLX, ComfyUI)}
+# Every provider registers through the plugin registry (vstudio.plugins: built-in manifests in
+# plugins/builtin/manifests, plus the user's own folder / package plugins once turned on). This order is only the
+# display order of the built-ins; any other enabled shot provider follows them.
 ORDER = ("kling-mcp", "minimax", "jimeng", "veo", "seedance-ark", "local-rapidmlx", "local-comfyui")
+
+
+def classes():
+    """{id: Provider class} of the enabled shot providers that take jobs (cloud / mcp / manual / local); ``render``
+    providers (HyperFrames ...) are made by ``make`` in lanes instead."""
+    from vstudio.plugins import registry as R
+    out = {}
+    for row in R.rows("shot-provider", enabled_only=True):
+        if row["error"]:
+            continue
+        try:
+            cls = R.instance(row["key"])
+        except Exception:  # noqa: BLE001  (a broken third-party plugin never takes the built-ins down)
+            continue
+        if (getattr(cls, "info", None) or {}).get("kind") in ("cloud", "mcp", "manual", "local"):
+            out[cls.info["id"]] = cls
+    return out
+
+
+def order():
+    c = classes()
+    return [p for p in ORDER if p in c] + sorted(p for p in c if p not in ORDER)
+
 
 _fake = {"on": None, "overrides": {}}
 _instances = {}
@@ -39,7 +60,7 @@ def install(pid, provider):
 def get(pid):
     if pid in _instances:
         return _instances[pid]
-    cls = CLASSES.get(pid)
+    cls = classes().get(pid)
     if cls is None:
         raise CreateError("not-found", status=404, what="service", id=pid)
     if fake_mode():
@@ -54,19 +75,24 @@ def get(pid):
 
 
 def info(pid):
-    return dict(CLASSES[pid].info)
+    c = classes()
+    if pid not in c:
+        raise CreateError("not-found", status=404, what="service", id=pid)
+    return dict(c[pid].info)
 
 
 def list_info():
-    return [dict(CLASSES[p].info) for p in ORDER]
+    c = classes()
+    return [dict(c[p].info) for p in order()]
 
 
 def detect(include_local=False):
     """[{id, label, kind, ready, code, params, ...}] - env presence only (no network) for cloud; local probes run
     only when the second flag is on and ``include_local``."""
     out = []
-    for pid in ORDER:
-        meta = dict(CLASSES[pid].info)
+    c = classes()
+    for pid in order():
+        meta = dict(c[pid].info)
         if meta["kind"] == "local" and not include_local:
             st = dict(ready=False, code="create.local-off", params={})
         else:

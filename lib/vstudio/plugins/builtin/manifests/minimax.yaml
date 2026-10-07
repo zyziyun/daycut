@@ -1,0 +1,10 @@
+id: minimax
+kind: shot-provider
+name: {en: MiniMax · Hailuo, zh: MiniMax · 海螺, fr: MiniMax · Hailuo}
+version: 1.0.0
+api: 1
+entry: vstudio.create.providers.aivideo:MiniMax
+description: {en: "Hailuo 02 through the MiniMax open-platform API", zh: "通过 MiniMax 开放平台 API 调用海螺 02", fr: "Hailuo 02 via l’API MiniMax"}
+permissions: [network, spend]
+cost: {kind: paid, notes: {en: "Pay as you go on your MiniMax key", zh: "按量计费（你的 MiniMax 密钥）", fr: "Paiement à l’usage sur votre clé MiniMax"}}
+concurrency: 4

@@ -1,0 +1,11 @@
+id: shell
+kind: agent-runner
+name: {en: Any command, zh: 任意命令, fr: N’importe quelle commande}
+version: 1.0.0
+api: 1
+entry: vstudio.plugins.builtin.runners:ShellRunner
+description: {en: "Your own command: it gets the job folder ({job_dir}) and writes outputs/", zh: "你自己的命令：拿到任务文件夹（{job_dir}），把结果写进 outputs/", fr: "Votre propre commande : elle reçoit le dossier ({job_dir}) et écrit outputs/"}
+permissions: [write-job, "exec:command"]
+cost: {kind: local}
+concurrency: 2
+timeout_s: 1800

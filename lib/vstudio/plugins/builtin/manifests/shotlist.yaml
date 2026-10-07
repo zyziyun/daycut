@@ -1,0 +1,10 @@
+id: shotlist
+kind: importer
+name: {en: Shot list, zh: 镜头表, fr: Liste de plans}
+version: 1.0.0
+api: 1
+entry: vstudio.plugins.builtin.shotlist:ShotListImporter
+description: {en: "JSON, CSV / TSV or Markdown shot lists", zh: "JSON、CSV / TSV 或 Markdown 镜头表", fr: "Listes de plans JSON, CSV / TSV ou Markdown"}
+permissions: [read-files]
+cost: {kind: free}
+exts: [.json, .csv, .tsv, .md, .markdown, .txt]

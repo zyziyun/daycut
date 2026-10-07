@@ -1,0 +1,10 @@
+id: jimeng
+kind: shot-provider
+name: {en: 即梦 · Seedance, zh: 即梦 · Seedance, fr: 即梦 · Seedance}
+version: 1.0.0
+api: 1
+entry: vstudio.create.providers.aivideo:Jimeng
+description: {en: "Assisted: Reelfold writes the prompts, you press Generate on jimeng.com", zh: "辅助模式：Reelfold 写好提示词，你在即梦网站上点生成", fr: "Assisté : Reelfold écrit les prompts, vous cliquez sur Générer"}
+permissions: [read-files]
+cost: {kind: subscription, notes: {en: "Uses your own 即梦 membership; Reelfold never clicks Generate", zh: "用你自己的即梦会员，Reelfold 不会替你点生成", fr: "Utilise votre abonnement 即梦"}}
+concurrency: 1

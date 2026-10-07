@@ -1,0 +1,9 @@
+id: seedance-ark
+kind: shot-provider
+name: {en: Seedance (Ark API), zh: Seedance（火山方舟 API）, fr: Seedance (API Ark)}
+version: 1.0.0
+api: 1
+entry: vstudio.create.providers.aivideo:SeedanceArk
+permissions: [network, spend]
+cost: {kind: paid, notes: {en: "Billed per second on your Ark key", zh: "按秒计费（你的方舟密钥）", fr: "Facturé à la seconde sur votre clé Ark"}}
+concurrency: 4

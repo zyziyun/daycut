@@ -1,0 +1,9 @@
+id: local-rapidmlx
+kind: shot-provider
+name: {en: Local drafts (MLX), zh: 本机草稿（MLX）, fr: Brouillons locaux (MLX)}
+version: 1.0.0
+api: 1
+entry: vstudio.create.providers.local_rapidmlx:RapidMLX
+permissions: [read-files]
+cost: {kind: local}
+concurrency: 1
