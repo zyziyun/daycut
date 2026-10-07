@@ -50,7 +50,8 @@ export function HistoryProvider({ children }: { children: ReactNode }) {
   const roots = useMemo(() => {
     const r = new Set(data?.watch ?? []);
     for (const i of live) r.add(i.dir); // live jobs outside the watched folders (engine registry) too
-    return [...r].slice(0, 20);
+    // only absolute folders can be watched; a registry entry with a relative dir is skipped, not sent (main rejects it)
+    return [...r].filter((d) => typeof d === 'string' && (d.startsWith('/') || /^[A-Za-z]:[\\/]/.test(d))).slice(0, 20);
   }, [data, live]);
   const key = roots.join('\n');
   useEffect(() => {

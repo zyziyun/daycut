@@ -151,11 +151,12 @@
 .ux-pvctl { position: absolute; left: 8px; right: 8px; bottom: 8px; display: flex; align-items: center; gap: 8px; padding: 6px 10px 6px 6px; border-radius: 12px; background: rgba(20, 18, 16, 0.62); backdrop-filter: blur(6px); color: #fff; font-size: 12px; }
 .ux-pvplay { width: 28px; height: 28px; border-radius: 50%; border: 0; background: #fff; color: #1a1816; display: flex; align-items: center; justify-content: center; flex: none; }
 .ux-pvplay .ico { width: 14px; height: 14px; }
-.ux-pvbar { position: relative; flex: 1; height: 16px; }
+.ux-pvbar { position: relative; flex: 1; height: 16px; cursor: pointer; touch-action: none; }
+.ux-pvbar:focus-visible { outline: 2px solid rgba(255, 255, 255, 0.7); outline-offset: 2px; border-radius: 4px; }
 .ux-pvbar::before { content: ''; position: absolute; left: 0; right: 0; top: 7px; height: 2px; border-radius: 1px; background: rgba(255, 255, 255, 0.35); }
 .ux-pvbar .win { position: absolute; top: 6px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.55); }
 .ux-pvbar .head { position: absolute; top: 3px; width: 2px; height: 10px; margin-left: -1px; background: #fff; }
-.ux-pvbar .dia { position: absolute; top: 3px; width: 10px; height: 10px; margin-left: -5px; transform: rotate(45deg); border: 0; padding: 0; background: #E2B34A; border-radius: 2px; }
+.ux-pvbar .dia { cursor: pointer; z-index: 1; position: absolute; top: 3px; width: 10px; height: 10px; margin-left: -5px; transform: rotate(45deg); border: 0; padding: 0; background: #E2B34A; border-radius: 2px; }
 .ux-pvbar .dia.on { box-shadow: 0 0 0 2px #fff; }
 .ux-opts { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .ux-opt { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; background: var(--surface); cursor: pointer; transition: border-color var(--t) var(--ease), background var(--t) var(--ease); }

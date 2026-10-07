@@ -197,10 +197,12 @@ export function UiProvider({
   useEffect(() => {
     if (!menu) return;
     const close = () => setMenu(null);
-    window.addEventListener('click', close);
+    // attach after the opening click has finished bubbling, or that same click closes the menu at once
+    const id = window.setTimeout(() => window.addEventListener('click', close), 0);
     window.addEventListener('blur', close);
     window.addEventListener('resize', close);
     return () => {
+      window.clearTimeout(id);
       window.removeEventListener('click', close);
       window.removeEventListener('blur', close);
       window.removeEventListener('resize', close);

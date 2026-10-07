@@ -235,6 +235,14 @@ test('Home busy: the Inbox top 3 + n more, Running, Going out today, the platfor
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('composer-platforms')).toContainText('Xiaohongshu, Douyin +2');
   expect((await page.evaluate(() => window.desk.getSettings())).defaultPlatforms).not.toContain('bilibili');
+  // the paperclip opens Add files / Add folder and the menu stays open (the opening click must not close it)
+  await page.getByTestId('composer-attach').click();
+  await expect(page.getByTestId('add-files')).toBeVisible();
+  await expect(page.getByTestId('add-folder')).toBeVisible();
+  await page.waitForTimeout(200);
+  await expect(page.getByTestId('add-files')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.mouse.click(5, 5);
   // typing: Make a plan becomes the one filled button, ⌘↵ shown
   await page.getByTestId('composer-input').fill('Cut this recording into 3 Douyin clips');
   await expect(page.getByTestId('make-plan')).toHaveClass(/primary/);
@@ -262,6 +270,13 @@ test('Inbox: list + preview, plain choices, confirm -> next one + Undo, ↑ ↓'
   await opts.nth(1).click(); // the preview follows the option (clip B, 3 s around the cut)
   await expect(pv.getByTestId('cut-preview-video')).toHaveAttribute('src', /B_/);
   await expect(pv.getByTestId('crumb-clip')).toContainText('Clip B');
+  // the bar seeks: a click near the end moves the playhead there and it stays (no snap back to the 6 s window)
+  const bar = pv.getByTestId('cut-preview-bar');
+  await expect.poll(async () => Number(await bar.getAttribute('aria-valuemax'))).toBeGreaterThan(0);
+  const bb = (await bar.boundingBox())!;
+  await page.mouse.click(bb.x + bb.width * 0.9, bb.y + bb.height / 2);
+  const max = Number(await bar.getAttribute('aria-valuemax'));
+  await expect.poll(async () => Number(await bar.getAttribute('aria-valuenow'))).toBeGreaterThanOrEqual(Math.floor(max * 0.8));
   await noMissingKeys();
   await shot('I1-inbox');
   const total = await page.getByTestId('inbox-item').count();

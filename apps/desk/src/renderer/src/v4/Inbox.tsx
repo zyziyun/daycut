@@ -463,6 +463,9 @@ export function CutPreview({ opts, cur, onPick, play = 0 }: { opts: InboxOption[
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
   const [dur, setDur] = useState(0);
+  // free = she dragged or clicked the bar: play from there and stop looping the 6 s window until the next cut is picked
+  const [free, setFree] = useState(false);
+  const bar = useRef<HTMLDivElement | null>(null);
   const o = cur ?? opts.find((x) => x.file) ?? null;
   const canBefore = !!o?.before?.file;
   const showSide = side === 'before' && canBefore ? 'before' : 'after';
@@ -475,6 +478,16 @@ export function CutPreview({ opts, cur, onPick, play = 0 }: { opts: InboxOption[
   useEffect(() => {
     if (play) autoplay.current = true;
   }, [play]);
+  useEffect(() => setFree(false), [src, a]);
+  const seekTo = (clientX: number) => {
+    const el = v.current;
+    const r = bar.current?.getBoundingClientRect();
+    if (!el || !r || !dur) return;
+    const tt = Math.min(Math.max((clientX - r.left) / r.width, 0), 1) * dur;
+    el.currentTime = tt;
+    setTime(tt);
+    setFree(true);
+  };
   useEffect(() => {
     const el = v.current;
     if (!el) return;
@@ -504,7 +517,7 @@ export function CutPreview({ opts, cur, onPick, play = 0 }: { opts: InboxOption[
             onTimeUpdate={(e) => {
               const el = e.target as HTMLVideoElement;
               setTime(el.currentTime);
-              if (el.currentTime >= b || (dur && el.currentTime >= dur - 0.05)) el.currentTime = a; // loop the 6 s window
+              if (!free && (el.currentTime >= b || (dur && el.currentTime >= dur - 0.05))) el.currentTime = a; // loop the 6 s window
             }}
             onClick={() => (v.current?.paused ? void v.current.play().catch(() => undefined) : v.current?.pause())}
             data-testid="cut-preview-video"
@@ -526,7 +539,36 @@ export function CutPreview({ opts, cur, onPick, play = 0 }: { opts: InboxOption[
             {playing ? <Pause className="ico" /> : <Play className="ico" />}
           </button>
           <span className="num">{fmtClock(time)}</span>
-          <div className="ux-pvbar">
+          <div
+            className="ux-pvbar"
+            ref={bar}
+            role="slider"
+            aria-label={t('player.seek')}
+            aria-valuemin={0}
+            aria-valuemax={Math.round(dur)}
+            aria-valuenow={Math.round(time)}
+            tabIndex={0}
+            data-testid="cut-preview-bar"
+            onPointerDown={(e) => {
+              if ((e.target as HTMLElement).closest('.dia')) return; // the diamonds pick a cut
+              e.currentTarget.setPointerCapture(e.pointerId);
+              seekTo(e.clientX);
+            }}
+            onPointerMove={(e) => {
+              if (e.currentTarget.hasPointerCapture(e.pointerId)) seekTo(e.clientX);
+            }}
+            onKeyDown={(e) => {
+              const el = v.current;
+              if (!el || !dur) return;
+              const step = e.shiftKey ? 5 : 1;
+              if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+                e.preventDefault();
+                el.currentTime = Math.min(Math.max(el.currentTime + (e.key === 'ArrowRight' ? step : -step), 0), dur);
+                setTime(el.currentTime);
+                setFree(true);
+              }
+            }}
+          >
             {dur > 0 && <i className="win" style={{ left: `${(a / dur) * 100}%`, width: `${((Math.min(b, dur) - a) / dur) * 100}%` }} />}
             {dur > 0 && <i className="head" style={{ left: `${(time / dur) * 100}%` }} />}
             {showSide === 'after' &&
