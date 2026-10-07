@@ -181,25 +181,18 @@ def _hook_lines(h):
     return lines
 
 
-_LATIN_WORD = re.compile(r"[A-Za-z0-9\u00C0-\u024F'’-]")
-
-
 def _title_parts(title):
-    """Cover big1 / big2 from a title: split at the first strong punctuation, else in the middle."""
+    """Cover big1 / big2 from a title: split at the first strong punctuation, else two balanced lines from the
+    shared line-breaker (``vstudio.subs.split_two``: never inside a latin word, CJK words kept together)."""
+    from vstudio.subs import split_two
     t = (title or "").strip()
     m = re.search(r"[：:，,？?！!]", t)
     if m and 2 <= m.start() <= len(t) - 2:
         return t[:m.start() + (1 if t[m.start()] in "？?！!" else 0)], t[m.end():].strip()
     if len(t) <= 8:
         return t, ""
-    # nearest-to-middle cut that never lands inside a Latin word (CJK may split between any characters)
-    cuts = [i for i in range(1, len(t))
-            if not (_LATIN_WORD.match(t[i - 1]) and _LATIN_WORD.match(t[i]))
-            and t[:i].strip() and t[i:].strip()]
-    if not cuts:
-        return t, ""
-    k = min(cuts, key=lambda i: abs(len(t) - 2 * i))
-    return t[:k].rstrip(), t[k:].lstrip()
+    lines = split_two(t)
+    return (lines[0], lines[1]) if len(lines) == 2 else (t, "")
 
 
 def _post_body(p):
@@ -796,7 +789,7 @@ def spoken_hook_lines(timeline, cues, max_one=16):
     """Hook items of ``timeline`` get ``hook_lines`` from the (proofread) captions spoken in their window - the
     title band then shows exactly what the cold open says, and make_vertical hides the captions under it.
     Returns {item index: lines}."""
-    from vstudio.subs import balanced_wrap
+    from vstudio.subs import join_caption, split_two
     out = {}
     for k, it in enumerate(timeline):
         if not it.get("hook") or it.get("kind") == "card":
@@ -806,17 +799,15 @@ def spoken_hook_lines(timeline, cues, max_one=16):
         txt = [c["text"].strip() for c in cues if a - 0.05 <= (c["start"] + c["end"]) / 2 < b and c["text"].strip()]
         if not txt:
             continue
-        full = "".join(txt)
+        full = join_caption(txt)
         if len(full) <= max_one:
             lines = [full]
         elif len(txt) >= 2:                          # break at the caption boundary nearest the middle
-            cum = [len("".join(txt[:i])) for i in range(1, len(txt))]
+            cum = [len(join_caption(txt[:i])) for i in range(1, len(txt))]
             i = min(range(len(cum)), key=lambda j: abs(cum[j] - len(full) / 2)) + 1
-            lines = ["".join(txt[:i]), "".join(txt[i:])]
+            lines = [join_caption(txt[:i]), join_caption(txt[i:])]
         else:
-            lines = balanced_wrap(full, len(full) / 2 + 1)[:2]
-            if len(lines) > 2:
-                lines = [lines[0], "".join(lines[1:])]
+            lines = split_two(full)
         it["hook_lines"] = [ln for ln in lines if ln]
         out[k] = it["hook_lines"]
     return out
