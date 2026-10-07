@@ -118,3 +118,12 @@ describe('BB-19 a fresh install routes every AI job to the AI the page shows (no
     expect(r.tasks).toEqual({});
   });
 });
+
+describe('i18n: effect parameters without a label read as words, not snake_case ids', async () => {
+  const { humanizeParam } = await import('../../src/renderer/src/v4/msg');
+  it('music_lufs -> Music lufs', () => {
+    expect(humanizeParam('music_lufs')).toBe('Music lufs');
+    expect(humanizeParam('in-dur')).toBe('In dur');
+    expect(humanizeParam('')).toBe('');
+  });
+});

@@ -9,7 +9,7 @@ import { fmtClock, getLang, has, t, tk, type MessageKey } from '../../i18n';
 import { pauses } from '../../lib/chatEdit';
 import { snapEdge } from '../../lib/timeline';
 import { media } from '../kit';
-import { effectLabel } from '../msg';
+import { effectLabel, humanizeParam } from '../msg';
 import { FrameAt } from './Frame';
 
 export interface CardEnv {
@@ -103,7 +103,7 @@ export function EffectCard({ env, op, onSubmit, onCancel, onRemove, okLabel }: {
     const own = `ce.fx.${k === 'color' ? 'colour' : k === 'anim' ? 'motion' : k}`;
     if (has(own)) return tk(own);
     if (has(`fxp.${k}`)) return tk(`fxp.${k}`);
-    return getLang() === 'zh-CN' && sch[k]['x-zh'] ? sch[k]['x-zh']!.replace(/\s*[(（].*$/, '') : k;
+    return getLang() === 'zh-CN' && sch[k]['x-zh'] ? sch[k]['x-zh']!.replace(/\s*[(（].*$/, '') : humanizeParam(k);
   };
   const submit = () => {
     const clean = Object.fromEntries(Object.entries(params).filter(([k, v]) => v !== '' && v !== null && v !== undefined && k in sch));

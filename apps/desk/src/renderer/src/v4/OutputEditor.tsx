@@ -25,7 +25,7 @@ import { useSplit, type LowerTab } from '../lib/useSplit';
 import { ChatPanel, type ChatApi } from './chat/ChatPanel';
 import { Empty, media, Sk } from './kit';
 import { LowerPane } from './LowerPane';
-import { effectLabel, emsg, errText, setEffectLabels } from './msg';
+import { effectLabel, emsg, errText, humanizeParam, setEffectLabels } from './msg';
 import { PinnedQuestion } from './PinnedQuestion';
 import { ShareButton } from './ShareDialog';
 import { Player, type PlayerApi } from './Player';
@@ -955,7 +955,7 @@ function paramLabel(key: string, sch: { 'x-zh'?: string }): string {
   const k = `fxp.${key}` as MessageKey;
   const own = t(k);
   if (own !== k) return own;
-  return getLang() === 'zh-CN' && sch['x-zh'] ? sch['x-zh'].replace(/\s*[(（].*$/, '') : key;
+  return getLang() === 'zh-CN' && sch['x-zh'] ? sch['x-zh'].replace(/\s*[(（].*$/, '') : humanizeParam(key);
 }
 
 function EffectsPanel({

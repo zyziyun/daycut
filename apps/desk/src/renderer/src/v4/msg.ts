@@ -40,3 +40,9 @@ export function errText(e: unknown): string {
   if (e instanceof EngineError && e.code) return emsg({ code: e.code, params: e.params as EngineMsg['params'], message: e.message, message_zh: e.messageZh });
   return e instanceof Error ? e.message : String(e);
 }
+
+/** An effect parameter the UI has no label for ("music_lufs"): readable words instead of the raw snake_case id. */
+export function humanizeParam(key: string): string {
+  const s = key.replace(/[_-]+/g, ' ').trim();
+  return s ? s[0].toUpperCase() + s.slice(1) : key;
+}
