@@ -203,3 +203,10 @@ def test_export_multi_platform(master, tmp_path):
     assert yt["reframe"]["mode_used"] == "scale"                 # same aspect -> plain scale (no face pass)
     assert any("sweet spot" in w for w in xhs["warnings"])
     assert any("blurred pad" in n for n in xhs["notes"])      # other-aspect cover: fitted, not cropped
+
+
+def test_order_key_puts_international_first_for_every_spelling():
+    keys = ["douyin:vertical", "xiaohongshu-full", "视频号", "youtube-shorts-vertical", "tiktok", "bilibili"]
+    assert sorted(keys, key=P.order_key) == ["youtube-shorts-vertical", "tiktok", "xiaohongshu-full",
+                                              "douyin:vertical", "视频号", "bilibili"]
+    assert P.order_key("nope") == len(P.ORDER)
