@@ -22,6 +22,10 @@ references/PROJECTS.md.
   output list | show | edit | render | undo | redo | revert | ai | chat | effects  --project P --output O   2nd-pass edit of
       one finished output (references/OUTPUT_EDIT.md): edit --ops JSON | --op NAME --param k=v | --op ai
       --instruction T [--apply]; render [--quality preview|final] [--targets primary,douyin:vertical|all]
+  ai --project P --instruction T [--outputs all|a,b] [--context JSON] [--timeout 120] [--json | --json-events]
+                                                      project-level AI edit: one model call for every output ->
+                                                      grouped changes per output, or needs_rerender (burned-in text
+                                                      on flattened outputs; answered by rules, no model call)
   series new --id S --recipe R [--name N] [--set JSON] [--cadence JSON] | show --id S | list | update --id S --set JSON
   inbox [--json] | inbox answer (--project P --id X [--item I] | --id X / --kind K [--projects a,b]) (--answer JSON | --default)
   calendar account add --id A --platform P [--times 12:00,19:00] [--per-day N] [--days 0,1,2,3,4]
@@ -367,6 +371,38 @@ def cmd_output(a):
     return 0
 
 
+def cmd_ai(a):
+    from . import projai as PA
+    emit, stream = (None, None)
+    if a.json_events:
+        from vstudio.batch.cli import json_event_sink
+        emit, stream = json_event_sink()
+    from .outputs import OutputError
+    try:
+        r = PA.plan(a.project or a.dir or os.getcwd(), a.instruction, outputs=a.outputs,
+                    context=json.loads(a.context) if a.context else None, provider=a.provider, model=a.model,
+                    timeout=a.timeout, on_event=emit)
+    except OutputError as e:
+        if not emit:
+            raise
+        emit(dict(event="failed", ok=False, error=e.info["message"], **e.info))
+        stream.flush()
+        return 5
+    if emit:
+        emit(dict(event="done", result=r))
+        stream.flush()
+        return 0
+    lines = [f"{r['answer']} ({r['seconds']}s, {r['provider']})"]
+    for g in r["groups"]:
+        lines.append(f"  {g['output']}: " + "; ".join(p["describe"]["message"] for p in g["proposed"]))
+    if r["needs_rerender"]:
+        n = r["needs_rerender"]
+        lines.append(f"  needs re-render: {', '.join(n['outputs'])} - {n['reason']['message']}")
+        lines += [f"    path: {p['kind']} - {p['message']['message']}" for p in n["paths"]]
+    _out(a, r, "\n".join(lines))
+    return 0
+
+
 def cmd_series(a):
     from . import home as H
     if a.action == "new":
@@ -535,6 +571,15 @@ def build_parser():
     p.add_argument("--targets", help="render: primary (default), platform:orientation list, or all")
     p.add_argument("--json-events", action="store_true")
     p.add_argument("--no-thumbs", action="store_true", help="effects: skip the preview thumbnails")
+    p = add("ai", cmd_ai, "project-level AI edit of every output (grouped per output; needs_rerender)")
+    p.add_argument("--project", help="project folder or adopted work folder (default --dir / cwd)")
+    p.add_argument("--instruction", required=True)
+    p.add_argument("--outputs", default="all", help="all (default) or a comma list of output ids")
+    p.add_argument("--context", help="JSON: what the creator points at (e.g. {\"selected\": \"<output id>\"})")
+    p.add_argument("--provider")
+    p.add_argument("--model")
+    p.add_argument("--timeout", type=float, default=120.0, help="seconds per provider before the fallback (120)")
+    p.add_argument("--json-events", action="store_true", help="stage / fallback events, then {event: done, result}")
     p = add("series", cmd_series, "series presets", d=False)
     p.add_argument("action", choices=["new", "show", "list", "update"])
     p.add_argument("--id")

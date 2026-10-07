@@ -621,12 +621,14 @@ def failure_code(err):
 
 
 def complete(task, system, prompt, schema=None, provider=None, model=None, max_tokens=16000, timeout=600,
-             config=None, effort=None, temperature=None, retries=2, repair=True, prices=None, **opts):
+             config=None, effort=None, temperature=None, retries=2, repair=True, prices=None, on_fallback=None,
+             **opts):
     """``complete`` with a provider fallback chain: a route entry may list ``fallback: [codex, ...]`` (persona /
     client ``llm.tasks.<task>`` or ``llm.default``, the desk's routes file, env ``VSTUDIO_LLM_<TASK>_FALLBACK``);
     when the routed provider fails (auth expired, CLI missing, outage), the next one is tried and the result says
     so: ``fallback_from`` (error texts) and ``fallback`` = {from, to, code, error, tried}. An explicit ``provider=``
-    argument disables the chain."""
+    argument disables the chain. ``on_fallback(info)`` is told {from, to, code, error} before each fallback
+    attempt (live progress: "Claude Code timed out, trying Codex")."""
     kw = dict(schema=schema, model=model, max_tokens=max_tokens, timeout=timeout, config=config, effort=effort,
               temperature=temperature, retries=retries, repair=repair, prices=prices, **opts)
     routed = None if provider else route(task, None, None, config)
@@ -644,6 +646,12 @@ def complete(task, system, prompt, schema=None, provider=None, model=None, max_t
             except ValueError:
                 errors.append(f"{name}: unknown provider")
                 continue
+            if on_fallback:
+                try:
+                    on_fallback({"from": tried[-1] if tried else None, "to": canonical(name),
+                                 "code": failure_code(errors[-1]), "error": str(errors[-1])[:300]})
+                except Exception:  # noqa: BLE001  (a progress callback never breaks the call)
+                    pass
             try:
                 out = _complete(task, system, prompt, provider=name,
                                 **dict(kw, model=fb.get("model") if isinstance(fb, dict) else None))

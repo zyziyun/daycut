@@ -79,6 +79,23 @@ id; `revert` of that step marks it `reverted`. The desk adds its own turns (slas
 `chat --add JSON` and patches status with `chat --turn ID --set JSON`. `show` returns `chat` so the conversation
 is rebuilt after a reopen.
 
+**Project-level AI** (`python -m vstudio.project ai --project P --instruction T [--outputs all|a,b] [--context
+JSON] [--timeout 120] [--json | --json-events]`, `projai.py`): one request for every output ("remove the series
+label from all clips"). (1) read every targeted output (cached transcripts only); (2) a cheap rule check BEFORE any
+model call: removing / replacing text burned into a flattened output, or restyling burned captions, can never be
+done by the editor, so those outputs get `needs_rerender` at once (no model, < 2 s) - evidence needed: a text noun
+(标题 / 水印 / label ...), the text in the folder's own scripts, or a cached transcript that does not say it (what
+is SAID goes to the model as a cut); text this editor added (title band, an effect's text, an added caption) is
+removed with plain ops; (3) the rest goes to ONE model call (task `output_edit`) with every output's summary,
+answered as groups per output, each op validated against that output's caps. `--timeout` bounds each provider; a
+timed-out / failed provider falls back along the route's chain (`fallback` event + `fallback` in the result).
+Nothing is applied: the desk applies a group with `output edit` (one undo step per output).
+`needs_rerender = {outputs, titles, code burned-text | burned-captions-restyle | model-needs-rerender, reason,
+targets, paths [{kind rerender-scripts {files [{file, line, text}], scripts, prompt} | regenerate {items, command} |
+re-export, message, actions [{kind copy-prompt {prompt} | open-file {file, line} | regenerate {items} | reveal
+{file}, label}]}]}`. `--json-events`: `{event: stage, stage: read|check|ask|plan, n, provider?, elapsed}`,
+`{event: fallback, from, to, code, error}`, then `{event: done, result}` (or `{event: failed, code, ...}`, exit 5).
+
 ## 4. Effects (`output effects --json [--no-thumbs]`)
 
 Each id is a row of the effects registry (`vstudio.effects`); `{id, label {en, zh}, description {en, zh}, kind,
@@ -133,6 +150,7 @@ descriptions) is `{code, params, message (English), message_zh}`: the desk local
 | `output chat ...` [`--add JSON` / `--turn ID --set JSON`] | `{ok, turns}` / `{ok, turn}` |
 | `output undo|redo ...` | the `show` document + `undone` / `redone` step |
 | `output effects` | `{ok, effects [...], n}` |
+| `ai --project P --instruction T [--outputs]` | `{ok, scope project, answer changes|needs_rerender|mixed|nothing, outputs [{id, title, mode}], groups [{output, title, mode, proposed, dropped, ops, summary, source model|rules}], needs_rerender, apply_all {outputs, ops}, classified, model_called, provider, model, fallback, cost_usd, seconds, warnings}` |
 
 Errors: exit 5 + `{ok: false, error, code, params, message, message_zh}`. Codes: `unknown-owner`,
 `unknown-output`, `unknown-op`, `bad-op`, `no-ops`, `unknown-effect`, `unknown-effect-instance`,
