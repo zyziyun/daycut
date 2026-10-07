@@ -87,7 +87,16 @@ function cleanChoice(c: Partial<RouteChoice> | undefined | null): RouteChoice | 
 }
 
 /** The engine's `python -m vstudio.llm route --json` (persona / client values) -> the initial desk choices. */
-export function routesFromEngine(engine: Record<string, { provider?: string; model?: string | null; fallback?: unknown }> | null | undefined): AiRoutes {
+/** A task route the engine resolved from a task-specific setting (persona / config `llm.tasks.<task>`, the desk file's
+ * tasks, `VSTUDIO_LLM_<TASK>_PROVIDER`) rather than inherited from the default. Without a `source` (older engine)
+ * every entry counts as its own. */
+function ownTaskRoute(r: { source?: string }): boolean {
+  const s = r.source;
+  if (!s) return true;
+  return /llm\.tasks\./.test(s) || (/^env VSTUDIO_LLM_.+_PROVIDER$/.test(s) && s !== 'env VSTUDIO_LLM_PROVIDER');
+}
+
+export function routesFromEngine(engine: Record<string, { provider?: string; model?: string | null; fallback?: unknown; source?: string }> | null | undefined): AiRoutes {
   const pick = (r?: { provider?: string; model?: string | null; fallback?: unknown }): RouteChoice | null =>
     r
       ? cleanChoice({
@@ -102,7 +111,11 @@ export function routesFromEngine(engine: Record<string, { provider?: string; mod
   const def = engineDef && engineDef.provider !== 'none' ? engineDef : { provider: 'claude-code' as ProviderId, model: null, fallback: ['codex' as ProviderId] };
   const tasks: AiRoutes['tasks'] = {};
   for (const k of AI_TASK_IDS) {
-    const c = pick(engine?.[AI_TASKS[k]]);
+    const raw = engine?.[AI_TASKS[k]];
+    // a task that only inherits the engine's default is not a choice of its own: with nothing configured the engine
+    // reports "none" for every task, which used to pin six jobs to rules while the page said Claude Code
+    if (!raw || !ownTaskRoute(raw)) continue;
+    const c = pick(raw);
     if (c && !sameChoice(c, def)) tasks[k] = c;
   }
   return { default: def, tasks };

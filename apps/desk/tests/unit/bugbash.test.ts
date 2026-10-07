@@ -96,3 +96,25 @@ describe('BB-13 media through a symlinked folder is served, a symlink out of a r
     expect(allowedMedia('/tmp/p/engine-data/a.txt', '/private/tmp/p/engine-data/a.txt', roots, P)).toBe(false);
   });
 });
+
+describe('BB-19 a fresh install routes every AI job to the AI the page shows (not six jobs to rules)', async () => {
+  const { routesFromEngine } = await import('../../src/shared/aiRoutes');
+  // `python -m vstudio.llm route --json` with nothing configured (no persona / config / desk routes)
+  const none = { provider: 'none', model: null, source: 'legacy-auto' };
+  const unconfigured = Object.fromEntries(['segment_plan', 'proofread', 'glossary', 'copy', 'script', 'planner', 'intake', 'output_edit', 'default'].map((k) => [k, none]));
+  it('no task is pinned to "none"', () => {
+    const r = routesFromEngine(unconfigured);
+    expect(r.default.provider).toBe('claude-code');
+    expect(r.tasks).toEqual({});
+  });
+  it('a task the persona really routes elsewhere is kept', () => {
+    const r = routesFromEngine({ ...unconfigured, proofread: { provider: 'ollama', model: 'qwen3:8b', source: 'persona llm.tasks.proofread' } });
+    expect(Object.values(r.tasks)).toEqual([{ provider: 'ollama', model: 'qwen3:8b', fallback: [] }]);
+  });
+  it('a task inherited from the persona default is not a task route', () => {
+    const def = { provider: 'codex', model: null, source: 'persona llm.default' };
+    const r = routesFromEngine({ default: def, copy: def, intake: def });
+    expect(r.default.provider).toBe('codex');
+    expect(r.tasks).toEqual({});
+  });
+});
