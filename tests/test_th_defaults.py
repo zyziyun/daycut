@@ -27,7 +27,7 @@ def test_talkinghead_recipe_reads_the_format_defaults():
     d = M.param_defaults(m)
     assert d["speed"] == f["speed"]["body"] == 1.25            # not the old recipe 1.1
     assert d["hook_speed"] == f["speed"]["hook"] and d["cleanup_profile"] == f["cleanup"] == "tight"
-    assert d["hook_count"] == f["hook_menu"] and d["notes"] is True and d["cover_retouch"] is True
+    assert d["hook_count"] == f["hook_menu"] and d["note_cards"] is True and d["cover_retouch"] is True
     assert "default" not in m["params"]["properties"]["speed"]   # the number lives in one place only
     pub = public_manifest(m)["params"]["properties"]           # what the desk forms / intake catalog see
     assert pub["speed"]["default"] == 1.25 and pub["cleanup_profile"]["default"] == "tight"
@@ -174,6 +174,12 @@ def test_desk_default_engine_is_her_talking_head_look():
     assert style["panels"] is True and style["progress"] == "refined"
     hooks = next(s for s in M.get("talkinghead")["stages"] if s["id"] == "hooks")
     assert "when" not in hooks                                 # the hook menu is offered on the default engine too
+
+
+def test_note_cards_switch_does_not_collide_with_job_notes():
+    """A job's ``notes`` are note lines (proofread context reads them as a list): the card switch is its own param."""
+    ctx = ST.proofread_context({}, dict(note_cards=True, notes=["要点一"]))
+    assert ctx["notes"] == ["要点一"] and "notes" not in M.param_defaults(M.get("talkinghead"))
 
 
 def test_vtrack_config_carries_hooks_panels_chapters_keywords():

@@ -49,7 +49,7 @@ params:
         notes: {zoom: false, pops: false, stamps: false, circles: false, cards: false, sfx: false, progress: classic, callouts: true, panels: true, hook_badge: true}
         refined: {zoom: true, pops: true, stamps: true, circles: true, cards: true, sfx: true, progress: refined, callouts: false, panels: false, hook_badge: false}
         mixed: {zoom: true, pops: true, stamps: true, circles: false, cards: true, sfx: true, progress: refined, callouts: false, panels: true, hook_badge: false}
-    notes:
+    note_cards:                # not `notes`: that is a job's own note lines (segment plans, proofread context)
       type: boolean
       x-format: notes
       title: 记笔记 panels, progress-bar chapters and highlighted keywords drafted from the clip (vtrack)

@@ -237,7 +237,7 @@ def run_compose_th(ctx):
     if p.get("hook") and not hooks:
         ctx.log("hook: the picked sentences were cut from the body; no hook montage")
     notes = None
-    if p.get("notes", True) is not False:
+    if p.get("note_cards", True) is not False:
         g = (ctx.inputs.get("glossary") or {}).get("glossary")
         call = ST.import_ref(_th(ctx.spec)["notes_call"]) if _th(ctx.spec).get("notes_call") else None
         try:
@@ -288,10 +288,10 @@ def _keys(*ks):
 
 def _compose_params(job, spec):
     from .edits import key_copy
-    d = _keys("platforms", "speed", "hook_speed", "style", "keywords", "hook", "notes")(job, spec)
+    d = _keys("platforms", "speed", "hook_speed", "style", "keywords", "hook", "note_cards")(job, spec)
     d.update({k: key_copy(job["params"], k) for k in ("title", "body", "tags")})
     th = {k: v for k, v in _th(spec).items() if k not in ("orient", "face")}
-    if d.get("notes") is not False:                   # the drafted cards follow the routed copy model
+    if d.get("note_cards") is not False:              # the drafted cards follow the routed copy model
         from vstudio import llm
         th["copy_route"] = llm.route("copy").provider
     return dict(d, th=th)
