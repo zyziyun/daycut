@@ -408,3 +408,36 @@ def test_english_request_gets_an_english_plan_summary(tmp_path):
     assert not any("一" <= c <= "鿿" for c in s)
     plan["prompt"] = "剪成小红书切片"
     assert PL.template_summary(plan).startswith("我会做")
+
+
+def test_speed_ramp_on_idle_stretches(tmp_path):
+    from vstudio.launch import timing as TM
+    v = str(tmp_path / "wait.mp4")
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x200:r=30:d=2",
+                    "-f", "lavfi", "-i", "color=c=0xF4F0E8:s=320x200:r=30:d=3", "-f", "lavfi", "-i",
+                    "testsrc2=s=320x200:r=30:d=2", "-filter_complex", "[0:v][1:v][2:v]concat=n=3:v=1[v]", "-map", "[v]",
+                    "-pix_fmt", "yuv420p", v], check=True)
+    shot = dict(id="w", kind="video", file=v, duration=7.0)
+    spans = TM.idle_spans(shot)
+    assert len(spans) == 1 and spans[0][0] == pytest.approx(2.0, abs=0.1) and spans[0][1] == pytest.approx(5.0, abs=0.1)
+    assert os.path.exists(v + ".idle.json") and TM.idle_spans(shot) == spans          # cached
+    segs = TM.segments(0.0, 7.0, spans)
+    assert [r for _, _, r in segs] == [1.0, TM.IDLE_RATE, 1.0]
+    assert TM.length(segs) == pytest.approx(7.0 - (3.0 - TM.KEEP) * (1 - 1 / TM.IDLE_RATE), abs=0.15)
+    f = TM.fit(segs, 3.0)
+    assert TM.length(f) == pytest.approx(3.0, abs=1e-3) and TM.fit(segs, 60) == segs   # never slows down
+    assert TM.to_scene(segs, 0.0) == 0 and TM.to_scene(segs, 7.0) == pytest.approx(TM.length(segs))
+    assert TM.to_scene(segs, 6.0) == pytest.approx(TM.length(segs) - 1.0, abs=0.01)    # after the ramp: real time
+
+
+def test_ramped_shot_becomes_back_to_back_clips(cfg, shots, tmp_path):
+    sh = {k: dict(v, idle=[(2.0, 4.5)]) for k, v in shots.items()}
+    plan = S.plan(cfg, sh, "clip", "en", "1:1", feature="plan")
+    segs = plan["scenes"][0]["media"]["segs"]
+    assert len(segs) == 3 and segs[1][2] > segs[0][2]
+    proj = str(tmp_path / "ramp")
+    CO.build(cfg, plan, proj, quiet=True)
+    html = open(os.path.join(proj, "index.html"), encoding="utf-8").read()
+    starts = [float(x) for x in re.findall(r'<video id="s0v\d" [^>]*data-start="([\d.]+)"', html)]
+    durs = [float(x) for x in re.findall(r'<video id="s0v\d" [^>]*data-duration="([\d.]+)"', html)]
+    assert len(starts) == 3 and all(abs(starts[k] + durs[k] - starts[k + 1]) < 0.002 for k in range(2))

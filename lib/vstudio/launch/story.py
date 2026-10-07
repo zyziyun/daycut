@@ -12,6 +12,7 @@ Pure functions (no rendering), so the timing and the camera are unit-tested. Sce
 Consecutive scenes overlap by ``XF`` seconds (crossfade). A loop ends on a crossfade back into its first frame.
 """
 from . import config as C
+from . import timing as TM
 
 XF = 0.35                     # scene crossfade
 LEAD = 0.55                   # the camera starts moving this long before the action it frames
@@ -70,14 +71,15 @@ def cam_pose(win, shot, cx, cy, zoom):
     return dict(x=round(x, 1), y=round(y, 1), scale=round(s, 5))
 
 
-def focus_events(shot, t0, t1, rate=1.0):
+def focus_events(shot, t0, t1, tmap=None):
     """The shot's focus boxes inside [t0, t1] (media seconds) -> [(scene_t, cx, cy, box_w, box_h)], merged when
-    closer than MERGE."""
+    closer than MERGE. tmap: media second -> scene second (default: t - t0)."""
+    tmap = tmap or (lambda m: m - t0)
     ev = []
     for f in sorted(shot.get("focus") or [], key=lambda f: f["t"]):
         if not (t0 <= f["t"] <= t1):
             continue
-        t = (f["t"] - t0) / rate
+        t = tmap(f["t"])
         cx, cy = f["x"] + f.get("w", 0) / 2, f["y"] + f.get("h", 0) / 2
         if ev and t - ev[-1][0] < MERGE:
             continue
@@ -85,12 +87,12 @@ def focus_events(shot, t0, t1, rate=1.0):
     return ev
 
 
-def camera(layout, shot, t0, t1, dur, rate=1.0):
+def camera(layout, shot, t0, t1, dur, tmap=None):
     """Keyframes [{t, x, y, scale, d, ease}] for one feature scene: open framed on the whole shot (or, on a
     narrow window, the first action), punch in on each action, pull back when the next one is far off."""
     win = layout["win"]
     z0, punch = layout["base_zoom"], layout["punch"]
-    ev = focus_events(shot, t0, t1, rate)
+    ev = focus_events(shot, t0, t1, tmap)
     fit, sw, sh = _fit(win, shot)
     narrow = (win[2] / win[3]) < (sw / sh) * 0.8          # the window shows a crop: follow the action
     first = (ev[0][1], ev[0][2]) if ev and narrow else (0.5, 0.5)
@@ -117,9 +119,12 @@ def _feature_scene(cfg, shots, fid, lang, layout, dur_hint, cut):
     shot = shot_for(feat, shots)
     a, b = media_window(feat, shot)
     rate = float(feat.get("rate", 1.0))
-    natural = (b - a) / rate
+    # idle stretches of a recording (waiting for the app) play fast unless the feature says ramp: false
+    spans = TM.idle_spans(shot) if shot["kind"] == "video" and feat.get("ramp", True) else []
+    segs = TM.segments(a, b, spans, rate)
+    natural = TM.length(segs)
     return dict(kind="feature", id=fid, shot=shot["id"], media=dict(kind=shot["kind"], file=shot["file"],
-                still=shot.get("still"), w=shot.get("w"), h=shot.get("h"), at=a, until=b, rate=rate),
+                still=shot.get("still"), w=shot.get("w"), h=shot.get("h"), at=a, until=b, rate=rate, segs=segs),
                 natural=natural, dur=dur_hint(natural),
                 kicker=C.text(feat.get("kicker"), lang), caption=C.text(feat.get("caption"), lang),
                 vo=C.text(feat.get("vo"), lang) if (cfg.get("voiceover") or {}).get("enabled") else "")
@@ -132,9 +137,11 @@ def _place(scenes, layout, shots, cfg):
         if s["kind"] == "feature":
             feat = C.feature(cfg, s["id"])
             shot = shot_for(feat, shots)
-            s["play"] = round(min(s["dur"], s["natural"]), 3)          # the rest holds the last frame
-            s["cam"] = camera(layout, shot, s["media"]["at"], s["media"]["at"] + s["play"] * s["media"]["rate"],
-                              s["dur"], s["media"]["rate"])
+            m = s["media"]
+            m["segs"] = TM.fit(m["segs"], s["dur"])                    # a short scene plays the take faster
+            s["play"] = round(min(s["dur"], TM.length(m["segs"])), 3)   # the rest holds the last frame
+            segs = m["segs"]
+            s["cam"] = camera(layout, shot, m["at"], m["until"], s["dur"], lambda t, g=segs: TM.to_scene(g, t))
         t += s["dur"] - (XF if i < len(scenes) - 1 else 0.0)
     return round(t, 3)
 

@@ -226,11 +226,19 @@ def build(cfg, plan, proj, quiet=False):
             tag = f"{sid}-{s['shot']}"
             if m["kind"] == "video":
                 src = _asset(m["file"], proj, "shots")
-                last = _frame(m["file"], m["at"] + s["play"] * m["rate"] - 0.05, proj, f"{tag}-last.jpg")
+                segs = m.get("segs") or [(m["at"], m["until"], m["rate"])]
+                last = _frame(m["file"], segs[-1][1] - 0.05, proj, f"{tag}-last.jpg")
                 cam += f'<img src="{last}" alt="">'
-                cam += (f'<video id="{sid}v" src="{src}" muted playsinline data-start="{_r(st)}" '
-                        f'data-duration="{_r(s["play"])}" data-media-start="{_r(m["at"])}" '
-                        f'data-playback-rate="{m["rate"]}" data-track-index="{3 + i % 2}" data-volume="0"></video>')
+                off = 0.0
+                for k, (m0, m1, rate) in enumerate(segs):      # speed ramp: one clip per segment, back to back
+                    d = (m1 - m0) / rate
+                    if off >= s["play"] - 1e-3:
+                        break
+                    d = min(d, s["play"] - off)
+                    cam += (f'<video id="{sid}v{k}" src="{src}" muted playsinline data-start="{_r(st + off)}" '
+                            f'data-duration="{_r(d)}" data-media-start="{_r(m0)}" data-playback-rate="{round(rate, 4)}" '
+                            f'data-track-index="{3 + i % 2}" data-volume="0"></video>')
+                    off += d
             else:
                 cam += f'<img src="{_asset(m["file"], proj, "shots")}" alt="">'
             cam += "</div>"
