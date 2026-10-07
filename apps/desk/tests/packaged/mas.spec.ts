@@ -75,9 +75,14 @@ async function launch(extra: Record<string, string> = {}): Promise<App> {
   if (!page) throw new Error('no app://desk/ window');
   const close = async () => {
     await browser!.close().catch(() => undefined);
+    const exited = new Promise((r) => proc.once('exit', r));
     proc.kill('SIGTERM');
-    await new Promise((r) => setTimeout(r, 2000));
-    if (proc.exitCode === null) proc.kill('SIGKILL');
+    await Promise.race([exited, new Promise((r) => setTimeout(r, 10000))]);
+    if (proc.exitCode === null && proc.signalCode === null) proc.kill('SIGKILL');
+    // the MAS Chromium keeps its single-instance socket in <container>/tmp/S; a killed instance (a quit that waits on a
+    // dialog, e.g. "downloads are still running") leaves it behind and the next launch would quit at once
+    for (let i = 0; i < 40 && fs.existsSync(path.join(CTMP, 'S')); i++) await new Promise((r) => setTimeout(r, 250));
+    fs.rmSync(path.join(CTMP, 'S'), { recursive: true, force: true });
     fs.rmSync(userData, { recursive: true, force: true });
   };
   return { proc, browser, page, userData, close };
