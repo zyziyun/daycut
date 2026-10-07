@@ -25,7 +25,7 @@ _GUESS = [
     ("photo-story", r"story|photo|文艺|照片"),
     ("vlog", r"vlog|travel|旅行|disney"),
     ("aigc", r"aigc|ai.?video|kling|seedance|veo"),
-    ("promo", r"promo|宣传|recut"),
+    ("promo", r"promo|宣传|recut|launch"),
     ("slides", r"slides|deck|幻灯"),
     ("script", r"script|脚本|口播稿"),
 ]
@@ -36,6 +36,8 @@ def recipe_type(recipe):
     r = (recipe or "").lower()
     if r.startswith("project:"):
         r = r.split(":", 1)[1].split("@")[0]
+    if r.startswith("launch-kit"):                  # a product launch kit is filed with the promos
+        return "promo"
     for t, rid in TYPES.items():
         if rid and (r == rid or r.startswith(rid)):
             return t

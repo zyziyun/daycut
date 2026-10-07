@@ -9,6 +9,7 @@ export const IDEAS: [MessageKey, MessageKey][] = [
   ['home.idea3', 'home.idea3Prompt'],
   ['home.idea4', 'home.idea4Prompt'],
   ['home.idea5', 'home.idea5Prompt'],
+  ['home.idea6', 'home.idea6Prompt'],
 ];
 
 export interface HomeIdea {
