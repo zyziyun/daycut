@@ -1,0 +1,94 @@
+---
+title: 在 Windows 上安装（预览）
+description: 千剪 Windows 版（Windows 10 / 11，x64）目前是预览版。现在可以从源码构建，或试用 CI 打出的未签名测试安装包，然后接上你自己的 AI。
+---
+
+import { Steps, Aside } from '@astrojs/starlight/components';
+
+<Aside type="caution" title="预览版">
+Windows 支持刚加入，测试得比 Mac 版少。目前还没有 Windows 正式版：GitHub Releases 上没有下载，也没有自动更新。下面的步骤是从源码构建。遇到问题请在 [GitHub Issues](https://github.com/zyziyun/reelfold/issues) 反馈。
+</Aside>
+
+## 准备
+
+- Windows 10（22H2）或 Windows 11，64 位（x64）。暂不支持 Arm 版 Windows。
+- 足够的磁盘空间：应用本身（安装后约 1.5 GB）、语音识别模型（约 1.6 GB），以及你的成片。
+- 一个你已经能用的 AI：Claude Code 或 Codex 的登录、一个 API key，或一个本地模型，任选其一。什么都不接也能先用，出方案时会退回到简单规则。
+
+## 和 Mac 版的区别
+
+| | Mac（Apple 芯片） | Windows（预览） |
+|---|---|---|
+| 语音识别 | MLX Whisper，用 GPU | faster-whisper，用 CPU，明显比 Mac 慢。可以用 NVIDIA 显卡，见下文 |
+| H.264 编码 | VideoToolbox | Windows 自带的 Media Foundation；没有可用的 Media Foundation H.264 编码器时（例如没装媒体功能包的 Windows N 版）自动改用 OpenH264 |
+| API key | macOS 钥匙串 | 用 Windows DPAPI 按你的用户账户加密保存 |
+| 安装包 | 已签名、已公证的 DMG | 尚未发布。测试安装包没有代码签名，SmartScreen 会提示 |
+
+## 从源码构建
+
+需要 [Node.js 22+](https://nodejs.org/)、[Python 3.12](https://www.python.org/downloads/windows/)（安装时勾选 **Add python.exe to PATH**）、[Git for Windows](https://git-scm.com/download/win)，以及 PATH 里的 `ffmpeg`（例如 `winget install Gyan.FFmpeg`）。
+
+<Steps>
+
+1. 在 PowerShell 里克隆仓库，安装引擎的 Python 依赖和应用的依赖：
+
+   ```powershell
+   git clone https://github.com/zyziyun/reelfold; cd reelfold
+   python -m pip install -r requirements.txt
+   npm install
+   ```
+
+   在 Windows 上 `requirements.txt` 装的是 faster-whisper，而不是 MLX Whisper。
+
+2. 启动应用：
+
+   ```powershell
+   npm run desk
+   ```
+
+   应用以 **Reelfold** 的名字打开，用 PATH 里的 `python` 启动引擎。如果用错了 Python，在设置里指定路径。
+
+</Steps>
+
+字体和人脸模型会在首次启动时由应用下载（**设置 → 模型、字体和工具**）。Whisper 模型在第一次转写时下载。
+
+### 测试安装包（未签名）
+
+维护者可以在 CI 里打一个未签名的 NSIS 安装包（Actions → *Desk release* → *Run workflow*，勾选 **windows**）。它和 Mac 版一样自带 Python、ffmpeg 和引擎。因为没有代码签名，Windows 会弹出「Windows 已保护你的电脑」：点 **更多信息 → 仍要运行**。只运行本仓库自己的 Actions 打出的安装包。
+
+## 接上你的 AI
+
+打开 **设置 → AI 账户与模型**，和 [Mac 版](/docs/zh/start/install-mac/) 一样。用订阅登录之前先装好命令行工具：
+
+- **Claude Code：** 原生安装器（`irm https://claude.ai/install.ps1 | iex`）或 `npm install -g @anthropic-ai/claude-code`。
+- **Codex：** `npm install -g @openai/codex`。
+
+千剪会在 PATH、`%USERPROFILE%\.local\bin` 和 npm 的全局目录（`%APPDATA%\npm`）里找它们，所以应用开着时装好的命令行工具不用重启也能找到。
+
+## 用 NVIDIA 显卡转写
+
+Windows 上 faster-whisper 默认用 CPU，因为它需要的 CUDA 库（CUDA 12 的 cuBLAS 和 cuDNN）不在应用里。如果你已经装好了，给你的用户设置环境变量 `VSTUDIO_WHISPER_DEVICE=cuda`（或 `auto`），然后重启千剪。如果 CUDA 库加载不了，转写会停下并提示原因；删掉这个变量（或设成 `cpu`）就回到 CPU。
+
+## 已知限制
+
+- 路径太深：Windows 默认限制路径 260 个字符，除非开启长路径（组策略「启用 Win32 长路径」）。如果渲染报路径错误，把项目放在短一点的目录，例如 `D:\Reelfold`。
+- 发布浏览器、定时发布和「创作」页的录制在 Windows 上测试得较少。
+- Windows 正式版发布之前没有自动更新。
+
+## 数据放在哪里
+
+| 目录 | 内容 |
+|---|---|
+| `%APPDATA%\Reelfold` | 应用设置、下载的模型和字体（`assets`）、加密的 API key、发布浏览器里各平台的登录 |
+| `%USERPROFILE%\.config\vstudio` | 引擎的主目录：项目列表、发布日历和偏好；新项目默认放在这里的 `projects\` |
+| `%USERPROFILE%\.cache\video-studio` | 引擎缓存：字体、模型、转写结果。和 Claude Code 技能共用 |
+| `%USERPROFILE%\.cache\huggingface\hub` | 源码构建或技能下载的 Whisper 模型 |
+
+你的原始素材不会被移动或修改。
+
+## 相关
+
+- [安装 Mac 应用](/docs/zh/start/install-mac/)
+- [安装 Claude Code 技能](/docs/zh/start/install-skill/)
+- [AI 服务](/docs/zh/concepts/ai-providers/)
+- [常见问题排查](/docs/zh/help/troubleshooting/)

@@ -1,0 +1,94 @@
+---
+title: Install on Windows (preview)
+description: Reelfold for Windows 10 and 11 (x64) is a preview. Build it from source today, or try an unsigned test installer from CI, then connect your own AI.
+---
+
+import { Steps, Aside } from '@astrojs/starlight/components';
+
+<Aside type="caution" title="Preview">
+Windows support is new and less tested than the Mac app. There is no Windows release yet: no download on GitHub Releases and no automatic updates. The steps below build the app from source. Please report anything that breaks on [GitHub Issues](https://github.com/zyziyun/reelfold/issues).
+</Aside>
+
+## Requirements
+
+- Windows 10 (22H2) or Windows 11, 64-bit (x64). Windows on Arm is not supported yet.
+- Disk space for the app (about 1.5 GB installed), the speech model (about 1.6 GB) and your renders.
+- An AI model you already have access to: a Claude Code or Codex login, an API key, or a local model. You can also start with none; planning then falls back to simple rules.
+
+## What is different from the Mac app
+
+| | Mac (Apple Silicon) | Windows (preview) |
+|---|---|---|
+| Speech recognition | MLX Whisper on the GPU | faster-whisper on the CPU, which is noticeably slower than on a Mac. An NVIDIA GPU can be used, see below |
+| H.264 encoding | VideoToolbox | Media Foundation (built into Windows), falling back to OpenH264 when Media Foundation has no H.264 encoder (for example Windows N without the Media Feature Pack) |
+| API keys | macOS keychain | Encrypted with Windows DPAPI under your user account |
+| Installer | Signed and notarized DMG | Not released yet. Test installers are unsigned, so SmartScreen warns |
+
+## Build from source
+
+You need [Node.js 22+](https://nodejs.org/), [Python 3.12](https://www.python.org/downloads/windows/) (tick **Add python.exe to PATH**), [Git for Windows](https://git-scm.com/download/win) and an `ffmpeg` on PATH (for example `winget install Gyan.FFmpeg`).
+
+<Steps>
+
+1. In PowerShell, clone the repository and install the engine's Python packages and the app's packages:
+
+   ```powershell
+   git clone https://github.com/zyziyun/reelfold; cd reelfold
+   python -m pip install -r requirements.txt
+   npm install
+   ```
+
+   On Windows `requirements.txt` installs faster-whisper instead of MLX Whisper.
+
+2. Start the app:
+
+   ```powershell
+   npm run desk
+   ```
+
+   The app opens as **Reelfold** and starts its engine with the `python` on your PATH. If it picks the wrong one, set the Python path in Settings.
+
+</Steps>
+
+Fonts and face models are downloaded by the app on first launch (**Settings → Models, fonts and tools**). The Whisper model is downloaded the first time you transcribe.
+
+### Test installer (unsigned)
+
+Maintainers can build an unsigned NSIS installer in CI (Actions → *Desk release* → *Run workflow* with **windows** ticked). It contains its own Python, ffmpeg and engine, like the Mac app. Because it is not code-signed, Windows shows **Windows protected your PC**: choose **More info → Run anyway**. Only run installers from this repository's own Actions runs.
+
+## Connect your AI
+
+Open **Settings → AI accounts & models**, the same as [on the Mac](/docs/start/install-mac/#connect-your-ai). For the subscription logins, install the CLI first:
+
+- **Claude Code:** the native installer (`irm https://claude.ai/install.ps1 | iex`) or `npm install -g @anthropic-ai/claude-code`.
+- **Codex:** `npm install -g @openai/codex`.
+
+Reelfold finds them on PATH, in `%USERPROFILE%\.local\bin` and in npm's global folder (`%APPDATA%\npm`), so a CLI installed while the app is running is picked up without a restart.
+
+## Using an NVIDIA GPU for transcription
+
+By default faster-whisper runs on the CPU on Windows, because the CUDA libraries it needs (cuBLAS and cuDNN for CUDA 12) are not part of the app. If you have installed them, set the environment variable `VSTUDIO_WHISPER_DEVICE=cuda` (or `auto`) for your user and restart Reelfold. If the CUDA libraries cannot be loaded, transcription stops with a message saying so; remove the variable (or set it to `cpu`) to go back to the CPU.
+
+## Known limitations
+
+- Very deep folders: Windows limits paths to 260 characters unless long paths are enabled (Group Policy *Enable Win32 long paths*). Keep projects in a short folder such as `D:\Reelfold` if a render fails with a path error.
+- The publish browser, scheduled publishing and the Create page's recorder are less tested on Windows.
+- No automatic updates until Windows releases ship.
+
+## Where your data lives
+
+| Folder | What is in it |
+|---|---|
+| `%APPDATA%\Reelfold` | App settings, downloaded models and fonts (`assets`), encrypted API keys, the publish browser's platform logins |
+| `%USERPROFILE%\.config\vstudio` | The engine's home: the project list, publish calendar and preferences; new projects go to `projects\` here by default |
+| `%USERPROFILE%\.cache\video-studio` | Engine cache: fonts, models, transcripts. Shared with the Claude Code skill |
+| `%USERPROFILE%\.cache\huggingface\hub` | Whisper models downloaded by a source build or the skill |
+
+Your original footage is never moved or modified.
+
+## Related
+
+- [Install the Mac app](/docs/start/install-mac/)
+- [Install the Claude Code skill](/docs/start/install-skill/)
+- [AI providers](/docs/concepts/ai-providers/)
+- [Troubleshooting](/docs/help/troubleshooting/)

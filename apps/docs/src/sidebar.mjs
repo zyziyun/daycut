@@ -11,6 +11,7 @@ export const sidebar = [
     '',
     'start/what-is-reelfold',
     'start/install-mac',
+    'start/install-windows',
     'start/install-skill',
     'start/first-project',
   ]),

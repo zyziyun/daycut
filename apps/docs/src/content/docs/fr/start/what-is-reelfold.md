@@ -16,7 +16,7 @@ Les deux versions font tourner le même moteur : une recette qui marche dans l�
 | Ce que c’est | Une app de bureau (`apps/desk`, Electron) | Le moteur sous forme de skill pour [Claude Code](https://claude.com/claude-code) (la racine du dépôt) |
 | Comment vous lui parlez | Une zone de demande sur l’Accueil : « On crée quoi aujourd’hui ? » | En langage courant, à Claude, dans votre terminal |
 | Idéal pour | Des lots suivis sur un tableau, une grille de relecture, la publication assistée | Travailler dans un dossier, écrire des scripts, des retouches ponctuelles |
-| Plateforme | macOS sur Apple Silicon (Windows plus tard) | Partout où tournent Claude Code, Python 3.10+ et ffmpeg |
+| Plateforme | macOS sur Apple Silicon (Windows x64 en préversion) | Partout où tournent Claude Code, Python 3.10+ et ffmpeg |
 | Installation | [Installer l’app Mac](/docs/fr/start/install-mac/) | [Installer le skill](/docs/fr/start/install-skill/) |
 
 Côté skill, `SKILL.md` aiguille chaque demande vers un workflow (`workflows/<name>/WORKFLOW.md`) qui s’appuie sur des scripts testés et une bibliothèque Python commune, `vstudio`.

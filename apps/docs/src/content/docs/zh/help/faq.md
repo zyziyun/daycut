@@ -9,7 +9,7 @@ description: 关于千剪的价格和开源协议、Windows 支持、哪些数�
 
 ## 有 Mac 安装包吗？Windows 呢？
 
-第一个 macOS 版本（Apple Silicon）即将发布在 [GitHub Releases](https://github.com/zyziyun/reelfold/releases/latest)。在那之前可以从源码构建，见[安装 Mac 应用](/docs/zh/start/install-mac/)。Windows 版之后再做。引擎本身是 Python 加 ffmpeg，也有 Windows 的适配（faster-whisper、`h264_mf` 编码器），不过大部分测试是在 Mac 上做的。
+第一个 macOS 版本（Apple Silicon）即将发布在 [GitHub Releases](https://github.com/zyziyun/reelfold/releases/latest)。在那之前可以从源码构建，见[安装 Mac 应用](/docs/zh/start/install-mac/)。Windows 10 / 11（x64）目前是预览版，可以从源码构建，见[在 Windows 上安装](/docs/zh/start/install-windows/)。那里引擎用 faster-whisper 和 `h264_mf` 编码器；大部分测试仍在 Mac 上做，也还没有 Windows 正式版。
 
 ## 它会替我发帖吗？
 

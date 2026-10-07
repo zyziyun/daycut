@@ -16,7 +16,7 @@ Both forms run the same engine, so a recipe that works in one works in the other
 | What it is | A desktop app (`apps/desk`, Electron) | The engine as a skill for [Claude Code](https://claude.com/claude-code) (the repo root) |
 | How you talk to it | A request box on Home: "What are we making today?" | Plain language to Claude in your terminal |
 | Good for | Batches on a board, a review grid, assisted publishing | Working inside a folder, scripting, one-off edits |
-| Platform | macOS on Apple Silicon (Windows later) | Anywhere Claude Code, Python 3.10+ and ffmpeg run |
+| Platform | macOS on Apple Silicon (Windows x64 in preview) | Anywhere Claude Code, Python 3.10+ and ffmpeg run |
 | Install | [Install the Mac app](/docs/start/install-mac/) | [Install the skill](/docs/start/install-skill/) |
 
 In the skill, `SKILL.md` routes each request to a workflow (`workflows/<name>/WORKFLOW.md`) with tested scripts and a shared Python library, `vstudio`.

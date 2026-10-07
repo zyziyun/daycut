@@ -9,7 +9,7 @@ Yes. Reelfold is open source under the MIT licence: the engine, the Claude Code 
 
 ## Is there a download for Mac? What about Windows?
 
-The first macOS release (Apple Silicon) is coming soon on [GitHub Releases](https://github.com/zyziyun/reelfold/releases/latest). Until then, build it from source: see [Install the Mac app](/docs/start/install-mac/). Windows is planned for later. The engine itself is Python and ffmpeg and has Windows code paths (faster-whisper, the `h264_mf` encoder), but most testing happens on Macs.
+The first macOS release (Apple Silicon) is coming soon on [GitHub Releases](https://github.com/zyziyun/reelfold/releases/latest). Until then, build it from source: see [Install the Mac app](/docs/start/install-mac/). Windows 10 / 11 (x64) is in preview: build it from source, see [Install on Windows](/docs/start/install-windows/). The engine uses faster-whisper and the `h264_mf` encoder there; most testing still happens on Macs, and there is no Windows release yet.
 
 ## Does it post for me?
 

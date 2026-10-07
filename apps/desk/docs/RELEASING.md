@@ -28,8 +28,8 @@ Every installer contains the whole engine, so users need nothing preinstalled:
   checkout's git HEAD (`-dirty` when the engine has uncommitted changes). `VSTUDIO_ENGINE_SRC` points it elsewhere.
 - H.264: the LGPL ffmpeg has no libx264, so the sidecar sets `VSTUDIO_H264_ENCODER` (`h264_videotoolbox` on macOS,
   `h264_mf` on Windows; from the runtime manifest, `DESK_H264_ENCODER` overrides) and `VSTUDIO_FFMPEG` /
-  `VSTUDIO_FFPROBE` (the bundled binaries). The engine (video-studio >= eedca6c) maps every encode to that encoder and
-  falls back to libx264 when a probe encode fails. The desk-side `runtime_shim/sitecustomize.py` is gone.
+  `VSTUDIO_FFPROBE` (the bundled binaries). The engine maps every encode to that encoder and, when a probe encode
+  fails, falls back to libx264 if the ffmpeg has it, else libopenh264 (the LGPL build has no libx264). The desk-side `runtime_shim/sitecustomize.py` is gone.
 
 On first launch the setup wizard starts a one-time background download (progress + time left in the wizard and a banner; Settings → Models, fonts and tools for the optional ones) of the assets pinned
 with sha256 in `packaging/assets.json`, into the app data folder (`~/Library/Application Support/Reelfold/assets`,
@@ -121,8 +121,62 @@ Full walk-through and the one-time secrets: [`docs/CI_CD.md`](../../../docs/CI_C
    Publishing also redeploys the website, whose download buttons turn on automatically.
 
 A manual run (Actions → Desk release → Run workflow) is a dry run by default: everything except the GitHub Release, the
-files kept as a workflow artifact. Tick *windows* for the experimental unsigned Windows installer (artifact only).
+files kept as a workflow artifact. Tick *windows* for the experimental unsigned Windows installer (artifact only; see
+Windows below); untick *mac* for a Windows-only run.
 macOS x64 is no longer built by CI (`npm run dist:mac` on an Intel Mac if ever needed).
+
+## Windows (preview, unsigned)
+
+Status: Windows 10 / 11 x64 runs from source and as an **unsigned** NSIS test installer built in CI. Nothing is
+released for Windows yet: no installer on GitHub Releases, so no `latest.yml` feed and no auto-update. The v0.2 release
+is macOS only and the Windows job never touches a release.
+
+**Test installer.** Actions → *Desk release* → *Run workflow* on the branch to test, tick **windows** (untick **mac**
+for a Windows-only run; *dry run* stays ticked). The `windows` job (windows-latest, `continue-on-error`) runs lint +
+unit tests, builds the runtime (`bundle.mjs --target=win32-x64`: python-build-standalone, the hash-locked pip set
+with faster-whisper / CTranslate2, the conda-forge LGPL ffmpeg with `h264_mf` and libopenh264, the engine), runs the
+runtime checks (imports, bundled ffmpeg has `h264_mf` + libopenh264 and no GPL encoders, the engine's H.264 test
+encode, longest path), runs `npm run dist:win` and uploads `Reelfold-<v>-win-x64.exe`, its `.blockmap` and `latest.yml`
+as the workflow artifact `reelfold-win32-x64-unsigned` (kept 7 days). Then it checks the real thing: the packaged-app
+suite on `dist/win-unpacked` (engine from the bundle, fuses, plus a real transcription of a public-domain recording with
+the bundled faster-whisper, `DESK_TEST_ASR=1`), a silent install (`/S`, per user), the same suite on the installed
+`Reelfold.exe`, and a silent uninstall. The CLI equivalent:
+
+```bash
+gh workflow run desk-release.yml --ref <branch> -f windows=true -f mac=false -f dry_run=true
+gh run watch <run-id> && gh run download <run-id> -n reelfold-win32-x64-unsigned
+```
+
+Sizes (v0.2.0 test build, Oct 2026): installer `Reelfold-0.2.0-win-x64.exe` 348 MB, installed 1.3 GB (runtime ≈ 1 GB);
+the Whisper large-v3-turbo CTranslate2 weights (1.6 GB) are a first-run download as on macOS. A full run of the job takes
+about 40 minutes (runtime build ~25, NSIS ~5, checks ~5).
+
+**SmartScreen.** An unsigned installer (and an unsigned `Reelfold.exe`) shows *Windows protected your PC* → *More
+info* → *Run anyway*. Testers should only run installers from this repository's Actions. Signing is a later
+decision (see §3 of One-time setup: Azure Trusted Signing is the recommended route; the config already switches to it
+when the `AZURE_*` secrets exist). Even signed, SmartScreen reputation builds up over the first downloads.
+
+**What differs from macOS** (all decided at runtime, the macOS build is unchanged):
+
+| Area | Windows |
+|---|---|
+| ASR | faster-whisper (CTranslate2) on the CPU, `int8`; `VSTUDIO_WHISPER_DEVICE=cuda` / `auto` uses an NVIDIA GPU when the user has the CUDA 12 cuBLAS + cuDNN DLLs (not shipped: ~1 GB and NVIDIA's licence); a CUDA failure stops the transcription with that hint (no silent switch). Model: `dropbox-dash/faster-whisper-large-v3-turbo` (MIT), first-run download `asr-ct2` in `packaging/assets.json`. |
+| H.264 | `h264_mf` (Media Foundation, licensed with Windows). If it does not work (Windows N without the Media Feature Pack, some VMs / RDP sessions) the engine falls back to libx264 when the ffmpeg has it, else **libopenh264** (in the LGPL build). OpenH264 is compiled from source by conda-forge, so Cisco's patent licence for its own binaries does not apply; it is the last resort. NVENC / QSV / AMF are used when `VSTUDIO_H264_ENCODER` names them and they work. |
+| ffmpeg | conda-forge `ffmpeg=8.1.2=lgpl_*` win-64, configured `--disable-gpl --enable-version3` (LGPL-3.0), only the DLLs it loads (`binaries.mjs peClosure`); `bundle.mjs` fails if libx264 / libx265 appear. |
+| Python | python-build-standalone 3.12 `x86_64-pc-windows-msvc`; the app runs it with `PYTHONUTF8=1` so files, pipes and CLI output are UTF-8 under a Chinese / Western code page. |
+| Keys | `safeStorage` = DPAPI (per Windows user). |
+| AI CLIs | found on PATH, `~\.local\bin`, `%APPDATA%\npm`, winget links, scoop shims; npm `.cmd` shims are run as `node <script>` (cmd.exe would re-parse prompts / JSON arguments). |
+| Processes | engine children are hidden (`windowsHide`), stopped through stdin and then `taskkill /T /F`; batch locks use `msvcrt.locking`; pid checks never call `os.kill(pid, 0)` (it terminates the process on Windows). |
+| Paths | drive letters, UNC, spaces and CJK names are covered by tests; paths over 260 characters need the system's *long paths* policy (not changed by the installer). |
+
+**Licensing to ship it.** Same as macOS: `THIRD_PARTY_LICENSES.md` + `resources/runtime/licenses` (regenerate with
+`node scripts/runtime/licenses.mjs` on the Windows runtime). The NSIS installer is per user
+(`%LOCALAPPDATA%\Programs\Reelfold`), no admin rights.
+
+**To ship Windows later:** choose signing (Azure Trusted Signing needs identity validation), add the secrets, give the
+`windows` job an upload step to the draft release (the `.exe`, `.blockmap` and `latest.yml` next to the mac files;
+electron-updater then serves Windows from the same release), drop `continue-on-error`, and smoke-test on a clean
+Windows 10 and 11 machine (first-run downloads, a transcription, an export, a Claude Code login).
 
 ## Local builds
 

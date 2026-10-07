@@ -16,7 +16,7 @@ description: 千剪（Reelfold）是免费开源、在本机运行的视频工�
 | 是什么 | 桌面应用（`apps/desk`，基于 Electron） | 把引擎做成 [Claude Code](https://claude.com/claude-code) 的技能（仓库根目录） |
 | 怎么下指令 | 首页的输入框：「今天要做什么？」 | 在终端里直接跟 Claude 说 |
 | 适合 | 看板式批量、审片网格、辅助发布 | 在素材文件夹里干活、写脚本、一次性的剪辑 |
-| 平台 | Apple 芯片的 macOS（Windows 版之后再出） | 能跑 Claude Code、Python 3.10+ 和 ffmpeg 的地方 |
+| 平台 | Apple 芯片的 macOS（Windows x64 预览版） | 能跑 Claude Code、Python 3.10+ 和 ffmpeg 的地方 |
 | 安装 | [安装 Mac 应用](/docs/zh/start/install-mac/) | [安装技能](/docs/zh/start/install-skill/) |
 
 技能里由 `SKILL.md` 把每个请求分派到对应的工作流（`workflows/<名称>/WORKFLOW.md`），工作流带着测过的脚本和共享的 Python 库 `vstudio`。
