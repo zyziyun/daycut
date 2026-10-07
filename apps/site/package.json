@@ -14,7 +14,7 @@
     "build": "ASTRO_TELEMETRY_DISABLED=1 astro build",
     "preview": "ASTRO_TELEMETRY_DISABLED=1 astro preview",
     "check:copy": "node scripts/check-copy.mjs",
-    "deploy": "npm run build && npx -y wrangler@4 deploy",
+    "deploy": "../../scripts/build-web.sh && npx -y wrangler@4 deploy",
     "check:site": "node scripts/check-site.mjs",
     "check": "node scripts/check-copy.mjs && node scripts/check-site.mjs",
     "og": "node scripts/og.mjs",
