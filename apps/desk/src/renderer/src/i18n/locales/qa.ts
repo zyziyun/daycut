@@ -10,6 +10,8 @@ export const qaEn = {
   'project.editFailed': 'An edit did not finish ({what}). Open that clip and ask again to redo it.',
   'fail.reason.intake': 'The planner didn’t answer, so nothing was made. Try again; if it keeps happening, restart Reelfold.',
   'plan.took': 'planned from {n, plural, one {# file} other {# files}} in {s} s',
+  'em.inbox.opt.cutWord': 'Cut “{word}”',
+  'em.inbox.opt.cutPause': 'Cut a {secs} s pause',
 };
 
 type QaKey = keyof typeof qaEn;
@@ -24,6 +26,8 @@ export const qaZh: Record<QaKey, string> = {
   'project.editFailed': '有一次修改没做成（{what}）。打开那条视频再说一次就能重做。',
   'fail.reason.intake': '做方案的程序没有响应，所以什么都没做。再试一次；一直这样就重启千剪。',
   'plan.took': '读了 {n} 个文件，做方案用时 {s} 秒',
+  'em.inbox.opt.cutWord': '删掉「{word}」',
+  'em.inbox.opt.cutPause': '删掉 {secs} 秒停顿',
 };
 
 export const qaFr: Record<QaKey, string> = {
@@ -36,4 +40,6 @@ export const qaFr: Record<QaKey, string> = {
   'project.editFailed': 'Une modification n’a pas abouti ({what}). Ouvrez ce clip et redemandez-la.',
   'fail.reason.intake': 'Le planificateur n’a pas répondu, rien n’a été créé. Réessayez ; si cela se reproduit, redémarrez Reelfold.',
   'plan.took': 'plan établi à partir de {n, plural, one {# fichier} other {# fichiers}} en {s} s',
+  'em.inbox.opt.cutWord': 'Couper « {word} »',
+  'em.inbox.opt.cutPause': 'Couper une pause de {secs} s',
 };

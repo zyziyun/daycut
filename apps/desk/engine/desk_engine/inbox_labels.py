@@ -210,9 +210,29 @@ def humanize(conf, spans, clip_for=None, words_for=None, source=None, idx=0):
     return out
 
 
+def _around(before, word, after, n=24):
+    """"…the words before ⟨word⟩ the words after…": the sentence a cut sits in (CJK runs together, Latin gets spaces)."""
+    b, w, a = clean_text(str(before or "")).strip()[-n:], clean_text(str(word or "")).strip(), clean_text(str(after or "")).strip()[:n]
+    sp = lambda x, y: " " if x and y and re.match(r"[A-Za-z0-9,.!?]", x[-1]) and re.match(r"[A-Za-z0-9]", y[0]) else ""  # noqa: E731
+    return f"{'…' if b else ''}{b}{sp(b, w)}⟨{w}⟩{sp(w, a)}{a}{'…' if a else ''}"
+
+
 def engine_option(o, default=None, idx=0):
-    """An engine checkpoint option -> the inbox option shape (label from its labels / label / text)."""
+    """An engine checkpoint option -> the inbox option shape (label from its labels / label / text). A cut the engine
+    asks about (filler / repeat / pause with ``t0``-``t1`` and its ``before`` / ``after`` words) reads "Cut “So”" with
+    the sentence around it, never a bare checkbox labelled with the filler word itself."""
     labels = o.get("labels") if isinstance(o.get("labels"), dict) else {}
+    if not labels and not o.get("label") and o.get("t0") is not None and o.get("t1") is not None:
+        word = clean_text(str(o.get("text") or "")).strip()
+        secs = round(max(0.0, float(o["t1"]) - float(o["t0"])), 1)
+        label = (_m("inbox.opt.cutWord", f"Cut “{word}”", f"删掉「{word}」", word=word) if word else
+                 _m("inbox.opt.cutPause", f"Cut a {secs:g} s pause", f"删掉 {secs:g} 秒停顿", secs=secs))
+        has_ctx = bool(str(o.get("before") or "").strip() or str(o.get("after") or "").strip())
+        return dict(id=str(o.get("id") if o.get("id") is not None else idx), clip=o.get("item"), clip_id=None,
+                    text=word, checked=o.get("checked", True) is not False, kind="filler", label=label,
+                    detail=None, quote=_around(o.get("before"), word, o.get("after")) if has_ctx else None,
+                    secs=-secs if secs else None, approx=False, at=None, before=None, choices=None, choice=None,
+                    recommended=default is not None and str(o.get("id")) == str(default))
     en = labels.get("en") or o.get("label") or o.get("text") or str(o.get("id") or idx)
     zh = labels.get("zh") or en
     return dict(id=str(o.get("id") if o.get("id") is not None else idx), clip=o.get("item"), clip_id=None,
