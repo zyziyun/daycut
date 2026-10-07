@@ -22,7 +22,7 @@ class RealEngine:
     mode = "real"
 
     def __init__(self, data_dir, registry, bus, python=None, engine_path=None):
-        import vstudio.batch  # noqa: F401  (fail fast -> the server falls back to mock mode)
+        import vstudio.batch  # noqa: F401  (fail fast -> the server reports the engine as not starting)
         self.data_dir = data_dir
         self.reg = registry
         self.bus = bus

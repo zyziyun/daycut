@@ -63,3 +63,20 @@ describe('BB-08 All projects counts a project with an Inbox decision as "needs y
     expect(withInbox('run', true)).toBe('run');
   });
 });
+
+describe('mock-in-product: test switches need a throw-away profile in a packaged build', async () => {
+  const { testSwitch } = await import('../../src/main/testHooks');
+  const tmp = os.tmpdir();
+  it('dev builds honour them as set', () => {
+    expect(testSwitch('DESK_ENGINE_MOCK', { DESK_ENGINE_MOCK: '1' }, false, tmp)).toBe(true);
+    expect(testSwitch('DESK_ENGINE_MOCK', {}, false, tmp)).toBe(false);
+  });
+  it('a packaged build ignores them for a real profile', () => {
+    expect(testSwitch('DESK_ENGINE_MOCK', { DESK_ENGINE_MOCK: '1' }, true, tmp)).toBe(false);
+    expect(testSwitch('DESK_SKIP_FIRST_RUN', { DESK_SKIP_FIRST_RUN: '1', DESK_USER_DATA: path.join(os.homedir(), 'Library') }, true, tmp)).toBe(false);
+  });
+  it('a packaged build honours them for a temp test profile (the packaged tests)', () => {
+    const ud = fs.mkdtempSync(path.join(tmp, 'bb-prof-'));
+    expect(testSwitch('DESK_HIDE_WINDOW', { DESK_HIDE_WINDOW: '1', DESK_USER_DATA: ud }, true, tmp)).toBe(true);
+  });
+});

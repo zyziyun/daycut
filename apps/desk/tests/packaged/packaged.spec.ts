@@ -111,7 +111,7 @@ test('mock engine runs on the bundled Python', async () => {
     expect(h.health.ok).toBe(true);
     expect(fs.realpathSync(h.health.python).startsWith(fs.realpathSync(path.join(res, 'runtime', 'python')))).toBe(true);
     const page = app.page;
-    await expect(page.getByTestId('engine-status')).toContainText(/mock|demo|演示/i, { timeout: 30000 });
+    await expect(page.getByTestId('engine-status')).toHaveAttribute('data-mode', 'mock', { timeout: 30000 });
     // bundled runtime + empty profile -> the first-run download banner is offered
     await expect(page.getByTestId('assets-banner')).toBeVisible({ timeout: 15000 });
   } finally {

@@ -32,15 +32,12 @@ def make_engine(data_dir, bus):
     engine_path = os.environ.get("VSTUDIO_ENGINE_PATH")
     if engine_path and os.path.isdir(os.path.join(engine_path, "lib")):
         sys.path.insert(0, os.path.join(engine_path, "lib"))
-    reason = None
-    if os.environ.get("DESK_ENGINE_MOCK") != "1":
-        try:
-            from desk_engine.real import RealEngine
-            return RealEngine(data_dir, reg, bus, engine_path=engine_path), None
-        except ImportError as e:
-            reason = f"vstudio not importable ({e}); using the mock engine"
-    from desk_engine.mock import MockEngine
-    return MockEngine(data_dir, reg, bus, step=float(os.environ.get("DESK_MOCK_STEP", "0.25"))), reason
+    if os.environ.get("DESK_ENGINE_MOCK") == "1":     # tests only: the desk passes it for a test profile, never else
+        from desk_engine.mock import MockEngine
+        return MockEngine(data_dir, reg, bus, step=float(os.environ.get("DESK_MOCK_STEP", "0.25"))), None
+    # no silent fallback to a fake engine: a broken / missing engine fails the start and the app says why
+    from desk_engine.real import RealEngine
+    return RealEngine(data_dir, reg, bus, engine_path=engine_path), None
 
 
 def main():
@@ -52,7 +49,11 @@ def main():
     os.makedirs(data_dir, exist_ok=True)
     origins = [o.strip() for o in (os.environ.get("DESK_ALLOWED_ORIGINS") or "").split(",") if o.strip()]
     bus = EventBus()
-    engine, note = make_engine(data_dir, bus)
+    try:
+        engine, note = make_engine(data_dir, bus)
+    except ImportError as e:
+        print(json.dumps(dict(ready=False, error=f"the video engine (vstudio) cannot be loaded: {e}")), flush=True)
+        return 3
     if engine.mode == "real":
         runner = CliRunner(engine.python, runner_env(engine.engine_path))
         caps = Capabilities(runner)

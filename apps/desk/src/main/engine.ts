@@ -107,7 +107,9 @@ export class EngineProcess {
   start(timeoutMs = 30000): Promise<EngineInfo> {
     const token = newToken();
     const env = engineProcessEnv(this.cfg, { DESK_TOKEN: token, DESK_ALLOWED_ORIGINS: this.cfg.allowedOrigins.join(','), DESK_DATA_DIR: this.cfg.dataDir });
+    // the fake engine only when main decided so (testSwitch): never inherited from the user's environment
     if (this.cfg.mock) env.DESK_ENGINE_MOCK = '1';
+    else delete env.DESK_ENGINE_MOCK;
     if (this.cfg.port) env.DESK_PORT = String(this.cfg.port);
     else delete env.DESK_PORT;
     const child = spawn(this.cfg.python, [path.join(this.cfg.engineDir, 'server.py')], {
@@ -133,7 +135,7 @@ export class EngineProcess {
           try {
             const msg = JSON.parse(line) as { ready: boolean; port?: number; mode?: EngineMode; note?: string; error?: string };
             if (!msg.ready || !msg.port) return done(new Error(msg.error ?? 'engine failed to start'));
-            this.info = { baseUrl: `http://127.0.0.1:${msg.port}`, token, mode: msg.mode ?? 'mock', note: msg.note ?? null };
+            this.info = { baseUrl: `http://127.0.0.1:${msg.port}`, token, mode: msg.mode ?? 'real', note: msg.note ?? null };
             return done(null, this.info);
           } catch {
             /* not the ready line */

@@ -116,14 +116,15 @@ function Shell({ onSettings }: { onSettings: (s: SettingsMsg) => void }) {
         <div className="grow" />
         <UpdateBadge />
         {nav({ name: 'settings' }, 'nav.settings', r.name === 'clients' || r.name === 'client', <SettingsIcon className="ico" />, 'nav-settings')}
-        <div className="eng" data-testid="engine-status">
+        <div className="eng" data-testid="engine-status" data-mode={error ? 'down' : (info?.mode ?? 'starting')}>
           {error ? (
             <>
               <i className="dot error" /> {t('engine.down')}
             </>
           ) : info ? (
             <>
-              <i className={`dot ${info.mode === 'real' ? 'done' : 'you'}`} /> {info.mode === 'real' ? t('engine.ready') : t('engine.demo')}
+              {/* no "demo mode" in the product: the fake engine exists for the test harness only (data-mode says which) */}
+              <i className="dot done" /> {t('engine.ready')}
             </>
           ) : (
             <>

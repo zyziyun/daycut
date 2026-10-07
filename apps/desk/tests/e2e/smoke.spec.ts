@@ -49,7 +49,7 @@ test('the app is Reelfold: name, About panel, menu', async () => {
 });
 
 test('engine starts (mock), Home and the project grid render', async () => {
-  await expect(page.getByTestId('engine-status')).toContainText(/mock|demo|演示/i, { timeout: 30000 });
+  await expect(page.getByTestId('engine-status')).toHaveAttribute('data-mode', 'mock', { timeout: 30000 });
   await expect(page.getByTestId('home')).toBeVisible();
   await page.getByTestId('nav-projects').click();
   await expect(page.getByTestId('project-card').filter({ hasText: 'demo-course' })).toBeVisible({ timeout: 15000 });

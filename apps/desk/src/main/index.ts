@@ -45,7 +45,7 @@ import { APP_NAME, applyIdentity } from './identity';
 import { SecretStore } from './secrets';
 import { checkForUpdates, initUpdater, installUpdate } from './updater';
 import { registerCleanupIpc, registerV02Ipc, v02EngineEnv } from './v02';
-import { devOnly, setPackaged, tempOnly } from './testHooks';
+import { devOnly, setPackaged, tempOnly, testSwitch } from './testHooks';
 import { openFeedback, recordProblem, registerSupportIpc } from './support';
 
 protocol.registerSchemesAsPrivileged([
@@ -190,7 +190,7 @@ function createOn(): boolean {
 
 function settingsMsg() {
   const s = settings.get();
-  return { ...s, createPage: createOn(), firstRunDone: s.firstRunDone || process.env.DESK_SKIP_FIRST_RUN === '1', resolved: resolvedConfig(), packaged: app.isPackaged, platform: process.platform };
+  return { ...s, createPage: createOn(), firstRunDone: s.firstRunDone || testSwitch('DESK_SKIP_FIRST_RUN'), resolved: resolvedConfig(), packaged: app.isPackaged, platform: process.platform };
 }
 
 /** One engine port per app session, chosen before the first start and reused by every restart (also when the
@@ -230,7 +230,7 @@ function startEngine(): Promise<EngineInfo> {
       python: cfg.python,
       dataDir: cfg.dataDir,
       allowedOrigins: [APP_ORIGIN],
-      mock: process.env.DESK_ENGINE_MOCK === '1',
+      mock: testSwitch('DESK_ENGINE_MOCK'),
       onCrash: (code, tail) => recordProblem('sidecar', `exit ${code}`, `engine exited (${code})`, tail.join('\n')),
       port: enginePort() ?? port ?? undefined,
       onDied: (detail) => onEngineCrash(gen, detail),
@@ -462,11 +462,11 @@ function createWindow(route?: string, show = true) {
       nodeIntegration: false,
       webviewTag: false,
       spellcheck: false,
-      backgroundThrottling: process.env.DESK_HIDE_WINDOW !== '1',
+      backgroundThrottling: !testSwitch('DESK_HIDE_WINDOW'),
     },
   });
   // DESK_HIDE_WINDOW=1: automated tests drive the app without putting windows on the user's screen
-  if (process.env.DESK_HIDE_WINDOW !== '1' && show) win.once('ready-to-show', () => win?.show());
+  if (!testSwitch('DESK_HIDE_WINDOW') && show) win.once('ready-to-show', () => win?.show());
   const wc = win.webContents;
   wc.setWindowOpenHandler(({ url }) => {
     if (isSafeExternal(url)) void shell.openExternal(url);
@@ -672,7 +672,7 @@ function registerIpc() {
     return r.canceled ? null : r.filePaths[0];
   });
   handle('notify:show', async (p) => {
-    if (!Notification.isSupported() || win?.isFocused() || process.env.DESK_HIDE_WINDOW === '1') return;
+    if (!Notification.isSupported() || win?.isFocused() || testSwitch('DESK_HIDE_WINDOW')) return;
     const n = new Notification({ title: p.title, body: p.body, silent: false });
     n.on('click', () => {
       if (!win) return;
@@ -955,7 +955,7 @@ if (!app.requestSingleInstanceLock()) {
     contents.on('will-attach-webview', (ev) => ev.preventDefault());
   });
   app.whenReady().then(() => {
-    if (process.env.DESK_HIDE_WINDOW === '1') app.dock?.hide();
+    if (testSwitch('DESK_HIDE_WINDOW')) app.dock?.hide();
     settings = new SettingsStore(app.getPath('userData'));
     usage = new UsageReporter({
       dir: app.getPath('userData'),

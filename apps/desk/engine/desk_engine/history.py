@@ -244,7 +244,9 @@ class History:
         env = os.environ.get("DESK_HISTORY_WATCH")
         if env is not None:
             return [p for p in env.split(os.pathsep) if p.strip()]
-        return list(DEFAULT_WATCH)
+        # the built-in default is the maintainer's demo folder: only where it exists, so a new user's Settings does
+        # not list a watched folder they never had
+        return [p for p in DEFAULT_WATCH if os.path.isdir(os.path.expanduser(p))]
 
     def watch(self):
         w = self._cfg().get("watch")

@@ -39,5 +39,35 @@ class EffectsCatalogueCached(unittest.TestCase):
             self.assertEqual(o.effects()["engine"], "real")
 
 
+class NoFakeEngineFallback(unittest.TestCase):
+    """Mock-in-product: a vstudio that does not import used to start the in-memory demo engine silently."""
+
+    def test_import_error_is_not_turned_into_a_mock_engine(self):
+        import server
+        from desk_engine.common import EventBus
+        env = {k: v for k, v in os.environ.items() if k != "DESK_ENGINE_MOCK"}
+        with mock.patch.dict(os.environ, env, clear=True), mock.patch.dict(sys.modules, {"desk_engine.real": None}):
+            with self.assertRaises(ImportError):
+                server.make_engine(tempfile.mkdtemp(), EventBus())
+
+    def test_mock_engine_only_when_asked(self):
+        import server
+        from desk_engine.common import EventBus
+        with mock.patch.dict(os.environ, {"DESK_ENGINE_MOCK": "1", "DESK_MOCK_STEP": "0.01"}):
+            eng, _ = server.make_engine(tempfile.mkdtemp(), EventBus())
+        self.assertEqual(eng.mode, "mock")
+        eng.shutdown()
+
+
+class DefaultWatchOnlyWhenPresent(unittest.TestCase):
+    def test_missing_default_folder_is_not_listed(self):
+        from desk_engine import history as H
+        env = {k: v for k, v in os.environ.items() if k != "DESK_HISTORY_WATCH"}
+        with mock.patch.dict(os.environ, env, clear=True), \
+                mock.patch.object(H, "DEFAULT_WATCH", ["/nonexistent/reelfold-demos", tempfile.gettempdir()]):
+            got = H.History(tempfile.mkdtemp(), registry=None).default_watch()
+        self.assertEqual(got, [tempfile.gettempdir()])
+
+
 if __name__ == "__main__":
     unittest.main()
