@@ -1,0 +1,119 @@
+---
+title: 安装 Mac 应用
+description: 在 Apple 芯片的 Mac 上安装千剪：首个正式版发布后从 GitHub Releases 下载，现在可以从源码构建，然后接上你自己的 AI。
+---
+
+import { Steps, Aside } from '@astrojs/starlight/components';
+
+千剪（Reelfold）Mac 应用是桌面版：一个说需求的输入框、跑批量的看板、审片收件箱，再加辅助发布。免费，MIT 协议。这一页带你把它装好，并接上一个 AI 模型。
+
+## 准备
+
+- 一台 Apple 芯片（M1 及以后）的 Mac。Windows 版之后再出。
+- 足够的磁盘空间：应用本身、语音识别模型（约 1.6 GB），以及你的成片。
+- 一个你已经能用的 AI：Claude Code 或 Codex 的登录、一个 API key，或一个本地模型，任选其一。什么都不接也能先用，出方案时会退回到简单规则。
+
+## 获取应用
+
+<Aside type="note" title="首个 macOS 正式版即将发布">
+签名后的安装包会发布在 [GitHub Releases](https://github.com/zyziyun/reelfold/releases/latest)。正式版出来之前，请按下面的步骤从源码构建。
+</Aside>
+
+### 下载安装（正式版发布后）
+
+<Steps>
+
+1. 打开 [github.com/zyziyun/reelfold/releases/latest](https://github.com/zyziyun/reelfold/releases/latest)，下载 Apple 芯片版（`mac-arm64`）的 `.dmg`。
+2. 打开 DMG，把 **Reelfold** 拖进「应用程序」。
+3. 从「应用程序」里打开 Reelfold。
+
+</Steps>
+
+安装版自带引擎：Python、ffmpeg 和 `vstudio` 引擎都打包在里面，不用另外安装。
+
+### 从源码构建（现在就能用）
+
+需要 Node 22+、Python 3.10+ 和 `ffmpeg`（比如 `brew install node python ffmpeg`）。
+
+<Steps>
+
+1. 克隆仓库，安装引擎和应用依赖：
+
+   ```bash
+   git clone https://github.com/zyziyun/reelfold && cd reelfold
+   ./install.sh && npm install
+   ```
+
+   `install.sh` 会装好 Python 依赖，并把字体和人脸模型下载到 `~/.cache/video-studio`。
+
+2. 启动应用：
+
+   ```bash
+   npm run desk
+   ```
+
+   应用以 **Reelfold** 的名字打开，并在后台用这份代码里的 `lib/` 启动引擎。
+
+</Steps>
+
+如果应用用错了 Python，可以在「设置」里指定 Python 路径。
+
+## 第一次打开
+
+千剪启动时会在你的 Mac 上开一个本地引擎（只监听 `127.0.0.1` 的小服务，只有应用自己能连）。引擎就绪后，状态会显示「本机就绪」。
+
+安装版会提示一次性下载引擎需要的资源，横幅里有入口，也可以在 **设置 → 模型、字体与工具** 里下载：
+
+| 下载内容 | 大小 | 用途 |
+|---|---|---|
+| 字体和 MediaPipe 人脸模型 | 约 62 MB | 字幕、封面、人脸跟踪、修图 |
+| Whisper large-v3-turbo | 约 1.6 GB | 语音转写 |
+| Chromium（可选） | 180–360 MB | HTML 封面、幻灯片和基于 HyperFrames 的工作流 |
+
+下载中断可以续传，装之前会先校验。源码构建时，字体和人脸模型已经由 `install.sh` 下好；如果还没有 Whisper 模型，第一次转写时引擎会自动下载。
+
+## 接上 AI
+
+打开 **设置 → AI 账号与模型**，每个服务旁边都有状态（已登录、登录已过期、已保存密钥、本地服务运行中）。
+
+| 方式 | 怎么做 | 费用 |
+|---|---|---|
+| **订阅账号（不用 API 密钥）** | 点 Claude Code 或 Codex 旁边的「登录」。应用里会打开一个终端，浏览器弹出登录页。 | 你的 Claude Pro / Max 或 ChatGPT 订阅 |
+| **API 密钥** | 粘贴 Anthropic、OpenAI、DeepSeek、通义千问、Kimi、智谱 GLM、OpenRouter、Gemini 或 ElevenLabs 的 key。密钥存在 macOS 钥匙串里，只交给引擎使用。 | 按量计费 |
+| **本地模型** | 在这台 Mac 或你自己的服务器上跑 Ollama、LM Studio、vLLM 或 llama.cpp，千剪会列出找到的模型。 | 免费，数据不出你的网络 |
+
+点「测试」会发一个很小的请求，确认它能正常回答。
+
+在「每项工作用哪个 AI」里设一个默认选项；需要的话，每项工作（出方案、挑片段、字幕校对、术语表、发布文案、AI 修改）也可以单独指定，并按顺序设备用。用到备用时，应用会告诉你是哪个回答的。新填的 API key 需要重启引擎才生效，页面上有按钮。
+
+每一步发给 AI 什么、哪些留在本机：见 [AI 服务](/docs/zh/concepts/ai-providers/)。
+
+## 更新
+
+- **安装版：** 启动时和之后每隔几小时检查一次更新，在后台下载好，然后提示你重启以更新到新版本。
+- **源码构建：** 拉取最新代码、重新安装，再启动：
+
+  ```bash
+  git pull && ./install.sh && npm install
+  npm run desk
+  ```
+
+## 卸载，以及数据放在哪
+
+把 Reelfold 从「应用程序」拖到废纸篓即可。你的项目和设置会留在磁盘上，需要的话再手动删除：
+
+| 文件夹 | 里面是什么 |
+|---|---|
+| `~/Library/Application Support/Reelfold` | 应用设置、下载的模型和字体（`assets`）、加密后的 API key、发布浏览器里各平台的登录状态 |
+| `~/.config/vstudio` | 引擎的主目录：项目列表、发布日历、你对去口头禅的确认习惯；从首页新建的项目默认放在这里的 `projects/` 下 |
+| `~/.cache/video-studio` | 引擎缓存：字体、模型、逐字稿，和 Claude Code 技能共用 |
+| `~/.cache/huggingface/hub` | 源码构建或技能下载的 Whisper 模型 |
+
+原始素材不会被移动或修改。如果你用过旧版日剪（Daycut），千剪第一次启动时会复制它的配置，旧文件夹原样保留作为备份。
+
+## 相关页面
+
+- [第一个项目](/docs/zh/start/first-project/)
+- [安装 Claude Code 技能](/docs/zh/start/install-skill/)
+- [AI 服务](/docs/zh/concepts/ai-providers/)
+- [常见问题排查](/docs/zh/help/troubleshooting/)

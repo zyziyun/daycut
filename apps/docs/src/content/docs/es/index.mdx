@@ -1,0 +1,68 @@
+---
+title: Documentación de Reelfold
+description: Conoce Reelfold (千剪), la herramienta de video gratuita y abierta que convierte una grabación en todos los cortes para cada plataforma. Instálala y empieza.
+template: splash
+editUrl: false
+pagefind: true
+hero:
+  title: Una grabación.<br><em>Todos los cortes.</em>
+  tagline: Describe lo que quieres y suelta tu material. Reelfold planifica los clips, los edita en tu Mac, revisa cada archivo y solo te muestra lo que necesita tu atención. Esta documentación cubre la app para Mac y el skill de Claude Code.
+  actions:
+    - text: Empezar
+      link: /docs/es/start/what-is-reelfold/
+      icon: right-arrow
+      variant: primary
+    - text: Ejemplos de peticiones
+      link: /docs/es/examples/
+      variant: secondary
+---
+
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+import { Image } from 'astro:assets';
+import home from '../../../assets/shots/home-A1-home-busy.png';
+
+<figure class="rf-print">
+  <Image src={home} alt="La pantalla de inicio de Reelfold: el cuadro de peticiones arriba, el lote en marcha y los clips pendientes de revisión." widths={[800, 1400, 2000]} sizes="(min-width: 72rem) 1100px, 100vw" loading="eager" fetchpriority="high" />
+</figure>
+<p class="rf-caption">Inicio: di qué estás preparando, sigue el lote mientras avanza y revisa solo lo que se marcó.</p>
+
+<p class="rf-kicker">Empieza aquí</p>
+
+<CardGrid>
+  <Card title="Instala la app para Mac" icon="laptop">
+    Gratis, con licencia MIT, para Apple Silicon. Usa tu propia IA: una sesión de Claude Code o Codex, una clave de API o un modelo local.
+    [Instalar →](/docs/es/start/install-mac/)
+  </Card>
+  <Card title="Úsalo como skill de Claude Code" icon="puzzle">
+    El mismo motor, en forma de skill. Clona el repositorio, ejecuta `install.sh` y habla con Claude sobre tu material.
+    [Instalar el skill →](/docs/es/start/install-skill/)
+  </Card>
+  <Card title="Tu primer proyecto en 5 minutos" icon="rocket">
+    Entra un clip hablando a cámara y sale un short subtitulado para dos plataformas, con portada y texto de publicación.
+    [Empezar →](/docs/es/start/first-project/)
+  </Card>
+  <Card title="Dilo con tus palabras" icon="comment-alt">
+    Peticiones que funcionan bien, desde «quita las pausas» hasta «corta esta clase en diez clips verticales».
+    [Ejemplos de peticiones →](/docs/es/examples/)
+  </Card>
+</CardGrid>
+
+<p class="rf-kicker">Guías según lo que creas</p>
+
+<CardGrid>
+  <LinkCard title="Shorts hablando a cámara" description="Sin pausas ni muletillas, con subtítulos, paneles de notas y portada." href="/docs/es/guides/talking-head/" />
+  <LinkCard title="De un video largo a clips" description="Una clase o un directo convertido en una semana de publicaciones verticales." href="/docs/es/guides/long-video-to-clips/" />
+  <LinkCard title="Clips de pódcast y entrevistas" description="El mejor minuto, encuadrado por cada persona, con la cara de los invitados oculta." href="/docs/es/guides/podcast-clips/" />
+  <LinkCard title="Un lote de más de 100" description="Planifica, prueba un piloto, ejecuta en paralelo y revisa solo las excepciones." href="/docs/es/guides/batch-100/" />
+  <LinkCard title="Exportación multiplataforma" description="Un máster, veinte plataformas, cada una con su formato." href="/docs/es/guides/multi-platform/" />
+  <LinkCard title="Programación y publicación" description="Un tablero semanal y una subida asistida; tú pulsas publicar." href="/docs/es/guides/scheduling-publishing/" />
+</CardGrid>
+
+<p class="rf-kicker">Consulta</p>
+
+<CardGrid>
+  <LinkCard title="Conceptos" description="Proyectos, recetas, revisión, temas, proveedores de IA, privacidad." href="/docs/es/concepts/projects/" />
+  <LinkCard title="Referencia" description="Workflows, CLI, persona.yaml, especificaciones de plataformas, efectos, códigos de error." href="/docs/es/reference/" />
+  <LinkCard title="Solución de problemas" description="Problemas de instalación, procesos lentos, errores del proveedor de IA, cortes raros." href="/docs/es/help/troubleshooting/" />
+  <LinkCard title="Contribuir" description="Compila desde el código fuente, ejecuta las pruebas, añade un efecto o una plataforma." href="/docs/es/contributing/" />
+</CardGrid>

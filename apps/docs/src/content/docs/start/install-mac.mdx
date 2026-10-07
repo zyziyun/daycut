@@ -1,0 +1,119 @@
+---
+title: Install the Mac app
+description: Install Reelfold for Mac on Apple Silicon, from GitHub Releases once the first build ships or from source today, then connect your own AI.
+---
+
+import { Steps, Aside } from '@astrojs/starlight/components';
+
+Reelfold for Mac is the desktop app: a request box, a board for running batches, a review inbox and assisted publishing. It is free and MIT licensed. This page gets it running and connected to an AI model.
+
+## Requirements
+
+- A Mac with Apple Silicon (M1 or later). Windows comes later.
+- Disk space for the app, the speech model (about 1.6 GB) and your renders.
+- An AI model you already have access to. Any one of these works: a Claude Code or Codex login, an API key, or a local model. You can also start with none; planning then falls back to simple rules.
+
+## Get the app
+
+<Aside type="note" title="The first macOS release is coming soon">
+Signed downloads will be published on [GitHub Releases](https://github.com/zyziyun/reelfold/releases/latest). Until the first release is out, build the app from source as shown below.
+</Aside>
+
+### Download (once released)
+
+<Steps>
+
+1. Open [github.com/zyziyun/reelfold/releases/latest](https://github.com/zyziyun/reelfold/releases/latest) and download the `.dmg` for Apple Silicon (`mac-arm64`).
+2. Open the DMG and drag **Reelfold** into Applications.
+3. Start Reelfold from Applications.
+
+</Steps>
+
+The installed app carries its own engine: Python, ffmpeg and the `vstudio` engine are bundled, so you do not need to install them yourself.
+
+### Build from source (available now)
+
+You need Node 22+, Python 3.10+ and `ffmpeg` (for example `brew install node python ffmpeg`).
+
+<Steps>
+
+1. Clone the repository and install the engine and the app's packages:
+
+   ```bash
+   git clone https://github.com/zyziyun/reelfold && cd reelfold
+   ./install.sh && npm install
+   ```
+
+   `install.sh` installs the Python dependencies and downloads fonts and face models into `~/.cache/video-studio`.
+
+2. Start the app:
+
+   ```bash
+   npm run desk
+   ```
+
+   The app opens as **Reelfold** and starts its engine in the background, using the `lib/` folder of this checkout.
+
+</Steps>
+
+If the app picks the wrong Python, set the Python path in Settings.
+
+## First launch
+
+When Reelfold starts, it launches a local engine on your Mac (a small server on `127.0.0.1` that only the app talks to). The status shows **Ready on this Mac** once it is up.
+
+The installed app offers a one-time download of what the engine needs, in a banner and under **Settings → Models, fonts and tools**:
+
+| Download | Size | Needed for |
+|---|---|---|
+| Fonts and MediaPipe face models | about 62 MB | Captions, covers, face tracking, retouch |
+| Whisper large-v3-turbo | about 1.6 GB | Transcription |
+| Chromium (optional) | 180–360 MB | HTML covers, slides and HyperFrames-based workflows |
+
+Downloads resume if interrupted and are checked before they are installed. In a source build, `install.sh` has already fetched the fonts and face models, and the engine downloads a Whisper model on the first transcription if none is installed.
+
+## Connect your AI
+
+Open **Settings → AI accounts & models**. Each provider shows a status (logged in, login expired, key saved, local server running).
+
+| Option | What you do | Billing |
+|---|---|---|
+| **Subscriptions (no API key)** | Click **Log in** next to Claude Code or Codex. A terminal opens in the app and your browser asks you to sign in. | Your Claude Pro / Max or ChatGPT subscription |
+| **API keys** | Paste a key for Anthropic, OpenAI, DeepSeek, Qwen, Kimi, GLM, OpenRouter, Gemini or ElevenLabs. Keys are kept in the macOS keychain and handed only to the engine. | Pay per use |
+| **Local models** | Run Ollama, LM Studio, vLLM or llama.cpp on this Mac or your own server. Reelfold lists the models it finds. | Free; nothing leaves your network |
+
+Use **Test** on a provider to send one tiny request and confirm it answers.
+
+Under **Which AI does what** you choose a default and, if you like, a different provider per task (planning, segment picking, caption proofreading, glossary, post copy, AI edits), with fallbacks in order. When a fallback answers, the app tells you which one did. A new API key needs an engine restart; the page offers the button.
+
+What each step sends to the provider, and what stays local: [AI providers](/docs/concepts/ai-providers/).
+
+## Update
+
+- **Installed app:** Reelfold checks for updates at launch and every few hours, downloads them in the background and offers **Restart to update** to the new version.
+- **Source build:** pull and reinstall, then start again:
+
+  ```bash
+  git pull && ./install.sh && npm install
+  npm run desk
+  ```
+
+## Uninstall and where your data lives
+
+Drag Reelfold from Applications to the Trash. Your projects and settings stay on disk until you remove them:
+
+| Folder | What is in it |
+|---|---|
+| `~/Library/Application Support/Reelfold` | App settings, downloaded models and fonts (`assets`), encrypted API keys, the publish browser's platform logins |
+| `~/.config/vstudio` | The engine's home: the project list, publish calendar and your filler-cut preferences; new projects go to `projects/` here by default |
+| `~/.cache/video-studio` | Engine cache: fonts, models, transcripts. Shared with the Claude Code skill |
+| `~/.cache/huggingface/hub` | Whisper models downloaded by a source build or the skill |
+
+Your original footage is never moved or modified. If you came from an older Daycut build, its profile folder is left in place as a backup the first time Reelfold copies it.
+
+## Related
+
+- [Your first project](/docs/start/first-project/)
+- [Install the Claude Code skill](/docs/start/install-skill/)
+- [AI providers](/docs/concepts/ai-providers/)
+- [Troubleshooting](/docs/help/troubleshooting/)

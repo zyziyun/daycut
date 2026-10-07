@@ -1,0 +1,97 @@
+---
+title: Tu primer proyecto
+description: Un recorrido de cinco minutos por Reelfold, de un clip a cámara a un short subtitulado para YouTube Shorts y TikTok, con portada y texto de publicación.
+---
+
+import { Steps, Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+
+En este recorrido conviertes un clip hablando a cámara en un short vertical ágil y subtitulado para YouTube Shorts y TikTok, con portada y texto de publicación para cada uno. Te llevará unos cinco minutos; el equipo hace el resto.
+
+## Antes de empezar
+
+- Tienes Reelfold instalado: [la app para Mac](/docs/es/start/install-mac/) o [el skill de Claude Code](/docs/es/start/install-skill/).
+- Tienes una grabación hablando a cámara de uno a tres minutos. Lo ideal es un clip vertical grabado con el teléfono; una grabación horizontal de webcam se reencuadra a 9:16 alrededor de tu cara.
+- Opcional: algunos términos que dices y que el reconocimiento de voz podría escribir mal (nombres de productos, jerga). Menciónalos en tu petición.
+
+## Crea el short
+
+<Tabs syncKey="form">
+<TabItem label="En la app para Mac">
+
+<Steps>
+
+1. **Descríbelo.** En **Home**, escribe tu petición en el cuadro que aparece bajo «What are we making today?» y suelta el clip:
+
+   > Haz más ágil este clip hablando a cámara: quita las pausas, las muletillas y las repeticiones, acelera a 1,1×, añade subtítulos y una barra de progreso, sin gancho. Exporta para YouTube Shorts y TikTok con portada y texto de publicación.
+
+   Después, haz clic en **Make a plan**.
+
+2. **Revisa el plan.** Reelfold analiza el clip y muestra su plan: el workflow de video hablando a cámara, un clip, dos plataformas, cuánto tarda y cuánto cuesta. Si algo no encaja, dilo en el cuadro («subtítulos solo en español», «velocidad 1.0») y haz clic en **Update**.
+
+3. **Lanza el piloto.** Haz clic en **Start — make 1 to preview**. El trabajo se ejecuta en tu Mac y aparece en **In progress**.
+
+4. **Confirma los cortes de muletillas.** Las muletillas evidentes (eh, em, tartamudeos) se cortan automáticamente. Las palabras que podrían ser parte del discurso («o sea», «bueno», «entonces», una frase que empiezas de nuevo, una segunda toma) esperan en el **Inbox**, en **Confirm the filler cuts**. Cada una aparece dentro de su frase, con el corte marcado. Acepta las que quieras quitar y conserva el resto, o usa **Accept suggestions**. Tras el corte, Reelfold vuelve a transcribir el resultado para comprobar que no se perdió ninguna palabra real.
+
+5. **Elige una portada.** El Inbox te ofrece fotogramas para la portada. Elige uno y escribe el texto de la portada.
+
+6. **Revisa.** Cada archivo pasa controles automáticos (palabras perdidas, fotogramas congelados, volumen, duración). Todo lo que se marca aparece en el Inbox con el motivo; los archivos que pasan los controles quedan listos.
+
+7. **Exporta y publica.** Obtienes un archivo por plataforma, cada uno con su portada, título, descripción y etiquetas. Desde **Publish**, Reelfold abre la página de subida de la plataforma en su navegador integrado y rellena el archivo y el texto. Tú pulsas publicar.
+
+</Steps>
+
+</TabItem>
+<TabItem label="Con el skill de Claude Code">
+
+<Steps>
+
+1. **Abre Claude Code en la carpeta del clip** y di lo que quieres:
+
+   > Haz más ágil talk.mp4: quita las pausas, las muletillas y las repeticiones, acelera a 1,1×, añade subtítulos y una barra de progreso, sin gancho. Exporta para YouTube Shorts y TikTok con portada y texto de publicación.
+
+   El skill dirige la petición al [workflow talkinghead](/docs/es/reference/workflows/talkinghead/). Puede que Claude te pregunte qué estilo de edición prefieres (un estilo tranquilo con notas, uno dinámico de cortes rápidos o una mezcla).
+
+2. **Responde a la hoja de limpieza.** Claude transcribe el clip y muestra una hoja numerada: primero las filas que debes confirmar, luego lo que se cortará automáticamente, las pausas que se acortarán y lo que se conserva. Cada fila muestra las palabras alrededor del corte. Responde con los números:
+
+   ```text
+   approve 3,5,9 keep 7
+   ```
+
+   `approve` corta también esas filas; `keep` las conserva (funciona también con las filas automáticas). `approve all` acepta todas las filas pendientes de confirmación, y funcionan rangos como `approve 2-4`. Tras el corte, el resultado se vuelve a transcribir; si se perdió una palabra real, Claude te dice dónde y descarta ese corte.
+
+3. **Revisa la vista previa.** Claude genera algunas imágenes de vista previa y después el video completo. Pide cambios con tus palabras («subtítulos más grandes», «quita la barra de progreso»).
+
+4. **Portada y texto de publicación.** Claude elige fotogramas candidatos para la portada, la genera y redacta un título, una descripción y etiquetas dentro de los límites de cada plataforma.
+
+5. **Exportación por plataforma.** Un máster limpio se convierte en un archivo por plataforma, con los subtítulos lejos de los botones de cada app y el volumen ajustado a su objetivo. Por debajo, esto es `python -m vstudio.export` con `--platforms youtube-shorts,tiktok`.
+
+</Steps>
+
+Con el skill, la publicación corre de tu cuenta: sube los archivos con el texto de publicación que redactó.
+
+</TabItem>
+</Tabs>
+
+<Aside type="tip">
+El paso de limpieza es la misma herramienta en todos los workflows que conservan la voz original, así que el formato de respuesta de arriba también sirve para pódcast, clases y vlogs. Detalles: [Limpieza de voz](/docs/es/reference/engine/cleanup/).
+</Aside>
+
+## Qué obtienes
+
+| Archivo | Qué es |
+|---|---|
+| Un video por plataforma | En 9:16, con subtítulos dentro de la zona segura de la plataforma y el volumen en su objetivo |
+| Una portada por plataforma | Con el tamaño adecuado para el feed de esa plataforma |
+| Texto de publicación por plataforma | Título, descripción y etiquetas comprobados según los límites de la plataforma |
+
+## Cambia algo después
+
+Cualquier clip terminado se puede volver a editar con tus palabras: «recorta los dos primeros segundos», «pon los subtítulos en amarillo», «añade una versión para Instagram». Cada cambio es un paso que se puede deshacer. Consulta [Ediciones posteriores](/docs/es/concepts/output-edits/).
+
+## Siguientes pasos
+
+- [Shorts hablando a cámara](/docs/es/guides/talking-head/): ganchos, paneles de notas, retoque y estilos en detalle
+- [De un video largo a clips](/docs/es/guides/long-video-to-clips/): una grabación, una semana de publicaciones
+- [Exportación multiplataforma](/docs/es/guides/multi-platform/): un máster, muchas plataformas
+- [Ejemplos de peticiones](/docs/es/examples/): peticiones que funcionan bien, por caso de uso
+- [Lotes y revisión](/docs/es/concepts/batch-review/): cómo encajan los pilotos, los controles y el Inbox

@@ -1,0 +1,97 @@
+---
+title: Your first project
+description: A five-minute walkthrough of Reelfold, from one talking-head clip to a captioned short for YouTube Shorts and TikTok with a cover and post copy.
+---
+
+import { Steps, Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+
+In this walkthrough you turn one talking-head clip into a tight, captioned vertical short for YouTube Shorts and TikTok, with a cover and post copy for each. It takes about five minutes of your time; the machine does the rest.
+
+## Before you start
+
+- Reelfold is installed: [the Mac app](/docs/start/install-mac/) or [the Claude Code skill](/docs/start/install-skill/).
+- You have one talking-head recording, one to three minutes long. A vertical phone clip works best; a horizontal webcam recording is reframed to 9:16 around your face.
+- Optional: a few terms you say that speech recognition may get wrong (product names, jargon). Mention them in your request.
+
+## Make the short
+
+<Tabs syncKey="form">
+<TabItem label="In the Mac app">
+
+<Steps>
+
+1. **Describe it.** On Home, type your request into the box under "What are we making today?" and drop in the clip:
+
+   > Tighten this talking-head clip: cut the pauses, filler words and repeats, speed it up 1.1×, add captions and a progress bar, no hook. Export for YouTube Shorts and TikTok with a cover and post copy.
+
+   Then click **Make a plan**.
+
+2. **Check the plan.** Reelfold reads the clip and shows its plan: the talking-head workflow, one clip, two platforms, how long it takes and what it costs. If something is off, say it in the box ("captions in English only", "speed 1.0") and click **Update**.
+
+3. **Start the pilot.** Click **Start — make 1 to preview**. The job runs on your Mac and appears under In progress.
+
+4. **Confirm the filler cuts.** Clear fillers (um, uh, stutters) are cut automatically. Words that might be real speech ("like", "you know", "so", a restarted sentence, a retake) wait in the **Inbox** under **Confirm the filler cuts**. Each one shows the sentence with the cut marked. Accept the ones you want gone and keep the rest, or use **Accept suggestions**. After the cut, Reelfold re-transcribes the result to check that no real word was lost.
+
+5. **Pick a cover.** The Inbox offers frames for the cover. Pick one and set the cover text.
+
+6. **Review.** Every file goes through automatic checks (missing words, frozen frames, loudness, length). Anything flagged shows up in the Inbox with the reason; files that passed are ready.
+
+7. **Export and publish.** You get one file per platform, each with its own cover, title, description and tags. From **Publish**, Reelfold opens the platform's upload page in its built-in browser and fills in the file and the copy. You press publish.
+
+</Steps>
+
+</TabItem>
+<TabItem label="With the Claude Code skill">
+
+<Steps>
+
+1. **Open Claude Code in the clip's folder** and say what you want:
+
+   > Tighten talk.mp4: cut the pauses, filler words and repeats, speed it up 1.1×, add captions and a progress bar, no hook. Export for YouTube Shorts and TikTok with a cover and post copy.
+
+   The skill routes this to the [talkinghead workflow](/docs/reference/workflows/talkinghead/). Claude may ask which editing style you want (a calm notes style, a punchy fast-cut style, or a mix).
+
+2. **Answer the cleanup review sheet.** Claude transcribes the clip and shows a numbered sheet: rows to confirm first, then what will be cut automatically, the pauses to squeeze and what is kept. Each row shows the words around the cut. Reply with the numbers:
+
+   ```text
+   approve 3,5,9 keep 7
+   ```
+
+   `approve` cuts those rows too; `keep` leaves them in (it works on automatic rows as well). `approve all` accepts every row waiting for confirmation, and ranges like `approve 2-4` work. After the cut, the result is re-transcribed; if a real word went missing, Claude tells you where and keeps that edit instead.
+
+3. **Check the preview.** Claude renders a few preview stills, then the full video. Ask for changes in plain words ("bigger captions", "drop the progress bar").
+
+4. **Cover and post copy.** Claude picks candidate frames for the cover, renders it, and writes a title, description and tags within each platform's limits.
+
+5. **Export per platform.** One clean master becomes one file per platform, with captions placed clear of each app's buttons and loudness set to its target. Under the hood this is `python -m vstudio.export` with `--platforms youtube-shorts,tiktok`.
+
+</Steps>
+
+Publishing from the skill is up to you: upload the files with the post copy it wrote.
+
+</TabItem>
+</Tabs>
+
+<Aside type="tip">
+The cleanup step is the same tool in every workflow that keeps original speech, so the reply format above also works for podcasts, lectures and vlogs. Details: [Speech cleanup](/docs/reference/engine/cleanup/).
+</Aside>
+
+## What you end up with
+
+| File | What it is |
+|---|---|
+| One video per platform | 9:16, captions inside the platform's safe area, loudness at the platform's target |
+| One cover per platform | Sized for that platform's feed |
+| Post copy per platform | Title, description and tags checked against the platform's limits |
+
+## Change something afterwards
+
+Every finished clip can be edited again in plain words: "trim the first two seconds", "make the captions yellow", "add an Instagram version". Each change is one undo step. See [Output edits](/docs/concepts/output-edits/).
+
+## Where to go next
+
+- [Talking-head shorts](/docs/guides/talking-head/): hooks, notes panels, retouch and styles in depth
+- [Long video into clips](/docs/guides/long-video-to-clips/): one recording, a week of posts
+- [Multi-platform export](/docs/guides/multi-platform/): one master, many platforms
+- [Example prompts](/docs/examples/): requests that work well, by use case
+- [Batch and review](/docs/concepts/batch-review/): how pilots, checks and the Inbox fit together

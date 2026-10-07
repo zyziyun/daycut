@@ -1,0 +1,67 @@
+---
+title: 千剪 Reelfold 文档
+description: 千剪（Reelfold）使用文档：免费开源的视频批量剪辑工具，一条素材剪成各个平台的成片。安装 Mac 版或 Claude Code 技能，跑通你的第一个批次。
+template: splash
+editUrl: false
+hero:
+  title: 一条素材，<em>千条成片。</em>
+  tagline: 说清楚要什么，把素材放进来。千剪规划选段，在你的 Mac 上剪辑，逐条自动质检，只把需要你看的交给你。这里是 Mac 版和 Claude Code 技能的使用文档。
+  actions:
+    - text: 快速开始
+      link: /docs/zh/start/what-is-reelfold/
+      icon: right-arrow
+      variant: primary
+    - text: 示例指令
+      link: /docs/zh/examples/
+      variant: secondary
+---
+
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+import { Image } from 'astro:assets';
+import home from '../../../assets/shots/home-A5-home-busy-zh.png';
+
+<figure class="rf-print">
+  <Image src={home} alt="千剪首页：顶部是需求输入框，下面是正在跑的批次和等你审的片子。" widths={[800, 1400, 2000]} sizes="(min-width: 72rem) 1100px, 100vw" loading="eager" fetchpriority="high" />
+</figure>
+<p class="rf-caption">首页：说一句要做什么，看着批次跑完，只审被标出来的那几条。</p>
+
+<p class="rf-kicker">从这里开始</p>
+
+<CardGrid>
+  <Card title="安装 Mac 版" icon="laptop">
+    免费、MIT 开源，支持 Apple 芯片。AI 用你自己的：Claude Code / Codex 登录、API key 或本地模型。
+    [安装 →](/docs/zh/start/install-mac/)
+  </Card>
+  <Card title="作为 Claude Code 技能使用" icon="puzzle">
+    同一套引擎做成技能。克隆仓库、运行 `install.sh`，然后直接跟 Claude 聊你的素材。
+    [安装技能 →](/docs/zh/start/install-skill/)
+  </Card>
+  <Card title="5 分钟做出第一条" icon="rocket">
+    放进一段口播，拿到带字幕的两个平台版本，外加封面和发布文案。
+    [开始 →](/docs/zh/start/first-project/)
+  </Card>
+  <Card title="用大白话说需求" icon="comment-alt">
+    从「去气口」到「这节课切成十条竖屏」，这些说法最好用。
+    [示例指令 →](/docs/zh/examples/)
+  </Card>
+</CardGrid>
+
+<p class="rf-kicker">按你要做的内容</p>
+
+<CardGrid>
+  <LinkCard title="口播短视频" description="去气口和口头禅，加字幕、记笔记面板、封面。" href="/docs/zh/guides/talking-head/" />
+  <LinkCard title="长视频切片" description="一场直播或一节课，切成一周的竖屏内容。" href="/docs/zh/guides/long-video-to-clips/" />
+  <LinkCard title="播客和访谈切片" description="挑出最精彩的一分钟，按说话人构图，嘉宾遮脸。" href="/docs/zh/guides/podcast-clips/" />
+  <LinkCard title="一次做 100 条以上" description="规划、试跑、并行处理，只审例外。" href="/docs/zh/guides/batch-100/" />
+  <LinkCard title="多平台导出" description="一条母版，二十个平台，各按各的规格。" href="/docs/zh/guides/multi-platform/" />
+  <LinkCard title="排期和发布" description="一周看板，辅助上传，发布按钮由你来点。" href="/docs/zh/guides/scheduling-publishing/" />
+</CardGrid>
+
+<p class="rf-kicker">查资料</p>
+
+<CardGrid>
+  <LinkCard title="核心概念" description="项目、配方、审片、主题、AI 服务、隐私。" href="/docs/zh/concepts/projects/" />
+  <LinkCard title="参考" description="工作流、命令行、persona.yaml、平台规格、特效、错误代码。" href="/docs/zh/reference/" />
+  <LinkCard title="常见问题排查" description="安装问题、跑得慢、AI 服务报错、剪得不对。" href="/docs/zh/help/troubleshooting/" />
+  <LinkCard title="参与贡献" description="从源码构建、跑测试、加特效或新平台。" href="/docs/zh/contributing/" />
+</CardGrid>

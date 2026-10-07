@@ -1,0 +1,119 @@
+---
+title: Instala la app para Mac
+description: Instala Reelfold para Mac en Apple Silicon, desde GitHub Releases cuando salga la primera versión o desde el código fuente hoy mismo, y conecta tu propia IA.
+---
+
+import { Steps, Aside } from '@astrojs/starlight/components';
+
+Reelfold para Mac es la app de escritorio: un cuadro de peticiones, un tablero para los lotes en marcha, una bandeja de revisión y publicación asistida. Es gratis y tiene licencia MIT. Esta página te ayuda a ponerla en marcha y conectarla a un modelo de IA.
+
+## Requisitos
+
+- Un Mac con Apple Silicon (M1 o posterior). Windows llegará más adelante.
+- Espacio en disco para la app, el modelo de reconocimiento de voz (unos 1,6 GB) y tus renders.
+- Un modelo de IA al que ya tengas acceso. Sirve cualquiera de estos: una sesión de Claude Code o Codex, una clave de API o un modelo local. También puedes empezar sin ninguno; en ese caso, la planificación recurre a reglas sencillas.
+
+## Consigue la app
+
+<Aside type="note" title="La primera versión para macOS llegará pronto">
+Las descargas firmadas se publicarán en [GitHub Releases](https://github.com/zyziyun/reelfold/releases/latest). Hasta que salga la primera versión, compila la app desde el código fuente como se indica más abajo.
+</Aside>
+
+### Descarga (cuando esté disponible)
+
+<Steps>
+
+1. Abre [github.com/zyziyun/reelfold/releases/latest](https://github.com/zyziyun/reelfold/releases/latest) y descarga el `.dmg` para Apple Silicon (`mac-arm64`).
+2. Abre el DMG y arrastra **Reelfold** a Aplicaciones.
+3. Abre Reelfold desde Aplicaciones.
+
+</Steps>
+
+La app instalada lleva su propio motor: Python, ffmpeg y el motor `vstudio` vienen incluidos, así que no tienes que instalarlos tú.
+
+### Compila desde el código fuente (disponible ya)
+
+Necesitas Node 22+, Python 3.10+ y `ffmpeg` (por ejemplo, `brew install node python ffmpeg`).
+
+<Steps>
+
+1. Clona el repositorio e instala el motor y los paquetes de la app:
+
+   ```bash
+   git clone https://github.com/zyziyun/reelfold && cd reelfold
+   ./install.sh && npm install
+   ```
+
+   `install.sh` instala las dependencias de Python y descarga las fuentes y los modelos faciales en `~/.cache/video-studio`.
+
+2. Inicia la app:
+
+   ```bash
+   npm run desk
+   ```
+
+   La app se abre como **Reelfold** y arranca su motor en segundo plano usando la carpeta `lib/` de esta copia del repositorio.
+
+</Steps>
+
+Si la app elige el Python equivocado, indica la ruta correcta en **Settings**.
+
+## Primer arranque
+
+Al iniciarse, Reelfold lanza un motor local en tu Mac (un pequeño servidor en `127.0.0.1` con el que solo habla la app). Cuando está listo, el estado muestra **Ready on this Mac**.
+
+La app instalada ofrece descargar una sola vez lo que necesita el motor, desde un aviso y en **Settings → Models, fonts and tools**:
+
+| Descarga | Tamaño | Para qué sirve |
+|---|---|---|
+| Fuentes y modelos faciales de MediaPipe | unos 62 MB | Subtítulos, portadas, seguimiento facial, retoque |
+| Whisper large-v3-turbo | unos 1,6 GB | Transcripción |
+| Chromium (opcional) | de 180 a 360 MB | Portadas en HTML, diapositivas y workflows basados en HyperFrames |
+
+Las descargas se reanudan si se interrumpen y se verifican antes de instalarse. Si compilaste desde el código fuente, `install.sh` ya descargó las fuentes y los modelos faciales, y el motor baja un modelo de Whisper en la primera transcripción si no hay ninguno instalado.
+
+## Conecta tu IA
+
+Abre **Settings → AI accounts & models**. Cada proveedor muestra un estado (sesión iniciada, sesión caducada, clave guardada, servidor local en marcha).
+
+| Opción | Qué haces | Facturación |
+|---|---|---|
+| **Suscripciones (sin clave de API)** | Haz clic en **Log in** junto a Claude Code o Codex. Se abre una terminal dentro de la app y tu navegador te pide iniciar sesión. | Tu suscripción a Claude Pro / Max o ChatGPT |
+| **Claves de API** | Pega una clave de Anthropic, OpenAI, DeepSeek, Qwen, Kimi, GLM, OpenRouter, Gemini o ElevenLabs. Las claves se guardan en el llavero de macOS y solo se entregan al motor. | Pago por uso |
+| **Modelos locales** | Ejecuta Ollama, LM Studio, vLLM o llama.cpp en este Mac o en tu propio servidor. Reelfold muestra los modelos que encuentra. | Gratis; nada sale de tu red |
+
+Usa **Test** en un proveedor para enviar una petición mínima y confirmar que responde.
+
+En **Which AI does what** eliges un proveedor predeterminado y, si quieres, otro distinto para cada tarea (planificación, selección de fragmentos, corrección de subtítulos, glosario, texto de publicación, ediciones con IA), con alternativas en orden. Cuando responde una alternativa, la app te dice cuál fue. Una clave de API nueva requiere reiniciar el motor; la página te ofrece el botón.
+
+Qué envía cada paso al proveedor y qué se queda en local: [Proveedores de IA](/docs/es/concepts/ai-providers/).
+
+## Actualiza
+
+- **App instalada:** Reelfold busca actualizaciones al arrancar y cada pocas horas, las descarga en segundo plano y te ofrece **Restart to update** a la nueva versión.
+- **Compilada desde el código fuente:** trae los cambios, reinstala y vuelve a iniciar:
+
+  ```bash
+  git pull && ./install.sh && npm install
+  npm run desk
+  ```
+
+## Desinstalación y dónde están tus datos
+
+Arrastra Reelfold de Aplicaciones a la Papelera. Tus proyectos y ajustes se quedan en el disco hasta que los borres:
+
+| Carpeta | Qué contiene |
+|---|---|
+| `~/Library/Application Support/Reelfold` | Ajustes de la app, modelos y fuentes descargados (`assets`), claves de API cifradas, las sesiones en plataformas del navegador de publicación |
+| `~/.config/vstudio` | La carpeta del motor: la lista de proyectos, el calendario de publicación y tus preferencias de corte de muletillas; los proyectos nuevos van por defecto a su subcarpeta `projects/` |
+| `~/.cache/video-studio` | Caché del motor: fuentes, modelos, transcripciones. Compartida con el skill de Claude Code |
+| `~/.cache/huggingface/hub` | Modelos de Whisper descargados por una compilación desde el código fuente o por el skill |
+
+Tu material original nunca se mueve ni se modifica. Si vienes de una versión anterior de Daycut, su carpeta de perfil se deja intacta como copia de seguridad la primera vez que Reelfold la copia.
+
+## Relacionado
+
+- [Tu primer proyecto](/docs/es/start/first-project/)
+- [Instala el skill de Claude Code](/docs/es/start/install-skill/)
+- [Proveedores de IA](/docs/es/concepts/ai-providers/)
+- [Solución de problemas](/docs/es/help/troubleshooting/)

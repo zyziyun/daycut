@@ -1,0 +1,68 @@
+---
+title: Documentation Reelfold
+description: Découvrez Reelfold (千剪), l’outil vidéo libre et gratuit qui tire d’un seul enregistrement tous les montages, pour chaque plateforme. Lancez votre premier lot.
+template: splash
+editUrl: false
+pagefind: true
+hero:
+  title: Un seul enregistrement.<br><em>Tous les montages.</em>
+  tagline: Décrivez ce que vous voulez et déposez vos rushes. Reelfold planifie les clips, les monte sur votre Mac, vérifie chaque fichier et ne vous montre que ce qui mérite un coup d’œil. Cette documentation couvre l’app Mac et le skill Claude Code.
+  actions:
+    - text: Commencer
+      link: /docs/fr/start/what-is-reelfold/
+      icon: right-arrow
+      variant: primary
+    - text: Exemples de demandes
+      link: /docs/fr/examples/
+      variant: secondary
+---
+
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+import { Image } from 'astro:assets';
+import home from '../../../assets/shots/home-A1-home-busy.png';
+
+<figure class="rf-print">
+  <Image src={home} alt="L’écran d’accueil de Reelfold : la zone de demande en haut, le lot en cours et les clips en attente de relecture." widths={[800, 1400, 2000]} sizes="(min-width: 72rem) 1100px, 100vw" loading="eager" fetchpriority="high" />
+</figure>
+<p class="rf-caption">Accueil : dites ce que vous préparez, suivez le lot, ne relisez que ce qui a été signalé.</p>
+
+<p class="rf-kicker">Pour commencer</p>
+
+<CardGrid>
+  <Card title="Installer l’app Mac" icon="laptop">
+    Gratuite, sous licence MIT, pour Apple Silicon. Apportez votre propre IA : un compte Claude Code ou Codex, une clé d’API ou un modèle local.
+    [Installer →](/docs/fr/start/install-mac/)
+  </Card>
+  <Card title="L’utiliser comme skill Claude Code" icon="puzzle">
+    Le même moteur, sous forme de skill. Clonez le dépôt, lancez `install.sh`, puis parlez de vos rushes à Claude.
+    [Installer le skill →](/docs/fr/start/install-skill/)
+  </Card>
+  <Card title="Votre premier projet en 5 minutes" icon="rocket">
+    Un clip face caméra en entrée, un short sous-titré pour deux plateformes en sortie, avec couverture et texte de publication.
+    [C’est parti →](/docs/fr/start/first-project/)
+  </Card>
+  <Card title="Dites-le avec vos mots" icon="comment-alt">
+    Des demandes qui marchent bien, de « coupe les blancs » à « découpe ce cours en dix clips verticaux ».
+    [Exemples de demandes →](/docs/fr/examples/)
+  </Card>
+</CardGrid>
+
+<p class="rf-kicker">Guides par type de vidéo</p>
+
+<CardGrid>
+  <LinkCard title="Shorts face caméra" description="Blancs et hésitations supprimés, sous-titres, panneaux de notes, couverture." href="/docs/fr/guides/talking-head/" />
+  <LinkCard title="Une vidéo longue en clips" description="Un cours ou un live transformé en une semaine de posts verticaux." href="/docs/fr/guides/long-video-to-clips/" />
+  <LinkCard title="Extraits de podcasts et d’interviews" description="La meilleure minute, cadrée sur chaque intervenant, visages des invités masqués." href="/docs/fr/guides/podcast-clips/" />
+  <LinkCard title="Un lot de plus de 100 vidéos" description="Planifier, tester un pilote, tout lancer en parallèle, ne relire que les exceptions." href="/docs/fr/guides/batch-100/" />
+  <LinkCard title="Export multiplateforme" description="Un master, vingt plateformes, chacune dans son format." href="/docs/fr/guides/multi-platform/" />
+  <LinkCard title="Planification et publication" description="Un planning de la semaine, une mise en ligne assistée ; c’est vous qui publiez." href="/docs/fr/guides/scheduling-publishing/" />
+</CardGrid>
+
+<p class="rf-kicker">Pour aller plus loin</p>
+
+<CardGrid>
+  <LinkCard title="Concepts" description="Projets, recettes, relecture, thèmes, fournisseurs d’IA, confidentialité." href="/docs/fr/concepts/projects/" />
+  <LinkCard title="Référence" description="Workflows, CLI, persona.yaml, specs des plateformes, effets, codes d’erreur." href="/docs/fr/reference/" />
+  <LinkCard title="Dépannage" description="Problèmes d’installation, traitements lents, erreurs du fournisseur d’IA, coupes étranges." href="/docs/fr/help/troubleshooting/" />
+  <LinkCard title="Contribuer" description="Compiler depuis les sources, lancer les tests, ajouter un effet ou une plateforme." href="/docs/fr/contributing/" />
+</CardGrid>

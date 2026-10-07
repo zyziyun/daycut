@@ -1,0 +1,68 @@
+---
+title: Reelfold documentation
+description: Learn Reelfold (千剪), the free open-source video tool that turns one recording into every cut for every platform. Install the Mac app or the Claude Code skill and make your first batch.
+template: splash
+editUrl: false
+pagefind: true
+hero:
+  title: One recording.<br><em>Every cut.</em>
+  tagline: Describe what you want, drop in the footage, and Reelfold plans the clips, edits them on your Mac, checks every file and hands you only what needs a look. These docs cover the Mac app and the Claude Code skill.
+  actions:
+    - text: Get started
+      link: /docs/start/what-is-reelfold/
+      icon: right-arrow
+      variant: primary
+    - text: Example prompts
+      link: /docs/examples/
+      variant: secondary
+---
+
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+import { Image } from 'astro:assets';
+import home from '../../assets/shots/home-A1-home-busy.png';
+
+<figure class="rf-print">
+  <Image src={home} alt="The Reelfold home screen: a request box at the top, the batch that is running, and the clips waiting for review." widths={[800, 1400, 2000]} sizes="(min-width: 72rem) 1100px, 100vw" loading="eager" fetchpriority="high" />
+</figure>
+<p class="rf-caption">Home: say what you are making, watch the batch run, review only what was flagged.</p>
+
+<p class="rf-kicker">Start here</p>
+
+<CardGrid>
+  <Card title="Install the Mac app" icon="laptop">
+    Free and MIT licensed, Apple Silicon. Bring your own AI: a Claude Code or Codex login, an API key, or a local model.
+    [Install →](/docs/start/install-mac/)
+  </Card>
+  <Card title="Use it as a Claude Code skill" icon="puzzle">
+    The same engine as a skill. Clone, run `install.sh`, then talk to Claude about your footage.
+    [Install the skill →](/docs/start/install-skill/)
+  </Card>
+  <Card title="Your first project in 5 minutes" icon="rocket">
+    One talking-head clip in, a captioned short for two platforms out, with a cover and post copy.
+    [Start →](/docs/start/first-project/)
+  </Card>
+  <Card title="Say it in plain words" icon="comment-alt">
+    Prompts that work well, from "cut the pauses" to "slice this lecture into ten vertical clips".
+    [Example prompts →](/docs/examples/)
+  </Card>
+</CardGrid>
+
+<p class="rf-kicker">Guides by what you make</p>
+
+<CardGrid>
+  <LinkCard title="Talking-head shorts" description="Pauses and fillers out, captions, notes panels, cover." href="/docs/guides/talking-head/" />
+  <LinkCard title="Long video into clips" description="One lecture or livestream into a week of vertical posts." href="/docs/guides/long-video-to-clips/" />
+  <LinkCard title="Podcast and interview clips" description="The best minute, framed per speaker, guests' faces masked." href="/docs/guides/podcast-clips/" />
+  <LinkCard title="A batch of 100+" description="Plan, pilot, run in parallel, review only the exceptions." href="/docs/guides/batch-100/" />
+  <LinkCard title="Multi-platform export" description="One master, twenty platforms, each in its own shape." href="/docs/guides/multi-platform/" />
+  <LinkCard title="Scheduling and publishing" description="A week board, assisted upload; you press publish." href="/docs/guides/scheduling-publishing/" />
+</CardGrid>
+
+<p class="rf-kicker">Look things up</p>
+
+<CardGrid>
+  <LinkCard title="Concepts" description="Projects, recipes, review, themes, AI providers, privacy." href="/docs/concepts/projects/" />
+  <LinkCard title="Reference" description="Workflows, CLI, persona.yaml, platform specs, effects, error codes." href="/docs/reference/" />
+  <LinkCard title="Troubleshooting" description="Install problems, slow runs, AI provider errors, odd cuts." href="/docs/help/troubleshooting/" />
+  <LinkCard title="Contributing" description="Build from source, run the tests, add an effect or a platform." href="/docs/contributing/" />
+</CardGrid>

@@ -1,0 +1,97 @@
+---
+title: Votre premier projet
+description: Prise en main de Reelfold en cinq minutes, d’un clip face caméra à un short sous-titré pour YouTube Shorts et TikTok, avec couverture et texte de publication.
+---
+
+import { Steps, Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+
+Dans ce pas-à-pas, vous transformez un clip face caméra en un short vertical rythmé et sous-titré pour YouTube Shorts et TikTok, avec une couverture et un texte de publication pour chacun. Comptez environ cinq minutes de votre temps ; la machine fait le reste.
+
+## Avant de commencer
+
+- Reelfold est installé : [l’app Mac](/docs/fr/start/install-mac/) ou [le skill Claude Code](/docs/fr/start/install-skill/).
+- Vous avez un enregistrement face caméra d’une à trois minutes. Un clip vertical tourné au téléphone donne les meilleurs résultats ; un enregistrement webcam horizontal est recadré en 9:16 autour de votre visage.
+- Facultatif : quelques termes que vous prononcez et que la reconnaissance vocale risque de mal transcrire (noms de produits, jargon). Mentionnez-les dans votre demande.
+
+## Créer le short
+
+<Tabs syncKey="form">
+<TabItem label="Dans l’app Mac">
+
+<Steps>
+
+1. **Décrivez-le.** Sur l’**Accueil**, tapez votre demande dans la zone sous « On crée quoi aujourd’hui ? » et déposez le clip :
+
+   > Resserre ce clip face caméra : coupe les blancs, les hésitations et les répétitions, accélère à 1,1×, ajoute des sous-titres et une barre de progression, sans accroche. Exporte pour YouTube Shorts et TikTok avec une couverture et un texte de publication.
+
+   Cliquez ensuite sur **Établir un plan**.
+
+2. **Vérifiez le plan.** Reelfold analyse le clip et affiche son plan : le workflow face caméra, un clip, deux plateformes, la durée et le coût. Si quelque chose ne va pas, dites-le dans la zone (« sous-titres en français uniquement », « vitesse 1.0 ») et cliquez sur **Mettre à jour**.
+
+3. **Lancez le pilote.** Cliquez sur **Lancer : 1 clip en aperçu**. La tâche tourne sur votre Mac et apparaît sous **En cours**.
+
+4. **Confirmez les coupes d’hésitations.** Les hésitations évidentes (euh, hum, bégaiements) sont coupées automatiquement. Les mots qui pourraient faire partie du discours (« genre », « en fait », « du coup », une phrase reprise, une deuxième prise) attendent dans la **Boîte de réception**, sous **Confirmer les coupes d’hésitations**. Chacun s’affiche dans sa phrase, avec la coupe surlignée. Acceptez celles que vous voulez supprimer et gardez le reste, ou utilisez **Accepter les suggestions**. Après la coupe, Reelfold retranscrit le résultat pour vérifier qu’aucun vrai mot n’a disparu.
+
+5. **Choisissez une couverture.** La Boîte de réception vous propose des images pour la couverture. Choisissez-en une et saisissez le texte de couverture.
+
+6. **Relisez.** Chaque fichier passe des contrôles automatiques (mots manquants, images figées, volume sonore, durée). Tout ce qui est signalé apparaît dans la Boîte de réception avec la raison ; les fichiers qui ont passé les contrôles sont prêts.
+
+7. **Exportez et publiez.** Vous obtenez un fichier par plateforme, chacun avec sa couverture, son titre, sa description et ses hashtags. Depuis **Publier**, Reelfold ouvre la page de mise en ligne de la plateforme dans son navigateur intégré, puis renseigne le fichier et le texte. C’est vous qui cliquez sur publier.
+
+</Steps>
+
+</TabItem>
+<TabItem label="Avec le skill Claude Code">
+
+<Steps>
+
+1. **Ouvrez Claude Code dans le dossier du clip** et dites ce que vous voulez :
+
+   > Resserre talk.mp4 : coupe les blancs, les hésitations et les répétitions, accélère à 1,1×, ajoute des sous-titres et une barre de progression, sans accroche. Exporte pour YouTube Shorts et TikTok avec une couverture et un texte de publication.
+
+   Le skill oriente la demande vers le [workflow talkinghead](/docs/fr/reference/workflows/talkinghead/). Claude peut vous demander quel style de montage vous préférez (un style posé avec des notes, un style nerveux en coupes rapides, ou un mélange des deux).
+
+2. **Répondez à la fiche de nettoyage.** Claude transcrit le clip et affiche une fiche numérotée : d’abord les lignes à confirmer, puis ce qui sera coupé automatiquement, les blancs à resserrer et ce qui est conservé. Chaque ligne montre les mots autour de la coupe. Répondez avec les numéros :
+
+   ```text
+   approve 3,5,9 keep 7
+   ```
+
+   `approve` coupe aussi ces lignes ; `keep` les conserve (cela marche aussi sur les lignes automatiques). `approve all` accepte toutes les lignes en attente de confirmation, et les plages comme `approve 2-4` fonctionnent. Après la coupe, le résultat est retranscrit ; si un vrai mot a disparu, Claude vous indique où et renonce à cette coupe.
+
+3. **Vérifiez l’aperçu.** Claude génère quelques images d’aperçu, puis la vidéo complète. Demandez vos modifications avec vos mots (« sous-titres plus grands », « enlève la barre de progression »).
+
+4. **Couverture et texte de publication.** Claude sélectionne des images candidates pour la couverture, la génère, puis rédige un titre, une description et des hashtags dans les limites de chaque plateforme.
+
+5. **Export par plateforme.** Un master propre devient un fichier par plateforme, avec les sous-titres placés à l’écart des boutons de chaque app et le volume sonore réglé sur sa cible. En coulisses, c’est `python -m vstudio.export` avec `--platforms youtube-shorts,tiktok`.
+
+</Steps>
+
+Avec le skill, la publication vous revient : mettez en ligne les fichiers avec le texte de publication qu’il a rédigé.
+
+</TabItem>
+</Tabs>
+
+<Aside type="tip">
+L’étape de nettoyage utilise le même outil dans tous les workflows qui conservent la parole d’origine : le format de réponse ci-dessus marche donc aussi pour les podcasts, les cours et les vlogs. Détails : [Nettoyage de la parole](/docs/fr/reference/engine/cleanup/).
+</Aside>
+
+## Ce que vous obtenez
+
+| Fichier | Description |
+|---|---|
+| Une vidéo par plateforme | En 9:16, sous-titres dans la zone de sécurité de la plateforme, volume sonore à sa cible |
+| Une couverture par plateforme | Dimensionnée pour le fil de cette plateforme |
+| Un texte de publication par plateforme | Titre, description et hashtags vérifiés selon les limites de la plateforme |
+
+## Modifier après coup
+
+Chaque clip terminé peut être retouché avec vos mots : « coupe les deux premières secondes », « passe les sous-titres en jaune », « ajoute une version Instagram ». Chaque modification correspond à une étape d’annulation. Voir [Retouches de clips](/docs/fr/concepts/output-edits/).
+
+## Et ensuite
+
+- [Shorts face caméra](/docs/fr/guides/talking-head/) : accroches, panneaux de notes, retouche et styles en détail
+- [Une vidéo longue en clips](/docs/fr/guides/long-video-to-clips/) : un enregistrement, une semaine de posts
+- [Export multiplateforme](/docs/fr/guides/multi-platform/) : un master, de nombreuses plateformes
+- [Exemples de demandes](/docs/fr/examples/) : des demandes qui marchent bien, par usage
+- [Lots et relecture](/docs/fr/concepts/batch-review/) : comment s’articulent pilotes, contrôles et Boîte de réception
