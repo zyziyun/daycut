@@ -107,6 +107,7 @@ export const legacyEn = {
 
   'lane.queued': 'Queued',
   'lane.running': 'Running',
+  'lane.waiting': 'Needs your answer',
   'lane.failed': 'Failed',
   'lane.review': 'To review',
   'lane.replan': 'Needs replan',

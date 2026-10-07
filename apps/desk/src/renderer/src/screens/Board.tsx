@@ -9,9 +9,12 @@ import { go } from '../lib/router';
 import { EstimateView } from './NewBatch';
 import { orderPlatforms } from '../../../shared/platforms';
 
-const LANES: { key: string; states: string[] }[] = [
-  { key: 'queued', states: ['planned'] },
+// every job state a batch or a project run writes: a project parks an item in `waiting` at a checkpoint and a
+// stopped run leaves `interrupted` (the next run picks it up); `dropped` stays off the board
+export const LANES: { key: string; states: string[] }[] = [
+  { key: 'queued', states: ['planned', 'interrupted'] },
   { key: 'running', states: ['running'] },
+  { key: 'waiting', states: ['waiting'] },
   { key: 'failed', states: ['failed'] },
   { key: 'review', states: ['done'] },
   { key: 'replan', states: ['needs-replan'] },

@@ -106,6 +106,7 @@ export const legacyZh = {
 
   'lane.queued': '排队',
   'lane.running': '运行中',
+  'lane.waiting': '等你回答',
   'lane.failed': '失败',
   'lane.review': '待审',
   'lane.replan': '需重做',

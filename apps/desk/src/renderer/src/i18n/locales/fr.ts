@@ -135,6 +135,7 @@ const legacyFr: Record<keyof typeof legacyEn, string> = {
 
   'lane.queued': 'En file',
   'lane.running': 'En cours',
+  'lane.waiting': 'Attend votre réponse',
   'lane.failed': 'Échec',
   'lane.review': 'À relire',
   'lane.replan': 'À replanifier',
