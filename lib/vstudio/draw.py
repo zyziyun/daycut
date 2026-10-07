@@ -39,9 +39,20 @@ def rgba(c, a=255):
 
 
 def brand(**override) -> dict:
-    """persona.brand merged over defaults, as RGB tuples (keys: accent, highlight, ink, ground, dim, ...)."""
+    """persona.brand merged over defaults, as RGB tuples (keys: accent, highlight, ink, ground, dim, ...).
+
+    accent / highlight follow the active design theme (vstudio.theme): its accent and its keyword colour over
+    video. A persona brand.accent / highlight still wins when no theme is chosen (legacy ``classic``); once a
+    theme is chosen anywhere (persona style.theme, client, recipe, output edit) the theme's pair wins."""
+    from . import theme as _TH
+    T = _TH.current()
     b = dict(BRAND_DEFAULTS)
-    b.update({k: v for k, v in ((persona().get("brand") or {}).items()) if isinstance(v, (str, list, tuple))})
+    b.update(accent=T["accent"], highlight=T["over_emph"])
+    pb = {k: v for k, v in ((persona().get("brand") or {}).items()) if isinstance(v, (str, list, tuple))}
+    if T.get("source") not in ("legacy", "default"):
+        pb.pop("accent", None)
+        pb.pop("highlight", None)
+    b.update(pb)
     b.update({k: v for k, v in override.items() if v is not None})
     out = {}
     for k, v in b.items():
@@ -407,6 +418,87 @@ def text_layer(text, f, fill=WHITE, hl_fill=None, stroke=6, stroke_fill=(20, 20,
     if shadow_alpha:
         return Image.alpha_composite(sh.filter(ImageFilter.GaussianBlur(4)), im)
     return im
+
+
+def limit_runs(rs, n):
+    """Keep at most ``n`` emphasised runs (the first ones) in a list of (text, emphasised) runs; 0 = all."""
+    if not n:
+        return rs
+    out, k = [], 0
+    for t, h in rs:
+        if h:
+            k += 1
+        out.append((t, h and k <= n))
+    return out
+
+
+def emph_layer(text, f, T=None, surface="paper", fill=None, emph_font=None, max_w=None, align="left",
+               line_gap=1.32, sweep=1.0, pad=None, keywords=None, emphasis=None, accent=None, max_lines=None):
+    """Theme-aware text block (RGBA PIL): 【keyword】 runs are emphasised the theme's way.
+
+    surface paper: ink text, no stroke; emphasis ``marker`` (a soft highlighter band behind the lower part of the
+    run), ``color`` (accent text) or ``underline`` (thin accent bar). surface video: theme over-video ink with a
+    thin stroke + soft shadow, keywords in the theme's over-video colour. At most ``T.emph_per_line`` keywords per
+    line are emphasised (STYLE_RULES S2). emph_font: a heavier font for emphasised runs (weight contrast).
+    sweep: 0-1, how far the marker / underline has drawn in (marker-sweep effect)."""
+    from . import theme as _TH
+    T = T or _TH.current()
+    mode = emphasis or T["emphasis"]
+    video = surface == "video"
+    size = getattr(f, "size", 40)
+    ink = rgba(fill) if fill is not None else _TH.rgba(T, "over_ink" if video else "ink")
+    acc = rgb(accent) if accent is not None else _TH.rgb(T, "accent")
+    emph_col = (_TH.rgb(T, "over_emph") if video else acc) + (255,)
+    stroke = max(1, int(round(size * float(T.get("over_stroke_w") or 0)))) if video else 0
+    pad = int(size * 0.3) + stroke if pad is None else pad
+    ef = emph_font or f
+    if isinstance(text, (list, tuple)):
+        lines = list(text)
+    else:
+        lines = wrap(text, f, max_w, balance=True, max_lines=max_lines) if max_w else std_markup(str(text)).split("\n")
+    per = int(T.get("emph_per_line") or 0)
+    L = [limit_runs(runs(ln, keywords), per) for ln in lines]
+    asc, desc = f.getmetrics()
+    lh = int((asc + desc) * line_gap)
+    widths = [sum(_D0.textlength(t, font=ef if h else f) for t, h in lr) for lr in L]
+    W = int(max(widths or [1])) + 2 * pad
+    H = lh * (len(L) - 1) + asc + desc + 2 * pad
+    base = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    marks = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    dm, dt = ImageDraw.Draw(marks), ImageDraw.Draw(base)
+    sh = Image.new("RGBA", (W, H), (0, 0, 0, 0)) if video and T.get("over_shadow") else None
+    ds = ImageDraw.Draw(sh) if sh is not None else None
+    mcol = _TH.rgb(T, "marker")
+    malpha = float(T.get("marker_alpha") or 1.0)
+    sw = min(1.0, max(0.0, float(sweep)))
+    for k, (lr, lw) in enumerate(zip(L, widths)):
+        x = pad + ((W - 2 * pad - lw) / 2 if align == "center" else ((W - 2 * pad - lw) if align == "right" else 0))
+        y = pad + k * lh
+        for t, h in lr:
+            fo = ef if h else f
+            w = _D0.textlength(t, font=fo)
+            if h and not video and mode in ("marker", "underline") and sw > 0:
+                if mode == "marker":
+                    y0, y1 = y + asc * 0.50, y + asc + desc * 0.30
+                    x0 = x - size * 0.06
+                    x1 = x0 + (w + size * 0.12) * sw
+                    dm.rounded_rectangle([x0, y0, x1, y1], int(size * 0.06), fill=mcol + (int(255 * malpha),))
+                else:
+                    y0 = y + asc + desc * 0.15
+                    x1 = x + w * sw
+                    dm.rectangle([x, y0, x1, y0 + max(2, size * 0.07)], fill=acc + (255,))
+            col = emph_col if (h and (video or mode == "color")) else ink
+            if ds is not None:
+                a = int(T.get("over_shadow") or 0)
+                ds.text((x + size * 0.03, y + size * 0.05), t, font=fo, fill=(0, 0, 0, a), stroke_width=stroke,
+                        stroke_fill=(0, 0, 0, a))
+            dt.text((x, y), t, font=fo, fill=col, stroke_width=stroke,
+                    stroke_fill=_TH.rgba(T, "over_stroke", 0.85) if stroke else None)
+            x += w
+    out = marks
+    if sh is not None:
+        out = Image.alpha_composite(out, sh.filter(ImageFilter.GaussianBlur(max(2, size // 14))))
+    return Image.alpha_composite(out, base)
 
 
 def bilingual_layer(primary, secondary, f1, f2=None, fill=WHITE, fill2=(203, 213, 225, 255), max_w=None,

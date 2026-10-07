@@ -28,6 +28,7 @@ from PIL import Image, ImageDraw
 
 from vstudio import draw as D
 from vstudio import overlays as O
+from vstudio import theme as TH
 
 POS = dict(x={"type": "number", "default": 0.5, "minimum": 0.0, "maximum": 1.0, "x-zh": "水平位置"},
            y={"type": "number", "default": 0.4, "minimum": 0.0, "maximum": 1.0, "x-zh": "垂直位置"})
@@ -50,8 +51,10 @@ def _str(default, zh, required=False, enum=None):
     return d
 
 
-ANIMS = ("pop", "slam", "slide", "fade", "none")
-COLOR = {"type": "string", "default": None, "x-zh": "颜色 (#RRGGBB, 空 = 品牌色)", "format": "color"}
+ANIMS = ("rise", "pop", "slam", "slide", "fade", "none")
+COLOR = {"type": "string", "default": None, "x-zh": "颜色 (#RRGGBB, 空 = 主题色)", "format": "color"}
+ANIM = {"type": "string", "default": None, "x-zh": "动画 (空 = 主题默认)", "enum": list(ANIMS)}
+THEME = {"type": "string", "default": None, "x-zh": "主题 (空 = 当前主题)", "enum": list(O.THEMES)}
 
 
 def _sfx_names():
@@ -72,14 +75,14 @@ SPECS = {
     "pop-words": dict(
         zh="弹出大字", en="Pop word", kind="overlay", stage="frame", default_dur=1.2, anim="pop",
         what_zh="一个大字 / 短词带描边弹出（重点词）",
-        params=dict(text=_str("", "文字", True), color=COLOR, size=_num(0.11, 0.04, 0.25, "字号 (画面短边比例)"),
-                    angle=_num(-4, -30, 30, "角度"), anim=_str("pop", "动画", enum=ANIMS), **_pos(0.5, 0.42)),
+        params=dict(text=_str("", "文字", True), color=COLOR, size=_num(0.09, 0.04, 0.25, "字号 (画面短边比例)"),
+                    angle=_num(None, -30, 30, "角度 (空 = 主题)"), anim=ANIM, **_pos(0.5, 0.42)),
         sample=dict(text="重点")),
     "stacking-stamps": dict(
         zh="印章", en="Stamp", kind="overlay", stage="frame", default_dur=1.5, anim="slam",
-        what_zh="白底描边印章从 2.2 倍砸入（亲测 / 划重点）",
-        params=dict(text=_str("", "文字", True), angle=_num(8, -30, 30, "角度"), scale=_num(1.0, 0.4, 3.0, "大小"),
-                    anim=_str("slam", "动画", enum=ANIMS), **_pos(0.72, 0.3)),
+        what_zh="细描边小标签浮现（亲测 / 划重点；旧版主题是砸入的红色印章）",
+        params=dict(text=_str("", "文字", True), angle=_num(None, -30, 30, "角度 (空 = 主题)"),
+                    scale=_num(1.0, 0.4, 3.0, "大小"), anim=ANIM, **_pos(0.72, 0.3)),
         sample=dict(text="亲测")),
     "punch-in": dict(
         zh="推镜放大", en="Punch-in zoom", kind="camera", stage="frame", default_dur=3.0,
@@ -90,16 +93,15 @@ SPECS = {
         sample=dict(scale=1.2)),
     "quote-card": dict(
         zh="金句卡", en="Quote card", kind="overlay", stage="frame", default_dur=3.0, anim="slide",
-        what_zh="引号金句卡片 + 说话人",
-        params=dict(text=_str("", "金句", True), speaker=_str("", "说话人"), width=_num(0.84, 0.4, 0.96, "宽度"),
-                    theme=_str(None, "主题", enum=O.THEMES), anim=_str("slide", "动画", enum=ANIMS), **_pos(0.5, 0.3)),
+        what_zh="金句卡：粗细对比 + 悬挂引号 + 细线（不是大红引号）",
+        params=dict(text=_str("", "金句", True), sub=_str("", "补充一句 (小字)"), speaker=_str("", "说话人"),
+                    width=_num(0.84, 0.4, 0.96, "宽度"), theme=THEME, anim=ANIM, **_pos(0.5, 0.3)),
         sample=dict(text="把复杂的事情讲简单", speaker="Speaker A")),
     "callout-bubble": dict(
         zh="标注气泡 / 箭头", en="Callout (+ arrow)", kind="overlay", stage="frame", default_dur=2.5, anim="slide",
         what_zh="说明气泡，可加一根指向画面某点的箭头",
         params=dict(text=_str("", "文字", True), arrow_x=_num(None, 0.0, 1.0, "箭头指向 x (空 = 无箭头)"),
-                    arrow_y=_num(None, 0.0, 1.0, "箭头指向 y"), theme=_str(None, "主题", enum=O.THEMES),
-                    anim=_str("slide", "动画", enum=ANIMS), **_pos(0.5, 0.3)),
+                    arrow_y=_num(None, 0.0, 1.0, "箭头指向 y"), theme=THEME, anim=ANIM, **_pos(0.5, 0.3)),
         sample=dict(text="这里是关键", arrow_x=0.75, arrow_y=0.55)),
     "chapter-card": dict(
         zh="章节卡", en="Chapter card", kind="fullframe", stage="frame", default_dur=1.6, anim="fade",
@@ -112,8 +114,7 @@ SPECS = {
         what_zh="标题 + 要点的笔记卡片",
         params=dict(title=_str("", "标题", True), bullets={"type": "array", "items": {"type": "string"},
                                                           "default": [], "x-zh": "要点"},
-                    theme=_str(None, "主题", enum=O.THEMES), width=_num(0.8, 0.4, 0.95, "宽度"),
-                    anim=_str("slide", "动画", enum=ANIMS), **_pos(0.5, 0.3)),
+                    theme=THEME, width=_num(0.8, 0.4, 0.95, "宽度"), anim=ANIM, **_pos(0.5, 0.3)),
         sample=dict(title="三个要点", bullets=["先定目标", "再拆步骤", "【每天复盘】"])),
     "overlay-images": dict(
         zh="贴纸 / 标签", en="Sticker / label", kind="overlay", stage="frame", default_dur=2.0, anim="pop",
@@ -121,30 +122,56 @@ SPECS = {
         params=dict(image=_str(None, "图片 (PNG 路径)"), text=_str("", "文字"),
                     style=_str("tag", "样式", enum=("tag", "chip", "badge", "star", "image")),
                     color=COLOR, scale=_num(1.0, 0.2, 4.0, "大小"), angle=_num(0, -45, 45, "角度"),
-                    anim=_str("pop", "动画", enum=ANIMS), **_pos(0.8, 0.2)),
+                    anim=ANIM, **_pos(0.8, 0.2)),
         sample=dict(text="新手必看", style="tag")),
     "badge": dict(
         zh="角标", en="Badge", kind="overlay", stage="frame", default_dur=3.0, anim="slide",
         what_zh="实心圆角标（精彩预告 / 精选）",
         params=dict(text=_str("", "文字", True), color=COLOR, scale=_num(1.0, 0.4, 3.0, "大小"),
-                    anim=_str("slide", "动画", enum=ANIMS), **_pos(0.2, 0.12)),
+                    anim=ANIM, **_pos(0.2, 0.12)),
         sample=dict(text="精彩预告")),
     "red-box": dict(
         zh="框选高亮", en="Red box", kind="box", stage="frame", default_dur=2.0, anim="pop",
         what_zh="圆角描边框圈出画面一块区域",
         params=dict(x=_num(0.5, 0.0, 1.0, "中心 x"), y=_num(0.5, 0.0, 1.0, "中心 y"), w=_num(0.4, 0.02, 1.0, "宽"),
-                    h=_num(0.12, 0.02, 1.0, "高"), color=COLOR, width=_num(6, 2, 24, "线宽 (px, 1080 宽)"),
-                    anim=_str("pop", "动画", enum=ANIMS)),
+                    h=_num(0.12, 0.02, 1.0, "高"), color=COLOR, width=_num(4, 2, 24, "线宽 (px, 1080 宽)"),
+                    anim=ANIM),
         sample=dict(x=0.5, y=0.55, w=0.6, h=0.12)),
     "progress-bar-pil": dict(
         zh="进度条", en="Progress bar", kind="progress", stage="frame", default_dur=None,
         what_zh="章节进度条（整条视频，可分章节）",
-        params=dict(style=_str("refined", "样式", enum=("classic", "refined")),
+        params=dict(style=_str(None, "样式 (空 = 主题：细线)", enum=("line", "classic", "refined")),
                     chapters={"type": "array", "default": [], "x-zh": "章节 [{start, end, label}] (源时间秒)",
                               "items": {"type": "object"}},
-                    y=_num(0.9, 0.0, 1.0, "垂直位置"), theme=_str(None, "主题", enum=O.THEMES)),
+                    y=_num(0.9, 0.0, 1.0, "垂直位置"), theme=THEME),
         sample=dict(chapters=[dict(start=0, end=4, label="问题"), dict(start=4, end=8, label="方法"),
                               dict(start=8, end=12, label="总结")])),
+    "marker-sweep": dict(
+        zh="马克笔划重点", en="Marker sweep", kind="overlay", stage="frame", default_dur=2.5, anim="rise",
+        what_zh="一行字，关键词下面一笔马克笔底色从左扫到右（主题色，安静的强调）",
+        params=dict(text=_str("", "文字 (用【】标关键词；不标 = 整句)", True), size=_num(0.06, 0.03, 0.14, "字号"),
+                    surface=_str("auto", "底", enum=("auto", "paper", "card")), sweep=_num(0.45, 0.1, 1.5, "扫的时长 (秒)"),
+                    anim=ANIM, **_pos(0.5, 0.72)),
+        sample=dict(text="把复杂的事，【讲简单】")),
+    "chapter-rule": dict(
+        zh="章节细线", en="Chapter rule", kind="overlay", stage="frame", default_dur=2.4, anim="rise",
+        what_zh="一根细线画出来 + 小号章节标签（02 · 第二部分）+ 可选标题；代替整屏章节卡",
+        params=dict(label=_str("", "标签", True), title=_str("", "标题"), index=_num(None, 1, 99, "序号"),
+                    width=_num(0.6, 0.2, 0.9, "宽度"), anim=ANIM, **_pos(0.36, 0.16)),
+        sample=dict(label="第二部分", title="先跑通，再优化", index=2)),
+    "number-counter": dict(
+        zh="数字滚动", en="Number counter", kind="overlay", stage="frame", default_dur=2.5, anim="rise",
+        what_zh="一个数字从 0 缓缓数到目标值（6-7 万粉丝 / 3 年），下面一行小字说明",
+        params=dict(value=_num(0, -1e9, 1e9, "数值"), label=_str("", "说明"), prefix=_str("", "前缀"),
+                    suffix=_str("", "后缀 (万 / % / 年)"), count=_num(0.9, 0.2, 3.0, "滚动时长 (秒)"),
+                    size=_num(0.12, 0.05, 0.25, "字号"), anim=ANIM, **_pos(0.5, 0.4)),
+        sample=dict(value=7, suffix="万", label="粉丝")),
+    "lower-third": dict(
+        zh="人名条", en="Lower third", kind="overlay", stage="frame", default_dur=3.0, anim="rise",
+        what_zh="左下角人名 / 身份条（主题卡片 + 一道细强调线）",
+        params=dict(name=_str("", "名字", True), role=_str("", "身份"), scale=_num(1.0, 0.5, 2.0, "大小"),
+                    anim=ANIM, **_pos(0.3, 0.78)),
+        sample=dict(name="Speaker A", role="Career coach")),
     "sfx-placement": dict(
         zh="音效", en="Sound effect", kind="audio", stage="audio", default_dur=0.5,
         what_zh="在某个时间点加一个合成音效（pop / whoosh / ding ...）",
@@ -188,6 +215,11 @@ ALIASES = {
     "transition": "xfade-joins", "xfade": "xfade-joins", "转场": "xfade-joins", "light-leak": "xfade-joins",
     "fade-out": "end-fade", "淡出": "end-fade",
     "grade": "vlog-grade", "look": "vlog-grade", "调色": "vlog-grade",
+    "marker": "marker-sweep", "highlight": "marker-sweep", "keyword": "marker-sweep", "划重点": "marker-sweep",
+    "马克笔": "marker-sweep", "关键词": "marker-sweep",
+    "rule": "chapter-rule", "chapter-line": "chapter-rule", "细线": "chapter-rule", "章节线": "chapter-rule",
+    "counter": "number-counter", "number": "number-counter", "数字": "number-counter", "数字滚动": "number-counter",
+    "lower_third": "lower-third", "name-tag": "lower-third", "人名条": "lower-third", "字幕条": "lower-third",
 }
 
 
@@ -327,10 +359,18 @@ def ease_in_out(u):
     return 0.5 - 0.5 * math.cos(math.pi * u)
 
 
-def anim_state(anim, t, dur, inn=0.22, out=0.18):
-    """(scale, opacity, dy_px_frac) of an overlay ``t`` s into its window of ``dur`` s."""
+def anim_state(anim, t, dur, inn=0.22, out=0.18, T=None):
+    """(scale, opacity, dy_px_frac) of an overlay ``t`` s into its window of ``dur`` s. ``rise`` (theme default):
+    fade + a small rise, ease-out over the theme's in duration, no overshoot (STYLE_RULES S7)."""
     if anim == "none":
         return 1.0, 1.0, 0.0
+    if anim == "rise":
+        T = T or TH.current()
+        m = T["motion"]
+        o = float(m.get("out_s") or out)
+        fade_out = min(1.0, max(0.0, (dur - t) / o)) if dur else 1.0
+        u = TH.ease(dict(motion=dict(overshoot=False)), t / float(m.get("in_s") or 0.28))
+        return 0.985 + 0.015 * u, u * fade_out, (1 - u) * float(m.get("rise") or 0.012)
     fade_out = min(1.0, max(0.0, (dur - t) / out)) if dur else 1.0
     if anim == "pop":
         u = t / inn
@@ -363,8 +403,18 @@ class Layer:
 
 
 class ImageLayer(Layer):
-    """An RGBA image placed at (x, y) centre, clamped into the safe box, animated (pop / slam / slide / fade)."""
+    """An RGBA image placed at (x, y) centre, clamped into the safe box, animated (rise / pop / slam / slide /
+    fade). anim None = the theme's default for this kind (``theme_anim``: stamp / pop / rise)."""
     anim_default = "pop"
+    theme_anim = None              # "stamp" | "pop": read T[stamp|pop].anim; None: "rise" (legacy: anim_default)
+
+    def anim(self):
+        if self.p.get("anim"):
+            return self.p["anim"]
+        T = TH.current()
+        if self.theme_anim:
+            return T[self.theme_anim].get("anim") or self.anim_default
+        return self.anim_default if TH.is_classic(T) else "rise"
 
     def image(self):
         raise NotImplementedError
@@ -396,7 +446,7 @@ class ImageLayer(Layer):
     def draw(self, img, t, dur):
         if not hasattr(self, "rgba"):
             self.setup()
-        s, op, dy = anim_state(self.p.get("anim") or self.anim_default, t, dur)
+        s, op, dy = anim_state(self.anim(), t, dur)
         if op <= 0.01:
             return img
         a = self.scaled(s)
@@ -404,22 +454,45 @@ class ImageLayer(Layer):
         return img
 
 
+def _shadow(im, u, T=None):
+    T = T or TH.current()
+    b, dy, a = T["shadow"]
+    return D.shadow(im, blur=max(1, int(b * u)), offset=(0, int(dy * u)), alpha=int(a))[0]
+
+
 class PopWords(ImageLayer):
+    theme_anim = "pop"
+
     def image(self):
-        size = max(16, int(float(self.p.get("size") or 0.11) * min(self.W, self.H)))
-        f = D.load_font("cjk-bold", size)
-        col = self.p.get("color") or D.brand()["highlight"]
-        im = D.text_layer(str(self.p["text"]), f, fill=D.rgba(col), stroke=max(3, size // 12),
-                          max_w=int(self.W * 0.86))
-        ang = float(self.p.get("angle") or 0)
+        T = TH.current()
+        size = max(16, int(float(self.p.get("size") or 0.09) * min(self.W, self.H)))
+        ang = self.p.get("angle")
+        ang = float(T["pop"].get("angle") or 0) if ang is None else float(ang)
+        if T["pop"].get("style") == "stroke":            # classic: big stroked word
+            f = D.load_font("cjk-bold", size)
+            col = self.p.get("color") or D.brand()["highlight"]
+            im = D.text_layer(str(self.p["text"]), f, fill=D.rgba(col), stroke=max(3, size // 12),
+                              max_w=int(self.W * 0.86))
+        else:                                             # white word, soft shadow, a thin accent bar under it
+            f = D.load_font(T["font_strong"], size)
+            txt = str(self.p["text"]).replace("【", "").replace("】", "")
+            col = D.rgba(self.p.get("color")) if self.p.get("color") else (255, 255, 255, 255)
+            im = D.emph_layer(txt, f, T, surface="video", fill=col, max_w=int(self.W * 0.86), align="center",
+                              pad=int(size * 0.3))
+            dr = ImageDraw.Draw(im)
+            bh = max(3, int(size * 0.07))
+            y = im.height - int(size * 0.3) + int(size * 0.02)
+            dr.rectangle([int(size * 0.3), y, im.width - int(size * 0.3), y + bh], fill=TH.rgba(T, "accent"))
         return im.rotate(ang, expand=True, resample=Image.BICUBIC) if ang else im
 
 
 class Stamp(ImageLayer):
     anim_default = "slam"
+    theme_anim = "stamp"
 
     def image(self):
-        return O.stamp(str(self.p["text"]), angle=float(self.p.get("angle") or 0),
+        a = self.p.get("angle")
+        return O.stamp(str(self.p["text"]), angle=None if a is None else float(a),
                        scale=self.oscale * float(self.p.get("scale") or 1.0))
 
 
@@ -427,9 +500,16 @@ class QuoteCard(ImageLayer):
     anim_default = "slide"
 
     def image(self):
-        T = O.get_theme(self.p.get("theme"))
+        T = TH.current() if not self.p.get("theme") or self.p.get("theme") in O.THEMES[:5] \
+            else TH.resolve(self.p["theme"])
         W = int(self.W * float(self.p.get("width") or 0.84))
         u = self.u
+        if T["quote"] != "glyph":
+            lines = [(str(self.p["text"]), "main")] + ([(str(self.p["sub"]), "sub")] if self.p.get("sub") else [])
+            im = O.quote_block(lines, W, theme=T["name"], card=True, speaker=self.p.get("speaker") or None,
+                               scale=u, size=52)
+            return _shadow(im, u, T)
+        PT = O.get_theme(self.p.get("theme"))
         fq = D.load_font("cjk-bold", max(14, int(52 * u)))
         fm = D.load_font("serif", max(14, int(120 * u)))
         fs = D.load_font("cjk", max(12, int(30 * u)))
@@ -438,12 +518,12 @@ class QuoteCard(ImageLayer):
         lh = int(sum(fq.getmetrics()) * 1.25)
         sp = str(self.p.get("speaker") or "")
         H = pad * 2 + int(70 * u) + lh * len(lines) + (int(54 * u) if sp else 0)
-        im = D.rounded_rect((W, H), int(26 * u), T["bubble"])
+        im = D.rounded_rect((W, H), int(26 * u), PT["bubble"])
         d = ImageDraw.Draw(im)
-        d.text((pad - int(6 * u), pad - int(40 * u)), "“", font=fm, fill=T["accent"] + (255,))
+        d.text((pad - int(6 * u), pad - int(40 * u)), "“", font=fm, fill=PT["accent"] + (255,))
         y = pad + int(70 * u)
         for ln in lines:
-            D.draw_runs(d, (pad, y), ln, fq, T["bubble_text"], T["hl"])
+            D.draw_runs(d, (pad, y), ln, fq, PT["bubble_text"], PT["hl"])
             y += lh
         if sp:
             d.text((pad, y + int(10 * u)), "— " + sp, font=fs, fill=D.brand().get("teal", (45, 212, 191)) + (255,))
@@ -488,7 +568,9 @@ class Notes(ImageLayer):
         w = int(self.W * float(self.p.get("width") or 0.8) / self.oscale)
         im = O.notes_panel(str(self.p["title"]), [str(b) for b in (self.p.get("bullets") or [])],
                            theme=self.p.get("theme"), width=max(200, w), scale=self.oscale)
-        return D.shadow(im, blur=max(1, int(12 * self.u)), offset=(0, int(8 * self.u)))[0]
+        if TH.is_classic():
+            return D.shadow(im, blur=max(1, int(12 * self.u)), offset=(0, int(8 * self.u)))[0]
+        return _shadow(im, self.u)
 
 
 class Sticker(ImageLayer):
@@ -521,7 +603,7 @@ class Badge(ImageLayer):
 class RedBox(Layer):
     def draw(self, img, t, dur):
         import cv2
-        s, op, _ = anim_state(self.p.get("anim") or "pop", t, dur)
+        s, op, _ = anim_state(self.p.get("anim") or ("pop" if TH.is_classic() else "fade"), t, dur)
         if op <= 0.01:
             return img
         cx, cy = float(self.p["x"]) * self.W, float(self.p["y"]) * self.H
@@ -599,7 +681,7 @@ class Progress(Layer):
                 self._cache.clear()
             x0, x1 = int(self.safe[0]), int(self.safe[2])
             try:
-                strip = O.progress_bar(chs, q, total, style=self.p.get("style") or "refined", width=self.W, x0=x0, x1=x1,
+                strip = O.progress_bar(chs, q, total, style=self.p.get("style"), width=self.W, x0=x0, x1=x1,
                                        theme=self.p.get("theme"))
             except Exception:  # noqa: BLE001  (labels that do not fit: a plain bar)
                 strip = O.progress_bar([(0.0, total, "")], q, total, style="classic", width=self.W, x0=x0, x1=x1)
@@ -611,9 +693,99 @@ class Progress(Layer):
         return img
 
 
+class _Animated(ImageLayer):
+    """An ImageLayer whose image changes with time (``frame_image(t)``), cached on a quantised clock."""
+    steps = 24
+
+    def frame_image(self, t):
+        raise NotImplementedError
+
+    def image(self):
+        return self.frame_image(99.0)
+
+    def draw(self, img, t, dur):
+        if not hasattr(self, "rgba"):
+            self.setup()                              # position from the final (largest) image
+            self._frames = {}
+        q = min(self.steps, int(t * self.steps / max(0.05, self.span())))
+        if q not in self._frames:
+            im = self.frame_image(q * self.span() / self.steps)
+            mw = self.safe[2] - self.safe[0]
+            if im.width > mw:
+                k = mw / im.width
+                im = im.resize((max(1, int(im.width * k)), max(1, int(im.height * k))), Image.LANCZOS)
+            self._frames[q] = np.asarray(im.convert("RGBA"))
+        s, op, dy = anim_state(self.anim(), t, dur)
+        if op <= 0.01:
+            return img
+        D.alpha_paste(img, self._frames[q], (self.cx, self.cy + dy * self.H), opacity=op, center=True, bgr=True)
+        return img
+
+    def span(self):
+        return 1.0
+
+
+class MarkerSweep(_Animated):
+    """A line of text; the marker under the keyword sweeps in after the line has risen in."""
+
+    def span(self):
+        return float(self.p.get("sweep") or 0.45) + 0.25
+
+    def frame_image(self, t):
+        T = TH.current()
+        size = max(14, int(float(self.p.get("size") or 0.06) * min(self.W, self.H)))
+        sw = min(1.0, max(0.0, (t - 0.2) / float(self.p.get("sweep") or 0.45)))
+        surf = self.p.get("surface") or "auto"
+        im = O.marker_line(str(self.p["text"]), size, sweep=TH.ease(T, sw), max_w=int(self.W * 0.84), align="center")
+        if surf == "card" or surf == "auto":
+            pad = int(size * 0.5)
+            card = D.rounded_rect((im.width + 2 * pad, im.height + pad), int(T["radius"] * self.u),
+                                  TH.rgb(T, "card") + (int(255 * T["card_alpha"]),))
+            card.alpha_composite(im, (pad, pad // 2))
+            return _shadow(card, self.u, T)
+        return im
+
+
+class ChapterRule(_Animated):
+    def span(self):
+        return 0.7
+
+    def frame_image(self, t):
+        T = TH.current()
+        p = TH.ease(dict(motion=dict(overshoot=False)), t / 0.6)
+        idx = self.p.get("index")
+        return O.chapter_rule(str(self.p["label"]), str(self.p.get("title") or "") or None,
+                              width=int(self.W * float(self.p.get("width") or 0.6)), progress=p, scale=self.u,
+                              surface="video", index=None if idx is None else int(idx), theme=T["name"])
+
+
+class NumberCounter(_Animated):
+    steps = 30
+
+    def span(self):
+        return float(self.p.get("count") or 0.9)
+
+    def frame_image(self, t):
+        size = max(20, int(float(self.p.get("size") or 0.12) * min(self.W, self.H)))
+        v = self.p.get("value") or 0
+        return O.counter(v, t, label=self.p.get("label") or None, size=size, dur=self.span(),
+                         prefix=self.p.get("prefix") or "", suffix=self.p.get("suffix") or "", surface="video")
+
+
+class LowerThird(ImageLayer):
+    anim_default = "slide"
+
+    def image(self):
+        im = O.lower_third(str(self.p["name"]), self.p.get("role") or None,
+                           scale=self.oscale * 0.7 * float(self.p.get("scale") or 1.0))
+        return _shadow(im, self.u)
+
+
 LAYERS = {"pop-words": PopWords, "stacking-stamps": Stamp, "quote-card": QuoteCard, "callout-bubble": Callout,
           "notes-panel": Notes, "overlay-images": Sticker, "badge": Badge, "red-box": RedBox,
-          "chapter-card": ChapterCard, "punch-in": PunchIn, "progress-bar-pil": Progress}
+          "chapter-card": ChapterCard, "punch-in": PunchIn, "progress-bar-pil": Progress,
+          "marker-sweep": MarkerSweep, "chapter-rule": ChapterRule, "number-counter": NumberCounter,
+          "lower-third": LowerThird}
 
 
 def make_layer(inst, W, H, safe=None):

@@ -286,7 +286,11 @@ def main():
     scaffold(promo, os.path.basename(promo))
 
     brand = P("brand", {}) or {}
-    ACC, HL, INK, GROUND = brand.get("accent", "#FF2442"), brand.get("highlight", "#FFD60A"), brand.get("ink", "#ECEEF2"), brand.get("ground", "#0B1020")
+    from vstudio.draw import brand as _brand                      # accent / highlight follow vstudio.theme
+    _hx = lambda c: "#%02X%02X%02X" % tuple(c)
+    _br = _brand()
+    ACC, HL = _hx(_br["accent"]), _hx(_br["highlight"])
+    INK, GROUND = brand.get("ink", "#ECEEF2"), brand.get("ground", "#0B1020")
     GOLD = brand.get("highlight_alt", "#F4D35E")
 
     # ---------------- timeline

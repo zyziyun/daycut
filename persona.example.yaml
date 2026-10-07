@@ -48,12 +48,18 @@ export:
   audio_bitrate: 192k
   colour: bt709
 
+style:
+  theme: editorial         # editorial | mono | soft | night | xhs-pop (classic = the old red look); see
+                           # references/STYLE_RULES.md. Tokens can be tinted here, e.g. accent: "#3E5C76"
+                           # Per client: client.yaml theme; per recipe: the project's theme param; per output:
+                           # the output-edit `theme` op ("换成更高级的配色").
+
 brand:
-  accent: "#FF2442"        # progress bar, badges, stamps
-  highlight: "#FFD60A"     # keyword highlight in subtitles, 记笔记 tag
+  # accent / highlight follow style.theme. Setting brand.accent / highlight WITHOUT a style.theme keeps the
+  # old look (theme classic with these colours), e.g. accent: "#FF2442", highlight: "#FFD60A"
   ink: "#ECEEF2"
   ground: "#0B1020"        # premium dark plate
-  panel_theme: notes-red   # notes-red | notes-yellow | teal | navy
+  # panel_theme: notes-red # legacy notes panel (notes-red | notes-yellow | teal | navy); default = the theme's card
 
 fonts: {}                  # override any role with your own file, e.g. cjk-bold: ~/Fonts/MyFont.ttf
 # Roles shipped by install.sh: cjk, cjk-bold (Noto Sans SC), cjk-serif, cjk-serif-bold (Noto Serif SC),
@@ -64,7 +70,7 @@ fonts: {}                  # override any role with your own file, e.g. cjk-bold
 subtitles:
   max_cjk_chars: 18
   max_en_chars: 90
-  highlight_markup: "【】"  # 【term】 renders in brand.highlight
+  highlight_markup: "【】"  # 【term】 is emphasised the theme's way (marker band / accent), one per line
   term_fixes: {}           # ASR corrections, e.g. {"cloud code": "Claude Code"}
 
 voice:                     # style rules for scripts and post copy (see workflows/preproduction)

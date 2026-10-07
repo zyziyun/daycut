@@ -470,8 +470,8 @@ def ass_write(cues, path, w=1920, h=1080, font_name=None, size=None, wrap=None, 
     font_name = font_name or font_family()
     if highlight is None:
         try:
-            from .config import persona
-            highlight = (persona().get("brand") or {}).get("highlight", "#FFD60A")
+            from .draw import brand
+            highlight = "#%02X%02X%02X" % brand()["highlight"]          # follows vstudio.theme
         except Exception:
             highlight = "#FFD60A"
     hc = _ass_colour(highlight)

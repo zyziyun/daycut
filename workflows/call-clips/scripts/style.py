@@ -26,8 +26,13 @@ _CC = _P.get("call_clips") or {}
 
 # frame accent: rules, node-card border, chip outline, accent title runs
 TEAL = _hex(_CC.get("frame_accent", "#2DD4BF"), (45, 212, 191))
-RED = _hex(_B.get("accent", "#FF2442"), (255, 36, 66))          # 记笔记 header, hook badge
-YEL = _hex(_B.get("highlight", "#FFD60A"), (255, 214, 10))      # 记笔记 tag, thumb accent
+try:                                                             # accent / highlight follow vstudio.theme
+    from vstudio.draw import brand as _brand
+    _BR = _brand()
+except Exception:  # noqa: BLE001
+    _BR = {}
+RED = tuple(_BR.get("accent") or _hex(_B.get("accent", "#FF2442"), (255, 36, 66)))       # 记笔记 header, hook badge
+YEL = tuple(_BR.get("highlight") or _hex(_B.get("highlight", "#FFD60A"), (255, 214, 10)))  # 记笔记 tag, thumb accent
 DIM = (156, 163, 175)
 WHITE = (255, 255, 255)
 

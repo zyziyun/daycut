@@ -37,7 +37,7 @@ Identify the **main material** and the **deliverable**, then open that workflow'
 | Many videos at once (10s–100s): one long recording → N vertical slices, a folder of 口播 clips → cleaned shorts; pilot, resumable runs, QC gates, exception-only review page, publish packages | `workflows/batch` (`python -m vstudio.batch`, references/BATCH.md) |
 | A topic → published short, end to end (script → drill → slides → record → clean up → edit → cover → export → post) | `references/SOP_SHORT_VIDEO.md` |
 | Any workflow as a project of N items (desk app in apps/desk / an agent in the project folder): recipe manifests, checkpoints, inbox, series, publish calendar | `python -m vstudio.project` (references/PROJECTS.md) |
-| Second-pass edit of ANY finished clip (成片二次编辑: project exports and work-folder finals): trim / word-snapped cuts, captions, title band, 16 effects (pop words, stamps, punch-in, quote / chapter cards, callouts, notes, stickers, SFX, transitions, progress bar ...), cover, speed, loudness, 3:4 / 9:16 / 16:9 re-layout, plain-language `ai` edits (with a selection / effect as context), undo + selective revert of one step, a per-clip chat transcript, cached preview / final renders + a before / after compare preview | `python -m vstudio.project output show / edit / render / undo / revert / ai / chat / effects` (references/OUTPUT_EDIT.md) |
+| Second-pass edit of ANY finished clip (成片二次编辑: project exports and work-folder finals): trim / word-snapped cuts, captions, title band, a design theme (`theme` op), 20 effects (pop words, stamps, punch-in, quote / chapter cards, callouts, notes, stickers, SFX, transitions, progress bar, marker sweep, chapter rule, number counter, lower third ...), cover, speed, loudness, 3:4 / 9:16 / 16:9 re-layout, plain-language `ai` edits (with a selection / effect as context), undo + selective revert of one step, a per-clip chat transcript, cached preview / final renders + a before / after compare preview | `python -m vstudio.project output show / edit / render / undo / revert / ai / chat / effects` (references/OUTPUT_EDIT.md) |
 | A plain-language request + any mix of files / folders (video, audio, photos, pdf / docx / pptx / md) → the right recipe(s), mixed plans allowed: inventory, editable plan, follow-up edits, projects | `python -m vstudio.intake analyze / plan / revise / apply` (references/INTAKE.md) |
 
 ### What the creator typically says → workflow
@@ -65,6 +65,7 @@ When the request is ambiguous, ask one question: what is the material, and where
 
 ## 2. Shared rules (all workflows)
 - **The creator decides taste-critical choices**: hook lines, which sentences to cut, style preset, voice. Offer a short menu with a recommendation; don't silently choose.
+- **Look = one design theme** (`lib/vstudio/theme.py`, rules in `references/STYLE_RULES.md`): `editorial` (default), `mono`, `soft`, `night`, `xhs-pop`. Pick it from persona `style.theme` / client / recipe `theme`; restyle a finished clip with the output-edit `theme` op ("换成更高级的配色"). Never hard-code colours in a workflow script: read theme tokens. One accent per frame, one emphasised keyword per line, no saturated red on light paper, notes = light paper card with a small label, quotes = typography (no coloured clip-art quote mark), stamps / pop words subtle (fade + rise, 200-350 ms ease-out), captions contrast >= 4.5:1.
 - **Persona first**: speeds, loudness, brand colours, title rules, tags and voice rules come from `persona()` (`lib/vstudio/config.py`). Never hard-code a creator's taste.
 - **Verify by looking and listening**: snapshot frames at the busiest moment of each section and mid-transition; ASR the cut to confirm no clipped syllables; check loudness of the final file.
 - **Verify names after ASR**: always run proofread with entity verification (`vstudio.proofread.proofread` / the batch proofread stage; `vstudio.entities`) before burning captions or writing cards / post copy, and use its fixes for every text of the project (宏都拉斯 → 洪都拉斯). See [references/CAPTION_RULES.md](references/CAPTION_RULES.md).
@@ -83,7 +84,8 @@ When the request is ambiguous, ask one question: what is the material, and where
 | Volume / loudness / music bed / ducking | `audio.loudnorm_2pass`, `audio.mix_bed`, `audio.loop_bed`; HyperFrames `carve.mjs` |
 | SFX cue sheets (whoosh / pop / hit on cuts and reveals) | `audio.cue_sheet_for`, `audio.sfx_bank`, `audio.place_sfx`; `references/SOUND.md` |
 | Captions (bilingual, keyword highlight, SRT/ASS) | `asr.transcribe` → `subs` (wrap, retime, srt/ass); explainer `display_en` for spoken numbers → digits |
-| Notes panels 记笔记, callouts, chips, badges, stamps, progress bar | `overlays.*` (PIL) or `overlays.hf_progress` / `hf.*` (HyperFrames) |
+| Notes panels 记笔记, callouts, chips, badges, stamps, progress bar, quote card, marker sweep, chapter rule, number counter, lower third | `overlays.*` (PIL, themed by `vstudio.theme`) or `overlays.hf_progress` / `hf.*` (HyperFrames; `theme.css_vars()` for HTML) |
+| 配色 / 风格 / 更高级 / 红色太丑 (the look) | `vstudio.theme` presets, `references/STYLE_RULES.md`; persona `style.theme`; output edit `{op: theme}` |
 | Highlight frame / freeze + enlarge / zoom-in / punch-in | `hf.freeze_hold`, `hf.punch_in`, talkinghead compose zoom, photo-story loupe + red-pen circle |
 | Split screen, screenshot cards with highlighter | `hf.split_screen`, `hf.screenshot_cards` (promo-recut) |
 | B-roll in 口播 (cut-away, PiP, split screen, scrolling screenshot cards) | talkinghead `BROLL` in the config (`scripts/vertical/broll.py`; captions avoid the face in splits) |
@@ -101,7 +103,7 @@ When the request is ambiguous, ask one question: what is the material, and where
 | What was validated on real footage | `references/VALIDATION.md` |
 | Which AI provider / model per step: API key, local model (Ollama, LM Studio, vLLM, llama.cpp, whisper / TTS server) or no key (the user's own Claude Code / Codex login) | `python -m vstudio.llm providers` (from `lib/`), persona / client `llm:` routes; `references/PROVIDERS.md` |
 
-The effect catalogue (87 effects, 190 counting named variants, generated from `lib/vstudio/effects.py`; 9 recipes): `references/EFFECTS.md`. Add an effect: `references/ADDING_EFFECTS.md`. Transitions shared across engines: `vstudio.xfade` (24 names in HyperFrames, ffmpeg and per-frame PIL).
+The effect catalogue (91 effects, 196 counting named variants, generated from `lib/vstudio/effects.py`; 9 recipes): `references/EFFECTS.md`. Add an effect: `references/ADDING_EFFECTS.md`. Transitions shared across engines: `vstudio.xfade` (24 names in HyperFrames, ffmpeg and per-frame PIL).
 
 ## 4. Shared library (`lib/vstudio`)
 | Module | What |
@@ -116,10 +118,11 @@ The effect catalogue (87 effects, 190 counting named variants, generated from `l
 | `tts` | OpenAI / Kokoro / Edge / self-hosted server / ElevenLabs TTS and local voice clone (Qwen3-TTS) with a content cache |
 | `llm` | `complete(task, system, prompt, schema=...)`: one LLM call for every provider (anthropic, openai, openai-compatible presets incl. local servers, gemini, claude-code / codex CLIs, none), routing, JSON repair, retries, cost; `python -m vstudio.llm providers / route / test` |
 | `face`, `filters`, `mls`, `retouch` | landmarks, `VideoFaceTracker`, talk activity; One Euro smoothing; own MLS warp; portrait retouch v2 + makeup |
-| `draw`, `overlays`, `cover` | PIL text/shape primitives, themed overlays and progress bars, cover compositors |
+| `theme` | design themes (tokens: paper, ink, one accent, marker, fonts, radius, shadow, card / quote / stamp / pop / progress styles, motion); resolution explicit > env > recipe > client > persona > legacy > `editorial` |
+| `draw`, `overlays`, `cover` | PIL text/shape primitives (`emph_layer`: theme emphasis), themed overlays and progress bars, cover compositors |
 | `render`, `hf` | headless-Chrome HTML→PNG, font staging/subsetting; HyperFrames effect generators |
 | `xfade` | one transition name → HyperFrames GSAP, ffmpeg `xfade` or per-frame blend (24 names) |
-| `effects` | effect registry (87 entries, 190 with variants) → generated `references/EFFECTS.md`; `--list`, `--show`, `find()` |
+| `effects` | effect registry (91 entries, 196 with variants) → generated `references/EFFECTS.md`; `--list`, `--show`, `find()` |
 | `beats` | beat grid, tempo check, downbeats, energy, sections, `snap`, `cut_plan`, `verify` |
 | `platform` | profiles: canvas, safe box, caption box, keep-outs, loudness, encode, length, cover, text limits |
 | `reframe` | face-tracked / centre / pad-blur / letterbox reframe between aspects (`python -m vstudio.reframe`) |

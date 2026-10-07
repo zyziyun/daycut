@@ -207,7 +207,7 @@ _add("video-in-photo-story", "Video in a photo story", "layout", "Pre-cut, grade
 # ------------------------------------------------------------------------------------------------
 _add("screenshot-card-3d", "3D screenshot card", "cards", "A card slides in with rotationY -28 to -6 deg, drifts, then leaves", [HF],
      {HF: ["vstudio.hf:screenshot_cards"]}, "`hf.py:screenshot_cards`",
-     [("card_w", 760, "wider = more readable, less face"), ("accent", "#FF2442", "brand accent for box / highlights")],
+     [("card_w", 760, "wider = more readable, less face"), ("accent", "theme", "brand accent for box / highlights (default: the theme accent)")],
      "Show a screenshot while the speaker talks about it", "med", "card on screen >= 3 s", "1 card per claim; the 3D entry stars once, later cards can enter flatter",
      ["Use high-res screenshots (they get scaled)", "Text inside must pass A6"], "tests/test_hf.py",
      '`hf.screenshot_cards([dict(id="c1", img=..., w, h, s, e, scroll=[[3, 0]])])`')
@@ -230,7 +230,7 @@ _add("overlay-images", "Chip / badge / tag / stamp images", "cards", "Themed RGB
      ["outline", "filled", "star", "tag", "ghost"])
 _add("badge", "Badge (jingxuan / preview)", "cards", "Solid label that slides in", [HF, PIL],
      {HF: ["vstudio.hf:badge"], PIL: ["vstudio.overlays:badge"]}, "`hf.py:badge`; `overlays.badge`",
-     [("accent", "#FF2442", "the brand accent; a second colour dilutes it")],
+     [("accent", "theme", "the brand accent; a second colour dilutes it")],
      "Mark a section as highlights / preview", "low", "whole section", "1 per section", [], "tests/test_hf.py",
      'HF: `hf.badge("...", s, d, at)`; PIL: `overlays.badge("...")`')
 _add("outlined-tag", "Outlined tag", "cards", "Fading pill (e.g. 'full version / excerpt / 1.1x')", [HF],
@@ -241,14 +241,14 @@ _add("framed-screen", "Framed screen", "cards", "Rounded, shadowed screen playin
      [("rate", 1.0, "1.1-1.2 tightens a reel without chipmunk audio (muted anyway)")],
      "Any 'video inside a monitor' beat", "med", "length of the reel", "1 per video", ["Enter with zoom_through"],
      "tests/test_hf.py", "`hf.framed_screen(src, start, dur, exit_at)`")
-_add("notes-panel", "Notes panel", "cards", "Card with header, bullets and a rotated tag", [PIL, FF],
+_add("notes-panel", "Notes panel", "cards", "Light theme card: small label, title, hairline rule, bullets (legacy: coloured header)", [PIL, FF],
      {PIL: ["vstudio.overlays:notes_panel", TH + ":PANELS"], FF: [LF + "burn_final.py"]},
      "`overlays.py:notes_panel`; per-row reveal in talkinghead `compose.py` (`PANELS`)",
-     [("width", 620, "wider = fewer line breaks but covers the face"), ("theme", "notes-red", "match the creator persona")],
+     [("width", 620, "wider = fewer line breaks but covers the face"), ("theme", "paper", "paper = the design theme's card; notes-red etc. = legacy panels")],
      "Summarise 2-4 points the speaker is listing", "low", "reveal 0.3 s per row; hold >= 2 s after the last row",
      "1 per topic", ["Max ~4 bullets; text must pass A6"], "tests/test_visual.py",
      "PIL image; burn with ffmpeg `overlay=...:enable='between(t,a,b)'`; for HF save a PNG",
-     ["notes-red", "notes-yellow", "teal", "navy"])
+     ["paper", "notes-red", "notes-yellow", "teal", "navy"])
 _add("callout-bubble", "Callout bubble", "cards", "Speech bubble that slides up 24 px", [PIL],
      {PIL: ["vstudio.overlays:callout", TH + ":CALLOUTS"]}, "`overlays.py:callout`; `compose.py` (`CALLOUTS`)",
      [("max_w", 560, "narrow bubbles wrap more lines")], "Side comments, asides", "low", "2-4 s", "~1 per 30 s",
@@ -258,10 +258,35 @@ _add("node-card", "Node card", "cards", "'NEXT' seam card", [PIL],
      "`overlays.py:node_card`; `call-clips/.../render_vertical.py:render_node_card`",
      [("eyebrow", "", "small kicker; keep to 1-3 words")], "Topic change inside a clip", "low", "fade 0.35 s, hold ~1.5 s",
      "1 per topic change", [], "tests/test_visual.py", "Paste at a cut and fade over 0.35 s")
-_add("quote-card", "Quote card", "cards", "Balanced quote lines with the speaker in teal", [PIL],
-     {PIL: [CC + "render_trio.py:render_quote"]}, "`call-clips/scripts/render_trio.py:render_quote`",
-     [("width", 980, "narrower = more lines, more poster-like")], "Pull a strong line from a call", "low", "hold >= 2 s",
-     "1-2 per clip", [], "no", "Copy the function")
+_add("quote-card", "Quote card", "cards", "Typographic quote: weight contrast, hanging opening mark, short accent rule", [PIL],
+     {PIL: ["vstudio.overlays:quote_block", CC + "render_trio.py:render_quote"]},
+     "`overlays.py:quote_block`; call-clips `render_trio.py:render_quote`",
+     [("width", 980, "narrower = more lines, more poster-like"), ("size", 80, "main line size; the sub line is 46% of it")],
+     "Pull a strong line from a call", "low", "hold >= 2 s",
+     "1-2 per clip", ["No clip-art quote glyph in a colour (STYLE_RULES S5)"], "tests/test_theme.py",
+     "`overlays.quote_block([(main, 'main'), (sub, 'sub')], width)`")
+_add("marker-sweep", "Marker sweep", "highlight", "A soft highlighter band sweeps in behind the keyword of one line", [PIL],
+     {PIL: ["vstudio.overlays:marker_line", "vstudio.draw:emph_layer"]}, "`overlays.py:marker_line` (sweep 0-1)",
+     [("sweep", 0.45, "seconds the marker takes; < 0.3 s snaps, > 0.8 s drags"),
+      ("size", 0.06, "fraction of the short side; it is a line of text, not a pop word")],
+     "Land the one keyword of a sentence quietly", "low", "0.45 s sweep, hold >= 1.5 s", "1 per 20 s (S2)",
+     ["One keyword per line; the theme's marker colour only"], "tests/test_theme.py",
+     '`overlays.marker_line("先做【减法】", 64, sweep=p)`')
+_add("chapter-rule", "Chapter rule", "cards", "A hairline draws across with a small tracked label (02 · name) and optional title", [PIL],
+     {PIL: ["vstudio.overlays:chapter_rule"]}, "`overlays.py:chapter_rule` (progress 0-1)",
+     [("progress", 1.0, "animate 0 -> 1 over ~0.6 s"), ("title", "", "optional; keep it to one short line")],
+     "A quiet section change instead of a full-frame chapter card", "low", "2-3 s", "1 per section",
+     [], "tests/test_theme.py", '`overlays.chapter_rule("第二部分", "先跑通，再优化", index=2, progress=p)`')
+_add("number-counter", "Number counter", "text", "A figure counts up with ease-out, small label under it", [PIL],
+     {PIL: ["vstudio.overlays:counter", "vstudio.overlays:counter_text"]}, "`overlays.py:counter(value, t)`",
+     [("count", 0.9, "seconds to count; long counts feel like a slot machine"), ("suffix", "", "万 / % / 年")],
+     "A number the speaker says that matters (fans, years, money)", "low", "0.9 s count, hold >= 1 s",
+     "1-2 per video", ["Width reserved for the final value, so digits never jitter"], "tests/test_theme.py",
+     '`overlays.counter(7, t, label="粉丝", suffix="万")`')
+_add("lower-third", "Lower third", "cards", "Theme card with name and role, short accent rule", [PIL],
+     {PIL: ["vstudio.overlays:lower_third"]}, "`overlays.py:lower_third`",
+     [("scale", 1.0, "1.0 = designed for 1920 landscape")], "Introduce a speaker", "low", "3 s", "1 per speaker",
+     [], "tests/test_theme.py", '`overlays.lower_third("Name", "Role")`')
 _add("circle-face-list", "Circle-face list scene", "cards", "Blurred bg, ringed circle crop of the face, title, popping tokens", [PIL],
      {PIL: [TH + ":blurbg", TH + ":circle_inset", TH + ":token_img", TH + ":CIRCLES"]}, "`compose.py` (`blurbg`, `circle_inset`, `token_img`)",
      [("R", 290, "circle radius; bigger keeps the speaker present, smaller gives tokens room")],
@@ -362,7 +387,7 @@ _add("highlighter-rows", "Highlighter rows", "highlight", "A yellow multiply bar
      [("frac", 0.6, "width fraction; 1.0 covers the whole row like a marker scrawl")], "Point at one line in a screenshot", "low",
      "sweep 0.5 s, hold >= 1 s", "1-2 per card", [], "tests/test_hf.py", "Rows from `find_rows.py`")
 _add("red-box", "Red box", "highlight", "Accent rounded box pops (back.out) around a region", [HF],
-     {HF: ["vstudio.hf:screenshot_cards"]}, "`hf.py:screenshot_cards` (`box=[t, y0, y1]`)", [("accent", "#FF2442", "brand accent")],
+     {HF: ["vstudio.hf:screenshot_cards"]}, "`hf.py:screenshot_cards` (`box=[t, y0, y1]`)", [("accent", "theme", "brand accent")],
      "Frame a block in a screenshot", "med", "pop 0.4 s, hold >= 1 s", "1 per card", [], "tests/test_hf.py", "Same as highlighter rows")
 _add("stamp-hf", "Stamp", "highlight", "Bordered word slams in from 2.2x", [HF], {HF: ["vstudio.hf:stamp"]}, "`hf.py:stamp`",
      [("angle", -12, "0 is a label, -12 a rubber stamp, beyond -20 slapstick"), ("size", 96, "headline size")],
@@ -521,10 +546,10 @@ _add("hf-progress", "HF chapter progress bar", "progress", "Bar + ticks + chapte
      {HF: ["vstudio.overlays:hf_progress"]}, "`lib/vstudio/overlays.py:hf_progress`", [("geo", "horizontal", "vertical sits under the platform UI")],
      "Long videos with chapters", "low", "whole video", "always on", ["<= 6 chapters"], "tests/test_visual.py",
      '`p = overlays.hf_progress(chs, 0, total)`; paste css/html/js')
-_add("progress-bar-pil", "Refined / classic bar (per frame)", "progress", "Segmented gradient bar with knob and pill, or notes-board bar", [PIL],
-     {PIL: ["vstudio.overlays:progress_bar"]}, '`overlays.py:progress_bar(style="refined"|"classic")`',
-     [("style", "classic", "refined for polished, classic for notes look")], "Per-frame compositors", "low", "whole video", "always on", [],
-     "tests/test_visual.py", "Paste `progress_bar(...)` each frame", ["refined", "classic"])
+_add("progress-bar-pil", "Line / refined / classic bar (per frame)", "progress", "Hairline theme bar (default), or segmented gradient bar with knob and pill, or notes-board bar", [PIL],
+     {PIL: ["vstudio.overlays:progress_bar", "vstudio.overlays:progress_line"]}, '`overlays.py:progress_bar(style=None|"line"|"refined"|"classic")`',
+     [("style", "line", "line = the theme's hairline; refined / classic = the legacy loud bars")], "Per-frame compositors", "low", "whole video", "always on", [],
+     "tests/test_visual.py", "Paste `progress_bar(...)` each frame", ["line", "refined", "classic"])
 _add("progress-ffmpeg", "Static bar + ffmpeg fill", "progress", "Dim bar PNG + labels + drawbox fill / playhead expression", [FF],
      {FF: ["vstudio.overlays:progress_static", "vstudio.overlays:progress_fill", "workflows/talkinghead/scripts/build_filter.py:progress"]},
      "`overlays.py:progress_static`, `progress_fill`; talkinghead `build_filter.py`", [("y", 1000, "")], "Pure-ffmpeg landscape passes", "low",

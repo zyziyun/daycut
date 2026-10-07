@@ -5,7 +5,7 @@ and persona CSS variables for HTML / HyperFrames projects.
     html_to_png("cover.html", "cover.png", size=(1080, 1920))        # path or an HTML string
     stage_fonts("project/assets/fonts", ["cjk", "cjk-bold"])          # copies from config.FONT_DIR
     subset_font(font("cjk-bold"), "用到的字", "assets/fonts/cjk-700.woff2")   # .otf if brotli is missing
-    persona_css()  -> ':root{--accent:#FF2442;--highlight:#FFD60A;...}'
+    persona_css()  -> ':root{--accent:..;--highlight:..;--ink:..;--t-paper:..;--t-ink:..;...}' (brand + theme tokens)
 
 CLI:  python -m vstudio.render page.html -o out.png [--size 1080x1920] [--scale 1] [--wait 2000]
 """
@@ -75,11 +75,16 @@ def find_chrome():
 # ---------------------------------------------------------------- CSS / fonts
 def persona_css(extra: dict = None) -> str:
     """':root{--accent:..;--highlight:..;--ink:..;--ground:..;...}' from persona.brand (+ extra vars)."""
+    from .draw import brand
+    from .theme import css_vars
     b = dict(persona().get("brand") or {})
+    br = brand()
+    b.update(accent="#%02X%02X%02X" % br["accent"], highlight="#%02X%02X%02X" % br["highlight"])
     b.update(extra or {})
     vars_ = "".join(f"--{k.replace('_', '-')}:{v};" for k, v in b.items()
                     if isinstance(v, str) and v.startswith("#"))
-    return ":root{" + vars_ + "}"
+    theme_vars = css_vars()[len(":root{"):-1].replace("--", "--t-")         # theme tokens: --t-paper, --t-ink ...
+    return ":root{" + vars_ + theme_vars + "}"
 
 
 def inject_css(html: str, css: str, style_id="vstudio-persona") -> str:

@@ -22,7 +22,7 @@ items:
   sources: [single, files, folder, csv, variants]
   from_input: video
   per_item: [title, body, tags, range, cleanup_reply, hook, cover]
-  shared: [pipeline, edit_style, platforms, speed, hook_speed, cleanup_profile, layout, language, keywords]
+  shared: [pipeline, edit_style, theme, platforms, speed, hook_speed, cleanup_profile, layout, language, keywords]
   variants: [platform, hook, language]
   share_cache: [probe, extract, asr, glossary]
 engine:
@@ -48,6 +48,10 @@ params:
         notes: {zoom: false, pops: false, stamps: false, circles: false, cards: false, sfx: false, progress: classic, callouts: true, panels: true, hook_badge: true}
         refined: {zoom: true, pops: true, stamps: true, circles: true, cards: true, sfx: true, progress: refined, callouts: false, panels: false, hook_badge: false}
         mixed: {zoom: true, pops: true, stamps: true, circles: false, cards: true, sfx: true, progress: refined, callouts: false, panels: true, hook_badge: false}
+    theme:
+      enum: [editorial, mono, soft, night, xhs-pop, classic]
+      title: Look (design theme; empty = the persona's style.theme)
+      x-zh: 配色主题（空 = 人设里的 style.theme；editorial 编辑感 / mono 黑白灰 / soft 柔和 / night 夜间 / xhs-pop 小红书红）
     platforms:
       type: array
       items: {type: string}

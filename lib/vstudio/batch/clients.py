@@ -11,7 +11,8 @@ client.yaml keys (all optional except ``name``):
   name, style (free text: tone for planners / copy), platforms ["xiaohongshu:full", "douyin"], tags [..] (the
   client's tag set), glossary [{wrong, right, source?, batch?, job?}] (ASR term fixes; accepted caption fixes
   append here), fillers {extra: [..], keep: [..]} (extra 口头禅 to cut / words never cut), brand {accent,
-  highlight, ink, ground} (#RRGGBB), cover_style frame | collage | face | text, cleanup_profile gentle |
+  highlight, ink, ground} (#RRGGBB), theme (design theme: editorial | mono | soft | night | xhs-pop | classic; the
+  client persona's ``client.theme``, see vstudio.theme), cover_style frame | collage | face | text, cleanup_profile gentle |
   standard | tight (``strict`` = tight), confirm_policy true | false (answer low-risk cleanup questions automatically), language,
   asr_prompt, delivery {cleanup_days (0 = never), per_day, times}, notes, crm {history: [{stage, at}], revenue:
   [{at, amount}]} (optional funnel data for ``metrics --csv``).
@@ -35,7 +36,7 @@ COVER_STYLES = ("frame", "collage", "face", "text")
 HEX = re.compile(r"^#[0-9A-Fa-f]{6}$")
 PLAT = re.compile(r"^[a-z][a-z-]{1,30}(:[a-z]{3,12})?$")
 SLUG = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,59}$")
-KNOWN = {"name", "slug", "style", "platforms", "tags", "glossary", "fillers", "brand", "cover_style", "cleanup_profile",
+KNOWN = {"name", "slug", "style", "platforms", "tags", "glossary", "fillers", "brand", "theme", "cover_style", "cleanup_profile",
          "confirm_policy", "language", "asr_prompt", "delivery", "notes", "crm", "created", "llm"}
 DEFAULT_CLEANUP_DAYS = 0          # never delete source recordings unless a client sets it
 
@@ -176,6 +177,12 @@ def validate(patch, partial=True):
             if not (isinstance(v, dict) and all(isinstance(x, str) and HEX.match(x) for x in v.values())):
                 raise ClientError("brand: {accent, highlight, ink, ground} as #RRGGBB")
             out[k] = dict(v)
+        elif k == "theme":
+            from vstudio import theme as TH
+            c = TH.canonical(v) if isinstance(v, str) else None
+            if not c:
+                raise ClientError(f"theme: {' | '.join(TH.names(True))}")
+            out[k] = c
         elif k == "cover_style":
             if v not in COVER_STYLES:
                 raise ClientError(f"cover_style: {' | '.join(COVER_STYLES)}")
@@ -280,6 +287,8 @@ def persona_overlay(eff):
         creator=dict(language=eff.get("language") or "zh"),
         client=dict(name=eff.get("name") or "", cover_style=eff.get("cover_style") or "frame",
                     style=eff.get("style") or ""))
+    if eff.get("theme"):
+        ov["client"]["theme"] = eff["theme"]
     if eff.get("brand"):
         ov["brand"] = dict(eff["brand"])
     if eff.get("llm"):
@@ -484,15 +493,35 @@ def write_persona(batch_dir, spec):
     return path
 
 
+def _spec_theme(batch_dir):
+    """The project's ``theme`` param (recipe layer of vstudio.theme) from ``<batch>/spec.yaml`` defaults."""
+    p = os.path.join(batch_dir, "spec.yaml")
+    if not os.path.exists(p):
+        return None
+    try:
+        import yaml
+        with open(p, encoding="utf-8") as f:
+            d = yaml.safe_load(f) or {}
+        return ((d.get("defaults") or {}).get("theme")) or None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 class activate:
-    """Context manager: make ``<batch>/client.persona.yaml`` THE persona (``VSTUDIO_PERSONA``) while a run lasts."""
+    """Context manager: make ``<batch>/client.persona.yaml`` THE persona (``VSTUDIO_PERSONA``) while a run lasts,
+    and hand the project's ``theme`` param to stages / workflow subprocesses as ``VSTUDIO_THEME``."""
 
     def __init__(self, batch_dir):
         self.path = os.path.join(batch_dir, "client.persona.yaml")
         self.prev = None
         self.on = os.path.exists(self.path)
+        self.theme = _spec_theme(batch_dir)
+        self.prev_theme = None
 
     def __enter__(self):
+        if self.theme:
+            self.prev_theme = os.environ.get("VSTUDIO_THEME")
+            os.environ["VSTUDIO_THEME"] = str(self.theme)
         if self.on:
             self.prev = os.environ.get("VSTUDIO_PERSONA")
             os.environ["VSTUDIO_PERSONA"] = self.path
@@ -500,6 +529,11 @@ class activate:
         return self
 
     def __exit__(self, *exc):
+        if self.theme:
+            if self.prev_theme is None:
+                os.environ.pop("VSTUDIO_THEME", None)
+            else:
+                os.environ["VSTUDIO_THEME"] = self.prev_theme
         if self.on:
             if self.prev is None:
                 os.environ.pop("VSTUDIO_PERSONA", None)

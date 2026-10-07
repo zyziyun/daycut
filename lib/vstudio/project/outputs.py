@@ -39,8 +39,11 @@ VIDEO = {".mp4", ".mov", ".m4v", ".mkv", ".webm"}
 DOC_VERSION = 1
 MIN_KEEP_S = 1.0
 OPS = ("trim", "cut", "cut_remove", "speed", "loudness", "captions", "caption_text", "caption_style", "caption_add",
-       "caption_remove", "caption_placement", "title", "effect_add", "effect_remove", "effect_update", "cover",
+       "caption_remove", "caption_placement", "title", "theme", "effect_add", "effect_remove", "effect_update", "cover",
        "export_add", "export_remove", "reset")
+# what a `theme` op hands back to the theme (restyle=true): explicit look keys of captions / title / effects
+THEME_LOOK = dict(caption=("color", "highlight", "stroke", "stroke_color", "font", "box", "box_color"),
+                  title=("color", "band_color"), effect=("color", "anim", "angle", "theme"))
 TARGET_ALIASES = {"3:4": "xiaohongshu:vertical", "9:16": "douyin:vertical", "16:9": "youtube:horizontal",
                   "小红书": "xiaohongshu", "抖音": "douyin", "b站": "bilibili", "B站": "bilibili", "视频号": "douyin",
                   "shorts": "youtube-shorts", "youtube shorts": "youtube-shorts"}
@@ -358,7 +361,7 @@ def capabilities(rec, doc=None):
     pipe = rec["mode"] == "pipeline"
     burned = (doc or {}).get("burned") or {}
     caps = dict(mode=rec["mode"], trim=True, cut=True, cut_snap="words", speed=True, loudness=True, effects=True,
-                title_band=True, cover=True, export=True, undo=True, ai=True,
+                title_band=True, theme=True, cover=True, export=True, undo=True, ai=True,
                 captions_ours=pipe, caption_text=pipe, caption_style=True, caption_restyle_burned=False,
                 caption_toggle=pipe, caption_add=True, caption_placements=["ours"] if pipe else ["band", "mask"],
                 relayout="master" if pipe else "reframe-file", relayout_layouts=["auto"] if pipe else ["auto", "band"],
@@ -384,7 +387,7 @@ def capabilities(rec, doc=None):
 def empty_state():
     return dict(trim=[None, None], cuts=[], speed=1.0, loudness=dict(lufs=None, tp=None),
                 captions=dict(enabled=None, style={}, overrides={}, removed=[], added=[], placement=None),
-                title=None, effects=[], cover=None, exports=[], seq=0)
+                title=None, theme=None, effects=[], cover=None, exports=[], seq=0)
 
 
 class Doc:
@@ -486,6 +489,14 @@ def fold(st, op):
         c["placement"] = op["placement"]
     elif k == "title":
         st["title"] = op.get("title")
+    elif k == "theme":
+        st["theme"] = op.get("theme")
+        if op.get("restyle", True):
+            c["style"] = {kk: v for kk, v in c["style"].items() if kk not in THEME_LOOK["caption"]}
+            if st.get("title"):
+                st["title"] = {kk: v for kk, v in st["title"].items() if kk not in THEME_LOOK["title"]}
+            for e in st["effects"]:
+                e["params"] = {kk: (None if kk in THEME_LOOK["effect"] else v) for kk, v in e["params"].items()}
     elif k == "effect_add":
         st["effects"].append(dict(id=op["id"], effect=op["effect"], start=op["start"], end=op["end"],
                                   params=dict(op["params"])))
@@ -983,6 +994,22 @@ def normalize(doc, st, op):
                 if x in t:
                     t[x] = min(hi, max(lo, _num(t[x], x)))
             n["title"] = t
+    elif k == "theme":
+        from vstudio import theme as TH
+        raw = op.get("theme", op.get("name"))
+        over = {x: op[x] for x in TH.COLOR_TOKENS if op.get(x) is not None}
+        for x in over:
+            over[x] = _color(over[x], x)
+        if raw in (None, "", "none", "default") and not over:
+            n["theme"] = None
+        else:
+            name = TH.canonical(raw) if raw not in (None, "") else None
+            if raw not in (None, "") and not name:
+                raise _err("unknown-theme", f"unknown theme {raw!r}; themes: {', '.join(TH.names(True))}",
+                           f"未知的配色主题 {raw!r}", theme=raw, known=TH.names(True))
+            n["theme"] = dict(theme=name, **over) if over else name
+        n["restyle"] = bool(op.get("restyle", not op.get("keep_colors", False)))
+        value["themes"] = TH.names(True)
     elif k == "effect_add":
         eid = FX.resolve(op.get("effect"))
         if not eid:
@@ -1104,6 +1131,10 @@ def describe(op):
                    n=len(op["cues"]))
     if k == "revert":
         return msg("op-revert", f"revert step {op['step']}", "撤销了其中一步", step=op["step"])
+    if k == "theme":
+        t = op.get("theme")
+        name = t.get("theme") if isinstance(t, dict) else t
+        return msg("op-theme", f"theme {name or 'default'}", f"配色主题：{name or '默认'}", theme=name)
     if k == "title":
         return msg("op-title", "set the title band" if op.get("title") else "remove the title band",
                    "设置标题条" if op.get("title") else "去掉标题条", text=(op.get("title") or {}).get("text"))
@@ -1388,7 +1419,9 @@ OP_DOC = {
     "caption_style": "{op, style: {size 0.6-1.8, color, highlight, keywords [..], position bottom|middle|top, font}}",
     "caption_add": "{op, start, end, text} or {op, from_transcript: true, start?, end?}",
     "caption_remove": "{op, cue}",
-    "title": "{op, text, sub?} title band at the top ('' removes it)",
+    "title": "{op, text, sub?} title band at the top ('' removes it); 【word】 in the text = the emphasised word",
+    "theme": "{op, theme: editorial|mono|soft|night|xhs-pop|classic, accent?} the whole look (配色 / 风格 / 更高级); "
+             "hands explicit caption / title / effect colours back to the theme (restyle: false keeps them)",
     "effect_add": "{op, effect, start, end?, params {..}}",
     "effect_remove": "{op, id}",
     "effect_update": "{op, id, start?, end?, shift?, params?}",
@@ -1420,6 +1453,7 @@ def _ai_context(rec, doc, st, use_asr=True):
     return dict(output=dict(duration=round(rec["info"]["duration"], 2), canvas=[rec["info"]["w"], rec["info"]["h"]],
                             mode=rec["mode"], platform=rec.get("platform")),
                 caps=caps, state=dict(trim=st["trim"], cuts=st["cuts"], speed=st["speed"], title=st["title"],
+                                      theme=st.get("theme"),
                                       effects=[dict(id=e["id"], effect=e["effect"], start=e["start"], end=e["end"])
                                                for e in st["effects"]], exports=st["exports"],
                                       caption_style=st["captions"]["style"]),
@@ -1494,6 +1528,15 @@ def _rule_ops(text, dur, ctx=None):
                       ("9:16", "douyin:vertical"), ("16:9", "youtube:horizontal")):
         if word in text.lower() and re.search(r"导出|export|发|版本|做一个|出一版", text, re.I):
             ops.append(dict(op="export_add", target=tgt))
+    if re.search(r"配色|主题|风格|颜色|色调|高级|好看|品味|丑|黑白|夜间|深色|柔和|低饱和|红色|小红书红|theme|palette", text, re.I):
+        from vstudio import theme as TH
+        words_ = sorted(list(TH.ALIASES) + TH.names(True) + [TH.PRESETS[x]["label_zh"] for x in TH.names(True)],
+                        key=len, reverse=True)
+        pick = next((TH.canonical(w) for w in words_ if w.lower() in text.lower() and w != "高级"), None)
+        if not pick and re.search(r"高级|好看|品味|丑|elegant|premium|tasteful", text, re.I):
+            pick = "editorial"
+        if pick:
+            ops.append(dict(op="theme", theme=pick))
     if re.search(r"进度条|progress bar", text, re.I):
         ops.append(dict(op="effect_add", effect="progress-bar-pil", start=0))
     if re.search(r"淡出|fade out", text, re.I):

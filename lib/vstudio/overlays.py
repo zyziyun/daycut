@@ -8,8 +8,12 @@
     O.progress_static(chapters, total, width=1920)                     # PNG + ffmpeg drawbox for a static pass
     O.hf_progress(chapters, start, total, geo) / O.hf_cue_css(...)     # HyperFrames / GSAP snippets
 
-Themes: notes-red (dark card, accent header, highlight 记笔记 tag), notes-yellow (paper card, highlight header),
-teal (dark card, teal rail + outline, longform style), navy (brand ground card, gold title).
+Panel themes: paper (default: the design theme's light card, small label + thin rule; vstudio.theme), notes-red
+(dark card, accent header, highlight 记笔记 tag; the legacy ``classic`` look), notes-yellow (paper card, highlight
+header), teal (dark card, teal rail + outline, longform style), navy (brand ground card, gold title). A design theme
+name (editorial, mono, soft, night, xhs-pop, classic) is accepted too and gives that theme's panel.
+Themed blocks (read vstudio.theme tokens): title_band, quote_block, notes_chip, marker_line, chapter_rule,
+counter, lower_third. Rules: references/STYLE_RULES.md.
 `scale` multiplies every size (1.0 = designed for a 1920-wide landscape frame; use ~1.5 for 1080x1920).
 """
 import json
@@ -17,21 +21,49 @@ import json
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
+from . import theme as TH
 from .config import persona
-from .draw import (brand, draw_runs, load_font, rgb, rgba, rounded_rect, shadow, text_layer, text_width, wrap)
+from .draw import (brand, draw_runs, emph_layer, load_font, rgb, rgba, rounded_rect, shadow, text_layer, text_width,
+                   wrap)
 
-THEMES = ("notes-red", "notes-yellow", "teal", "navy")
+THEMES = ("paper", "notes-red", "notes-yellow", "teal", "navy") + tuple(TH.names())
 
 
 def notes_tag_default():
     return ((persona().get("overlays") or {}).get("notes_tag")) or "记笔记 ↓"
 
 
+def paper_theme(T=None) -> dict:
+    """The panel colours of a design theme (light card, small accent label, thin rule; dark card on night)."""
+    T = T or TH.current()
+    c = lambda k, a=255: TH.rgba(T, k, a)
+    acc = TH.rgb(T, "accent")
+    card_a = int(255 * float(T["card_alpha"]))
+    return dict(name="paper", layout="paper", design=T["name"], card=TH.rgb(T, "card") + (card_a,), header=None,
+                header_text=c("card_ink"), tag_bg=None, tag_text=acc + (255,), text=c("card_ink"),
+                text2=c("ink2"), hl=acc + (255,), dot=acc + (255,), accent=acc, outline=None, rule=c("rule"),
+                bubble=TH.rgb(T, "card") + (card_a,), bubble_text=c("card_ink"), chip_fill=acc,
+                chip_text=TH.rgb(T, "accent_ink"), radius=int(T["radius"]), shadow=tuple(T["shadow"]))
+
+
 def get_theme(name=None) -> dict:
-    """Resolved colours for a theme name (default persona.brand.panel_theme)."""
-    name = name or (persona().get("brand") or {}).get("panel_theme") or "notes-red"
+    """Resolved panel colours for a panel theme name, a design theme name or a dict. Default: the persona's
+    brand.panel_theme while no design theme is chosen (legacy), else the active design theme's paper panel."""
     if isinstance(name, dict):
         return name
+    T = TH.current()
+    if not name:
+        if T.get("source") in ("legacy", "default"):
+            name = (persona().get("brand") or {}).get("panel_theme")
+        if not name:
+            name = "notes-red" if T["notes"] == "header" else "paper"
+    if name not in ("notes-red", "notes-yellow", "teal", "navy", "paper"):
+        c = TH.canonical(name)
+        if c:
+            T = TH.resolve(c)
+            name = "notes-red" if T["notes"] == "header" else "paper"
+    if name == "paper":
+        return paper_theme(T)
     B = brand()
     dark = (16, 18, 24)
     if name == "notes-yellow":
@@ -83,6 +115,8 @@ def notes_panel(title, bullets, theme=None, width=620, scale=1.0, tag=None, keyw
     body_h = PY * 2 + nlines * lh + max(0, len(bullets) - 1) * GAP
     tagw = int(text_width(tag, ftag)) + _s(24, scale) if tag else 0
 
+    if T["layout"] == "paper":
+        return _notes_paper(title, bullets, T, W, scale, tag, keywords)
     if T["layout"] == "header":
         HEAD = _s(70, scale)
         H = HEAD + body_h
@@ -131,6 +165,80 @@ def notes_panel(title, bullets, theme=None, width=620, scale=1.0, tag=None, keyw
             y += lh
         y += GAP
     return im
+
+
+def _label_text(tag):
+    return str(tag or "").replace("↓", "").replace("→", "").strip()
+
+
+def tracked_width(text, f, track):
+    size = getattr(f, "size", 20)
+    return sum(text_width(ch, f) for ch in text) + max(0, len(text) - 1) * size * track
+
+
+def draw_tracked(d, xy, text, f, fill, track=0.12):
+    """Letter-spaced small label (eyebrows, 本段 / 记笔记 labels); returns the x after the text."""
+    x, y = xy
+    size = getattr(f, "size", 20)
+    for ch in text:
+        d.text((x, y), ch, font=f, fill=fill)
+        x += text_width(ch, f) + size * track
+    return x - size * track
+
+
+def _notes_paper(title, bullets, P, W, scale, tag, keywords):
+    """Paper notes card: small accent label, title, hairline rule, bullets (keywords the theme's way)."""
+    T = TH.resolve(P.get("design")) if P.get("design") else TH.current()
+    PX, PT, PB = _s(30, scale), _s(24, scale), _s(26, scale)
+    fl = load_font(T["font_label"], _s(22, scale))
+    ft = load_font(T["font_strong"], _s(34, scale))
+    fb = load_font(T["font_body"], _s(30, scale))
+    fe = load_font(T["font_strong"], _s(30, scale))
+    lab = _label_text(tag)
+    inner = W - 2 * PX
+    tlines = wrap(title, ft, inner, balance=True) if title else []
+    tlh = int(sum(ft.getmetrics()) * 1.22)
+    DOT, GAP = _s(7, scale), _s(12, scale)
+    bx = PX + DOT + _s(14, scale)
+    blocks = []
+    for b in bullets:
+        cont = b.startswith(" ")
+        im = emph_layer(b.strip(), fb, T, surface="paper", fill=P["text"], emph_font=fe, max_w=W - bx - PX,
+                        line_gap=1.3, pad=0, keywords=keywords)
+        blocks.append((cont, im))
+    lab_h = (sum(fl.getmetrics()) + _s(12, scale)) if lab else 0
+    rule_gap = _s(16, scale)
+    H = PT + lab_h + tlh * len(tlines) + (rule_gap * 2 + P_rule_w(scale) if blocks else 0) \
+        + sum(im.height for _, im in blocks) + GAP * max(0, len(blocks) - 1) + PB
+    if not blocks:
+        H -= _s(6, scale)
+    r = _s(P.get("radius", 14), scale)
+    im = rounded_rect((W, H), r, P["card"])
+    d = ImageDraw.Draw(im)
+    y = PT
+    if lab:
+        d.ellipse([PX, y + _s(8, scale), PX + _s(8, scale), y + _s(16, scale)], fill=P["accent"] + (255,))
+        draw_tracked(d, (PX + _s(16, scale), y - _s(2, scale)), lab, fl, P["accent"] + (255,), T["label_track"])
+        y += lab_h
+    for ln in tlines:
+        draw_runs(d, (PX, y), ln, ft, P["header_text"], P["header_text"])
+        y += tlh
+    if blocks:
+        y += rule_gap - _s(6, scale)
+        d.rectangle([PX, y, W - PX, y + P_rule_w(scale) - 1], fill=P["rule"])
+        y += P_rule_w(scale) + rule_gap
+        asc = sum(fb.getmetrics())
+        for cont, b in blocks:
+            if not cont:
+                cy = y + asc // 2
+                d.ellipse([PX, cy - DOT // 2, PX + DOT, cy + DOT // 2], fill=P["dot"])
+            im.alpha_composite(b, (bx, int(y)))
+            y += b.height + GAP
+    return im
+
+
+def P_rule_w(scale):
+    return max(1, _s(2, scale))
 
 
 # ---------------------------------------------------------------- small furniture
@@ -198,9 +306,41 @@ def badge(text, theme=None, scale=1.0, size=32, color=None):
     return im
 
 
-def stamp(text, angle=8, theme=None, scale=1.0, size=56):
-    """Rubber stamp: white plate, thick accent border + accent text, rotated."""
-    T = get_theme(theme)
+def stamp(text, angle=None, theme=None, scale=1.0, size=56):
+    """Stamp in the design theme's style. ``outline`` (default themes): a quiet label - thin ink / accent border,
+    paper fill, upright. ``plate`` (classic): white plate, thick accent border + accent text, rotated 8 deg.
+    angle None = the theme's angle."""
+    D = TH.current() if theme is None or theme in THEMES[:5] else TH.resolve(theme)
+    st = D["stamp"]
+    if angle is None:
+        angle = float(st.get("angle") or 0)
+    if st.get("style") == "label":                     # quiet card label: accent dot + tracked ink text, no border
+        f = load_font(D["font_strong"], _s(size * 0.54, scale))
+        asc, desc = f.getmetrics()
+        tw = tracked_width(text, f, 0.08)
+        dot = _s(size * 0.1, scale)
+        PX = _s(size * 0.36, scale)
+        w, h = int(tw + dot * 2 + PX * 2 + _s(size * 0.2, scale)), asc + desc + _s(size * 0.42, scale)
+        im = rounded_rect((w, h), _s(min(10, D["radius"]), scale), TH.rgb(D, "card") + (int(255 * st.get("fill_alpha", 0.95)),))
+        d = ImageDraw.Draw(im)
+        cy = h / 2
+        d.ellipse([PX, cy - dot, PX + 2 * dot, cy + dot], fill=TH.rgba(D, st.get("color") or "accent"))
+        draw_tracked(d, (PX + 2 * dot + _s(size * 0.2, scale), (h - asc - desc) / 2 - _s(1, scale)), text, f,
+                     TH.rgba(D, "card_ink"), 0.08)
+        return im.rotate(angle, expand=True, resample=Image.BICUBIC) if angle else im
+    if st.get("style") != "plate":
+        col = TH.rgb(D, st.get("color") or "ink")
+        f = load_font(D["font_strong"], _s(size * 0.82, scale))
+        asc, desc = f.getmetrics()
+        w = int(tracked_width(text, f, 0.06)) + _s(52, scale)
+        h = asc + desc + _s(30, scale)
+        im = rounded_rect((w, h), _s(min(10, D["radius"]), scale), TH.rgb(D, "card") + (int(255 * st.get("fill_alpha", 0.92)),),
+                          outline=col + (255,), width=max(1, _s(st.get("border", 2), scale)))
+        d = ImageDraw.Draw(im)
+        tw = tracked_width(text, f, 0.06)
+        draw_tracked(d, ((w - tw) / 2, (h - asc - desc) / 2 - _s(1, scale)), text, f, col + (255,), 0.06)
+        return im.rotate(angle, expand=True, resample=Image.BICUBIC) if angle else im
+    T = get_theme(theme if theme in THEMES[:5] else None)
     f = load_font("cjk-bold", _s(size, scale))
     asc, desc = f.getmetrics()
     w, h = int(text_width(text, f)) + _s(56, scale), asc + desc + _s(28, scale)
@@ -229,6 +369,17 @@ def node_card(title, eyebrow="", theme=None, scale=1.0, min_w=620, max_w=960):
     if text_width(title, ft) > w - _s(96, scale):
         ft = load_font("cjk-bold", _s(44, scale))
     h = _s(216, scale)
+    D = TH.current()
+    if not TH.is_classic(D):                            # theme card, accent rule + eyebrow, ink title
+        im = rounded_rect((w, h), _s(D["radius"], scale), TH.rgb(D, "card") + (int(255 * D["card_alpha"]),))
+        d = ImageDraw.Draw(im)
+        acc = TH.rgb(D, "accent") + (255,)
+        d.rectangle([_s(48, scale), _s(60, scale), _s(104, scale), _s(62, scale)], fill=acc)
+        if eyebrow:
+            draw_tracked(d, (_s(48, scale), _s(80, scale)), eyebrow, load_font(D["font_label"], _s(26, scale)), acc,
+                         D["label_track"])
+        d.text((_s(48, scale), _s(128 if eyebrow else 100, scale)), title, font=ft, fill=TH.rgba(D, "card_ink"))
+        return im
     im = rounded_rect((w, h), _s(24, scale), (10, 12, 16, 247), outline=T["accent"] + (235,), width=_s(3, scale))
     d = ImageDraw.Draw(im)
     d.rectangle([_s(48, scale), _s(60, scale), _s(120, scale), _s(65, scale)], fill=T["accent"] + (255,))
@@ -260,6 +411,9 @@ def chapter_card(index, total, title, size=(1920, 1080), theme=None, ground=None
     word would not fit; the whole block (number, kicker, title, rule) is centred vertically and the
     left-aligned block is centred horizontally. accent: per-video accent override."""
     T = with_accent(theme, accent); B = brand()
+    D = TH.current()
+    if not TH.is_classic(D) and not ground:             # paper card: theme paper, ink title, accent number + rule
+        B = dict(B, ink=TH.rgb(D, "ink"), dim=TH.rgb(D, "ink2"), ground=TH.rgb(D, "paper"))
     W, H = size
     bg = rgb(ground) if ground else B["ground"]
     im = Image.new("RGBA", (W, H), bg + (255,))
@@ -314,10 +468,16 @@ def _norm_chapters(chapters):
 def progress_bar(chapters, t, total=None, style="classic", width=1080, x0=None, x1=None, scale=None, theme=None):
     """Chapter progress strip at time t (same clock as chapter times). Returns RGBA of size (width, h).
 
+    line:    (theme default) a hairline track in the theme's rule colour, accent fill, small gaps between
+             chapters, no knob / glow; the current chapter as a small grey label when the theme asks for it.
     classic: thin track, chapter ticks, labels under each segment, accent fill + white knob, active label
              as an accent pill (notes-board).
     refined: one rounded segment per chapter with gaps, accent->amber gradient fill with glow, white knob,
              and a '01 / 05  label' pill under the bar (精剪)."""
+    if style in (None, "auto", "theme"):
+        style = TH.current()["progress"].get("style") or "line"
+    if style == "line":
+        return progress_line(chapters, t, total, width=width, x0=x0, x1=x1, scale=scale)
     T = get_theme(theme); B = brand()
     ch = _norm_chapters(chapters)
     total = float(total if total is not None else (ch[-1][1] if ch else 1.0))
@@ -617,3 +777,288 @@ def cue_html(text):
     from .draw import markup
     a, b = markup()
     return _h.escape(text).replace(a, "<em>").replace(b, "</em>")
+
+
+# ---------------------------------------------------------------- themed blocks (vstudio.theme tokens)
+def _T(theme=None):
+    return TH.resolve(theme) if theme is not None else TH.current()
+
+
+def progress_line(chapters, t, total=None, width=1080, x0=None, x1=None, scale=None, theme=None, on_video=False):
+    """Hairline progress (theme ``progress``): track in rule colour (white 35% on video), fill in accent / ink,
+    2 px gaps between chapters; label of the current chapter in ink2 when ``progress.label``."""
+    T = _T(theme)
+    pr = T["progress"]
+    ch = _norm_chapters(chapters) if chapters else []
+    total = float(total if total is not None else (ch[-1][1] if ch else 1.0)) or 1.0
+    if not ch:
+        ch = [(0.0, total, "")]
+    s = scale if scale is not None else width / 1080.0
+    x0 = _s(64, s) if x0 is None else x0
+    x1 = width - _s(64, s) if x1 is None else x1
+    th = max(2, _s(pr.get("height", 4), s))
+    lab = bool(pr.get("label")) and any(c[2] for c in ch)
+    fl = load_font(T["font_body"], _s(22, s))
+    H = th + (_s(44, s) if lab else _s(4, s))
+    im = Image.new("RGBA", (width, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    track = (255, 255, 255, 90) if on_video else TH.rgba(T, pr.get("track") or "rule")
+    fill = TH.rgba(T, pr.get("fill") or "accent")
+    gap = _s(4, s) if len(ch) > 1 else 0
+    dur = sum(b - a for a, b, _ in ch) or 1.0
+    avail = (x1 - x0) - gap * (len(ch) - 1)
+    x, cur = x0, 0
+    for i, (a, b, _l) in enumerate(ch):
+        w = avail * (b - a) / dur
+        d.rectangle([x, 0, x + w, th - 1], fill=track)
+        if t >= a:
+            p = 1.0 if t >= b else (t - a) / max(1e-6, b - a)
+            if t < b:
+                cur = i
+            if p > 0:
+                d.rectangle([x, 0, x + w * p, th - 1], fill=fill)
+        x += w + gap
+    if lab:
+        d.text((x0, th + _s(12, s)), str(ch[cur][2]), font=fl, fill=TH.rgba(T, "ink2"))
+    return im
+
+
+def title_band(text, W, H, theme=None, color=None, band_color=None, sub=None, size=1.0, align=None, alpha=None):
+    """Title band (RGBA W x H): theme paper, title in the theme's title face; a 【keyword】 is emphasised the
+    theme's way (marker band / accent / underline). Explicit color / band_color win."""
+    T = _T(theme)
+    band = rgb(band_color) if band_color else TH.rgb(T, "paper")
+    a = 255 if alpha is None else int(alpha)
+    im = Image.new("RGBA", (int(W), int(H)), band + (a,))
+    text = str(text or "")
+    if not text.strip():
+        return im
+    sz = int(H * (0.36 if sub else 0.42) * float(size or 1.0))
+    maxw = int(W * 0.86)
+    while sz > 18:
+        f = load_font(T["font_title"], sz)
+        if text_width(text, f) <= maxw:
+            break
+        sz -= 2
+    f = load_font(T["font_title"], sz)
+    lay = emph_layer(text, f, T, surface="paper", fill=color, pad=int(sz * 0.2), line_gap=1.2)
+    fs = load_font(T["font_body"], max(14, int(sz * 0.42))) if sub else None
+    sl = emph_layer(str(sub), fs, T, surface="paper", fill=TH.rgba(T, "ink2"), pad=int(sz * 0.1)) if sub else None
+    tot = lay.height + (sl.height if sl else 0)
+    y = (H - tot) // 2
+    al = align or T.get("title_align") or "center"
+    xx = (lambda w: (W - w) // 2) if al == "center" else (lambda w: int(W * 0.07))
+    im.alpha_composite(lay, (max(0, xx(lay.width)), max(0, y)))
+    if sl:
+        im.alpha_composite(sl, (max(0, xx(sl.width)), max(0, y + lay.height)))
+    return im
+
+
+def quote_block(lines, width, theme=None, card=False, speaker=None, scale=1.0, sweep=1.0, size=80, label=None):
+    """Typographic quote (RGBA): ``lines`` = str or [str | (text, role)] with role main | sub. Weight contrast
+    (main in the theme's quote face, sub in body ink2), a hanging opening quote in ink2 outside the text column,
+    a short accent rule above, keywords the theme's way. card=True puts it on the theme card (for use over video).
+    Classic themes keep the old big coloured mark."""
+    T = _T(theme)
+    if isinstance(lines, str):
+        lines = [lines]
+    rows = [(x, "main") if isinstance(x, str) else (x[0], x[1]) for x in lines]
+    u = scale
+    pad = _s(44, u) if card else 0
+    hang = _s(size * 0.55, u)
+    col_w = int(width - 2 * pad - hang)
+    fm = load_font(T["font_quote"], _s(size, u))
+    fsub = load_font(T["font_body"], _s(size * 0.46, u))
+    fe = load_font(T["font_quote"], _s(size, u))
+    blocks = []
+    for txt, role in rows:
+        if role == "sub":
+            blocks.append((role, emph_layer(txt, fsub, T, surface="paper", fill=TH.rgba(T, "ink2"), max_w=col_w,
+                                            line_gap=1.4, pad=0, sweep=sweep)))
+        else:
+            blocks.append((role, emph_layer(txt, fm, T, surface="paper", fill=TH.rgba(T, "card_ink" if card else "ink"),
+                                            emph_font=fe, max_w=col_w, line_gap=1.22, pad=0, sweep=sweep)))
+    fl = load_font(T["font_label"], _s(22, u))
+    rule_h = max(2, _s(3, u))
+    top = rule_h + _s(28, u)
+    if label:
+        top += sum(fl.getmetrics()) + _s(10, u)
+    gaps = [(_s(26, u) if blocks[i][0] != blocks[i - 1][0] else _s(10, u)) for i in range(1, len(blocks))]
+    sp_h = (sum(fsub.getmetrics()) + _s(22, u)) if speaker else 0
+    H = pad * 2 + top + sum(b.height for _, b in blocks) + sum(gaps) + sp_h
+    W = int(width)
+    if card:
+        im = rounded_rect((W, H), _s(T["radius"], u), TH.rgb(T, "card") + (int(255 * T["card_alpha"]),))
+    else:
+        im = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    x = pad + hang
+    y = pad
+    acc = TH.rgb(T, "accent")
+    if T["quote"] == "glyph":                          # legacy: big coloured mark
+        fq = load_font("cjk-bold", _s(size * 1.9, u))
+        d.text((pad, y - _s(size * 0.35, u)), "“", font=fq, fill=acc + (255,))
+    else:
+        d.rectangle([x, y, x + _s(56, u), y + rule_h - 1], fill=acc + (255,))
+    y += rule_h + _s(28, u)
+    if label:
+        draw_tracked(d, (x, y), label, fl, acc + (255,), T["label_track"])
+        y += sum(fl.getmetrics()) + _s(10, u)
+    first_main = True
+    for i, (role, b) in enumerate(blocks):
+        if i:
+            y += gaps[i - 1]
+        if role == "main" and first_main and T["quote"] != "glyph":
+            # hanging punctuation: the opening mark sits in the margin, aligned to the first line's cap height
+            fq = load_font(T["font_quote"], _s(size, u))
+            qw = text_width("“", fq)
+            d.text((x - qw - _s(size * 0.04, u), y - _s(size * 0.02, u)), "“", font=fq, fill=TH.rgba(T, "ink2", 0.55))
+            first_main = False
+        im.alpha_composite(b, (int(x), int(y)))
+        y += b.height
+    if speaker:
+        y += _s(22, u)
+        d.text((x, y), "— " + str(speaker), font=fsub, fill=TH.rgba(T, "ink2"))
+    return im
+
+
+def notes_chip(label, title, width, height=None, theme=None, scale=1.0, flush="left", alpha=None):
+    """Section card (本段 / 记笔记 + one or two lines) for a corner of the video: theme card, small accent label
+    with a dot, title in strong ink. flush left: square left edge (it runs off the frame), rounded right."""
+    T = _T(theme)
+    u = scale
+    PX, PT = _s(26, u), _s(20, u)
+    fl = load_font(T["font_label"], _s(22, u))
+    lab = _label_text(label)
+    inner = int(width - PX * 2)
+    sz = _s(34, u)
+    while sz > _s(22, u):
+        ft = load_font(T["font_strong"], sz)
+        ls = wrap(title, ft, inner, balance=True, max_lines=2)
+        if all(text_width(x, ft) <= inner for x in ls):
+            break
+        sz -= 2
+    lh = int(sz * 1.36)
+    lab_h = sum(fl.getmetrics()) + _s(10, u) if lab else 0
+    H = int(height or (PT * 2 + lab_h + lh * len(ls)))
+    r = _s(T["radius"], u)
+    a = int(255 * (T["card_alpha"] if alpha is None else alpha))
+    im = Image.new("RGBA", (int(width), H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    x0 = -r if flush == "left" else 0
+    d.rounded_rectangle([x0, 0, width - 1, H - 1], r, fill=TH.rgb(T, "card") + (a,))
+    y = (H - lab_h - lh * len(ls)) / 2
+    acc = TH.rgb(T, "accent") + (255,)
+    if lab:
+        d.ellipse([PX, y + _s(7, u), PX + _s(8, u), y + _s(15, u)], fill=acc)
+        draw_tracked(d, (PX + _s(16, u), y - _s(3, u)), lab, fl, acc, T["label_track"])
+        y += lab_h
+    for x in ls:
+        draw_runs(d, (PX, y), x, ft, TH.rgba(T, "card_ink"), TH.rgba(T, "card_ink"))
+        y += lh
+    return im
+
+
+def marker_line(text, size, theme=None, sweep=1.0, surface="paper", max_w=None, align="left", role=None):
+    """One keyword line with a marker that sweeps in (sweep 0-1) behind the 【keyword】 (whole line if no markup)."""
+    T = _T(theme)
+    if "【" not in str(text) and "**" not in str(text):
+        text = "【" + str(text) + "】"
+    f = load_font(role or T["font_strong"], int(size))
+    return emph_layer(text, f, T, surface=surface, sweep=sweep, max_w=max_w, align=align, emphasis="marker"
+                      if surface == "paper" else None)
+
+
+def chapter_rule(label, title=None, width=900, theme=None, progress=1.0, scale=1.0, surface="paper", index=None):
+    """Thin chapter marker: a hairline that draws across (progress 0-1), a small tracked label above it (``02``
+    and the chapter name), optional title below in strong ink. On video: white text with a soft shadow."""
+    T = _T(theme)
+    u = scale
+    video = surface == "video"
+    fl = load_font(T["font_label"], _s(24, u))
+    ft = load_font(T["font_title"], _s(46, u))
+    lab = (f"{int(index):02d}  " if index is not None else "") + _label_text(label)
+    ink = (255, 255, 255, 255) if video else TH.rgba(T, "ink")
+    acc = (255, 255, 255, 230) if video else TH.rgba(T, "accent")
+    rule = (255, 255, 255, 150) if video else TH.rgba(T, "rule")
+    lab_h = sum(fl.getmetrics())
+    t_h = int(sum(ft.getmetrics()) * 1.1) if title else 0
+    H = lab_h + _s(14, u) + max(2, _s(2, u)) + (_s(18, u) + t_h if title else 0) + _s(8, u)
+    im = Image.new("RGBA", (int(width), H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    p = min(1.0, max(0.0, float(progress)))
+    draw_tracked(d, (0, 0), lab, fl, acc, T["label_track"])
+    y = lab_h + _s(14, u)
+    rw = int(width * p)
+    if rw > 0:
+        d.rectangle([0, y, rw, y + max(2, _s(2, u)) - 1], fill=rule)
+        d.rectangle([0, y, min(rw, _s(56, u)), y + max(2, _s(2, u)) - 1], fill=acc)
+    if title:
+        y += max(2, _s(2, u)) + _s(18, u)
+        d.text((0, y), str(title), font=ft, fill=ink)
+    if video:
+        sh, pad = shadow(im, blur=_s(6, u), offset=(0, _s(2, u)), alpha=120)
+        return sh
+    return im
+
+
+def counter_text(value, t, dur=0.9, decimals=None, prefix="", suffix=""):
+    """The number a gentle counter shows ``t`` s in (ease-out over ``dur``; integer unless decimals)."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    u = min(1.0, max(0.0, t / dur)) if dur > 0 else 1.0
+    e = 1 - (1 - u) ** 3
+    dec = decimals if decimals is not None else (0 if float(v).is_integer() else 1)
+    x = v * e
+    s = f"{x:,.{dec}f}"
+    return f"{prefix}{s}{suffix}"
+
+
+def counter(value, t=99.0, label=None, theme=None, size=120, dur=0.9, prefix="", suffix="", surface="paper",
+            decimals=None):
+    """Gentle number counter (RGBA): the figure counts up with ease-out (tabular width reserved for the final
+    value, so nothing jitters), unit / label in small ink2 under it, a short accent rule."""
+    T = _T(theme)
+    video = surface == "video"
+    fn = load_font(T["font_title"], int(size))
+    fl = load_font(T["font_body"], max(14, int(size * 0.24)))
+    final = counter_text(value, 99, dur, decimals, prefix, suffix)
+    cur = counter_text(value, t, dur, decimals, prefix, suffix)
+    W = int(max(text_width(final, fn), text_width(str(label or ""), fl))) + int(size * 0.2)
+    asc, desc = fn.getmetrics()
+    lab_h = sum(fl.getmetrics()) + int(size * 0.12) if label else 0
+    H = asc + desc + int(size * 0.18) + lab_h + int(size * 0.1)
+    im = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    ink = (255, 255, 255, 255) if video else TH.rgba(T, "ink")
+    d.text((W - text_width(final, fn) - int(size * 0.1) + (text_width(final, fn) - text_width(cur, fn)), 0), cur,
+           font=fn, fill=ink)
+    y = asc + desc + int(size * 0.06)
+    d.rectangle([int(size * 0.1), y, int(size * 0.1) + int(size * 0.4), y + max(2, int(size * 0.025))],
+                fill=TH.rgba(T, "accent") if not video else (255, 255, 255, 220))
+    if label:
+        d.text((int(size * 0.1), y + int(size * 0.12)), str(label), font=fl,
+               fill=(255, 255, 255, 220) if video else TH.rgba(T, "ink2"))
+    if video:
+        return shadow(im, blur=max(2, int(size * 0.05)), offset=(0, 2), alpha=110)[0]
+    return im
+
+
+def lower_third(name, role=None, theme=None, scale=1.0, width=None):
+    """Name super: theme card, name in strong ink, role in ink2, a short accent rule at the left."""
+    T = _T(theme)
+    u = scale
+    fn = load_font(T["font_strong"], _s(38, u))
+    fr = load_font(T["font_body"], _s(26, u))
+    PX, PY = _s(30, u), _s(20, u)
+    w = int(width or (max(text_width(name, fn), text_width(role or "", fr)) + PX * 2 + _s(16, u)))
+    h = PY * 2 + sum(fn.getmetrics()) + (sum(fr.getmetrics()) + _s(6, u) if role else 0)
+    im = rounded_rect((w, h), _s(min(T["radius"], 12), u), TH.rgb(T, "card") + (int(255 * T["card_alpha"]),))
+    d = ImageDraw.Draw(im)
+    d.rectangle([PX, PY + _s(4, u), PX + _s(3, u), h - PY - _s(4, u)], fill=TH.rgba(T, "accent"))
+    d.text((PX + _s(16, u), PY), name, font=fn, fill=TH.rgba(T, "card_ink"))
+    if role:
+        d.text((PX + _s(16, u), PY + sum(fn.getmetrics()) + _s(6, u)), role, font=fr, fill=TH.rgba(T, "ink2"))
+    return im

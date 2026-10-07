@@ -46,6 +46,7 @@ timeline); positions are fractions of the canvas (x, y = centre).
 | `caption_add` / `caption_remove` | `start, end, text` or `from_transcript: true, start?, end?` / `cue` | flattened: placement auto = mask over the detected caption band |
 | `caption_placement` | `mode band|mask|none, box?, style blur|solid, always?, band?` | flattened only |
 | `title` | `text, sub?, color?, band_color?, y?, height?, size?` | `text: ""` removes the band |
+| `theme` | `theme editorial|mono|soft|night|xhs-pop|classic (or 编辑感 / 黑白灰 / 柔和 / 夜间 / 小红书), accent?, ink?, paper?, ..., restyle? (default true), keep_colors?` | the whole look of the frame pass (title band, captions on paper, notes, quote, stamps, pop words, progress); restyle hands explicit caption / title / effect colours, angles and anims back to the theme; `theme: null` = the creator's default. Rules: STYLE_RULES.md |
 | `effect_add` | `effect, start, end? / duration?, params {}, id?` | effect id / alias / zh label from the catalogue; params validated (unknown dropped, clamped, required checked) |
 | `effect_update` | `id, start?, end?, shift?, duration?, params?` | move / retime / change params |
 | `effect_remove` | `id` | |
@@ -109,14 +110,18 @@ frames rendered once into `$VSTUDIO_CACHE/output_fx/`.
 | `pop-words` | 弹出大字 | frame | text, color, size, angle, anim, x, y |
 | `stacking-stamps` | 印章 | frame | text, angle, scale, anim, x, y |
 | `punch-in` | 推镜放大 | frame | scale, in_dur, out_dur, hold return|stay, x, y (origin) |
-| `quote-card` | 金句卡 | frame | text, speaker, width, theme, anim, x, y |
+| `quote-card` | 金句卡 | frame | text, sub, speaker, width, theme, anim, x, y |
 | `callout-bubble` | 标注气泡 / 箭头 | frame | text, arrow_x, arrow_y, theme, anim, x, y |
 | `chapter-card` | 章节卡 | frame | title, index, total, accent |
 | `notes-panel` | 记笔记面板 | frame | title, bullets, theme, width, anim, x, y |
 | `overlay-images` | 贴纸 / 标签 | frame | image, text, style tag|chip|badge|star|image, color, scale, angle, anim, x, y |
 | `badge` | 角标 | frame | text, color, scale, anim, x, y |
 | `red-box` | 框选高亮 | frame | x, y, w, h, color, width, anim |
-| `progress-bar-pil` | 进度条 | frame | style, chapters [{start, end, label}], y, theme (whole clip) |
+| `progress-bar-pil` | 进度条 | frame | style line|classic|refined (empty = theme hairline), chapters [{start, end, label}], y, theme (whole clip) |
+| `marker-sweep` | 马克笔划重点 | frame | text (【kw】), size, surface auto|paper|card, sweep, anim, x, y |
+| `chapter-rule` | 章节细线 | frame | label, title, index, width, anim, x, y |
+| `number-counter` | 数字滚动 | frame | value, label, prefix, suffix, count, size, anim, x, y |
+| `lower-third` | 人名条 | frame | name, role, scale, anim, x, y |
 | `sfx-placement` | 音效 | audio | name (the synthesized bank), gain |
 | `music-bed` | 背景音乐 | audio | file, duck_db, music_lufs (whole clip) |
 | `xfade-joins` | 转场 | timeline | transition (any `vstudio.xfade` name), duration: at a cut join = an xfade, elsewhere a flash / dip |

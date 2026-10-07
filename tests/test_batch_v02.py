@@ -67,7 +67,7 @@ def test_client_init_show_update_layered_over_persona(tmp_path):
                            fillers={"extra": ["对不对"], "keep": ["然后"]}, cleanup_profile="tight"))
     eff = v["effective"]
     assert eff["name"] == "Acme 讲师" and eff["platforms"] == ["douyin"] and eff["cleanup_profile"] == "tight"
-    assert eff["brand"]["accent"] == "#112233" and eff["brand"]["highlight"]      # persona brand underneath
+    assert eff["brand"]["accent"] == "#112233" and eff["brand"]["ink"]      # persona brand underneath
     assert eff["delivery"]["cleanup_days"] == 0 and eff["confirm_policy"] is True     # 0 = never delete sources
     with pytest.raises(CL.ClientError):
         CL.init(cdir, dict(name="x"))
@@ -106,7 +106,7 @@ def test_batch_with_client_gets_defaults_glossary_and_persona_overlay(tmp_path):
     from vstudio.config import persona
     with CL.activate(r["batch_dir"]):
         assert persona()["brand"]["accent"] == "#123456"
-    assert persona()["brand"]["accent"] != "#123456"
+    assert persona()["brand"].get("accent") != "#123456"
 
 
 # --------------------------------------------------------------------------- plan-segments

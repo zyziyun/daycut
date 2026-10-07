@@ -199,7 +199,11 @@ def visual_spec(rec, st, tl, tg, band):
     bandspec = None
     if band:
         bandspec = dict(band=float(pl.get("band") or 0.2), title=bool(st.get("title")))
-    return dict(layers=layers, captions=caps, style=c["style"], title=st.get("title"), mask=mask, band=bandspec,
+    from vstudio import theme as TH
+    look = TH.resolve(st.get("theme"))                 # the resolved look is part of the final key: a persona /
+    look = sha1_json({k: v for k, v in look.items() if k != "source"}, 12)   # client theme change re-renders
+    return dict(layers=layers, captions=caps, style=c["style"], title=st.get("title"), theme=st.get("theme"),
+                look=look, mask=mask, band=bandspec,
                 dips=dips, safe=[round(x, 2) for x in _safe(tg)], caption_box=[round(x, 2) for x in _caption_box(tg)],
                 mode=rec["mode"])
 
@@ -392,18 +396,55 @@ class Captions:
             s = min(self.W, self.H) * 0.055
         return max(14, int(s * float(self.st.get("size") or 1.0)))
 
-    def layer(self, k, text):
-        if k not in self.cache:
+    def _surface(self, img, cx, cy):
+        """paper | video: what is under the caption (a flat area in the theme paper / a light flat band = paper)."""
+        want = self.st.get("surface")
+        if want in ("paper", "video"):
+            return want
+        if self.st.get("color") or self.st.get("stroke") is not None:
+            return "legacy"                                    # explicit look: the old text_layer path
+        if img is None:
+            return "video"
+        h = int(self.H * 0.05)
+        x0, x1 = int(self.W * 0.1), int(self.W * 0.9)
+        y0, y1 = max(0, int(cy - h)), min(self.H, int(cy + h))
+        roi = img[y0:y1, x0:x1]
+        if roi.size == 0:
+            return "video"
+        px = roi.reshape(-1, 3).astype(np.int16)
+        med = np.median(px, axis=0)
+        near = float((np.abs(px - med).max(axis=1) <= 10).mean())   # a flat paper band (a hairline or an edge of
+        return "paper" if near >= 0.85 else "video"                  # video inside the probe is fine)
+
+    def layer(self, k, text, surface="legacy"):
+        key = (k, surface)
+        if key not in self.cache:
             Dr = self.Dr
+            from vstudio import theme as TH
+            T = TH.current()
             size = self._size(text)
-            f = Dr.load_font(self.st.get("font") or "cjk-bold", size)
-            stroke = max(2, int(size * float(self.st.get("stroke", 0.08) if self.st.get("stroke") is not None else 0.08)))
             x0, _, x1, _ = self.box
             maxw = (self.band_rect[2] - self.band_rect[0]) * 0.92 if self.band_rect else (x1 - x0)
+            if surface in ("paper", "video"):
+                f = Dr.load_font(self.st.get("font") or T["font_caption"], size)
+                ink = None
+                if surface == "paper" and TH.is_dark(T) is False and self.paper_rgb is not None and \
+                        TH.luminance(self.paper_rgb) < 0.2:
+                    ink = TH.rgba(T, "over_ink")
+                im = Dr.emph_layer(text, f, T, surface=surface, fill=ink, keywords=self.st.get("keywords") or None,
+                                   max_w=int(maxw), align="center", line_gap=1.22,
+                                   accent=self.st.get("highlight"))
+                self.cache[key] = np.asarray(im)
+                return self.cache[key]
+            f = Dr.load_font(self.st.get("font") or "cjk-bold", size)
+            stroke = max(2, int(size * float(self.st.get("stroke", 0.08) if self.st.get("stroke") is not None else 0.08)))
+            if self.st.get("stroke") is not None and float(self.st.get("stroke")) == 0:
+                stroke = 0
             im = Dr.text_layer(text, f, fill=Dr.rgba(self.st.get("color") or "#FFFFFF"),
                                hl_fill=self.st.get("highlight"), stroke=stroke,
                                stroke_fill=Dr.rgba(self.st.get("stroke_color") or (20, 20, 20)),
-                               keywords=self.st.get("keywords") or None, max_w=int(maxw), pad=8)
+                               keywords=self.st.get("keywords") or None, max_w=int(maxw), pad=8,
+                               shadow_alpha=150 if stroke else 0)
             if self.st.get("box"):
                 from PIL import Image
                 bg = Dr.rounded_rect((im.width + 24, im.height + 8), int(size * 0.3),
@@ -411,14 +452,14 @@ class Captions:
                 bg.alpha_composite(im, (12, 4))
                 im = bg
                 del Image
-            self.cache[k] = np.asarray(im)
-        return self.cache[k]
+            self.cache[key] = np.asarray(im)
+        return self.cache[key]
+
+    paper_rgb = None
 
     def draw(self, img, t):
         for k, (a, b, text) in enumerate(self.cues):
             if a <= t < b:
-                L = self.layer(k, text)
-                h, w = L.shape[:2]
                 if self.band_rect:
                     x0, y0, x1, y1 = self.band_rect
                     cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
@@ -431,32 +472,33 @@ class Captions:
                     cx = (x0 + x1) / 2
                     cy = {"bottom": (y0 + y1) / 2, "middle": self.H * 0.6, "top": self.H * 0.22}.get(
                         pos, float(self.st.get("y") or 0.8) * self.H)
-                    if pos == "bottom":
-                        cy = min(cy, y1 - h / 2)
+                sf = self._surface(img, cx, cy)
+                if sf == "paper" and self.paper_rgb is None:
+                    h = int(self.H * 0.05)
+                    roi = img[max(0, int(cy - h)):int(cy + h), int(self.W * 0.1):int(self.W * 0.9)]
+                    if roi.size:
+                        self.paper_rgb = tuple(int(v) for v in np.median(roi.reshape(-1, 3), axis=0)[::-1])
+                L = self.layer(k, text, sf)
+                h, w = L.shape[:2]
+                if not self.band_rect and not self.mask_rect and (self.st.get("position") or "bottom") == "bottom":
+                    cy = min(cy, self.box[3] - h / 2)
                 self.Dr.alpha_paste(img, L, (cx, cy), center=True, bgr=True)
                 break
         return img
 
 
-def _title_layer(title, W, h_px):
-    from vstudio import draw as Dr
-    from PIL import Image
-    band = Image.new("RGBA", (W, h_px), Dr.rgba(title.get("band_color") or Dr.brand()["ground"], 232))
-    text = str(title.get("text") or "")
-    sub = str(title.get("sub") or "")
-    size = int(h_px * (0.42 if sub else 0.5) * float(title.get("size") or 1.0))
-    f = Dr.fit_font(text, "cjk-bold", size, int(W * 0.9))
-    lay = Dr.text_layer(text, f, fill=Dr.rgba(title.get("color") or "#FFFFFF"), stroke=0, shadow_alpha=0, pad=2)
-    if sub:
-        fs = Dr.fit_font(sub, "cjk", int(size * 0.55), int(W * 0.9))
-        sl = Dr.text_layer(sub, fs, fill=Dr.rgba(Dr.brand()["highlight"]), stroke=0, shadow_alpha=0, pad=2)
-        tot = lay.height + sl.height
-        y = (h_px - tot) // 2
-        band.alpha_composite(lay, ((W - lay.width) // 2, max(0, y)))
-        band.alpha_composite(sl, ((W - sl.width) // 2, max(0, y + lay.height)))
-    else:
-        band.alpha_composite(lay, ((W - lay.width) // 2, max(0, (h_px - lay.height) // 2)))
-    return np.asarray(band)
+def _title_layer(title, W, h_px, alpha=None):
+    from vstudio import overlays as O
+    im = O.title_band(str(title.get("text") or ""), W, h_px, color=title.get("color"),
+                      band_color=title.get("band_color"), sub=title.get("sub") or None,
+                      size=float(title.get("size") or 1.0), alpha=title.get("alpha") if alpha is None else alpha)
+    return np.asarray(im)
+
+
+def _flat(img, y, h, tol=6.0):
+    """True when rows y..y+h of a BGR frame are one flat colour (a designed paper band, not video)."""
+    roi = img[max(0, int(y)):int(y + h)]
+    return bool(roi.size) and float(roi.reshape(-1, 3).std(axis=0).max()) < tol
 
 
 def _band_layout(W, H, sw, sh, band_frac, title):
@@ -472,6 +514,13 @@ def _band_layout(W, H, sw, sh, band_frac, title):
 
 
 def frame_pass(src, out, audio_wav, vis, tg, fps, quality, final_encode, beat):
+    """The per-frame pass, drawn inside the output's theme (``theme`` op; None = the creator's default)."""
+    from vstudio import theme as TH
+    with TH.use(vis.get("theme")):
+        return _frame_pass(src, out, audio_wav, vis, tg, fps, quality, final_encode, beat)
+
+
+def _frame_pass(src, out, audio_wav, vis, tg, fps, quality, final_encode, beat):
     import cv2
 
     from vstudio import draw as Dr
@@ -514,8 +563,12 @@ def frame_pass(src, out, audio_wav, vis, tg, fps, quality, final_encode, beat):
             hp = int(H * float(title.get("height") or 0.1))
             title_arr = _title_layer(title, W, hp)
             title_y = int(float(title["y"]) * H) if title.get("y") is not None else int(safe[1])
+    title_flat = None
     cap_spans = [(a, b) for a, b, _ in (vis["captions"] or [])]
     ground = np.array(Dr.brand()["ground"][::-1], np.uint8)
+    from vstudio import theme as TH
+    _T = TH.current()
+    band_paper = None if _T.get("band") == "blur" else np.array(TH.rgb(_T, "paper")[::-1], np.uint8)
 
     dec = [m.ffmpeg_bin(), "-v", "error", "-i", src, "-map", "0:v:0", "-f", "rawvideo", "-pix_fmt", "bgr24", "-"]
     enc = [m.ffmpeg_bin(), "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{W}x{H}",
@@ -551,9 +604,13 @@ def frame_pass(src, out, audio_wav, vis, tg, fps, quality, final_encode, beat):
                     L.draw(img, t - a, b - a)
             if band:
                 x, y, vw, vh = vid_rect
-                small = cv2.resize(img, (max(2, W // 12), max(2, H // 12)), interpolation=cv2.INTER_AREA)
-                bg = cv2.GaussianBlur(cv2.resize(small, (W, H), interpolation=cv2.INTER_LINEAR), (0, 0), 9)
-                canvas = (bg.astype(np.float32) * 0.35).astype(np.uint8)
+                if band_paper is not None:
+                    canvas = np.empty((H, W, 3), np.uint8)
+                    canvas[:] = band_paper
+                else:
+                    small = cv2.resize(img, (max(2, W // 12), max(2, H // 12)), interpolation=cv2.INTER_AREA)
+                    bg = cv2.GaussianBlur(cv2.resize(small, (W, H), interpolation=cv2.INTER_LINEAR), (0, 0), 9)
+                    canvas = (bg.astype(np.float32) * 0.35).astype(np.uint8)
                 canvas[y:y + vh, x:x + vw] = cv2.resize(img, (vw, vh), interpolation=cv2.INTER_AREA)
                 img = canvas
             elif (sw, sh) != (W, H):
@@ -562,6 +619,10 @@ def frame_pass(src, out, audio_wav, vis, tg, fps, quality, final_encode, beat):
                 if a <= t < b or (L.__class__.__name__ == "Progress" and a <= t <= b + 1.0):
                     L.draw(img, t - a, b - a)
             if title_arr is not None:
+                if title_flat is None:                     # over a flat area (a master's own paper band): text only,
+                    title_flat = _flat(img, title_y, title_arr.shape[0]) and not title.get("band_color") and not top_rect
+                    if title_flat:                         # so no band edge shows against the master's paper
+                        title_arr = _title_layer(title, W, title_arr.shape[0], alpha=0)
                 Dr.alpha_paste(img, title_arr, (0, title_y), bgr=True)
             if caps:
                 caps.draw(img, t)

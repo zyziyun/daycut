@@ -136,12 +136,21 @@ def enter_zoom(target, at, from_scale=1.15, dur=0.6, tl="tl"):
 
 
 # ---------------------------------------------------------------- cards & overlays
-def screenshot_cards(cards, card_w=760, card_h=740, left=1100, top=60, accent="#FF2442", tl="tl",
+def _acc(accent):
+    """None -> the theme accent as #RRGGBB (vstudio.theme via draw.brand)."""
+    if accent:
+        return accent
+    from .draw import brand
+    return "#%02X%02X%02X" % brand()["accent"]
+
+
+def screenshot_cards(cards, card_w=760, card_h=740, left=1100, top=60, accent=None, tl="tl",
                      cards_js=None, card_w_js=None):
     """3D screenshot cards: slide in with rotationY, drift, scroll the image to [t, y] keyframes, highlighter
     rows sweep in ([t, y0, y1, width fraction], image px) and an optional red box [t, y0, y1] pops.
     cards: [{id, img, w, h, s, e, scroll: [[t, y], ...], hl: [...], box?}] (w/h = image px).
     cards_js / card_w_js: JS expressions to reference instead of inlining (html still uses the Python values)."""
+    accent = _acc(accent)
     CW = _v(card_w_js if card_w_js is not None else card_w)
     cw = card_w
     css = (f".card {{ position: absolute; left: {left}px; top: {top}px; width: {cw}px; height: {card_h}px; border-radius: 22px; overflow: hidden; background: #fff;\n"
@@ -194,8 +203,9 @@ def chips(items, end, left=1080, top=822, width=800, ink="#ECEEF2", gold="#F4D35
     return _out(css, f'<div id="chips">{inner}</div>', js)
 
 
-def badge(text, start, duration, at, left=160, top=954, accent="#FF2442", el="mbadge", track=4, tl="tl"):
+def badge(text, start, duration, at, left=160, top=954, accent=None, el="mbadge", track=4, tl="tl"):
     """Small solid label (e.g. 精选) that slides in from the left at `at`."""
+    accent = _acc(accent)
     css = f'#{el} {{ position: absolute; left: {left}px; top: {top}px; padding: 4px 16px; border-radius: 10px; background: {accent}; color: #fff; font: 700 28px "CJK"; opacity: 0; }}\n'
     html = f'<div id="{el}" class="clip" data-start="{r(start)}" data-duration="{r(duration)}" data-track-index="{track}">{text}</div>' if text else ""
     js = f'if ($("#{el}")) {tl}.fromTo("#{el}", {{ opacity: 0, x: -20 }}, {{ opacity: 1, x: 0, duration: 0.35, ease: "power2.out" }}, {_v(at)});\n'
@@ -227,8 +237,9 @@ def title_card(title, start, at, sub=None, top=400, size=96, gold="#F4D35E", el=
     return _out(css, html, js)
 
 
-def stamp(text, start, duration, at, left=1290, top=230, accent="#FF2442", size=96, angle=-12, el="stamp", track=4, tl="tl"):
+def stamp(text, start, duration, at, left=1290, top=230, accent=None, size=96, angle=-12, el="stamp", track=4, tl="tl"):
     """Rubber stamp: bordered word slams in from scale 2.2 at `at` (back.out), tilted `angle` deg."""
+    accent = _acc(accent)
     css = (f'#{el} {{ position: absolute; left: {left}px; top: {top}px; padding: 10px 30px; border: 7px solid {accent}; color: {accent}; font: 700 {size}px "CJK";\n'
            "  border-radius: 18px; opacity: 0; background: rgba(255,255,255,.12); }\n")
     html = f'<div id="{el}" class="clip" data-start="{r(start)}" data-duration="{r(duration)}" data-track-index="{track}">{text}</div>' if text else ""
@@ -267,10 +278,11 @@ def freeze_clips(src, freeze_src, start, cut_at, hold, media_dur, rate=1.0, ids=
 
 
 def freeze_hold(at, hold, fly_from=(380, -150), label="", image="", left=160, top=250, width=1600,
-                accent="#FF2442", gold="#F4D35E", clip=None, track=6, tl="tl"):
+                accent=None, gold="#F4D35E", clip=None, track=6, tl="tl"):
     """Over a frozen frame: dim the picture and fly a zoomed card (e.g. the prompt from a screenshot) out
     from offset `fly_from` (towards where it sits in the screenshot), hold, fly it back. clip = (start, dur)
     for the html data-start/duration (default (at, hold) when those are numbers)."""
+    accent = _acc(accent)
     css = ("#pz-dim { background: rgba(5,8,16,.72); opacity: 0; }\n"
            f"#pz-box {{ position: absolute; left: {left}px; top: {top}px; width: {width}px; padding: 26px 30px 30px; border-radius: 26px; background: #EFEFEC;\n"
            f"  box-shadow: 0 40px 120px rgba(0,0,0,.6), 0 0 0 6px {accent}; transform-origin: 85% 10%; opacity: 0; }}\n"
