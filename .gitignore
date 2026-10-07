@@ -6,6 +6,7 @@ renders/
 .media/
 node_modules/
 *.mp4
+!apps/desk/packaging/sample/reelfold-sample.mp4
 *.wav
 assets/fonts/
 .env

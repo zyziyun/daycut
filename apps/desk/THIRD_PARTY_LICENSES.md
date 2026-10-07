@@ -259,6 +259,7 @@ Fetched from the upstream URLs pinned in `packaging/assets.json` into the app da
 | Asset group | Targets | Licence | Host |
 |---|---|---|---|
 | core | all | Fonts: SIL OFL 1.1 (Noto CJK, STIX Two, JetBrains Mono). Models: Apache-2.0 (Google MediaPipe). | raw.githubusercontent.com |
+| asr-mlx-fast | darwin-arm64 | OpenAI Whisper large-v3-turbo weights, MIT (4-bit MLX conversion by mlx-community). | huggingface.co |
 | asr-mlx | darwin-arm64 | OpenAI Whisper large-v3-turbo weights, MIT (MLX conversion by mlx-community). | huggingface.co |
 | asr-ct2 | darwin-x64, win32-x64 | OpenAI Whisper large-v3-turbo weights, MIT (CTranslate2 conversion). | huggingface.co |
 | chromium-darwin-arm64 | darwin-arm64 | Chromium, BSD-3-Clause and third-party licences (chrome://credits). Used for HTML covers/slides and HyperFrames. | storage.googleapis.com |
@@ -269,6 +270,12 @@ Fonts: Noto Sans SC / Noto Serif SC (notofonts/noto-cjk), STIX Two Text (google/
 Font License 1.1 (https://openfontlicense.org). MediaPipe models (face landmarker, selfie segmenter, selfie multiclass
 segmenter) — Apache-2.0, Google. Whisper large-v3-turbo weights — MIT, OpenAI (MLX conversion: mlx-community;
 CTranslate2 conversion: dropbox-dash / Mobius Labs). Chromium snapshot builds — BSD-3-Clause and third-party licences.
+
+## Sample recording (in the installer)
+
+`packaging/sample/reelfold-sample.mp4` ("Try with a sample"): made by the Reelfold project with no camera, people or
+third-party media — voice synthesised with Kokoro-82M (Apache-2.0), slides drawn with Noto Sans SC (SIL OFL 1.1). The
+recording itself is CC0 1.0 (`packaging/sample/LICENSE.txt`).
 
 ## Not bundled
 

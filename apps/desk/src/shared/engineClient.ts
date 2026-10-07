@@ -28,6 +28,7 @@ import type {
   HistoryConfig,
   HistoryDetail,
   HistoryDoc,
+  SampleInfo,
   MetricsDoc,
   PlanBatchBody,
   PlanRequest,
@@ -302,6 +303,14 @@ export class EngineClient {
   }
   unhideHistory() {
     return this.req<HistoryConfig>('POST', '/api/history/unhide', {});
+  }
+  /** the built-in sample recording ("Try with a sample"), copied where the engine can work on it */
+  sample() {
+    return this.req<SampleInfo>('GET', '/api/sample');
+  }
+  /** delete a project made from the sample (refused for anything else) */
+  removeSample(dir: string) {
+    return this.req<{ ok: boolean; removed: string }>('POST', '/api/sample/remove', { dir });
   }
   cleanupDue() {
     return this.req<{ batch: string; paths: string[]; outside?: string[]; due?: number }[]>('GET', '/api/cleanup/due');

@@ -72,12 +72,14 @@ test('first-run wizard: brand, AI (subscriptions first, keys folded), default pl
   // + the Create page's video services (MiniMax, Gemini / Veo, Ark, the Kling MCP token)
   expect(Object.keys(keyStatus.keys).sort()).toEqual(['anthropic', 'ark', 'deepseek', 'gemini', 'glm', 'kimi', 'kling', 'minimax', 'openai', 'openrouter', 'qwen']);
   await page.getByTestId('fr-next').click(); // -> platforms (no downloads step on a dev checkout)
-  await page.getByRole('button', { name: /TikTok/ }).click();
+  // English UI: TikTok + YouTube Shorts are pre-picked; add Bilibili
+  await page.getByRole('button', { name: /Bilibili/ }).click();
   await page.getByTestId('fr-next').click(); // finish
   await expect(page.getByTestId('first-run')).toHaveCount(0);
   const s = await page.evaluate(() => window.desk.getSettings());
   expect(s.firstRunDone).toBe(true);
   expect(s.defaultPlatforms).toContain('tiktok');
+  expect(s.defaultPlatforms).toContain('bilibili');
 });
 
 test('client workspace: create, edit client.yaml fields', async () => {
@@ -212,7 +214,7 @@ test('delivery package: folders, 文案.md, schedule, notes, zip; delivered stat
   await expect(page.getByTestId('delivery')).toBeVisible({ timeout: 30000 });
   const d = (await api<{ delivery: { dir: string; zip: string; cleanup: { enabled: boolean } } }>(`/api/batches/${batchId}/deliver`)).delivery;
   const names = fs.readdirSync(d.dir);
-  for (const f of ['文案.md', '排期表.csv', '交付说明.md', 'manifest.json', '小红书']) expect(names).toContain(f);
+  for (const f of ['文案.md', '排期表.csv', '交付说明.md', 'manifest.json', 'TikTok']) expect(names).toContain(f);
   expect(fs.readFileSync(path.join(d.dir, '文案.md'), 'utf8')).toContain('AI 标识提醒');
   expect(fs.existsSync(d.zip)).toBe(true);
   expect(d.cleanup.enabled).toBe(false); // source cleanup is never on by default

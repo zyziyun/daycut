@@ -172,6 +172,8 @@ function engineEnv(bundled: boolean) {
       ...r.env,
       // one cache with the CLI skill: fonts / models the user already has are used, nothing is fetched twice
       VSTUDIO_CACHE: engineCacheDir(),
+      // no persona of her own: the bundled example says "zh"; detect the spoken language per recording instead
+      ...(settings.get().personaPath ? {} : { VSTUDIO_ASR_LANGUAGE: 'auto' }),
       ...assets.env(),
       ...createEnv(),
     },

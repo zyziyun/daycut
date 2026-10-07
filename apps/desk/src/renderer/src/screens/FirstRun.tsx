@@ -1,21 +1,25 @@
-// First-run wizard: language -> AI (the Claude Code / Codex subscription she already pays for first, API keys
-// folded under it) -> one-time downloads (bundled runtime only) -> default platforms. One primary per step (Next /
-// Start); everything can be skipped and changed later in Settings. No engine words, ports, tokens or paths.
+// First-run wizard (feat/first-run, dogfood "first 10 minutes"): language -> AI (her Claude Code / Codex
+// subscription first, API keys folded under it, or an explicit "continue without AI") -> where she posts. The one-time
+// downloads start by themselves the moment the wizard opens (the smallest speech model first) and run in the
+// background: every step shows how far they are and how long is left, and nothing waits for them except the first
+// batch. One primary per step; everything can be changed later in Settings. No engine words, ports, tokens or paths.
 import { useEffect, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { pill, PROVIDERS, type ProviderId } from '../../../shared/aiRoutes';
 import type { SettingsMsg } from '../../../shared/deskApi';
-import { AssetsCard, useAssets } from '../components/assets';
+import { DownloadStrip, useAssets, useAutoDownload } from '../components/assets';
 import { BrandSymbol, BrandWordmark } from '../components/Brand';
 import { KeysCard } from '../components/KeysCard';
 import { ErrorBox } from '../components/ui';
-import { LANGS, LOCALES, setLang, t, tk } from '../i18n';
+import { getLang, LANGS, LOCALES, setLang, t, tk } from '../i18n';
 import { refreshStatus, rowOf, useAi } from '../lib/ai';
+import { defaultPlatformsFor } from '../lib/firstRun';
 import { LoginTerminal, type LoginReq } from '../v4/LoginTerminal';
 import { PlatformPicker } from './Clients';
 import { UsageFirstRunCard } from '../components/UsageConsent';
 
-const ALL_STEPS = ['welcome', 'ai', 'models', 'platforms'] as const;
+// The order of the wizard (the usage-counts consent card sits on the welcome step).
+const ALL_STEPS = ['welcome', 'ai', 'platforms'] as const;
 type Step = (typeof ALL_STEPS)[number];
 
 const STEP_KEY = 'firstRunStep';
@@ -23,8 +27,8 @@ const SUBS: ProviderId[] = ['claude-code', 'codex'];
 
 export function FirstRun({ settings, onDone }: { settings: SettingsMsg; onDone: (s: SettingsMsg) => void }) {
   const assets = useAssets();
-  // the downloads step only exists for the bundled runtime (a dev checkout has its models already)
-  const steps: readonly Step[] = assets && !assets.bundled ? ALL_STEPS.filter((s) => s !== 'models') : ALL_STEPS;
+  useAutoDownload(assets);
+  const steps: readonly Step[] = ALL_STEPS;
   // the step survives a page reload (e.g. an engine restart that had to change port): downloads never move the user
   const [step, setStepState] = useState<Step>(() => {
     const s = sessionStorage.getItem(STEP_KEY) as Step | null;
@@ -35,8 +39,10 @@ export function FirstRun({ settings, onDone }: { settings: SettingsMsg; onDone: 
     setStepState(s);
   };
   const [lang, setL] = useState(settings.lang);
-  const [platforms, setPlatforms] = useState<string[]>(settings.defaultPlatforms?.length ? settings.defaultPlatforms : ['xiaohongshu:full']);
+  const [platforms, setPlatforms] = useState<string[]>(() => defaultPlatformsFor(getLang(), settings.defaultPlatforms));
+  const [touched, setTouched] = useState(false);
   const [needsRestart, setNeedsRestart] = useState(false);
+  const [aiReady, setAiReady] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const i = Math.max(0, steps.indexOf(step));
 
@@ -44,10 +50,10 @@ export function FirstRun({ settings, onDone }: { settings: SettingsMsg; onDone: 
     setErr(null);
     try {
       // the ONLY place first run is marked done: the explicit finish / skip buttons (never a finished download)
-      const s = await window.desk.firstRun.complete(platforms.length ? platforms : ['xiaohongshu:full'], skipped);
+      const s = await window.desk.firstRun.complete(platforms.length ? platforms : defaultPlatformsFor(getLang()), skipped);
       sessionStorage.removeItem(STEP_KEY);
       if (needsRestart) void window.desk.restartEngine().catch(() => undefined);
-      location.hash = '#/batches';
+      location.hash = '#/'; // Home: the composer and "Try with a sample"
       onDone(s);
     } catch (e) {
       setErr((e as Error).message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ''));
@@ -55,6 +61,7 @@ export function FirstRun({ settings, onDone }: { settings: SettingsMsg; onDone: 
   }
 
   const next = () => (i < steps.length - 1 ? setStep(steps[i + 1]) : void finish());
+  const primary = i === steps.length - 1 ? t('fr.start') : step === 'ai' && !aiReady ? t('fr.noAiPrimary') : t('fr.next');
   return (
     <div className="firstrun" data-testid="first-run">
       <div className="frcard col">
@@ -90,6 +97,7 @@ export function FirstRun({ settings, onDone }: { settings: SettingsMsg; onDone: 
                   onClick={() => {
                     setL(l);
                     setLang(l);
+                    if (!touched) setPlatforms(defaultPlatformsFor(l, settings.defaultPlatforms));
                     void window.desk.setSettings({ lang: l });
                   }}
                 >
@@ -101,27 +109,33 @@ export function FirstRun({ settings, onDone }: { settings: SettingsMsg; onDone: 
             <UsageFirstRunCard settings={settings} />
           </div>
         )}
-        {step === 'ai' && <AiStep onKeys={() => setNeedsRestart(true)} />}
-        {step === 'models' && (
-          <div className="col">
-            <p className="small" style={{ margin: 0 }}>
-              {t('fr.modelsWhy')}
-            </p>
-            {assets?.bundled ? <AssetsCard primary={false} /> : <div className="muted small">{t('common.working')}</div>}
-            {assets?.busy && <div className="muted small">{t('fr.downloadsRunning')}</div>}
-          </div>
+        {step === 'ai' && (
+          <AiStep
+            onKeys={() => {
+              setNeedsRestart(true);
+              setAiReady(true);
+            }}
+            onReady={(r) => setAiReady((old) => old || r)}
+          />
         )}
         {step === 'platforms' && (
           <div className="col">
             <p className="small" style={{ margin: 0 }}>
               {t('fr.platformsWhy')}
             </p>
-            <PlatformPicker value={platforms} onChange={setPlatforms} />
+            <PlatformPicker
+              value={platforms}
+              onChange={(v) => {
+                setTouched(true);
+                setPlatforms(v);
+              }}
+            />
             <p className="muted small" style={{ margin: 0 }}>
               {t('fr.laterInSettings')}
             </p>
           </div>
         )}
+        <DownloadStrip status={assets} />
         <ErrorBox error={err} />
         <div className="row">
           <button className="btn" disabled={i === 0} onClick={() => setStep(steps[Math.max(0, i - 1)])}>
@@ -129,7 +143,7 @@ export function FirstRun({ settings, onDone }: { settings: SettingsMsg; onDone: 
           </button>
           <div style={{ flex: 1 }} />
           <button className="btn primary" disabled={step === 'platforms' && !platforms.length} onClick={next} data-testid="fr-next">
-            {i === steps.length - 1 ? t('fr.start') : t('fr.next')}
+            {primary}
           </button>
         </div>
       </div>
@@ -137,18 +151,25 @@ export function FirstRun({ settings, onDone }: { settings: SettingsMsg; onDone: 
   );
 }
 
-/** Subscription logins first (one row each: name, state, Sign in), API keys folded below. */
-function AiStep({ onKeys }: { onKeys: () => void }) {
+/** Subscription logins first (one row each: name, state, Sign in), API keys folded below, and "continue without AI"
+ * said out loud: what still works and what does not. */
+function AiStep({ onKeys, onReady }: { onKeys: () => void; onReady: (ready: boolean) => void }) {
   const { status, checking } = useAi();
   const [login, setLogin] = useState<LoginReq | null>(null);
   useEffect(() => {
     void refreshStatus({ refresh: true, probe: false });
   }, []);
+  const ready = SUBS.find((p) => rowOf(status, p)?.state === 'logged-in');
+  useEffect(() => onReady(Boolean(ready)), [ready, onReady]);
   return (
     <div className="col" data-testid="fr-ai">
+      <b style={{ fontSize: 16, fontWeight: 600 }}>{t('fr.aiTitle')}</b>
       <p className="small" style={{ margin: 0 }}>
         {t('fr.aiWhy')}
       </p>
+      <div className="muted small" style={{ fontWeight: 500 }}>
+        {t('fr.subsTitle')}
+      </div>
       <div className="col" style={{ gap: 8 }}>
         {SUBS.map((p) => {
           const row = rowOf(status, p);
@@ -185,9 +206,16 @@ function AiStep({ onKeys }: { onKeys: () => void }) {
         </summary>
         <KeysCard onChange={onKeys} />
       </details>
-      <p className="muted small" style={{ margin: 0 }}>
-        {t('fr.aiNone')}
-      </p>
+      {ready ? (
+        <p className="small" style={{ margin: 0 }} data-testid="fr-ai-ready">
+          {t('fr.aiReady', { name: PROVIDERS[ready].name })}
+        </p>
+      ) : (
+        <div className="card col" style={{ gap: 4, padding: '12px 14px' }} data-testid="fr-no-ai">
+          <b style={{ fontWeight: 500 }}>{t('fr.noAiTitle')}</b>
+          <span className="muted small">{t('fr.noAiBody')}</span>
+        </div>
+      )}
       {login && (
         <LoginTerminal
           req={login}

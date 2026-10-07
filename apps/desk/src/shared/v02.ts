@@ -417,6 +417,16 @@ export interface HistoryItem {
   failure?: PilotFailure | null;
   /** the pilot the desk started is still running */
   pilot?: { started: number | null; provider: string | null } | null;
+  /** made from the built-in sample recording (labelled, deletable) */
+  sample?: boolean;
+}
+/** GET /api/sample (engine/desk_engine/sample.py) */
+export interface SampleInfo {
+  available: boolean;
+  path?: string;
+  size?: number;
+  duration?: number | null;
+  licence?: string;
 }
 export type FailureCode = 'ai-login' | 'ai-quota' | 'ai-timeout' | 'ai-missing' | 'engine' | 'disk' | 'media' | 'unknown';
 export interface PilotFailure {

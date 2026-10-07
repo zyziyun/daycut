@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import { RotateCcw, Send, Sparkles, Square } from 'lucide-react';
 import type { IntakeJob, IntakePlan } from '../../../shared/v04';
-import { fmtClock, fmtMinutes, fmtMoney, t } from '../i18n';
+import { fmtClock, fmtMinutes, fmtMoney, getLang, t } from '../i18n';
+import { nameAsSample, planSentence } from '../lib/firstRun';
 import { useEngine } from '../lib/engine';
 import { useHistory } from '../lib/history';
 import { go, href } from '../lib/router';
@@ -26,7 +27,7 @@ export function planFacts(plan: IntakePlan) {
   return { clips, sizes, plats, wall, usd };
 }
 
-export function PlanCard({ job, jobId, onRevise, onReset, onStarted }: { job: IntakeJob | null; jobId: string; onRevise: (s: string) => void; onReset: () => void; onStarted: () => void }) {
+export function PlanCard({ job, jobId, onRevise, onReset, onStarted, sample = false }: { job: IntakeJob | null; jobId: string; onRevise: (s: string) => void; onReset: () => void; onStarted: () => void; sample?: boolean }) {
   const { client } = useEngine();
   const { reload } = useHistory();
   const ui = useUi();
@@ -101,6 +102,7 @@ export function PlanCard({ job, jobId, onRevise, onReset, onStarted }: { job: In
     );
   }
   const f = planFacts(plan);
+  const noAi = Boolean(plan.planner?.fallback);
   const rows = plan.projects.flatMap((p) => (p.items?.rows ?? []).map((r) => ({ p, r }))).slice(0, 8);
   const video = plan.materials.find((m) => m.kind === 'video');
   const questions = [
@@ -111,7 +113,8 @@ export function PlanCard({ job, jobId, onRevise, onReset, onStarted }: { job: In
     if (!client) return;
     setStarting(true);
     try {
-      const r = await client.applyIntake(jobId, { run: true });
+      // the sample's projects are named as the sample (the engine marks them; the desk labels and can delete them)
+      const r = await client.applyIntake(jobId, sample && plan ? { run: true, plan: nameAsSample(plan, t('sample.projectName')) } : { run: true });
       ui.toast(t('plan.started'));
       sessionStorage.removeItem('v4.composer');
       onStarted();
@@ -138,15 +141,21 @@ export function PlanCard({ job, jobId, onRevise, onReset, onStarted }: { job: In
   return (
     <div className="card plan" data-testid="plan-card" aria-busy={running}>
       <div className="row">
-        <b style={{ fontWeight: 500, fontSize: 15 }}>{t('plan.title')}</b>
+        <b style={{ fontWeight: 500, fontSize: 15 }}>{noAi ? t('plan.titleRules') : t('plan.title')}</b>
         <span className="muted">· {t('plan.read', { n: plan.materials.length, s: Math.max(1, Math.round(plan.planner?.seconds ?? 1)) })}</span>
         <span className="sp" />
         {running && <span className="muted">{t('plan.revising')}</span>}
       </div>
-      <p className="lead" lang="zh-CN" data-testid="plan-summary">
-        {plan.summary_zh}
+      {/* without AI the engine's summary is a Chinese template: say the plan in her UI language instead */}
+      <p className="lead" lang={noAi && getLang() !== 'zh-CN' ? undefined : 'zh-CN'} data-testid="plan-summary">
+        {noAi && getLang() !== 'zh-CN' ? planSentence(plan, platformName) : plan.summary_zh}
       </p>
-      {plan.planner?.provider && (
+      {noAi && !plan.planner?.failure && (
+        <p className="muted small" style={{ marginTop: -4 }} data-testid="plan-no-ai">
+          {t('plan.noAi')}
+        </p>
+      )}
+      {plan.planner?.provider && !(noAi && !plan.planner.failure) && (
         <AnsweredBy provider={plan.planner.fallback ? 'rules' : plan.planner.provider} fallback={plan.planner.provider_fallback} kind="planned" testId="plan-answered-by" />
       )}
       {plan.planner?.fallback && plan.planner.failure && (plan.planner.routed ?? plan.planner.provider) && <FallbackNote rulesFrom={plan.planner.routed ?? plan.planner.provider} />}

@@ -172,6 +172,12 @@ Font License 1.1 (https://openfontlicense.org). MediaPipe models (face landmarke
 segmenter) — Apache-2.0, Google. Whisper large-v3-turbo weights — MIT, OpenAI (MLX conversion: mlx-community;
 CTranslate2 conversion: dropbox-dash / Mobius Labs). Chromium snapshot builds — BSD-3-Clause and third-party licences.
 
+## Sample recording (in the installer)
+
+\`packaging/sample/reelfold-sample.mp4\` ("Try with a sample"): made by the Reelfold project with no camera, people or
+third-party media — voice synthesised with Kokoro-82M (Apache-2.0), slides drawn with Noto Sans SC (SIL OFL 1.1). The
+recording itself is CC0 1.0 (\`packaging/sample/LICENSE.txt\`).
+
 ## Not bundled
 
 The optional RVM matting engine used by the engine's cover workflow is GPL-3.0 and is never shipped with the app.

@@ -109,31 +109,27 @@ test.afterAll(async () => {
   server?.close();
 });
 
-test('queued downloads keep the wizard on its step, the window open and the page alive', async () => {
+test('the wizard starts the required downloads by itself; they never move her, close the window or reload the page', async () => {
   test.setTimeout(120000);
   await expect(page.getByTestId('first-run')).toBeVisible({ timeout: 30000 });
-  await page.getByTestId('fr-next').click(); // welcome -> AI
-  await page.getByTestId('fr-next').click(); // AI -> downloads
-  await expect(page.getByTestId('assets-card')).toBeVisible();
-  // the download button is not a second primary next to Next, and no raw folder path is shown
+  // nothing to click: the required groups are queued the moment the wizard opens, and one plain line says so
+  await expect(page.getByTestId('dl-strip')).toBeVisible();
+  await expect(page.getByTestId('dl-strip')).toContainText(/captions|字幕/i);
+  await expect(page.getByTestId('dl-strip')).not.toContainText(/\/Users\/|\/var\/|\/tmp\/|Whisper|MediaPipe/);
   await expect(page.locator('[data-testid="first-run"] .btn.primary')).toHaveCount(1);
-  await expect(page.getByTestId('assets-card')).not.toContainText(/\/Users\/|\/var\/|\/tmp\//);
   const tokenBefore = await page.evaluate(async () => (await window.desk.engineInfo()).token);
   // a marker that only survives if the page is never reloaded
   await page.evaluate(() => ((window as unknown as { __marker: number }).__marker = 42));
+  // an optional group queued on top (as from Settings) joins the same background queue
+  await page.evaluate(() => window.desk.assets.install(['chromium']));
 
-  // required groups are pre-ticked; add the optional one and queue all three at once
-  await page.getByTestId('asset-pick-chromium').check();
-  await page.getByTestId('assets-download-selected').click();
-  await expect(page.getByTestId('asset-state-chromium')).toHaveText(/排队|Queued/);
-
-  // while the queue runs and after each group finishes: still the wizard, still the models step
+  await page.getByTestId('fr-next').click(); // welcome -> AI, while downloading
   const steps = page.locator('.steps .on');
-  for (const id of ['core', 'chromium', 'asr-mlx']) {
-    await expect(page.getByTestId(`asset-state-${id}`)).toHaveText(/已安装|Installed/, { timeout: 60000 });
-    await expect(page.getByTestId('first-run')).toBeVisible();
-    await expect(steps).toHaveText(/下载|Downloads/);
-  }
+  await expect(steps).toHaveText(/AI|IA/);
+  await expect.poll(async () => (await page.evaluate(() => window.desk.assets.status())).groups.every((g) => g.installed), { timeout: 60000 }).toBe(true);
+  await expect(page.getByTestId('dl-strip')).toHaveAttribute('data-state', 'done');
+  await expect(page.getByTestId('first-run')).toBeVisible();
+  await expect(steps).toHaveText(/AI|IA/);
 
   // the env group triggers an engine-sidecar restart: new token, same page (marker kept), same step, window open
   await expect.poll(async () => page.evaluate(async () => (await window.desk.engineInfo()).token), { timeout: 30000 }).not.toBe(tokenBefore);
@@ -141,14 +137,15 @@ test('queued downloads keep the wizard on its step, the window open and the page
   const st = await page.evaluate(() => window.desk.assets.status());
   expect(st.busy).toBe(false);
   expect(st.restartNeeded).toBe(false);
-  await expect(steps).toHaveText(/下载|Downloads/);
+  await expect(steps).toHaveText(/AI|IA/);
   expect(closed).toBe(false);
   expect(app.windows().length).toBe(1);
 
-  // only the explicit buttons leave the wizard
+  // only the explicit buttons leave the wizard, and they land on Home
   await page.getByTestId('fr-next').click(); // -> platforms
   await page.getByTestId('fr-next').click(); // finish
-  await expect(page.getByTestId('engine-status')).toBeVisible({ timeout: 15000 });
+  await expect(page.getByTestId('home')).toBeVisible({ timeout: 15000 });
+  expect(await page.evaluate(() => location.hash)).toBe('#/');
   expect(closed).toBe(false);
 });
 

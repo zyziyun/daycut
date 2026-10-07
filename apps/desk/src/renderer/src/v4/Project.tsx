@@ -95,7 +95,7 @@ export function Project({ id, tab: asked }: { id: string; tab: ProjectTab }) {
     const todo = list.filter((c) => !mine.has(c.id));
     const slots = nextSlots(todo.length, cal.posts.map((p) => p.at));
     const made: { id: string; at: string }[] = [];
-    for (let i = 0; i < todo.length; i++) made.push(await client.schedule({ item: id, clip: todo[i].id, at: slots[i], platform: 'xiaohongshu' }));
+    for (let i = 0; i < todo.length; i++) made.push(await client.schedule({ item: id, clip: todo[i].id, at: slots[i], platform: todo[i].files[0]?.platform?.split(':')[0] || 'xiaohongshu' }));
     ui.toast(made.length ? t('pub.scheduled', { date: fmtDate(made[0].at) }) : t('pub.confirmed', { n: 0 }), {
       undo: made.length
         ? async () => {
@@ -139,13 +139,16 @@ export function Project({ id, tab: asked }: { id: string; tab: ProjectTab }) {
         : t('project.sub.runningNoN')
       : review
         ? t('project.sub.review', { passed: review.params.passed ?? 0, n: review.params.n ?? 0 })
-        : clips.length
-          ? t('project.sub.done', { n: clips.length })
-          : t('project.sub.empty');
+        : done.length
+          ? t('project.sub.done', { n: done.length })
+          : clips.length
+            ? t('proj.working') // queued / rendering clips are not "ready to publish"
+            : t('project.sub.empty');
   const tabs: [ProjectTab, string, number | null][] = [
     ['clips', t('project.tab.clips'), clips.length || null],
     ...(isBatch && item?.openable ? ([['review', t('project.tab.review'), review ? Number(review.params.n) : null]] as [ProjectTab, string, number | null][]) : []),
-    ...(isBatch && item?.openable ? ([['deliver', t('project.tab.deliver'), null]] as [ProjectTab, string, number | null][]) : []),
+    // the delivery package screen is batch-only ("unknown batch" for a project): projects go out from Publish
+    ...(item?.kind === 'batch' && item?.openable ? ([['deliver', t('project.tab.deliver'), null]] as [ProjectTab, string, number | null][]) : []),
     ['history', t('project.tab.history'), null],
     ['files', t('project.tab.files'), null],
   ];
@@ -180,6 +183,30 @@ export function Project({ id, tab: asked }: { id: string; tab: ProjectTab }) {
             </div>
             <span className="sp" />
             <div className="acts">
+              {item?.sample && (
+                <>
+                  <span className="badge accent" data-testid="project-sample">
+                    {t('sample.badge')}
+                  </span>
+                  <button
+                    className="btn ghost sm"
+                    data-testid="sample-remove"
+                    onClick={() => {
+                      if (!client || !item || !window.confirm(t('sample.removeAsk'))) return;
+                      void client
+                        .removeSample(item.dir)
+                        .then(() => {
+                          ui.toast(t('sample.removed'));
+                          reloadHist();
+                          go({ name: 'home' });
+                        })
+                        .catch((e: Error) => ui.toast(e.message, { error: true }));
+                    }}
+                  >
+                    {t('sample.remove')}
+                  </button>
+                </>
+              )}
               <StatusPill s={s} label={failure ? t('status.failed') : undefined} />
               {!failure && done.length > 0 && <ShareButton item={id} />}
               {!failure && primary}

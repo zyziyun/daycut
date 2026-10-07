@@ -8,7 +8,7 @@
 //   quiet     - "All clear" + Continue tiles; first run - six starting points
 // Every project / clip / post on the page is the same link as everywhere else (lib/nav).
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, CalendarDays, Check, ChevronDown, ChevronRight, File as FileIcon, FileText, Film, Folder, FolderOpen, GraduationCap, Image as ImageIcon, Lightbulb, MessageSquare, MessagesSquare, Mic, MoreHorizontal, Music, Paperclip, Plus, Repeat, Sparkles, Video, X } from 'lucide-react';
+import { ArrowRight, CalendarDays, Check, ChevronDown, ChevronRight, File as FileIcon, FileText, Film, Folder, FolderOpen, GraduationCap, Image as ImageIcon, Lightbulb, MessageSquare, MessagesSquare, Mic, MoreHorizontal, Music, Paperclip, Play, Plus, Repeat, Sparkles, Video, X } from 'lucide-react';
 import type { HistoryItem } from '../../../shared/v02';
 import type { CalendarPost, InboxItem, IntakeJob } from '../../../shared/v04';
 import { fmtAgo, fmtTime, getLang, t, tk, type MessageKey } from '../i18n';
@@ -26,6 +26,8 @@ import { inboxSub, inboxTitle, InboxThumb } from './Inbox';
 import { FailureActions } from './Failure';
 import { PlatformIcon } from './PlatformIcon';
 import { PlatformPicker } from './PlatformPicker';
+import { DownloadStrip, useAssets } from '../components/assets';
+import { downloadSummary } from '../lib/firstRun';
 import { useUi } from './ui';
 import { WEEK_WORDS } from '../../../shared/weekPlan';
 import { useWeekPlan } from '../weekplan/useWeekPlan';
@@ -72,11 +74,15 @@ const DRAFT = 'v4.composer';
 
 export function Home() {
   const { client } = useEngine();
+  const latest = useRef(client); // the engine restarts onto new models with a new client: retries use the newest
+  useEffect(() => {
+    latest.current = client;
+  }, [client]);
   const ui = useUi();
   const { data: hist } = useHistory();
   const draft = useMemo(() => {
     try {
-      return JSON.parse(sessionStorage.getItem(DRAFT) ?? '{}') as { prompt?: string; files?: string[]; job?: string };
+      return JSON.parse(sessionStorage.getItem(DRAFT) ?? '{}') as { prompt?: string; files?: string[]; job?: string; sample?: boolean };
     } catch {
       return {};
     }
@@ -84,6 +90,13 @@ export function Home() {
   const [prompt, setPrompt] = useState(draft.prompt ?? '');
   const [files, setFiles] = useState<string[]>(draft.files ?? []);
   const [jobId, setJobId] = useState<string | null>(draft.job ?? null);
+  const [sample, setSample] = useState(Boolean(draft.sample));
+  // a request made before the one-time downloads finished: planned by itself once they are in (and the engine
+  // restarted onto them), never against a half-installed speech model
+  const [waitDl, setWaitDl] = useState<{ prompt: string; files: string[]; sample: boolean } | null>(null);
+  const assets = useAssets();
+  const dl = downloadSummary(assets);
+  const modelsReady = !assets?.bundled || (dl.state === 'done' && !assets.restartNeeded);
   const [job, setJob] = useState<IntakeJob | null>(null);
   const [busy, setBusy] = useState(false);
   const [over, setOver] = useState(false);
@@ -94,8 +107,8 @@ export function Home() {
   const wp = useWeekPlan();
 
   useEffect(() => {
-    sessionStorage.setItem(DRAFT, JSON.stringify({ prompt, files, job: jobId }));
-  }, [prompt, files, jobId]);
+    sessionStorage.setItem(DRAFT, JSON.stringify({ prompt, files, job: jobId, sample }));
+  }, [prompt, files, jobId, sample]);
   useEffect(() => {
     void window.desk.getSettings().then((s) => setPlatforms(s.defaultPlatforms ?? []));
   }, []);
@@ -146,17 +159,58 @@ export function Home() {
       setFiles([]);
     }
   };
-  const submit = async () => {
-    if (!client || busy || !ready) return;
-    if (files.length && WEEK_WORDS.test(prompt)) return void startWeek();
+  const submit = async (req?: { prompt: string; files: string[]; sample: boolean }) => {
+    const p = req ?? { prompt: prompt.trim(), files, sample };
+    if (!client || busy || !(p.prompt || p.files.length)) return;
+    if (!req && files.length && WEEK_WORDS.test(prompt)) return void startWeek();
+    if (!modelsReady && p.files.length) {
+      setWaitDl(p);
+      return;
+    }
     setBusy(true);
+    // right after the downloads the engine restarts onto the new models: a request that lands in that gap is retried
+    // for a few seconds instead of failing
+    const tries = req ? 12 : 1;
     try {
-      const r = await client.startIntake(prompt.trim(), files, platforms ?? undefined);
-      setJobId(r.id);
+      for (let i = 0; ; i++) {
+        try {
+          const r = await (latest.current ?? client).startIntake(p.prompt, p.files, platforms ?? undefined);
+          setSample(p.sample);
+          setJobId(r.id);
+          return;
+        } catch (e) {
+          if (i + 1 >= tries) throw e;
+          await new Promise((res) => setTimeout(res, 1500));
+        }
+      }
     } catch (e) {
       ui.toast(errText(e), { error: true });
     } finally {
       setBusy(false);
+    }
+  };
+  useEffect(() => {
+    if (waitDl && modelsReady && client) {
+      const p = waitDl;
+      setWaitDl(null);
+      void submit(p);
+    }
+  }, [waitDl, modelsReady, client]); // eslint-disable-line react-hooks/exhaustive-deps
+  /** "Try with a sample": the built-in recording + a ready request, planned at once (a real batch, real engine). */
+  const trySample = async () => {
+    if (!client) return;
+    try {
+      const s = await client.sample();
+      if (!s.available || !s.path) {
+        ui.toast(t('sample.unavailable'), { error: true });
+        return;
+      }
+      const p = { prompt: t('sample.prompt'), files: [s.path], sample: true };
+      setPrompt(p.prompt);
+      setFiles(p.files);
+      await submit(p);
+    } catch (e) {
+      ui.toast((e as Error).message, { error: true });
     }
   };
   const revise = async (text: string) => {
@@ -183,6 +237,7 @@ export function Home() {
   const reset = () => {
     setJobId(null);
     setJob(null);
+    setSample(false);
   };
   const started = () => {
     setPrompt('');
@@ -286,7 +341,7 @@ export function Home() {
               <span className="ux-kbdhint" aria-hidden>
                 ⌘↵
               </span>
-              <button className={`btn lg ux-make ${ready ? 'primary' : ''}`} disabled={busy || !ready} onClick={() => void submit()} data-testid="make-plan">
+              <button className={`btn lg ux-make ${ready ? 'primary' : ''}`} disabled={busy || !ready || !!waitDl} onClick={() => void submit()} data-testid="make-plan">
                 <Sparkles className="ico" />
                 {t('home.submit')}
               </button>
@@ -317,6 +372,7 @@ export function Home() {
               onClick={(e) => {
                 const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
                 ui.menu({ clientX: r.left - 160, clientY: r.bottom + 6 }, [
+                  { label: t('sample.try'), icon: <Play className="ico" />, run: () => void trySample(), testId: 'idea-sample' },
                   ...IDEAS.map(([k, pk]) => ({ label: t(k), run: () => fill(t(pk)) })),
                   ...(recent ?? []).slice(1, 4).map((r2) => ({ label: r2.prompt.slice(0, 48), icon: <FolderOpen className="ico" />, run: () => fill(r2.prompt) })),
                 ]);
@@ -332,8 +388,20 @@ export function Home() {
             {recent!.map((r) => r.prompt).join(' · ')}
           </span>
         )}
-        {planning && <PlanCard job={job} jobId={jobId!} onRevise={revise} onReset={reset} onStarted={started} />}
-        {!planning && (firstRun ? <FirstRunStarts onPick={(p) => fill(p)} /> : <Below />)}
+        {waitDl && !planning && (
+          <div className="col" style={{ gap: 8, marginTop: 12 }} data-testid="home-wait-models">
+            <DownloadStrip status={assets} />
+            <div className="row">
+              <span className="muted small">{waitDl.sample ? t('sample.waitModels') : t('home.waitModels')}</span>
+              <span className="sp" />
+              <button className="btn ghost sm" onClick={() => setWaitDl(null)}>
+                {t('home.waitCancel')}
+              </button>
+            </div>
+          </div>
+        )}
+        {planning && <PlanCard job={job} jobId={jobId!} onRevise={revise} onReset={reset} onStarted={started} sample={sample} />}
+        {!planning && !waitDl && (firstRun ? <FirstRunStarts onPick={(p) => fill(p)} onSample={() => void trySample()} /> : <Below />)}
       </div>
     </div>
   );
@@ -388,8 +456,20 @@ function PlatformChip({ value, onChange }: { value: string[] | null; onChange: (
 }
 
 // ---------------------------------------------------------------- first run
-function FirstRunStarts({ onPick }: { onPick: (prompt: string) => void }) {
+function FirstRunStarts({ onPick, onSample }: { onPick: (prompt: string) => void; onSample: () => void }) {
   return (
+    <>
+      <button className="card ux-start ux-sample" onClick={onSample} data-testid="home-sample">
+        <span className="ic">
+          <Play className="ico lg" />
+        </span>
+        <span>
+          <b>{t('sample.tryTitle')}</b>
+          <span className="muted">{t('sample.trySub')}</span>
+        </span>
+        <span className="sp" />
+        <span className="btn primary">{t('sample.try')}</span>
+      </button>
     <div className="ux-starts" data-testid="home-starts">
       {STARTS.map((s) => (
         <button key={s.title} className="card ux-start" onClick={() => onPick(t(s.prompt))} data-testid="home-start">
@@ -403,6 +483,7 @@ function FirstRunStarts({ onPick }: { onPick: (prompt: string) => void }) {
         </button>
       ))}
     </div>
+    </>
   );
 }
 

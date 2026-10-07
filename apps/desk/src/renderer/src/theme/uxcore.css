@@ -100,6 +100,9 @@
 .ux-start .ic { width: 44px; height: 44px; border-radius: 10px; background: var(--surface-2); color: var(--accent); display: flex; align-items: center; justify-content: center; flex: none; }
 .ux-start b { display: block; font-weight: 600; font-size: 15px; margin-bottom: 4px; }
 .ux-start .muted { font-size: 14px; line-height: 1.5; }
+/* first run: "Try with a sample" sits above the six starting points, full width */
+.ux-sample { width: 100%; margin-top: 24px; align-items: center; border-color: var(--accent); }
+.ux-sample > .btn { flex: none; pointer-events: none; }
 @media (max-width: 1180px) {
   .ux-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .ux-tiles > :nth-child(5) { display: none; }

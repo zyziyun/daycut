@@ -1,0 +1,12 @@
+Reelfold sample recording (reelfold-sample.mp4, script.json)
+
+Made by the Reelfold project for trying the app without your own footage. No camera footage, no real people,
+no third-party media:
+  - Voice: synthesised with Kokoro-82M (hexgrad/Kokoro-82M, Apache-2.0 weights; MLX port mlx-community/Kokoro-82M-bf16),
+    voice "af_heart". The words were written by the Reelfold project.
+  - Picture: slides drawn by apps/desk/scripts/sample/make_sample.py with Noto Sans SC (SIL Open Font License 1.1).
+Rebuild: python3 apps/desk/scripts/sample/make_sample.py
+
+To the extent possible under law, the Reelfold project has waived all copyright and related or neighboring rights
+to this sample recording. This work is published under CC0 1.0 Universal:
+https://creativecommons.org/publicdomain/zero/1.0/

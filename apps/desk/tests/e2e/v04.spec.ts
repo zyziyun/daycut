@@ -62,7 +62,7 @@ test('Home: say it + a file -> AI plan card -> revise -> start a pilot -> the ne
   await page.getByTestId('make-plan').click();
   const facts = page.getByTestId('plan-facts');
   await expect(facts).toContainText(/4 clips|4 条/, { timeout: 30000 });
-  await expect(page.getByTestId('plan-summary')).toContainText('4 条');
+  await expect(page.getByTestId('plan-summary')).toContainText(/4 clips|4 条/); // no AI planned it: said in the UI language
   await expect(page.getByTestId('plan-decide')).toBeVisible(); // the last clip is short: one thing to decide
   await page.getByTestId('plan-revise').fill('只要 3 条');
   await page.getByTestId('plan-revise-send').click();

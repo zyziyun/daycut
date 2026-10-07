@@ -61,7 +61,8 @@ async function launch(extra: Record<string, string>, args: string[] = []): Promi
   const cache = fs.mkdtempSync(path.join(os.tmpdir(), 'vsdesk-packaged-cache-'));
   const env = cleanEnv({ DESK_USER_DATA: userData, DESK_HIDE_WINDOW: '1', DESK_SHARED_CACHE: cache, DESK_HF_HUB: '', ...extra });
   const port = await freePort();
-  const proc = spawn(appExecutable(), [`--remote-debugging-port=${port}`, ...args], { env, stdio: 'ignore' });
+  // --use-mock-keychain: a rebuilt (re-signed) binary must never raise a keychain prompt on the developer's screen
+  const proc = spawn(appExecutable(), ['--use-mock-keychain', `--remote-debugging-port=${port}`, ...args], { env, stdio: 'ignore' });
   let browser: Browser | null = null;
   for (let i = 0; i < 120 && !browser; i++) {
     try {
@@ -143,6 +144,24 @@ test('real engine starts from the bundle (vstudio, Python and ffmpeg inside the 
       return r.ok ? ((await r.json()) as unknown[]).length : -r.status;
     });
     expect(recipes).toBeGreaterThan(0);
+  } finally {
+    await app.close();
+  }
+});
+
+test('the sample recording ships in the app and the real engine offers it (copied out of the bundle)', async () => {
+  const res = resourcesDir(appExecutable());
+  const dir = path.join(res, 'packaging', 'sample');
+  expect(fs.statSync(path.join(dir, 'reelfold-sample.mp4')).size).toBeGreaterThan(100_000);
+  expect(fs.readFileSync(path.join(dir, 'LICENSE.txt'), 'utf8')).toContain('CC0');
+  const app = await launch({});
+  try {
+    const info = await app.page.evaluate(async () => {
+      const i = await window.desk.engineInfo();
+      return (await fetch(i.baseUrl + '/api/sample', { headers: { Authorization: `Bearer ${i.token}` } })).json();
+    });
+    expect(info.available).toBe(true);
+    expect(fs.realpathSync(info.path).startsWith(fs.realpathSync(app.env.DESK_USER_DATA))).toBe(true);
   } finally {
     await app.close();
   }

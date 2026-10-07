@@ -19,6 +19,7 @@ import { publishPlatformsZh } from './publishPlatforms';
 import { releaseZh } from './release';
 import type { MessageKey, v04En } from './en';
 import { uxCoreZh } from './uxcore';
+import { firstRunZh } from './firstRun';
 
 const v04Zh: Record<keyof typeof v04En, string> = {
   'nav.home': '首页',
@@ -580,4 +581,4 @@ const v04Zh: Record<keyof typeof v04En, string> = {
   'editor.zoomFit': '全部',
 };
 
-export const zhCN: Record<MessageKey, string> = { ...legacyZh, ...legacyZhV02, ...v04Zh, ...aiaccZh, ...publishPlatformsZh, ...chatEditZh, ...channelsZh, ...projectAiZh, ...aboutZh, ...releaseZh, ...publishBoardZh, ...publishLoopZh, ...settingsV2Zh, ...createZh, ...pluginsZh, ...uxCoreZh, ...usageZh, ...weekPlanZh, ...shareZh, ...qaZh };
+export const zhCN: Record<MessageKey, string> = { ...legacyZh, ...legacyZhV02, ...v04Zh, ...aiaccZh, ...publishPlatformsZh, ...chatEditZh, ...channelsZh, ...projectAiZh, ...aboutZh, ...releaseZh, ...publishBoardZh, ...publishLoopZh, ...settingsV2Zh, ...createZh, ...pluginsZh, ...uxCoreZh, ...usageZh, ...weekPlanZh, ...shareZh, ...qaZh, ...firstRunZh };

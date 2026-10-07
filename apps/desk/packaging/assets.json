@@ -76,8 +76,34 @@
    ]
   },
   {
-   "id": "asr-mlx",
+   "id": "asr-mlx-fast",
    "required": true,
+   "targets": [
+    "darwin-arm64"
+   ],
+   "root": "models/whisper-large-v3-turbo-q4-mlx",
+   "env": {
+    "VSTUDIO_WHISPER_MLX": ""
+   },
+   "licence": "OpenAI Whisper large-v3-turbo weights, MIT (4-bit MLX conversion by mlx-community).",
+   "files": [
+    {
+     "url": "https://huggingface.co/mlx-community/whisper-large-v3-turbo-q4/resolve/660c343bbf4e52ac257f0b7d952e5388e6f93bef/config.json",
+     "dest": "config.json",
+     "sha256": "538e24557b8f9bc504700add5e7bbe32087c2353001ff563e64772ad4398671a",
+     "size": 341
+    },
+    {
+     "url": "https://huggingface.co/mlx-community/whisper-large-v3-turbo-q4/resolve/660c343bbf4e52ac257f0b7d952e5388e6f93bef/weights.npz",
+     "dest": "weights.npz",
+     "sha256": "862bbc832b05f3f4ec19dd632b701d61a6d3f5c7906360a10d72a79870642a80",
+     "size": 463664664
+    }
+   ]
+  },
+  {
+   "id": "asr-mlx",
+   "required": false,
    "targets": [
     "darwin-arm64"
    ],

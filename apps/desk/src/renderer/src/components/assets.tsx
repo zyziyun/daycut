@@ -1,8 +1,10 @@
 // First-run downloads (fonts, MediaPipe models, Whisper weights, optional Chromium) and the update indicator.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { Check } from 'lucide-react';
 import type { AssetsStatusMsg } from '../../../shared/assets';
 import type { UpdateStateMsg } from '../../../shared/deskApi';
 import { t, tk } from '../i18n';
+import { downloadSummary, etaText, fmtBytes, speedOf } from '../lib/firstRun';
 
 type Status = AssetsStatusMsg & { bundled?: boolean };
 
@@ -34,6 +36,7 @@ export function AssetsBanner() {
   if (!s?.bundled) return null;
   const missing = s.groups.filter((g) => g.required && !g.installed);
   const active = s.groups.find((g) => g.progress);
+  if (missing.length) return <DownloadStrip status={s} banner />;
   if (active?.progress) {
     return (
       <div className="notice accent col" data-testid="assets-banner" style={{ margin: 12, gap: 8 }}>
@@ -50,6 +53,8 @@ export function AssetsBanner() {
     );
   }
   if (!missing.length && !s.restartNeeded) return null;
+  // the main process restarts the engine onto new downloads by itself the moment nothing runs: no button for that
+  if (!missing.length && !s.restartWhenIdle) return null;
   const total = missing.reduce((a, g) => a + g.bytes, 0);
   return (
     <div className="notice accent col" data-testid="assets-banner" style={{ margin: 12, gap: 8 }}>
@@ -72,6 +77,56 @@ export function AssetsBanner() {
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Ask for the required downloads once (bundled runtime, something missing, nothing queued). They run in the main
+ * process; leaving the screen never stops them. */
+export function useAutoDownload(s: Status | null) {
+  const asked = useRef(false);
+  useEffect(() => {
+    if (!s?.bundled || asked.current) return;
+    const missing = s.groups.filter((g) => g.required && !g.installed);
+    if (!missing.length) return;
+    asked.current = true;
+    if (!missing.some((g) => g.queued || g.progress)) void window.desk.assets.install();
+  }, [s]);
+}
+
+/** The required downloads as one plain line + bar + time left (first-run wizard and the banner above every screen). */
+export function DownloadStrip({ status, banner = false }: { status: Status | null; banner?: boolean }) {
+  const sum = downloadSummary(status);
+  const [samples, setSamples] = useState<[number, number][]>([]);
+  const { state, done } = sum;
+  useEffect(() => {
+    if (state !== 'downloading') return;
+    const now = Date.now();
+    // the last 20 s of progress events -> the speed the time left is estimated from
+    setSamples((old) => [...old.filter(([t0]) => now - t0 < 20000), [now, done]]);
+  }, [state, done]);
+  if (!status?.bundled) return null;
+  if (sum.state === 'done') {
+    return banner ? null : (
+      <div className="row small" data-testid="dl-strip" data-state="done">
+        <Check className="ico" /> {t('dl.done')}
+      </div>
+    );
+  }
+  const eta = sum.state === 'downloading' ? etaText(sum.total - sum.done, speedOf(samples)) : '';
+  return (
+    <div className={`notice accent col ${banner ? '' : 'fr-dl'}`} data-testid={banner ? 'assets-banner' : 'dl-strip'} data-state={sum.state} style={{ margin: banner ? 12 : 0, gap: 8 }}>
+      <b style={{ fontWeight: 500 }}>{t('dl.title')}</b>
+      <span className="small">{t('dl.body', { done: fmtBytes(sum.done), total: fmtBytes(sum.total), eta })}</span>
+      <Bar received={sum.done} total={sum.total} />
+      {sum.state === 'failed' || sum.state === 'waiting' ? (
+        <div className="row">
+          {sum.error && <span className="err small">{t('dl.failed', { error: sum.error })}</span>}
+          <button className="btn sm" onClick={() => window.desk.assets.install(sum.missing)} data-testid="dl-retry">
+            {sum.state === 'failed' ? t('dl.retry') : t('assets.downloadOne')}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

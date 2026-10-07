@@ -12,6 +12,8 @@ const PINS = {
   googleFonts: '7085eb89a950e85db5b166b7a58d414544b4140c',
   jetbrainsMono: '19371302b95d218af43299bce79ddbddd0bc364d',
   mlxWhisper: { repo: 'mlx-community/whisper-large-v3-turbo', rev: 'a4aaeec0636e6fef84abdcbe3544cb2bf7e9f6fb' },
+  // 4-bit turbo: ~460 MB instead of 1.6 GB, near-identical captions; the first-run default (the full one is optional)
+  mlxWhisperFast: { repo: 'mlx-community/whisper-large-v3-turbo-q4', rev: '660c343bbf4e52ac257f0b7d952e5388e6f93bef' },
   fasterWhisper: { repo: 'dropbox-dash/faster-whisper-large-v3-turbo', rev: '0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf' },
   chromium: { 'darwin-arm64': ['Mac_Arm', 1712143, 'chrome-mac.zip'], 'darwin-x64': ['Mac', 1712146, 'chrome-mac.zip'], 'win32-x64': ['Win_x64', 1712024, 'chrome-win.zip'] },
 };
@@ -77,9 +79,20 @@ groups.push({
   ],
 });
 log('whisper');
+// asr-mlx-fast comes first: both set VSTUDIO_WHISPER_MLX and a later installed group wins, so the full model takes
+// over once she downloads it
+groups.push({
+  id: 'asr-mlx-fast',
+  required: true,
+  targets: ['darwin-arm64'],
+  root: 'models/whisper-large-v3-turbo-q4-mlx',
+  env: { VSTUDIO_WHISPER_MLX: '' },
+  licence: 'OpenAI Whisper large-v3-turbo weights, MIT (4-bit MLX conversion by mlx-community).',
+  files: await hf(PINS.mlxWhisperFast, '.', ['config.json', 'weights.npz']),
+});
 groups.push({
   id: 'asr-mlx',
-  required: true,
+  required: false,
   targets: ['darwin-arm64'],
   root: 'models/whisper-large-v3-turbo-mlx',
   env: { VSTUDIO_WHISPER_MLX: '' },

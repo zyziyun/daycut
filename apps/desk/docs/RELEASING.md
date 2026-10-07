@@ -31,9 +31,10 @@ Every installer contains the whole engine, so users need nothing preinstalled:
   `VSTUDIO_FFPROBE` (the bundled binaries). The engine (video-studio >= eedca6c) maps every encode to that encoder and
   falls back to libx264 when a probe encode fails. The desk-side `runtime_shim/sitecustomize.py` is gone.
 
-On first launch the app offers a one-time download (banner + Settings → Models, fonts and tools) of the assets pinned
+On first launch the setup wizard starts a one-time background download (progress + time left in the wizard and a banner; Settings → Models, fonts and tools for the optional ones) of the assets pinned
 with sha256 in `packaging/assets.json`, into the app data folder (`~/Library/Application Support/Reelfold/assets`,
-`%APPDATA%\Reelfold\assets`; the first Reelfold launch copies an older `Daycut` / `video-studio desk` profile there once, see `src/main/identity.ts`): fonts + MediaPipe models (62 MB), Whisper large-v3-turbo (1.6 GB), and optionally
+`%APPDATA%\Reelfold\assets`; the first Reelfold launch copies an older `Daycut` / `video-studio desk` profile there once, see `src/main/identity.ts`): fonts + MediaPipe models (62 MB) and Whisper large-v3-turbo 4-bit (464 MB) — required; optional: the full-precision
+Whisper large-v3-turbo (1.6 GB, takes over once installed) and
 Chromium for HTML covers/slides/HyperFrames (180–360 MB). Downloads resume, are verified before they are installed and
 never leave a half-installed folder.
 

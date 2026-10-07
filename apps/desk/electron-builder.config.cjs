@@ -58,6 +58,8 @@ module.exports = {
     { from: 'engine', to: 'engine', filter: ['**/*.py', '!tests/**', '!**/__pycache__/**'] },
     { from: 'adapters', to: 'adapters' },
     { from: 'packaging/assets.json', to: 'packaging/assets.json' },
+    // "Try with a sample": the CC0 sample recording (~1 MB, engine/desk_engine/sample.py)
+    { from: 'packaging/sample', to: 'packaging/sample', filter: ['reelfold-sample.mp4', 'script.json', 'LICENSE.txt'] },
     { from: 'THIRD_PARTY_LICENSES.md', to: 'THIRD_PARTY_LICENSES.md' },
     { from: 'packaging/resources/icons', to: 'packaging/resources/icons' }, // About panel icon (Linux)
     // built by `npm run runtime` (scripts/runtime/bundle.mjs) for the target being packaged

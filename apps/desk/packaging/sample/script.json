@@ -1,0 +1,126 @@
+{
+ "duration": 112.69,
+ "voice": "Kokoro-82M af_heart",
+ "lines": [
+  {
+   "slide": 0,
+   "start": 0.6,
+   "end": 8.47,
+   "text": "Hi! This is a sample recording that ships with Reelfold, so you can try a whole batch without your own footage."
+  },
+  {
+   "slide": 0,
+   "start": 9.07,
+   "end": 11.32,
+   "text": "Um, the idea is simple."
+  },
+  {
+   "slide": 0,
+   "start": 12.72,
+   "end": 19.76,
+   "text": "You record once. You cut it into many short clips. Then you post them on every platform."
+  },
+  {
+   "slide": 0,
+   "start": 20.46,
+   "end": 25.46,
+   "text": "In the next two minutes I'll walk through three habits that make this, uh, really easy."
+  },
+  {
+   "slide": 1,
+   "start": 27.46,
+   "end": 29.31,
+   "text": "The first habit is"
+  },
+  {
+   "slide": 1,
+   "start": 29.81,
+   "end": 33.76,
+   "text": "The first habit is to plan the beats before you press record."
+  },
+  {
+   "slide": 1,
+   "start": 34.36,
+   "end": 37.84,
+   "text": "Write down three to five points, one sentence each."
+  },
+  {
+   "slide": 1,
+   "start": 38.34,
+   "end": 42.96,
+   "text": "And, um, know how you want to end, so every clip has a clear landing."
+  },
+  {
+   "slide": 1,
+   "start": 44.76,
+   "end": 49.01,
+   "text": "If a point needs a long explanation, it's probably two points."
+  },
+  {
+   "slide": 2,
+   "start": 49.91,
+   "end": 53.13,
+   "text": "The second habit: record it in one take."
+  },
+  {
+   "slide": 2,
+   "start": 53.73,
+   "end": 60.05,
+   "text": "Leave a short pause between points. Those pauses become the natural cut lines for your clips."
+  },
+  {
+   "slide": 2,
+   "start": 60.85,
+   "end": 66.22,
+   "text": "If you stumble, just, uh, restart the sentence. Don't stop the recording."
+  },
+  {
+   "slide": 2,
+   "start": 67.83,
+   "end": 73.35,
+   "text": "The editor keeps the last good take and drops the rest, so a restart costs you nothing."
+  },
+  {
+   "slide": 3,
+   "start": 75.55,
+   "end": 78.92,
+   "text": "The third habit is to let the batch do the boring part."
+  },
+  {
+   "slide": 3,
+   "start": 79.52,
+   "end": 84.15,
+   "text": "Pauses and filler words get cut, like the ones in this very sample."
+  },
+  {
+   "slide": 3,
+   "start": 84.75,
+   "end": 88.57,
+   "text": "Every clip gets captions, a cover and its own copy."
+  },
+  {
+   "slide": 3,
+   "start": 89.07,
+   "end": 94.25,
+   "text": "And you export one file per platform, in the right shape, with the right loudness."
+  },
+  {
+   "slide": 4,
+   "start": 96.15,
+   "end": 98.7,
+   "text": "So, um, here is what to do now."
+  },
+  {
+   "slide": 4,
+   "start": 99.5,
+   "end": 104.62,
+   "text": "Open the review, look only at the clips that were flagged, and fix them by chatting."
+  },
+  {
+   "slide": 4,
+   "start": 105.32,
+   "end": 111.49,
+   "text": "When a clip feels right, publish it. That's it. Thanks for trying the sample!"
+  }
+ ]
+}

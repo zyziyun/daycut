@@ -488,7 +488,7 @@ export function CutPreview({ opts, cur, onPick, play = 0 }: { opts: InboxOption[
   const src = showSide === 'before' ? o?.before?.file : o?.file;
   const at = (showSide === 'before' ? o?.before?.at : o?.at) ?? 0;
   const a = Math.max(0, at - 3);
-  const b = at + 3;
+  const b = o?.at == null && o?.before?.at == null ? Number.POSITIVE_INFINITY : at + 3; // a whole video (e.g. before publishing) plays through
   const idx = o ? opts.indexOf(o) + 1 : 0;
   const sameClip = opts.filter((x) => x.file && x.file === o?.file && x.at != null);
   useEffect(() => {
