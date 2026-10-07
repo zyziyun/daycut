@@ -82,6 +82,14 @@ Everything content-specific lives in ONE file, `launch.config.yaml`; start from
 - Demo length: scenes are 4.5–9 s; the total is squeezed into `demo.max_seconds` (never under 4 s per scene) or
   padded by holding each shot's last frame up to `demo.min_seconds`.
 
+## Speed ramps (what `timing` does)
+
+Real recordings wait: a plan being made, a render finishing. `ffmpeg freezedetect` (a very low noise threshold, so
+typing still counts as motion) finds the frozen stretches of each shot; they play at 4× after a 0.35 s lead-in at
+normal speed, the actions play at the feature's `rate`. When the scene is still shorter than the ramped take, every
+segment speeds up evenly. Each segment is its own back-to-back clip in the composition. Detection is cached next to
+the shot (`<shot>.mp4.idle.json`); `ramp: false` on a feature turns it off.
+
 ## Camera (what `story.camera` does)
 
 The shot is cover-fitted into the product window. Each focus event becomes a punch-in (zoom ≤ the point where the
