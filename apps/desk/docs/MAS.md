@@ -64,7 +64,11 @@ Run with `npm run mas:local` (ad-hoc signature, real MAS entitlements, real App 
 - Found and fixed on the way: scripts calling `python3` hit the xcrun shim; the bundled LGPL ffmpeg has no `hqdn3d` /
   `eq` (GPL), which failed every talking-head render in **both** editions - `vstudio.media` now passes those two
   polish filters through when the ffmpeg lacks them; the Anthropic provider needed the `anthropic` package, which the
-  bundled runtime lacks - it now falls back to the Messages API over plain HTTPS.
+  bundled runtime lacks - it now falls back to the Messages API over plain HTTPS; with no usable AI at all (no key
+  yet - the reviewer's case) the glossary step failed the whole job - it now falls back to rules and logs why.
+- Known: the MAS Chromium keeps its single-instance socket in `<container>/tmp/S`. After a force-quit / crash the
+  next launch can quit at once (`Failed to create .../S/SingletonCookie: File exists`); the launch after that works.
+  The packaged tests clear it between launches.
 - `tests/packaged/mas.spec.ts` (run by `npm run mas:local`): entitlements of every executable, Info.plist / privacy
   manifest / no Squirrel / no node-pty, the sandboxed engine, Lite AI rows and routes, no Chromium group, updater and
   usage off, Lite copy in Settings and first run; `DESK_TEST_SAMPLE=1` adds the sample run.
