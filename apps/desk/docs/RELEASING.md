@@ -14,7 +14,7 @@ What ships, how to sign it, how to cut a release, and what the store builds woul
 | macOS x64 (macOS 12+, best effort) | `…-mac-x64.dmg/.zip` | same | electron-updater |
 | Windows x64 | `Reelfold-<v>-win-x64.exe` (NSIS, per user) | Azure Trusted Signing or a code-signing cert; unsigned if neither | electron-updater |
 | Microsoft Store (later) | `.appx` (`npm run dist:appx`) | the Store | the Store |
-| Mac App Store (later) | not possible yet (see the last section) | | |
+| Mac App Store ("Lite", sandboxed) | `Reelfold-<v>-*.pkg` (`npm run release:mas`, [MAS.md](MAS.md)) | Apple Distribution + Mac Installer Distribution, provisioning profile | the Mac App Store |
 
 Every installer contains the whole engine, so users need nothing preinstalled:
 
@@ -253,20 +253,12 @@ Store-specific risks: policy 10.2.2 forbids downloading code that changes the ap
 downloads (content) but either bundle Chromium in the Store package or leave that optional group out of the Store
 build. The Store accepts packages up to 25 GB, so size is not a problem.
 
-## Mac App Store — blockers and what would have to change
+## Mac App Store
 
-Not feasible with the current architecture. MAS apps must be sandboxed (`com.apple.security.app-sandbox`) and signed
-with *Apple Distribution* + *Mac Installer Distribution* certificates and a provisioning profile (Electron `mas` target).
-
-| Blocker | Why | What would have to change |
-|---|---|---|
-| Downloaded executables | Guideline 2.5.2: no downloading or executing code not in the reviewed bundle. Chromium (optional asset) is executable. | Bundle Chromium (or drop HTML covers/HyperFrames in the MAS build). Models/fonts as data downloads are fine. |
-| Sandboxed child processes | Python, ffmpeg and Chromium run as children; inside the sandbox they must live in the bundle, be signed with `com.apple.security.inherit` + `app-sandbox`, and they inherit the parent's sandbox. | Sign every runtime binary with an inherit entitlements file; verify Chromium can run sandboxed in a sandbox (it needs `--no-sandbox` style flags and may simply fail). |
-| File access | The engine reads/writes arbitrary batch folders and remembers them (`batches.json`), reads `~/.cache`, persona files in home. Sandboxed apps only get user-selected files and must persist access with security-scoped bookmarks; the Python child only sees what the parent was granted. | Store security-scoped bookmarks for every batch folder/output folder and start access before each engine call; move all engine paths into the container (`VSTUDIO_CACHE` is already set by the app). |
-| JIT in Python | numba/llvmlite need `allow-unsigned-executable-memory`; MAS sandbox apps may only use `allow-jit` (MAP_JIT). | Disable numba (word timings via another path) or ask the engine for a non-numba timing fallback. |
-| Local HTTP engine | The engine serves on 127.0.0.1. | Add `com.apple.security.network.server` + `network.client`; App Review may question a local server — an IPC/stdio transport would be safer. |
-| Publish browser | Logs into third-party platforms in embedded sessions. | Likely fine, but review guideline 5.1 (account access) needs a clear explanation. |
-| Self-updater | Not allowed in MAS. | Already disabled for `process.mas`. |
+The sandboxed "Lite" build (`BUILD_EDITION=mas`, electron-builder `mas` target) is described in [MAS.md](MAS.md):
+what it leaves out, how each sandbox blocker listed here before was solved (bookmarks for picked folders, every
+runtime binary signed app-sandbox + inherit, no Chromium download - the app renders HTML itself, no hardened runtime
+so numba keeps working, no CLI sign-in), the local sandbox check (`npm run mas:local`) and the release steps.
 
 ## Engine requests (repo root `lib/` — tracked here for the desk)
 
@@ -281,4 +273,5 @@ with *Apple Distribution* + *Mac Installer Distribution* certificates and a prov
    through the backends) and document it; optionally a `VSTUDIO_HF_OFFLINE` switch so nothing is fetched implicitly.
 6. **mediapipe range**: the engine runs on mediapipe 0.10.35 (arm64/Windows) and 0.10.21 (macOS x64 — newer
    releases have no x86_64 macOS wheels); please keep `>=0.10.14` working on both, or document the minimum.
-7. **No numba requirement path** (only if the Mac App Store is ever pursued): word timestamps without numba.
+7. ~~**No numba requirement path**~~: not needed - the Mac App Store build has no hardened runtime, and numba runs
+   inside the App Sandbox (checked with the sandboxed build, docs/MAS.md).
