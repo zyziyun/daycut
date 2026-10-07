@@ -3,8 +3,8 @@
 Real mode: every call runs ``python -m vstudio.create <cmd> --json`` (CliRunner.sibling, like intake.py); long jobs
 (plan, ideas, bible revise, episodes add, run, handoff, record ingest) are background subprocesses with
 ``--json-events`` streamed to /api/stream as ``create`` events, polled at GET create/jobs/<id>.
-Mock mode (DESK_ENGINE_MOCK=1): the same commands run in this process against a private store
-(<DESK_DATA_DIR>/create-mock) with fake services only - nothing leaves the machine, nothing is charged.
+Without the engine every route answers ``create.engine-missing`` (503): nothing is ever made by anything else.
+(The desk's own tests run the same commands in process with fake services: engine/tests/fixtures/desk_mock.)
 
 Nothing here runs until the desk calls it (the Create flag off = never called = zero cost). Money: a finals run is
 refused here unless it carries an estimate id + an 8-hex confirm code + max_cny, and the engine checks again.
@@ -88,50 +88,31 @@ def _abs(v, name):
 
 
 class CreateApi:
-    def __init__(self, data_dir, bus, runner=None, mode="mock", history=None, calendar=None, outputs=None):
+    def __init__(self, data_dir, bus, runner=None, mode="real", history=None, calendar=None, outputs=None):
         self.data_dir, self.bus, self.runner, self.mode = data_dir, bus, runner, mode
         self.history, self.calendar, self.outputs = history, calendar, outputs
         self.jobs = {}
         self.used = False
         self.recovered = []
         self._lock = threading.Lock()
-        self._mod = None
         self._inbox_cache = (0.0, [])
 
     # ---------------------------------------------------------------- engine access
-    def mock_home(self):
-        return os.path.join(self.data_dir, "create-mock")
-
-    def engine(self):
-        """Mock mode only: vstudio.create in this process, private store, fake services."""
-        if self._mod is None:
-            try:
-                from vstudio.create import cli, providers, store
-            except ImportError as e:              # no engine on the path: Create says so instead of crashing
-                raise Refused("create.engine-missing", dict(error=str(e)), status=503) from e
-            store.configure(self.mock_home())
-            providers.set_fake(True)
-            self._mod = cli
-        return self._mod
-
     def real(self):
         return self.mode == "real" and self.runner is not None
 
     def _base(self):
         return ["--json"]
 
+    def _need_engine(self):
+        if not self.real():
+            raise Refused("create.engine-missing", dict(error="the video engine is not running"), status=503)
+
     def call(self, args, timeout=180):
         self.used = True
-        if self.real():
-            doc = self.runner.sibling("vstudio.create").json(self._base() + args, timeout=timeout)
-            return self._check(doc)
-        cli = self.engine()
-        from vstudio.create.i18n import CreateError
-        a = cli.parser().parse_args(self._base() + args)
-        try:
-            return cli.dispatch(a)
-        except CreateError as e:
-            raise Refused(e.code, e.params, e.status) from e
+        self._need_engine()
+        doc = self.runner.sibling("vstudio.create").json(self._base() + args, timeout=timeout)
+        return self._check(doc)
 
     @staticmethod
     def _check(doc):
@@ -174,14 +155,7 @@ class CreateApi:
         return dict(job=jid, kind=kind)
 
     def _run_job(self, args, on_event, limit=None):
-        if not self.real():
-            cli = self.engine()
-            from vstudio.create.i18n import CreateError
-            a = cli.parser().parse_args(self._base() + args)
-            try:
-                return cli.dispatch(a, on_event=on_event)
-            except CreateError as e:
-                raise Refused(e.code, e.params, e.status) from e
+        self._need_engine()
         r = self.runner
         cmd = [r.python, "-m", "vstudio.create", "--json-events", *args]
         p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=r.env,
@@ -243,8 +217,6 @@ class CreateApi:
         except ImportError:
             vh = os.path.expanduser(os.environ.get("VSTUDIO_HOME") or "~/.config/vstudio")
         out = [os.path.join(vh, "series"), os.path.join(vh, "recordings")]
-        if not self.real():
-            out.append(self.mock_home())
         return [p for p in out if os.path.isdir(p)]
 
     def recordings_root(self):
@@ -259,10 +231,6 @@ class CreateApi:
         d = res.get("dir")
         if not d:
             return res
-        if not self.real() and self.history is not None:
-            extra = getattr(self.history, "extra_work", None)
-            if extra is not None:
-                extra.add(os.path.abspath(d))
         res["project_id"] = batch_id(d)
         posts = []
         if schedule and self.calendar is not None:
@@ -532,8 +500,6 @@ class CreateApi:
                 need(isinstance(langs, list) and len(langs) <= 3 and all(x in LANGS for x in langs), "languages: zh en fr")
                 schedule = b.get("schedule", True) is not False
                 args = ["handoff", eid] + (["--languages", ",".join(langs)] if langs else [])
-                if not self.real():
-                    args.append("--no-register")
                 return self.job("handoff", args, meta=dict(episode=eid),
                                 after=lambda r: self._after_handoff(r, schedule))
         if p == ["record", "ingest"]:

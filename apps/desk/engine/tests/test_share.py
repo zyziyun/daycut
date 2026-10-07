@@ -142,9 +142,9 @@ class ShareTest(unittest.TestCase):
 
     def test_routes(self):
         from desk_engine.app import Api
-        from desk_engine.mock import MockEngine
+        from desk_mock import MockEngine, make_api
         data = os.path.join(self.root, "desk2")
-        api = Api(MockEngine(data, Registry(data), self.bus, step=0.01), self.bus, "t" * 40, [])
+        api = make_api(MockEngine(data, Registry(data), self.bus, step=0.01), self.bus, "t" * 40, [])
         item = next(r["id"] for r in api.history.list()["items"] if r["dir"] == self.d)
         opt = api.route("GET", f"/api/share/{item}", {}, None)
         self.assertEqual(len(opt["clips"]), 2)

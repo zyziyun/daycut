@@ -12,6 +12,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import _isolate  # noqa: E402,F401
 
+import desk_mock as DM  # noqa: E402
+
 from desk_engine import inbox as IB  # noqa: E402
 from desk_engine import intake as IN  # noqa: E402
 from desk_engine import outputs as OU  # noqa: E402
@@ -366,7 +368,7 @@ class RebaseTest(unittest.TestCase):
 
 class IntakeTest(unittest.TestCase):
     def test_rule_plan_shape_and_question(self):
-        p = IN.rule_plan("把这条副业复盘剪成 4 条小红书切片，每条一分钟左右", ["/x/多元副业复盘_final.mp4"],
+        p = DM.rule_plan("把这条副业复盘剪成 4 条小红书切片，每条一分钟左右", ["/x/多元副业复盘_final.mp4"],
                          probe=lambda _p: dict(duration=653.0))
         self.assertEqual(p["kind"], "vstudio.intake.plan")
         proj = p["projects"][0]
@@ -378,19 +380,19 @@ class IntakeTest(unittest.TestCase):
         self.assertIn("4 条", p["summary_zh"])
 
     def test_revise_rules(self):
-        p = IN.rule_plan("剪成 4 条小红书切片", ["/x/a.mp4"], probe=lambda _p: dict(duration=600.0))
-        r = IN.rule_revise(p, "只要 3 条，不要 9:16")
+        p = DM.rule_plan("剪成 4 条小红书切片", ["/x/a.mp4"], probe=lambda _p: dict(duration=600.0))
+        r = DM.rule_revise(p, "只要 3 条，不要 9:16")
         proj = r["projects"][0]
         self.assertEqual(proj["items"]["count"], 3)
         self.assertEqual(proj["params"]["aspects"], ["3:4"])
         self.assertEqual(r["revisions"][-1]["prompt"], "只要 3 条，不要 9:16")
-        same = IN.rule_revise(p, "嗯？")
+        same = DM.rule_revise(p, "嗯？")
         self.assertTrue(same["warnings"])
 
     def test_async_plan_and_mock_apply(self):
         root = tempfile.mkdtemp()
         with mock.patch.dict(os.environ, {"VSTUDIO_HOME": os.path.join(root, "home"), "DESK_MOCK_STEP": "0.01"}):
-            it = IN.Intake(os.path.join(root, "desk"), None)
+            it = DM.MockIntake(os.path.join(root, "desk"), None)
             pid = it.start("剪一条口播", [])["id"]
             for _ in range(200):
                 if it.get(pid)["state"] != "running":
@@ -404,6 +406,76 @@ class IntakeTest(unittest.TestCase):
                 reg = json.load(f)
             self.assertEqual(reg[0]["dir"], d)
             self.assertEqual(it.recent()[0]["prompt"], "剪一条口播")
+
+
+class IntakeEngineHiccupTest(unittest.TestCase):
+    """No mock in the product: a failed ``vstudio.intake`` probe used to make "Make a plan" write fake projects and
+    fake pilot results. Now the plan card says why and offers Try again; nothing is written."""
+
+    class Runner:
+        python, env = "python3", {}
+
+        def __init__(self, help_text):
+            self.help, self.calls = help_text, []
+
+        def sibling(self, mod):
+            r = self
+
+            class S:
+                def text(self, args, **kw):
+                    r.calls.append(args)
+                    if isinstance(r.help, Exception):
+                        raise r.help
+                    return r.help
+
+                def json(self, args, **kw):
+                    r.calls.append(args)
+                    if args[0] == "plan":
+                        return dict(kind="vstudio.intake.plan", version=1, projects=[], prompt="p")
+                    raise AssertionError(f"unexpected {args}")
+            return S()
+
+    def wait(self, it, pid):
+        for _ in range(300):
+            if it.get(pid)["state"] != "running":
+                return it.get(pid)
+            time.sleep(0.01)
+        self.fail("plan never finished")
+
+    def test_probe_hiccup_is_an_error_with_retry_and_writes_nothing(self):
+        root = tempfile.mkdtemp()
+        home = os.path.join(root, "home")
+        with mock.patch.dict(os.environ, {"VSTUDIO_HOME": home}):
+            runner = self.Runner(RuntimeError("vstudio.intake: exit 1: database is locked"))
+            it = IN.Intake(os.path.join(root, "desk"), None, runner, "real")
+            pid = it.start("剪一条口播", [])["id"]
+            j = self.wait(it, pid)
+            self.assertEqual((j["state"], j["error_code"]), ("error", "intake"))
+            self.assertIn("did not answer", j["error"])
+            self.assertIsNone(j.get("plan"))
+            with self.assertRaises(BadRequest):
+                it.apply(pid, plan=dict(kind="vstudio.intake.plan", projects=[dict(name="x")]), run=True)
+            self.assertFalse(os.path.exists(os.path.join(home, "projects.json")))
+            self.assertFalse(os.path.exists(os.path.join(home, "projects")))
+            with self.assertRaises(BadRequest):
+                it.retry_pilot(root)
+            runner.help = "usage: python -m vstudio.intake {plan,revise,apply}"     # the hiccup passed: Try again
+            it.retry(pid)
+            j = self.wait(it, pid)
+            self.assertEqual(j["state"], "done")
+            self.assertGreaterEqual(runner.calls.count(["--help"]), 2)            # probed again on retry
+
+    def test_no_engine_at_all(self):
+        it = IN.Intake(tempfile.mkdtemp(), None, None, "real")
+        pid = it.start("x", [])["id"]
+        j = self.wait(it, pid)
+        self.assertEqual((j["state"], j["error_code"]), ("error", "intake"))
+
+    def test_no_rule_planner_or_simulated_pilot_in_the_product(self):
+        for name in ("rule_plan", "rule_revise", "_mock_apply", "_mock_pilot"):
+            self.assertFalse(hasattr(IN, name) or hasattr(IN.Intake, name), name)
+        from desk_engine import pilot
+        self.assertFalse(hasattr(pilot, "record_mock"))
 
 
 class InboxTest(unittest.TestCase):
@@ -448,3 +520,20 @@ class InboxTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PlanTimingTest(unittest.TestCase):
+    def test_the_card_gets_the_real_planning_time(self):
+        """The card said "read 1 file in 1 s" (the planner's own number) while planning took 20-40 s."""
+        root = tempfile.mkdtemp()
+        with mock.patch.dict(os.environ, {"VSTUDIO_HOME": os.path.join(root, "home"), "DESK_MOCK_STEP": "0.3"}):
+            it = DM.MockIntake(os.path.join(root, "desk"), None)
+            pid = it.start("剪一条口播", [])["id"]
+            for _ in range(300):
+                if it.get(pid)["state"] != "running":
+                    break
+                time.sleep(0.02)
+            j = it.get(pid)
+            self.assertEqual(j["state"], "done")
+            self.assertGreaterEqual(j["seconds"], 0.3)
+            self.assertLess(j["plan"]["planner"]["seconds"], 0.3)             # the planner's own number is not it

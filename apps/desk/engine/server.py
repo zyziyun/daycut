@@ -7,8 +7,9 @@ Environment
   VSTUDIO_ENGINE_PATH   the video-studio repo; its lib/ is put on sys.path (PYTHONPATH also works)
   DESK_PORT             preferred port (an engine restart keeps the old one so the UI's CSP stays valid);
                         a random free port when unset or taken
-  DESK_ENGINE_MOCK=1    force the in-memory mock engine
-  DESK_MOCK_STEP        seconds per mock stage (default 0.25)
+  DESK_ENGINE_MOCK=1    tests only: the in-memory test engine from engine/tests/fixtures/desk_mock (the desk's test
+                        harness sets it in a dev build; a packaged app neither passes it nor ships engine/tests, so
+                        there it fails the start instead)
   ANTHROPIC_API_KEY / OPENAI_API_KEY   segment-planning providers (from the OS keychain via the desk)
 Prints one line ``{"ready": true, "port": N, "mode": "real"|"mock"}`` on stdout, then serves until stdin closes
 (the parent died) or SIGTERM.
@@ -27,14 +28,28 @@ from desk_engine.common import EventBus, Registry  # noqa: E402
 from desk_engine.studio import Studio  # noqa: E402
 
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+FIXTURES = os.path.join(HERE, "tests", "fixtures")
+
+
+def test_engine():
+    """The test engine package (engine/tests/fixtures/desk_mock): fake batches, rule plans, simulated pilots and fake
+    Create services for the desk's own tests. Never part of a packaged app."""
+    if not os.path.isfile(os.path.join(FIXTURES, "desk_mock", "__init__.py")):
+        raise ImportError("DESK_ENGINE_MOCK is set, but the test engine is not part of this build")
+    if FIXTURES not in sys.path:
+        sys.path.insert(0, FIXTURES)
+    import desk_mock
+    return desk_mock
+
+
 def make_engine(data_dir, bus):
     reg = Registry(data_dir)
     engine_path = os.environ.get("VSTUDIO_ENGINE_PATH")
     if engine_path and os.path.isdir(os.path.join(engine_path, "lib")):
         sys.path.insert(0, os.path.join(engine_path, "lib"))
     if os.environ.get("DESK_ENGINE_MOCK") == "1":     # tests only: the desk passes it for a test profile, never else
-        from desk_engine.mock import MockEngine
-        return MockEngine(data_dir, reg, bus, step=float(os.environ.get("DESK_MOCK_STEP", "0.25"))), None
+        return test_engine().MockEngine(data_dir, reg, bus, step=float(os.environ.get("DESK_MOCK_STEP", "0.25"))), None
     # no silent fallback to a fake engine: a broken / missing engine fails the start and the app says why
     from desk_engine.real import RealEngine
     return RealEngine(data_dir, reg, bus, engine_path=engine_path), None
@@ -69,11 +84,10 @@ def main():
         runner = CliRunner(engine.python, runner_env(engine.engine_path))
         caps = Capabilities(runner)
         threading.Thread(target=caps.probe, daemon=True).start()      # warm the cache off the start-up path
-    else:
-        runner, caps = None, Capabilities(fixed=set())
-    api = Api(engine, bus, token, origins, studio=Studio(engine, data_dir, bus, caps, runner))
-    if engine.mode == "real":
+        api = Api(engine, bus, token, origins, studio=Studio(engine, data_dir, bus, caps, runner))
         threading.Thread(target=warm, args=(api,), daemon=True).start()
+    else:
+        api = test_engine().make_api(engine, bus, token, origins)
     try:
         port = int(os.environ.get("DESK_PORT") or 0)
     except ValueError:

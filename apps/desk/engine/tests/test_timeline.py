@@ -1,5 +1,6 @@
 """Timeline media (desk_engine/timeline.py): tile plan, audio peaks, the sprite sheet + peaks of a real file (cached),
-and 「听一遍这条片子」 in mock mode (words from an .srt next to the file, kept in the desk data dir, returned by show)."""
+and 「听一遍这条片子」 with the test engine (words from an .srt next to the file, kept in the desk data dir, returned by
+show); without the engine it fails and says so."""
 import os
 import shutil
 import subprocess
@@ -12,6 +13,8 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import _isolate  # noqa: E402,F401
+
+from desk_mock import MockStrips  # noqa: E402
 
 from desk_engine import outputs as OU  # noqa: E402
 from desk_engine import timeline as TL  # noqa: E402
@@ -103,7 +106,7 @@ class TranscribeTest(unittest.TestCase):
         self.h = History(data, Registry(data))
         self.bus = EventBus()
         self.o = OU.Outputs(data, self.h, bus=self.bus)
-        self.s = TL.Strips(data, self.o, self.h, self.bus, mock=True)
+        self.s = MockStrips(data, self.o, self.h, self.bus)
         self.item = next(r["id"] for r in self.h.list()["items"] if r["dir"] == self.d)
 
     def tearDown(self):

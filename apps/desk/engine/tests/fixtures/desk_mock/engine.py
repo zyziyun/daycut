@@ -1,6 +1,6 @@
-"""Mock engine: same API as RealEngine, in memory, no ffmpeg / whisper needed.
+"""The test engine: same API as RealEngine, in memory, no ffmpeg / whisper needed. Tests only (the desk's e2e
+harness starts it with DESK_ENGINE_MOCK=1 in a dev build; it is not shipped in the app).
 
-Used when ``vstudio`` cannot be imported or DESK_ENGINE_MOCK=1 (UI development, the Electron smoke test).
 A run walks every job through the real stage names with a short sleep per stage; job 4, 8, ... go red.
 """
 import datetime as dt
@@ -12,9 +12,10 @@ import sys
 import threading
 import time
 
-from .common import safe_name, BadRequest, batch_id, need, sha1_json, write_json
-from .planning import fake_transcript
-from .real import verify_manifest
+from desk_engine.common import safe_name, BadRequest, batch_id, need, sha1_json, write_json
+from desk_engine.real import verify_manifest
+
+from .transcript import fake_transcript
 
 STAGES = ["probe", "extract", "asr", "cleanup", "apply", "compose", "glossary", "proofread", "export", "verify", "qc",
           "preview"]
@@ -421,7 +422,7 @@ class MockEngine:
         b = self._b(bid)
         if not b["package"]:
             return dict(manifest=None, dir=None, verify=dict(ok=False, reason="not packaged yet"))
-        from .common import read_json
+        from desk_engine.common import read_json
         man = read_json(os.path.join(b["package"]["dir"], "manifest.json"))
         return dict(manifest=man, dir=b["package"]["dir"], verify=verify_manifest(man))
 
@@ -437,7 +438,7 @@ class MockEngine:
         b = self._b(bid)
         j = self._job(bid, jid)
         words, edits = _fake_cleanup(jid)
-        from .real import _parse_reply_local
+        from desk_engine.real import _parse_reply_local
         r = _parse_reply_local(j["params"].get("cleanup_reply") or "")
         for e in edits:
             if e["action"] == "auto":
@@ -541,7 +542,7 @@ class MockEngine:
 
 
 def _read_rows(path):
-    from .v02store import load_yaml
+    from desk_engine.v02store import load_yaml
     with open(path, encoding="utf-8") as f:
         doc = load_yaml(f.read())
     rows = doc.get("segments") if isinstance(doc, dict) else doc

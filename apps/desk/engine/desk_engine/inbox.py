@@ -154,7 +154,7 @@ def confirm_options(d, conf):
 
 
 class Inbox:
-    def __init__(self, data_dir, history, runner=None, mode="mock", bus=None):
+    def __init__(self, data_dir, history, runner=None, mode=None, bus=None):
         self.path = os.path.join(data_dir, "inbox.json")
         self.history, self.runner, self.mode, self.bus = history, runner, mode, bus
         self._lock = threading.Lock()

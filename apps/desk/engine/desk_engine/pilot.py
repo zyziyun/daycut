@@ -196,14 +196,3 @@ def resume_after_answer(runner, d, bus=None, spawner=None):
         return None                                           # another question still waits for her
     return (spawner or spawn)(py, runner.env, d, bus=bus,
                               args=[py, "-m", "vstudio.project", "resume", "--dir", d, "--json-events"])
-
-
-def record_mock(d, ok, error=None, provider=None):
-    """Mock mode: the same files a real pilot leaves behind (DESK_MOCK_PILOT_FAIL drives the failure)."""
-    with open(os.path.join(d, LOG), "a", encoding="utf-8") as f:
-        if ok:
-            f.write(json.dumps(dict(event="project-end", status="pilot-review", exit_code=4)) + "\n")
-        else:
-            f.write(json.dumps(dict(ok=False, error=error, type="ProjectError"), ensure_ascii=False) + "\n")
-    write_json(os.path.join(d, REC), dict(pid=None, started=time.time(), offset=0, exit=4 if ok else 5,
-                                          finished=time.time(), provider=provider))

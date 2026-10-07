@@ -137,7 +137,7 @@ def _plus_hours(at, h):
 
 
 class Calendar:
-    def __init__(self, data_dir, history, outputs, bus=None, mode="mock"):
+    def __init__(self, data_dir, history, outputs, bus=None, mode=None):
         self.path = os.path.join(data_dir, "calendar.json")
         self.history, self.outputs, self.bus, self.mode = history, outputs, bus, mode
         self._lock = threading.Lock()

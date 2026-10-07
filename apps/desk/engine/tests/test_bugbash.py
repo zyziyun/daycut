@@ -58,6 +58,41 @@ class NoFakeEngineFallback(unittest.TestCase):
         self.assertEqual(eng.mode, "mock")
         eng.shutdown()
 
+    def test_the_test_engine_lives_in_tests_only(self):
+        """M8: the fake engine is a test fixture (engine/tests/fixtures/desk_mock), not product code."""
+        import server
+        from desk_engine.common import EventBus
+        here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.assertFalse(os.path.exists(os.path.join(here, "desk_engine", "mock.py")))
+        with mock.patch.dict(os.environ, {"DESK_ENGINE_MOCK": "1", "DESK_MOCK_STEP": "0.01"}):
+            eng, _ = server.make_engine(tempfile.mkdtemp(), EventBus())
+        self.assertEqual(type(eng).__module__, "desk_mock.engine")
+        eng.shutdown()
+        for f in os.listdir(os.path.join(here, "desk_engine")):
+            if f.endswith(".py"):
+                with open(os.path.join(here, "desk_engine", f), encoding="utf-8") as fh:
+                    src = fh.read()
+                self.assertNotIn("DESK_MOCK", src, f)
+                self.assertNotIn("_mock_", src, f)
+
+    def test_a_packaged_layout_cannot_start_the_test_engine(self):
+        """The packaged app ships engine/ without tests/: DESK_ENGINE_MOCK=1 fails the start, nothing fake runs."""
+        import shutil
+        import subprocess
+        here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        pkg = tempfile.mkdtemp()
+        shutil.copy(os.path.join(here, "server.py"), pkg)
+        shutil.copytree(os.path.join(here, "desk_engine"), os.path.join(pkg, "desk_engine"),
+                        ignore=shutil.ignore_patterns("__pycache__"))
+        env = dict(os.environ, DESK_TOKEN="t" * 40, DESK_DATA_DIR=tempfile.mkdtemp(), DESK_ENGINE_MOCK="1")
+        p = subprocess.run([sys.executable, os.path.join(pkg, "server.py")], env=env, capture_output=True, text=True,
+                           timeout=60, stdin=subprocess.DEVNULL)
+        first = p.stdout.strip().splitlines()[0]
+        import json
+        doc = json.loads(first)
+        self.assertFalse(doc["ready"])
+        self.assertIn("test engine is not part of this build", doc["error"])
+
 
 class DefaultWatchOnlyWhenPresent(unittest.TestCase):
     def test_missing_default_folder_is_not_listed(self):

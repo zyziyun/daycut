@@ -8,7 +8,11 @@ are set in ``os.environ`` so engine subprocesses (``python -m vstudio.batch ...`
 import atexit
 import os
 import shutil
+import sys
 import tempfile
+
+# the test engine (fake batches, rule plans, fake Create services) lives here, never in desk_engine
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures"))
 
 ROOT = tempfile.mkdtemp(prefix="desk-engine-tests-")
 HOME = os.path.join(ROOT, "vstudio-home")

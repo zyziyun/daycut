@@ -1,11 +1,11 @@
 """v0.2 adapter (PRODUCT_V02.md): clients, AI segment planning, in-review edits, review timing, client delivery,
-metrics. One facade over the mock or real engine.
+metrics. One facade over the engine.
 
 For every v0.2 operation the adapter checks the engine's capabilities (caps.py). When the engine has the
 command it is called (``python -m vstudio.batch <cmd> ... --json``); otherwise the desk's own faithful
-implementation runs: always in mock mode, and in real mode for the parts the desk can do itself (clients,
-timing, deliver from the publish package, metrics). Operations that need media processing (plan-segments,
-job edit, job rerun) report ``engine lacks <cap>`` in real mode without the command.
+implementation runs for the parts the desk can do itself (clients, timing, deliver from the publish package,
+metrics). Operations that need media processing (plan-segments, job edit, job rerun) report ``engine lacks <cap>``
+without the command. (The in-memory test engine in engine/tests/fixtures subclasses this for the desk's tests.)
 
 Engine command contract (python -m vstudio.batch ..., all with --json; matches the engine's v0.2 CLI):
   plan-segments --source F --count N --min S --max S --provider claude|openai|none [--client DIR]
@@ -80,38 +80,20 @@ class Studio:
         self.plans = {}
         self._lock = threading.RLock()
         self.step = float(getattr(engine, "step", 0.25) or 0.25)
-        if engine.mode == "mock":
-            self._seed_mock()
-
-    @property
-    def mock(self):
-        return self.e.mode == "mock"
 
     def has(self, cap):
-        return (not self.mock) and self.caps.has(cap)
+        return self.caps.has(cap)
+
+    def can(self, what):
+        """plan | edit | rerun: the engine command behind it exists."""
+        return self.has({"plan": "plan-segments", "edit": "job-edit", "rerun": "job-rerun"}[what])
 
     def _lacks(self, cap):
         raise BadRequest(f"engine lacks {cap} (update video-studio to use this in real mode)")
 
     def capabilities(self):
-        info = self.caps.info() if not self.mock else dict(source="mock", commands={c: False for c in
-                                                                                  ("plan-segments", "client", "job-edit",
-                                                                                   "job-rerun", "deliver", "metrics",
-                                                                                   "timing")})
-        return dict(mode=self.e.mode, **info,
-                    fallback=dict(plan=self.mock or self.has("plan-segments"), edit=self.mock or self.has("job-edit"),
-                                  rerun=self.mock or self.has("job-rerun")))
-
-    def _seed_mock(self):
-        if self.list_clients():
-            return
-        self.create_client(dict(slug="demo", name="示例客户 · 知识讲师", style="干净、信息密度高、不花哨",
-                                platforms=["xiaohongshu:full", "tiktok:vertical"], tags=["RAG", "面试", "AI"],
-                                glossary=[dict(wrong="rag", right="RAG")], cleanup_profile="strict"))
-        demo = next((b for b in self.e.list_batches() if b["name"] == "demo-course"), None)
-        if demo:
-            self.store.set_batch_meta(demo["id"], client="demo", created=time.time())
-            self.set_crm("demo", dict(stage="pilot"))
+        return dict(mode=self.e.mode, **self.caps.info(),
+                    fallback=dict(plan=self.can("plan"), edit=self.can("edit"), rerun=self.can("rerun")))
 
     # ================================================================ clients
     def client_dir(self, slug):
@@ -127,15 +109,14 @@ class Studio:
 
     def _persona_defaults(self):
         base = dict(DEFAULT_CLIENT)
-        if not self.mock:
-            try:
-                from vstudio.config import persona
-                p = persona() or {}
-                br = p.get("brand") or {}
-                base["brand"] = dict(accent=br.get("accent", base["brand"]["accent"]),
-                                     highlight=br.get("highlight", base["brand"]["highlight"]))
-            except Exception:  # noqa: BLE001
-                pass
+        try:
+            from vstudio.config import persona
+            p = persona() or {}
+            br = p.get("brand") or {}
+            base["brand"] = dict(accent=br.get("accent", base["brand"]["accent"]),
+                                 highlight=br.get("highlight", base["brand"]["highlight"]))
+        except Exception:  # noqa: BLE001
+            pass
         return base
 
     def _client_view(self, slug, cfg):
@@ -288,7 +269,7 @@ class Studio:
         pid = secrets.token_hex(6)
         if body.get("client"):
             self._read_client(body["client"])
-        if not self.mock and not self.has("plan-segments"):
+        if not self.can("plan"):
             self._lacks("plan-segments")
         if body["provider"] == "claude" and not os.environ.get("ANTHROPIC_API_KEY") and not self.has("plan-segments"):
             raise BadRequest("ANTHROPIC_API_KEY missing: add it in Settings -> API keys, or use provider none")
@@ -308,43 +289,32 @@ class Studio:
         self.bus.publish("plan", plan=plan["id"], state=plan["state"], progress=progress)
 
     def _plan(self, plan):
-        b = plan["request"]
         try:
-            if self.has("plan-segments"):
-                self._plan_progress(plan, "engine")
-                args = ["plan-segments", "--source", b["source"], "--count", str(b["count"]), "--min", str(b["min"]),
-                        "--max", str(b["max"]), "--provider", b["provider"], "--out", plan["dir"], "--json"]
-                if b.get("client"):
-                    args += ["--client", self.client_dir(b["client"])]
-                if b.get("platforms"):
-                    args += ["--platforms", ",".join(b["platforms"])]
-                doc = self.runner.json(args, timeout=3 * 3600)
-                res = dict(source=b["source"], duration=doc.get("duration"), provider=doc.get("provider", b["provider"]),
-                           segments=doc.get("segments") or [], words=doc.get("words") or [],
-                           draft=doc.get("draft"))
-                if not res["words"] and doc.get("transcript"):
-                    tr = read_json(doc["transcript"], {}) or {}
-                    res["words"] = [dict(w=w.get("w") or w.get("word", "").strip(), t=w.get("t", w.get("start")),
-                                         te=w.get("te", w.get("end")))
-                                    for sg in tr.get("segments") or [] for w in sg.get("words") or []]
-            else:
-                dur = P.probe_duration(b["source"])
-                for p in ("asr", "planning"):
-                    time.sleep(self.step * 2)
-                    self._plan_progress(plan, p)
-                words = P.fake_transcript(dur)
-                segs = P.rule_plan(words, count=b["count"], min_s=b["min"], max_s=b["max"])
-                if b["provider"] != "none":
-                    for s in segs:
-                        s["why"] = f"[{b['provider']} mock] " + s["why"]
-                draft = os.path.join(plan["dir"], "segments.draft.yaml")
-                write_text(draft, dump_yaml(dict(source=b["source"], segments=segs)))
-                res = dict(source=b["source"], duration=round(dur, 2), provider=b["provider"], segments=segs,
-                           words=[dict(w=w["w"], t=w["t"], te=w["te"]) for w in words], draft=draft)
-            plan.update(state="done", progress="done", result=res)
+            plan.update(state="done", progress="done", result=self._plan_segments(plan))
         except Exception as e:  # noqa: BLE001
             plan.update(state="error", error=str(e))
         self.bus.publish("plan", plan=plan["id"], state=plan["state"], progress=plan["progress"])
+
+    def _plan_segments(self, plan):
+        """``plan-segments`` through the engine -> {source, duration, provider, segments, words, draft}."""
+        b = plan["request"]
+        self._plan_progress(plan, "engine")
+        args = ["plan-segments", "--source", b["source"], "--count", str(b["count"]), "--min", str(b["min"]),
+                "--max", str(b["max"]), "--provider", b["provider"], "--out", plan["dir"], "--json"]
+        if b.get("client"):
+            args += ["--client", self.client_dir(b["client"])]
+        if b.get("platforms"):
+            args += ["--platforms", ",".join(b["platforms"])]
+        doc = self.runner.json(args, timeout=3 * 3600)
+        res = dict(source=b["source"], duration=doc.get("duration"), provider=doc.get("provider", b["provider"]),
+                   segments=doc.get("segments") or [], words=doc.get("words") or [],
+                   draft=doc.get("draft"))
+        if not res["words"] and doc.get("transcript"):
+            tr = read_json(doc["transcript"], {}) or {}
+            res["words"] = [dict(w=w.get("w") or w.get("word", "").strip(), t=w.get("t", w.get("start")),
+                                 te=w.get("te", w.get("end")))
+                            for sg in tr.get("segments") or [] for w in sg.get("words") or []]
+        return res
 
     def get_plan(self, pid):
         p = self.plans.get(pid)
@@ -426,7 +396,7 @@ class Studio:
                        file=next((x.get("cover") for x in exports if x.get("cover")), None)),
             copy=dict(title=p.get("title") or "", body=p.get("body") or "", tags=p.get("tags") or []),
             history=ent.get("history") or [], pending=ent.get("pending") or [], reruns=ent.get("reruns") or 0,
-            can_edit=self.mock or self.has("job-edit"), can_rerun=self.mock or self.has("job-rerun"),
+            can_edit=self.can("edit"), can_rerun=self.can("rerun"),
             client=self.batch_client(bid))
         return d
 
@@ -552,18 +522,18 @@ class Studio:
         r["undone"] = last
         return r
 
+    def _rerun(self, bid, jid, stages):
+        if self.has("job-rerun"):
+            return self.e.spawn_rerun(bid, jid)
+        if self.has("job-edit"):         # the engine caches stages by params: a targeted run redoes only stale ones
+            return self.e.run(bid, dict(jobs=[jid]))
+        self._lacks("job-rerun")
+
     def rerun(self, bid, jid):
         ent = self._edits(bid).get(jid) or dict(history=[], pending=[], reruns=0, count=0, since_rerun=0)
         stages = ent.get("pending") or []
         need(stages, "nothing to re-render: no pending edits")
-        if self.has("job-rerun"):
-            r = self.e.spawn_rerun(bid, jid)
-        elif self.mock:
-            r = self.e.rerun_job(bid, jid, stages)
-        elif self.has("job-edit"):       # the engine caches stages by params: a targeted run redoes only stale ones
-            r = self.e.run(bid, dict(jobs=[jid]))
-        else:
-            self._lacks("job-rerun")
+        r = self._rerun(bid, jid, stages)
         ent.update(pending=[], reruns=int(ent.get("reruns") or 0) + 1, since_rerun=0)
         self._put_edits(bid, jid, ent)
         return dict(r or {}, stages=stages)

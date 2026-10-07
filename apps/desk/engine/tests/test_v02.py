@@ -19,7 +19,7 @@ from desk_engine import planning as P  # noqa: E402
 from desk_engine.app import Api, validate_deliver, validate_edit, validate_plan_batch  # noqa: E402
 from desk_engine.caps import Capabilities, parse_help, parse_recipes_doc  # noqa: E402
 from desk_engine.common import BadRequest, EventBus, Registry  # noqa: E402
-from desk_engine.mock import MockEngine  # noqa: E402
+from desk_mock import MockEngine, fake_transcript, make_api  # noqa: E402
 from desk_engine.studio import Studio, downstream  # noqa: E402
 
 # header of the gtm weekly metrics sheet (copied into the repo so the test needs nothing outside it)
@@ -82,7 +82,7 @@ class CapsTest(unittest.TestCase):
 
 class PlanningTest(unittest.TestCase):
     def test_rule_plan_contract(self):
-        words = P.fake_transcript(600)
+        words = fake_transcript(600)
         segs = P.rule_plan(words, count=5, min_s=20, max_s=60)
         self.assertEqual(len(segs), 5)
         for s in segs:
@@ -236,7 +236,7 @@ class MockFlowTest(unittest.TestCase):
         self.tmp = tempfile.mkdtemp()
         self.bus = EventBus()
         self.eng = MockEngine(self.tmp, Registry(self.tmp), self.bus, step=0.005)
-        self.api = Api(self.eng, self.bus, "t" * 48, [])
+        self.api = make_api(self.eng, self.bus, "t" * 48, [])
         self.st = self.api.studio
         self.R = lambda m, path, body=None, q=None: self.api.route(m, path, q or {}, body)
 

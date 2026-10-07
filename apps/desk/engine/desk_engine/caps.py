@@ -9,7 +9,7 @@ The v0.2 commands (plan-segments, client, job edit / job rerun, deliver, metrics
      plus ``job --help`` / ``client --help`` for the nested verbs.
 
 Capability names (stable, used by the adapter): plan-segments, client, job-edit, job-rerun, deliver, metrics,
-timing. A missing capability means the adapter uses its own faithful implementation (mock mode) or reports
+timing. A missing capability means the adapter uses its own faithful implementation (the test engine) or reports
 "engine too old" (real mode, for operations that need media processing).
 """
 import json
@@ -139,7 +139,7 @@ def kill_tracked(procs):
 
 
 class Capabilities:
-    """Lazily probed, cached capability set. ``fixed`` skips probing (mock mode / tests)."""
+    """Lazily probed, cached capability set. ``fixed`` skips probing (the test engine / tests)."""
 
     def __init__(self, runner=None, fixed=None):
         self.runner = runner

@@ -8,8 +8,7 @@ transcription of an output that has no transcript yet.
   GET  /api/outputs/<item>/<clip>/transcribe  -> {state: idle | running | done | failed, error?, words?}
 
 Transcription runs the engine's ``vstudio.asr.transcribe`` (cached by the engine as usual) in the engine's Python;
-in mock mode the words come from an ``.srt`` next to the file (or a placeholder sentence) after
-``DESK_MOCK_ASR_STEP`` seconds. Either way the words are kept in ``<DESK_DATA_DIR>/transcripts/<key>.json`` (ASR
+without the engine it fails and says so. The words are kept in ``<DESK_DATA_DIR>/transcripts/<key>.json`` (ASR
 shape), which ``outputs._base`` reads first, so ``show`` returns them from then on.
 """
 import array
@@ -80,8 +79,8 @@ def peaks_from_pcm(samples, rate, per_sec):
 
 
 class Strips:
-    def __init__(self, data_dir, outputs, history, bus=None, mock=True):
-        self.data_dir, self.outputs, self.history, self.bus, self.mock = data_dir, outputs, history, bus, mock
+    def __init__(self, data_dir, outputs, history, bus=None):
+        self.data_dir, self.outputs, self.history, self.bus = data_dir, outputs, history, bus
         self.dir = os.path.join(data_dir, "strips")
         self._locks = {}
         self._lock = threading.Lock()
@@ -197,18 +196,23 @@ class Strips:
 
     def _run_asr(self, item, clip, f, dest):
         try:
-            words = self._mock_words(f) if self.mock or self.outputs.runner is None else self._engine_words(f["path"])
+            words = self._words(f)
             if not words:
                 raise RuntimeError("no speech heard")
-            write_json(dest, dict(words=words, file=f["path"], at=time.time(), by="mock" if self.mock else "engine"))
+            write_json(dest, dict(words=words, file=f["path"], at=time.time(), by="engine"))
             st = dict(state="done", words=len(words), at=time.time())
         except Exception as e:  # noqa: BLE001
             st = dict(state="failed", error=str(e)[:300], at=time.time())
         self._asr[(item, clip)] = st
         self._emit(item, clip, st)
 
+    def _words(self, f):
+        return self._engine_words(f["path"])
+
     def _engine_words(self, path):
         r = self.outputs.runner
+        if r is None:
+            raise RuntimeError("transcribing needs the video engine, which is not running")
         code = ("import json,sys\nfrom vstudio import asr\ntr=asr.transcribe(sys.argv[1])\n"
                 "segs=[dict(s, words=asr.join_subwords(s.get('words') or [])) for s in tr['segments']]\n"
                 "print(json.dumps(asr.words_of(dict(segments=segs)), ensure_ascii=False))")
@@ -218,27 +222,6 @@ class Strips:
             raise RuntimeError((p.stderr or p.stdout or "transcription failed").strip().splitlines()[-1][:300])
         line = (p.stdout or "").strip().splitlines()[-1] if (p.stdout or "").strip() else "[]"
         return [dict(w=str(w["w"]), t=round(float(w["t"]), 3), te=round(float(w["te"]), 3)) for w in json.loads(line)]
-
-    def _mock_words(self, f):
-        time.sleep(float(os.environ.get("DESK_MOCK_ASR_STEP", "2")))
-        cues = []
-        d = os.path.dirname(f["path"])
-        for cand in sorted([x for x in os.listdir(d) if x.endswith(".srt")], key=lambda x: (not x.startswith("zh"), x)):
-            cues = parse_srt(open(os.path.join(d, cand), encoding="utf-8", errors="replace").read())
-            if cues:
-                break
-        if not cues:
-            dur = float(f.get("duration") or 6)
-            cues = [(0.3, max(0.6, dur - 0.3), "这是 一段 模拟 的 转写 文字 用来 演示 时间轴 上 的 逐字稿")]
-        out = []
-        for a, b, text in cues:
-            toks = tokens(text)
-            if not toks or b <= a:
-                continue
-            step = (b - a) / len(toks)
-            for i, tk in enumerate(toks):
-                out.append(dict(w=tk, t=round(a + i * step, 3), te=round(a + (i + 1) * step - 0.02, 3)))
-        return out
 
 
 _TS = re.compile(r"(\d+):(\d+):(\d+)[,.](\d+)\s*-->\s*(\d+):(\d+):(\d+)[,.](\d+)")

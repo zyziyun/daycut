@@ -71,7 +71,8 @@ v0.4 (outputs.py, intake.py, inbox.py; engine command when available, desk imple
                                            POST|GET .../transcribe 「听一遍」 -> output-transcribe events
   GET  /api/effects                        effects catalogue (zh labels, params, preview kind)
   POST /api/intake {prompt, inputs[]}      -> {id}; GET /api/intake/<id>; POST .../revise {prompt}; POST .../apply
-                                           {plan?, run?}; POST .../stop (planning / revising); GET /api/intake/recent
+                                           {plan?, run?}; POST .../stop (planning / revising); POST .../retry (a
+                                           failed plan / revision again); GET /api/intake/recent
   GET  /api/sample                         the built-in sample recording (copied out of the app) -> {available, path, ...};
        POST /api/sample/remove {dir}       delete a project made from it (sample.py)
   POST /api/pilot/retry {item, provider?}  re-run a failed pilot (provider: every model task on it, e.g. codex)
@@ -425,7 +426,9 @@ def validate_package(b):
 
 
 class Api:
-    def __init__(self, engine, bus, token, origins, studio=None):
+    def __init__(self, engine, bus, token, origins, studio=None, kinds=None):
+        """``kinds``: {History | Intake | Strips | CreateApi: class} replacing the built-in part (the test engine in
+        engine/tests/fixtures passes its in-memory versions; the product never does)."""
         self.engine, self.bus, self.token, self.origins = engine, bus, token, set(origins)
         if studio is None:
             from .caps import Capabilities
@@ -433,21 +436,24 @@ class Api:
             studio = Studio(engine, engine.data_dir, bus, Capabilities(fixed=set()))
         self.studio = studio
         from .common import Registry
+        from .create import CreateApi
         from .history import History
-        self.history = History(engine.data_dir, getattr(engine, "reg", None) or Registry(engine.data_dir), engine)
-        from .inbox import Inbox
         from .intake import Intake
+        from .timeline import Strips
+        K = {**dict(History=History, Intake=Intake, Strips=Strips, CreateApi=CreateApi), **(kinds or {})}
+        self.history = K["History"](engine.data_dir, getattr(engine, "reg", None) or Registry(engine.data_dir), engine)
+        from .inbox import Inbox
         from .outputs import Outputs, probe
         runner = getattr(studio, "runner", None)
-        self.outputs = Outputs(engine.data_dir, self.history, runner if engine.mode == "real" else None, bus)
+        real = engine.mode == "real"
+        self.outputs = Outputs(engine.data_dir, self.history, runner if real else None, bus)
         from .projask import ProjectAsk
         self.project_ask = ProjectAsk(self.outputs, bus)
-        from .timeline import Strips
-        self.strips = Strips(engine.data_dir, self.outputs, self.history, bus, mock=engine.mode != "real")
+        self.strips = K["Strips"](engine.data_dir, self.outputs, self.history, bus)
         from .history import vstudio_home
         from .sample import Sample
         self.sample = Sample(engine.data_dir, vstudio_home)
-        self.intake = Intake(engine.data_dir, bus, runner, engine.mode, probe=probe, sample=self.sample)
+        self.intake = K["Intake"](engine.data_dir, bus, runner, engine.mode, probe=probe, sample=self.sample)
         self.inbox = Inbox(engine.data_dir, self.history, runner, engine.mode, bus)
         from .calendar import Calendar
         self.calendar = Calendar(engine.data_dir, self.history, self.outputs, bus, mode=engine.mode)
@@ -455,10 +461,10 @@ class Api:
         self.workpkg = WorkPackages(engine.data_dir, self.history, self.outputs)
         from .weekplan import WeekPlans            # 「这周的素材 → 一周的帖子」 (intake + run + calendar.plan)
         self.weekplans = WeekPlans(engine.data_dir, bus, self.intake, self.calendar, self.history,
-                                   runner if engine.mode == "real" else None)
-        from .create import CreateApi              # Create page: idle until the desk calls /api/create (flag)
-        self.create = CreateApi(engine.data_dir, bus, runner if engine.mode == "real" else None, engine.mode,
-                                history=self.history, calendar=self.calendar, outputs=self.outputs)
+                                   runner if real else None)
+        # Create page: idle until the desk calls /api/create (flag)
+        self.create = K["CreateApi"](engine.data_dir, bus, runner if real else None, engine.mode,
+                                     history=self.history, calendar=self.calendar, outputs=self.outputs)
         self.inbox.extra.append(self.create.inbox_items)
         from .share import Share                   # share for review: static page + feedback -> Inbox
         self.share = Share(engine.data_dir, self.history, self.outputs, self.inbox, bus)
@@ -549,6 +555,8 @@ class Api:
                 return self.intake.apply(parts[1], b.get("plan"), run=b.get("run", True) is not False)
             if parts[2:] == ["stop"] and method == "POST":
                 return self.intake.stop(parts[1])
+            if parts[2:] == ["retry"] and method == "POST":
+                return self.intake.retry(parts[1])
         if parts == ["sample"] and method == "GET":
             return self.sample.info()
         if parts == ["sample", "remove"] and method == "POST":

@@ -39,13 +39,16 @@ export function tempOnly(name: string, env: NodeJS.ProcessEnv = process.env, pac
   return rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? v : undefined;
 }
 
-/** Test switches (mock engine, skip first run, hidden window, no PTY, no update checks). Dev builds: as set. A packaged
+/** Test switches (test engine, skip first run, hidden window, no PTY, no update checks). Dev builds: as set. A packaged
  * build honours them only for a throw-away test profile (DESK_USER_DATA inside the temp dir, as the packaged tests
- * use): an end user's Reelfold can never be switched into a fake engine or a hidden window by an environment variable. */
+ * use): an end user's Reelfold can never be switched into a hidden window by an environment variable. The test
+ * engine (DESK_ENGINE_MOCK) is never started by a packaged build, whatever the profile: it is a test fixture under
+ * engine/tests, which the app does not ship, and the packaged tests run the real bundled engine. */
 export type TestSwitch = 'DESK_ENGINE_MOCK' | 'DESK_SKIP_FIRST_RUN' | 'DESK_HIDE_WINDOW' | 'DESK_NO_PTY' | 'DESK_DISABLE_UPDATES';
 
 export function testSwitch(name: TestSwitch, env: NodeJS.ProcessEnv = process.env, packaged = packagedBuild, tmp = os.tmpdir()): boolean {
   if (env[name] !== '1') return false;
   if (!packaged) return true;
+  if (name === 'DESK_ENGINE_MOCK') return false;
   return !!env.DESK_USER_DATA && tempOnly('DESK_USER_DATA', env, true, tmp) !== undefined;
 }

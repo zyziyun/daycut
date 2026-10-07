@@ -20,8 +20,8 @@ from desk_engine import schedule_text as ST  # noqa: E402
 from desk_engine.calendar import Calendar  # noqa: E402
 from desk_engine.common import BadRequest, Registry, read_json, write_json  # noqa: E402
 from desk_engine.history import History  # noqa: E402
-from desk_engine.intake import Intake  # noqa: E402
 from desk_engine.weekplan import WeekPlans, _want  # noqa: E402
+from desk_mock import MockIntake, record_pilot  # noqa: E402
 
 MON = "2026-10-05"   # a Monday; "today" is that Sunday before, so the whole week is free
 SUN = "2026-10-04"
@@ -51,7 +51,7 @@ def fake_spawn(fail=False, review=False):
     def spawn(python, env, d, provider=None, bus=None, args=None):
         calls.append(args)
         if fail:
-            pilot.record_mock(d, False, "plan-segments failed (exit 5): ffmpeg: moov atom not found")
+            record_pilot(d, False, "plan-segments failed (exit 5): ffmpeg: moov atom not found")
             return {}
         n = int((read_json(os.path.join(d, ".vstudio", "work.json"), {}) or {}).get("count") or 1)
         fin = os.path.join(d, "final")
@@ -118,7 +118,7 @@ class Flow(unittest.TestCase):
         self.o = OU.Outputs(data, self.h)
         self.cal = Calendar(data, self.h, self.o)
         # the planner + apply: the desk's rule planner stands in for vstudio.intake (no model in tests)
-        self.intake = Intake(data, None, mode="mock")
+        self.intake = MockIntake(data, None)
         self.spawn = fake_spawn()
         self.w = WeekPlans(data, None, PlannerAsEngine(self.intake), self.cal, self.h, runner=Runner(), spawn=self.spawn)
         self.src = os.path.join(self.root, "this-week")

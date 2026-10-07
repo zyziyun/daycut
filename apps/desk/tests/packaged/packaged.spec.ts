@@ -1,5 +1,6 @@
 // Packaged-app check: launches the built .app / .exe (not the dev tree), with an isolated profile and a scrubbed
-// environment, and verifies the engine runs from the bundled runtime — first the mock engine, then the real one.
+// environment, and verifies the real engine runs from the bundled runtime. The test engine (engine/tests) is not in the
+// bundle and DESK_ENGINE_MOCK is ignored by a packaged build: every check here runs on the real engine.
 //   npm run dist:mac:unsigned && npm run test:packaged
 // The build has its Electron fuses set (no --inspect, no ELECTRON_RUN_AS_NODE), so Playwright's _electron.launch
 // (which drives the main process through the Node inspector) cannot attach: the app is started with Chromium's
@@ -105,17 +106,18 @@ async function health(app: App) {
 
 test.skip(!fs.existsSync(appExecutable()), `no packaged app at ${appExecutable()}`);
 
-test('mock engine runs on the bundled Python', async () => {
+test('a packaged app never starts the test engine: DESK_ENGINE_MOCK is ignored, the real engine runs', async () => {
   // the v0.2 first-run wizard would cover the main window; this test is about the engine + assets banner
+  const res = resourcesDir(appExecutable());
+  expect(fs.existsSync(path.join(res, 'engine', 'tests'))).toBe(false); // the test engine is not shipped
+  expect(fs.existsSync(path.join(res, 'engine', 'desk_engine', 'mock.py'))).toBe(false);
   const app = await launch({ DESK_ENGINE_MOCK: '1', DESK_MOCK_STEP: '0.02', DESK_SKIP_FIRST_RUN: '1' });
   try {
-    const res = resourcesDir(appExecutable());
     const h = await health(app);
-    expect(h.mode).toBe('mock');
-    expect(h.health.ok).toBe(true);
+    expect(h.mode, h.note ?? '').toBe('real');
     expect(fs.realpathSync(h.health.python).startsWith(fs.realpathSync(path.join(res, 'runtime', 'python')))).toBe(true);
     const page = app.page;
-    await expect(page.getByTestId('engine-status')).toHaveAttribute('data-mode', 'mock', { timeout: 30000 });
+    await expect(page.getByTestId('engine-status')).toHaveAttribute('data-mode', 'real', { timeout: 30000 });
     // bundled runtime + empty profile -> the first-run download banner is offered
     await expect(page.getByTestId('assets-banner')).toBeVisible({ timeout: 15000 });
   } finally {
@@ -172,7 +174,7 @@ test('the sample recording ships in the app and the real engine offers it (copie
 
 test('first-run download: the core group (fonts + MediaPipe models) installs and verifies', async () => {
   test.skip(process.env.DESK_TEST_DOWNLOADS !== '1', 'set DESK_TEST_DOWNLOADS=1 (downloads ~62 MB)');
-  const app = await launch({ DESK_ENGINE_MOCK: '1' });
+  const app = await launch({});
   try {
     const page = app.page;
     await page.evaluate(() => window.desk.assets.install(['core']));
@@ -268,7 +270,7 @@ test('an old profile migrates into Reelfold and its API keys still decrypt with 
   fs.mkdirSync(cur);
   fs.writeFileSync(path.join(cur, 'settings.json'), JSON.stringify({ lang: 'fr', firstRunDone: true }));
   fs.writeFileSync(path.join(cur, 'migrated-from.json'), JSON.stringify({ from: 'seed', safeStorageName: NAME, at: 'seed' }));
-  const env = { DESK_APP_DATA: appData, DESK_LEGACY_NAMES: NAME, DESK_USER_DATA: '', DESK_ENGINE_MOCK: '1', DESK_SKIP_FIRST_RUN: '1' };
+  const env = { DESK_APP_DATA: appData, DESK_LEGACY_NAMES: NAME, DESK_USER_DATA: '', DESK_SKIP_FIRST_RUN: '1' };
   try {
     const a = await launch(env, [], { realKeychain: true });
     try {

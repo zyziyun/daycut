@@ -27,7 +27,7 @@ FIX = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", 
 from desk_engine.app import Api, serve  # noqa: E402
 from desk_engine.common import EventBus  # noqa: E402
 from desk_engine.common import Registry  # noqa: E402
-from desk_engine.mock import MockEngine  # noqa: E402
+from desk_mock import MockEngine, make_api  # noqa: E402
 
 TOKEN = "p" * 48
 ORIGIN = "app://desk"
@@ -53,7 +53,7 @@ class CreatePluginRoutesTest(unittest.TestCase):
         cls.tmp = tempfile.mkdtemp()
         bus = EventBus()
         cls.engine = MockEngine(cls.tmp, Registry(cls.tmp), bus, step=0.01)
-        cls.api = Api(cls.engine, bus, TOKEN, [ORIGIN])
+        cls.api = make_api(cls.engine, bus, TOKEN, [ORIGIN])
         cls.httpd = serve(cls.api)
 
     @classmethod

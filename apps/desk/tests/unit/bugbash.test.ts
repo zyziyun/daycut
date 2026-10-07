@@ -79,6 +79,16 @@ describe('mock-in-product: test switches need a throw-away profile in a packaged
     const ud = fs.mkdtempSync(path.join(tmp, 'bb-prof-'));
     expect(testSwitch('DESK_HIDE_WINDOW', { DESK_HIDE_WINDOW: '1', DESK_USER_DATA: ud }, true, tmp)).toBe(true);
   });
+  it('a packaged build never starts the test engine, not even for a temp test profile', () => {
+    const ud = fs.mkdtempSync(path.join(tmp, 'bb-prof-'));
+    expect(testSwitch('DESK_ENGINE_MOCK', { DESK_ENGINE_MOCK: '1', DESK_USER_DATA: ud }, true, tmp)).toBe(false);
+  });
+  it('electron-builder does not ship the test engine (engine/tests)', () => {
+    const cfg = fs.readFileSync(path.resolve(import.meta.dirname, '../../electron-builder.config.cjs'), 'utf8');
+    expect(cfg).toMatch(/from: 'engine', to: 'engine', filter: \[[^\]]*'!tests\/\*\*'/);
+    expect(fs.existsSync(path.resolve(import.meta.dirname, '../../engine/tests/fixtures/desk_mock/__init__.py'))).toBe(true);
+    expect(fs.existsSync(path.resolve(import.meta.dirname, '../../engine/desk_engine/mock.py'))).toBe(false);
+  });
 });
 
 describe('BB-13 media through a symlinked folder is served, a symlink out of a root is not', async () => {

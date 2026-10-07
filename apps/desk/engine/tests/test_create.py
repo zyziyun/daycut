@@ -18,7 +18,7 @@ import _isolate  # noqa: E402,F401
 
 from desk_engine.app import Api, serve  # noqa: E402
 from desk_engine.common import EventBus, Registry  # noqa: E402
-from desk_engine.mock import MockEngine  # noqa: E402
+from desk_mock import MockEngine, make_api  # noqa: E402
 
 TOKEN = "c" * 48
 ORIGIN = "app://desk"
@@ -30,7 +30,7 @@ class CreateRoutesTest(unittest.TestCase):
         cls.tmp = tempfile.mkdtemp()
         bus = EventBus()
         cls.engine = MockEngine(cls.tmp, Registry(cls.tmp), bus, step=0.01)
-        cls.api = Api(cls.engine, bus, TOKEN, [ORIGIN])
+        cls.api = make_api(cls.engine, bus, TOKEN, [ORIGIN])
         cls.httpd = serve(cls.api)
 
     @classmethod
