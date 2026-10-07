@@ -69,7 +69,9 @@ test('Home: say it + a file -> AI plan card -> revise -> start a pilot -> the ne
   await page.getByTestId('plan-start').click();
   await expect(page.getByTestId('project-title')).toContainText('副业复盘', { timeout: 30000 });
   await page.getByTestId('nav-home').click();
-  await expect(page.getByTestId('live-lane')).toContainText('副业复盘', { timeout: 30000 });
+  // the mock pilot takes ~0.4 s (DESK_MOCK_STEP 0.02): by the time Home renders it is either still Running or already
+  // waiting for her in the Inbox lane ("第 1 条做好了") - both say the new project is going
+  await expect(page.locator('[data-testid=live-lane], [data-testid=home-inbox]').filter({ hasText: '副业复盘' }).first()).toBeVisible({ timeout: 30000 });
   await expect(page.getByTestId('recent-prompts')).toContainText('副业复盘');
 });
 
@@ -95,7 +97,12 @@ test('a fuye-like folder: large player, full screen with F / Esc, frame stepping
   const player = page.getByTestId('player');
   await expect(page.getByTestId('player-overlay')).toBeVisible();
   await page.waitForFunction(() => ((document.querySelector('[data-testid=player-video]') as HTMLVideoElement | null)?.readyState ?? 0) >= 1);
+  // the overlay autoplays: K pauses wherever playback got to (0.02-0.12 s on a busy machine), so go to the first
+  // frame before stepping - the timecodes below are absolute
   await page.keyboard.press('k');
+  await expect.poll(() => page.evaluate(() => (document.querySelector('[data-testid=player-video]') as HTMLVideoElement).paused)).toBe(true);
+  await page.keyboard.press('Home');
+  await expect(page.getByTestId('timecode')).toContainText('00:00:00:00');
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('ArrowRight');
   await expect(page.getByTestId('timecode')).toContainText('00:00:00:02');
