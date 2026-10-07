@@ -36,6 +36,7 @@ The Mac app keeps the same settings under **Settings**; the skill reads `persona
 | [`publish`](#publish) | Default hashtags, named tag sets and the chapter line format. | `tags`, `tag_sets`, `chapter_line` |
 | [`intake`](#intake) | How the planner treats materials (for example burned-in captions). | `burned_captions` |
 | [`cleanup`](#cleanup) | Default cleanup profile, crossfade, extra fillers and words never to cut. | `profile`, `crossfade`, `fillers_extra`, `never_cut` |
+| [`formats`](#formats) | recurring formats (python -m vstudio.formats list): first-pass defaults per kind of post. |  |
 
 ## Full example, section by section
 
@@ -183,4 +184,10 @@ cleanup:                   # shared 气口 / filler / repeat tool (python -m vst
   never_cut: []            # tokens never flagged as filler / repeat, e.g. [然后]
   # policy: true           # answer low-risk confirm edits automatically (batch stages do by default); learned
   #                        # answers live in ~/.config/vstudio/cleanup_policy.json (or policy_file: <path>)
+```
+
+### `formats`
+
+```yaml
+formats: {}                # recurring formats (python -m vstudio.formats list): first-pass defaults per kind of post.
 ```

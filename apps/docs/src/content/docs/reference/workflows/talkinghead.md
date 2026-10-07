@@ -57,7 +57,8 @@ On the V track the style is just the `STYLE` dict in the config, so switching la
 - **Hooks are the highest-leverage choice, so the creator picks them.**
   - Scan the transcript and present a numbered menu of about 12 candidates: text, a type tag
     (核心观点 / 反差 / 吐槽 / 共鸣 / 金句 / 悬念) and length at the hook speed. Suggest 2-3 combos.
-  - The creator picks the set and the order. Half-sentences are allowed.
+  - The creator picks the set and the order. Half-sentences are allowed. Never pick or insert hooks yourself: with no
+    answer there is no hook montage (recipe `hook_default: -1`); promo-style pieces open on her own first line.
   - Re-check the cut with ASR at normal speed (`atempo=1/HOOK_SPEED`).
 - **Disfluency (去气口 / filler / 重复 / 口误).** One shared tool for every speech workflow: `vstudio.cleanup`
   (`references/CLEANUP.md`, `python -m vstudio.cleanup analyze | review | apply | verify`). Fillers, stutters, repeats,
@@ -68,8 +69,11 @@ On the V track the style is just the `STYLE` dict in the config, so switching la
 - **Cutting padding sentences (废话).** When asked, propose the exact sentence list first: background asides,
   sentences repeating the previous one, hedges (「也可能这是我的感觉」), a second example of the same point.
   Then drop the agreed sentences by sid.
-- **Speed.** Defaults persona `speed.hook` 1.3x / `speed.body` 1.1x. On 加速: hooks 1.5-1.65x, body 1.25-1.35x
-  (`fast_hook` / `fast_body`). Chinese speech stays intelligible up to about 1.4x (`cjk_max_intelligible`).
+- **Speed.** Defaults come from the `talking-head` format (`python -m vstudio.formats show talking-head`: body 1.25x,
+  hooks 1.5x; persona `formats.talking-head` overrides), else persona `speed.*`. On 加速: hooks up to 1.6x, body
+  1.3-1.4x (`fast_hook` / `fast_body`). Chinese speech stays natural up to about 1.4x (`cjk_max_intelligible`); faster
+  sounded fake (加速都假了). Always apply it and say the rates in the handover; `vstudio.firstpass` fails a render that
+  is not sped up.
 - **Safe zone.** Comes from the platform profile (`vstudio.platform.safe_box` / `caption_box` / `keepouts`). 小红书 9:16:
   meaningful content in y 240..1660, nothing on the right edge in the lower half (buttons), subtitles around y 1525.
   Other canvases: see Platforms.
@@ -142,11 +146,13 @@ Full notes in `references/vertical_pipeline.md`.
    Add `--platform xiaohongshu:vertical` (3:4) / `douyin` / `youtube` for another canvas (`preview_<platform>.jpg`).
    A bare `xiaohongshu` means the profile's default orientation, which is **3:4**; the 9:16 小红书 canvas is
    `xiaohongshu:full` (also what you get with no PLATFORM at all).
-10. **Cover** (3:4, 1080x1440 by default). `python3 $V/pick_cover_frame.py body3_rt.mp4` ranks frames by
+10. **Cover**: the same canvas as the video (pass the same `--platform` as compose; a 3:4 cover on a 9:16 video was
+    rejected), bright, full face, retouched, theme typography (`vstudio.theme`). `python3 $V/pick_cover_frame.py body3_rt.mp4` ranks frames by
     `mouthSmile - 1.5*eyeBlink - |cx-0.5|` and writes a contact sheet; set `COVER` in the config, then
     `python3 $V/cover.py config.py` (`--platform douyin --platform youtube` adds 9:16 / 1280x720 covers as
-    `<OUT stem>.douyin-vertical.jpg` etc.; OUT is only ever written for the config's own platform). Bottom gradient + 2-line title (line 2 with yellow keywords), a 记笔记 sticky
-    top-left, a rotated red tag top-right. Always look at the rendered cover.
+    `<OUT stem>.douyin-vertical.jpg` etc.; OUT is only ever written for the config's own platform). Bottom gradient + 2-line title (line 2 keywords in
+    the theme's emphasis), a 记笔记 sticky top-left, a small tag top-right. Always look at the rendered cover, then run
+    `python -m vstudio.firstpass <OUT> --format talking-head --cover <cover>` (size, brightness).
 11. **Caption.** `python3 $VSTUDIO/workflows/talkinghead/scripts/caption.py config.py --title "..." [--platform douyin]`
     (title / description / tag / length limits per platform).
 
