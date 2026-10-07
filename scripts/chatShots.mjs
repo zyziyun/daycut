@@ -73,6 +73,17 @@ const say = async (s) => {
   await page.press('[data-testid=chat-input]', 'Enter');
 };
 const seek = (t) => page.evaluate((x) => { const v = document.querySelector('[data-testid=player-video]'); if (v) v.currentTime = x; }, t);
+/** drag across the words lane from a to b seconds (a selection = context for the chat) */
+const select = async (a, b) => {
+  const lane = await page.locator('[data-testid=tl-words]').boundingBox();
+  const D = await page.evaluate(() => document.querySelector('[data-testid=player-video]')?.duration || 83);
+  const x = (t) => lane.x + (t / D) * lane.width;
+  await page.mouse.move(x(a), lane.y + lane.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(x(b), lane.y + lane.height / 2, { steps: 10 });
+  await page.mouse.up();
+  await page.waitForSelector('[data-testid=ctx-sel]');
+};
 const shot = async (name, fn) => {
   if (only.length && !only.includes(name)) return;
   try {
@@ -118,7 +129,7 @@ await shot('03-effect', async () => {
 });
 await shot('04-captions', async () => {
   await seek(12);
-  await page.locator('[data-testid=tl-words] .w').nth(30).click();
+  await select(12, 24);
   await page.fill('[data-testid=chat-input]', zh ? '/字幕' : '/captions');
   await page.press('[data-testid=chat-input]', 'Enter');
   await page.waitForSelector('[data-testid=card-captions]', { timeout: 30000 });
@@ -146,14 +157,7 @@ await shot('07-selection', async () => {
   await page.waitForSelector('[data-testid=change-apply]', { timeout: 30000 });
   await page.click('[data-testid=change-apply]');
   await page.waitForSelector('[data-testid=applied-line]');
-  const w = page.locator('[data-testid=tl-words] .w');
-  const a = await w.nth(24).boundingBox();
-  const b = await w.nth(34).boundingBox();
-  await page.mouse.move(a.x + 2, a.y + a.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(b.x + b.width - 2, b.y + b.height / 2, { steps: 8 });
-  await page.mouse.up();
-  await page.waitForSelector('[data-testid=ctx-sel]');
+  await select(12, 18);
   await page.focus('[data-testid=chat-input]');
   await page.keyboard.type('/');
   await page.waitForSelector('[data-testid=slash-menu]');

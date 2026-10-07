@@ -638,6 +638,16 @@ export const ChatPanel = forwardRef<ChatApi, Props>(function ChatPanel(p, ref) {
             {x.role === 'ai' ? aiTurn(x) : x.card ? cardTurn(x) : meBubble(x.text)}
           </div>
         ))}
+        {p.sel && !pending && turns.length > 0 && (
+          <div className="cc-ai" data-testid="chat-sel-hint">
+            <span className="av">
+              <Sparkles className="ico" />
+            </span>
+            <div className="body">
+              <div className="say">{t('ce.selHint', { a: r1(p.sel.a), b: r1(p.sel.b) })}</div>
+            </div>
+          </div>
+        )}
         {pending && (
           <div className="col" style={{ gap: 10 }}>
             {meBubble(pending.text, pending.ctx)}
