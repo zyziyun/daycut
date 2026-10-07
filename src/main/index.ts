@@ -14,6 +14,7 @@ import type { EngineInfo } from '../shared/types';
 import type { AssetManifest } from '../shared/assets';
 import { AssetManager, defaultHfHub, sharedEngineCache } from './assets';
 import { registerAiIpc, syncRoutesFile } from './aiAccounts';
+import { installAppMenu } from './appMenu';
 import { defaultEnginePath, EngineProcess, engineProcessEnv, findPython } from './engine';
 import { isAllowedMediaPath, mediaMime, parseRange, pathFromMediaUrl } from './media';
 import { loadAdapters } from './publish/adapters';
@@ -24,6 +25,7 @@ import { findBundledRuntime, runtimeEnv, type BundledRuntime } from './runtime';
 import { buildCsp, isAppUrl, isSafeExternal } from './security';
 import { SettingsStore } from './settings';
 import { HistoryWatcher } from './historyWatch';
+import { APP_NAME, applyIdentity } from './identity';
 import { checkForUpdates, initUpdater, installUpdate } from './updater';
 import { registerCleanupIpc, registerV02Ipc, v02EngineEnv } from './v02';
 
@@ -38,7 +40,9 @@ const APP_ORIGIN = IS_DEV ? new URL(DEV_URL!).origin : 'app://desk';
 const RENDERER_DIR = path.join(__dirname, '../renderer');
 const RES = app.isPackaged ? process.resourcesPath : app.getAppPath();
 
-if (process.env.DESK_USER_DATA) app.setPath('userData', process.env.DESK_USER_DATA); // tests: isolated profile
+// Daycut name + the profile folder / keychain key of this install (old video-studio desk installs keep theirs);
+// DESK_USER_DATA: tests, isolated profile
+const IDENTITY = applyIdentity(app);
 
 // ---------------------------------------------------------------- diagnostics: the main process must never die
 /** Append to <userData>/logs/main.log (and the console). Never throws. */
@@ -365,6 +369,7 @@ function createWindow() {
     minWidth: 1100,
     minHeight: 700,
     backgroundColor: '#0E1113',
+    title: APP_NAME,
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     show: false,
     webPreferences: {
@@ -491,6 +496,7 @@ function registerIpc() {
     if (p.python && !fs.existsSync(p.python)) throw new Error('python not found');
     const before = settings.get();
     const next = settings.set(p);
+    if (next.lang !== before.lang) menu();
     if (next.enginePath !== before.enginePath || next.python !== before.python) {
       void startEngine();
     }
@@ -625,6 +631,11 @@ function loadAssetManifest(): AssetManifest {
 }
 
 // ---------------------------------------------------------------- lifecycle
+function menu() {
+  const iconPath = path.join(RES, 'packaging/resources/icons/256x256.png');
+  installAppMenu({ lang: settings?.get().lang ?? 'en', res: RES, win: () => win, iconPath: fs.existsSync(iconPath) ? iconPath : undefined });
+}
+
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
@@ -640,6 +651,9 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     if (process.env.DESK_HIDE_WINDOW === '1') app.dock?.hide();
     settings = new SettingsStore(app.getPath('userData'));
+    mainLog(`[main] ${APP_NAME} ${app.getVersion()} · profile ${app.getPath('userData')}${IDENTITY.legacy ? ' (kept from video-studio desk)' : ''}`);
+    menu();
+    if (!app.isPackaged && process.platform === 'darwin') app.dock?.setIcon(path.join(RES, 'packaging/resources/icon.png'));
     syncRoutesFile(app.getPath('userData'), settings.get().aiRoutes);
     runtime = findBundledRuntime(RES, app.isPackaged);
     assets = new AssetManager({

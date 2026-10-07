@@ -13,6 +13,13 @@
 // See docs/RELEASING.md.
 const env = process.env;
 
+// Public releases repo (electron-updater feed + website download links). Override until it exists:
+//   DESK_RELEASES_OWNER=zyziyun DESK_RELEASES_REPO=daycut-releases
+// Installs from before the Daycut rename read zyziyun/video-studio-desk-releases (baked into their app-update.yml):
+// publish the first Daycut release there too so they update across.
+const RELEASES_OWNER = env.DESK_RELEASES_OWNER || 'zyziyun';
+const RELEASES_REPO = env.DESK_RELEASES_REPO || 'daycut-releases';
+
 const azure =
   env.AZURE_TENANT_ID && env.AZURE_CLIENT_ID && env.AZURE_CLIENT_SECRET && env.AZURE_SIGNING_ENDPOINT && env.AZURE_SIGNING_ACCOUNT && env.AZURE_SIGNING_PROFILE
     ? {
@@ -30,10 +37,13 @@ const RUNTIME_NON_CODE = String.raw`/Contents/Resources/runtime/(?!.*\.(so|dylib
 
 /** @type {import('electron-builder').Configuration} */
 module.exports = {
+  // Kept from video-studio desk on purpose: the same bundle id / AppUserModelID / NSIS GUID means Daycut installs
+  // over the old app (same Keychain ACL, same Start-menu identity, auto-update keeps working). User data stays in the
+  // old folder too (src/main/identity.ts).
   appId: 'com.vstudio.desk',
-  productName: 'video-studio desk',
+  productName: 'Daycut',
   copyright: 'Copyright © 2026 zyziyun',
-  artifactName: 'video-studio-desk-${version}-${os}-${arch}.${ext}',
+  artifactName: 'Daycut-${version}-${os}-${arch}.${ext}',
   directories: { output: 'dist', buildResources: 'packaging/resources' },
   files: ['out/**', 'package.json', '!**/*.map'],
   npmRebuild: false,
@@ -45,12 +55,14 @@ module.exports = {
     { from: 'adapters', to: 'adapters' },
     { from: 'packaging/assets.json', to: 'packaging/assets.json' },
     { from: 'THIRD_PARTY_LICENSES.md', to: 'THIRD_PARTY_LICENSES.md' },
+    { from: 'packaging/resources/icons', to: 'packaging/resources/icons' }, // About panel icon (Linux)
     // built by `npm run runtime` (scripts/runtime/bundle.mjs) for the target being packaged
     { from: 'build/runtime/${platform}-${arch}', to: 'runtime' },
   ],
-  publish: [{ provider: 'github', owner: 'zyziyun', repo: 'video-studio-desk-releases', releaseType: 'draft' }],
+  publish: [{ provider: 'github', owner: RELEASES_OWNER, repo: RELEASES_REPO, releaseType: 'draft' }],
 
   mac: {
+    icon: 'packaging/resources/icon.icns', // scripts/brand/icons.mjs
     target: ['dmg', 'zip'], // zip: electron-updater; arch from the CLI (--arm64 / --x64)
     category: 'public.app-category.video',
     minimumSystemVersion: '14.0', // MLX wheels; the x64 build overrides this (see release.yml)
@@ -65,9 +77,20 @@ module.exports = {
       NSMicrophoneUsageDescription: 'Not used.',
     },
   },
-  dmg: { sign: false, writeUpdateInfo: false },
+  dmg: {
+    sign: false,
+    writeUpdateInfo: false,
+    title: 'Daycut', // volume name
+    background: 'packaging/resources/background.png', // + background@2x.png
+    window: { width: 540, height: 380 },
+    contents: [
+      { x: 140, y: 200, type: 'file' },
+      { x: 400, y: 200, type: 'link', path: '/Applications' },
+    ],
+  },
 
   win: {
+    icon: 'packaging/resources/icon.ico',
     target: ['nsis'],
     // sign the bundled python.exe / ffmpeg.exe too (Defender SmartScreen looks at launched executables);
     // *.pyd/*.dll are left alone to keep the signature count (and Azure cost) low
@@ -80,6 +103,16 @@ module.exports = {
     allowToChangeInstallationDirectory: true,
     differentialPackage: true,
     deleteAppDataOnUninstall: false,
+    shortcutName: 'Daycut',
+    uninstallDisplayName: 'Daycut',
+    installerIcon: 'packaging/resources/icon.ico',
+    uninstallerIcon: 'packaging/resources/icon.ico',
+  },
+  linux: {
+    icon: 'packaging/resources/icons',
+    category: 'AudioVideo',
+    executableName: 'daycut',
+    synopsis: 'Turn one recording into a month of short videos',
   },
   appx: {
     // Microsoft Store (MSIX). Values come from Partner Center; the Store re-signs the package.
@@ -87,7 +120,7 @@ module.exports = {
     publisher: env.MS_STORE_PUBLISHER || 'CN=00000000-0000-0000-0000-000000000000',
     publisherDisplayName: env.MS_STORE_PUBLISHER_NAME || 'PLACEHOLDER',
     applicationId: 'VideoStudioDesk',
-    displayName: 'video-studio desk',
+    displayName: 'Daycut',
     languages: ['zh-CN', 'en-US'],
     backgroundColor: '#0E1113',
     showNameOnTiles: true,

@@ -48,7 +48,7 @@ const hash = (h: string) => page.evaluate((x) => (location.hash = x), h);
 
 test('the top-left is the app, not a workspace; clients only in agency mode', async () => {
   await expect(page.getByTestId('home')).toBeVisible({ timeout: 30000 });
-  await expect(page.getByTestId('app-brand')).toContainText('video-studio');
+  await expect(page.getByTestId('app-brand')).toContainText('Daycut');
   await expect(page.getByTestId('workspace')).toHaveCount(0);
   await expect(page.locator('nav.side')).not.toContainText(/My account|自己的账号|Workspace|工作区/);
   await hash('#/projects');

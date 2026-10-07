@@ -1,7 +1,8 @@
 # Release: on a tag v<version> (must equal package.json "version"), build the engine runtime + installers for
 # macOS arm64, macOS x64 (best effort) and Windows x64, sign/notarize when the secrets exist (unsigned otherwise),
 # run the packaged-app check, upload artifacts, and (with RELEASES_TOKEN) attach everything to a DRAFT release in
-# the public repo zyziyun/video-studio-desk-releases, which electron-updater reads. Publish the draft by hand.
+# the public releases repo (repo variables DESK_RELEASES_OWNER / DESK_RELEASES_REPO, default zyziyun/daycut-releases),
+# which electron-updater reads. Publish the draft by hand.
 #
 # Secrets (all optional; see docs/RELEASING.md):
 #   mac signing   MAC_CERT_P12_BASE64, MAC_CERT_PASSWORD
@@ -9,7 +10,7 @@
 #   win signing   AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, AZURE_SIGNING_ENDPOINT,
 #                 AZURE_SIGNING_ACCOUNT, AZURE_SIGNING_PROFILE, AZURE_SIGNING_PUBLISHER
 #                 or WIN_CERT_PFX_BASE64, WIN_CERT_PASSWORD
-#   publishing    RELEASES_TOKEN  (fine-grained PAT: Contents read/write on zyziyun/video-studio-desk-releases)
+#   publishing    RELEASES_TOKEN  (fine-grained PAT: Contents read/write on the releases repo)
 name: Release
 on:
   push:
@@ -17,7 +18,7 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: 'Attach to a draft release in video-studio-desk-releases'
+        description: 'Attach to a draft release in the releases repo'
         type: boolean
         default: false
 permissions:
@@ -99,6 +100,8 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          DESK_RELEASES_OWNER: ${{ vars.DESK_RELEASES_OWNER }}
+          DESK_RELEASES_REPO: ${{ vars.DESK_RELEASES_REPO }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -127,7 +130,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: video-studio-desk-${{ matrix.target }}
+          name: daycut-${{ matrix.target }}
           if-no-files-found: error
           retention-days: 14
           path: |

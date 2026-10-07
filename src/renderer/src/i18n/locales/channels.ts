@@ -3,7 +3,7 @@
 // multi-platform package of a project (clips x platforms -> files, covers, copy, checks). English + 简体中文.
 
 export const channelsEn = {
-  'app.name': 'video-studio',
+  'app.name': 'Daycut',
   'nav.main': 'Main',
 
   'set.channels': 'Publishing accounts',
@@ -78,7 +78,7 @@ export const channelsEn = {
 };
 
 export const channelsZh: Record<keyof typeof channelsEn, string> = {
-  'app.name': 'video-studio',
+  'app.name': '日剪 Daycut',
   'nav.main': '主导航',
 
   'set.channels': '发布账号',

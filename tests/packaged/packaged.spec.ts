@@ -12,9 +12,9 @@ function appExecutable(): string {
   if (process.env.DESK_APP_PATH) return process.env.DESK_APP_PATH;
   if (process.platform === 'darwin') {
     const dir = path.join(ROOT, 'dist', process.arch === 'arm64' ? 'mac-arm64' : 'mac');
-    return path.join(dir, 'video-studio desk.app', 'Contents', 'MacOS', 'video-studio desk');
+    return path.join(dir, 'Daycut.app', 'Contents', 'MacOS', 'Daycut');
   }
-  return path.join(ROOT, 'dist', 'win-unpacked', 'video-studio desk.exe');
+  return path.join(ROOT, 'dist', 'win-unpacked', 'Daycut.exe');
 }
 
 function resourcesDir(exe: string) {
@@ -62,7 +62,7 @@ test('mock engine runs on the bundled Python', async () => {
     expect(h.health.ok).toBe(true);
     expect(fs.realpathSync(h.health.python).startsWith(fs.realpathSync(path.join(res, 'runtime', 'python')))).toBe(true);
     const page = await app.firstWindow();
-    await expect(page.getByTestId('engine-status')).toContainText(/mock|演示/i, { timeout: 30000 });
+    await expect(page.getByTestId('engine-status')).toContainText(/mock|demo|演示/i, { timeout: 30000 });
     // bundled runtime + empty profile -> the first-run download banner is offered
     await expect(page.getByTestId('assets-banner')).toBeVisible({ timeout: 15000 });
   } finally {

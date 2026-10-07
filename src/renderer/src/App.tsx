@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Calendar, Home as HomeIcon, Inbox as InboxIcon, LayoutGrid, Settings as SettingsIcon } from 'lucide-react';
 import type { SettingsMsg } from '../../shared/deskApi';
 import { AssetsBanner, UpdateBadge } from './components/assets';
-import { setLang, t, type MessageKey } from './i18n';
+import { BrandSymbol, BrandWordmark } from './components/Brand';
+import { getLang, setLang, t, type MessageKey } from './i18n';
 import { EngineProvider, useEngine } from './lib/engine';
 import { HistoryProvider, useHistory } from './lib/history';
 import { InboxProvider, useInbox } from './lib/inbox';
@@ -90,13 +91,11 @@ function Shell({ onSettings }: { onSettings: (s: SettingsMsg) => void }) {
     <div className={`v4 app ${r.name === 'clip' ? 'rail' : ''}`}>
       <nav className="side" aria-label={t('nav.main')}>
         {/* solo creator first: the app itself, no workspace / account switcher */}
-        <div className="ws brand" data-testid="app-brand" title={t('app.name')}>
-          <span className="av" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="14" height="14">
-              <path d="M8 5.5v13l10.5-6.5z" fill="currentColor" />
-            </svg>
-          </span>
-          <b>{t('app.name')}</b>
+        <div className="brand" title={t('app.name')} data-testid="app-brand">
+          <BrandSymbol size={22} />
+          <BrandWordmark height={17} />
+          {getLang() === 'zh-CN' ? <span className="zh" aria-hidden="true">日剪</span> : null}
+          <span className="sr">{t('app.name')}</span>
         </div>
         {nav({ name: 'home' }, 'nav.home', r.name === 'home' || r.name === 'new', <HomeIcon className="ico" />, 'nav-home', running > 0 ? <span className="count run" data-testid="running-badge">{running}</span> : null)}
         {nav({ name: 'inbox' }, 'nav.inbox', r.name === 'inbox', <InboxIcon className="ico" />, 'nav-inbox', nIn > 0 ? <span className="count you" data-testid="inbox-badge">{nIn}</span> : null)}

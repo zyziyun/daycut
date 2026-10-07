@@ -1,9 +1,9 @@
 {
   "name": "video-studio-desk",
-  "productName": "video-studio desk",
+  "productName": "Daycut",
   "version": "0.1.0",
   "private": true,
-  "description": "Desktop workbench for the video-studio skill: batches, board, review, publish (assisted fill).",
+  "description": "Daycut (日剪): turn one recording into a month of short videos. Desktop app built on the open-source video-studio engine.",
   "main": "out/main/index.cjs",
   "type": "module",
   "scripts": {
@@ -60,7 +60,7 @@
   "author": {
     "name": "zyziyun"
   },
-  "homepage": "https://github.com/zyziyun/video-studio-desk-releases",
+  "homepage": "https://github.com/zyziyun/daycut-releases",
   "optionalDependencies": {
     "node-pty": "^1.1.0"
   }

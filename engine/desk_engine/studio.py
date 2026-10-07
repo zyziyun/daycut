@@ -164,7 +164,7 @@ class Studio:
 
     def _write_client(self, slug, cfg):
         write_text(os.path.join(self.client_dir(slug), "client.yaml"),
-                   "# client.yaml - overrides the global persona for this client's batches (video-studio desk)\n"
+                   "# client.yaml - overrides the global persona for this client's batches (Daycut)\n"
                    + dump_yaml(cfg))
 
     def create_client(self, body):
