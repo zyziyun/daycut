@@ -548,8 +548,22 @@ class Project:
         return out
 
     # ------------------------------------------------------------- checkpoints
-    def pending(self, cid=None, item=None):
-        """Every checkpoint waiting for an answer: the payloads the gates wrote (options, default, previews)."""
+    def _settled(self, pay, base=None):
+        """An answer for this checkpoint payload is recorded (its gate passes on the next run): it no longer waits
+        for her, even though the gate's stage row says ``CheckpointPending`` until the run goes on."""
+        cp = next((c for c in self.manifest["checkpoints"] if c["id"] == pay.get("id")), None)
+        if cp is None:
+            return False
+        a = self.data["answers"].get(cp["id"]) or {}
+        v = a.get("*") if cp["scope"] == "project" else (a.get(pay.get("item")) or (a.get(base) if base else None))
+        if not isinstance(v, dict) or "value" not in v:
+            return False
+        reask = cp.get("reask", cp["kind"] != "author")
+        return not reask or not v.get("digest") or v["digest"] == pay.get("digest")
+
+    def pending(self, cid=None, item=None, answered=False):
+        """Every checkpoint waiting for an answer: the payloads the gates wrote (options, default, previews).
+        Answered ones (the run has not gone past their gate yet) only with ``answered=True``."""
         if not os.path.exists(os.path.join(self.state_dir, DB_NAME)):
             return []
         st = Store(self.state_dir)
@@ -564,8 +578,9 @@ class Project:
                         if cid and c != cid:
                             continue
                         pay = B.read_payload(self.state_dir, j["id"], c) or {}
-                        pay.update(project=self.dir, project_name=self.data.get("name"), item=j["id"])
-                        out.append(pay)
+                        pay.update(project=self.dir, project_name=self.data.get("name"), item=j["id"], id=c)
+                        if answered or not self._settled(pay, (j.get("params") or {}).get("_base_item")):
+                            out.append(pay)
             return out
         finally:
             st.close()
@@ -581,7 +596,7 @@ class Project:
         elif items:
             targets = list(items)
         else:
-            targets = [p["item"] for p in self.pending(cid)]
+            targets = [p["item"] for p in self.pending(cid, answered=True)]
             if not targets and len(self.jobs_rows()) == 1:
                 targets = [self.jobs_rows()[0]["id"]]            # one item: (re-)answer it
             if not targets:
@@ -594,7 +609,7 @@ class Project:
         try:
             answered = []
             for t in targets:
-                jid = t if t != "*" else (self.pending(cid) or [{}])[0].get("item")
+                jid = t if t != "*" else (self.pending(cid, answered=True) or [{}])[0].get("item")
                 pay = (B.read_payload(self.state_dir, jid, cid) if jid else None) or {}
                 row = st.job(jid) if (st and jid) else None
                 params = (row or {}).get("params") or next((r for r in self.jobs_rows() if r["id"] == jid), {})
@@ -660,6 +675,9 @@ class Project:
                 waiting = [s["id"][len(M.GATE_PREFIX):] for s in stages
                            if s["gate"] and (rows.get(s["id"]) or {}).get("state") == "failed"
                            and str((rows.get(s["id"]) or {}).get("error") or "").startswith("CheckpointPending")]
+                waiting = [c for c in waiting if not self._settled(
+                    dict(B.read_payload(self.state_dir, j["id"], c) or {}, id=c, item=j["id"]),
+                    (j.get("params") or {}).get("_base_item"))]
                 n_done = sum(s["state"] in ("done", "skipped") for s in stages)
                 done_all += n_done
                 total_all += len(stages)

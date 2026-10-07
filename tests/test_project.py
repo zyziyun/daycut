@@ -217,6 +217,29 @@ def test_preproduction_checkpoint_roundtrip_refresh_and_export(tmp_path):
     assert ctx["pending"][0]["item"] == "002"
 
 
+def test_an_answered_checkpoint_stops_waiting_before_the_run_goes_on(tmp_path):
+    """Answering records the decision; the gate's stage row says CheckpointPending until the next run. The inbox,
+    pending() and status must not keep asking (the desk resumes a project's run only once nothing waits for her)."""
+    topics = tmp_path / "topics.txt"
+    topics.write_text("为什么第二次请求更快\n缓存到底省了什么\n", encoding="utf-8")
+    pdir = str(tmp_path / "scripts")
+    cli("new", "--recipe", "preproduction", "--dir", pdir, "--list", str(topics), "--json")
+    cli("run", "--dir", pdir, "--json")
+    HM.register(pdir)
+    p = Project(pdir)
+    p.answer("lock", dict(lock=True), items=["001"])
+    assert [(x["item"], x["id"]) for x in p.pending()] == [("002", "lock")]
+    assert {x["item"] for x in p.pending(answered=True)} == {"001", "002"}
+    st = p.status()
+    assert {i["id"]: i["waiting"] for i in st["items"]} == {"001": [], "002": ["lock"]} and st["pending"] == 1
+    assert [(e["item"], e["id"]) for e in IB.inbox()["entries"]] == [("002", "lock")]
+    p.answer("lock", dict(lock=True))                         # no items: answers every one waiting, 002 again
+    assert p.pending() == [] and IB.inbox()["total"] == 0
+    assert Project(pdir).status()["state"] != "needs-you"
+    r = cli("resume", "--dir", pdir, "--json")
+    assert {i["id"]: i["state"] for i in json.loads(r.stdout)["items"]} == {"001": "done", "002": "done"}
+
+
 def test_json_events_stream_is_pure_json(tmp_path):
     pdir = str(tmp_path / "p")
     cli("new", "--recipe", "preproduction", "--dir", pdir, "--json")
