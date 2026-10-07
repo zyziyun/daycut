@@ -179,7 +179,7 @@ def analyze(x, sr=SR):
     loud = e[e > np.percentile(e, 60)] if len(e) > 10 else e
     noise_db = float(np.percentile(e, 10)) if len(e) else -120.0
     speech_db = float(np.mean(loud)) if len(loud) else noise_db
-    N0 = np.sort(P, axis=0)[:max(4, len(P) // 7)].mean(0)
+    N0 = P[np.argsort(e)[:max(4, len(P) // 7)]].mean(0)          # the quietest frames (by frame energy)
     return dict(noise_db=round(noise_db, 1), speech_db=round(speech_db, 1), snr_db=round(speech_db - noise_db, 1),
                 hum_hz=_hum(N0), t60=_round(_t60(m)), clip_pct=round(float(np.mean(np.abs(x) > 0.99) * 100), 3),
                 seconds=round(len(m) / SR, 2))
