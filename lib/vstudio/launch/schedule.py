@@ -5,7 +5,8 @@
     SC.write(rows, "kit/schedule")              # schedule.json + SCHEDULE.md
     SC.apply(rows, accounts={"x": "my-x"})      # vstudio.project.pubcal posts, state "planned" (never posts)
 
-Launch day: the demo on every platform. Then one feature clip per weekday, on every clip platform. Each platform
+Launch day: the demo on every platform. Then one feature clip per weekday, on every short-clip platform
+(not YouTube long-form). Each platform
 gets the render that fits it (canvas and language: international platforms English, Chinese platforms Chinese
 when it was rendered) and its own slot time (``schedule.slots``, local time). Platforms are ordered international
 first, then Chinese. Nothing is posted: the calendar holds "planned" rows the creator approves and posts herself.
@@ -80,10 +81,12 @@ def propose(cfg, kit):
     day0 = next(days)
     for pl in plats:
         add(day0, pl, "demo", None, kit.get("demo") or {})
+    from .posts import CLIP_PLATFORMS
     for fid in C.cut_features(cfg, "clips"):
         day = next(days)
         for pl in plats:
-            add(day, pl, "clip", fid, (kit.get("clips") or {}).get(fid) or {})
+            if pl.split(":")[0] in CLIP_PLATFORMS:            # short clips: not YouTube long-form
+                add(day, pl, "clip", fid, (kit.get("clips") or {}).get(fid) or {})
     rows.sort(key=lambda r: (r["at"][:10], plats.index(r["platform"]), r["at"]))
     return rows
 

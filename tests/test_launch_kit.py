@@ -323,6 +323,8 @@ def test_schedule_picks_canvas_and_language(cfg):
     clip_x = [r for r in rows if r["kind"] == "clip" and r["platform"] == "x"]
     assert [r["video"] for r in clip_x] == ["plan-en-11.mp4", "review-en-11.mp4"]
     assert clip_x[0]["at"][:10] == "2026-11-04"
+    assert not [r for r in SC.propose(dict(cfg, platforms=["youtube", "x"]), dict(demo=have, clips=clips))
+                if r["kind"] == "clip" and r["platform"] == "youtube"]
 
 
 def test_schedule_apply_adds_planned_posts_only_for_known_accounts(cfg):
