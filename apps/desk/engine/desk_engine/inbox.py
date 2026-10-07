@@ -77,6 +77,7 @@ class Inbox:
         self.history, self.runner, self.mode, self.bus = history, runner, mode, bus
         self._lock = threading.Lock()
         self._real = None
+        self.extra = []          # more sources: callables -> [item] (Create: takes to pick, paused runs ...)
 
     def real(self):
         if self._real is None:
@@ -163,6 +164,11 @@ class Inbox:
                                       default=p.get("default"), minutes=1, source="engine",
                                       engine=dict(dir=pd, id=p.get("id"), item=p.get("item"))))
             except Exception:  # noqa: BLE001
+                pass
+        for src in self.extra:
+            try:
+                items += [i for i in src() if i["key"] not in answers]
+            except Exception:  # noqa: BLE001  (an optional source never breaks the inbox)
                 pass
         thumbs = [i["project"]["thumb"] for i in items if i["project"].get("thumb")]
         self.history.allow_media(thumbs)

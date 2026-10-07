@@ -233,6 +233,7 @@ class History:
         self._lock = threading.Lock()
         self._thumbs = set()
         self._media = set()
+        self.extra_work = set()
 
     # ---------------------------------------------------------- config (watched folders, hidden)
     def _cfg(self):
@@ -368,6 +369,8 @@ class History:
         for w in self.watch():
             for kind, d in scan_folder(w):
                 out.append((kind, d, "watch", {}))
+        for d in sorted(self.extra_work):          # Create hand-offs in the desk's mock mode (not registered)
+            out.append(("work", d, "create", {}))
         return out, series
 
     def list(self, q=None, status=None, kind=None, type_=None, client=None):

@@ -434,6 +434,10 @@ class Api:
         self.calendar = Calendar(engine.data_dir, self.history, self.outputs, bus)
         from .workpkg import WorkPackages
         self.workpkg = WorkPackages(engine.data_dir, self.history, self.outputs)
+        from .create import CreateApi              # Create page: idle until the desk calls /api/create (flag)
+        self.create = CreateApi(engine.data_dir, bus, runner if engine.mode == "real" else None, engine.mode,
+                                history=self.history, calendar=self.calendar, outputs=self.outputs)
+        self.inbox.extra.append(self.create.inbox_items)
         self.port = None
 
     def roots(self):
@@ -446,6 +450,7 @@ class Api:
                 out.append(p if os.path.isdir(p) else os.path.dirname(p))
             for p in j.get("applied") or []:
                 out.append(p["dir"])
+        out += self.create.roots()
         return sorted(set(out))
 
     def route_v04(self, method, parts, query, body):
@@ -677,6 +682,8 @@ class Api:
             return e.recipes()
         if method == "GET" and parts == ["roots"]:
             return self.roots()
+        if parts[:1] == ["create"]:
+            return self.create.route(method, parts[1:], query, body)
         if parts[:1] != ["batches"]:
             r = self.route_v04(method, parts, query, body)
             if r is not None:
@@ -822,7 +829,7 @@ def make_handler(api):
                 self._send(200, res)
             except BadRequest as e:
                 doc = getattr(e, "doc", None)        # engine refusals keep their code for the UI's own words
-                self._send(422 if doc else 400, dict(error=str(e), **(doc or {})))
+                self._send(getattr(e, "status", None) or (422 if doc else 400), dict(error=str(e), **(doc or {})))
             except KeyError as e:
                 self._send(404, dict(error=str(e).strip("'\"")))
             except (FileNotFoundError, ValueError) as e:
