@@ -19,7 +19,7 @@ references/PROJECTS.md.
                                                       post.md, ...) -> DIR/.vstudio/work.json + registry (works.py)
   touch DIR [--status running|waiting|done|failed] [--stage S] [--progress 0..1] [--message M] [--eta S]
       [--needs-you] [--recipe R] [--title T] [--outputs a,b]   register a job folder + its live status (heartbeat)
-  output list | show | edit | render | undo | redo | revert | ai | chat | effects  --project P --output O   2nd-pass edit of
+  output list | show | edit | preview-edl | render | undo | redo | revert | ai | chat | effects  --project P --output O   2nd-pass edit of
       one finished output (references/OUTPUT_EDIT.md): edit --ops JSON | --op NAME --param k=v | --op ai
       --instruction T [--apply]; render [--quality preview|final] [--targets primary,douyin:vertical|all]
   ai --project P --instruction T [--outputs all|a,b] [--context JSON] [--timeout 120] [--json | --json-events]
@@ -357,7 +357,7 @@ def cmd_output(a):
                      use_asr=not a.no_asr, context=json.loads(a.context) if a.context else None,
                      record=not a.no_record, timeout=a.timeout))
         return 0
-    # edit
+    # edit / preview-edl
     if a.ops:
         ops = json.loads(a.ops)
     elif a.ops_file:
@@ -366,7 +366,11 @@ def cmd_output(a):
     elif a.op:
         ops = dict(_params(a), op=a.op)
     else:
-        raise O.OutputError("no-ops", "edit needs --ops JSON, --ops-file F or --op NAME", "需要 --ops 或 --op")
+        raise O.OutputError("no-ops", f"{act} needs --ops JSON, --ops-file F or --op NAME", "需要 --ops 或 --op")
+    if act == "preview-edl":
+        r = O.preview_edl(proj, a.output, ops)
+        _out(a, r, "\n".join(f"keep {x:.3f}-{y:.3f}" for x, y in r["keep"]) + f"\n-> {r['duration']:.2f}s")
+        return 0
     _out(a, O.edit(proj, a.output, ops, note=a.note, turn=a.turn))
     return 0
 
@@ -546,7 +550,7 @@ def build_parser():
     p.add_argument("--outputs", help="comma list (default: videos in final/ exports/ out/)")
     p = add("output", cmd_output, "second-pass edit of a finished output (references/OUTPUT_EDIT.md)")
     p.add_argument("action", choices=["list", "show", "edit", "render", "undo", "redo", "revert", "ai", "chat",
-                                      "effects"])
+                                      "effects", "preview-edl"])
     p.add_argument("--project", help="project folder or adopted work folder (default --dir / cwd)")
     p.add_argument("--output", help="output id (output list), or its file path")
     p.add_argument("--ops", help="JSON op or list of ops")

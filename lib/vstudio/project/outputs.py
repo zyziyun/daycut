@@ -21,7 +21,8 @@ Times in ops are seconds on the ORIGINAL output timeline (``time_base: "edited"`
 converted when the op is recorded); positions are fractions of the canvas. Every message has a stable ``code`` +
 ``params`` with English ``message`` and ``message_zh`` (the desk localises by code).
 
-    list_outputs(dir) / show(dir, out) / edit(dir, out, ops, turn) / undo / redo / revert(dir, out, step) /
+    list_outputs(dir) / show(dir, out) / edit(dir, out, ops, turn) / preview_edl(dir, out, ops) / undo / redo /
+    revert(dir, out, step) /
     ai(dir, out, instruction, apply, context) / chat / chat_add / chat_update (chat.json transcript)
     render: vstudio.project.outrender.render(dir, out, quality="preview" | "final", targets=[...])
 """
@@ -365,7 +366,8 @@ def capabilities(rec, doc=None):
                 captions_ours=pipe, caption_text=pipe, caption_style=True, caption_restyle_burned=False,
                 caption_toggle=pipe, caption_add=True, caption_placements=["ours"] if pipe else ["band", "mask"],
                 relayout="master" if pipe else "reframe-file", relayout_layouts=["auto"] if pipe else ["auto", "band"],
-                burned_captions=None if pipe else burned.get("captions"), audio=rec["info"]["has_audio"])
+                burned_captions=None if pipe else burned.get("captions"), audio=rec["info"]["has_audio"],
+                cut_words=True, cut_strategy=cut_strategy(rec, burned))
     notes = []
     if not pipe:
         notes.append(msg("flattened", "edits are applied on top of the finished file (no clean master)",
@@ -533,7 +535,7 @@ def merge_cuts(cuts):
             out[-1][2] = "; ".join(x for x in (out[-1][2], w) if x)
         else:
             out.append([a, b, w])
-    return [[round(a, 3), round(b, 3), w] for a, b, w in out]
+    return [[round(a, 5), round(b, 5), w] for a, b, w in out]     # 5 decimals: zero-crossed edges are sub-ms
 
 
 # --------------------------------------------------------------------------- timeline
@@ -553,7 +555,7 @@ def segments(st, dur):
             if cb < y:
                 nxt.append([cb, y])
         segs = nxt
-    return [[round(x, 3), round(y, 3)] for x, y in segs if y - x > 0.04]
+    return [[round(x, 5), round(y, 5)] for x, y in segs if y - x > 0.04]
 
 
 def joins(st, segs):
@@ -667,13 +669,51 @@ def words(doc, required=True):
         from vstudio.batch.livestatus import write as lw
         lw(doc.dir, "done", stage="transcribe", by="output-edit")
     if isinstance(raw, dict):
-        from vstudio import asr
-        W = asr.words_of(raw)
+        W = _flat_words(raw)
     else:
-        W = [dict(w=str(w["w"]), t=float(w["t"]), te=float(w["te"])) for w in raw or []]
+        W = []
+        for w in raw or []:
+            row = dict(w=str(w["w"]), t=float(w["t"]), te=float(w["te"]))
+            if w.get("p") is not None:
+                row["p"] = round(float(w["p"]), 3)
+            W.append(row)
     os.makedirs(doc.dir, exist_ok=True)
     write_json(path, dict(sig=doc.d["source_sig"], file=doc.rec["file"], words=W, at=_stamp()))
     return W
+
+
+def _flat_words(raw):
+    """``asr.words_of`` that keeps the word probability (``p``, used by the low-confidence marks) when present."""
+    segs = raw.get("segments") if isinstance(raw, dict) else raw
+    if not segs and isinstance(raw, dict) and raw.get("words"):
+        segs = [dict(words=[dict(word=w.get("w", w.get("word", "")), start=w.get("t", w.get("start")),
+                                 end=w.get("te", w.get("end")), probability=w.get("p", w.get("probability")))
+                            for w in raw["words"]])]
+    out = []
+    for s in segs or []:
+        for w in s.get("words") or []:
+            txt = str(w.get("word", "")).strip()
+            if not txt:
+                continue
+            row = dict(w=txt, t=round(float(w["start"]), 3), te=round(float(w["end"]), 3))
+            p = w.get("probability", w.get("p"))
+            if p is not None:
+                row["p"] = round(float(p), 3)
+            out.append(row)
+    return out
+
+
+def words_sig(W):
+    """Signature of a word list (text + times): a word selection made against another transcript is stale."""
+    return sha1_json([[w["w"], round(float(w["t"]), 3), round(float(w["te"]), 3)] for w in W or []], 10)
+
+
+def cached_words(doc):
+    """The cached transcript words of this output (never transcribes) or None."""
+    tr = read_json(os.path.join(doc.dir, "transcript.json"), None)
+    if isinstance(tr, dict) and tr.get("sig") == doc.d.get("source_sig") and isinstance(tr.get("words"), list):
+        return tr["words"]
+    return None
 
 
 def _energy(doc, W):
@@ -682,6 +722,145 @@ def _energy(doc, W):
         return C.energy_of(doc.rec["file"], W)
     except Exception:  # noqa: BLE001  (whisper times only)
         return None
+
+
+# --------------------------------------------------------------------------- cut edges: zero crossings, caption lines
+ZC_WIN = 0.005          # s: a cut edge moves at most this far to the nearest audio zero crossing
+
+
+def zero_cross(samples, sr, t, t0, win=ZC_WIN):
+    """The audio zero crossing nearest to ``t`` within ±``win`` s (linear interpolation between the two samples
+    around the sign change) in a mono float array ``samples`` that starts at absolute time ``t0``; ``t`` itself
+    when there is none. Pure."""
+    import numpy as np
+    x = np.asarray(samples, dtype=np.float64).ravel()
+    if x.size < 2 or not sr:
+        return t
+    c = (t - t0) * sr
+    lo = max(0, int(np.floor((t - win - t0) * sr)))
+    hi = min(x.size - 1, int(np.ceil((t + win - t0) * sr)))
+    if hi - lo < 1:
+        return t
+    seg = x[lo:hi + 1]
+    neg = seg < 0
+    k = np.nonzero(neg[1:] != neg[:-1])[0]
+    if k.size == 0:
+        return t
+    a, b = seg[k], seg[k + 1]
+    den = np.where(np.abs(a - b) > 1e-12, a - b, 1.0)
+    pos = lo + k + np.clip(a / den, 0.0, 1.0)
+    pos = pos[np.abs(pos - c) <= win * sr + 1e-9]
+    if pos.size == 0:
+        return t
+    return float(t0 + pos[int(np.argmin(np.abs(pos - c)))] / sr)
+
+
+def _pcm_window(path, t, win=0.01, sr=48000):
+    """~2*win s of mono float PCM around ``t`` (one tiny ffmpeg call) -> (samples, sr, t0) or None on any
+    failure (no audio stream, no ffmpeg)."""
+    import subprocess
+
+    import numpy as np
+    try:
+        from vstudio import media
+        t0 = max(0.0, float(t) - win)
+        r = subprocess.run([media.ffmpeg_bin(), "-v", "error", "-ss", f"{t0:.6f}", "-i", path, "-t", f"{2 * win:.6f}",
+                            "-vn", "-map", "0:a:0", "-ac", "1", "-ar", str(sr), "-f", "f32le", "-"],
+                           capture_output=True, timeout=30)
+        if r.returncode != 0:
+            return None
+        x = np.frombuffer(r.stdout, np.float32)
+        return (x, sr, t0) if x.size >= 8 else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _zero_edges(rec, s, e):
+    """(s', e', applied): both cut edges moved to the nearest zero crossing (±5 ms) of the audio the renderer
+    cuts (the master in pipeline mode)."""
+    if not rec["info"].get("has_audio"):
+        return s, e, False
+    src = rec["master"] if rec["mode"] == "pipeline" and rec.get("master") else rec["file"]
+    out, hit = [], False
+    for t in (s, e):
+        w = _pcm_window(src, t)
+        z = zero_cross(w[0], w[1], t, w[2]) if w else t
+        hit = hit or z != t
+        out.append(round(z, 5))
+    if out[1] - out[0] < 0.03:
+        return s, e, False
+    return out[0], out[1], hit
+
+
+def cut_strategy(rec, burned=None):
+    """How a transcript cut treats the picture: ``remaster`` (pipeline: captions are re-composed), ``snap_captions``
+    (flattened with burned captions: edges snap to caption line boundaries), ``hard`` (flattened, none detected)."""
+    if rec["mode"] == "pipeline":
+        return "remaster"
+    return "snap_captions" if (burned or {}).get("captions") else "hard"
+
+
+def _doc_strategy(doc):
+    if doc.rec["mode"] == "pipeline":
+        return "remaster"
+    b = doc.d.get("burned")
+    return cut_strategy(doc.rec, b if isinstance(b, dict) else burned_text(doc))
+
+
+CAPTION_SNAP_S = 0.3
+
+
+def _caption_gaps(W):
+    """Silences between the burned caption lines, approximated by ``subs.cues_from_words(W, max_chars=14)`` (the
+    burned captions were made from the same speech): [(a, b)] incl. the open ends."""
+    from vstudio import subs
+    mids = [(w["t"] + w["te"]) / 2 for w in W]
+    groups = []
+    for c in subs.cues_from_words(W, max_chars=14, fixes=False):
+        ws = [w for w, m in zip(W, mids) if c.start - 1e-3 <= m <= c.end + 1e-3]
+        if ws:
+            groups.append((ws[0]["t"], ws[-1]["te"]))
+    if not groups:
+        return [(float("-inf"), float("inf"))]
+    return [(float("-inf"), groups[0][0])] + [(a[1], b[0]) for a, b in zip(groups, groups[1:])] + \
+        [(groups[-1][1], float("inf"))]
+
+
+def _snap_captions(W, s, e):
+    """Move each edge of a transcript cut to the nearest caption line boundary within 0.3 s -> (s, e, warnings)."""
+    gaps = _caption_gaps(W)
+    out, warns = [], []
+    for t in (s, e):
+        if any(a - 1e-3 <= t <= b + 1e-3 for a, b in gaps):
+            out.append(t)
+            continue
+        best = None
+        for a, b in gaps:
+            pad = 0.03 if b - a > 0.06 else (b - a) / 2
+            p = min(max(t, a + pad), b - pad)
+            if best is None or abs(p - t) < abs(best - t):
+                best = p
+        if best is not None and abs(best - t) <= CAPTION_SNAP_S:
+            out.append(round(best, 3))
+        else:
+            out.append(t)
+            warns.append(msg("cut-splits-burned-caption", "this cut splits a caption burned into the picture",
+                             "这处剪辑会切断画面里的字幕", at=round(t, 2)))
+    if out[1] - out[0] < 0.03:
+        return s, e, warns
+    return out[0], out[1], warns
+
+
+def _index(v, name, n):
+    if isinstance(v, str) and re.fullmatch(r"\s*\d+\s*", v):          # --param gap=3 from the CLI
+        v = int(v)
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or int(v) != v:
+        raise _err("bad-param", f"{name} must be a word index", f"{name} 需要词序号", name=name, value=v)
+    i = int(v)
+    if not 0 <= i < n:
+        raise _err("bad-param", f"{name}={i} is outside the transcript (0-{n - 1})", f"{name} 超出文字稿范围",
+                   name=name, value=i, n=n)
+    return i
 
 
 # --------------------------------------------------------------------------- burned text detection
@@ -859,27 +1038,72 @@ def normalize(doc, st, op):
         n.update(start=s, end=e)
         value.update(start=s, end=e)
     elif k == "cut":
-        s = _src_time(op.get("start"), "start", op, tl, dur)
-        e = _src_time(op.get("end"), "end", op, tl, dur)
-        if e <= s:
-            raise _err("bad-time", "cut: end must be after start", "剪切：结束要晚于开始", start=s, end=e)
-        W = words(doc, required=not op.get("no_snap"))
+        from vstudio import cleanup as C
+        by_words, by_gap = op.get("words") is not None, op.get("gap") is not None
+        no_snap = bool(op.get("no_snap"))
+        W = None
+        if by_words or by_gap or op.get("sig"):
+            W = words(doc)
+            if op.get("sig") and str(op["sig"]) != words_sig(W):
+                raise _err("stale-words", "the transcript changed since you selected these words; select again",
+                           "文字稿已更新，请重新选择", expected=words_sig(W), got=op["sig"])
+        why = str(op.get("why") or ("pause" if by_gap else ""))
         said = ""
-        if W and not op.get("no_snap"):
-            from vstudio import cleanup as C
-            r = C.snap_cut(W, _energy(doc, W), s, e)
-            if not r:
-                raise _err("cut-no-word", f"cut {s:g}-{e:g}s holds no whole word", "这个区间里没有完整的词",
-                           start=s, end=e)
-            s, e = r
+        if by_gap:
+            i = _index(op["gap"], "gap", max(0, len(W) - 1))
+            keep = min(2.0, max(0.05, _num(op.get("keep", 0.25), "keep")))
+            g = float(W[i + 1]["t"]) - float(W[i]["te"])
+            if g < keep + 0.05:
+                raise _err("bad-param", f"the pause after word {i} is {g:.2f}s: too short to shorten to {keep:g}s",
+                           f"这个停顿只有 {g:.2f} 秒，不能再缩短", name="gap", value=i, gap_s=round(g, 3),
+                           keep_s=keep)
+            s, e = round(float(W[i]["te"]) + keep / 2, 3), round(float(W[i + 1]["t"]) - keep / 2, 3)
+            value.update(gap=i, gap_s=round(g, 3), keep_s=keep)
+        else:
+            if by_words:
+                ws = op["words"] if isinstance(op["words"], (list, tuple)) else [op["words"], op["words"]]
+                if len(ws) != 2:
+                    raise _err("bad-param", "words: [first index, last index]", "words 需要 [起, 止] 序号",
+                               name="words", value=op["words"])
+                i0, i1 = _index(ws[0], "words", len(W)), _index(ws[1], "words", len(W))
+                if i1 < i0:
+                    raise _err("bad-param", "words: the last index is before the first", "words 序号顺序反了",
+                               name="words", value=[i0, i1])
+                s = round(min(max(float(W[i0]["t"]), 0.0), dur), 3)
+                e = round(min(max(float(W[i1]["te"]), 0.0), dur), 3)
+                value["word_range"] = [i0, i1]
+            else:
+                s = _src_time(op.get("start"), "start", op, tl, dur)
+                e = _src_time(op.get("end"), "end", op, tl, dur)
+            if e <= s:
+                raise _err("bad-time", "cut: end must be after start", "剪切：结束要晚于开始", start=s, end=e)
+            if W is None:
+                W = words(doc, required=not no_snap)
+            if W and not no_snap:
+                r = C.snap_cut(W, _energy(doc, W), s, e)
+                if by_words and (not r or r[0] > _mid(W[i0]) or r[1] < _mid(W[i1])):
+                    r = C.snap_cut(W, None, s, e)           # the audio disagrees: a selection keeps its words
+                if not r:
+                    raise _err("cut-no-word", f"cut {s:g}-{e:g}s holds no whole word", "这个区间里没有完整的词",
+                               start=s, end=e)
+                s, e = r
+                if (by_words or why == "transcript") and not pipe and _doc_strategy(doc) == "snap_captions":
+                    s, e, w_ = _snap_captions(W, s, e)
+                    warns += w_
+                    value["caption_snap"] = not w_
+        if not no_snap:
+            s, e, zc = _zero_edges(rec, s, e)
+            if zc:
+                value["zero_cross"] = True
+        if W and not by_gap:
             said = C.join_words([w for w in W if s <= (w["t"] + w["te"]) / 2 <= e])
-        n.update(start=s, end=e, why=str(op.get("why") or ""))
+        n.update(start=s, end=e, why=why)
         test = fold(st, n)
         kept = sum(b - a for a, b in segments(test, dur))
         if kept < MIN_KEEP_S:
             raise _err("too-short", f"only {kept:.2f}s would be left", f"只剩 {kept:.2f} 秒", kept_s=round(kept, 3),
                        min_s=MIN_KEEP_S)
-        value.update(cut=[s, e], words=said, snapped=bool(W), kept_s=round(kept, 3))
+        value.update(cut=[s, e], words=said, snapped=bool(W) and not by_gap, kept_s=round(kept, 3))
     elif k == "cut_remove":
         i = int(_num(op.get("index"), "index"))
         if not 0 <= i < len(st["cuts"]):
@@ -1109,15 +1333,27 @@ def normalize(doc, st, op):
     return n, value, warns
 
 
-def describe(op):
-    """A short {code, params, message, message_zh} line for a normalized op (history, AI proposals)."""
+def describe(op, value=None):
+    """A short {code, params, message, message_zh} line for a normalized op (history, AI proposals). ``value``:
+    the op's value from ``normalize`` (a cut's ``words`` = what was said in it)."""
     k = op["op"]
     if k == "trim":
         return msg("op-trim", f"trim to {op.get('start') or 0:g}s - {op.get('end') if op.get('end') is not None else 'end'}",
                    "裁剪首尾", start=op.get("start"), end=op.get("end"))
     if k == "cut":
-        return msg("op-cut", f"cut {op['start']:g}-{op['end']:g}s", f"剪掉 {op['start']:g}-{op['end']:g} 秒",
-                   start=op["start"], end=op["end"])
+        said = str((value or {}).get("words") or "")
+        why = op.get("why") or ""
+        a, b = round(op["start"], 2), round(op["end"], 2)
+        q = f" “{said[:40]}”" if said else ""
+        return msg("op-cut", f"cut {a:g}-{b:g}s{q}", f"剪掉 {a:g}-{b:g} 秒" + (f"「{said[:40]}」" if said else ""),
+                   start=op["start"], end=op["end"], why=why, said=said)
+    if k == "caption_text":
+        return msg("op-caption-text", f"caption {op['cue']}: {op['text']}", f"字幕 {op['cue']} 改为：{op['text']}",
+                   cue=op["cue"], text=op["text"], force=bool(op.get("force")))
+    if k == "caption_remove":
+        return msg("op-caption-remove", f"remove caption {op['cue']}", f"删除字幕 {op['cue']}", cue=op["cue"])
+    if k == "effect_remove":
+        return msg("op-effect-remove", f"remove effect {op['id']}", f"删除特效 {op['id']}", id=op["id"])
     if k == "speed":
         return msg("op-speed", f"speed {op['value']:g}x", f"{op['value']:g} 倍速", value=op["value"])
     if k == "effect_add":
@@ -1150,8 +1386,8 @@ def _load(d, output):
 
 def apply_ops(doc, ops, by="user", note=None, dry=False):
     """Normalize every op in order against the evolving state (all or nothing) -> (step, values, warnings)."""
-    st = doc.state()
-    normed, values, warns = [], [], []
+    st0 = st = doc.state()
+    normed, values, warns, retime_ = [], [], [], False
     for i, op in enumerate(ops):
         try:
             n, v, w = normalize(doc, st, op)
@@ -1162,13 +1398,141 @@ def apply_ops(doc, ops, by="user", note=None, dry=False):
         normed.append(n)
         values.append(v)
         warns += w
+        if n["op"] == "cut" and (n.get("why") in RETIME_WHY or op.get("words") is not None or
+                                 op.get("gap") is not None):
+            retime_ = True
+    descs = [describe(n, v) for n, v in zip(normed, values)]
+    retimed = None
+    if retime_:
+        new_cuts = [(n["start"], n["end"]) for n in normed if n["op"] == "cut"]
+        derived, retimed = retime(doc, st0, st, new_cuts)
+        for n in derived:
+            st = fold(st, n)
+            normed.append(n)
+            descs.append(describe(n))
     step = dict(id=f"s{len(doc.d['steps']) + 1}-{sha1_json([normed, time.time()], 6)}", at=_stamp(), by=by,
-                note=note, ops=normed, describe=[describe(n) for n in normed])
+                note=note, ops=normed, describe=descs)
+    if retimed is not None:
+        step["retimed"] = retimed
     if not dry:
         doc.d["steps"].append(step)
         doc.d["redo"] = []
         doc.save()
     return step, values, warns
+
+
+RETIME_WHY = ("transcript", "filler", "pause")
+MIN_EFFECT_S = 0.4
+
+
+def _mid(w):
+    return (float(w["t"]) + float(w["te"])) / 2
+
+
+def _in_cuts(t, cuts):
+    return any(a <= t <= b for a, b in cuts)
+
+
+def _touches(a, b, cuts):
+    return any(b > x and a < y for x, y in cuts)
+
+
+def _bound_words(e, W):
+    """The words a pop-words effect shows: its text found among the words inside its window, else the word at
+    its start."""
+    from vstudio import cleanup as C
+    ws = [w for w in W if e["start"] - 1e-3 <= _mid(w) <= e["end"] + 1e-3]
+    want = C.norm((e.get("params") or {}).get("text") or "")
+    if want and ws:
+        txt, own = "", []
+        for k, w in enumerate(ws):
+            n = C.norm(w["w"])
+            txt += n
+            own += [k] * len(n)
+        at = txt.find(want)
+        if at >= 0:
+            return [ws[k] for k in sorted(set(own[at:at + len(want)]))]
+    first = next((w for w in W if float(w["te"]) > e["start"]), None)
+    return [first] if first is not None and float(first["t"]) <= e["end"] else []
+
+
+def retime(doc, st0, st1, new_cuts):
+    """Captions and effects after transcript cuts, as ops of the SAME step (one Apply = one undo step).
+
+    ``st0`` / ``st1``: the state before / after the step's own ops; ``new_cuts``: [(a, b)] the step's cuts. Pipeline
+    cues touched by a new cut lose the cut words (``caption_text`` force, or ``caption_remove`` when nothing - or
+    under 2 characters, appended to the previous kept cue - is left); visual effects squeezed under 0.4 s, pop-words
+    whose word was cut and SFX that start inside a cut are removed; a partly cut effect is only reported (the render
+    maps it). music-bed is never touched. -> (derived ops, retimed info)."""
+    import re as _re
+
+    from vstudio import cleanup as C
+    rec = doc.rec
+    dur = rec["info"]["duration"]
+    tl0, tl1 = Timeline(st0, dur), Timeline(st1, dur)
+    cuts = [(a, b) for a, b, *_ in st1["cuts"]]
+    W = cached_words(doc) or []
+    ops = []
+    info = dict(captions=dict(retimed=0, shortened=0, removed=0), effects=dict(trimmed=[], removed=[]), sfx_removed=0,
+                targets=["primary"] + [x["target"] for x in st1["exports"]])
+    if rec["mode"] == "pipeline" and rec.get("cues"):
+        rows = [r for r in _cue_rows(rec, st1) if not r["added"] and not r["removed"]]
+        new_text, removed, carry, short = {}, [], {}, set()
+        for r in rows:
+            s0, s1 = tl0.span(r["start"], r["end"]), tl1.span(r["start"], r["end"])
+            ws = [w for w in W if r["start"] - 1e-3 <= _mid(w) <= r["end"] + 1e-3]
+            touched = any(_in_cuts(_mid(w), new_cuts) for w in ws) if ws else _touches(r["start"], r["end"], new_cuts)
+            if touched:
+                keep = [w for w in ws if not _in_cuts(_mid(w), cuts)]
+                if s1 is None or not keep:
+                    removed.append(r["id"])
+                    continue
+                if len(keep) < len(ws):
+                    text = C.join_words(keep)
+                    if len(_re.sub(r"\s", "", text)) < 2:
+                        removed.append(r["id"])
+                        carry[r["id"]] = text
+                        continue
+                    new_text[r["id"]] = text
+                    short.add(r["id"])
+            if s0 and s1 and (abs(s0[0] - s1[0]) > 1e-3 or abs(s0[1] - s1[1]) > 1e-3):
+                info["captions"]["retimed"] += 1
+        order = [r["id"] for r in rows]
+        cur = {r["id"]: r["text"] for r in rows}
+        for cid, text in carry.items():
+            prev = next((x for x in reversed(order[:order.index(cid)]) if x not in removed), None)
+            if prev is not None:
+                new_text[prev] = C.join_words([dict(w=new_text.get(prev, cur[prev])), dict(w=text)])
+        for cid in order:
+            if cid in new_text and cid not in removed and new_text[cid] != cur[cid]:
+                ops.append(dict(op="caption_text", cue=cid, text=new_text[cid], force=True))
+                info["captions"]["shortened"] += cid in short
+        for cid in removed:
+            ops.append(dict(op="caption_remove", cue=cid))
+        info["captions"]["removed"] = len(removed)
+    for e in st1["effects"]:
+        sp = FX.SPECS[e["effect"]]
+        label = dict(en=sp["en"], zh=sp["zh"])
+        if e["effect"] == "sfx-placement":
+            if any(a < e["start"] < b for a, b in new_cuts):
+                ops.append(dict(op="effect_remove", id=e["id"]))
+                info["sfx_removed"] += 1
+            continue
+        if sp["kind"] in ("audio", "join", "look", "end", "progress") or not _touches(e["start"], e["end"], new_cuts):
+            continue
+        s0, s1 = tl0.span(e["start"], e["end"]), tl1.span(e["start"], e["end"])
+        L0 = s0[1] - s0[0] if s0 else 0.0
+        L1 = s1[1] - s1[0] if s1 else 0.0
+        gone = s1 is None or L1 < MIN_EFFECT_S
+        if not gone and e["effect"] == "pop-words":
+            gone = any(_in_cuts(_mid(w), cuts) for w in _bound_words(e, W))
+        if gone:
+            ops.append(dict(op="effect_remove", id=e["id"]))
+            info["effects"]["removed"].append(dict(id=e["id"], effect=e["effect"], label=label))
+        elif L1 < L0 - 0.01:
+            info["effects"]["trimmed"].append(dict(id=e["id"], effect=e["effect"], label=label, from_s=round(L0, 2),
+                                                   to_s=round(L1, 2)))
+    return ops, info
 
 
 def edit(d, output, ops, by="user", note=None, turn=None):
@@ -1367,6 +1731,12 @@ def show(d, output):
 def show_doc(rec, doc):
     st = doc.state()
     dead = reverted_ids(doc.d["steps"])
+    if rec["mode"] == "flattened" and not isinstance(doc.d.get("burned"), dict):
+        try:                                       # once per file signature: caps.cut_strategy needs it
+            burned_text(doc)
+            doc.save()
+        except Exception:  # noqa: BLE001
+            pass
     caps, notes = capabilities(rec, doc.d if rec["mode"] == "flattened" else None)
     tl = Timeline(st, rec["info"]["duration"])
     from . import outrender as R
@@ -1391,12 +1761,99 @@ def show_doc(rec, doc):
                effects=effects, timeline=tl.as_dict(),
                history=dict(steps=[dict(id=s["id"], at=s["at"], by=s.get("by"), note=s.get("note"),
                                         describe=s.get("describe") or [describe(o) for o in s["ops"]],
-                                        reverted=s["id"] in dead, revert_of=s.get("revert_of"))
+                                        reverted=s["id"] in dead, revert_of=s.get("revert_of"),
+                                        retimed=s.get("retimed"))
                                    for s in doc.d["steps"]], undo=len(doc.d["steps"]), redo=len(doc.d["redo"])),
                chat=_chat_load(doc)["turns"],
                renders=renders, warnings=list(doc.d.get("warnings") or []),
-               paths=dict(doc=doc.path, dir=doc.dir, renders=os.path.join(doc.dir, "renders")))
+               paths=dict(doc=doc.path, dir=doc.dir, renders=os.path.join(doc.dir, "renders"),
+                          transcript=os.path.join(doc.dir, "transcript.json")))
+    W = cached_words(doc)
+    out["words_sig"] = words_sig(W) if W is not None else None
+    try:
+        out["marks"] = marks(W) if W else []
+    except Exception:  # noqa: BLE001  (marks are a hint: show never fails because of them)
+        out["marks"] = []
     return out
+
+
+# --------------------------------------------------------------------------- transcript marks
+MARKS_MAX = 500
+PAUSE_MARK_S = 0.6
+LOWCONF_P = 0.5
+_MARKS_MEMO = {}
+
+
+def marks(W, limit=MARKS_MAX):
+    """Hints for the transcript editor, from the cached words (indices into ``W``): fillers (``cleanup.detect``
+    without audio, rows not kept), pauses over 0.6 s and low-confidence words (``p`` < 0.5 when the transcript has
+    it) -> [{kind filler|pause|lowconf, i0, i1, text, save_s, group}], at most ``limit``."""
+    import bisect
+
+    from vstudio import cleanup as C
+    if not W:
+        return []
+    key = (words_sig(W), limit)
+    if key in _MARKS_MEMO:
+        return copy.deepcopy(_MARKS_MEMO[key])
+    out = []
+    mids = [_mid(w) for w in W]
+    try:
+        LW = C.load_words([dict(w=w["w"], t=w["t"], te=w["te"]) for w in W])
+        for e in C.detect(LW):
+            if e["kind"] != "filler" or e.get("action") == "keep" or not e.get("words"):
+                continue
+            a, b = LW[e["words"][0]]["t"], LW[e["words"][-1]]["te"]
+            i0 = bisect.bisect_left(mids, a - 1e-3)
+            i1 = bisect.bisect_right(mids, b + 1e-3) - 1
+            if i1 < i0:
+                continue
+            text = C.join_words(W[i0:i1 + 1])
+            out.append(dict(kind="filler", i0=i0, i1=i1, text=text, save_s=round(float(e["t1"]) - float(e["t0"]), 1),
+                            group=C.norm(e.get("text") or text)))
+    except Exception:  # noqa: BLE001
+        pass
+    for i in range(len(W) - 1):
+        g = float(W[i + 1]["t"]) - float(W[i]["te"])
+        if g > PAUSE_MARK_S:
+            out.append(dict(kind="pause", i0=i, i1=i + 1, text=f"{g:.1f}s", save_s=round(g - 0.25, 1), group="pause"))
+    for i, w in enumerate(W):
+        if w.get("p") is not None and float(w["p"]) < LOWCONF_P:
+            out.append(dict(kind="lowconf", i0=i, i1=i, text=str(w["w"]), save_s=0.0, group="lowconf"))
+    out.sort(key=lambda m: (m["i0"], m["i1"], m["kind"]))
+    out = out[:limit]
+    if len(_MARKS_MEMO) > 32:
+        _MARKS_MEMO.clear()
+    _MARKS_MEMO[key] = copy.deepcopy(out)
+    return out
+
+
+def preview_edl(d, output, ops):
+    """What the renderer would keep if ``ops`` were applied (nothing is written to the edit document): the ops are
+    normalized + folded in order exactly like ``edit`` (same snapping); one that fails is skipped and reported in
+    ``dropped``. -> {ok, output, keep [[a, b]] (``segments``, the renderer's own), cuts [[a, b]], duration (edited),
+    source_duration, ops [{index, op, describe, value}], dropped [{index, op, error}], warnings}."""
+    rec, doc = _load(d, output)
+    if isinstance(ops, dict):
+        ops = [ops]
+    if not isinstance(ops, list):
+        raise _err("no-ops", "preview-edl needs a JSON op or a list of ops", "需要操作列表")
+    dur = rec["info"]["duration"]
+    st = doc.state()
+    done, dropped, warns = [], [], []
+    for i, op in enumerate(ops):
+        try:
+            n, v, w = normalize(doc, st, op)
+        except OutputError as e:
+            dropped.append(dict(index=i, op=op, error=e.info))
+            continue
+        st = fold(st, n)
+        done.append(dict(index=i, op=n, describe=describe(n, v), value=v))
+        warns += w
+    tl = Timeline(st, dur)
+    return dict(ok=True, output=rec["id"], keep=segments(st, dur), cuts=[[a, b] for a, b, *_ in st["cuts"]],
+                duration=round(tl.duration, 3), source_duration=round(dur, 3), ops=done, dropped=dropped,
+                warnings=warns)
 
 
 # --------------------------------------------------------------------------- AI: instruction -> ops
@@ -1609,12 +2066,12 @@ def ai(d, output, instruction, apply=False, provider=None, model=None, use_asr=T
             continue
         clean = {k: v for k, v in op.items() if k not in ("why", "reason", "description")}
         try:
-            n, _, w = normalize(doc, cur, clean)
+            n, v_, w = normalize(doc, cur, clean)
         except OutputError as e:
             dropped.append(dict(op=op, error=e.info))
             continue
         cur = fold(cur, n)
-        proposed.append(dict(op=clean, normalized=n, describe=describe(n), why=op.get("why") or op.get("reason"),
+        proposed.append(dict(op=clean, normalized=n, describe=describe(n, v_), why=op.get("why") or op.get("reason"),
                              warnings=w))
     out = dict(ok=True, instruction=instruction, context=focus, proposed=proposed, ops=[p["op"] for p in proposed],
                dropped=dropped, summary=summary, warnings=warns, cost_usd=cost, seconds=round(time.time() - t0, 2),

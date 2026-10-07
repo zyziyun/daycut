@@ -3,7 +3,7 @@
 Every finished video the desk app shows can be edited again (成片二次编辑): a recipe project's export
 (`<item>/<platform>-<orientation>`) or a video of an adopted work folder (`final/A.mp4`; a plain skill folder is
 adopted on first use). Code: `lib/vstudio/project/outputs.py` (outputs, edit document, ops, AI),
-`outrender.py` (cached render), `outfx.py` (effect catalogue + frame layers). Tests: `tests/test_output_edit.py`.
+`outrender.py` (cached render), `outfx.py` (effect catalogue + frame layers). Tests: `tests/test_output_edit.py`, `tests/test_output_cut.py` (transcript cuts).
 
 ## 1. Modes and capability flags
 
@@ -14,7 +14,12 @@ adopted on first use). Code: `lib/vstudio/project/outputs.py` (outputs, edit doc
 
 `show` returns `caps` (`mode, trim, cut, cut_snap, speed, loudness, effects, title_band, cover, export, undo, ai,
 captions_ours, caption_text, caption_style, caption_restyle_burned, caption_toggle, caption_add,
-caption_placements, relayout, relayout_layouts, burned_captions, audio`) and `caps_notes` (why a flag is off).
+caption_placements, relayout, relayout_layouts, burned_captions, audio, cut_words, cut_strategy`) and `caps_notes`
+(why a flag is off). `cut_words: true` = cuts by transcript word index (`cut {words}` / `cut {gap}`, section 3a);
+`cut_strategy` says what a transcript cut does to the picture: `remaster` (pipeline: captions are re-composed from
+the master and re-timed in the same step), `snap_captions` (flattened with burned captions detected: cut edges snap to
+the burned caption line boundaries), `hard` (flattened, no burned captions detected or unknown: a plain cut with a
+2-frame audio fade at every join; no video fade - a video dip on a hard cut reads as a flash).
 
 ## 2. Files (nothing else in the project / work folder is written; the original output is never overwritten)
 
@@ -37,7 +42,7 @@ timeline); positions are fractions of the canvas (x, y = centre).
 | op | fields | notes |
 |---|---|---|
 | `trim` | `start?, end?, snap=true` | word-safe edges (`cleanup.snap_range`) when a transcript is cached |
-| `cut` / `cut_remove` | `start, end, why?, no_snap?` / `index` | snapped to whole words with `cleanup.snap_cut` on the output's transcript (transcribed once, cached) |
+| `cut` / `cut_remove` | `start, end, why?, no_snap?` or `words: [i0, i1], sig?, why?` or `gap: i, keep?, sig?` / `index` | snapped to whole words with `cleanup.snap_cut` on the output's transcript (transcribed once, cached), then each edge moves to the nearest audio zero crossing (±5 ms); transcript cuts: section 3a |
 | `speed` | `value` 0.5-2.5 | setpts + atempo |
 | `loudness` | `lufs, tp?` | default: the target platform's profile |
 | `captions` | `enabled` | pipeline only |
@@ -53,6 +58,58 @@ timeline); positions are fractions of the canvas (x, y = centre).
 | `cover` | `t, text, style card|plain|band` or `clear` | frame of the edited timeline |
 | `export_add` / `export_remove` | `target` (`platform[:orientation]`, `3:4`, `9:16`, `16:9`), `layout auto|band` | re-layout, never a plain letterbox (band is a designed layout for flattened files) |
 | `reset` | | everything back to the original (undoable) |
+
+### 3a. Transcript cuts (Descript-style editing)
+
+Word indices refer to the cached transcript (`transcript.json` words `[{w, t, te, p?}]`, `paths.transcript` in
+`show`); `show.words_sig` is its signature (`sha1` of `[w, t, te]` per word, 10 hex; `null` while nothing is
+transcribed - `show` never transcribes).
+
+| op form | meaning |
+|---|---|
+| `{op: cut, words: [i0, i1], sig?, why: transcript}` | cut words i0..i1 (inclusive): start = `W[i0].t`, end = `W[i1].te`, then `snap_cut` (word-safe edges; if the audio refinement would drop a selected word the plain word times are used). `sig` != the current `words_sig` -> `stale-words` (nothing applied); indices not ints / out of range / reversed -> `bad-param` |
+| `{op: cut, gap: i, keep: 0.25, sig?, why: pause}` | shorten the pause between word i and i+1, keeping `keep` s (0.05-2, default 0.25) of it: cut `[W[i].te + keep/2, W[i+1].t - keep/2]`, no word snapping; a pause shorter than `keep + 0.05` -> `bad-param` |
+| `{op: cut, start, end, why: filler}` | a plain range (marks, AI) - snapped as before |
+
+Every cut edge (unless `no_snap`, or no audio) then moves to the nearest zero crossing of the audio the renderer cuts
+(the master in pipeline mode) within ±5 ms (`outputs.zero_cross(samples, sr, t, t0)` on ~20 ms decoded with one
+tiny ffmpeg call per edge; any failure leaves the edge): `values[i].zero_cross: true`. Cut times keep 5 decimals.
+Flattened + `snap_captions`: each edge of a transcript cut (`words` or `why: transcript`) moves to the nearest
+burned caption line boundary within 0.3 s (lines approximated by `subs.cues_from_words(W, max_chars=14)`);
+an edge that cannot snap keeps its place and adds warning `cut-splits-burned-caption {at}`
+(`values[i].caption_snap` true / false).
+
+`why` is free text; the desk sends `transcript`, `filler`, `pause`. `values[i]` of a cut: `{cut [a, b], words (what
+was said in it), snapped, kept_s, word_range?, gap?, gap_s?, keep_s?, zero_cross?, caption_snap?}`; its history line
+is `op-cut {start, end, why, said}`.
+
+**One Apply = one step, captions and effects re-timed in it.** When a step holds a cut with `why` transcript /
+filler / pause (or a `words` / `gap` cut), derived ops are computed against the final state of the step and
+appended to the SAME step (a single undo restores everything):
+- captions (pipeline cues): a cue with a word cut by this step loses the cut words (`caption_text {cue, text:
+  join_words(remaining), force: true}`); nothing left (or no edited span) -> `caption_remove`; under 2 characters
+  left -> removed and its text appended to the previous kept cue. Added captions are only re-mapped by the render.
+- effects (visual, overlapping a new cut): edited length < 0.4 s or fully cut -> `effect_remove`; `pop-words`
+  whose word (its `text` among the words in its window, else the word at its start) was cut -> `effect_remove`;
+  partly cut -> nothing (the render maps it), reported as trimmed. `sfx-placement` starting inside a new cut ->
+  `effect_remove`. `music-bed`, joins, grade, end fade and the progress bar are never touched.
+- `step.retimed` (also on `history.steps[].retimed`): `{captions {retimed, shortened, removed}, effects {trimmed
+  [{id, effect, label {en, zh}, from_s, to_s}], removed [{id, effect, label}]}, sfx_removed, targets [primary,
+  ...exports]}` - every version updates: the cut happens before the canvas work of every target.
+  Derived ops describe as `op-caption-text {cue, text, force}`, `op-caption-remove {cue}`, `op-effect-remove {id}`.
+
+**Marks** (`show.marks`, from the cached transcript only, at most 500, never fails `show`):
+`[{kind filler|pause|lowconf, i0, i1, text, save_s, group}]` - fillers = `cleanup.detect` without audio, rows of
+kind filler not kept (`group` = the normalized filler, e.g. `那个`; `save_s` = its length); pauses = gaps over 0.6 s
+between words i0 and i1 = i0 + 1 (`text` "1.2s", `save_s` = gap - 0.25, `group` pause; cut it with `{gap: i0}`);
+lowconf = words with an ASR probability `p` < 0.5 (when the transcript has it).
+
+**preview-edl** (`output preview-edl --project P --output O --ops JSON --json`, `outputs.preview_edl(d, output,
+ops)`): what the renderer would keep if the draft ops were applied; nothing is written (the transcript is read
+from the cache). Ops are normalized + folded in order exactly like `edit` (same snapping); a failing op is skipped
+and reported. -> `{ok, output, keep [[a, b]] (outputs.segments, the renderer's own), cuts [[a, b]], duration
+(edited s), source_duration, ops [{index, op (normalized), describe, value}], dropped [{index, op, error}],
+warnings}`. No derived caption / effect ops (they never change the kept ranges).
 
 `ai`: `output ai --instruction "..." [--apply]` (or `edit --op ai`): the routed model (task `output_edit` of
 `vstudio.llm`; `claude-code` / `codex` / API / local routes all work) gets the output facts, caps, current state,
@@ -149,8 +206,9 @@ descriptions) is `{code, params, message (English), message_zh}`: the desk local
 | command | stdout |
 |---|---|
 | `output list --project P` | `{ok, dir, kind project|work, outputs [{id, file, title, item, platform, orientation, edited, steps, mode, edit_dir}]}` |
-| `output show --project P --output O` | `{ok, output {id, file, mode, canvas, fps, duration, platform, master}, caps, caps_notes, state, captions [{id, start, end, text, original, edited, removed, added}], effects [{id, effect, start, end, params, label, edited [a, b]}], timeline {segments, joins, speed, duration}, history {steps [{id, at, by, note, describe}], undo, redo}, renders [{target, quality, file, fresh}], warnings, paths}` |
-| `output edit ... --ops JSON` | the `show` document + `{step, values [per op], warnings}` |
+| `output show --project P --output O` | `{ok, output {id, file, mode, canvas, fps, duration, platform, master}, caps, caps_notes, state, captions [{id, start, end, text, original, edited, removed, added}], effects [{id, effect, start, end, params, label, edited [a, b]}], timeline {segments, joins, speed, duration}, history {steps [{id, at, by, note, describe, retimed}], undo, redo}, renders [{target, quality, file, fresh}], warnings, paths {doc, dir, renders, transcript}, words_sig, marks}` |
+| `output edit ... --ops JSON` | the `show` document + `{step {id, ops, describe, retimed?}, values [per op], warnings}` |
+| `output preview-edl ... --ops JSON` | `{ok, output, keep, cuts, duration, source_duration, ops, dropped, warnings}` (nothing written) |
 | `output ai ... --instruction T [--context JSON] [--apply]` | `{ok, context, proposed [{op, normalized, describe, why, warnings}], ops, dropped [{op, error}], summary, provider, model, cost_usd, seconds, warnings, turn, applied, step?}` |
 | `output render ...` | `{ok, output, mode, quality, targets [{target, file, cover, canvas, layout, duration, key, cached, stages [{stage, key, cached, seconds}], warnings}], seconds}`; `--json-events`: `target-start`, `stage-done`, `target-done`, `render-done` lines; `--with-ops JSON`: a before / after preview of ops that are not applied, into `renders/<target>.compare.mp4` (`compare: true`; edit.json and the manifest untouched) |
 | `output revert ... --step ID` | the `show` document + `{step, reverted}` |
@@ -164,8 +222,8 @@ Errors: exit 5 + `{ok: false, error, code, params, message, message_zh}`. Codes:
 `duplicate-effect`, `bad-param`, `bad-time`, `too-short`, `cut-no-word`, `unknown-cut`, `no-audio`, `no-words`,
 `transcribe-failed`, `captions-not-ours`, `unknown-cue`, `empty-text`, `not-faithful`, `placement-pipeline`,
 `unknown-target`, `nothing-to-undo`, `nothing-to-redo`, `unknown-step`, `already-reverted`, `revert-conflict`,
-`bad-context`, `unknown-turn`, `llm-failed`, `llm-bad-json`, `render-failed`.
+`bad-context`, `unknown-turn`, `llm-failed`, `llm-bad-json`, `render-failed`, `stale-words {expected, got}`.
 Warnings / notes: `flattened`, `captions-add-only`, `relayout-crops-burned`, `no-master`, `master-mismatch`,
 `source-changed`, `placement-auto`, `style-added-only`, `band-pipeline`, `effect-cut-away`, `param-adjusted`,
-`unknown-param`, `no-model`, `length`. Op descriptions: `op-<op>` (e.g. `op-effect-add {effect, start, end}`,
+`unknown-param`, `no-model`, `length`, `cut-splits-burned-caption {at}`. Op descriptions: `op-<op>` (e.g. `op-effect-add {effect, start, end}`,
 `op-revert {step, what}`).

@@ -111,6 +111,9 @@ def plan(rec, doc, st, tg, quality):
     full = len(tl.segs) == 1 and abs(tl.segs[0][0]) < 1e-3 and abs(tl.segs[0][1] - dur) < 0.02
     timeline = dict(segs=tl.segs, joins=tl.joins, speed=tl.speed, grade=grade, end_fade=endf,
                     duration=round(tl.duration, 3), has_audio=info["has_audio"])
+    if len(tl.segs) > 1 and info["has_audio"] and OUT.cut_strategy(rec, doc.d.get("burned")) == "hard":
+        # flattened, no burned captions: a 2-frame audio fade at every plain join (a hard cut of the finished mix)
+        timeline["join_fade"] = round(2.0 / float(rec["info"]["fps"] or 30.0), 4)
     timeline["op"] = "none" if (full and tl.speed == 1.0 and not grade and not endf) else "ffmpeg"
     timeline["key"] = sha1_json(["timeline", canvas["key"], timeline, quality if timeline["op"] != "none" else None], 16)
     sfx = sorted([[round(tl.to_edit(e["start"], "start") or 0.0, 3), e["params"]["name"], e["params"].get("gain", 1.0)]
@@ -268,13 +271,20 @@ def run_timeline(spec, src, out, quality, workdir):
     fps = info["fps"] or 30.0
     has_a = bool(info["has_audio"])
     g, segs = [], spec["segs"]
+    jd = {j["index"]: j for j in spec["joins"]}
+    jf = float(spec.get("join_fade") or 0.0)
     for k, (a, b) in enumerate(segs):
-        g.append(f"[0:v:0]trim=start={a:.4f}:end={b:.4f},setpts=PTS-STARTPTS,fps={fps:.6g},format=yuv420p,"
+        g.append(f"[0:v:0]trim=start={a:.6f}:end={b:.6f},setpts=PTS-STARTPTS,fps={fps:.6g},format=yuv420p,"
                  f"settb=AVTB[v{k}]")
         if has_a:
-            g.append(f"[0:a:0]atrim=start={a:.4f}:end={b:.4f},asetpts=PTS-STARTPTS,aresample=48000,"
+            fades = ""
+            f = min(jf, (b - a) / 3)
+            if f > 0 and k > 0 and (k - 1) not in jd:
+                fades += f",afade=t=in:st=0:d={f:.4f}"
+            if f > 0 and k < len(segs) - 1 and k not in jd:
+                fades += f",afade=t=out:st={max(0.0, b - a - f):.6f}:d={f:.4f}"
+            g.append(f"[0:a:0]atrim=start={a:.6f}:end={b:.6f},asetpts=PTS-STARTPTS{fades},aresample=48000,"
                      f"aformat=channel_layouts=stereo[a{k}]")
-    jd = {j["index"]: j for j in spec["joins"]}
     cv, ca, L = "v0", "a0", segs[0][1] - segs[0][0]
     for k in range(1, len(segs)):
         n = segs[k][1] - segs[k][0]
