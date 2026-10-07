@@ -61,7 +61,8 @@ describe('picked folders (security-scoped bookmarks)', () => {
     expect(inside('/a/bc', '/a/b', '/')).toBe(false);
     expect(inside('/a/b/', '/a/b', '/')).toBe(true);
   });
-  it('keeps bookmarks, starts them at launch, stops them on quit', () => {
+  // security-scoped bookmarks exist only in the macOS sandbox (the Mac App Store build); POSIX paths throughout
+  it.skipIf(process.platform === 'win32')('keeps bookmarks, starts them at launch, stops them on quit', () => {
     const dir = tmp();
     const started: string[] = [];
     const stopped: string[] = [];
