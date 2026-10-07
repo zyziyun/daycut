@@ -1,16 +1,19 @@
 // npm run dev: Vite dev server (renderer, HMR) + esbuild watch (main, preload) + Electron, restarted when
 // main/preload change. A previous dev run of this repo that is still alive (port 5173 / its Electron) is stopped
 // first through the pidfile it recorded (scripts/devLock.mjs) instead of failing with "Port 5173 is already in use".
+// On macOS Electron runs from a cached Daycut.app copy so the menu bar / Dock / About say Daycut (scripts/devApp.mjs).
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { context } from 'esbuild';
 import electronPath from 'electron';
 import { createServer } from 'vite';
 import { mainOptions } from './build.mjs';
+import { devElectronBinary } from './devApp.mjs';
 import { clearPidfile, pidfilePath, processGroup, takeOver, writePidfile } from './devLock.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
 const pidfile = pidfilePath(root);
+const electronBin = devElectronBinary({ root, electronPath });
 const { port } = await takeOver({ root, port: 5173, file: pidfile });
 writePidfile(pidfile, { pid: process.pid, pgid: processGroup(process.pid), port, root, startedBy: 'dev.mjs' });
 
@@ -22,7 +25,7 @@ console.log(`[dev] renderer at ${url}`);
 let child = null;
 let restarting = false;
 function launch() {
-  child = spawn(electronPath, ['.'], {
+  child = spawn(electronBin, ['.'], {
     stdio: 'inherit',
     env: { ...process.env, VITE_DEV_SERVER_URL: url },
   });

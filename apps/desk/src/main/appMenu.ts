@@ -1,15 +1,15 @@
-// Application menu + About panel, always labelled "Daycut" (the internal app name may still be the legacy one, see
-// identity.ts, so no role label is left to Electron's defaults). Rebuilt when the UI language changes.
+// Application menu + About panel, always labelled "Daycut" (every label is explicit, none is left to Electron's
+// role defaults). About strings come from the i18n adapter (en / zh-CN / fr). Rebuilt when the UI language changes.
 import fs from 'node:fs';
 import path from 'node:path';
-import { app, dialog, Menu, shell, type BrowserWindow, type MenuItemConstructorOptions } from 'electron';
-import { APP_NAME, APP_NAME_ZH, ENGINE_REPO_URL } from './identity';
+import { app, dialog, Menu, nativeImage, shell, type BrowserWindow, type MenuItemConstructorOptions } from 'electron';
+import { aboutStrings, type AboutStrings } from '../renderer/src/i18n/locales/about';
+import { APP_NAME, APP_NAME_ZH, REPO_URL } from './identity';
 
 type Lang = 'en' | 'zh-CN';
 
 const L = {
   en: {
-    about: `About ${APP_NAME}`,
     hide: `Hide ${APP_NAME}`,
     hideOthers: 'Hide Others',
     showAll: 'Show All',
@@ -19,10 +19,6 @@ const L = {
     view: 'View',
     window: 'Window',
     help: 'Help',
-    licences: 'Third-party Licences',
-    engine: 'video-studio Engine on GitHub',
-    builtOn: 'Built on the open-source video-studio engine.',
-    version: 'Version',
     services: 'Services',
     undo: 'Undo',
     redo: 'Redo',
@@ -42,7 +38,6 @@ const L = {
     close: 'Close Window',
   },
   'zh-CN': {
-    about: `关于 ${APP_NAME_ZH} ${APP_NAME}`,
     hide: `隐藏 ${APP_NAME_ZH} ${APP_NAME}`,
     hideOthers: '隐藏其他',
     showAll: '全部显示',
@@ -52,10 +47,6 @@ const L = {
     view: '显示',
     window: '窗口',
     help: '帮助',
-    licences: '第三方许可',
-    engine: 'GitHub 上的 video-studio 引擎',
-    builtOn: '基于开源的 video-studio 引擎。',
-    version: '版本',
     services: '服务',
     undo: '撤销',
     redo: '重做',
@@ -89,41 +80,52 @@ function licencesFile(res: string): string | null {
   return fs.existsSync(f) ? f : null;
 }
 
-export function aboutCredits(lang: Lang): string {
-  const chromium = process.versions.chrome.split('.')[0];
-  return [
-    L[lang].builtOn,
-    ENGINE_REPO_URL.replace('https://', ''),
-    '',
-    `Electron ${process.versions.electron} · Chromium ${chromium} · Node.js ${process.versions.node.split('.')[0]}`,
-    lang === 'en' ? 'Licences: Help → Third-party Licences' : '开源许可：帮助 → 第三方许可',
-  ].join('\n');
+const COPYRIGHT_YEAR = 2026; // electron-builder.config.cjs: copyright
+
+/** "Daycut" (en / fr) or "日剪 Daycut" (zh): the name the About panel shows. */
+export function displayName(lang: string): string {
+  return lang.startsWith('zh') ? `${APP_NAME_ZH} ${APP_NAME}` : APP_NAME;
+}
+
+/** About strings for the UI language, from the i18n adapter (src/renderer/src/i18n/locales/about.ts). */
+export function aboutText(lang: string, version = app.getVersion(), versions: { electron: string; chrome: string; node: string } = process.versions): AboutStrings {
+  return aboutStrings(lang, { app: displayName(lang), version, url: REPO_URL, year: COPYRIGHT_YEAR, versions });
+}
+
+/** The panel body under the name / version: open-source repo, runtime versions, where the licences are. */
+export function aboutCredits(lang: string, version = app.getVersion(), versions?: { electron: string; chrome: string; node: string }): string {
+  const a = aboutText(lang, version, versions);
+  return [a['about.openSource'], '', a['about.runtime'], a['about.licencesHint']].join('\n');
 }
 
 function setAbout(d: MenuDeps) {
+  const a = aboutText(d.lang);
   app.setAboutPanelOptions({
-    applicationName: d.lang === 'en' ? APP_NAME : `${APP_NAME_ZH} ${APP_NAME}`,
-    applicationVersion: app.getVersion(),
+    applicationName: displayName(d.lang),
+    applicationVersion: app.getVersion(), // macOS / Linux show it as "Version x.y.z" under the name
     version: '', // no "(build)" suffix: CFBundleVersion repeats the version
-    copyright: 'Copyright © 2026 zyziyun',
+    copyright: a['about.copyright'],
     credits: aboutCredits(d.lang),
-    website: ENGINE_REPO_URL,
-    ...(d.iconPath && process.platform === 'linux' ? { iconPath: d.iconPath } : {}),
+    website: REPO_URL,
+    // macOS takes the icon from the bundle (packaged: icon.icns; dev: the Daycut.app copy + app.dock.setIcon)
+    ...(d.iconPath && process.platform !== 'darwin' ? { iconPath: d.iconPath } : {}),
   });
 }
 
-/** Windows has no native About panel: a message box with the same content. */
+/** Windows: a message box with the same content (Daycut icon, "Daycut · Version x.y.z", repo, versions, licences). */
 function showAbout(d: MenuDeps) {
   if (process.platform !== 'win32') return app.showAboutPanel();
+  const a = aboutText(d.lang);
   const w = d.win();
   const opts = {
     type: 'none' as const,
-    title: L[d.lang].about,
-    message: `${d.lang === 'en' ? APP_NAME : `${APP_NAME_ZH} ${APP_NAME}`}`,
-    detail: `${L[d.lang].version} ${app.getVersion()}\n\n${aboutCredits(d.lang).split('\n').slice(0, -1).join('\n')}\n\nCopyright © 2026 zyziyun`,
-    buttons: ['OK', L[d.lang].licences],
+    title: a['about.menu'],
+    message: a['about.heading'],
+    detail: [a['about.openSource'], '', a['about.runtime'], '', a['about.copyright']].join('\n'),
+    buttons: ['OK', a['about.licences']],
     defaultId: 0,
     cancelId: 0,
+    ...(d.iconPath ? { icon: nativeImage.createFromPath(d.iconPath) } : {}),
   };
   void (w ? dialog.showMessageBox(w, opts) : dialog.showMessageBox(opts)).then((r) => {
     if (r.response === 1) openLicences(d);
@@ -137,6 +139,7 @@ function openLicences(d: MenuDeps) {
 
 export function installAppMenu(d: MenuDeps) {
   const t = L[d.lang];
+  const a = aboutText(d.lang);
   setAbout(d);
   const mac = process.platform === 'darwin';
   const dev = !app.isPackaged;
@@ -144,9 +147,9 @@ export function installAppMenu(d: MenuDeps) {
     label: t.help,
     role: 'help',
     submenu: [
-      ...(mac ? [] : [{ label: t.about, click: () => showAbout(d) }, { type: 'separator' as const }]),
-      { label: t.licences, click: () => openLicences(d), enabled: Boolean(licencesFile(d.res)) },
-      { label: t.engine, click: () => void shell.openExternal(ENGINE_REPO_URL) },
+      ...(mac ? [] : [{ label: a['about.menu'], click: () => showAbout(d) }, { type: 'separator' as const }]),
+      { label: a['about.licences'], click: () => openLicences(d), enabled: Boolean(licencesFile(d.res)) },
+      { label: a['about.repo'], click: () => void shell.openExternal(REPO_URL) },
     ],
   };
   const template: MenuItemConstructorOptions[] = [
@@ -155,7 +158,7 @@ export function installAppMenu(d: MenuDeps) {
           {
             label: APP_NAME,
             submenu: [
-              { label: t.about, click: () => showAbout(d) },
+              { label: a['about.menu'], click: () => showAbout(d) },
               { type: 'separator' },
               { label: t.services, role: 'services', submenu: [] },
               { type: 'separator' },

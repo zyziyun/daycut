@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { APP_NAME, LEGACY_NAME, resolveIdentity } from '../../src/main/identity';
+import { APP_NAME, applyIdentity, LEGACY_NAME, resolveIdentity } from '../../src/main/identity';
 
 function appData(dirs: Record<string, string[]>) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'daycut-id-'));
@@ -37,5 +37,22 @@ describe('identity across the video-studio desk -> Daycut rename', () => {
   it('DESK_USER_DATA (tests) overrides everything', () => {
     const root = appData({ [LEGACY_NAME]: ['settings.json'] });
     expect(resolveIdentity(root, '/tmp/x')).toEqual({ internalName: APP_NAME, userData: '/tmp/x', legacy: false });
+  });
+
+  it('a legacy install keeps its keychain name until ready, then app.getName() is Daycut', () => {
+    const root = appData({ [LEGACY_NAME]: ['settings.json'] });
+    let name = 'electron';
+    const ready: (() => void)[] = [];
+    const app = {
+      getPath: () => root,
+      setPath: () => undefined,
+      setName: (n: string) => (name = n),
+      setAppUserModelId: () => undefined,
+      once: (ev: string, f: () => void) => ev === 'ready' && ready.push(f),
+    } as unknown as Electron.App;
+    expect(applyIdentity(app, '').legacy).toBe(true);
+    expect(name).toBe(LEGACY_NAME); // the safeStorage key is read before 'ready'
+    ready.forEach((f) => f());
+    expect(name).toBe(APP_NAME);
   });
 });

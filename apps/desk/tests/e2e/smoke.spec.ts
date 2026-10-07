@@ -36,6 +36,18 @@ test('window is locked down', async () => {
   expect(page.url()).toMatch(/^app:\/\/desk\//);
 });
 
+test('the app is Daycut: name, About panel, menu', async () => {
+  const id = await app.evaluate(({ app: a, Menu }) => {
+    const top = Menu.getApplicationMenu()?.items.map((i) => i.label) ?? [];
+    const labels = (Menu.getApplicationMenu()?.items ?? []).flatMap((i) => i.submenu?.items.map((s) => s.label) ?? []);
+    return { name: a.getName(), top, labels };
+  });
+  expect(id.name).toBe('Daycut');
+  expect(id.labels).toContain('About Daycut');
+  expect(id.labels).toContain('Daycut on GitHub');
+  expect([...id.top, ...id.labels].join('|')).not.toMatch(/Electron|video-studio/);
+});
+
 test('engine starts (mock), Home and the project grid render', async () => {
   await expect(page.getByTestId('engine-status')).toContainText(/mock|demo|演示/i, { timeout: 30000 });
   await expect(page.getByTestId('home')).toBeVisible();

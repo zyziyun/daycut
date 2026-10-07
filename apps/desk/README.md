@@ -8,6 +8,7 @@ Batches → board → review → job detail (transcript edits) → publish (buil
 ```bash
 npm install          # here or at the repo root: one npm workspace install (node_modules at the repo root)
 npm run dev          # Vite + Electron; engine sidecar starts automatically, using this repo's lib/ (../..)
+                     # macOS: runs as "Daycut" from a cached Daycut.app copy of Electron (build/.cache/dev-app)
 npm run test         # vitest (unit) + python unittest (engine/tests)
 npm run test:e2e     # builds, then Playwright Electron smoke + CDP fill fixture
 npm run lint         # eslint + tsc
@@ -34,6 +35,7 @@ every call); the persona's `llm:` routes are the starting values. `DESK_AI_MOCK=
 routes.json, test.json) stands in for the engine in tests; `DESK_NO_PTY=1` forces the fallback terminal.
 
 Publish adapters: `adapters/*.json` (schema: `src/shared/publish/adapterSchema.ts`). Override or add adapters
-without rebuilding in `~/Library/Application Support/video-studio-desk/adapters/`. Selectors marked
+without rebuilding in `~/Library/Application Support/Daycut/adapters/` (`video-studio desk/adapters/` for installs
+from before the rename). Selectors marked
 `"status": "unverified"` were written without a live session — verify them, then set `verified` + `lastVerified`.
 The app never clicks publish; there is no way to express a click in an adapter.

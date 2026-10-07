@@ -5,7 +5,10 @@
 // publish browser's cookies. Renaming the app outright would orphan both: settings, API keys and platform logins
 // would silently disappear. So an existing install keeps running under its old internal name and folder (nothing is
 // copied or re-encrypted), and only a fresh install uses "Daycut". Everything the creator sees (bundle name, menus,
-// About, window title, notifications) says Daycut either way; the internal name is never shown.
+// About, window title, notifications) says Daycut either way.
+// Electron reads the name for the keychain / libsecret key once, before 'ready' (PostCreateMainMessageLoop), so a
+// legacy install is renamed back to "Daycut" as soon as 'ready' fires: app.getName() is "Daycut" for everything after
+// that, and safeStorage keeps the old key (checked: a rename at 'ready' still encrypts with "<old> Safe Storage").
 // Kept in step with electron-builder.config.cjs: appId stays com.vstudio.desk.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -15,10 +18,11 @@ export const APP_NAME_ZH = '日剪';
 export const APP_ID = 'com.vstudio.desk';
 /** productName before the rename: the userData folder and safeStorage key of every existing install. */
 export const LEGACY_NAME = 'video-studio desk';
-export const ENGINE_REPO_URL = 'https://github.com/zyziyun/daycut';
+/** the open-source monorepo (engine + this app) */
+export const REPO_URL = 'https://github.com/zyziyun/daycut';
 
 export interface Identity {
-  /** the name handed to app.setName() (keychain / libsecret key); never displayed */
+  /** the name handed to app.setName() before 'ready' (keychain / libsecret key); "Daycut" from 'ready' on */
   internalName: string;
   userData: string;
   legacy: boolean;
@@ -41,6 +45,7 @@ export function resolveIdentity(appData: string, override?: string, exists: (p: 
 export function applyIdentity(app: Electron.App, override = process.env.DESK_USER_DATA): Identity {
   const id = resolveIdentity(app.getPath('appData'), override);
   app.setName(id.internalName);
+  if (id.internalName !== APP_NAME) app.once('ready', () => app.setName(APP_NAME)); // runs before whenReady() callbacks
   app.setPath('userData', id.userData);
   if (process.platform === 'win32') app.setAppUserModelId(APP_ID); // toasts + taskbar match the installer shortcut
   return id;

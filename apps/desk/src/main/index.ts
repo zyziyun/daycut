@@ -39,6 +39,10 @@ const IS_DEV = Boolean(DEV_URL);
 const APP_ORIGIN = IS_DEV ? new URL(DEV_URL!).origin : 'app://desk';
 const RENDERER_DIR = path.join(__dirname, '../renderer');
 const RES = app.isPackaged ? process.resourcesPath : app.getAppPath();
+/** Daycut brand icons (scripts/brand/icons.mjs): 256 px for windows / About on Windows + Linux, 1024 px for the dev Dock. */
+const ICON_256 = path.join(RES, 'packaging/resources/icons/256x256.png');
+const ICON_DOCK = path.join(RES, 'packaging/resources/icon.png');
+const brandIcon = (f: string) => (fs.existsSync(f) ? f : undefined);
 
 // Daycut name + the profile folder / keychain key of this install (old video-studio desk installs keep theirs);
 // DESK_USER_DATA: tests, isolated profile
@@ -370,6 +374,7 @@ function createWindow() {
     minHeight: 700,
     backgroundColor: '#0E1113',
     title: APP_NAME,
+    ...(process.platform !== 'darwin' && brandIcon(ICON_256) ? { icon: ICON_256 } : {}), // macOS: the bundle icon
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     show: false,
     webPreferences: {
@@ -632,8 +637,7 @@ function loadAssetManifest(): AssetManifest {
 
 // ---------------------------------------------------------------- lifecycle
 function menu() {
-  const iconPath = path.join(RES, 'packaging/resources/icons/256x256.png');
-  installAppMenu({ lang: settings?.get().lang ?? 'en', res: RES, win: () => win, iconPath: fs.existsSync(iconPath) ? iconPath : undefined });
+  installAppMenu({ lang: settings?.get().lang ?? 'en', res: RES, win: () => win, iconPath: brandIcon(ICON_256) });
 }
 
 if (!app.requestSingleInstanceLock()) {
@@ -653,7 +657,9 @@ if (!app.requestSingleInstanceLock()) {
     settings = new SettingsStore(app.getPath('userData'));
     mainLog(`[main] ${APP_NAME} ${app.getVersion()} · profile ${app.getPath('userData')}${IDENTITY.legacy ? ' (kept from video-studio desk)' : ''}`);
     menu();
-    if (!app.isPackaged && process.platform === 'darwin') app.dock?.setIcon(path.join(RES, 'packaging/resources/icon.png'));
+    // dev: the Dock (and the About panel, which uses the same NSApp icon) shows Daycut, not the Electron atom. The
+    // packaged app and the dev Daycut.app copy (scripts/devApp.mjs) carry icon.icns already; this covers `electron .`.
+    if (!app.isPackaged && process.platform === 'darwin' && brandIcon(ICON_DOCK)) app.dock?.setIcon(ICON_DOCK);
     syncRoutesFile(app.getPath('userData'), settings.get().aiRoutes);
     runtime = findBundledRuntime(RES, app.isPackaged);
     assets = new AssetManager({
