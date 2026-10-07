@@ -18,12 +18,14 @@ export const PAUSE_KEEP = 0.25;
 export const PARA_GAP = 1.5;
 
 const END = /[。！？!?.…]$/;
-const ALNUM_END = /[A-Za-z0-9]$/;
-const ALNUM_START = /^[A-Za-z0-9]/;
+// a Latin word, or a Latin word with its punctuation ("posts." "everyone," "it's)"); never CJK punctuation
+const LATIN_END = /[A-Za-z0-9%]$|[A-Za-z0-9%][.,!?;:)\]"'”’]+$/;
+const LATIN_START = /^["“‘(]?[A-Za-z0-9]/;
 
-/** A space goes between two Latin / number tokens only (Chinese runs together). */
+/** A space goes between two Latin / number words, also after Latin punctuation ("posts. Hi"); Chinese runs together. */
 export function spaceBefore(prev: Word | undefined, cur: Word): boolean {
-  return !!prev && ALNUM_END.test(prev.w) && ALNUM_START.test(cur.w);
+  if (!prev || !LATIN_END.test(prev.w) || !LATIN_START.test(cur.w)) return false;
+  return !/\d[.,]$/.test(prev.w) || !/^\d/.test(cur.w); // "3." "5" / "1," "000" stay one number
 }
 
 /** Paragraphs: a new one after a pause over 1.5 s, or at a sentence end once the paragraph is long enough. */
@@ -214,6 +216,11 @@ export function joinWords(words: Word[], a: number, b: number): string {
   let s = '';
   for (let i = a; i <= b && i < words.length; i++) s += (spaceBefore(words[i - 1], words[i]) && i > a ? ' ' : '') + words[i].w;
   return s;
+}
+
+/** Plain text of a list of words (same spacing rules). */
+export function wordsText(words: Word[]): string {
+  return joinWords(words, 0, words.length - 1);
 }
 
 /** Replace one word inside a caption line (the first match after the words before it), for a caption-only fix. */

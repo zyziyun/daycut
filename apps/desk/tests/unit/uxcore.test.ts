@@ -28,6 +28,7 @@ import {
   segments,
   selectionInfo,
   spaceBefore,
+  wordsText,
   toggleGap,
   toggleRange,
   wordIndexAt,
@@ -130,6 +131,15 @@ describe('the transcript', () => {
     expect(spaceBefore(W[0], W[1])).toBe(false); // 去给Lakeside (Chinese + English run together)
     expect(spaceBefore(W[1], W[2])).toBe(true);
     expect(joinWords(W, 0, 3)).toBe('去给Lakeside City College，');
+  });
+  it('keeps a space after Latin punctuation, never in Chinese', () => {
+    const w = (x: string, t: number) => ({ w: x, t, te: t + 0.2 });
+    const en = ['Thanks', 'for', 'the', 'posts.', 'Hi,', 'everyone!', '"Really"', 'works.', '(see', 'it)'].map(w);
+    expect(joinWords(en, 0, en.length - 1)).toBe('Thanks for the posts. Hi, everyone! "Really" works. (see it)');
+    const zh = ['我们', '今天', '讲', 'RAG，', '然后', '你好。', '再见'].map(w);
+    expect(joinWords(zh, 0, zh.length - 1)).toBe('我们今天讲RAG，然后你好。再见');
+    expect(joinWords(['3.', '5', 'x'].map(w), 0, 2)).toBe('3.5 x');
+    expect(wordsText(en.slice(3, 5))).toBe('posts. Hi,');
     expect(selectionInfo(W, 3, 1)).toEqual({ n: 3, secs: 1.6 - 0.45 });
   });
   it('kept ranges <-> what the player skips; applied cuts collapse to a marker', () => {

@@ -8,6 +8,7 @@ import type { EditOp, EffectDef, EffectInstance } from '../../../../shared/v04';
 import { fmtClock, getLang, has, t, tk, type MessageKey } from '../../i18n';
 import { pauses } from '../../lib/chatEdit';
 import { snapEdge } from '../../lib/timeline';
+import { wordsText } from '../../lib/transcript';
 import { media } from '../kit';
 import { effectLabel, humanizeParam } from '../msg';
 import { FrameAt } from './Frame';
@@ -92,7 +93,7 @@ export function EffectCard({ env, op, onSubmit, onCancel, onRemove, okLabel }: {
   const [rng, setRng] = useState<[number, number]>([r3(a0), r3(Math.min(doc.duration, b0))]);
   useEffect(() => {
     if ('text' in (def?.params ?? {}) && !params.text) {
-      const said = doc.words.filter((w) => w.t >= rng[0] - 0.01 && w.te <= rng[1] + 0.01).map((w) => w.w).join('').slice(0, 8);
+      const said = wordsText(doc.words.filter((w) => w.t >= rng[0] - 0.01 && w.te <= rng[1] + 0.01)).slice(0, 8);
       setParams((p) => ({ ...p, text: said || firstWord?.w || '' }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -298,7 +299,7 @@ export function CaptionsCard({ env, ops, onSubmit, onCancel, okLabel }: { env: C
   const [look, setLook] = useState<'clean' | 'bold' | 'boxed'>('clean');
   const [pos, setPos] = useState<string>(st0?.position ?? style.position ?? 'bottom');
   const [word, setWord] = useState('');
-  const [addText, setAddText] = useState(() => (ours ? '' : doc.words.filter((w) => w.t >= a - 0.01 && w.te <= (env.sel?.b ?? a + 2.5) + 0.01).map((w) => w.w).join('')));
+  const [addText, setAddText] = useState(() => (ours ? '' : wordsText(doc.words.filter((w) => w.t >= a - 0.01 && w.te <= (env.sel?.b ?? a + 2.5) + 0.01))));
   const cands = useMemo(() => [...new Set([...kw, ...doc.words.filter((w) => w.w.length >= 2 && w.t >= a && w.t <= b).map((w) => w.w)])].slice(0, 4), [kw, doc.words, a, b]);
   const build = (): EditOp[] => {
     if (!ours)
@@ -456,8 +457,8 @@ export function TrimCard({ env, ops, onSubmit, onCancel, onCompare, comparing, o
   };
   const built = build();
   const lenAfter = b - a - built.filter((o) => o.op === 'cut').reduce((s, o) => s + ((o as { end: number }).end - (o as { start: number }).start), 0);
-  const headW = words.filter((w) => w.t >= a).slice(0, 4).map((w) => w.w).join('');
-  const tailW = words.filter((w) => w.te <= b).slice(-3).map((w) => w.w).join('');
+  const headW = wordsText(words.filter((w) => w.t >= a).slice(0, 4));
+  const tailW = wordsText(words.filter((w) => w.te <= b).slice(-3));
   return (
     <Card
       kind="trim"

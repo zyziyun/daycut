@@ -7,6 +7,7 @@ import type { EditBody, EditResult, JobEditInfo } from '../../../shared/v02';
 import { t, tk } from '../i18n';
 import { useEngine } from '../lib/engine';
 import { hms } from '../lib/format';
+import { wordsText } from '../lib/transcript';
 import { EdgeEditor } from './SegmentReview';
 import { ErrorBox, Media } from './ui';
 
@@ -302,7 +303,7 @@ function InnerCut({ info, getTime, onEdit }: { info: JobEditInfo; getTime: () =>
   if (!info.range) return <div className="muted small">{t('edit.noRange')}</div>;
   // the player plays the clip from the start of its source range (output ≈ source - range start before cuts)
   const fromPlayer = () => Math.round((info.range![0] + getTime()) * 100) / 100;
-  const words = a != null && b != null && b > a ? info.words.filter((w) => w.t >= a - 0.05 && w.te <= b + 0.05).map((w) => w.w).join('') : '';
+  const words = a != null && b != null && b > a ? wordsText(info.words.filter((w) => w.t >= a - 0.05 && w.te <= b + 0.05).map((w) => ({ w: w.w, t: w.t, te: w.te }))) : '';
   const ok = a != null && b != null && b > a && a >= info.range[0] && b <= info.range[1];
   return (
     <div className="col" style={{ gap: 6 }} data-testid="cut-editor">
