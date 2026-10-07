@@ -512,3 +512,39 @@ def test_cli_revert_chat_context(tmp_path, synth):
     assert json.loads(r.stdout)["turn"]["status"] == "discarded"
     r = _cli("revert", "--project", w, "--output", oid, "--json")
     assert r.returncode == 5 and json.loads(r.stdout)["code"] == "bad-param"
+
+
+# --------------------------------------------------------------------------- BB-15: English terms in Chinese speech
+def test_join_subwords_mixed_chinese_english():
+    from vstudio import asr
+    raw = [dict(word="就是", start=14.0, end=14.06), dict(word="ind", start=14.06, end=15.24),
+           dict(word="ex", start=15.24, end=15.44), dict(word="ing", start=15.44, end=15.58),
+           dict(word=" pipeline,", start=15.58, end=15.82), dict(word="s", start=18.58, end=18.98, probability=0.4),
+           dict(word="au", start=18.98, end=19.12, probability=0.9), dict(word="ce,", start=19.12, end=19.9),
+           dict(word="然后", start=19.9, end=20.2), dict(word="E", start=26.8, end=27.18),
+           dict(word="mb", start=27.18, end=27.28), dict(word="ed", start=27.28, end=27.34),
+           dict(word="ded", start=27.34, end=27.42), dict(word="的话", start=27.42, end=27.6),
+           dict(word="r", start=27.6, end=27.7)]
+    got = asr.join_subwords(raw)
+    assert [w["word"].strip() for w in got] == ["就是", "indexing", "pipeline,", "sauce,", "然后", "Embedded", "的话", "r"]
+    s = next(w for w in got if w["word"] == "sauce,")
+    assert (s["start"], s["end"], s["probability"]) == (18.58, 19.9, 0.4)
+    # an English transcript keeps its words (whisper's leading space starts each one); a gap splits too
+    en = [dict(word=" Hello", start=0, end=0.4), dict(word=" world", start=0.4, end=0.8), dict(word=" don", start=0.9, end=1.0),
+          dict(word="'t", start=1.0, end=1.1), dict(word="go", start=2.0, end=2.2)]
+    assert [w["word"].strip() for w in asr.join_subwords(en)] == ["Hello", "world", "don't", "go"]
+    # separate words written without spaces (another tool's word list) keep their gap: never glued together
+    sep = [dict(word="去给", start=0, end=0.3), dict(word="Lakeside", start=0.34, end=0.8),
+           dict(word="City", start=0.84, end=1.1), dict(word="College，", start=1.14, end=1.6)]
+    assert [w["word"] for w in asr.join_subwords(sep)] == ["去给", "Lakeside", "City", "College，"]
+
+
+def test_editor_words_join_subwords_and_redo_old_split_cache():
+    from vstudio.project import outputs as O
+    W = O._flat_words(dict(segments=[dict(words=[dict(word="这个", start=0, end=0.3), dict(word="s", start=0.3, end=0.4),
+                                                  dict(word="au", start=0.4, end=0.5), dict(word="ce", start=0.5, end=0.7)])]))
+    assert [w["w"] for w in W] == ["这个", "sauce"]
+    old = dict(words=[dict(w="这个", t=0, te=0.3), dict(w="s", t=0.3, te=0.4), dict(w="au", t=0.4, te=0.5)])
+    assert O._split_terms(old) and not O._split_terms(dict(old, joined=1))
+    assert not O._split_terms(dict(words=[dict(w="Hello", t=0, te=0.4), dict(w="world", t=0.4, te=0.8)]))  # English
+    assert not O._split_terms(dict(words=[dict(w="这个", t=0, te=0.3), dict(w="RAG", t=0.3, te=0.6)]))

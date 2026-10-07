@@ -650,7 +650,7 @@ def words(doc, required=True):
     folder (``transcript.json``). -> [{"w","t","te"}] ([] when unavailable and not required)."""
     path = os.path.join(doc.dir, "transcript.json")
     tr = read_json(path, None)
-    if isinstance(tr, dict) and tr.get("sig") == doc.d["source_sig"]:
+    if isinstance(tr, dict) and tr.get("sig") == doc.d["source_sig"] and not _split_terms(tr):
         return tr["words"]
     if not doc.rec["info"]["has_audio"]:
         if required:
@@ -678,8 +678,23 @@ def words(doc, required=True):
                 row["p"] = round(float(w["p"]), 3)
             W.append(row)
     os.makedirs(doc.dir, exist_ok=True)
-    write_json(path, dict(sig=doc.d["source_sig"], file=doc.rec["file"], words=W, at=_stamp()))
+    write_json(path, dict(sig=doc.d["source_sig"], file=doc.rec["file"], words=W, at=_stamp(), joined=1))
     return W
+
+
+_LATIN = re.compile(r"[A-Za-z0-9']+")
+
+
+def _split_terms(tr):
+    """A transcript cached before sub-word joining (no ``joined``) of Chinese speech with English tokens side by side:
+    it may show "s au ce" for "source", so it is transcribed again once."""
+    if tr.get("joined"):
+        return False
+    W = tr.get("words") or []
+    if not any(re.search(r"[\u3040-\u30ff\u4e00-\u9fff]", str(w.get("w", ""))) for w in W):
+        return False
+    return any(_LATIN.fullmatch(str(a.get("w", ""))) and _LATIN.match(str(b.get("w", ""))) and
+               float(b.get("t", 0)) - float(a.get("te", 0)) <= 0.02 for a, b in zip(W, W[1:]))
 
 
 def _flat_words(raw):
@@ -689,9 +704,10 @@ def _flat_words(raw):
         segs = [dict(words=[dict(word=w.get("w", w.get("word", "")), start=w.get("t", w.get("start")),
                                  end=w.get("te", w.get("end")), probability=w.get("p", w.get("probability")))
                             for w in raw["words"]])]
+    from vstudio.asr import join_subwords
     out = []
     for s in segs or []:
-        for w in s.get("words") or []:
+        for w in join_subwords(s.get("words") or []):      # "s" "au" "ce" in Chinese speech -> "sauce"
             txt = str(w.get("word", "")).strip()
             if not txt:
                 continue

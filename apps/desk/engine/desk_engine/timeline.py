@@ -210,7 +210,8 @@ class Strips:
     def _engine_words(self, path):
         r = self.outputs.runner
         code = ("import json,sys\nfrom vstudio import asr\ntr=asr.transcribe(sys.argv[1])\n"
-                "print(json.dumps(asr.words_of(tr), ensure_ascii=False))")
+                "segs=[dict(s, words=asr.join_subwords(s.get('words') or [])) for s in tr['segments']]\n"
+                "print(json.dumps(asr.words_of(dict(segments=segs)), ensure_ascii=False))")
         p = subprocess.run([r.python, "-c", code, path], capture_output=True, text=True, timeout=3600,
                            env=r.env, stdin=subprocess.DEVNULL)
         if p.returncode != 0:

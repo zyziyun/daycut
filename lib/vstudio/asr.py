@@ -596,6 +596,35 @@ def words_of(transcript):
             for s in segs for w in (s.get("words") or []) if w["word"].strip()]
 
 
+def _latin_end(text):
+    return bool(text) and text[-1].isascii() and text[-1].isalnum()
+
+
+def join_subwords(words, max_gap=0.02):
+    """Whisper-shaped words of ONE segment ([{"word", "start", "end", "probability"?}], raw text with whisper's
+    leading space) -> the same with sub-word tokens joined into words. Chinese / Japanese transcripts are split per
+    token, so an English term inside Chinese speech comes out as "s" "au" "ce," or "E" "mb" "ed" "ded": a Latin token
+    with no leading space that starts exactly where the Latin token before it ends (whisper's sub-tokens of one word
+    touch; separate words written without spaces keep a gap) belongs to the same word. A token after CJK
+    text, or with whisper's leading space, starts a new word; nothing else changes."""
+    out = []
+    for w in words or []:
+        raw = str(w.get("word", ""))
+        core = raw.strip()
+        prev = out[-1] if out else None
+        if (prev is not None and core and not raw[:1].isspace() and core[0].isascii() and (core[0].isalnum() or core[0] == "'")
+                and _latin_end(str(prev.get("word", "")).strip())
+                and float(w.get("start", 0)) - float(prev.get("end", 0)) <= max_gap):
+            prev["word"] = str(prev["word"]) + core
+            prev["end"] = w.get("end", prev.get("end"))
+            for k in ("probability", "p"):
+                if w.get(k) is not None and prev.get(k) is not None:
+                    prev[k] = min(float(prev[k]), float(w[k]))
+            continue
+        out.append(dict(w))
+    return out
+
+
 _TOK = lambda s: re.findall(r"[a-z0-9]+|[⺀-鿿豈-﫿]", s.lower().replace("’", "").replace("'", ""))
 
 

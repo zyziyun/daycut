@@ -166,9 +166,13 @@ def probe(path):
 # ------------------------------------------------------------------ transcripts
 def _words_from_asr(doc):
     words = []
+    if isinstance(doc, dict) and "segments" not in doc and "words" not in doc:
+        # an engine ASR sidecar (``<file>.asr.json``): {cache key: transcript}; the newest entry is the last one
+        doc = next((v for v in reversed(list(doc.values())) if isinstance(v, dict) and v.get("segments")), None)
     if isinstance(doc, dict):
+        from vstudio.asr import join_subwords
         for seg in doc.get("segments") or []:
-            for w in seg.get("words") or []:
+            for w in join_subwords(seg.get("words") or []):     # "s" "au" "ce" in Chinese speech -> "sauce"
                 t, te = w.get("start", w.get("t")), w.get("end", w.get("te"))
                 txt = (w.get("word") or w.get("w") or "").strip()
                 if txt and t is not None and te is not None:
