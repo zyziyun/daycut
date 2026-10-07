@@ -781,7 +781,7 @@ export const ChatPanel = forwardRef<ChatApi, Props>(function ChatPanel(p, ref) {
                 <span className="cctx" data-testid="ctx-sel">
                   <Crop className="ico" style={{ width: 13, height: 13 }} />
                   <span className="mono">{`${r1(p.sel.a)}–${r1(p.sel.b)}`}</span>
-                  {getLang() === 'zh-CN' ? '选中' : 'selected'}
+                  {t('ce.selected')}
                   <button onClick={p.onClearSel} aria-label={t('ce.ctx.remove')} data-testid="ctx-sel-x">
                     <X className="ico" style={{ width: 13, height: 13 }} />
                   </button>
