@@ -53,7 +53,10 @@ export function useResolve() {
 export function InboxScreen() {
   const { items, loading, doneToday } = useInbox();
   const q = useRouteQuery();
-  const triage = useTriageState();
+  // the "review all in a row" queue only while the route says so (?triage=1, like the editor): a queue left through
+  // the sidebar stays in sessionStorage and would otherwise put a stale "2 of 2" bar over the plain Inbox
+  const queue = useTriageState();
+  const triage = q.triage === '1' ? queue : null;
   const [proj, setProj] = useState<string>('');
   const [skipped, setSkipped] = useState<string[]>([]);
   const [importing, setImporting] = useState(false);
