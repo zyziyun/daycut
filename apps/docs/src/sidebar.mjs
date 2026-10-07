@@ -1,0 +1,54 @@
+// Sidebar. Page labels come from each page's title in its locale; group labels are translated here.
+const g = (label, zh, fr, es, items, collapsed = false) => ({
+  label,
+  translations: { 'zh-CN': zh, fr, es },
+  collapsed,
+  items,
+});
+
+export const sidebar = [
+  g('Getting started', '快速开始', 'Premiers pas', 'Primeros pasos', [
+    'start/what-is-reelfold',
+    'start/install-mac',
+    'start/install-skill',
+    'start/first-project',
+  ]),
+  g('Concepts', '核心概念', 'Concepts', 'Conceptos', [
+    'concepts/projects',
+    'concepts/recipes',
+    'concepts/batch-review',
+    'concepts/output-edits',
+    'concepts/themes',
+    'concepts/ai-providers',
+    'concepts/publishing',
+    'concepts/privacy',
+  ]),
+  g('Guides', '使用指南', 'Guides', 'Guías', [
+    'guides/talking-head',
+    'guides/long-video-to-clips',
+    'guides/podcast-clips',
+    'guides/course-slicing',
+    'guides/promo-recut',
+    'guides/photo-story',
+    'guides/vlog',
+    'guides/explainer',
+    'guides/covers',
+    'guides/multi-platform',
+    'guides/batch-100',
+    'guides/scheduling-publishing',
+    'guides/studios',
+  ]),
+  g('Example prompts', '示例指令', 'Exemples de demandes', 'Ejemplos de peticiones', ['examples']),
+  g('Reference', '参考', 'Référence', 'Referencia', [
+    'reference',
+    'reference/cli',
+    'reference/persona',
+    'reference/platforms',
+    'reference/effects',
+    'reference/captions',
+    'reference/messages',
+    g('Workflows', '工作流', 'Workflows', 'Flujos de trabajo', [{ autogenerate: { directory: 'reference/workflows' } }], true),
+    g('Engine notes', '引擎说明', 'Notes moteur', 'Notas del motor', [{ autogenerate: { directory: 'reference/engine' } }], true),
+  ]),
+  g('Help', '帮助', 'Aide', 'Ayuda', ['help/troubleshooting', 'help/faq', 'contributing']),
+];

@@ -1,0 +1,18 @@
+---
+// Header right side: links back to the main site (same locale), Download, then the default GitHub icon.
+import Default from '@astrojs/starlight/components/SocialIcons.astro';
+
+const lang = Astro.locals.starlightRoute.lang;
+const L = {
+  en: { home: '/', dl: 'Download', site: 'reelfold.com' },
+  'zh-CN': { home: '/zh/', dl: '下载', site: '官网' },
+  fr: { home: '/fr/', dl: 'Télécharger', site: 'reelfold.com' },
+  es: { home: '/', dl: 'Descargar', site: 'reelfold.com' },
+}[lang] ?? { home: '/', dl: 'Download', site: 'reelfold.com' };
+---
+
+<nav class="rf-sitelinks" aria-label="Reelfold">
+  <a class="rf-hide-s" href={L.home}>{L.site}</a>
+  <a class="rf-dl rf-hide-s" href="https://github.com/zyziyun/reelfold/releases/latest">{L.dl}</a>
+</nav>
+<Default />

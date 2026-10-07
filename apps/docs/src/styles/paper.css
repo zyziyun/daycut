@@ -1,0 +1,453 @@
+/* Reelfold "Paper" theme for Starlight: warm paper, ink, one teal accent, serif display headings.
+   Tokens match the site redesign (Direction F). Contrast: ink2 7.8:1, ink3 5.2:1, teal 5.1:1 on paper. */
+
+:root {
+  --rf-paper: #f4f0e8;
+  --rf-paper2: #ece6db;
+  --rf-card: #fbf9f5;
+  --rf-ink: #1c1a17;
+  --rf-ink2: #4f4943;
+  --rf-ink3: #6b6359;
+  --rf-rule: rgba(28, 26, 23, 0.13);
+  --rf-teal: #0a7266;
+  --rf-serif: 'Instrument Serif', 'Instrument Serif Fallback', Georgia, serif;
+
+  --sl-font: 'Inter Variable', Inter, 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans SC', system-ui, -apple-system,
+    'Segoe UI', sans-serif;
+  --sl-font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --sl-text-base: 1rem;
+  --sl-line-height: 1.7;
+  --sl-content-width: 46rem;
+  --sl-sidebar-width: 17.5rem;
+  --sl-nav-height: 4rem;
+  --sl-text-h1: 2.9rem;
+  --sl-text-h2: 2rem;
+  --sl-text-h3: 1.45rem;
+  --sl-text-h4: 1.1rem;
+  --sl-text-title: 2.75rem;
+}
+
+/* Dark ("ink") */
+:root {
+  --sl-color-accent-low: #12302c;
+  --sl-color-accent: #3fae9f;
+  --sl-color-accent-high: #a7e3d9;
+  --sl-color-white: #f2ece2;
+  --sl-color-gray-1: #e4ddd1;
+  --sl-color-gray-2: #c9c1b4;
+  --sl-color-gray-3: #a59d91;
+  --sl-color-gray-4: #7a7268;
+  --sl-color-gray-5: #4a443d;
+  --sl-color-gray-6: #2a2622;
+  --sl-color-black: #1a1815;
+  --rf-rule: rgba(242, 236, 226, 0.12);
+  --rf-card: #221f1b;
+  --rf-teal: #4fc1b0;
+  --sl-color-blue-low: #142b28;
+  --sl-color-blue: #3fae9f;
+  --sl-color-blue-high: #b5e6de;
+  --sl-color-purple-low: #142b28;
+  --sl-color-purple: #3fae9f;
+  --sl-color-purple-high: #b5e6de;
+  --sl-color-orange-low: #33281a;
+  --sl-color-orange: #d39b3c;
+  --sl-color-orange-high: #f1d9ad;
+  --sl-color-green-low: #142b28;
+  --sl-color-green: #3fae9f;
+  --sl-color-green-high: #b5e6de;
+}
+
+/* Light ("paper"), the default look */
+:root[data-theme='light'] {
+  --sl-color-accent-low: #d6ebe6;
+  --sl-color-accent: #0a7266;
+  --sl-color-accent-high: #064c44;
+  --sl-color-white: #1c1a17;
+  --sl-color-gray-1: #2c2925;
+  --sl-color-gray-2: #4f4943;
+  --sl-color-gray-3: #6b6359;
+  --sl-color-gray-4: #8d857b;
+  --sl-color-gray-5: #d3cbbe;
+  --sl-color-gray-6: #ece6db;
+  --sl-color-gray-7: #f8f5ef;
+  --sl-color-black: #f4f0e8;
+  --sl-color-bg-nav: #f4f0e8;
+  --sl-color-bg-sidebar: #f4f0e8;
+  --sl-color-bg-inline-code: #ebe5d9;
+  --sl-color-hairline-light: rgba(28, 26, 23, 0.09);
+  --sl-color-hairline: rgba(28, 26, 23, 0.13);
+  --sl-color-hairline-shade: rgba(28, 26, 23, 0.2);
+  --rf-rule: rgba(28, 26, 23, 0.13);
+  --rf-card: #fbf9f5;
+  --rf-teal: #0a7266;
+  /* Aside / notice palette, kept inside the paper look: note + tip = teal, caution = ochre, danger = brick */
+  --sl-color-blue-low: #e3efec;
+  --sl-color-blue: #0a7266;
+  --sl-color-blue-high: #064c44;
+  --sl-color-purple-low: #e3efec;
+  --sl-color-purple: #0a7266;
+  --sl-color-purple-high: #064c44;
+  --sl-color-orange-low: #f3e8d2;
+  --sl-color-orange: #b07a1c;
+  --sl-color-orange-high: #6b4708;
+  --sl-color-red-low: #f4e1dc;
+  --sl-color-red: #a8432f;
+  --sl-color-red-high: #6e2617;
+  --sl-color-green-low: #e3efec;
+  --sl-color-green: #0a7266;
+  --sl-color-green-high: #064c44;
+}
+
+:root[lang='zh-CN'] {
+  --rf-serif: 'Reelfold Serif SC', 'Noto Serif SC', 'Songti SC', 'STSong', serif;
+  --sl-line-height: 1.85;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: 'cv11', 'ss01';
+}
+
+/* Header: paper with a hairline, compact wordmark */
+.header {
+  border-bottom: 1px solid var(--sl-color-hairline);
+  background: color-mix(in srgb, var(--sl-color-black) 90%, transparent);
+  backdrop-filter: blur(12px);
+}
+.site-title img {
+  height: 1.55rem;
+  width: auto;
+}
+
+/* Titles and headings: serif display, like the site */
+h1#_top,
+.sl-markdown-content :is(h1, h2, h3),
+.hero h1,
+.rf-home h2 {
+  font-family: var(--rf-serif);
+  font-weight: 400;
+  letter-spacing: -0.015em;
+  color: var(--sl-color-white);
+}
+h1#_top {
+  font-size: clamp(2.3rem, 4.4vw, var(--sl-text-title));
+  line-height: 1.04;
+}
+.sl-markdown-content h2 {
+  line-height: 1.12;
+  margin-top: 2.6rem;
+}
+.sl-markdown-content h3 {
+  line-height: 1.2;
+}
+.sl-markdown-content :is(h4, h5, h6) {
+  font-weight: 600;
+  letter-spacing: 0;
+}
+:root[lang='zh-CN'] :is(h1#_top, .sl-markdown-content :is(h1, h2, h3), .hero h1, .rf-home h2) {
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+:root[lang='zh-CN'] h1#_top {
+  line-height: 1.25;
+  font-size: clamp(2rem, 3.6vw, 2.4rem);
+}
+:root[lang='zh-CN'] .sl-markdown-content h2 {
+  font-size: 1.6rem;
+  line-height: 1.4;
+}
+:root[lang='zh-CN'] .sl-markdown-content h3 {
+  font-size: 1.22rem;
+  line-height: 1.5;
+}
+
+/* Lead paragraph under the title */
+.sl-markdown-content > p.lead,
+.rf-lead {
+  font-size: 1.15rem;
+  color: var(--sl-color-gray-2);
+}
+
+/* Body links: ink with a teal underline (calm, readable) */
+.sl-markdown-content a:not(:where(.not-content *)) {
+  color: var(--sl-color-white);
+  text-decoration-color: color-mix(in srgb, var(--sl-color-accent) 70%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+}
+.sl-markdown-content a:not(:where(.not-content *)):hover {
+  color: var(--sl-color-accent);
+}
+
+/* Sidebar: small caps group labels, teal current page */
+.sidebar-content .group-label .large {
+  font-family: var(--sl-font);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--sl-color-gray-3);
+}
+:root[lang='zh-CN'] .sidebar-content .group-label .large {
+  letter-spacing: 0.2em;
+  font-size: 0.78rem;
+}
+.sidebar-content a[aria-current='page'] {
+  background: transparent;
+  color: var(--sl-color-accent);
+  font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--sl-color-accent);
+  border-radius: 0;
+}
+.sidebar-content a {
+  font-size: 0.92rem;
+}
+
+/* Tables: ruled, no zebra */
+.sl-markdown-content table {
+  font-size: 0.92rem;
+  border-collapse: collapse;
+}
+.sl-markdown-content :is(th, td) {
+  border: 0;
+  border-bottom: 1px solid var(--sl-color-hairline);
+  padding: 0.6rem 0.9rem 0.6rem 0;
+  vertical-align: top;
+}
+.sl-markdown-content thead th {
+  border-bottom: 1px solid var(--sl-color-white);
+  font-weight: 600;
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--sl-color-gray-3);
+  background: transparent;
+}
+.sl-markdown-content tr:nth-child(2n) {
+  background: transparent;
+}
+
+/* Inline code */
+.sl-markdown-content :not(pre) > code {
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+  font-size: 0.86em;
+}
+
+/* Asides: paper cards with a left rule */
+.starlight-aside {
+  border-inline-start-width: 2px;
+  border-radius: 0 6px 6px 0;
+}
+
+/* Cards (home + section index) */
+.card {
+  border: 1px solid var(--sl-color-hairline) !important;
+  background: var(--rf-card) !important;
+  border-radius: 8px;
+  box-shadow: 0 18px 32px -28px rgba(60, 40, 10, 0.35);
+}
+.card .title {
+  font-family: var(--rf-serif);
+  font-size: 1.45rem !important;
+  font-weight: 400;
+}
+:root[lang='zh-CN'] .card .title {
+  font-weight: 600;
+  font-size: 1.15rem !important;
+}
+.card .icon {
+  color: var(--sl-color-accent);
+  background: transparent !important;
+  border: 0 !important;
+  padding: 0 !important;
+}
+.sl-link-card {
+  border-radius: 8px !important;
+  background: var(--rf-card);
+  border-color: var(--sl-color-hairline) !important;
+  box-shadow: none !important;
+}
+.sl-link-card:hover {
+  border-color: var(--sl-color-gray-4) !important;
+}
+.sl-link-card .title {
+  font-weight: 600;
+}
+
+/* Splash hero: centred, like the site */
+.hero {
+  padding-block: clamp(2.5rem, 7vw, 6rem) 0.5rem !important;
+  grid-template-columns: 100% !important;
+}
+.hero .stack {
+  text-align: center !important;
+}
+.hero .copy {
+  align-items: center !important;
+}
+.hero .copy > * {
+  max-width: 40rem;
+}
+.hero .actions {
+  justify-content: center !important;
+}
+.hero h1#_top {
+  font-size: clamp(3rem, 7vw, 5.6rem);
+  line-height: 0.96;
+  letter-spacing: -0.025em;
+}
+.hero h1 em {
+  font-style: italic;
+  white-space: nowrap;
+}
+.hero .copy > h1#_top {
+  max-width: none;
+}
+:root[lang='zh-CN'] .hero h1#_top {
+  font-size: clamp(2.5rem, 5.4vw, 4.2rem);
+  line-height: 1.15;
+}
+:root[lang='zh-CN'] .hero h1 em {
+  font-style: normal;
+  color: var(--sl-color-accent);
+}
+.hero .tagline {
+  margin-inline: auto;
+  text-wrap: balance;
+  color: var(--sl-color-gray-2);
+  font-size: clamp(1.05rem, 1.5vw, 1.22rem);
+  max-width: 38rem;
+}
+.hero .sl-link-button,
+.sl-link-button {
+  border-radius: 999px;
+  font-weight: 500;
+}
+.sl-link-button.primary {
+  background: var(--sl-color-white);
+  border-color: var(--sl-color-white);
+  color: var(--sl-color-black);
+}
+.sl-link-button.secondary {
+  border-color: var(--sl-color-hairline-shade);
+  color: var(--sl-color-white);
+}
+
+/* Home extras */
+.rf-kicker {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--sl-color-gray-3);
+  margin-top: 3rem !important;
+}
+.rf-kicker::before {
+  content: '';
+  width: 1.75rem;
+  height: 1px;
+  background: currentColor;
+}
+.rf-print {
+  background: var(--rf-card);
+  padding: clamp(8px, 1.2vw, 16px);
+  box-shadow: 0 1px 0 rgba(28, 26, 23, 0.05), 0 30px 60px -30px rgba(60, 40, 10, 0.25), 0 0 0 1px rgba(28, 26, 23, 0.06);
+  margin-block: 2rem 0.5rem;
+}
+.rf-print img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--sl-color-hairline);
+}
+.rf-caption {
+  text-align: center;
+  font-family: var(--rf-serif);
+  font-style: italic;
+  color: var(--sl-color-gray-2);
+  font-size: 1rem;
+  margin-top: 0.75rem !important;
+}
+:root[lang='zh-CN'] .rf-caption {
+  font-family: var(--sl-font);
+  font-style: normal;
+  font-size: 0.9rem;
+}
+
+/* Example-prompt tables: the prompt column reads as quoted speech */
+.rf-prompts td:nth-child(2) {
+  font-family: var(--rf-serif);
+  font-size: 1.2rem;
+  line-height: 1.4;
+  color: var(--sl-color-white);
+}
+.rf-prompts td:nth-child(3) {
+  white-space: nowrap;
+}
+:root[lang='zh-CN'] .rf-prompts td:nth-child(2) {
+  font-family: var(--sl-font);
+  font-size: 0.98rem;
+  line-height: 1.75;
+}
+
+/* Header links to the main site */
+.rf-sitelinks {
+  display: flex;
+  align-items: center;
+  gap: 1.1rem;
+  font-size: 0.88rem;
+  color: var(--sl-color-gray-2);
+  white-space: nowrap;
+}
+.rf-sitelinks a {
+  color: inherit;
+  text-decoration: none;
+}
+.rf-sitelinks a:hover {
+  color: var(--sl-color-white);
+}
+.rf-sitelinks .rf-dl {
+  border: 1px solid var(--sl-color-hairline-shade);
+  border-radius: 999px;
+  padding: 0.3rem 0.85rem;
+  color: var(--sl-color-white);
+}
+@media (max-width: 72rem) {
+  .rf-sitelinks .rf-hide-s {
+    display: none;
+  }
+}
+
+/* Focus */
+:focus-visible {
+  outline: 2px solid var(--sl-color-accent);
+  outline-offset: 3px;
+}
+
+/* Pagination + footer meta */
+.pagination-links a {
+  border-radius: 8px;
+  box-shadow: none;
+  border-color: var(--sl-color-hairline);
+}
+.pagination-links a .link-title {
+  font-family: var(--rf-serif);
+  font-size: 1.3rem;
+}
+:root[lang='zh-CN'] .pagination-links a .link-title {
+  font-weight: 600;
+  font-size: 1.05rem;
+}
+
+/* Starlight notices (fallback language, draft) as quiet paper strips */
+.sl-markdown-content .starlight-aside,
+.starlight-aside {
+  background: color-mix(in srgb, var(--sl-color-asides-border) 7%, var(--rf-card));
+}
+.content-panel .sl-container > .starlight-aside {
+  font-size: 0.85rem;
+}

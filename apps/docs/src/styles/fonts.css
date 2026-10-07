@@ -1,0 +1,24 @@
+/* Self-hosted OFL fonts only (no runtime Google Fonts).
+   Instrument Serif (display), Inter (UI/body), JetBrains Mono (code): @fontsource packages, OFL 1.1.
+   ZH display: Noto Serif SC, subset at `npm run gen` to the glyphs used in Chinese titles and headings. */
+@import '@fontsource/instrument-serif/latin-400.css';
+@import '@fontsource/instrument-serif/latin-400-italic.css';
+@import '@fontsource-variable/inter/index.css';
+@import '@fontsource/jetbrains-mono/latin-400.css';
+
+@font-face {
+  font-family: 'Reelfold Serif SC';
+  src: url('../assets/fonts/noto-serif-sc-sub.woff2') format('woff2');
+  font-weight: 500 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Metric-adjusted fallback so the serif swap does not shift layout. */
+@font-face {
+  font-family: 'Instrument Serif Fallback';
+  src: local('Georgia'), local('Times New Roman');
+  size-adjust: 88%;
+  ascent-override: 98%;
+  descent-override: 26%;
+}

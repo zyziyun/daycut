@@ -1,7 +1,7 @@
 {
   "name": "video-studio-monorepo",
   "private": true,
-  "description": "Reelfold (千剪): the open-source video-studio skill + engine (repo root), the Reelfold desktop app (apps/desk) and the website (apps/site).",
+  "description": "Reelfold (千剪): the open-source video-studio skill + engine (repo root), the Reelfold desktop app (apps/desk), the website (apps/site) and the docs (apps/docs).",
   "license": "MIT",
   "homepage": "https://reelfold.com",
   "workspaces": [
@@ -14,6 +14,9 @@
     "lint": "npm run lint -w apps/desk",
     "test": "npm run test -w apps/desk",
     "build:site": "npm run build -w apps/site",
+    "docs": "npm run dev -w apps/docs",
+    "build:docs": "npm run build -w apps/docs",
+    "build:web": "scripts/build-web.sh",
     "check": "python3 scripts/check_skill.py"
   },
   "repository": {
