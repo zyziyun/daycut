@@ -825,7 +825,7 @@ def complete(task, system, prompt, schema=None, provider=None, model=None, max_t
             if cname in CLI_PROVIDERS and code in ("auth-expired", "not-logged-in"):
                 _remember(cname, "expired" if code == "auth-expired" else "not-logged-in", str(e))
             elif cname in CLI_PROVIDERS and code == "timeout":
-                _remember(cname, "unresponsive", str(e))      # the next calls skip it for a while (fail fast)
+                _remember(cname, "unresponsive", str(e), fp="")   # next calls skip it for a while (no CLI run here)
             continue
         if cname in CLI_PROVIDERS:
             _remember(cname, "logged-in")
@@ -860,10 +860,10 @@ def _known_unresponsive(provider):
         return False
 
 
-def _remember(provider, state, detail=None):
+def _remember(provider, state, detail=None, fp=None):
     try:
         from . import llm_auth
-        llm_auth.remember(provider, state, detail)
+        llm_auth.remember(provider, state, detail, fp=fp)
     except Exception:  # noqa: BLE001
         pass
 

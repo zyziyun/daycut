@@ -251,13 +251,13 @@ def fingerprint(provider, status_out=None):
     return hashlib.sha1(json.dumps(parts, default=str).encode()).hexdigest()[:16]
 
 
-def remember(provider, state, detail=None, fp=None, force=False):
+def remember(provider, state, detail=None, fp=None):
     """Record a CLI login state (probe result, or an AI call that failed with an auth error / timed out / succeeded).
-    ``force``: also write a "logged-in" record (the health check keeps when it last saw the CLI answer)."""
+    ``fp=""``: store without a fingerprint (computing one runs the CLI, which a hung CLI would drag out)."""
     if provider not in CLIS:
         return
     d = _read_cache()
-    if state == "logged-in" and provider not in d and not force:
+    if state == "logged-in" and provider not in d:
         return                                  # nothing to clear: the common path stays file-free
     d[provider] = dict(state=state, at=time.time(), detail=(detail or "")[:200] or None,
                        fp=fp if fp is not None else fingerprint(provider))
@@ -302,8 +302,10 @@ def known_unresponsive(provider):
     the whole CLI timeout again (a dead / hung ``claude -p`` cost every plan 120 s before Codex took over)."""
     if provider not in CLIS or not os.path.exists(cache_path()):
         return False
-    e = known_state(provider)
-    return bool(e and e.get("state") == "unresponsive" and time.time() - float(e.get("at") or 0) < unresponsive_ttl())
+    # no fingerprint here: it runs `claude auth status`, which a hung CLI drags out too - the short TTL is the guard
+    e = _read_cache().get(provider)
+    return bool(isinstance(e, dict) and e.get("state") == "unresponsive"
+                and time.time() - float(e.get("at") or 0) < unresponsive_ttl())
 
 
 # ------------------------------------------------------------------ per provider
@@ -337,7 +339,7 @@ def _claude_code(probe=True, timeout=PROBE_TIMEOUT, refresh=False):
         if prc == -1 and "timed out" in perr:
             state, detail = "error", perr
             row["probe"] = dict(ran=True, state="timeout", seconds=round(time.time() - t0, 1))
-            remember("claude-code", "unresponsive", perr, fp)   # AI calls go straight to the fallback meanwhile
+            remember("claude-code", "unresponsive", perr, fp="")   # AI calls go straight to the fallback meanwhile
             return dict(row, state=state, ready=False, verified=False, detail=detail,
                         message=msg("auth-timeout", seconds=timeout))
         row["probe"] = dict(ran=True, state=state)
