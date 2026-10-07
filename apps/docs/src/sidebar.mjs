@@ -8,6 +8,7 @@ const g = (label, zh, fr, es, items, collapsed = false) => ({
 
 export const sidebar = [
   g('Getting started', '快速开始', 'Premiers pas', 'Primeros pasos', [
+    '',
     'start/what-is-reelfold',
     'start/install-mac',
     'start/install-skill',
