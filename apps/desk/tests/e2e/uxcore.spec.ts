@@ -559,6 +559,7 @@ test('first run: no projects yet -> the starting points (8 with lesson and q&a)'
     await p2.reload();
     await expect(p2.getByTestId('home-starts')).toBeVisible({ timeout: 30000 });
     await expect(p2.getByTestId('home-start')).toHaveCount(8); // + lesson clips, interview q&a (801678c)
+    await expect(p2.getByTestId('home-sample')).toBeVisible(); // "Try with a sample" above them on a first run
     await expect(p2.locator('.ux-hello h1')).toHaveText('What do you want to make?');
     await p2.getByTestId('home-start').nth(1).click();
     await expect(p2.getByTestId('composer-input')).not.toHaveValue('');

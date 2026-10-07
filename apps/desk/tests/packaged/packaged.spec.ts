@@ -55,14 +55,17 @@ interface App {
   close(): Promise<void>;
 }
 
-async function launch(extra: Record<string, string>, args: string[] = []): Promise<App> {
+async function launch(extra: Record<string, string>, args: string[] = [], opts: { realKeychain?: boolean } = {}): Promise<App> {
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'vsdesk-packaged-'));
   // hidden window; the engine cache and Hugging Face cache point at temp folders so a test never writes the user's
   const cache = fs.mkdtempSync(path.join(os.tmpdir(), 'vsdesk-packaged-cache-'));
-  const env = cleanEnv({ DESK_USER_DATA: userData, DESK_HIDE_WINDOW: '1', DESK_SHARED_CACHE: cache, DESK_HF_HUB: '', ...extra });
+  // DESK_SKIP_FIRST_RUN by default: the wizard starts the required downloads (~0.5 GB) by itself, and a quit during
+  // a download asks first (a modal that a test's SIGTERM never answers)
+  const env = cleanEnv({ DESK_USER_DATA: userData, DESK_HIDE_WINDOW: '1', DESK_SHARED_CACHE: cache, DESK_HF_HUB: '', DESK_SKIP_FIRST_RUN: '1', ...extra });
   const port = await freePort();
   // --use-mock-keychain: a rebuilt (re-signed) binary must never raise a keychain prompt on the developer's screen
-  const proc = spawn(appExecutable(), ['--use-mock-keychain', `--remote-debugging-port=${port}`, ...args], { env, stdio: 'ignore' });
+  // (the migration test opts into the real keychain with an item of its own)
+  const proc = spawn(appExecutable(), [...(opts.realKeychain ? [] : ['--use-mock-keychain']), `--remote-debugging-port=${port}`, ...args], { env, stdio: 'ignore' });
   let browser: Browser | null = null;
   for (let i = 0; i < 120 && !browser; i++) {
     try {
@@ -200,8 +203,8 @@ test('fuses are set in the built binary', async () => {
   expect(wire[FuseV1Options.EnableCookieEncryption]).toBe(ENABLE);
   expect(wire[FuseV1Options.GrantFileProtocolExtraPrivileges]).toBe(DISABLE);
   // ELECTRON_RUN_AS_NODE is ignored: the binary starts the app instead of a Node REPL evaluating our script
-  const r = spawnSync(appExecutable(), ['-e', 'console.log("ran-as-node")'], {
-    env: { ...cleanEnv({}), ELECTRON_RUN_AS_NODE: '1', DESK_HIDE_WINDOW: '1', DESK_USER_DATA: fs.mkdtempSync(path.join(os.tmpdir(), 'vsdesk-fuse-')) },
+  const r = spawnSync(appExecutable(), ['--use-mock-keychain', '-e', 'console.log("ran-as-node")'], {
+    env: { ...cleanEnv({}), ELECTRON_RUN_AS_NODE: '1', DESK_HIDE_WINDOW: '1', DESK_SKIP_FIRST_RUN: '1', DESK_USER_DATA: fs.mkdtempSync(path.join(os.tmpdir(), 'vsdesk-fuse-')) },
     timeout: 8000,
     encoding: 'utf8',
   });
@@ -267,7 +270,7 @@ test('an old profile migrates into Reelfold and its API keys still decrypt with 
   fs.writeFileSync(path.join(cur, 'migrated-from.json'), JSON.stringify({ from: 'seed', safeStorageName: NAME, at: 'seed' }));
   const env = { DESK_APP_DATA: appData, DESK_LEGACY_NAMES: NAME, DESK_USER_DATA: '', DESK_ENGINE_MOCK: '1', DESK_SKIP_FIRST_RUN: '1' };
   try {
-    const a = await launch(env);
+    const a = await launch(env, [], { realKeychain: true });
     try {
       const st = await a.page.evaluate(() => window.desk.secrets.set('openai', 'packaged-test-key-0123456789'));
       expect(st.keys.openai).toBe(true);
@@ -279,7 +282,7 @@ test('an old profile migrates into Reelfold and its API keys still decrypt with 
     fs.renameSync(cur, old);
     fs.rmSync(path.join(old, 'migrated-from.json'));
     fs.rmSync(path.join(old, 'logs'), { recursive: true, force: true });
-    const b = await launch(env);
+    const b = await launch(env, [], { realKeychain: true });
     try {
       expect((await b.page.evaluate(() => window.desk.getSettings())).lang).toBe('fr');
       expect((await b.page.evaluate(() => window.desk.secrets.status())).keys.openai).toBe(true);
