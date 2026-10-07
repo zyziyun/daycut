@@ -135,6 +135,7 @@ html, body { width: {W}px; height: {H}px; overflow: hidden; background: var(--pa
 .cap { position: absolute; font-family: {DISPLAY}; font-weight: 560; line-height: 1.16; letter-spacing: -.012em;
   color: var(--ink); }
 .cap .w { display: inline-block; opacity: 0; white-space: pre; }
+.ln { white-space: nowrap; }      /* lines are broken in Python by measuring the font: the browser must not re-wrap */
 .cap .mk { padding: 0 .12em; margin: 0 -.04em; border-radius: .12em;
   background-image: linear-gradient(var(--marker), var(--marker)); background-repeat: no-repeat;
   background-position: 0 88%; background-size: 0% 46%; }
@@ -159,7 +160,8 @@ html, body { width: {W}px; height: {H}px; overflow: hidden; background: var(--pa
 
 def _fit_caption(text, lang, layout, files):
     x0, y0, x1, y1 = layout["text"]
-    px, lines = B.fit(text, files["display"], layout["caption_px"], x1 - x0, layout["caption_lines"], lang, DISPLAY_W)
+    px, lines = B.fit(text, files["display"], layout["caption_px"], int((x1 - x0) * 0.97), layout["caption_lines"], lang,
+                      DISPLAY_W)
     return px, lines
 
 

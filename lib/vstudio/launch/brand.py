@@ -77,19 +77,24 @@ def _pil_path(path):
 
 @functools.lru_cache(maxsize=256)
 def _font(path, px, weight=None):
+    """PIL font set up like the browser renders it: variable fonts get the CSS weight and opsz = the font size
+    (font-optical-sizing: auto), so measured widths match the page."""
     from PIL import ImageFont
     f = ImageFont.truetype(_pil_path(path), int(px))
-    if weight:
-        try:                                          # variable fonts: pick the weight the CSS will use
-            axes = f.get_variation_axes()
-        except Exception:                             # noqa: BLE001 - static font
-            axes = []
-        if axes:
-            vals = [a["default"] for a in axes]
-            for i, a in enumerate(axes):
-                if a.get("name") in (b"Weight", "Weight"):
-                    vals[i] = weight
-            f.set_variation_by_axes(vals)
+    try:
+        axes = f.get_variation_axes()
+    except Exception:                                 # noqa: BLE001 - a static font has no axes
+        axes = []
+    if axes:
+        vals = [a["default"] for a in axes]
+        for i, a in enumerate(axes):
+            name = a.get("name")
+            name = name.decode() if isinstance(name, bytes) else str(name)
+            if name.lower() == "weight" and weight:
+                vals[i] = weight
+            elif name.lower() == "optical size":
+                vals[i] = max(a["minimum"], min(a["maximum"], px))
+        f.set_variation_by_axes(vals)
     return f
 
 
