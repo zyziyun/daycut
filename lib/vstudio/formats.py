@@ -39,8 +39,10 @@ import sys
 #                 "" = only the post's own tags (persona tags would be off-topic)
 #   guests        None | "ask-mask" (offer a sticker over each other participant's head only, never the frame)
 #   rules         short extra rules learned from her corrections (shown in `show`, not in the summary line)
+#   audio         "required" = the render must have sound (her voice); "optional" = silent is fine (a product demo
+#                 with kinetic captions and no music bed)
 _COMMON = dict(theme="editorial", series_labels=False, captions="zh", tag_set=None, guests=None, notes=False,
-               progress=None, hook_menu=12, rules=[])
+               progress=None, hook_menu=12, rules=[], audio="required")
 
 FORMATS = {
     "talking-head": dict(
@@ -108,18 +110,26 @@ FORMATS = {
         cover=dict(aspect="video", style="frames", retouch=False, min_luma=0.42, text="designed"),
         rules=["先估积分；放大、字幕、配乐在本地做，不花积分", "台词像真人说话，不要 AI 腔",
                "发布时打开平台自己的 AI 生成内容声明"]),
+    "launch": dict(
+        labels=dict(zh="产品发布 / 更新视频", en="Product launch video"), workflow="launch-kit",
+        speed=dict(body=1.0, hook=1.0, inserts=1.0), hooks="none", cleanup="off", captions="en", tag_set="",
+        audio="optional",
+        cover=dict(aspect="video", style="title-card", retouch=False, min_luma=0.40, text="designed"),
+        rules=["真实的产品操作录屏，不放假数据当真实数字", "动态字幕 + 推近到操作处，默认无旁白、无配乐",
+               "配乐只用有授权的本地曲库；AI 配音要标注", "平台顺序：国际平台在前，中文平台在后"]),
 }
 # recipe / workflow id -> format (intake.rules recipe ids and workflow folder names)
 BY_RECIPE = {"talkinghead": "talking-head", "promo-recut": "promo", "call-clips": "call-clips",
              "longform-to-short": "lecture-slices", "longform-course": "lecture-slices", "batch": "lecture-slices",
              "vlog": "vlog", "explainer": "explainer", "photo-story": "photo-story", "ai-video": "ai-skit",
-             "lesson-clips": "lesson-points", "interview-qa": "interview-qa"}
+             "lesson-clips": "lesson-points", "interview-qa": "interview-qa", "launch-kit": "launch"}
 ALIASES = {"口播": "talking-head", "talkinghead": "talking-head", "promo-recut": "promo", "宣传": "promo",
            "播客": "call-clips", "podcast": "call-clips", "call": "call-clips", "访谈": "call-clips",
            "lecture": "lecture-slices", "课程": "lecture-slices", "切片": "lecture-slices", "讲解": "explainer",
            "3b1b": "explainer", "文艺片": "photo-story", "photo": "photo-story", "ai-video": "ai-skit",
            "ai": "ai-skit", "短剧": "ai-skit", "知识点": "lesson-points", "lesson": "lesson-points",
-           "问答": "interview-qa", "q&a": "interview-qa", "qa": "interview-qa"}
+           "问答": "interview-qa", "q&a": "interview-qa", "qa": "interview-qa", "launch-kit": "launch",
+           "发布视频": "launch", "product launch": "launch"}
 
 
 def _merge(a, b):

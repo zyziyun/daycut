@@ -79,10 +79,14 @@ def load_post(path):
 
 
 # ------------------------------------------------------------------------------------------------ checks
-def check_video(info, prof, sources_info):
+def check_video(info, prof, sources_info, fmt=None):
     out = []
-    out.append(_item("audio", bool(info.get("has_audio")), "成片有声音", "the render has an audio track",
-                     fix_zh="音轨丢了：检查最后一步合成 / 导出是否带了 -map 0:a"))
+    if (fmt or {}).get("audio") == "optional" and not info.get("has_audio"):
+        out.append(_item("audio", None, "无声成片（这个格式默认无配乐 / 旁白）", "silent render (this format has no "
+                         "music or voice by default)", severity="info"))
+    else:
+        out.append(_item("audio", bool(info.get("has_audio")), "成片有声音", "the render has an audio track",
+                         fix_zh="音轨丢了：检查最后一步合成 / 导出是否带了 -map 0:a"))
     short = min(info["display_w"], info["display_h"])
     floor = min(prof.w, prof.h)
     if sources_info:
@@ -249,7 +253,7 @@ def run(video, fmt=None, platform=None, sources=(), speed=None, cues=None, cover
     prof = _profile(platform, info)
     sp = speed if speed is not None else ((f or {}).get("speed") or {}).get("body")
     items = []
-    items += check_video(info, prof, srcs)
+    items += check_video(info, prof, srcs, f)
     items += check_media(video, prof, media_checks and info.get("has_audio"))
     items += check_speed(info["duration"], [s["duration"] for s in srcs], sp, hook_seconds)
     items += check_captions(load_cues(cues), f, locale)
