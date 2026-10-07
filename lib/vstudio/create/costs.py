@@ -43,11 +43,13 @@ def models_for(provider):
     return list(((load_rates().get("providers") or {}).get(provider) or {}).keys())
 
 
-def snap(e, seconds):
-    """Seconds the service bills for a clip of ``seconds`` (discrete clip lengths, or min / step / max)."""
+def snap(e, seconds, resolution=None):
+    """Seconds the service bills for a clip of ``seconds`` (discrete clip lengths, or min / step / max).
+    ``clips_s_by_res`` narrows the lengths per resolution (Veo 3.1: 1080p is 8 s only)."""
     seconds = max(0.1, float(seconds or 0))
-    if e.get("clips_s"):
-        ok = sorted(e["clips_s"])
+    clips = (e.get("clips_s_by_res") or {}).get(resolution or e.get("resolution")) or e.get("clips_s")
+    if clips:
+        ok = sorted(clips)
         return float(next((v for v in ok if v >= seconds - 1e-6), ok[-1]))
     lo, hi, step = e.get("min_clip_s") or 1, e.get("max_clip_s") or 60, e.get("step_s") or 1
     v = max(lo, math.ceil((seconds - 1e-6) / step) * step)
@@ -67,7 +69,7 @@ def price_job(provider, model, seconds, resolution=None, kind="video"):
         out.update(seconds_billed=None, native_units=credits,
                    cny=round(credits * e["cny_per_credit"], 2) if e.get("cny_per_credit") else None)
         return out
-    billed = snap(e, seconds)
+    billed = snap(e, seconds, res)
     out["seconds_billed"] = billed
     cps = (e.get("credits_per_s") or {}).get(res)
     out["native_units"] = round(cps * billed) if cps else None
@@ -78,7 +80,8 @@ def price_job(provider, model, seconds, resolution=None, kind="video"):
         usd = tbl.get(str(int(billed)))
         out["cny"] = None if usd is None else round(usd * fx, 2)
     elif e.get("usd_per_s") is not None:
-        out["cny"] = round(e["usd_per_s"] * billed * fx, 2)
+        usd = e["usd_per_s"].get(res) if isinstance(e["usd_per_s"], dict) else e["usd_per_s"]
+        out["cny"] = None if usd is None else round(usd * billed * fx, 2)
     elif e.get("cny_per_s") is not None:
         out["cny"] = round(e["cny_per_s"] * billed, 2)
     elif cps and e.get("cny_per_credit"):
@@ -256,7 +259,8 @@ def check(est, series_doc, sid, allow_unknown=False, balances=None, ready=None):
 
 
 def verify(ep, estimate_id, code, max_cny, fresh):
-    """The stored estimate if (1) it exists, (2) the code matches, (3) not expired, (4) the plan did not change
+    """The stored estimate if (1) it exists, (2) the code matches and was never used for a run (one OK = one
+    submission), (3) not expired, (4) the plan did not change
     since (``fresh`` = a new build of the same stage has the same code), (5) ``max_cny`` covers it."""
     if not estimate_id or not code:
         raise CreateError("confirm-required", status=409)
@@ -265,6 +269,8 @@ def verify(ep, estimate_id, code, max_cny, fresh):
         raise CreateError("confirm-required", status=409, estimate=estimate_id)
     if est.get("confirm_code") != code:
         raise CreateError("confirm-mismatch", status=409)
+    if est.get("used"):
+        raise CreateError("confirm-used", status=409)
     if time.time() > float(est.get("expires_at") or 0):
         raise CreateError("confirm-expired", status=409)
     if fresh["confirm_code"] != code:

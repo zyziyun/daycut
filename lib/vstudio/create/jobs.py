@@ -15,6 +15,8 @@ finals = the spend gate first (costs.verify + costs.check + provider quotes), th
 manual (即梦) units get a prompt sheet and wait for the files; record units wait for the recorder; card / reuse
 shots are made in post.
 """
+import contextlib
+import fcntl
 import glob
 import os
 import shutil
@@ -36,6 +38,20 @@ POLL_LIMIT = float(os.environ.get("VSTUDIO_CREATE_POLL_LIMIT_S", "1800"))
 def lock(eid):
     with _glock:
         return _locks.setdefault(eid, threading.RLock())
+
+
+@contextlib.contextmanager
+def submit_lock(eid):
+    """This thread's episode lock + a file lock, so two desk processes (double click, two windows) cannot both
+    pass the spend gate with the same OK."""
+    with lock(eid):
+        d = store.episode_dir(eid)
+        with open(os.path.join(d, ".submit.lock"), "a") as f:
+            fcntl.flock(f, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(f, fcntl.LOCK_UN)
 
 
 def context(eid):
@@ -143,8 +159,10 @@ def build_job(ep, bible, unit):
     job = PL.unit_job(cfg, u)
     e = costs.entry(unit["provider"], unit["model"]) or {}
     job.unit = unit["id"]
-    job.duration = costs.snap(e, unit["seconds"]) if e else unit["seconds"]
     job.resolution = e.get("resolution") or job.resolution
+    job.duration = costs.snap(e, unit["seconds"], job.resolution) if e else unit["seconds"]
+    if e.get("api_model"):              # the service's own model id when it differs from Reelfold's key
+        job.model = os.environ.get(e.get("api_model_env") or "", "") or e["api_model"]
     job.extra = dict(job.extra or {}, rationale=f"Shot {', '.join(unit['shots'])} of the user's own short.")
     if PR.fake_mode() and unit.get("hard"):
         job.extra["fake_takes"] = 2
@@ -325,9 +343,10 @@ class Run:
 
 def run_finals(eid, estimate_id, confirm_code, max_cny, allow_unknown=False, only=None, on_event=None,
                hard_first=True, early_stop=True):
-    ep, s, fmt, bible, est, routes, units = gate(eid, estimate_id, confirm_code, max_cny, allow_unknown, only)
-    with lock(eid):
+    with submit_lock(eid):              # gate + "this OK is used" in one step: a double click submits once
+        ep, s, fmt, bible, est, routes, units = gate(eid, estimate_id, confirm_code, max_cny, allow_unknown, only)
         ep = store.load_episode(eid)
+        ep["estimates"][est["id"]]["used"] = store.stamp()
         try:
             os.remove(os.path.join(store.work_dir(ep), "STOP"))
         except OSError:

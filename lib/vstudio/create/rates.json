@@ -1,38 +1,54 @@
 {
- "version": "2026-10-06",
+ "version": "2026-10-07",
  "currency": "CNY",
  "fx": {"USD": 7.1},
- "note": "Estimates only: each service's own price, shown before a charge, wins. verified=false rates come from docs or observed in-app prices and must be re-checked (RESEARCH.md).",
+ "note": "Estimates only: each service's own price, shown before a charge, wins. verified=true = read on the vendor's own pricing page on checked_at; verified=false = docs, press or in-app observation, re-check before trusting (creator/RESEARCH.md).",
  "providers": {
   "kling-mcp": {
    "kling-video-v3_0_omni": {"label": "Kling 3.0", "unit": "second", "resolution": "1080p",
-                              "credits_per_s": {"1080p": 12, "720p": 8}, "cny_per_credit": 0.0833,
+                              "credits_per_s": {"1080p": 12, "720p": 9}, "cny_per_credit": 0.0833,
                               "min_clip_s": 5, "max_clip_s": 10, "step_s": 1, "native_audio": true,
-                              "seen_at": "2026-09-14", "source": "observed in the Kling app (5 s 1080p = 60 credits); ¥ per credit from the membership price", "verified": false},
+                              "seen_at": "2026-09-14", "checked_at": "2026-10-07",
+                              "source": "credits/s: observed in the Kling app (5 s 1080p = 60 credits) and Kling's MCP guide as quoted by third parties (with native audio: 1080p 12, 720p 9; without: 8 / 6). MCP spends paid credits only (no bonus credits, no off-peak free generation); non-members get one task at a time. Yuan per credit is from the membership price, not an official per-credit price. kling.ai/app/mcp/guide did not render for a fetch.",
+                              "verified": false},
    "kling-image-v3_0_omni": {"label": "Kling image", "unit": "image", "credits_per_image": 2, "cny_per_credit": 0.0833,
                               "seen_at": "2026-09-14", "source": "observed in the Kling app", "verified": false}
   },
   "minimax": {
    "MiniMax-Hailuo-02": {"label": "Hailuo 02", "unit": "clip", "resolution": "768p",
-                         "usd_per_clip": {"768p": {"6": 0.28, "10": 0.56}, "1080p": {"6": 0.49}},
-                         "clips_s": [6, 10], "native_audio": false,
-                         "seen_at": "2026-10-03", "source": "MiniMax open platform pricing page", "verified": false}
+                         "usd_per_clip": {"768p": {"6": 0.28, "10": 0.56}, "1080p": {"6": 0.49}, "512p": {"6": 0.10, "10": 0.15}},
+                         "cny_per_clip_cn": {"768p": {"6": 2.00, "10": 4.00}, "1080p": {"6": 3.50}, "512p": {"6": 0.60, "10": 1.00}},
+                         "clips_s": [6, 10], "clips_s_by_res": {"1080p": [6]}, "native_audio": false,
+                         "seen_at": "2026-10-03", "checked_at": "2026-10-07",
+                         "source": "https://platform.minimax.io/docs/guides/pricing-paygo (USD, api.minimax.io, the adapter's default host) and https://platform.minimax.cn/docs/guides/pricing-paygo.md (CNY, China platform; its keys need MINIMAX_API_BASE). Both list Hailuo 02 under 'legacy/historical' models; MiniMax-H3 (per-second, V2 API) is current and not wired in yet. Model, 6/10 s at 768P and 6 s at 1080P confirmed on https://platform.minimax.io/docs/api-reference/video-generation-t2v.",
+                         "verified": true}
   },
   "veo": {
-   "veo-3.1-fast": {"label": "Veo 3.1 Fast", "unit": "second", "resolution": "1080p", "usd_per_s": 0.12,
-                    "clips_s": [4, 6, 8], "native_audio": true,
-                    "seen_at": "2026-10-03", "source": "Gemini API pricing (with audio)", "verified": false},
-   "veo-3.1-lite": {"label": "Veo 3.1 Lite", "unit": "second", "resolution": "720p", "usd_per_s": 0.05,
-                    "clips_s": [4, 6, 8], "native_audio": true,
-                    "seen_at": "2026-10-03", "source": "Gemini API pricing", "verified": false},
-   "veo-3.1": {"label": "Veo 3.1", "unit": "second", "resolution": "1080p", "usd_per_s": 0.40,
-               "clips_s": [4, 6, 8], "native_audio": true,
-               "seen_at": "2026-10-03", "source": "Gemini API pricing (with audio)", "verified": false}
+   "veo-3.1-fast": {"label": "Veo 3.1 Fast", "unit": "second", "resolution": "1080p",
+                    "usd_per_s": {"720p": 0.10, "1080p": 0.12},
+                    "clips_s": [4, 6, 8], "clips_s_by_res": {"1080p": [8]}, "native_audio": true,
+                    "seen_at": "2026-10-03", "checked_at": "2026-10-07",
+                    "source": "https://ai.google.dev/gemini-api/docs/pricing (audio included, billed only when a video is generated); durations and '1080p (8s length only)' from https://ai.google.dev/gemini-api/docs/veo. Model ids are still *-preview.",
+                    "verified": true},
+   "veo-3.1-lite": {"label": "Veo 3.1 Lite", "unit": "second", "resolution": "720p",
+                    "usd_per_s": {"720p": 0.05, "1080p": 0.08},
+                    "clips_s": [4, 6, 8], "clips_s_by_res": {"1080p": [8]}, "native_audio": true,
+                    "seen_at": "2026-10-03", "checked_at": "2026-10-07",
+                    "source": "https://ai.google.dev/gemini-api/docs/pricing; https://ai.google.dev/gemini-api/docs/veo",
+                    "verified": true},
+   "veo-3.1": {"label": "Veo 3.1", "unit": "second", "resolution": "1080p", "usd_per_s": {"720p": 0.40, "1080p": 0.40},
+               "clips_s": [4, 6, 8], "clips_s_by_res": {"1080p": [8]}, "native_audio": true,
+               "seen_at": "2026-10-03", "checked_at": "2026-10-07",
+               "source": "https://ai.google.dev/gemini-api/docs/pricing; https://ai.google.dev/gemini-api/docs/veo",
+               "verified": true}
   },
   "seedance-ark": {
    "seedance-2": {"label": "Seedance (Ark API)", "unit": "second", "resolution": "720p", "cny_per_s": 1.0,
+                  "api_model": "doubao-seedance-2-0-260128", "api_model_env": "ARK_SEEDANCE_MODEL",
                   "min_clip_s": 4, "max_clip_s": 15, "step_s": 1, "native_audio": true,
-                  "seen_at": "2026-10-03", "source": "Volcengine Ark pricing", "verified": false}
+                  "seen_at": "2026-10-03", "checked_at": "2026-10-07",
+                  "source": "Press reports of the Ark price list (2026-03-04: ¥46 per million tokens without video input, ≈308,880 tokens per 15 s 720p ≈ ¥0.95/s; ¥28 with video input), e.g. https://finance.sina.com.cn/tech/digi/2026-03-04/doc-inhpvpqk3851254.shtml. The Volcengine docs pages did not render for a fetch. At that time Ark listed Seedance 2.0 API access as 'coming soon'. The api_model id comes from a reseller: check it in your Ark console.",
+                  "verified": false}
   },
   "jimeng": {
    "seedance-2": {"label": "即梦 Seedance", "unit": "second", "resolution": "720p", "credits_per_s": {"720p": 8, "480p": 9},

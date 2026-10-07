@@ -165,9 +165,10 @@ def test_rule_route_instruction(home):
 
 # ------------------------------------------------------------------------------------------- costs
 def test_min_clip_rounding_and_prices():
-    v = costs.price_job("veo", "veo-3.1-fast", 2.0)
-    assert v["seconds_billed"] == 4 and abs(v["cny"] - 3.41) < 0.05            # ¥3.4 (mockup)
-    assert costs.price_job("veo", "veo-3.1-fast", 6.5)["seconds_billed"] == 8
+    v = costs.price_job("veo", "veo-3.1-fast", 2.0, "720p")
+    assert v["seconds_billed"] == 4 and abs(v["cny"] - 2.84) < 0.05            # $0.10/s at 720p
+    assert costs.price_job("veo", "veo-3.1-fast", 2.0)["seconds_billed"] == 8   # 1080p = 8 s clips only
+    assert costs.price_job("veo", "veo-3.1-fast", 6.5, "720p")["seconds_billed"] == 8
     h = costs.price_job("minimax", "MiniMax-Hailuo-02", 2.0)
     assert h["seconds_billed"] == 6 and abs(h["cny"] - 1.99) < 0.05             # ¥2.0
     assert costs.price_job("minimax", "MiniMax-Hailuo-02", 7)["seconds_billed"] == 10
@@ -200,6 +201,46 @@ def test_no_submit_without_confirm(home):
         assert e.value.status == 409
     assert fake.SUBMITS == []
     assert costs.ledger(sid) == []
+
+
+def test_one_ok_submits_once(home):
+    """The same estimate + code a second time (double click, a second window) is refused before any submit."""
+    sid, eid = sample_episode()
+    shots = ["01", "10", "15"]
+    for no in shots:
+        jobs.set_source(eid, no, "cloud:minimax/MiniMax-Hailuo-02")
+    est = jobs.estimate(eid, "finals", only=shots)
+    assert est["subtotal_cny"] == 6.0 and est["max_cny"] == 7.8
+    jobs.run(eid, "finals", est["id"], est["confirm_code"], est["max_cny"], only=shots)
+    assert len(fake.SUBMITS) == 3
+    with pytest.raises(CreateError) as e:
+        jobs.run(eid, "finals", est["id"], est["confirm_code"], est["max_cny"], only=shots)
+    assert e.value.code == "create.confirm-used"
+    assert len(fake.SUBMITS) == 3
+    assert [r["status"] for r in costs.ledger(sid)] == ["submitted"] * 3
+
+
+def test_veo_1080p_is_8s_only_and_priced_per_resolution():
+    e = costs.entry("veo", "veo-3.1-fast")
+    assert costs.snap(e, 3, "1080p") == 8 and costs.snap(e, 3, "720p") == 4
+    assert costs.price_job("veo", "veo-3.1-fast", 3)["cny"] == round(0.12 * 8 * 7.1, 2)
+    assert costs.price_job("veo", "veo-3.1-fast", 3, "720p")["cny"] == round(0.10 * 4 * 7.1, 2)
+    assert costs.price_job("veo", "veo-3.1-lite", 5)["seconds_billed"] == 6
+
+
+def test_job_uses_the_services_own_model_id(home, monkeypatch):
+    sid, eid = sample_episode()
+    jobs.set_source(eid, "01", "cloud:seedance-ark/seedance-2")
+    jobs.set_source(eid, "10", "cloud:veo/veo-3.1-fast")
+    ep, s, fmt, bible = jobs.context(eid)
+    _, units, _ = jobs.plan(ep, s, fmt, ["01", "10"])
+    by = {u["shots"][0]: u for u in units}
+    ark = jobs.build_job(ep, bible, by["01"])
+    assert ark.model == costs.entry("seedance-ark", "seedance-2")["api_model"] and ark.duration == 4
+    monkeypatch.setenv("ARK_SEEDANCE_MODEL", "my-ark-endpoint")
+    assert jobs.build_job(ep, bible, by["01"]).model == "my-ark-endpoint"
+    veo = jobs.build_job(ep, bible, by["10"])
+    assert (veo.model, veo.resolution, veo.duration) == ("veo-3.1-fast", "1080p", 8)
 
 
 def test_confirm_expired_and_plan_changed(home):

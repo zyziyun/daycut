@@ -5,7 +5,8 @@
 
 CODES = (
     # errors / refusals (jobs.run, costs.check)
-    "create.confirm-required", "create.confirm-mismatch", "create.confirm-expired", "create.plan-changed",
+    "create.confirm-required", "create.confirm-mismatch", "create.confirm-expired", "create.confirm-used",
+    "create.plan-changed",
     "create.over-budget", "create.over-cap", "create.unknown-rate", "create.low-credits", "create.price-changed",
     "create.provider-not-ready", "create.max-too-low", "create.nothing-to-make", "create.not-found",
     "create.bad-input", "create.manual-only", "create.local-off",
