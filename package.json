@@ -17,7 +17,8 @@
     "docs": "npm run dev -w apps/docs",
     "build:docs": "npm run build -w apps/docs",
     "build:web": "scripts/build-web.sh",
-    "check": "python3 scripts/check_skill.py"
+    "check": "python3 scripts/check_skill.py",
+    "version:bump": "npm version --no-git-tag-version --workspace apps/desk"
   },
   "repository": {
     "type": "git",
