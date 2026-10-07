@@ -266,6 +266,41 @@ test('the bundled engine is this repository’s engine (llm / project / intake, 
   if (head) expect(commit.replace(/-dirty$/, '')).toBe(head);
 });
 
+// Every package the engine's requirements.txt names (markers evaluated for this platform) is installed in the bundled
+// runtime and imports, extras included (scripts/runtime/check_requirements.py, also run by bundle.mjs): a package added
+// to the engine but not re-locked is otherwise silently missing from the app (babel / pypinyin / jsonschema before 0.2.0).
+function bundledPython() {
+  const rt = path.join(resourcesDir(appExecutable()), 'runtime');
+  const py = process.platform === 'win32' ? path.join(rt, 'python', 'python.exe') : path.join(rt, 'python', 'bin', 'python3');
+  const env = { ...cleanEnv({}), PYTHONPATH: path.join(rt, 'vstudio', 'lib'), PYTHONNOUSERSITE: '1', PYTHONDONTWRITEBYTECODE: '1', PYTHONUTF8: '1' };
+  return { py, env };
+}
+
+test('every package in the engine requirements.txt is in the bundled runtime and imports', async () => {
+  test.setTimeout(300000);
+  const { py, env } = bundledPython();
+  const reqs = path.resolve(ROOT, '..', '..', 'requirements.txt');
+  const out = spawnSync(py, [path.join(ROOT, 'scripts', 'runtime', 'check_requirements.py'), reqs], { env, encoding: 'utf8', timeout: 240000 });
+  expect(out.status, out.stderr).toBe(0);
+  const rows = JSON.parse(out.stdout.trim().split('\n').pop()!) as { req: string; name: string; version?: string; error?: string }[];
+  console.log('[packaged] requirements', rows.map((r) => `${r.name}==${r.version ?? '?'}`).join(' '));
+  expect(rows.filter((r) => r.error).map((r) => `${r.req}: ${r.error}`)).toEqual([]);
+  for (const n of ['babel', 'pypinyin', 'jsonschema', 'numpy', 'mediapipe', 'openai']) expect(rows.map((r) => r.name)).toContain(n);
+});
+
+// the CLDR entity check really runs: 宏都拉斯 -> 洪都拉斯 needs babel (CLDR names) + pypinyin (sound-alike)
+test('the named-entity check runs on the bundled engine (宏都拉斯 -> 洪都拉斯 from CLDR)', async () => {
+  const { py, env } = bundledPython();
+  const code = 'import json; import babel, pypinyin, jsonschema; from vstudio import entities as E; ' +
+    'r = E.verify("这次去了宏都拉斯，宏都拉斯的咖啡很好喝", locale="zh_Hans"); ' +
+    'print(json.dumps(dict(fixes=[(f["from"], f["to"], f["source"], f["guess"]) for f in r["fixes"]], fixed=E.fix_text("宏都拉斯的咖啡", r["fixes"])), ensure_ascii=False))';
+  const out = spawnSync(py, ['-c', code], { env, encoding: 'utf8', timeout: 120000 });
+  expect(out.status, out.stderr).toBe(0);
+  const res = JSON.parse(out.stdout.trim().split('\n').pop()!) as { fixes: [string, string, string, boolean][]; fixed: string };
+  expect(res.fixes).toContainEqual(['宏都拉斯', '洪都拉斯', 'cldr', false]);
+  expect(res.fixed).toBe('洪都拉斯的咖啡');
+});
+
 test('AI accounts never show raw engine errors (paths, Python tracebacks)', async () => {
   const app = await launch({ DESK_SKIP_FIRST_RUN: '1' });
   try {

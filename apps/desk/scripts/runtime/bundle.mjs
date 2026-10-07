@@ -182,6 +182,11 @@ function verify() {
   const asr = isMac && target.endsWith('arm64') ? 'mlx_whisper' : 'faster_whisper';
   run(pyExe(), ['-c', `import numpy, scipy, cv2, mediapipe, soundfile, yaml, PIL, fontTools, openai, ${asr}, vstudio.batch, vstudio.media as m; ` +
     `import shutil; ff = m.ffmpeg_bin(); assert ff.startswith(${JSON.stringify(path.join(OUT, 'ffmpeg'))}), ff; print('ok', ff, '${asr}')`], { env });
+  // every package of the engine's requirements.txt is installed and imports (a package added there but not re-locked
+  // is otherwise missing from the app); the CLDR entity check runs (babel + pypinyin)
+  run(pyExe(), [path.join(ROOT, 'scripts', 'runtime', 'check_requirements.py'), path.join(ENGINE_ROOT, 'requirements.txt')], { env, quiet: true, capture: true });
+  run(pyExe(), ['-c', 'from vstudio import entities as E; f = E.verify("去了宏都拉斯", locale="zh_Hans")["fixes"]; ' +
+    'assert [(x["from"], x["to"]) for x in f] == [("宏都拉斯", "洪都拉斯")], f; print("entities ok")'], { env: { ...env, PYTHONUTF8: '1' } });
   const enc = run(path.join(OUT, 'ffmpeg', 'bin', isWin ? 'ffmpeg.exe' : 'ffmpeg'), ['-hide_banner', '-encoders'], { capture: true });
   if (!enc.includes(T.h264)) throw new Error(`bundled ffmpeg lacks ${T.h264}`);
   if (/libx264|libx265/.test(enc)) throw new Error('bundled ffmpeg contains GPL encoders');
