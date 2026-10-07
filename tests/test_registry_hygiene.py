@@ -73,3 +73,20 @@ def test_prune_projects(monkeypatch, tmp_path):
     assert [p["dir"] for p in H.projects()] == [str(real)]
     r = H.register(os.path.join(junk, "p3"), "p3")
     assert r.get("registered") is False and len(H.projects()) == 1
+
+
+def test_one_entry_per_real_folder(monkeypatch, tmp_path):
+    """A run that reaches the same folder through a symlink (macOS /var -> /private/var) updates its entry."""
+    monkeypatch.setenv("VSTUDIO_HOME", str(tmp_path / "home"))
+    real = tmp_path / "real"
+    (real / "proj" / "state").mkdir(parents=True)
+    (real / "proj" / "state" / "batch.db").write_bytes(b"")
+    (real / "proj" / "project.yaml").write_text("name: p\n")
+    os.symlink(real, tmp_path / "link")
+    for root in (real, tmp_path / "link", real):
+        CL.register_batch(str(root / "proj" / "state"), "p")
+        H.register(str(root / "proj"), "p")
+    assert len(CL.batches()) == 1
+    assert len(H.projects()) == 1
+    H.unregister(str(tmp_path / "link" / "proj"))
+    assert H.projects() == []

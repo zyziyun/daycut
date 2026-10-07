@@ -16,7 +16,8 @@ def sha1_json(obj, n=None):
 
 
 def batch_id(path):
-    return hashlib.sha1(os.path.abspath(path).encode()).hexdigest()[:12]
+    """One id per real folder: /var/... and /private/var/... (or any symlinked spelling) are the same batch."""
+    return hashlib.sha1(os.path.realpath(path).encode()).hexdigest()[:12]
 
 
 def read_json(path, default=None):
@@ -189,7 +190,8 @@ class Registry:
         self._lock = threading.Lock()
 
     def all(self):
-        return [b for b in (read_json(self.path, []) or []) if isinstance(b, dict) and b.get("dir")]
+        # the id follows the real folder, also for entries written before ids did
+        return [dict(b, id=batch_id(b["dir"])) for b in (read_json(self.path, []) or []) if isinstance(b, dict) and b.get("dir")]
 
     def get(self, bid):
         return next((b for b in self.all() if b["id"] == bid), None)

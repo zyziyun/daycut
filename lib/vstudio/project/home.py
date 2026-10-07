@@ -55,8 +55,9 @@ def register(pdir, name=None, recipe=None, series=None, client=None, kind=None):
     pdir = os.path.abspath(pdir)
     if is_temp_path(pdir) and not is_temp_path(registry_path()):
         return dict(dir=pdir, name=name, recipe=recipe, series=series, client=client, registered=False)
-    rows = [p for p in projects() if os.path.abspath(p["dir"]) != pdir]
-    old = next((p for p in projects() if os.path.abspath(p["dir"]) == pdir), {})
+    real = os.path.realpath(pdir)                    # /var/... and /private/var/... are one project
+    rows = [p for p in projects() if os.path.realpath(p["dir"]) != real]
+    old = next((p for p in projects() if os.path.realpath(p["dir"]) == real), {})
     row = dict(dir=pdir, name=name, recipe=recipe, series=series, client=client,
                created=old.get("created") or time.strftime("%Y-%m-%dT%H:%M:%S"))
     if kind:
@@ -67,8 +68,8 @@ def register(pdir, name=None, recipe=None, series=None, client=None, kind=None):
 
 
 def unregister(pdir):
-    pdir = os.path.abspath(pdir)
-    write_json(registry_path(), [p for p in projects() if os.path.abspath(p["dir"]) != pdir])
+    real = os.path.realpath(pdir)
+    write_json(registry_path(), [p for p in projects() if os.path.realpath(p["dir"]) != real])
 
 
 def live_projects():

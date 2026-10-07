@@ -234,6 +234,43 @@ class HistoryTest(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(b, "batch.db-wal")))
 
 
+class SymlinkedPathsTest(unittest.TestCase):
+    """A project run reached through a symlink (macOS /var -> /private/var) registered its state/ twice; the board's
+    id came from one spelling, the registry's from the other, so the board found no batch."""
+
+    def setUp(self):
+        self.root = os.path.realpath(tempfile.mkdtemp(prefix="hist-link-"))
+        self.home = os.path.join(self.root, "home")
+        os.makedirs(self.home)
+        self.env = mock.patch.dict(os.environ, {"VSTUDIO_HOME": self.home, "DESK_HISTORY_WATCH": ""})
+        self.env.start()
+        self.reg = Registry(os.path.join(self.root, "desk"))
+        self.h = HI.History(os.path.join(self.root, "desk"), self.reg)
+
+    def tearDown(self):
+        self.env.stop()
+
+    def test_one_row_one_id_whatever_the_spelling(self):
+        from vstudio.batch import clients as CL
+        from vstudio.project import home as PH
+        real = os.path.join(self.root, "real")
+        proj = os.path.join(real, "p")
+        make_batch(os.path.join(proj, "state"), name="p")
+        with open(os.path.join(proj, "project.yaml"), "w") as f:
+            f.write("name: P\nrecipe: talkinghead\n")
+        link = os.path.join(self.root, "link")
+        os.symlink(real, link)
+        for root in (real, link):                    # two runs, two spellings of the same folder
+            CL.register_batch(os.path.join(root, "p", "state"), "p")
+            PH.register(os.path.join(root, "p"), "P", "talkinghead")
+        self.assertEqual(len(CL.batches()), 1)
+        ent = self.reg.add(os.path.join(link, "p", "state"), "p")
+        self.assertEqual(ent["id"], C.batch_id(os.path.join(proj, "state")))
+        rows = self.h.list()["items"]
+        self.assertEqual([(r["kind"], r["id"], r["opened"]) for r in rows], [("project", ent["id"], True)])
+        self.assertEqual(self.reg.get(rows[0]["id"])["dir"], os.path.join(link, "p", "state"))  # the board finds it
+
+
 class HygieneTest(unittest.TestCase):
     def test_is_temp_path(self):
         self.assertTrue(C.is_temp_path(os.path.join(tempfile.gettempdir(), "tmpdgrjlyfq", "batch-fake")))

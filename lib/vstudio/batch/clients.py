@@ -423,12 +423,17 @@ def register_batch(batch_dir, name=None, cdir=None):
         if is_temp_path(batch_dir) and not is_temp_path(path):
             continue                                  # a scratch / test batch never enters the real registry
         try:
-            reg = [r for r in read_json(path, []) or [] if isinstance(r, dict) and keep_entry(r.get("dir"), path)]
-            if not any(r.get("dir") == batch_dir for r in reg):
+            reg, seen = [], set()
+            for r in read_json(path, []) or []:          # one entry per real folder (/var and /private/var alike)
+                if isinstance(r, dict) and keep_entry(r.get("dir"), path) and os.path.realpath(r["dir"]) not in seen:
+                    seen.add(os.path.realpath(r["dir"]))
+                    reg.append(r)
+            real = os.path.realpath(batch_dir)
+            if real not in seen:
                 reg.append(dict(dir=batch_dir, name=name, client=cdir, at=time.time()))
             else:
                 for r in reg:
-                    if r.get("dir") == batch_dir:
+                    if os.path.realpath(r["dir"]) == real:
                         r.update(name=name or r.get("name"), client=cdir or r.get("client"))
             write_json(path, reg)
         except OSError:
