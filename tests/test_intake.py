@@ -285,7 +285,7 @@ def test_parse_prompt():
     assert R.parse_prompt("把这节课切成二十条")["count"] == 20
     assert R.parse_prompt("不要讲解视频")["exclude"] == ["explainer"]
     it = R.parse_prompt("发视频号和小红书，还有快手")
-    assert it["platforms"] == ["xiaohongshu", "wechat-channels"] and it["unsupported_platforms"] == ["快手"]
+    assert it["platforms"] == ["wechat-channels", "xiaohongshu"] and it["unsupported_platforms"] == ["快手"]   # request order
     assert sorted(R.parse_prompt("发布方案还要支持 X 和 ins")["platforms"]) == ["instagram", "x"]
     assert R.parse_prompt("1.2x 速度，发 B站")["platforms"] == ["bilibili"]
 

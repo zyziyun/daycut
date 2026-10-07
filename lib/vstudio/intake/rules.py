@@ -92,13 +92,16 @@ def negations(text):
 
 
 def platforms_of(text):
+    """Platforms named in a request, in the order the request names them."""
     t = _norm(text)
-    out = []
+    out, pos = [], {}
     for w, p in PLATFORM_WORDS:
         if w in t and p not in out:
             if p == "youtube" and "youtube-shorts" in out and "shorts" in t and t.count("youtube") <= 1:
                 continue
             out.append(p)
+            pos[p] = t.find(w)
+    out.sort(key=lambda p: pos[p])
     toks = re.findall(r"[a-z0-9.]+|[^\sa-z0-9.]", t)
     for i, tok in enumerate(toks):
         p = TOKEN_PLATFORMS.get(tok)
