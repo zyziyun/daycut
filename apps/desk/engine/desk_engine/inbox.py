@@ -18,6 +18,7 @@ import sqlite3
 import threading
 import time
 
+from . import inbox_labels as L
 from . import works as WK
 from .common import need, read_json, write_json
 
@@ -71,6 +72,46 @@ def _batch_review(entry):
     return dict(todo=[r[0] for r in todo], red=[j for j in issues], issues=issues, passed=passed, total=len(rows))
 
 
+def confirm_options(d, conf):
+    """PICKS.md bullets -> plain-language options (inbox_labels.humanize) + the media files they preview."""
+    text = ""
+    for n in ("PICKS.md", "NOTES.md"):
+        p = os.path.join(d, n)
+        if os.path.exists(p):
+            try:
+                with open(p, encoding="utf-8", errors="replace") as f:
+                    text += f.read(200000) + "\n"
+            except OSError:
+                pass
+    spans = L.picks_spans(text)
+    try:
+        clips = [c for c in WK.clips(d) if c.get("files")]
+    except Exception:  # noqa: BLE001
+        clips = []
+    by_letter = {}
+    for c in clips:
+        if c.get("letter") and not c.get("extra") and c["letter"] not in by_letter:
+            by_letter[c["letter"]] = c
+    words = {}
+
+    def words_for(letter):
+        if letter not in words:
+            from .outputs import _asr_for
+            c = by_letter.get(letter)
+            words[letter] = _asr_for(c["files"][0]["path"]) if c else []
+        return words[letter]
+    source = L.find_source(d, L.source_name(text))
+    opts = [L.humanize(c, spans, by_letter.get, words_for, source, i) for i, c in enumerate(conf)]
+    media = [source] if source else []
+    for o in opts:
+        c = by_letter.get(o["clip"])
+        if c:
+            o["file"] = c["files"][0]["path"]
+            o["cover"] = c.get("cover")
+            media += [o["file"]] + ([o["cover"]] if o["cover"] else [])
+    return opts, media
+
+
 class Inbox:
     def __init__(self, data_dir, history, runner=None, mode="mock", bus=None):
         self.path = os.path.join(data_dir, "inbox.json")
@@ -98,7 +139,7 @@ class Inbox:
     # ---------------------------------------------------------- listing
     def list(self):
         answers = self._answers()
-        items = []
+        items, allow = [], []
         hist = self.history.list()["items"]
         for e in hist:
             proj = dict(id=e["id"], name=e.get("name"), kind=e["kind"], thumb=e.get("thumb"), type=e.get("type"))
@@ -107,11 +148,11 @@ class Inbox:
                 if conf:
                     k = _key(e["dir"], "confirm", json.dumps(conf, ensure_ascii=False))
                     if k not in answers:
+                        opts, media = confirm_options(e["dir"], conf)
+                        allow += media
                         items.append(dict(key=k, kind="confirm", group="choose", project=proj, code="inbox.confirmEdits",
                                           params=dict(n=len(conf)), text=None, minutes=max(1, len(conf) // 2),
-                                          options=[dict(id=f"o{i}", clip=c.get("clip"), text=c["text"], checked=True)
-                                                   for i, c in enumerate(conf)], source="picks",
-                                          at=e.get("updated")))
+                                          options=opts, source="picks", at=e.get("updated")))
             else:
                 rv = _batch_review(e)
                 if rv:
@@ -146,21 +187,29 @@ class Inbox:
                                       text=live.get("message"), minutes=1, source="live", at=live.get("heartbeat")))
         if self.real():
             try:
-                doc = self.runner.sibling("vstudio.project").json(["inbox", "list", "--json"], timeout=120)
+                doc = self.runner.sibling("vstudio.project").json(["inbox", "--json"], timeout=120)
                 by_dir = {os.path.realpath(e["dir"]): e for e in hist}
-                for p in (doc.get("items") or doc.get("pending") or []) if isinstance(doc, dict) else []:
+                for p in (doc.get("entries") or doc.get("items") or doc.get("pending") or []) if isinstance(doc, dict) else []:
                     if not isinstance(p, dict):
                         continue
                     pd = os.path.realpath(p.get("project") or p.get("dir") or "")
                     e = by_dir.get(pd) or {}
                     kind = p.get("kind") or p.get("checkpoint_kind") or "checkpoint"
+                    spend = kind == "budget-approval"
+                    params = dict(n=p.get("n_options") or 0)
+                    if spend:
+                        params.update(L.spend_params(p))
+                    raw = [o for o in p.get("options") or [] if isinstance(o, dict)]
                     items.append(dict(key=_key(pd, p.get("id"), p.get("item"), p.get("digest")), kind=kind,
                                       group=GROUP.get(kind, "other"),
                                       project=dict(id=e.get("id"), name=e.get("name") or os.path.basename(pd),
                                                    kind=e.get("kind"), thumb=e.get("thumb"), type=e.get("type")),
-                                      code=f"checkpoint.{kind}", params=dict(n=p.get("n_options") or 0),
+                                      code=("inbox.spend" if spend and params.get("amount") is not None
+                                            else f"checkpoint.{kind}"), params=params,
                                       text=(p.get("labels") or {}).get("zh") or p.get("label"),
-                                      options=p.get("options") or [], previews=p.get("previews") or [],
+                                      label=p.get("label_info"),
+                                      options=[L.engine_option(o, p.get("default"), i) for i, o in enumerate(raw)],
+                                      previews=p.get("previews") or [],
                                       default=p.get("default"), minutes=1, source="engine",
                                       engine=dict(dir=pd, id=p.get("id"), item=p.get("item"))))
             except Exception:  # noqa: BLE001
@@ -171,10 +220,13 @@ class Inbox:
             except Exception:  # noqa: BLE001  (an optional source never breaks the inbox)
                 pass
         thumbs = [i["project"]["thumb"] for i in items if i["project"].get("thumb")]
-        self.history.allow_media(thumbs)
-        items.sort(key=lambda i: ({"failed": -1, "choose": 0, "spend": 1, "review": 2}.get(i["group"], 3),
-                                  -(i.get("at") or 0)))
-        return dict(items=items, at=time.time())
+        self.history.allow_media(thumbs + allow)
+        # quickest first (the inbox reads top-down: what takes a minute goes before what takes ten); failures lead
+        items.sort(key=lambda i: (0 if i["group"] == "failed" else 1, i.get("minutes") or 1,
+                                  {"choose": 0, "spend": 1, "review": 2}.get(i["group"], 3), -(i.get("at") or 0)))
+        day0 = time.mktime(time.localtime()[:3] + (0, 0, 0, 0, 0, -1))
+        done = [a for a in answers.values() if isinstance(a, dict) and (a.get("at") or 0) >= day0]
+        return dict(items=items, at=time.time(), done_today=len(done))
 
     # ---------------------------------------------------------- answering
     def answer(self, keys, answer=None):

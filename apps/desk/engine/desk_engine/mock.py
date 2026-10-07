@@ -61,7 +61,8 @@ class MockEngine:
         self.threads = {}
         self.cancel_flags = {}
         self._lock = threading.RLock()
-        self._seed()
+        if os.environ.get("DESK_MOCK_SEED", "1") != "0":       # tests: an empty desk (first run)
+            self._seed()
 
     # ------------------------------------------------------------------ seed data
     def _seed(self):

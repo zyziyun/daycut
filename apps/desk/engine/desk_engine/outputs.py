@@ -299,6 +299,19 @@ def validate_ops(ops):
             need(isinstance(o.get("target"), str) and TARGET_RE.match(o["target"]), "target: 3:4 | 9:16 | 16:9 | platform")
         if o["op"] == "effect_add":
             need(isinstance(o.get("effect"), str) and 0 < len(o["effect"]) <= 40, "effect: id")
+        if o.get("words") is not None:
+            w = o["words"]
+            need(isinstance(w, list) and len(w) == 2 and all(isinstance(x, int) and not isinstance(x, bool) and
+                                                             0 <= x < 200000 for x in w) and w[0] <= w[1],
+                 "words: [first, last] word indices")
+        if o.get("gap") is not None:
+            need(isinstance(o["gap"], int) and not isinstance(o["gap"], bool) and 0 <= o["gap"] < 200000, "gap: a word index")
+        if o.get("keep") is not None:
+            need(isinstance(o["keep"], (int, float)) and not isinstance(o["keep"], bool) and 0 <= o["keep"] <= 5, "keep: seconds")
+        if o.get("sig") is not None:
+            need(isinstance(o["sig"], str) and re.match(r"^[0-9a-f]{6,40}$", o["sig"]), "sig: the words signature")
+        if o.get("why") is not None:
+            need(isinstance(o["why"], str) and len(o["why"]) <= 200, "why: text")
         out.append(dict(o))
     return out
 
@@ -329,11 +342,21 @@ def apply_op(state, o, base):
         state["trim"] = [a, z]
         return _m("op-trim", f"trim to {a or 0:g}s - {z if z is not None else dur:g}", "裁剪首尾", start=a, end=z), None
     if op == "cut":
-        a, z = t_(o.get("start"), "start"), t_(o.get("end"), "end")
+        said = ""
+        if o.get("words") is not None or o.get("gap") is not None:
+            r = word_cut(base.get("words") or [], o)
+            a, z, said = r["start"], r["end"], r["said"]
+        else:
+            a, z = t_(o.get("start"), "start"), t_(o.get("end"), "end")
         if a is None or z is None or z - a < 0.05:
             raise EngineMessage(_m("bad-time", "end must be after start", "结束要晚于开始"))
         state["cuts"] = sorted(state["cuts"] + [dict(start=a, end=z, why=o.get("why") or "")], key=lambda c: c["start"])
-        return _m("op-cut", f"cut {a:g}s - {z:g}s", f"剪掉 {a:g}–{z:g} 秒", start=a, end=z), None
+        kept = sum(y - x for x, y in segments(state, dur if dur < 1e8 else z + 1))
+        if kept < 1.0:
+            raise EngineMessage(_m("too-short", f"only {kept:.2f}s would be left", f"只剩 {kept:.2f} 秒",
+                                   kept_s=round(kept, 3), min_s=1.0))
+        return _m("op-cut", f"cut {a:g}s - {z:g}s", f"剪掉 {a:g}–{z:g} 秒", start=a, end=z, why=o.get("why") or "",
+                  said=said), dict(cut=[a, z], words=said)
     if op == "cut_remove":
         i = o.get("index")
         if not isinstance(i, int) or not 0 <= i < len(state["cuts"]):
@@ -482,6 +505,144 @@ def apply_op(state, o, base):
     raise EngineMessage(_m("unknown-op", f"unknown op {op}", f"不认识的操作 {op}", op=op))
 
 
+# ------------------------------------------------------------------ transcript editing (cut by words, marks, EDL)
+FILLERS = {"嗯", "呃", "啊", "额", "那个", "就是", "对吧", "怎么说", "um", "uh", "erm", "uhm", "euh", "bah"}
+PUNCT = "，。、！？,.!?;；:：「」“”\"'（）()…—- "
+
+
+def words_sig(words):
+    """Signature of a word list (the engine's ``words_sig``): a cut by word index is refused when it changed."""
+    rows = [[w["w"], round(float(w["t"]), 3), round(float(w["te"]), 3)] for w in words or []]
+    return hashlib.sha1(json.dumps(rows, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()[:10]
+
+
+def _join(ws):
+    out = ""
+    for w in ws:
+        x = w["w"]
+        if out and re.match(r"^[A-Za-z0-9]", x) and re.search(r"[A-Za-z0-9]$", out):
+            out += " "
+        out += x
+    return out
+
+
+def word_cut(W, o):
+    """``cut`` by word indices (``words: [i0, i1]``) or a pause (``gap: i`` keeps ``keep`` s of the silence after word i)
+    -> {start, end, said}. Edges sit between words (never inside the next / previous kept word)."""
+    if o.get("sig") and o["sig"] != words_sig(W):
+        raise EngineMessage(_m("stale-words", "the transcript changed since you selected these words; select again",
+                               "文字稿已更新，请重新选择", expected=o["sig"], got=words_sig(W)))
+    if o.get("gap") is not None:
+        i = o["gap"]
+        if not 0 <= i < len(W) - 1:
+            raise EngineMessage(_m("bad-param", "gap: no such pause", "没有这个停顿", name="gap"))
+        keep = float(o.get("keep") if o.get("keep") is not None else 0.25)
+        a, z = W[i]["te"] + keep / 2, W[i + 1]["t"] - keep / 2
+        if z - a < 0.05:
+            raise EngineMessage(_m("bad-param", "that pause is already short", "这个停顿已经很短了", name="gap"))
+        return dict(start=round(a, 3), end=round(z, 3), said="")
+    i0, i1 = o["words"]
+    if not (0 <= i0 <= i1 < len(W)):
+        raise EngineMessage(_m("bad-param", "words: outside the transcript", "选中的词超出了文字稿", name="words"))
+    lo = W[i0 - 1]["te"] + 0.01 if i0 > 0 else 0.0
+    hi = W[i1 + 1]["t"] - 0.01 if i1 + 1 < len(W) else W[i1]["te"] + 0.3
+    a = max(lo, W[i0]["t"] - 0.03)
+    z = min(hi, W[i1]["te"] + 0.03)
+    if z - a < 0.03:
+        raise EngineMessage(_m("cut-no-word", "there is no whole word in that selection", "这个区间里没有完整的词"))
+    return dict(start=round(a, 3), end=round(z, 3), said=_join(W[i0:i1 + 1]))
+
+
+def segments(state, dur):
+    """Kept source ranges: trim minus cuts (the engine's ``segments``: pieces under 40 ms dropped)."""
+    tr = state.get("trim") or [None, None]
+    segs = [[float(tr[0] if tr[0] is not None else 0.0), float(tr[1] if tr[1] is not None else dur)]]
+    for c in state.get("cuts") or []:
+        ca, cb = float(c["start"]), float(c["end"])
+        nxt = []
+        for x, y in segs:
+            if cb <= x or ca >= y:
+                nxt.append([x, y])
+                continue
+            if ca > x:
+                nxt.append([x, ca])
+            if cb < y:
+                nxt.append([cb, y])
+        segs = nxt
+    return [[round(x, 3), round(y, 3)] for x, y in segs if y - x > 0.04]
+
+
+def kept_len(segs, a, b):
+    return sum(max(0.0, min(y, b) - max(x, a)) for x, y in segs)
+
+
+def marks(W):
+    """Fillers (嗯 / 那个 / um ...), pauses over 0.6 s and low-confidence words of a transcript, for the transcript's
+    filter chips: [{kind, i0, i1, text, save_s, group}]."""
+    out = []
+    for i, w in enumerate(W or []):
+        tok = (w.get("w") or "").strip(PUNCT).lower()
+        if tok in FILLERS:
+            out.append(dict(kind="filler", i0=i, i1=i, text=w["w"].strip(PUNCT), save_s=round(max(0.1, w["te"] - w["t"]), 1),
+                            group=tok))
+        if w.get("p") is not None and float(w["p"]) < 0.5:
+            out.append(dict(kind="lowconf", i0=i, i1=i, text=w["w"], save_s=0, group="lowconf"))
+        if i + 1 < len(W):
+            gap = W[i + 1]["t"] - w["te"]
+            if gap > 0.6:
+                out.append(dict(kind="pause", i0=i, i1=i + 1, text=f"{gap:.1f}s", save_s=round(gap - 0.25, 1),
+                                group="pause"))
+        if len(out) >= 500:
+            break
+    return out
+
+
+def retime(state, base, cut_ops):
+    """What a transcript cut does to the rest of the clip (desk implementation of the engine's re-timing): effects
+    fully cut / left under 0.4 s are removed (ops), partly cut ones shortened; captions of a pipeline clip that are
+    fully cut are removed, partly cut ones shortened. -> (extra ops, retimed summary)."""
+    dur = base["duration"] or 0
+    segs = segments(state, dur)
+    cuts = [(c["start"], c["end"]) for c in cut_ops]
+    first = min((a for a, _ in cuts), default=None)
+    extra, removed, trimmed, sfx = [], [], [], 0
+    by = {x["id"]: x for x in EFFECTS}
+    for e in state["effects"]:
+        if e["effect"] in ("music-bed", "end-fade", "vlog-grade", "progress-bar-pil", "xfade-joins"):
+            continue
+        lab = (by.get(e["effect"]) or {}).get("label") or dict(en=e["effect"], zh=e["effect"])
+        before = max(0.0, e["end"] - e["start"])
+        kept = kept_len(segs, e["start"], e["end"])
+        hit = any(a < e["end"] and b > e["start"] for a, b in cuts)
+        if not hit:
+            continue
+        if e["effect"] == "sfx-placement" and any(a <= e["start"] <= b for a, b in cuts):
+            extra.append(dict(op="effect_remove", id=e["id"]))
+            sfx += 1
+        elif kept < 0.4:
+            extra.append(dict(op="effect_remove", id=e["id"]))
+            removed.append(dict(id=e["id"], effect=e["effect"], label=lab))
+        elif kept < before - 0.05:
+            trimmed.append(dict(id=e["id"], effect=e["effect"], label=lab, from_s=round(before, 1), to_s=round(kept, 1)))
+    caps = dict(retimed=0, shortened=0, removed=0)
+    if base["mode"] == "pipeline":
+        gone = set(state["captions"]["removed"])
+        for c in base["captions"]:
+            if c["id"] in gone:
+                continue
+            s, z = float(c["start"]), float(c["end"])
+            kept = kept_len(segs, s, z)
+            if first is not None and z > first:
+                caps["retimed"] += 1
+            if kept < 0.05:
+                extra.append(dict(op="caption_remove", cue=c["id"]))
+                caps["removed"] += 1
+            elif kept < (z - s) - 0.05:
+                caps["shortened"] += 1
+    targets = ["primary"] + [x["target"] for x in state.get("exports") or []]
+    return extra, dict(captions=caps, effects=dict(trimmed=trimmed, removed=removed), sfx_removed=sfx, targets=targets)
+
+
 def _has_word(txt, word):
     """``word`` appears in ``txt`` as a whole token. ``\\b`` cannot be used: it never matches before ``--context``
     (both sides of the boundary are non-word characters), and it would match ``chat`` inside ``chat-x``."""
@@ -496,6 +657,7 @@ class Outputs:
         self.history, self.runner, self.bus = history, runner, bus
         self._real = None
         self._ext = False             # the engine also has revert / chat / ai --context / render --with-ops
+        self._pv = False              # the engine has preview-edl (live skip preview of pending transcript cuts)
         self._lock = threading.Lock()
         self._lists = {}
         self._jobs = {}
@@ -511,6 +673,7 @@ class Outputs:
                     ok = all(_has_word(txt, v) for v in ("show", "edit", "render", "undo")) and \
                         "invalid choice" not in txt
                     self._ext = ok and all(_has_word(txt, v) for v in ("revert", "chat", "--context"))
+                    self._pv = ok and _has_word(txt, "preview-edl")
                 except Exception:  # noqa: BLE001
                     ok = False
             self._real = ok
@@ -671,6 +834,15 @@ class Outputs:
         if words:
             out["words"] = words
         out["waveform"] = waveform(out["words"], dur)
+        out["words_sig"] = eng.get("words_sig") or (words_sig(out["words"]) if out["words"] else None)
+        out["marks"] = eng.get("marks") if isinstance(eng.get("marks"), list) else marks(out["words"])
+        out["caps"].setdefault("cut_words", bool(out["words"]) and out["caps"].get("cut", True) is not False)
+        out["caps"].setdefault("cut_strategy", "remaster" if out["mode"] == "pipeline" else "hard")
+        for s_, raw in zip(out["steps"], hist.get("steps") or []):
+            if raw.get("retimed"):
+                s_["retimed"] = raw["retimed"]
+            if raw.get("note"):
+                s_["note"] = raw["note"]
         return out
 
     def show(self, item_id, clip_id):
@@ -680,8 +852,8 @@ class Outputs:
         if oid:
             eng = self._cli(["show", "--project", e["dir"], "--output", oid])
             tr = read_json(os.path.join((eng.get("paths") or {}).get("dir") or "/nonexistent", "transcript.json"), None)
-            words = [dict(w=w["w"], t=w["t"], te=w["te"]) for w in (tr or {}).get("words") or []] \
-                if isinstance(tr, dict) else None
+            words = [dict(w=w["w"], t=w["t"], te=w["te"], **({"p": w["p"]} if w.get("p") is not None else {}))
+                     for w in (tr or {}).get("words") or []] if isinstance(tr, dict) else None
             if not self._ext:                                  # older engine: the desk keeps the transcript
                 eng["chat"] = self._desk(e, clip_id).get("chat") or []
             doc = self._normalise(base, eng, item_id, words or None)
@@ -716,15 +888,24 @@ class Outputs:
             except Exception:  # noqa: BLE001  (read-only folder: the edit log lives in the desk data dir anyway)
                 pass
 
-    def edit(self, item_id, clip_id, ops, by="user", turn=None):
+    def edit(self, item_id, clip_id, ops, by="user", turn=None, note=None):
         e, c = self._clip(item_id, clip_id)
         ops = validate_ops(ops)
+        need(by in ("user", "you", "ai"), "by: user | you | ai")
+        need(note is None or (isinstance(note, str) and len(note) <= 200), "note: text")
         need(turn is None or (isinstance(turn, str) and TURN_RE.match(turn)), "turn: a chat turn id")
         self._adopt_on_first_edit(e)
         oid = self._output_id(e, c)
         if oid:
-            args = ["edit", "--project", e["dir"], "--output", oid, "--ops", json.dumps(ops, ensure_ascii=False)]
-            r = self._cli(args + (["--turn", turn] if turn and self._ext else []))
+            args = ["edit", "--project", e["dir"], "--output", oid] + (["--note", note] if note else [])
+            tail = ["--turn", turn] if turn and self._ext else []
+            try:
+                r = self._cli(args + ["--ops", json.dumps(ops, ensure_ascii=False)] + tail)
+            except EngineMessage as m:                       # the engine transcribed other words: cut by time
+                if m.doc.get("code") != "stale-words" or not all(o.get("start") is not None for o in ops if o.get("words")):
+                    raise
+                plain = [{k: v for k, v in o.items() if k not in ("words", "sig")} for o in ops]
+                r = self._cli(args + ["--ops", json.dumps(plain, ensure_ascii=False)] + tail)
             if turn and not self._ext:
                 self._desk_turn(e, clip_id, turn, dict(status="applied", applied_step=(r.get("step") or {}).get("id")))
             self._publish(item_id, clip_id)
@@ -738,13 +919,28 @@ class Outputs:
                 d, v = apply_op(work, o, base)
                 if o["op"] in ("effect_add", "caption_add") and isinstance(v, dict) and v.get("id"):
                     o["id"] = v["id"]                        # recorded with its id: a replay (revert) keeps it
+                if o["op"] == "cut" and (o.get("words") is not None or o.get("gap") is not None):
+                    o.update(start=d["params"]["start"], end=d["params"]["end"])   # replayable without the words
+                    o.pop("words", None)
+                    o.pop("gap", None)
+                    o.pop("sig", None)
                 describe.append(d)
                 values.append(v)
                 if isinstance(v, dict) and v.get("warning"):
                     warnings.append(_m(v["warning"], "style applies to added captions only", "样式只作用于新增的字幕"))
+            retimed = None
+            text_cuts = [d_["params"] for o, d_ in zip(ops, describe) if o["op"] == "cut" and
+                         (o.get("why") in ("transcript", "filler", "pause"))]
+            if text_cuts:
+                extra, retimed = retime(work, base, text_cuts)
+                for o in extra:
+                    describe.append(apply_op(work, o, base)[0])
+                ops = ops + extra
             step = dict(id=f"s{len(st['steps']) + 1}-{hashlib.sha1(json.dumps(ops).encode()).hexdigest()[:6]}",
-                        at=time.strftime("%Y-%m-%dT%H:%M:%S"), by=by, note=None, ops=ops, describe=describe,
+                        at=time.strftime("%Y-%m-%dT%H:%M:%S"), by=by, note=note, ops=ops, describe=describe,
                         before=st["state"])
+            if retimed:
+                step["retimed"] = retimed
             st["state"] = work
             st["steps"].append(step)
             st["redo"] = []
@@ -1006,6 +1202,46 @@ class Outputs:
             self._save(e, clip_id, st)
         self._publish(item_id, clip_id)
         return dict(ok=True, targets=files, simulated=True)
+
+    # ---------------------------------------------------------- live skip preview of pending transcript cuts
+    def preview_edl(self, item_id, clip_id, ops):
+        """The kept ranges if ``ops`` (pending cuts) were applied - the same snapping and segment rules as the
+        render, nothing written: {keep [[a, b]], cuts [[a, b]], duration, source_duration, dropped}. Engine
+        ``output preview-edl`` when it has it, else the desk implementation."""
+        ops = validate_ops(ops) if ops else []
+        e, c = self._clip(item_id, clip_id)
+        oid = self._output_id(e, c)
+        if oid and self._pv:
+            try:
+                r = self._cli(["preview-edl", "--project", e["dir"], "--output", oid, "--ops",
+                               json.dumps(ops, ensure_ascii=False)], timeout=120)
+                return dict(ok=True, keep=r.get("keep") or [], cuts=r.get("cuts") or [], duration=r.get("duration"),
+                            source_duration=r.get("source_duration"), dropped=r.get("dropped") or [], engine="real")
+            except EngineMessage:
+                pass
+        base = self._base(e, c)
+        if oid:                                          # an engine without preview-edl: its state + desk snapping
+            doc = self.show(item_id, clip_id)
+            work = dict(_new_state(), trim=[(doc.get("trim") or {}).get("start"), (doc.get("trim") or {}).get("end")],
+                        cuts=[dict(start=x["start"], end=x["end"], why="") for x in doc.get("cuts") or []])
+            base = dict(base, words=doc.get("words") or base["words"])
+        else:
+            work = json.loads(json.dumps(self._desk(e, clip_id)["state"]))
+        dropped = []
+        for i, o in enumerate(ops):
+            if o["op"] not in ("cut", "cut_remove", "trim"):
+                continue
+            try:
+                trial = json.loads(json.dumps(work))
+                apply_op(trial, o, base)
+                work = trial
+            except EngineMessage as m:
+                dropped.append(dict(index=i, error=m.doc))
+        dur = base["duration"] or 0
+        keep = segments(work, dur)
+        return dict(ok=True, keep=keep, cuts=[[x["start"], x["end"]] for x in work["cuts"]],
+                    duration=round(sum(b - a for a, b in keep) / float(work.get("speed") or 1.0), 3),
+                    source_duration=dur, dropped=dropped, engine="desk")
 
     # ---------------------------------------------------------- 让 AI 改 (natural language -> proposed ops)
     def ask(self, item_id, clip_id, prompt, context=None):

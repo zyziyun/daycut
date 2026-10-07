@@ -261,19 +261,31 @@ class Intake:
         return out
 
     # ---------------------------------------------------------- plan / revise
-    def start(self, prompt, inputs):
+    def start(self, prompt, inputs, platforms=None):
+        """``platforms``: the composer's platform chip (used when the request names none)."""
+        need(platforms is None or (isinstance(platforms, list) and len(platforms) <= 20 and
+                                   all(isinstance(p, str) and re.match(r"^[a-z][a-z-]{0,30}(:[a-z]{3,12})?$", p)
+                                       for p in platforms)), "platforms: platform ids")
         pid = hashlib.sha1(f"{prompt}\0{inputs}\0{time.time()}".encode()).hexdigest()[:12]
         self._set(pid, id=pid, state="running", step="analyze", prompt=prompt, inputs=inputs, plan=None, error=None,
-                  started=time.time())
+                  started=time.time(), platforms=platforms or None)
         threading.Thread(target=self._plan, args=(pid, prompt, inputs), daemon=True).start()
         return dict(id=pid)
+
+    def _platform_hint(self, pid, prompt):
+        """The chip's platforms as words the planner reads, when the request itself names no platform."""
+        plats = (self.jobs.get(pid) or {}).get("platforms") or []
+        if not plats or any(re.search(pat, prompt, re.I) for pat, _p, _z in PLATFORMS):
+            return prompt
+        names = [next((zh for _pt, p2, zh in PLATFORMS if p2 == p.split(":")[0]), p.split(":")[0]) for p in plats]
+        return f"{prompt}\n（发布到：{'、'.join(dict.fromkeys(names))}）"
 
     def _plan(self, pid, prompt, inputs):
         try:
             if self.real():
                 out = self._path(pid)
                 os.makedirs(self.dir, exist_ok=True)
-                args = ["plan", "--prompt", prompt, "--out", out, "--json"]
+                args = ["plan", "--prompt", self._platform_hint(pid, prompt), "--out", out, "--json"]
                 if inputs:
                     args += ["--inputs", *inputs]
                 self._set(pid, step="plan")
@@ -286,7 +298,8 @@ class Intake:
                 time.sleep(float(os.environ.get("DESK_MOCK_STEP", "0.25")))
                 self._set(pid, step="plan")
                 time.sleep(float(os.environ.get("DESK_MOCK_PLAN_DELAY", "0")))   # tests: a slow model
-                plan = rule_plan(prompt, inputs, self.probe, pid, self.defaults())
+                plats = (self.jobs.get(pid) or {}).get("platforms")
+                plan = rule_plan(prompt, inputs, self.probe, pid, dict(self.defaults(), **({"platforms": plats} if plats else {})))
                 write_json(self._path(pid), plan)
             self._set(pid, state="done", step="done", plan=plan)
         except Exception as e:  # noqa: BLE001

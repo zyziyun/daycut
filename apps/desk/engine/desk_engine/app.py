@@ -55,7 +55,10 @@ History (history.py; read-only discovery of past work: desk + engine registries,
 v0.4 (outputs.py, intake.py, inbox.py; engine command when available, desk implementation otherwise)
   GET  /api/outputs/<item>                 one clip per output {clips [{id, title, state, files, cover, post}], confirm}
   GET  /api/outputs/<item>/<clip>          player + editor document (words, captions, effects, caps, ops, version)
-  POST /api/outputs/<item>/<clip>/edit     {ops: [op...]} (one undo step);  /ask {prompt} -> proposals;
+  POST /api/outputs/<item>/<clip>/edit     {ops: [op...], by?, note?} (one undo step; a transcript cut {op: cut,
+                                           words: [i0, i1], sig, why} also re-times captions / effects in that
+                                           step);  /preview-edl {ops} -> kept ranges of pending cuts (live skip);
+                                           /ask {prompt} -> proposals;
                                            /render {quality?, targets?, with_ops?};  /undo | /redo {steps?}
                                            /revert {step} (one earlier step, later ones kept); /chat {add} |
                                            {turn, set} (the clip's chat transcript; show returns it as chat);
@@ -482,7 +485,10 @@ class Api:
             if len(parts) == 4 and method == "POST":
                 verb = parts[3]
                 if verb == "edit":
-                    return self.outputs.edit(parts[1], clip, b.get("ops"), turn=b.get("turn"))
+                    return self.outputs.edit(parts[1], clip, b.get("ops"), by=b.get("by") or "user", turn=b.get("turn"),
+                                             note=b.get("note"))
+                if verb == "preview-edl":
+                    return self.outputs.preview_edl(parts[1], clip, b.get("ops"))
                 if verb == "ask":
                     return self.outputs.ask(parts[1], clip, b.get("prompt"), context=b.get("context"))
                 if verb == "render":
@@ -508,7 +514,7 @@ class Api:
                 need(isinstance(inputs, list) and len(inputs) <= 200, "inputs: up to 200 files / folders")
                 inputs = [_abs_path(p, "inputs[]") for p in inputs]
                 need(prompt.strip() or inputs, "say what to make or add files")
-                return self.intake.start(prompt.strip(), inputs)
+                return self.intake.start(prompt.strip(), inputs, b.get("platforms"))
             if parts == ["intake", "recent"] and method == "GET":
                 return self.intake.recent()
             need(len(parts) >= 2 and PID_RE.match(parts[1]), "bad plan id")
