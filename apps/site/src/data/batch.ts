@@ -1,4 +1,4 @@
-// The real batch shown on the home page: ~/Desktop/video-studio-demos/batch-rag (72-min RAG lecture, 2026-10-06).
+// The real batch shown on the home page (a 72-min RAG lecture, 2026-10-06; source media stays private).
 // 24 clips × 4 formats (Xiaohongshu 3:4, Xiaohongshu 9:16, Douyin, YouTube Shorts) = 96 files; $0.73 AI cost;
 // automatic QC: 21 green, 3 red (ep09, ep19, ep21). `start` = where the clip starts in the lecture (segments.yaml).
 // Covers: jobs/<id>/export/out/vertical/ep1/cover_3x4.png, resized into src/assets/clips/.
