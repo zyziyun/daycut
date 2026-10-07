@@ -16,7 +16,8 @@ export type Route =
   | { name: 'calendar' }
   | { name: 'channels' }
   | { name: 'new'; mode?: 'recording' }
-  | { name: 'settings' }
+  /** #/settings[/<section>[/<sub>]]: a section of the settings registry (settings/registry.ts) */
+  | { name: 'settings'; section?: string; sub?: string }
   | { name: 'aiAccounts'; focus?: string }
   | { name: 'clients' }
   | { name: 'client'; slug: string }
@@ -59,8 +60,7 @@ export function parseRoute(hash: string): Route {
   if (p[0] === 'publish') return p[1] === 'accounts' ? { name: 'channels' } : { name: 'calendar' };
   if (p[0] === 'new') return p[1] === 'recording' ? { name: 'new', mode: 'recording' } : { name: 'new' };
   if (p[0] === 'create') return createEnabled() ? { name: 'create', path: p.slice(1, 5) } : { name: 'home' };
-  if (p[0] === 'settings' && p[1] === 'video') return createEnabled() ? { name: 'create', path: ['settings'] } : { name: 'settings' };
-  if (p[0] === 'settings') return p[1] === 'ai' ? { name: 'aiAccounts', focus: p[2] } : { name: 'settings' };
+  if (p[0] === 'settings') return p[1] === 'ai' ? { name: 'aiAccounts', focus: p[2] } : p[1] ? { name: 'settings', section: p[1], sub: p[2] } : { name: 'settings' };
   if (p[0] === 'metrics') return { name: 'metrics' };
   if (p[0] === 'welcome') return { name: 'welcome' };
   if (p[0] === 'clients') return p[1] ? { name: 'client', slug: p[1] } : { name: 'clients' };
@@ -78,9 +78,10 @@ export function href(r: Route): string {
   switch (r.name) {
     case 'home':
       return '#/';
+    case 'settings':
+      return `#/settings${r.section ? `/${encodeURIComponent(r.section)}${r.sub ? `/${encodeURIComponent(r.sub)}` : ''}` : ''}`;
     case 'inbox':
     case 'projects':
-    case 'settings':
     case 'clients':
     case 'metrics':
     case 'welcome':

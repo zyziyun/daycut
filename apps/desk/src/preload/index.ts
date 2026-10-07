@@ -14,6 +14,7 @@ const api: DeskApi = {
   openFolder: () => call('dialog:openFolder'),
   openExternal: (url) => call('shell:openExternal', { url }),
   showItem: (path) => call('shell:showItem', { path }),
+  openLogs: () => call('shell:openLogs'),
   copyText: (text) => call('clipboard:write', { text }),
   getSettings: () => call('settings:get'),
   setSettings: (patch) => call('settings:set', patch),

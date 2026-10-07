@@ -115,6 +115,20 @@ export function Channels() {
       await window.desk.publish.open(c.adapterId, c.account, page);
       if (!fresh) await window.desk.publish.navigate(page); // an account opened before keeps its page otherwise
     });
+  // Settings › Publishing / the status line asked to sign in to one account: open its login page here
+  useEffect(() => {
+    let want: { adapterId: string; account: string } | null = null;
+    try {
+      want = JSON.parse(sessionStorage.getItem('ch.login') || 'null');
+    } catch {
+      want = null;
+    }
+    if (!want || !channels.some((c) => c.adapterId === want!.adapterId && c.account === want!.account)) return;
+    sessionStorage.removeItem('ch.login');
+    void open(want, 'login');
+    // once, when the accounts have loaded
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channels]);
   const add = (a: Adapter) =>
     run(async () => {
       const label = nextAccountLabel(channels.filter((c) => c.adapterId === a.id).map((c) => c.account));

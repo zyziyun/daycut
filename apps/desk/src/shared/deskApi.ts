@@ -114,10 +114,12 @@ export interface UpdateStateMsg {
 export interface DeskApi {
   engineInfo(): Promise<EngineInfo>;
   restartEngine(): Promise<EngineInfo>;
-  openFile(kind: 'video' | 'segments' | 'persona'): Promise<string | null>;
+  openFile(kind: 'video' | 'segments' | 'persona' | 'python'): Promise<string | null>;
   openFolder(): Promise<string | null>;
   openExternal(url: string): Promise<void>;
   showItem(path: string): Promise<void>;
+  /** open <userData>/logs in Finder / Explorer */
+  openLogs(): Promise<void>;
   copyText(text: string): Promise<void>;
   getSettings(): Promise<SettingsMsg>;
   setSettings(patch: Partial<Pick<SettingsMsg, 'enginePath' | 'python' | 'lang' | 'theme' | 'accent' | 'defaultPlatforms' | 'cleanupDays' | 'agencyMode' | 'createPage' | 'createLocalGen'>>): Promise<SettingsMsg>;

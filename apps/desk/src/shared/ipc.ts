@@ -46,11 +46,13 @@ const fileName = z.string().regex(/^[A-Za-z0-9\u4e00-\u9fff][A-Za-z0-9\u4e00-\u9
 export const ipcSchemas = {
   'engine:info': z.undefined(),
   'engine:restart': z.undefined(),
-  'dialog:openFile': z.strictObject({ kind: z.enum(['video', 'segments', 'persona']) }),
+  'dialog:openFile': z.strictObject({ kind: z.enum(['video', 'segments', 'persona', 'python']) }),
   'dialog:openFiles': z.strictObject({ kind: z.enum(['video', 'any']) }),
   'dialog:openFolder': z.undefined(),
   'shell:openExternal': z.strictObject({ url: httpsUrl }),
   'shell:showItem': z.strictObject({ path: absPath }),
+  /** Settings › Advanced › Help and diagnostics: the app's own log folder (<userData>/logs) */
+  'shell:openLogs': z.undefined(),
   'clipboard:write': z.strictObject({ text: z.string().max(20000) }),
   'settings:get': z.undefined(),
   'settings:set': z.strictObject({

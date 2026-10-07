@@ -499,8 +499,10 @@ function registerIpc() {
         ? [{ name: 'Video', extensions: ['mp4', 'mov', 'm4v', 'mkv', 'webm'] }]
         : p.kind === 'persona'
           ? [{ name: 'Persona', extensions: ['yaml', 'yml'] }]
-          : [{ name: 'Segments', extensions: ['yaml', 'yml', 'csv', 'json'] }];
-    const r = await dialog.showOpenDialog(win!, { properties: ['openFile'], filters });
+          : p.kind === 'python'
+            ? []
+            : [{ name: 'Segments', extensions: ['yaml', 'yml', 'csv', 'json'] }];
+    const r = await dialog.showOpenDialog(win!, { properties: ['openFile', ...(p.kind === 'python' ? (['showHiddenFiles'] as const) : [])], filters });
     return r.canceled ? null : r.filePaths[0];
   });
   handle('notify:show', async (p) => {
@@ -524,6 +526,11 @@ function registerIpc() {
   handle('shell:showItem', async (p) => {
     if (fs.existsSync(p.path)) shell.showItemInFolder(p.path);
   });
+  handle('shell:openLogs', async () => {
+    const dir = path.join(app.getPath('userData'), 'logs');
+    fs.mkdirSync(dir, { recursive: true });
+    await shell.openPath(dir);
+  });
   handle('clipboard:write', async (p) => clipboard.writeText(p.text));
   handle('settings:get', async () => settingsMsg());
   handle('settings:set', async (p) => {
@@ -535,9 +542,7 @@ function registerIpc() {
     const before = settings.get();
     const next = settings.set(p);
     if (next.lang !== before.lang) menu();
-    if (next.enginePath !== before.enginePath || next.python !== before.python) {
-      void startEngine();
-    }
+    // engine path / Python apply on the next engine start: Settings shows "Restart to apply" (one click)
     return { ...settingsMsg(), ...next, createPage: createOn(), firstRunDone: settingsMsg().firstRunDone, resolved: resolvedConfig(), packaged: app.isPackaged, platform: process.platform };
   });
 

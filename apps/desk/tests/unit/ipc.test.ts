@@ -7,6 +7,9 @@ describe('IPC validation', () => {
   it('accepts well-formed payloads', () => {
     expect(validateIpc('publish:fill', fill)).toEqual(fill);
     expect(validateIpc('dialog:openFile', { kind: 'video' })).toEqual({ kind: 'video' });
+    expect(validateIpc('dialog:openFile', { kind: 'python' })).toEqual({ kind: 'python' }); // Settings › Advanced › Python
+    expect(validateIpc('shell:openLogs', undefined)).toBeUndefined();
+    expect(() => validateIpc('shell:openLogs', { path: '/etc' })).toThrow(); // only the app's own log folder
     expect(validateIpc('engine:info', undefined)).toBeUndefined();
     expect(validateIpc('publish:setBounds', { x: 0, y: 40, width: 800, height: 600 })).toBeTruthy();
   });

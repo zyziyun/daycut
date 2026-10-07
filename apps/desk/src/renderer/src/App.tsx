@@ -19,8 +19,7 @@ import { Metrics } from './screens/Metrics';
 import { NewBatch } from './screens/NewBatch';
 import { Publish } from './screens/Publish';
 import { Review } from './screens/Review';
-import { Settings } from './screens/Settings';
-import { AIAccounts } from './v4/AIAccounts';
+import { rememberNonSettings, SettingsShell } from './settings/SettingsShell';
 import { applyTheme, type AccentName, type ThemeName } from './theme/tokens';
 import { CalendarScreen } from './v4/Calendar';
 import { Channels } from './v4/Channels';
@@ -84,11 +83,15 @@ function Shell({ onSettings }: { onSettings: (s: SettingsMsg) => void }) {
   useRunNotifications();
   const running = live.filter((i) => i.live?.state === 'running').length;
   const nIn = inbox.items.length;
+  useEffect(() => rememberNonSettings(location.hash), [r]);
   const inProject = r.name === 'project' || r.name === 'clip' || r.name === 'board' || r.name === 'job' || r.name === 'deliver' || r.name === 'review';
   const nav = (to: Route, key: MessageKey, on: boolean, icon: React.ReactNode, testId: string, count?: React.ReactNode) => (
     <NavLink to={to} on={on} icon={icon} label={t(key)} count={count} testId={testId} />
   );
   if (r.name === 'focus') return <Focus key={r.id} id={r.id} />;
+  // Settings has its own sub-nav in place of the app sidebar
+  if (r.name === 'settings' || r.name === 'aiAccounts' || ((r.name === 'clients' || r.name === 'client') && !agencyMode()))
+    return <SettingsShell section={r.name === 'aiAccounts' ? 'ai' : r.name === 'settings' ? r.section ?? 'general' : 'general'} sub={r.name === 'aiAccounts' ? r.focus : r.name === 'settings' ? r.sub : undefined} onChange={onSettings} />;
   return (
     <div className={`v4 app ${r.name === 'clip' ? 'rail' : ''}`}>
       <nav className="side" aria-label={t('nav.main')}>
@@ -106,7 +109,7 @@ function Shell({ onSettings }: { onSettings: (s: SettingsMsg) => void }) {
         {nav({ name: 'calendar' }, 'nav.publishTop', r.name === 'calendar' || r.name === 'publish' || r.name === 'metrics' || r.name === 'channels', <Calendar className="ico" />, 'nav-publish')}
         <div className="grow" />
         <UpdateBadge />
-        {nav({ name: 'settings' }, 'nav.settings', r.name === 'settings' || r.name === 'aiAccounts' || r.name === 'clients' || r.name === 'client', <SettingsIcon className="ico" />, 'nav-settings')}
+        {nav({ name: 'settings' }, 'nav.settings', r.name === 'clients' || r.name === 'client', <SettingsIcon className="ico" />, 'nav-settings')}
         <div className="eng" data-testid="engine-status">
           {error ? (
             <>
@@ -125,7 +128,7 @@ function Shell({ onSettings }: { onSettings: (s: SettingsMsg) => void }) {
       </nav>
       <main className="main">
         <AssetsBanner />
-        {error && r.name !== 'settings' && r.name !== 'aiAccounts' ? (
+        {error ? (
           <div className="pg">
             <div className="banner">
               <i className="dot error" />
@@ -173,21 +176,19 @@ function Screen({ r, onSettings }: { r: Route; onSettings: (s: SettingsMsg) => v
     case 'deliver':
       return <Deliver key={r.batch} batch={r.batch} />;
     case 'clients':
-      return agencyMode() ? <Clients /> : <Settings onChange={onSettings} />;
+      return <Clients />;
     case 'client':
-      return agencyMode() ? <ClientDetail key={r.slug} slug={r.slug} /> : <Settings onChange={onSettings} />;
+      return <ClientDetail key={r.slug} slug={r.slug} />;
     case 'channels':
       return <Channels />;
     case 'metrics':
       return <Metrics />;
     case 'welcome':
       return <WelcomeAgain onDone={onSettings} />;
-    case 'aiAccounts':
-      return <AIAccounts focus={r.focus} />;
     case 'create':
       return <CreateScreen path={r.path} onSettings={onSettings} />;
     default:
-      return <Settings onChange={onSettings} />;
+      return null;
   }
 }
 

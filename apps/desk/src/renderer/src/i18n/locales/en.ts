@@ -1,5 +1,7 @@
 // English (source of truth and fallback). Product copy: short, friendly, no engine jargon.
 import { createEn } from './create';
+import { publishBoardEn } from './publishBoard';
+import { settingsV2En } from './settingsV2';
 import { legacyEn } from '../legacy/en';
 import { aiaccEn } from './aiacc';
 import { aboutEn } from './about';
@@ -569,5 +571,5 @@ export const v04En = {
   'editor.zoomFit': 'Fit',
 };
 
-export const en = { ...legacyEn, ...legacyEnV02, ...v04En, ...aiaccEn, ...publishPlatformsEn, ...chatEditEn, ...channelsEn, ...projectAiEn, ...aboutEn, ...releaseEn, ...createEn, ...uxCoreEn };
+export const en = { ...legacyEn, ...legacyEnV02, ...v04En, ...aiaccEn, ...publishPlatformsEn, ...chatEditEn, ...channelsEn, ...projectAiEn, ...aboutEn, ...releaseEn, ...publishBoardEn, ...settingsV2En, ...createEn, ...uxCoreEn };
 export type MessageKey = keyof typeof en;

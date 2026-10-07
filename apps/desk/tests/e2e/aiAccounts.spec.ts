@@ -80,37 +80,56 @@ test.afterAll(async () => {
 const hash = (h: string) => page.evaluate((x) => (location.hash = x), h);
 const card = (p: string) => page.getByTestId(`provider-${p}`);
 
-test('settings -> AI accounts: expired Claude login, Codex logged in, keys / local servers', async () => {
+test('settings -> AI: expired Claude login, Codex logged in, keys / local servers in their sheets', async () => {
   await hash('#/settings');
-  await page.getByTestId('open-ai-accounts').click();
+  await page.getByTestId('snav-ai').click();
   await expect(page.getByTestId('ai-accounts')).toBeVisible();
+  await expect(page.getByTestId('snav-ai')).toHaveAttribute('data-dot', 'warn', { timeout: 15000 }); // the AI in use needs her
   await expect(card('claude-code').getByTestId('provider-pill')).toHaveAttribute('data-state', 'expired', { timeout: 15000 });
   await expect(card('claude-code').getByTestId('provider-pill')).toHaveText(/Login expired/);
-  await expect(card('claude-code').getByTestId('login-claude-code')).toHaveText('Log in again');
+  await expect(card('claude-code').getByTestId('login-claude-code')).toHaveText('Sign in again');
   await expect(card('codex').getByTestId('provider-pill')).toHaveAttribute('data-state', 'logged-in');
+  await expect(page.getByTestId('ai-fallback-sentence')).toHaveText(/tries Codex → simple rules/);
+  // API keys and local models live in their sheets
+  await page.getByTestId('ai-add-key').click();
   await expect(card('deepseek').getByTestId('provider-pill')).toHaveText('Not set up');
+  await page.keyboard.press('Escape');
+  await page.getByTestId('ai-local-setup').click();
   await expect(card('ollama').getByTestId('provider-pill')).toHaveText('Local server not running');
+  await page.keyboard.press('Escape');
+  // the fallback order: one sentence on the page, the editor in a sheet
+  await page.getByTestId('ai-order').click();
   await expect(page.getByTestId('route-default-provider')).toHaveValue('claude-code'); // the persona's routes
   await expect(page.getByTestId('route-default-fallbacks').getByTestId('fallback-item')).toHaveText(/Codex/);
+  await page.keyboard.press('Escape');
+  // General's status line: the mock engine is demo mode, which outranks the AI (one thing at a time)
+  await page.getByTestId('snav-general').click();
+  await expect(page.getByTestId('settings-status')).toHaveAttribute('data-tone', 'warn');
+  await page.getByTestId('snav-ai').click();
 });
 
-test('登录 runs the CLI login in the in-app terminal; on exit the status is checked again', async () => {
+test('Sign in runs the CLI login in the sign-in sheet (code pasted in the sheet); on exit the status is checked again', async () => {
   await card('claude-code').getByTestId('login-claude-code').click();
   const term = page.getByTestId('login-terminal');
   await expect(term).toBeVisible();
+  await expect(term).toContainText('Your browser opened');
+  await expect(page.getByTestId('term-wait')).toBeVisible();
+  // the terminal is folded under Show details
+  await page.getByTestId('signin-details').click();
   await expect(term).toContainText('claude auth login');
   await expect(page.locator('.xterm-rows')).toContainText('Paste code', { timeout: 15000 });
-  await page.locator('.xterm-helper-textarea').focus();
-  await page.keyboard.type('abc123');
-  await page.keyboard.press('Enter');
+  await page.getByTestId('signin-code').fill('abc123');
+  await page.getByTestId('signin-code').press('Enter');
   await expect(page.getByTestId('term-exit')).toBeVisible({ timeout: 15000 });
-  await expect(card('claude-code').getByTestId('provider-pill')).toHaveText('Logged in · Max', { timeout: 15000 });
+  await expect(card('claude-code').getByTestId('provider-pill')).toHaveText('Working', { timeout: 15000 });
   await expect(card('claude-code').getByTestId('provider-account')).toContainText('me@example.com');
   await page.getByTestId('term-close').click();
   await expect(term).toHaveCount(0);
+  await expect(page.getByTestId('snav-ai')).toHaveAttribute('data-dot', 'ok');
 });
 
 test('switching the default provider is explicit and shows up where AI runs', async () => {
+  await page.getByTestId('ai-order').click();
   await page.getByTestId('route-default-provider').selectOption('codex');
   await expect(page.getByTestId('route-default-fallbacks').getByTestId('fallback-item')).toHaveCount(0);
   await page.getByTestId('route-default-add-fallback').selectOption('claude-code');
@@ -118,6 +137,13 @@ test('switching the default provider is explicit and shows up where AI runs', as
   const file = JSON.parse(fs.readFileSync(path.join(tmp, 'profile', 'llm-routes.json'), 'utf8'));
   expect(file.default).toEqual({ provider: 'codex', fallback: ['claude-code'] });
   expect(file.tasks.output_edit.provider).toBe('codex');
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('provider-codex')).toBeVisible(); // the card at the top is now Codex
+  // per-job routes are a second page
+  await page.getByTestId('ai-perjob').click();
+  await expect(page.getByTestId('ai-routes')).toBeVisible();
+  await page.getByTestId('ai-jobs-back').click();
+  await expect(page.getByTestId('ai-perjob')).toBeVisible();
 
   await hash('#/');
   await expect(page.getByTestId('composer')).toBeVisible();
@@ -149,7 +175,7 @@ for (const lang of ['zh-CN', 'en'] as const) {
     await page.waitForURL(/^app:\/\/desk\//);
     await hash('#/settings/ai/codex');
     await expect(card('codex').getByTestId('provider-pill')).toHaveAttribute('data-state', 'logged-in', { timeout: 15000 });
-    if (lang === 'zh-CN') await expect(page.getByTestId('ai-accounts')).toContainText('AI 账号与模型');
+    if (lang === 'zh-CN') await expect(page.getByTestId('ai-accounts')).toContainText('和你一起规划');
     const missing = await page.evaluate(() => document.body.innerText.match(/⟦[^⟧]+⟧|\baiacc\.[\w.-]+/g));
     expect(missing).toBeNull();
     await page.evaluate(() => localStorage.removeItem('i18n.strict'));

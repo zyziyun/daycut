@@ -93,7 +93,8 @@ describe('Create routes', () => {
       expect(parseCreate(top.name === 'create' ? top.path : [])).toEqual(r);
       expect(href(top)).toBe(h);
     }
-    expect(parseRoute('#/settings/video')).toEqual({ name: 'create', path: ['settings'] });
+    // Settings › Video generation is a section of the settings sub-nav (settings/registry.ts)
+    expect(parseRoute('#/settings/video')).toEqual({ name: 'settings', section: 'video' });
     expect(parseCreate(['e', 'BAD!'])).toEqual({ screen: 'home' });
   });
 
@@ -101,7 +102,7 @@ describe('Create routes', () => {
     setCreatePrefs({ createPage: false });
     expect(parseRoute('#/create')).toEqual({ name: 'home' });
     expect(parseRoute('#/create/e/if-ads-e04/storyboard')).toEqual({ name: 'home' });
-    expect(parseRoute('#/settings/video')).toEqual({ name: 'settings' });
+    expect(parseRoute('#/settings/video')).toEqual({ name: 'settings', section: 'video' }); // hidden: the shell shows General
     expect(parseRoute('#/inbox')).toEqual({ name: 'inbox' });
   });
 });
