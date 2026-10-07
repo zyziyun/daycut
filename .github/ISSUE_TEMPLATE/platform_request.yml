@@ -1,0 +1,52 @@
+name: Platform request or correction
+description: Add a platform, or fix a size, safe zone, caption limit or loudness value for one we have.
+labels: ["platform", "enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Reelfold exports each platform in its own shape. Profiles live in `lib/vstudio/platform.py`, with sources in `references/PLATFORMS.md`.
+        Values tagged **[S]** need an official source; **[3P]** third-party; **[C]** convention. A link and the date you checked it make this easy to merge.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Request type
+      options:
+        - New platform
+        - Correction to an existing platform
+        - Assisted publishing (fill in the upload page) for a platform
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      placeholder: e.g. Lemon8, Twitch clips, Naver Clip, YouTube Shorts
+    validations:
+      required: true
+  - type: textarea
+    id: values
+    attributes:
+      label: Values
+      description: Fill in what you know; leave the rest blank.
+      value: |
+        - Canvas / aspect ratios:
+        - Length limits:
+        - Safe zones (UI overlays):
+        - Caption / title / description / hashtag limits:
+        - Loudness target:
+        - Cover size and crops:
+        - Upload limits (file size, codec, bitrate):
+  - type: textarea
+    id: sources
+    attributes:
+      label: Sources and date checked
+      description: Official help pages, spec docs, or your own measurements (say how you measured).
+    validations:
+      required: true
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Contributing
+      options:
+        - label: I can open the pull request (see CONTRIBUTING.md, "Add or fix a platform profile").

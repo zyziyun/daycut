@@ -1,0 +1,61 @@
+name: Bug report
+description: Something broke, or a clip came out wrong.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for trying Reelfold on real footage. Please check [Troubleshooting](https://reelfold.com/docs/help/troubleshooting/) first.
+        Never paste API keys, and only attach footage, stills or transcripts you have the rights to share.
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where did it happen?
+      options:
+        - Mac app (Reelfold)
+        - Claude Code skill (video-studio)
+        - Engine CLI (python -m vstudio...)
+        - Website or docs
+    validations:
+      required: true
+  - type: textarea
+    id: asked
+    attributes:
+      label: What did you ask for?
+      description: The sentence you typed, or the command / workflow you ran.
+      placeholder: 'e.g. "Cut the pauses and filler words, add captions, export for TikTok and Shorts"'
+    validations:
+      required: true
+  - type: textarea
+    id: got
+    attributes:
+      label: What happened instead?
+      description: What you saw, and what you expected. A screenshot or a still helps a lot.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include the kind of footage (length, resolution, language, talking head / screen / podcast).
+      placeholder: |
+        1. Drop a 12-minute 1080p talking-head recording (Chinese)
+        2. ...
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: App → About, or `git -C ~/.claude/skills/video-studio rev-parse --short HEAD` for the skill.
+      placeholder: 0.2.0 / 5acb93c
+  - type: input
+    id: env
+    attributes:
+      label: Mac and AI provider
+      description: macOS version, chip, and which AI you use (Claude Code login, Codex login, API key, local model).
+      placeholder: macOS 26.1, M2, Claude Code login
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant log lines. Remove personal paths, names and keys before pasting.
+      render: text

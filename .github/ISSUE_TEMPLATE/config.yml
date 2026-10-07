@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Question or idea
+    url: https://github.com/zyziyun/reelfold/discussions
+    about: Ask how to do something, share a result, or float an idea before it becomes a feature request.
+  - name: Docs
+    url: https://reelfold.com/docs/
+    about: Install, guides, troubleshooting and the full reference.
+  - name: Security report
+    url: https://github.com/zyziyun/reelfold/security/advisories/new
+    about: Please report vulnerabilities privately, not as a public issue (see SECURITY.md).

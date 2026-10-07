@@ -1,0 +1,76 @@
+# Changelog
+
+All notable changes to Reelfold (the Mac app, the engine and the Claude Code skill) are listed here.
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
+[Semantic Versioning](https://semver.org/) (pre-1.0: minor versions may change behaviour).
+
+App releases are tagged `v*`; engine-only releases are tagged `engine-v*`.
+
+## [Unreleased]
+
+Planned as **0.2.0**, the first public macOS release (Apple Silicon). Nothing before it was published as a release;
+the earlier history lives in the commit log (formerly `video-studio` and `Daycut`).
+
+### Added
+
+- **Mac app (Reelfold · 千剪)**, MIT, in `apps/desk`:
+  - Home composer: describe the job in one sentence and drop the footage; AI proposes a plan card with an estimate,
+    then runs a pilot before the full batch.
+  - Projects of many clips running in parallel, an inbox that shows only what needs you, and an All work view of
+    batches, projects and skill work folders.
+  - Chat-first clip editor: big player, a chat column that proposes changes as cards, a timeline with a scrub bar,
+    selective undo of one earlier step, before/after compare.
+  - Project-level "edit with AI" across every clip at once.
+  - Assisted publishing: the upload page is filled in per platform and you press publish (never auto-posts).
+  - AI accounts: sign in with your Claude Code or Codex subscription, an API key, or a local model, and switch per task.
+  - First-run wizard with queued model downloads; bundled Python runtime and LGPL ffmpeg; auto-update.
+  - UI in English, 中文 and Français.
+  - Create page (behind a setting): series studio with formats, bible, storyboard and a spend gate.
+- **Engine**:
+  - `vstudio.intake`: one sentence plus the material becomes a validated plan (rule fallback when no model is set).
+  - `vstudio.project`: every workflow is a recipe with checkpoints, series, inbox and publishing calendar.
+  - Batch orchestration: segment planning, client workspaces, job edits with stale-stage reruns, delivery packages,
+    metrics, caption proofreading with a cache.
+  - Clip-level editing (`project output list|show|edit|render|undo|redo|ai|effects`) with a cached stage render.
+  - `vstudio.llm`: one interface for Anthropic, OpenAI, OpenAI-compatible servers (DeepSeek, Qwen, Kimi, GLM,
+    OpenRouter, Ollama…) and the Claude Code / Codex CLIs, with per-route fallback chains and timeouts.
+  - ASR and TTS backend registries, including self-hosted Whisper servers.
+  - `vstudio.formats` (defaults per recurring format) and `vstudio.firstpass` (a check before every handover:
+    audio, resolution, speed, loudness, first frame, caption terms, cover).
+  - Named-entity verification after ASR (place names and cities).
+  - One design-theme system for every overlay (editorial default).
+- **Platforms**: 20 profiles, each with its own canvas, safe zones, caption box, length, loudness, cover and copy
+  limits: YouTube, YouTube Shorts, TikTok, Instagram, X, Facebook, LinkedIn, Threads, Reddit, Pinterest, Snapchat
+  Spotlight, Dailymotion, Kwai, 小红书, 抖音, 视频号, B站, 快手, 微博, 知乎.
+- **Docs site** at [reelfold.com/docs](https://reelfold.com/docs/) in English, 中文, Français and Español; reference
+  pages generated from the engine sources.
+- **Website** at [reelfold.com](https://reelfold.com) in four languages.
+- Repo: CONTRIBUTING, Code of Conduct, security policy, issue and pull-request templates, roadmap, this changelog.
+
+### Changed
+
+- Renamed to **Reelfold (千剪)**. The repo moved from `zyziyun/video-studio` and `zyziyun/daycut` (old URLs
+  redirect). The Claude Code skill keeps the name `video-studio`, and existing installs keep working.
+- Monorepo: the engine and skill at the root, the app, website and docs under `apps/`.
+- SKILL.md rewritten as a five-step job flow with one routing table.
+- Source recordings are never deleted automatically; delivery cleanup is off by default.
+- One cache root, `~/.cache/video-studio` (the legacy `~/.cache/vstudio` is still read).
+- English is the default language for the app and the website.
+
+### Fixed
+
+- AI fallback works on every path (segment planning, proofreading, chat edit), Codex gets a strict JSON schema,
+  and an all-attempts error says what was tried.
+- Chat edits always answer; the capability probe no longer misses `--context`.
+- Pilot and project failures are visible, with a retry; planning can be stopped.
+- Filler cuts keep the word they trim in the captions; AABB reduplication (起起落落) is no longer cut as a stammer.
+- A dropped word's tail cut in promo recuts no longer runs into the next word.
+- Burned-in finished edits default to the band layout (old captions cropped, new ones below).
+
+### Security
+
+- Electron fuses on the packaged app (no run-as-node, no `NODE_OPTIONS` / `--inspect`, asar integrity), hardened
+  runtime and notarization.
+- API keys in the OS keychain; every IPC call validated; the local engine needs a per-session token.
+
+[Unreleased]: https://github.com/zyziyun/reelfold/commits/main

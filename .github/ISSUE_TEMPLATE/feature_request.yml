@@ -1,0 +1,51 @@
+name: Feature request
+description: Something Reelfold should do that it can't yet.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Big or open-ended ideas are often better as a [Discussion](https://github.com/zyziyun/reelfold/discussions) first.
+        Check the [roadmap](https://github.com/zyziyun/reelfold/blob/main/ROADMAP.md) to see if it is already planned.
+  - type: textarea
+    id: job
+    attributes:
+      label: What are you trying to make?
+      description: The real job, in plain words. Who watches it, on which platform, how often you make it.
+      placeholder: Every week I cut one 60-minute podcast into 8 vertical clips for Shorts, TikTok and 小红书...
+    validations:
+      required: true
+  - type: textarea
+    id: today
+    attributes:
+      label: What happens today?
+      description: What Reelfold does now, or what you do by hand instead.
+    validations:
+      required: true
+  - type: textarea
+    id: want
+    attributes:
+      label: What would you like?
+      description: How you would say it to Reelfold, and what a good result looks like.
+      placeholder: '"Give every clip a different cover but the same series title"'
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Planning / batches
+        - Cutting and cleanup (pauses, filler, repeats)
+        - Captions and text
+        - Effects, themes, covers
+        - Review and editing
+        - Export and platforms
+        - Publishing
+        - AI providers and models
+        - Install and setup
+        - Other
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Contributing
+      options:
+        - label: I'd like to work on this myself.
