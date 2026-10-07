@@ -279,3 +279,15 @@ def test_stamp_styles():
         assert TH.current()["stamp"]["style"] == "label" and lab[lab.shape[0] // 2, 2, 3] > 200   # card label
     with TH.use("classic"):
         assert TH.current()["stamp"]["angle"] == 8.0                             # the old slam stays in classic
+
+
+def test_paper_caption_shrinks_before_it_wraps():
+    from vstudio.project import outrender as R
+    text = "你会有其他的稻草可以去揪着"
+    vis = dict(captions=[[0.0, 2.0, text]], style={"y": 0.65, "position": "custom"}, caption_box=[200, 1000, 880, 1300])
+    c = R.Captions(vis, 1080, 1440, None)
+    size = c._size(text)
+    w = D.text_width(text, D.load_font(TH.current()["font_caption"], size))
+    c.box = (540 - w * 0.53, 1000, 540 + w * 0.53, 1300)                       # ~6 % too narrow for one line
+    one = c.layer(0, text, "paper")
+    assert one.shape[0] < size * 2.5                                               # one line, a little smaller

@@ -426,13 +426,22 @@ class Captions:
             x0, _, x1, _ = self.box
             maxw = (self.band_rect[2] - self.band_rect[0]) * 0.92 if self.band_rect else (x1 - x0)
             if surface in ("paper", "video"):
-                f = Dr.load_font(self.st.get("font") or T["font_caption"], size)
+                role = self.st.get("font") or T["font_caption"]
+                f = Dr.load_font(role, size)
+                plain = Dr.std_markup(text).replace("\n", "")
+                for k in range(1, 7):                       # a cue a little too wide: shrink up to ~15 % before
+                    if Dr.text_width(plain.replace("【", "").replace("】", ""), f) <= maxw * 0.97:   # wrapping
+                        break                               # (two balanced lines break words: 稻|草)
+                    f = Dr.load_font(role, max(14, int(size * (1 - 0.025 * k))))
+                else:                                       # two lines: smaller and tighter, so the block keeps
+                    f = Dr.load_font(role, max(14, int(size * 0.82)))   # about the height of a one-line cue
+                two = Dr.text_width(plain.replace("【", "").replace("】", ""), f) > maxw * 0.97
                 ink = None
                 if surface == "paper" and TH.is_dark(T) is False and self.paper_rgb is not None and \
                         TH.luminance(self.paper_rgb) < 0.2:
                     ink = TH.rgba(T, "over_ink")
                 im = Dr.emph_layer(text, f, T, surface=surface, fill=ink, keywords=self.st.get("keywords") or None,
-                                   max_w=int(maxw), align="center", line_gap=1.22,
+                                   max_w=int(maxw), align="center", line_gap=1.08 if two else 1.22,
                                    accent=self.st.get("highlight"))
                 self.cache[key] = np.asarray(im)
                 return self.cache[key]
