@@ -105,8 +105,10 @@ whole sentence); "to" must sound like "from" (about the same number of syllables
 translate (precision -> 精度 is wrong: the speaker said "precision"); never delete or add words, never rephrase, \
 never fix grammar, case, fillers or repetitions; leave out anything you are not sure of. "confidence": 0-1, how \
 sure you are that the speaker said "to" every time "from" appears.
-At most 60 terms and 40 fixes (the most frequent first), each listed once; "why" in at most 8 words.
-Reply with JSON only: {"terms": ["..."], "fixes": [{"from": "...", "to": "...", "why": "...", "confidence": 0.9}]}"""
+3. "entities": the proper nouns of the transcript (countries, regions, cities, organisations, companies, products, people): {"text": "<exactly as in the transcript>", "standard": "<its standard spelling in the transcript's language and script>", "kind": "place|org|product|person", "certain": true|false} - "certain" only when you know the standard spelling for sure; a sound-alike spelling fix only, never a translation.
+At most 60 terms, 40 fixes and 40 entities (the most frequent first), each listed once; "why" in at most 8 words.
+Reply with JSON only: {"terms": ["..."], "fixes": [{"from": "...", "to": "...", "why": "...", "confidence": 0.9}],
+"entities": [{"text": "...", "standard": "...", "kind": "org", "certain": true}]}"""
 
 
 def resolve_provider(provider=None, task="proofread", config=None):
@@ -505,6 +507,7 @@ def build_glossary(text, context=None, provider="auto", model=None, call=None, p
             return {}
     d = ask(GLOSSARY_SYSTEM, "\n".join(lines))
     out["terms"] = [str(x).strip() for x in d.get("terms") or [] if str(x).strip()][:200]
+    llm_entities = [e for e in d.get("entities") or [] if isinstance(e, dict)][:80]
     vocab = latin_vocab(text)
     proposals = list(d.get("fixes") or [])
     if vocab:                                    # second, focused pass over the English tokens (RM -> LLM ...)
@@ -561,9 +564,31 @@ def build_glossary(text, context=None, provider="auto", model=None, call=None, p
                 out["fixes"].append(dict(fx, checked="second look"))
     else:
         out["fixes"] += cand
+    # named-entity verification (vstudio.entities): CLDR place names / cities, glossary spellings and the model's
+    # "standard spelling" answers; certain ones join the source's fixes (one truth for captions, cards and copy)
+    from . import entities as ENT
+    ev = ENT.verify(text, locale=entity_locale(text), glossary=list(ctx.get("glossary") or []) + out["terms"],
+                    llm_entities=llm_entities)
+    have = {f["from"] for f in out["fixes"]}
+    for f in ev["fixes"]:
+        if f["from"] not in have and not check_glossary_fix(dict(f), text):
+            out["fixes"].append(dict(**{"from": f["from"], "to": f["to"]}, why=f["why"], confidence=1.0,
+                                     count=f.get("count", 1), checked=f"entity:{f['source']}"))
+    out["entities"] = dict(locale=ev["locale"], found=ev["entities"], flagged=ev["flagged"])
     out["cost_usd"] = cost_usd(mdl, out["usage"], prices, prov)
     out["fixes"].sort(key=lambda f: -len(f["from"]))
     return out
+
+
+def entity_locale(text=""):
+    """The content locale for entity spelling: persona ``creator.locale`` (zh-TW, zh-HK ...), else from the text."""
+    from . import entities as ENT
+    try:
+        from .config import persona
+        loc = (persona().get("creator") or {}).get("locale")
+    except Exception:  # noqa: BLE001
+        loc = None
+    return ENT.norm_locale(loc, text)
 
 
 def latin_vocab(text, limit=400):
@@ -771,7 +796,7 @@ def guess_check(change, glossary=None, context=None, min_score=GUESS_MIN):
     validated source glossary: never guesses. An LLM change is supported when every swapped span is a glossary
     confusion / lands on a glossary term, or sounds alike with score >= min_score; else it is a guess."""
     src = change.get("source")
-    if src in ("term_fix", "glossary"):
+    if src in ("term_fix", "glossary", "entity"):
         return False, src
     spans = change.get("diff") or [list(x) for x in diff_spans(change.get("before", ""), change.get("after", ""))]
     spans = [(o or "", n or "") for o, n in spans if (o or n)]
@@ -820,14 +845,15 @@ def flag_guesses(changes, glossary=None, context=None, min_score=GUESS_MIN):
 
 def proofread(cues, term_fixes=None, provider="auto", model=None, context=None, heard=None, words=None,
               low_conf=0.5, call=None, prices=None, chunk=120, glossary=None, propagate=True, passes=2, cache=None,
-              locked=None):
+              locked=None, entities=True):
     """cues: [{start, end, text}] (or ``subs.Cue``). Returns dict(cues, changes, rejected, low_confidence,
     fillers_left, provider, model, usage, cost_usd, cache). Never changes timing or the number of cues.
 
     Order: (1) ``term_fixes`` (the creator's list; a fix that deletes spoken words is applied but logged in
     ``warnings``), (2) ``glossary`` fixes (``build_glossary``: one per source, the same on every job), (3) the
-    LLM per-cue pass with the glossary in its context, every fix through ``_valid`` (``faithful``), (4) an
-    accepted LLM fix of a term is applied to the job's other cues holding the same span (``llm-propagated``).
+    named-entity check (``vstudio.entities``: CLDR place names / cities / glossary spellings, ``entities``: False
+    off, or a locale such as "zh_Hant"), (4) the LLM per-cue pass with the glossary in its context, every fix
+    through ``_valid`` (``faithful``), (5) an accepted LLM fix of a term is applied to the job's other cues holding the same span (``llm-propagated``).
 
     ``cache`` (a ``CueCache`` or a directory): the LLM result of every cue is stored under its normalized ASR text
     + ``context_hash`` (prompt, provider / model, glossary, term fixes, topic); a cue seen before is NOT sent again
@@ -875,6 +901,29 @@ def proofread(cues, term_fixes=None, provider="auto", model=None, context=None, 
                                 why="glossary: " + "; ".join(used)))
             protected[i] += [n for _, n in diff_spans(c["text"], new) if n]
             c["text"] = new
+    # named entities (vstudio.entities): place names that sound like the CLDR / city standard but are spelled
+    # otherwise (宏都拉斯 -> 洪都拉斯), glossary spellings; the same fixes every job of the source gets
+    ents = None
+    if entities is not False:
+        from . import entities as ENT
+        alltext = "\n".join(c["text"] for c in C)
+        ents = ENT.verify(alltext, locale=entities if isinstance(entities, str) else entity_locale(alltext),
+                          glossary=[t for t in keep_terms if re.search(r"[A-Za-z]", t)])
+        efix = [f for f in ents["fixes"] if not any(f["from"] in t and f["from"] != t for t in keep_terms)]
+        for i, c in enumerate(C):
+            if i in locked or not efix:
+                continue
+            new = ENT.fix_text(c["text"], efix)
+            if new != c["text"]:
+                bad = faithful(c["text"], new)
+                if bad:
+                    rejected.append(dict(i=i, text=c["text"], to=new, source="entity", reason=bad))
+                    continue
+                used = [f"{f['from']} -> {f['to']}" for f in efix if f["from"] in c["text"]]
+                changes.append(dict(i=i, start=c["start"], end=c["end"], before=c["text"], after=new, source="entity",
+                                    why="entity: " + "; ".join(used)))
+                protected[i] += [n for _, n in diff_spans(c["text"], new) if n]
+                c["text"] = new
     prov = "custom" if call else resolve_provider(provider)
     mdl = model or default_model(prov)
     low = low_confidence(list(words or ()) + list(heard or ()), C, low_conf)
@@ -987,6 +1036,8 @@ def proofread(cues, term_fixes=None, provider="auto", model=None, context=None, 
     fb = next((x.get("fallback") for x in getattr(fn, "results", None) or [] if x and x.get("fallback")), None) \
         if prov != "none" and C else None
     return dict(cues=C, changes=changes, rejected=rejected, warnings=warnings, low_confidence=low, fallback=fb,
+                entities=None if ents is None else dict(locale=ents["locale"], fixes=ents["fixes"],
+                                                        flagged=ents["flagged"], found=ents["entities"]),
                 fillers_left=caption_fillers(C), provider=prov, model=mdl if prov != "none" else None, usage=usage,
                 cost_usd=cost_usd(mdl, usage, prices, prov) if prov not in ("none",) else 0.0,
                 glossary=dict(fixes=len(gfix), terms=len((glossary or {}).get("terms") or [])), cache=cstat,

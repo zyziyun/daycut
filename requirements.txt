@@ -9,6 +9,9 @@ scipy
 soundfile
 PyYAML
 jsonschema
+# named-entity verification of transcripts (vstudio.entities): CLDR place names (BSD) + toneless pinyin (MIT)
+babel
+pypinyin
 fonttools[woff]
 openai
 # local whisper (ASR): MLX on Apple silicon, CTranslate2 elsewhere (vstudio.asr picks what is installed)

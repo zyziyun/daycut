@@ -403,6 +403,8 @@ def generate_copy(platform, source, lang="en", bilingual=False, provider=None, c
     j = (r or {}).get("json")
     if not j:
         return None
+    from . import entities as ENT                     # names spelled like the captions (宏都拉斯 -> 洪都拉斯)
+    j = ENT.fix_post(j, ENT.verify(source + "\n" + "\n".join(str(v) for v in j.values() if isinstance(v, str)))["fixes"])
     text = post_body(j.get("hook", ""), j.get("body", ""), tags=j.get("tags"), platform=platform, warn=warn,
                      use_persona_tags=False)
     text = fit_copy(text, platform, warn=warn)

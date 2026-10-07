@@ -810,6 +810,19 @@ def plan_segments(source, transcript=None, client=None, count=None, min_s=None, 
         rows.append(dict(id=f"s{n + 1:03d}", start=round(start, 3), end=round(end, 3), title=title, chapter=chapter,
                          hook=hk[0] if hk else None, hook_candidates=hk, notes=notes, tags=tags, why=why, risk=risk,
                          score=score))
+    # named entities (vstudio.entities): titles / notes cards / hooks / tags spell names like the captions will
+    from vstudio import entities as ENT
+    ev = ENT.verify("\n".join(s_["text"] for s_ in sents), locale=ENT.norm_locale(None, "".join(
+        s_["text"] for s_ in sents[:50])), glossary=[g.get("right") for g in gl if isinstance(g, dict) and g.get("right")])
+    if ev["fixes"]:
+        for r in rows:
+            for k in ("title", "chapter", "why", "risk"):
+                r[k] = ENT.fix_text(r[k], ev["fixes"])
+            r["notes"] = [ENT.fix_text(x, ev["fixes"]) for x in r["notes"]]
+            r["tags"] = [ENT.fix_text(x, ev["fixes"]) for x in r["tags"]]
+            for h in [r["hook"]] + list(r["hook_candidates"]):
+                if h:
+                    h["text"] = ENT.fix_text(h["text"], ev["fixes"])
     cost = 0.0
     if api_cost is not None:
         cost = round(api_cost, 4)
@@ -822,7 +835,7 @@ def plan_segments(source, transcript=None, client=None, count=None, min_s=None, 
                language=lang, count=count, min=mn, max=mx, platforms=platforms, title_max=limit,
                chapters=[dict(start=round(sents[c["k0"]]["t"], 2), end=round(sents[c["k1"]]["te"], 2), name=c["name"])
                          for c in chapters], segments=rows, cost_usd=cost, usage=usage, warnings=warnings,
-               notices=notices, client=cdir, seconds=round(time.time() - t_start, 2), fallback=fallback_info)
+               notices=notices, entities=dict(fixes=ev["fixes"], flagged=ev["flagged"]), client=cdir, seconds=round(time.time() - t_start, 2), fallback=fallback_info)
     if write:
         od = os.path.abspath(out or os.path.join(os.path.dirname(os.path.abspath(source or tr_path or ".")),
                                                  "plan-" + os.path.splitext(os.path.basename(source or "source"))[0]))

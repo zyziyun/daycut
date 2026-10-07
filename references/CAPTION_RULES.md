@@ -1,0 +1,36 @@
+# Caption, card and copy text rules
+
+Everything the viewer reads that comes from the transcript (burned captions, notes cards, quote cards, titles,
+hooks, post copy, tags) follows these rules.
+
+## 1. After ASR, always verify the names
+
+**After ASR, always run proofread with entity verification before burning captions or writing copy.**
+
+ASR writes proper nouns by sound: 洪都拉斯 (Honduras) comes out as 宏都拉斯, Wells Fargo as "wells fargo". One wrong
+name then ends up in the captions, a notes card and the post copy at once.
+
+- `vstudio.proofread.proofread(cues, ...)` runs the check on every caption (also with `provider="none"`); the batch
+  `proofread` stage does it for every job. `entities=False` turns it off, `entities="zh_Hant"` sets the content
+  locale (default: persona `creator.locale`, else simplified Chinese for Chinese text).
+- `vstudio.entities.verify(text, locale, glossary)` is the check itself:
+  - **Places (Chinese)**: country / region names from Unicode CLDR (`babel`: zh_Hans, zh_Hant, zh_Hant_HK) plus
+    a curated list of major cities. A span that sounds like the content locale's standard name but is written
+    differently is corrected (宏都拉斯 → 洪都拉斯 in zh_Hans; 洪都拉斯 → 宏都拉斯 in zh_Hant). This is a sound-alike
+    swap, so it passes the faithful validator.
+  - **Regional variants that sound different** (纽西兰 vs 新西兰, 澳洲 vs 澳大利亚) are the speaker's own word: they
+    are kept, and reported as `variant: regional`.
+  - **Other entities** (organisations, products, people, English names): the glossary spelling ("wells fargo" →
+    "Wells Fargo"), and the model's `entities` answer inside the one glossary call per source ("standard
+    spelling?"). Only a `certain` answer that still sounds like the transcript is applied; everything else is
+    flagged as a `guess` for the creator to look at.
+- **One source of truth per project**: the same fixes are applied to the captions (proofread), the post copy
+  (`vstudio.batch.stages.entity_post` in the export stage), the plan-segments titles / notes cards / hooks / tags,
+  and generated copy (`vstudio.publish.generate_copy`). Never fix a name in one place by hand only: add it to the
+  creator's glossary / `subtitles.term_fixes` so every text gets it.
+
+## 2. Captions must match the audio
+
+A caption fix may only swap a short mis-heard span for what the speaker said: no deleted or added words, no
+translation, no rephrasing (`vstudio.proofread.faithful`). Fillers and repetitions are a cleanup question
+(references/CLEANUP.md), not a proofreading one.

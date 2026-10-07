@@ -260,12 +260,27 @@ def _export_resource(job, spec):
     return "face" if _p(job).get("layout") == "face" else "cpu-render"
 
 
+def entity_post(post, fixes=None):
+    """Post copy with the captions' named-entity fixes (one truth: the title / body / tags say 洪都拉斯 when the
+    captions do), plus the rule-based check of the copy itself (CLDR place names, when proofread did not run)."""
+    from vstudio import entities as ENT
+    if not isinstance(post, dict):
+        return post
+    fx = list(fixes or [])
+    txt = "\n".join(str(v) for v in post.values() if isinstance(v, str)) + "\n" + "\n".join(
+        str(x) for v in post.values() if isinstance(v, list) for x in v if isinstance(x, str))
+    have = {f["from"] for f in fx}
+    fx += [f for f in ENT.verify(txt)["fixes"] if f["from"] not in have]
+    return ENT.fix_post(post, fx)
+
+
 def run_export(ctx):
     from vstudio import export as X
     p, c = ctx.params, ctx.inputs["compose"]
     post = read_json(c["post"])
     if p.get("_copy_orig"):                           # copy edited in review: the post says the new copy
         post.update(title=p.get("title") or "", body=p.get("body") or "", tags=p.get("tags") or None)
+    post = entity_post(post, (ctx.inputs.get("proofread") or {}).get("entity_fixes"))
     covers = p.get("cover")
     if isinstance(covers, dict):                      # `job edit --op cover`: {t, text, file}
         covers = [covers["file"]] if covers.get("file") else None
@@ -489,8 +504,12 @@ def run_proofread(ctx):
     ctx.log(f"proofread ({res['provider']}): {len(res['changes'])} change(s), {len(res['rejected'])} rejected, "
             f"{len(res['low_confidence'])} low-confidence word(s); cache {cs.get('hits', 0)} hit(s), "
             f"{cs.get('sent', 0)} cue(s) sent" + (f", {len(locked)} locked (caption edits)" if locked else ""))
+    ent = (res.get("entities") or {}).get("fixes") or []
+    ent += [dict(f, source="glossary") for f in (glossary or {}).get("fixes") or []
+            if str(f.get("checked") or "").startswith("entity:")]
     return dict(cues=cues_path, report=rep, files=[cues_path, rep], cost_usd=res["cost_usd"],
-                changes=len(res["changes"]), provider=res["provider"], digest=sha1_file(cues_path))
+                changes=len(res["changes"]), provider=res["provider"], digest=sha1_file(cues_path),
+                entity_fixes=[{k: f.get(k) for k in ("from", "to", "kind", "source", "why")} for f in ent])
 
 
 def proofread_context(spec, p):
