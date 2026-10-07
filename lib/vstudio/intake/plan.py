@@ -439,7 +439,8 @@ def _first_path(v):
 
 
 def _orientation_hint(rid, ins, analysis):
-    if rid in ("talkinghead", "longform-to-short", "call-clips", "vlog", "photo-story", "ai-video"):
+    if rid in ("talkinghead", "longform-to-short", "call-clips", "vlog", "photo-story", "ai-video", "lesson-clips",
+               "interview-qa"):
         return "vertical"
     return None
 
@@ -530,6 +531,12 @@ def _apply_intent(m, params, sources, intent, items):
         params["style"], sources["style"] = intent["style"], "prompt"
     if intent.get("mask") is not None and m["id"] == "call-clips":
         params["no_mask"], sources["no_mask"] = (not intent["mask"]), "prompt"
+    if intent.get("mask") is not None and "mask" in props and m["id"] in ("lesson-clips", "interview-qa"):
+        params["mask"], sources["mask"] = ("sticker" if intent["mask"] else "off"), "prompt"
+    if intent.get("subtitles") and "subtitles" in props:
+        params["subtitles"], sources["subtitles"] = intent["subtitles"], "prompt"
+        if intent.get("subtitle_lang") and "subtitle_lang" in props:
+            params["subtitle_lang"], sources["subtitle_lang"] = intent["subtitle_lang"], "prompt"
     if intent.get("hook") is not None and "hook_default" in props:
         params["hook_default"], sources["hook_default"] = (0 if intent["hook"] else -1), "prompt"
     if intent.get("orientation") and m["id"] == "promo-recut":

@@ -20,6 +20,11 @@ PHRASES = [
     ("ai-video", ["ai短剧", "ai 短剧", "短剧", "aigc", "ai生成", "ai 生成", "可灵", "即梦", "seedance", "海螺", "定妆照", "分镜prompt",
                   "积分", "连载"], 3),
     ("explainer", ["讲解视频", "讲解短视频", "讲解", "3b1b", "3blue1brown", "解释一个概念", "原理讲解", "科普", "explainer"], 2),
+    ("lesson-clips", ["切成知识点", "按知识点", "知识点切片", "知识点", "教学点", "今日短语", "每日短语", "每个短语", "学习笔记",
+                      "单词卡", "knowledge point", "knowledge-point", "teaching point", "today's phrase", "study notes",
+                      "phrase of the day", "vocab clips"], 3),
+    ("interview-qa", ["问答切片", "一问一答", "问答", "q&a", "q & a", "qa clips", "question and answer",
+                      "questions and answers", "提问和回答"], 3),
     ("longform-course", ["剪成课程", "做成课程", "课程视频", "上课实录", "教学长视频", "完整课程", "剪成一节课"], 3),
     ("longform-to-short", ["切片", "切成", "分几集", "分集", "竖屏切片", "长视频切", "拆成", "拆条", "剪成多条", "批量切"], 2),
     ("call-clips", ["播客切", "访谈切", "对话切", "采访切", "podcast", "播客", "对话", "访谈", "采访", "嘉宾", "遮脸", "打码", "放个小猫", "三人同框", "zoom", "会议", "连麦"], 2),
@@ -139,17 +144,21 @@ def parse_prompt(text):
         intent["shape"] = "vertical"
     if re.search(r"保留(原|旧)?字幕|不(要)?(加|换|重做)字幕|字幕不(要)?动", t):
         intent["keep_captions"] = True
-    if re.search(r"英文|英语|english", t):
+    sub = subtitles_of(t)
+    if sub:
+        intent.update(sub)
+    tl = SUB_LANG_RX.sub(" ", t)                      # "中英字幕" / "Chinese and English subtitles" name captions, not speech
+    if re.search(r"英文|英语|english", tl):
         intent["language"] = "en"
-    elif re.search(r"中文|普通话", t):
+    elif re.search(r"中文|普通话", tl):
         intent["language"] = "zh"
     if re.search(r"剪干净|狠一点|去干净|tight|严格", t):
         intent["cleanup"] = "tight" if re.search(r"狠|tight|严格", t) else "standard"
     elif re.search(r"轻一点|轻度|保留口癖|gentle", t):
         intent["cleanup"] = "gentle"
-    if re.search(r"不(用|要)?遮脸|露脸也行|同意露脸|不打码", t):
+    if re.search(r"不(用|要)?遮脸|露脸也行|同意露脸|不打码|(?:don'?t|do not|no need to) (?:mask|hide|blur)|no (?:face )?masks?\b", t):
         intent["mask"] = False
-    elif re.search(r"遮脸|打码|放个小猫|挡住脸|遮一下", t):
+    elif re.search(r"遮脸|打码|放个小猫|挡住脸|遮一下|(?:mask|hide|blur)\b[^,.;，。]{0,24}\bfaces?\b", t):
         intent["mask"] = True
     if re.search(r"卡点|快节奏|燃|动感", t):
         intent["style"] = "fun"
@@ -168,6 +177,31 @@ def parse_prompt(text):
     intent["focus"] = focus_of(text) if intent["extract"] else []
     intent["positions"] = [dict(word=w, span=s) for w, s in POSITIONS if w in (text or "")]
     return intent
+
+
+SUB_LANG_RX = re.compile(r"(?:中英(?:文)?|英中|中文和英文|英文和中文|双语|chinese\s*(?:and|&|/|\+)\s*english|"
+                         r"english\s*(?:and|&|/|\+)\s*chinese|bilingual|中文|英文|chinese|english)\s*(?:双语)?"
+                         r"(?:的)?\s*(?:字幕|subtitles?|captions?|subs)", re.I)
+
+
+def subtitles_of(t):
+    """Caption language wishes -> {subtitles: mono|bilingual|translated, subtitle_lang?}."""
+    t = (t or "").lower()
+    if re.search(r"只要(?:中文|英文)?(?:翻译|译文)(?:字幕)?|只(?:要|放)(?:中文|英文)字幕|(?:translated|translation)[- ]only|"
+                 r"only (?:the )?(?:chinese|english) (?:subtitles|captions)|(?:subtitles|captions) only in (?:chinese|english)", t):
+        out = dict(subtitles="translated")
+        m = re.search(r"中文|chinese", t)
+        if m:
+            out["subtitle_lang"] = "zh"
+        elif re.search(r"英文|english", t):
+            out["subtitle_lang"] = "en"
+        return out
+    if re.search(r"中英|英中|双语|bilingual|chinese\s*(?:and|&|/|\+)\s*english|english\s*(?:and|&|/|\+)\s*chinese|"
+                 r"中文和英文|英文和中文|两种语言", t):
+        return dict(subtitles="bilingual")
+    if re.search(r"不要翻译|不用翻译|只要原文字幕|no translation|source[- ]language only", t):
+        return dict(subtitles="mono")
+    return {}
 
 
 def _count(text):
@@ -323,7 +357,8 @@ def choose_recipes(intent, analysis):
         r = _resolve(max(sc, key=sc.get), sc, intent, present, c)
         if r and r not in [x for x, _ in out]:
             out.append((r, c))
-    if intent["extract"] and not any(r in ("talkinghead", "longform-to-short", "call-clips") for r, _ in out):
+    if intent["extract"] and not any(r in ("talkinghead", "longform-to-short", "call-clips", "lesson-clips",
+                                           "interview-qa") for r, _ in out):
         r = _extract_recipe(present)
         if r and r not in excl:
             out = [x for x in out if x[0] != "talkinghead"]
@@ -379,11 +414,29 @@ def material_recipes(analysis):
     return out
 
 
+EDU_SOURCE = {"lesson-clips": ("lecture", "screen-recording", "talking-head", "finished-edit", "call"),
+              "interview-qa": ("call", "talking-head", "lecture", "screen-recording", "finished-edit")}
 FILE_INPUT = {"talkinghead": ("video", ("talking-head", "finished-edit")),
               "polish": ("video", ("finished-edit", "talking-head")),
               "cover": ("video", ("finished-edit", "talking-head")),
               "promo-recut": ("talk", ("talking-head", "finished-edit")),
               "longform-course": ("source", ("lecture", "screen-recording", "talking-head"))}
+
+
+def _screen_and_camera(analysis, used=()):
+    """(screen share, camera) of the same session: the longest screen recording + the talking-head video whose
+    length is closest to it (within 25 %); None when the materials are not such a pair."""
+    vids = [f for f in _by_kind(analysis, "video") if f["id"] not in used]
+    screens = [f for f in vids if f.get("screen_share")]
+    cams = [f for f in vids if f.get("talking_head") and not f.get("screen_share")]
+    if not screens or not cams:
+        return None
+    src = max(screens, key=lambda f: f.get("duration") or 0)
+    d = src.get("duration") or 0
+    cam = min(cams, key=lambda f: abs((f.get("duration") or 0) - d))
+    if d and not (0.8 <= (cam.get("duration") or 0) / d <= 1.25):
+        return None
+    return src, cam
 
 
 def _pick_source(analysis, prefs):
@@ -404,7 +457,34 @@ def rule_projects(intent, analysis, ctx):
         p = dict(recipe=rid, materials=[], inputs={}, items={}, params={}, why="")
         ctext = (clause or {}).get("text") or ""
         cnt = (clause or {}).get("count") or (intent.get("count") if len(chosen) == 1 else None)
-        if rid in ("longform-to-short", "call-clips"):
+        if rid in EDU_SOURCE:
+            src, cam = _pick_source(analysis, EDU_SOURCE[rid]), None
+            if rid == "lesson-clips":                  # a screen share + a camera of the same lesson: one project
+                src, cam = _screen_and_camera(analysis, used) or (src, None)
+            if not src:
+                risks.append(MSG.cs("intake.risk.no-source", recipe=rid))
+                continue
+            p["materials"] = [src["id"]]
+            p["inputs"] = {"source": [src["path"]]}
+            used.add(src["id"])
+            if cam:
+                p["inputs"]["camera"] = cam["path"]
+                p["materials"].append(cam["id"])
+                used.add(cam["id"])
+                p["params"]["layout"] = "pip"
+            if rid == "interview-qa":
+                if intent.get("mask") is True:
+                    p["params"]["mask"] = "sticker"
+                elif intent.get("mask") is None:
+                    questions.append(dict(project=len(projects), text=MSG.cs("intake.question.mask-faces"),
+                                          options=["除我以外全部遮", "都不遮（已获同意）", "我来指定"], default="除我以外全部遮"))
+            if cnt:
+                p["params"]["count"] = cnt
+            p["items"] = dict(method="per-file", count=1)
+            what = "按知识点切段 + 回顾 + 学习笔记" if rid == "lesson-clips" else "按一问一答切段"
+            p["why"] = f"{src['rel']}（{_fmt_dur(src.get('duration'))}，{_role_zh(rmap[src['id']])}）→ {what}" + \
+                ("（加摄像头画中画）" if p["inputs"].get("camera") else "")
+        elif rid in ("longform-to-short", "call-clips"):
             prefs = ("call",) if rid == "call-clips" else ("lecture", "screen-recording", "talking-head", "finished-edit", "call")
             src = _pick_source(analysis, prefs) or _pick_source(analysis, ("talking-head", "finished-edit", "lecture",
                                                                              "screen-recording", "call"))
@@ -625,10 +705,19 @@ def revise_rules(plan, instruction):
                     continue
                 p.setdefault("params", {})[param] = it[key]
             notes.append(f"{param} = {it[key]}")
+    if it.get("subtitles"):
+        for p in projects:
+            if p["recipe"] in EDU_SOURCE:
+                p.setdefault("params", {})["subtitles"] = it["subtitles"]
+                if it.get("subtitle_lang"):
+                    p["params"]["subtitle_lang"] = it["subtitle_lang"]
+        notes.append(f"字幕 = {it['subtitles']}")
     if it.get("mask") is not None:
         for p in projects:
             if p["recipe"] == "call-clips":
                 p.setdefault("params", {})["no_mask"] = not it["mask"]
+            if p["recipe"] in EDU_SOURCE:
+                p.setdefault("params", {})["mask"] = "sticker" if it["mask"] else "off"
         notes.append("遮脸" if it["mask"] else "不遮脸")
     if it.get("hook") is not None:
         for p in projects:

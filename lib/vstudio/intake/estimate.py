@@ -20,7 +20,8 @@ DEFAULT_OUT_S = {"explainer": {"short": 60, "long": 300}, "photo-story": 75, "vl
                  "promo-recut": 120, "slides": 45}
 TTS_USD_PER_MIN = 0.015          # gpt-4o-mini-tts, about
 LLM_USD_PER_SOURCE_MIN = 0.01    # plan-segments + proofread + glossary on an API model, about
-SPEECH_RECIPES = {"talkinghead", "longform-to-short", "call-clips", "longform-course", "promo-recut", "batch", "polish"}
+SPEECH_RECIPES = {"talkinghead", "longform-to-short", "call-clips", "longform-course", "promo-recut", "batch", "polish",
+                  "lesson-clips", "interview-qa"}
 
 
 def _bench():
