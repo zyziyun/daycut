@@ -72,6 +72,8 @@ v0.4 (outputs.py, intake.py, inbox.py; engine command when available, desk imple
   GET  /api/effects                        effects catalogue (zh labels, params, preview kind)
   POST /api/intake {prompt, inputs[]}      -> {id}; GET /api/intake/<id>; POST .../revise {prompt}; POST .../apply
                                            {plan?, run?}; POST .../stop (planning / revising); GET /api/intake/recent
+  GET  /api/sample                         the built-in sample recording (copied out of the app) -> {available, path, ...};
+       POST /api/sample/remove {dir}       delete a project made from it (sample.py)
   POST /api/pilot/retry {item, provider?}  re-run a failed pilot (provider: every model task on it, e.g. codex)
   GET  /api/calendar?start=YYYY-MM-DD      {posts, queue}; POST /api/calendar {item, clip, platform, at};
                                            POST /api/calendar/<id> {at?, state?, remove?, caption?, platform?,
@@ -442,7 +444,10 @@ class Api:
         self.project_ask = ProjectAsk(self.outputs, bus)
         from .timeline import Strips
         self.strips = Strips(engine.data_dir, self.outputs, self.history, bus, mock=engine.mode != "real")
-        self.intake = Intake(engine.data_dir, bus, runner, engine.mode, probe=probe)
+        from .history import vstudio_home
+        from .sample import Sample
+        self.sample = Sample(engine.data_dir, vstudio_home)
+        self.intake = Intake(engine.data_dir, bus, runner, engine.mode, probe=probe, sample=self.sample)
         self.inbox = Inbox(engine.data_dir, self.history, runner, engine.mode, bus)
         from .calendar import Calendar
         self.calendar = Calendar(engine.data_dir, self.history, self.outputs, bus, mode=engine.mode)
@@ -544,6 +549,13 @@ class Api:
                 return self.intake.apply(parts[1], b.get("plan"), run=b.get("run", True) is not False)
             if parts[2:] == ["stop"] and method == "POST":
                 return self.intake.stop(parts[1])
+        if parts == ["sample"] and method == "GET":
+            return self.sample.info()
+        if parts == ["sample", "remove"] and method == "POST":
+            r = self.sample.remove(b.get("dir"))
+            if self.bus:
+                self.bus.publish("batches")
+            return r
         if parts == ["pilot", "retry"] and method == "POST":
             e = self.history.find(b.get("item"))
             need(e["kind"] in ("project", "work"), "only a project's pilot can be retried")

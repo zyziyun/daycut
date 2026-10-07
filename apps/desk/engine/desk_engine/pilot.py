@@ -178,10 +178,6 @@ def resume_after_answer(runner, d, bus=None, spawner=None):
         return None
     cli = runner.sibling("vstudio.project")
     rd = os.path.realpath(d)
-    pend = cli.json(["inbox", "--json"], timeout=120)
-    entries = (pend.get("entries") or pend.get("items") or []) if isinstance(pend, dict) else []
-    if any(os.path.realpath(e.get("project") or e.get("dir") or "") == rd for e in entries if isinstance(e, dict)):
-        return None                                           # another question still waits for her
     st = cli.json(["status", "--dir", d, "--json"], timeout=120)
     items = (st.get("items") or []) if isinstance(st, dict) else []
     if not items or any(it.get("state") == "running" for it in items):
@@ -189,6 +185,15 @@ def resume_after_answer(runner, d, bus=None, spawner=None):
     if all(it.get("state") in ("done", "failed", "dropped") for it in items):
         return None
     py = runner.python
+    if isinstance(st, dict) and st.get("batch_state") == "pilot-review":
+        # the desk's pilot (every new project starts as one): `resume` would stop at once ("pilot-review"), and the
+        # question she just answered stays listed until its stage runs again - so carry on with the same pilot run
+        # (finished stages are cached; it stops again at any question still open)
+        return (spawner or spawn)(py, runner.env, d, bus=bus)
+    pend = cli.json(["inbox", "--json"], timeout=120)
+    entries = (pend.get("entries") or pend.get("items") or []) if isinstance(pend, dict) else []
+    if any(os.path.realpath(e.get("project") or e.get("dir") or "") == rd for e in entries if isinstance(e, dict)):
+        return None                                           # another question still waits for her
     return (spawner or spawn)(py, runner.env, d, bus=bus,
                               args=[py, "-m", "vstudio.project", "resume", "--dir", d, "--json-events"])
 

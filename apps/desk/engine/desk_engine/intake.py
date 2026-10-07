@@ -201,10 +201,26 @@ def _slug(name, i):
     return f"{i + 1:02d}-{s or 'project'}"
 
 
+# Checkpoints a plan from the desk answers with its default (vstudio.intake --auto): the composer promises "only asks
+# you when something needs a human", so the opening (default: none), the filler cuts (the safe ones) and the cover
+# (the suggested frame) are not questions unless her request is about them. All three can be changed afterwards on
+# the clip. Review before publishing always stays hers.
+AUTO = ("hook", "filler", "cover")
+_ASKS_FOR = {"hook": r"hook|opening|cold open|teaser|开场|开头|高光预告|预告",
+             "cover": r"cover|thumbnail|封面|缩略图",
+             "filler": r"(confirm|确认).{0,12}(filler|口癖|气口)"}
+
+
+def auto_checkpoints(prompt):
+    """The checkpoints answered with their default for this request (``AUTO`` minus what she asked about)."""
+    return [c for c in AUTO if not re.search(_ASKS_FOR[c], prompt or "", re.I)]
+
+
 class Intake:
-    def __init__(self, data_dir, bus, runner=None, mode="mock", probe=None, defaults=None):
+    def __init__(self, data_dir, bus, runner=None, mode="mock", probe=None, defaults=None, sample=None):
         self.dir = os.path.join(data_dir, "intake")
         self.bus, self.runner, self.mode, self.probe = bus, runner, mode, probe
+        self.sample = sample
         self.defaults = defaults or (lambda: {})
         self.jobs = {}
         self._procs = {}               # plan id -> running engine children (stop kills them)
@@ -286,6 +302,9 @@ class Intake:
                 out = self._path(pid)
                 os.makedirs(self.dir, exist_ok=True)
                 args = ["plan", "--prompt", self._platform_hint(pid, prompt), "--out", out, "--json"]
+                auto = auto_checkpoints(prompt)
+                if auto:
+                    args += ["--auto", ",".join(auto)]
                 if inputs:
                     args += ["--inputs", *inputs]
                 self._set(pid, step="plan")
@@ -364,6 +383,8 @@ class Intake:
                         self._spawn_pilot(p["dir"])
         else:
             projects = self._mock_apply(plan, out_root, home, run)
+        if self.sample is not None and self.sample.uses_sample(j.get("inputs")):
+            self.sample.mark([p["dir"] for p in projects])
         self._set(pid, applied=projects)
         if self.bus:
             self.bus.publish("batches")

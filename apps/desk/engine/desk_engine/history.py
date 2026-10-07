@@ -395,6 +395,9 @@ class History:
             seen.add(rp)
             if rp in hidden or is_temp_path(d) and not is_temp_path(self.path):
                 continue
+            if kind_ == "batch" and os.path.basename(rp) == "state" and \
+                    os.path.exists(os.path.join(os.path.dirname(rp), "project.yaml")):
+                continue                            # a project's own run store: the project row stands for it
             if kind_ == "work":
                 if not os.path.isdir(d) or not (WK.looks_like_work(d) or os.path.exists(WK.record_path(d))):
                     continue
@@ -429,6 +432,8 @@ class History:
                 info["failure"] = fail
                 if live and live.get("state") in ("running", "interrupted"):
                     live = dict(live, state="failed")
+            if os.path.isfile(os.path.join(d, ".vstudio", "sample.json")):
+                info["sample"] = True               # made from the built-in sample (sample.py): labelled, deletable
             if names.get(rp):
                 info["name"] = names[rp]
             if rp in clients:

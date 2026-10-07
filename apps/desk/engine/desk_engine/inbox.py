@@ -29,6 +29,46 @@ GROUP = {"confirm": "choose", "filler-confirm": "choose", "hook-pick": "choose",
          "checkpoint": "other", "consent": "other", "privacy-masks": "other"}
 
 
+_PLATFORM_NAMES = {"tiktok": "TikTok", "youtube-shorts": "YouTube Shorts", "youtube": "YouTube",
+                   "xiaohongshu": "Xiaohongshu", "douyin": "Douyin", "bilibili": "Bilibili", "instagram": "Instagram",
+                   "x": "X", "wechat-channels": "WeChat Channels"}
+
+
+def _export_label(path):
+    """exports/tiktok-vertical.mp4 -> "TikTok · vertical" (a publish checkpoint lists the files it would publish)."""
+    stem = os.path.splitext(os.path.basename(path))[0]
+    for orient in ("vertical", "horizontal", "square", "full"):
+        if stem.endswith("-" + orient):
+            name = stem[: -len(orient) - 1]
+            return f"{_PLATFORM_NAMES.get(name, name)} · {orient}"
+    return _PLATFORM_NAMES.get(stem, stem)
+
+
+def _with_clip(opt, raw, item):
+    """An engine option that points at a video plays in the inbox and links to its clip in the editor."""
+    if item and not opt.get("clip_id"):
+        opt["clip_id"] = item
+    if raw.get("file") and str(raw["file"]).endswith((".mp4", ".mov")):
+        opt["file"] = raw["file"]
+    return opt
+
+
+def engine_answer(kind, answer):
+    """The desk's generic answer (``{approve: [option ids], keep: [...]}`` from her ticks) in the shape the engine
+    checkpoint's schema wants; None = use the checkpoint's default."""
+    if not isinstance(answer, dict) or "approve" not in answer or not isinstance(answer.get("approve"), list):
+        return answer or None
+    ids = [int(x) for x in answer["approve"] if str(x).lstrip("-").isdigit()]
+    if kind in ("hook-pick", "cover-pick"):
+        return dict(pick=ids[0]) if len(ids) == 1 else None      # one tick = her pick; all / none = the default
+    if kind == "publish":
+        return dict(approve=bool(answer["approve"]) or not answer.get("keep"))
+    if kind == "filler-confirm":
+        keep = [int(x) for x in answer.get("keep") or [] if str(x).lstrip("-").isdigit()]
+        return dict(approve=ids, keep=keep)
+    return answer
+
+
 def _key(*parts):
     return hashlib.sha1("\0".join(str(p) for p in parts).encode()).hexdigest()[:16]
 
@@ -203,6 +243,11 @@ class Inbox:
                     if spend:
                         params.update(L.spend_params(p))
                     raw = [o for o in p.get("options") or [] if isinstance(o, dict)]
+                    if kind == "publish":                 # the exported videos (not their covers), by platform
+                        raw = [dict(o, labels=dict(en=_export_label(o["file"]), zh=_export_label(o["file"])))
+                               for o in raw if str(o.get("file") or "").endswith((".mp4", ".mov"))
+                               and os.sep + "exports" + os.sep in str(o.get("file"))]
+                        allow += [o["file"] for o in raw]
                     items.append(dict(key=_key(pd, p.get("id"), p.get("item"), p.get("digest")), kind=kind,
                                       group=GROUP.get(kind, "other"),
                                       project=dict(id=e.get("id"), name=e.get("name") or os.path.basename(pd),
@@ -211,12 +256,17 @@ class Inbox:
                                             else f"checkpoint.{kind}"), params=params,
                                       text=(p.get("labels") or {}).get("zh") or p.get("label"),
                                       label=p.get("label_info"),
-                                      options=[L.engine_option(o, p.get("default"), i) for i, o in enumerate(raw)],
+                                      options=[_with_clip(L.engine_option(o, p.get("default"), i), o, p.get("item"))
+                                               for i, o in enumerate(raw)],
                                       previews=p.get("previews") or [],
                                       default=p.get("default"), minutes=1, source="engine",
                                       engine=dict(dir=pd, id=p.get("id"), item=p.get("item"))))
             except Exception:  # noqa: BLE001
                 pass
+        # a run parked at a checkpoint shows up twice (its live status + the engine's own entry): keep the engine's,
+        # which has the options
+        asked = {i["project"]["id"] for i in items if i["source"] == "engine"}
+        items = [i for i in items if not (i["source"] == "live" and i["project"]["id"] in asked)]
         for src in self.extra:
             try:
                 items += [i for i in src() if i["key"] not in answers]
@@ -246,7 +296,8 @@ class Inbox:
                 args = ["inbox", "answer", "--project", eng["dir"], "--id", str(eng["id"])]
                 if eng.get("item"):
                     args += ["--item", str(eng["item"])]
-                args += ["--answer", json.dumps(answer, ensure_ascii=False)] if answer else ["--default"]
+                value = engine_answer(it.get("kind"), answer)
+                args += ["--answer", json.dumps(value, ensure_ascii=False)] if value is not None else ["--default"]
                 self.runner.sibling("vstudio.project").json(args + ["--json"], timeout=300)
                 if eng.get("dir") and eng["dir"] not in dirs:
                     dirs.append(eng["dir"])
