@@ -1,5 +1,6 @@
 """Series planning: one sentence (+ a format) -> a series draft (bible + ideas), revise the bible in plain
-language, more ideas. LLM first (ai.ask), rule fallback from the format when no model is set up.
+language, more ideas. The AI writes them (ai.ask_or_fail: a failure is a clear ``create.ai-failed``, never rules);
+"Start from the template" (``mode="template"``) is the format's own outline, labelled as such.
 
     plan_series(prompt, fmt=None, budget=None, platforms=None, lang="en") -> draft (not saved)
     create_series(draft) -> sid       revise_bible(sid, instruction|patch) -> bible       more_ideas(sid, n)
@@ -158,8 +159,7 @@ def plan_series(prompt, fmt=None, budget=None, platforms=None, lang="en", episod
     none answers in time -> ``create.ai-failed`` {reason not-set-up | timeout | auth-expired | ..., provider,
     seconds}: never a silent swap. template = the format's own outline (its engine, beats, cast slots, rules and
     stock episode angles), no AI call - what the desk offers as "Start from the template", labelled as such
-    (draft ``source: "template"``). The test harness (fake services / VSTUDIO_CREATE_NO_LLM=1) plans with the
-    template too."""
+    (draft ``source: "template"``)."""
     prompt = str(prompt or "").strip()
     if not prompt and not fmt:
         raise CreateError("bad-input", field="prompt")
@@ -171,7 +171,7 @@ def plan_series(prompt, fmt=None, budget=None, platforms=None, lang="en", episod
     fid = fmt or guess_format(prompt)
     f = F.get(fid)
     _step(on_event, "read", format=fid)
-    use_ai = mode == "auto" and ai.enabled()
+    use_ai = mode == "auto"
     if use_ai and not ai.configured():
         _step(on_event, "ai-failed", code="not-set-up", provider="none", seconds=0)
         raise CreateError("ai-failed", status=503, reason="not-set-up", provider="none", seconds=0)
@@ -252,21 +252,14 @@ def revise_bible(sid, instruction=None, patch=None):
         raise CreateError("bad-input", field="instruction")
     s = store.load_series_file(sid)
     lang = store.create_meta(s).get("lang", "en")
-    got = ai.ask(SYSTEM.format(lang=ai.lang_name(lang)),
-                 f"Current bible (YAML-ish): engine={bible.get('engine')!r} cast={bible.get('cast')!r} "
-                 f"rules={bible.get('rules')!r}\nChange request: {text}\nReturn the full revised engine, cast, "
-                 "always and never.", REVISE_SCHEMA)
-    if got:
-        bible["engine"] = got["engine"]
-        bible["cast"] = [dict(c, own=next((o.get("own", False) for o in bible.get("cast") or [] if o.get("id") == c["id"]),
-                                         False)) for c in got["cast"]]
-        bible["rules"] = dict(always=got["always"], never=got["never"])
-    else:
-        rules = bible.setdefault("rules", dict(always=[], never=[]))
-        if re.match(r"^\s*(never|don'?t|no\b|不要|别|禁止|不能)", text, re.I):
-            rules.setdefault("never", []).append(text)
-        else:
-            rules.setdefault("always", []).append(text)
+    got = ai.ask_or_fail(SYSTEM.format(lang=ai.lang_name(lang)),
+                         f"Current bible (YAML-ish): engine={bible.get('engine')!r} cast={bible.get('cast')!r} "
+                         f"rules={bible.get('rules')!r}\nChange request: {text}\nReturn the full revised engine, cast, "
+                         "always and never.", REVISE_SCHEMA)
+    bible["engine"] = got["engine"]
+    bible["cast"] = [dict(c, own=next((o.get("own", False) for o in bible.get("cast") or [] if o.get("id") == c["id"]),
+                                     False)) for c in got["cast"]]
+    bible["rules"] = dict(always=got["always"], never=got["never"])
     store.save_bible(sid, bible)
     return bible
 
@@ -282,10 +275,13 @@ def more_ideas(sid, n=4):
     bible = store.load_bible(sid)
     have = store.load_ideas(sid)
     lang = meta.get("lang", "en")
-    got = ai.ask(SYSTEM.format(lang=ai.lang_name(lang)),
-                 f"Series: {s.get('name')}. Engine: {bible.get('engine')}. Cast: {bible.get('cast')}. Already used: "
-                 f"{[i['title'] for i in have]}. Write {n} NEW episode ideas (title, logline, notes).", IDEAS_SCHEMA)
-    new = (got or {}).get("ideas") or rule_ideas(f, s.get("name") or "", n, start=len(have) + 1, lang=lang)
+    got = ai.ask_or_fail(SYSTEM.format(lang=ai.lang_name(lang)),
+                         f"Series: {s.get('name')}. Engine: {bible.get('engine')}. Cast: {bible.get('cast')}. Already "
+                         f"used: {[i['title'] for i in have]}. Write {n} NEW episode ideas (title, logline, notes).",
+                         IDEAS_SCHEMA)
+    new = [x for x in got.get("ideas") or [] if isinstance(x, dict) and x.get("title")]
+    if not new:
+        raise CreateError("ai-failed", status=503, reason="bad-answer", provider=ai.provider(), seconds=0)
     est = idea_cny(f)
     base = max([int(i["id"][1:]) for i in have if re.match(r"^i\d+$", str(i.get("id")))] + [0])
     rows = [dict(id=f"i{base + k + 1}", title=x["title"], logline=x.get("logline", ""), notes=x.get("notes", ""),

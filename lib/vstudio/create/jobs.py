@@ -164,8 +164,6 @@ def build_job(ep, bible, unit):
     if e.get("api_model"):              # the service's own model id when it differs from Reelfold's key
         job.model = os.environ.get(e.get("api_model_env") or "", "") or e["api_model"]
     job.extra = dict(job.extra or {}, rationale=f"Shot {', '.join(unit['shots'])} of the user's own short.")
-    if PR.fake_mode() and unit.get("hard"):
-        job.extra["fake_takes"] = 2
     return job
 
 
@@ -287,14 +285,12 @@ class Run:
                 return "unknown"
             if r["status"] in ("done", "failed") or time.time() - t0 > POLL_LIMIT:
                 break
-            time.sleep(POLL_EVERY if not PR.fake_mode() else 0.05)
+            time.sleep(getattr(p, "poll_every", POLL_EVERY))
         if r["status"] != "done":
             self.state_done(tid, unit, [], failed=str(r.get("raw"))[:200])
             self.set_unit(unit["id"], state="failed", code="create.shot-failed")
             return "failed"
         urls = list(r.get("urls") or [])
-        if PR.fake_mode() and (job.extra or {}).get("fake_takes", 1) > 1 and urls:
-            urls = urls * int(job.extra["fake_takes"])
         files = []
         d = _takes_dir(self.ep)
         for url in urls:
@@ -493,7 +489,8 @@ def run(eid, stage, estimate_id=None, confirm_code=None, max_cny=None, allow_unk
 # --------------------------------------------------------------------------- takes
 def write_manual_sheets(ep, bible, units):
     """即梦: one prompt per unit to copy into the site; YOU press Generate there; save as <unit>_v1.mp4."""
-    j = PR.get("jimeng") if not PR.fake_mode() else None
+    j = PR.get("jimeng")
+    j = j if callable(getattr(j, "sheet", None)) else None
     parts = ["# 即梦 prompts\n\nPaste each prompt into jimeng.com, press Generate yourself, and save the download as "
              "`<unit>_v1.mp4` (Reelfold picks the files up).\n"]
     for u in units:

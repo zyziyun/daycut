@@ -1,13 +1,10 @@
 """Provider registry: ids, ``get(id)``, ``list_info()``, ``detect()`` (status per provider, no paid calls).
 
-Fake mode (``set_fake(True)`` - the desk's mock mode and tests, or env VSTUDIO_CREATE_FAKE=1): every provider is a
-FakeProvider with the real one's metadata; nothing leaves this machine.
+Tests stand a fake in for every provider with ``set_fake(FakeClass)`` (tests/create_fake.py); nothing in the engine
+turns that on (no environment variable, no command-line flag), so the product always talks to the real services.
 """
-import os
-
 from ..i18n import CreateError
 from .base import Provider, SubmitTimeout  # noqa: F401
-from .fake import FakeProvider
 
 # Every provider registers through the plugin registry (vstudio.plugins: built-in manifests in
 # plugins/builtin/manifests, plus the user's own folder / package plugins once turned on). This order is only the
@@ -37,17 +34,19 @@ def order():
     return [p for p in ORDER if p in c] + sorted(p for p in c if p not in ORDER)
 
 
-_fake = {"on": None, "overrides": {}}
+_fake = {"cls": None, "overrides": {}}
 _instances = {}
 
 
 def fake_mode():
-    return _fake["on"] if _fake["on"] is not None else os.environ.get("VSTUDIO_CREATE_FAKE") == "1"
+    """A test installed a fake provider class (``set_fake``)."""
+    return bool(_fake["cls"])
 
 
-def set_fake(on=True, **overrides):
-    """Fake mode on/off; ``overrides`` = {provider_id: FakeProvider kwargs} (tests: fail / timeout / balance)."""
-    _fake["on"] = on
+def set_fake(cls=None, **overrides):
+    """Tests only: ``cls`` (``cls(info, **kwargs)``) stands in for every provider, None = the real ones;
+    ``overrides`` = {provider_id: kwargs} (fail / timeout / balance ...)."""
+    _fake["cls"] = cls
     _fake["overrides"] = overrides
     _instances.clear()
 
@@ -64,10 +63,7 @@ def get(pid):
     if cls is None:
         raise CreateError("not-found", status=404, what="service", id=pid)
     if fake_mode():
-        kw = dict(_fake["overrides"].get(pid) or {})
-        if pid == "kling-mcp":
-            kw.setdefault("balance", 1240)
-        inst = FakeProvider(cls.info, **kw)
+        inst = _fake["cls"](cls.info, **dict(_fake["overrides"].get(pid) or {}))
     else:
         inst = cls()
     _instances[pid] = inst

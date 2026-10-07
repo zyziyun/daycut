@@ -1,5 +1,7 @@
-"""LLM glue for Create: ``ask(system, prompt, schema)`` -> JSON dict or None (no model set up, fake mode, or a
-failure; callers then use their rule-based fallback). Routed as the ``script`` task (SPEC: the ``create`` task's
+"""LLM glue for Create: ``ask(system, prompt, schema)`` -> JSON dict or None (no model set up, or a failure), and
+``ask_or_fail`` -> the dict or ``CreateError("ai-failed", reason=...)``: the series bible, more ideas, bible changes
+and episode scripts never swap a failed answer for rules (only "Start from the template" is template text, and it
+says so). Routed as the ``script`` task (SPEC: the ``create`` task's
 default route is the same as ``script``; a separate task id is a later, shared-file change).
 
 Every call is bounded: each CLI attempt (Claude Code / Codex subscriptions) gets ``VSTUDIO_CREATE_AI_TIMEOUT``
@@ -38,15 +40,8 @@ def deadline():
     return _num("VSTUDIO_CREATE_AI_DEADLINE", 200.0)
 
 
-def enabled():
-    from .providers import fake_mode
-    return not fake_mode() and os.environ.get("VSTUDIO_CREATE_NO_LLM") != "1"
-
-
 def provider():
     """The provider the ``script`` task routes to ("none" when nothing is set up), never raises."""
-    if not enabled():
-        return "none"
     try:
         from vstudio import llm
         return llm.route(TASK).provider or "none"
@@ -59,10 +54,10 @@ def configured():
 
 
 def ask(system, prompt, schema, max_tokens=6000, timeout=None, on_event=None, strict=False):
-    if not enabled():
-        return None
     who = provider()
     if who == "none":
+        if strict:
+            raise AIFailed("not-set-up", "none", "no AI is set up for scripts")
         return None
     per = float(timeout or attempt_timeout())
     limit = max(per, deadline())
@@ -116,6 +111,20 @@ def ask(system, prompt, schema, max_tokens=6000, timeout=None, on_event=None, st
     if strict:
         raise fail
     return None
+
+
+def ask_or_fail(system, prompt, schema, **kw):
+    """``ask`` that never comes back empty: no AI set up, a timeout, an expired login or an answer without JSON ->
+    ``CreateError("ai-failed", reason, provider, seconds, tried)`` (the desk shows the reason and Retry)."""
+    from .i18n import CreateError
+    try:
+        got = ask(system, prompt, schema, strict=True, **kw)
+    except AIFailed as e:
+        raise CreateError("ai-failed", status=503, reason=e.code, provider=e.provider or "", seconds=e.seconds,
+                          tried=e.tried) from e
+    if not isinstance(got, dict):
+        raise CreateError("ai-failed", status=503, reason="bad-answer", provider=provider(), seconds=0)
+    return got
 
 
 def lang_name(lang):

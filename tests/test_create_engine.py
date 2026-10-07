@@ -11,7 +11,7 @@ from _create_helpers import ROOT, home, needs_ffmpeg, sample_episode  # noqa: F4
 
 from vstudio.create import bible as BI, costs, formats as F, handoff as HO, jobs, providers as PR, routing, store, views
 from vstudio.create.i18n import CreateError
-from vstudio.create.providers import fake
+import create_fake as fake
 
 
 # ------------------------------------------------------------------------------------------- formats
@@ -35,9 +35,9 @@ def test_format_label_fallback_and_unknown():
 
 
 # ------------------------------------------------------------------------------------------- planning
-def test_plan_series_rules_fallback(home):
+def test_plan_series_with_the_test_ai(home):
     d = BI.plan_series("5-episode series ad for my matcha brand, office comedy, 30 s each, Chinese + English")
-    assert d["format"] == "series-ad" and d["source"] == "template"
+    assert d["format"] == "series-ad" and d["source"] == "ai" and fake.ASKED[-1] == "plan_series"
     assert d["episodes"] == 5 and d["bible"]["length_s"] == 30
     assert d["bible"]["languages"] == ["zh", "en"]
     assert len(d["ideas"]) == 4 and d["ideas"][0]["picked"]
@@ -46,9 +46,8 @@ def test_plan_series_rules_fallback(home):
 
 def test_plan_series_with_fake_llm(home, monkeypatch):
     from vstudio import llm
-    monkeypatch.setenv("VSTUDIO_CREATE_NO_LLM", "0")
     monkeypatch.setenv("VSTUDIO_LLM_SCRIPT_PROVIDER", "codex")
-    PR.set_fake(False)
+    fake.real_ai()
     seen = {}
 
     def fake_complete(task, system, prompt, schema=None, **kw):
@@ -65,9 +64,8 @@ def test_plan_series_with_fake_llm(home, monkeypatch):
 
 def test_plan_series_llm_failure_is_a_clear_error_then_template_works(home, monkeypatch):
     from vstudio import llm
-    monkeypatch.setenv("VSTUDIO_CREATE_NO_LLM", "0")
     monkeypatch.setenv("VSTUDIO_LLM_SCRIPT_PROVIDER", "claude-code")
-    PR.set_fake(False)
+    fake.real_ai()
     monkeypatch.setattr(llm, "complete", lambda *a, **k: (_ for _ in ()).throw(llm.LLMError("claude CLI: 401 expired")))
     with pytest.raises(CreateError) as ei:
         BI.plan_series("脱口秀段子，讲副业")
@@ -79,8 +77,7 @@ def test_plan_series_llm_failure_is_a_clear_error_then_template_works(home, monk
 
 def test_plan_series_no_ai_set_up_is_a_clear_error_never_a_silent_swap(home, monkeypatch):
     from vstudio import llm
-    monkeypatch.setenv("VSTUDIO_CREATE_NO_LLM", "0")
-    PR.set_fake(False)
+    fake.real_ai()
     called = []
     monkeypatch.setattr(llm, "complete", lambda *a, **k: called.append(1))
     monkeypatch.setattr(llm, "route", lambda *a, **k: llm.Route("none", None, {}, "legacy-auto"))
@@ -104,11 +101,10 @@ def test_plan_series_hanging_ai_times_out_with_steps(home, monkeypatch):
     """Her bug: Claude Code (expired login) never answers -> Plan spun forever. Now: bounded, steps, clear error."""
     import threading
     from vstudio import llm
-    monkeypatch.setenv("VSTUDIO_CREATE_NO_LLM", "0")
     monkeypatch.setenv("VSTUDIO_LLM_SCRIPT_PROVIDER", "claude-code")
     monkeypatch.setenv("VSTUDIO_CREATE_AI_TIMEOUT", "0.2")
     monkeypatch.setenv("VSTUDIO_CREATE_AI_DEADLINE", "0.6")
-    PR.set_fake(False)
+    fake.real_ai()
     gate = threading.Event()
     seen = {}
 
@@ -162,6 +158,27 @@ def test_bible_revise_rules_and_ideas(home):
     assert "make B more stubborn" in b["rules"]["always"]
     new = BI.more_ideas(sid, 2)
     assert len(new) == 2 and new[0]["id"] == "i5"
+
+
+def test_bible_ideas_and_scripts_never_fall_back_to_rules(home, monkeypatch):
+    """No AI answer -> a clear create.ai-failed with the reason: never rules made up in its place (no-mock rule)."""
+    from vstudio import llm
+    from vstudio.create import script
+    sid = BI.create_series(BI.plan_series("series ad for umbrellas"))
+    fake.real_ai()
+    monkeypatch.setenv("VSTUDIO_LLM_SCRIPT_PROVIDER", "claude-code")
+    monkeypatch.setattr(llm, "complete", lambda *a, **k: (_ for _ in ()).throw(llm.LLMError("claude CLI: 401 expired")))
+    before, ideas = store.load_bible(sid), store.load_ideas(sid)
+    for call in (lambda: BI.revise_bible(sid, "never show real logos"), lambda: BI.more_ideas(sid, 2),
+                 lambda: script.add_episodes(sid, ["i1"])):
+        with pytest.raises(CreateError) as ei:
+            call()
+        assert ei.value.code == "create.ai-failed" and ei.value.params["reason"] == "auth-expired"
+    assert store.load_bible(sid) == before and store.load_ideas(sid) == ideas and store.list_episodes(sid) == []
+    monkeypatch.setattr(llm, "route", lambda *a, **k: llm.Route("none", None, {}, "legacy-auto"))
+    with pytest.raises(CreateError) as ei:
+        script.add_episodes(sid, ["i1"])
+    assert ei.value.params["reason"] == "not-set-up"
 
 
 def test_episodes_add_writes_script_board_stills(home):
@@ -365,7 +382,7 @@ def test_unknown_rate_refused_unless_allowed(home, tmp_path, monkeypatch):
 
 
 def test_price_changed_refusal(home):
-    PR.set_fake(True, **{"kling-mcp": dict(quote_factor=1.2, balance=5000)})
+    PR.set_fake(fake.FakeProvider, **{"kling-mcp": dict(quote_factor=1.2, balance=5000)})
     sid, eid = sample_episode()
     est = jobs.estimate(eid, "finals")
     with pytest.raises(CreateError) as e:
@@ -375,7 +392,7 @@ def test_price_changed_refusal(home):
 
 
 def test_low_credits_refusal(home):
-    PR.set_fake(True, **{"kling-mcp": dict(balance=10)})
+    PR.set_fake(fake.FakeProvider, **{"kling-mcp": dict(balance=10)})
     sid, eid = sample_episode()
     est = jobs.estimate(eid, "finals")
     with pytest.raises(CreateError) as e:
@@ -404,7 +421,7 @@ def test_early_stop_after_two_hard_failures(home):
     sid, eid = sample_episode()
     est0 = jobs.estimate(eid, "finals")
     hard = [f"u{no}" for no in est0["hard_first"]]
-    PR.set_fake(True, **{"kling-mcp": dict(fail=set(hard[:2]), balance=5000)})
+    PR.set_fake(fake.FakeProvider, **{"kling-mcp": dict(fail=set(hard[:2]), balance=5000)})
     fake.reset()
     est = jobs.estimate(eid, "finals")
     res = jobs.run(eid, "finals", est["id"], est["confirm_code"], est["max_cny"])
@@ -439,7 +456,7 @@ def test_rejected_submit_not_counted(home):
     sid, eid = sample_episode()
     est0 = jobs.estimate(eid, "finals")
     target = f"u{est0['hard_first'][0]}"
-    PR.set_fake(True, **{"kling-mcp": dict(reject={target}, balance=5000)})
+    PR.set_fake(fake.FakeProvider, **{"kling-mcp": dict(reject={target}, balance=5000)})
     est = jobs.estimate(eid, "finals")
     jobs.run(eid, "finals", est["id"], est["confirm_code"], est["max_cny"])
     row = [r for r in costs.ledger(sid) if r["unit"] == target][0]
@@ -535,7 +552,7 @@ def test_veo_request_and_poll_shapes(monkeypatch):
 
 
 def test_detect_never_ready_without_keys(monkeypatch):
-    PR.set_fake(False)
+    PR.set_fake(None)
     for k in ("KLING_MCP_TOKEN", "MINIMAX_API_KEY", "GEMINI_API_KEY", "ARK_API_KEY"):
         monkeypatch.delenv(k, raising=False)
     d = {x["id"]: x for x in PR.detect()}
@@ -549,6 +566,21 @@ def test_detect_never_ready_without_keys(monkeypatch):
 
 def test_cli_json_error_shape(home, capsys):
     from vstudio.create import cli
-    rc = cli.main(["--home", str(home), "--fake", "--json", "run", "nope-e01", "--stage", "finals"])
+    rc = cli.main(["--home", str(home), "--json", "run", "nope-e01", "--stage", "finals"])
     out = json.loads(capsys.readouterr().out)
     assert rc == 2 and out["error"]["code"] in ("create.not-found", "create.confirm-required")
+
+
+def test_no_fake_switch_in_the_engine(monkeypatch):
+    """No-mock rule: only a test can stand fakes in (set_fake); no env var or CLI flag turns them on."""
+    from vstudio.create import cli
+    PR.set_fake(None)
+    monkeypatch.setenv("VSTUDIO_CREATE_FAKE", "1")
+    assert not PR.fake_mode()
+    with pytest.raises(SystemExit):
+        cli.parser().parse_args(["--fake", "formats"])
+    src = os.path.join(ROOT, "lib", "vstudio", "create")
+    blob = "".join(open(os.path.join(r, f), encoding="utf-8").read() for r, _, fs in os.walk(src) for f in fs
+                   if f.endswith(".py"))
+    assert "VSTUDIO_CREATE_FAKE" not in blob and "VSTUDIO_CREATE_NO_LLM" not in blob
+    assert not os.path.exists(os.path.join(src, "providers", "fake.py"))

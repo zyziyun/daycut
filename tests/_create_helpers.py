@@ -1,4 +1,5 @@
-"""Shared fixtures for the Create engine tests: an isolated store home, fake services, no model calls."""
+"""Shared fixtures for the Create engine tests: an isolated store home, fake services and a fake AI (create_fake.py),
+no model calls."""
 import pathlib
 import shutil
 import sys
@@ -13,19 +14,18 @@ needs_ffmpeg = pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg not
 
 @pytest.fixture
 def home(tmp_path, monkeypatch):
-    from vstudio.create import costs, providers as PR, store
-    from vstudio.create.providers import fake
+    import create_fake as fake
+    from vstudio.create import costs, store
     monkeypatch.setenv("VSTUDIO_HOME", str(tmp_path / "vhome"))
-    monkeypatch.setenv("VSTUDIO_CREATE_NO_LLM", "1")
     monkeypatch.delenv("KLING_MCP_TOKEN", raising=False)
     monkeypatch.delenv("MINIMAX_API_KEY", raising=False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     store.configure(str(tmp_path / "vhome"))
-    PR.set_fake(True)
+    fake.install()
     fake.reset()
     costs.set_cap(300)
     yield tmp_path / "vhome"
-    PR.set_fake(None)
+    fake.uninstall()
     store.configure(None)
 
 

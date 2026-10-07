@@ -1,5 +1,5 @@
-"""Episode scripts: idea -> beats with lines + the shot list (one model call), lint, revise. Rule fallback from
-the format's beat template when no model is set up.
+"""Episode scripts: idea -> beats with lines + the shot list (one model call), lint, revise. No AI answer is a clear
+``create.ai-failed`` (reason, provider, Retry in the desk), never a script made up from rules.
 
     add_episodes(sid, idea_ids, on_event=None) -> [episode]      write(ep) / revise(eid, instruction) -> ep
 """
@@ -37,27 +37,6 @@ def _target(bible, fmt):
     return float(bible.get("length_s") or statistics.mean(fmt["length_s"]))
 
 
-def rule_episode(fmt, bible, idea, lang):
-    """Two shots per beat (a wide set-up + a closer reaction / line); repeated beats get a text card."""
-    zh = str(lang).startswith("zh")
-    cast = [c["id"] for c in bible.get("cast") or []] or ["A"]
-    beats = []
-    title = idea.get("title") or ""
-    for i, b in enumerate(F.expand_beats(fmt, lang)):
-        a = cast[i % len(cast)]
-        other = cast[(i + 1) % len(cast)]
-        line = (f"{b['label']}：{title}" if zh else f"{b['label']}: {title}")
-        shots = [dict(camera="wide" if not zh else "全景", faces=[] if i % 3 == 0 else [a, other][:1 + (i % 2)],
-                      action=(f"{b['label']} — {idea.get('logline') or title}"), dur=2.0, card=None, line=None)]
-        if b.get("n"):
-            shots.append(dict(camera="insert", faces=[], action=b["label"], dur=1.5, card=f"*{title}", line=None))
-        else:
-            shots.append(dict(camera="close" if not zh else "近景", faces=[a], action=line, dur=2.0, card=None,
-                              line=line))
-        beats.append(dict(beat=b["label"], lines=[dict(who=a, text=line)], shots=shots))
-    return dict(beats=beats)
-
-
 def lint(ep, bible, fmt):
     """Plain checks -> [code]: runtime vs the target, long lines, text asked inside generated shots."""
     out = []
@@ -84,15 +63,15 @@ def write(ep, sid=None):
     bible = store.load_bible(sid)
     lang = meta.get("lang", "en")
     idea = ep.get("idea") or {}
-    got = ai.ask(SYSTEM.format(lang=ai.lang_name(lang)),
-                 f"Series: {s.get('name')}\nEngine: {bible.get('engine')}\nCast: {bible.get('cast')}\n"
-                 f"Always: {(bible.get('rules') or {}).get('always')}\nNever: {(bible.get('rules') or {}).get('never')}\n"
-                 f"Beats: {[b['label'] for b in bible.get('beats') or F.expand_beats(fmt, lang)]}\n"
-                 f"Episode: {idea.get('title')} - {idea.get('logline')}\nTarget length: {_target(bible, fmt):.0f} s, "
-                 f"aspect {bible.get('aspect', '9:16')}.", SCHEMA, max_tokens=8000)
-    doc = got if got and got.get("beats") else rule_episode(fmt, bible, idea, lang)
-    ep["script"] = dict(beats=[dict(beat=b["beat"], lines=b.get("lines") or []) for b in doc["beats"]],
-                        source="ai" if got else "rules")
+    doc = ai.ask_or_fail(SYSTEM.format(lang=ai.lang_name(lang)),
+                         f"Series: {s.get('name')}\nEngine: {bible.get('engine')}\nCast: {bible.get('cast')}\n"
+                         f"Always: {(bible.get('rules') or {}).get('always')}\nNever: {(bible.get('rules') or {}).get('never')}\n"
+                         f"Beats: {[b['label'] for b in bible.get('beats') or F.expand_beats(fmt, lang)]}\n"
+                         f"Episode: {idea.get('title')} - {idea.get('logline')}\nTarget length: {_target(bible, fmt):.0f} s, "
+                         f"aspect {bible.get('aspect', '9:16')}.", SCHEMA, max_tokens=8000)
+    if not doc.get("beats"):
+        raise CreateError("ai-failed", status=503, reason="bad-answer", provider=ai.provider(), seconds=0)
+    ep["script"] = dict(beats=[dict(beat=b["beat"], lines=b.get("lines") or []) for b in doc["beats"]], source="ai")
     ep["shots"] = storyboard.from_beats(doc["beats"], target=_target(bible, fmt), cast=bible.get("cast") or [])
     ep["lint"] = lint(ep, bible, fmt)
     ep["state"] = "boarded"

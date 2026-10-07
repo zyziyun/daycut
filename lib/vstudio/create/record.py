@@ -163,9 +163,6 @@ def cut(src, edl, out, studio=True):
 
 def transcript_words(path, language=None):
     """mlx-whisper (or the configured ASR) -> [{word, start, end}] or None when no ASR is available."""
-    from .providers import fake_mode
-    if fake_mode():
-        return None
     try:
         from vstudio import asr
         tr = asr.transcribe(path, language=language)

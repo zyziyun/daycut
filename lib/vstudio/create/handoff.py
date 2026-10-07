@@ -10,7 +10,7 @@ import hashlib
 import os
 import shutil
 
-from . import ai, formats as F, jobs, providers as PR, store, stills
+from . import ai, formats as F, jobs, store, stills
 from .i18n import CreateError
 
 LANG_PLATFORMS = {"zh": ["xiaohongshu", "douyin"], "en": ["youtube-shorts", "tiktok"], "fr": ["instagram"]}   # registry order
@@ -18,12 +18,16 @@ SLOTS = [(3, "20:00"), (4, "09:00"), (5, "12:00"), (6, "20:00")]       # Thu 20:
 AI_LABEL = {"zh": "AI 生成 · 仅供娱乐", "en": "AI-generated · for fun", "fr": "Généré par IA · pour rire"}
 
 
-def _timeline(ep, fake):
+# the master's canvas / frame rate / film grain (tests/create_fake.py makes them small and fast)
+CANVAS, FPS, GRAIN = (1080, 1920), 30, 3
+
+
+def _timeline(ep):
     d = store.work_dir(ep)
     picks = ep.get("picks") or {}
     takes = ep.get("takes") or {}
     edl = []
-    size = (360, 640) if fake else (1080, 1920)
+    size = CANVAS
     for sh in ep.get("shots") or []:
         dur = float(sh.get("dur") or 2)
         f = picks.get(sh["no"]) or ((takes.get(sh["no"]) or [{}])[0].get("file"))
@@ -44,8 +48,8 @@ def _timeline(ep, fake):
         else:
             still = sh.get("still") or stills.placeholder(sh, os.path.join(d, "stills", f"{sh['no']}.jpg"))
             edl.append({"still": still, "dur": dur})
-    return dict(canvas=list(size), fps=24 if fake else 30, takes_dir="takes", out="master.mp4",
-                grade=dict(saturation=0.92, grain=0 if fake else 3), edl=edl, music=dict(path=None),
+    return dict(canvas=list(size), fps=FPS, takes_dir="takes", out="master.mp4",
+                grade=dict(saturation=0.92, grain=GRAIN), edl=edl, music=dict(path=None),
                 captions=dict(language="zh", max_chars=32, out="cues.json"))
 
 
@@ -54,9 +58,8 @@ def assemble(eid, on_event=None):
     ep = store.load_episode(eid)
     if not ep.get("shots"):
         raise CreateError("nothing-to-make", status=409)
-    fake = PR.fake_mode()
     path = os.path.join(store.work_dir(ep), "timeline.yaml")
-    store.write_yaml(path, _timeline(ep, fake))
+    store.write_yaml(path, _timeline(ep))
     A = _import("assemble")
     t = A.load(path)
     res = A.assemble(t, asr=False, out=lambda m: on_event and on_event(dict(event="create.progress",

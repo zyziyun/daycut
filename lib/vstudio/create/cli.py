@@ -17,7 +17,7 @@ exit code 2). ``--json-events``: progress as JSON lines (``{"event": ...}``) bef
     plugins [list | enable KEY | disable KEY | set KEY --settings-json J]     (KEY = <kind>:<id>; docs/PLUGINS.md)
     import PATH [--into EID] [--importer ID] [--format F]   a board (HyperFrames, shot list, EDL / OTIO / XML)
     make EID [--only 01,02] [--lanes N]       plugin: / agent: shots in parallel lanes (job folders, QC, takes)
-Global: --home DIR (store root instead of $VSTUDIO_HOME), --fake (fake services, no model calls).
+Global: --home DIR (store root instead of $VSTUDIO_HOME).
 """
 import argparse
 import json
@@ -36,7 +36,6 @@ def parser():
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--json-events", action="store_true")
     ap.add_argument("--home")
-    ap.add_argument("--fake", action="store_true")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("formats")
     s = sub.add_parser("providers")
@@ -278,11 +277,9 @@ def _plugins(a):
 
 def main(argv=None):
     a = parser().parse_args(argv)
-    from . import providers as PR, store
+    from . import store
     if a.home:
         store.configure(a.home)
-    if a.fake:
-        PR.set_fake(True)
 
     def emit(ev):
         if a.json_events:

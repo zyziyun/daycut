@@ -4,6 +4,7 @@ import type { CreateClient, CreateJob, Msg } from '../../../shared/create';
 import { EngineError } from '../../../shared/engineClient';
 import { has, t, tk } from '../i18n';
 import { useEngine, useLoad } from '../lib/engine';
+import { planErrorText } from './PlanStatus';
 
 export function useCreate(): CreateClient | null {
   const { client } = useEngine();
@@ -25,6 +26,8 @@ export function errText(e: unknown): string {
 
 export function msgText(m: Msg | null | undefined): string {
   if (!m) return '';
+  // no AI answer (bible change, more ideas, scripts): the reason and who failed, never a silent rules swap
+  if (m.code === 'create.ai-failed' || m.code === 'create.job-timeout') return planErrorText(m);
   const params: Record<string, string | number> = {};
   for (const [k, v] of Object.entries(m.params ?? {})) params[k] = Array.isArray(v) ? v.join(', ') : typeof v === 'number' ? v : String(v ?? '');
   return has(m.code) ? tk(m.code, params) : m.code;
