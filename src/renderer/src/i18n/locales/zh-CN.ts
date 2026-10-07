@@ -2,6 +2,7 @@
 import { legacyZh } from '../legacy/zh';
 import { aiaccZh } from './aiacc';
 import { chatEditZh } from './chatEdit';
+import { projectAiZh } from './projectAi';
 import { legacyZhV02 } from '../legacy/v02';
 import { publishPlatformsZh } from './publishPlatforms';
 import type { MessageKey, v04En } from './en';
@@ -568,4 +569,4 @@ const v04Zh: Record<keyof typeof v04En, string> = {
   'editor.zoomFit': '全部',
 };
 
-export const zhCN: Record<MessageKey, string> = { ...legacyZh, ...legacyZhV02, ...v04Zh, ...aiaccZh, ...publishPlatformsZh, ...chatEditZh };
+export const zhCN: Record<MessageKey, string> = { ...legacyZh, ...legacyZhV02, ...v04Zh, ...aiaccZh, ...publishPlatformsZh, ...chatEditZh, ...projectAiZh };

@@ -11,7 +11,7 @@ import { useHistory } from '../lib/history';
 import { useInbox } from '../lib/inbox';
 import { go, href, type ProjectTab } from '../lib/router';
 import { clipStatus, itemStatus } from '../lib/status';
-import { AIPanel } from './AIPanel';
+import { ProjectAIPanel } from './ProjectAIPanel';
 import { inboxTitle } from './Inbox';
 import { Empty, More, SkGrid, StatusPill, Thumb } from './kit';
 import { PlayerOverlay } from './Player';
@@ -244,14 +244,13 @@ export function Project({ id, tab }: { id: string; tab: ProjectTab }) {
           {tab === 'files' && <FilesTab id={id} extras={extras} />}
         </div>
       </div>
-      <AIPanel
+      <ProjectAIPanel
         item={id}
-        clip={sel && sel.state !== 'queued' && sel.state !== 'running' && sel.files.length ? sel.id : null}
-        clipTitle={sel?.title}
+        clips={done.map((c) => ({ id: c.id, title: c.title }))}
+        selected={sel && done.includes(sel) ? { id: sel.id, title: sel.title } : null}
         running={s === 'run'}
         liveText={s === 'run' ? item?.live?.message : null}
         onApplied={reload}
-        onCompare={(ops) => ops && sel && go({ name: 'clip', id, clip: sel.id })}
       />
       {playing && (
         <PlayerOverlay

@@ -35,7 +35,7 @@ import type {
   WeeklyDoc,
 } from './v02';
 import type { AskContext, ChatTurn, ExportJob } from './chatEdit';
-import type { AskResult, CalendarDoc, CalendarPost, ClipsDoc, EditOp, EffectDef, EngineMsg, InboxDoc, IntakeJob, IntakePlan, OutputDoc } from './v04';
+import type { AskResult, CalendarDoc, CalendarPost, ClipsDoc, EditOp, EffectDef, EngineMsg, InboxDoc, IntakeJob, IntakePlan, OutputDoc, ProjectAskJob } from './v04';
 
 export class EngineError extends Error {
   constructor(
@@ -310,6 +310,26 @@ export class EngineClient {
       `/api/outputs/${bid(item)}/${clipId(clip)}/ask`,
       context ? { prompt: prompt.slice(0, 500), context } : { prompt: prompt.slice(0, 500) },
     );
+  }
+  /** project-level 让 AI 改: one request for every clip (or `clips`) of the project -> a background job */
+  projectAsk(item: string, prompt: string, clips?: string[] | null, context?: Record<string, unknown> | null) {
+    const body: Record<string, unknown> = { prompt: prompt.slice(0, 500) };
+    if (clips?.length) body.clips = clips.map(clipId).map(decodeURIComponent);
+    if (context) body.context = context;
+    return this.req<{ ok: boolean; job: string; clips: string[]; timeout: number }>('POST', `/api/outputs/${bid(item)}/project-ask`, body);
+  }
+  projectAskJob(job: string) {
+    if (!/^[0-9a-f]{10}$/.test(job)) throw new EngineError(400, `bad job ${job}`);
+    return this.req<ProjectAskJob>('GET', `/api/project-ask/${job}`);
+  }
+  /** Cancel: the engine process (and the model CLI it started) is killed */
+  stopProjectAsk(job: string) {
+    if (!/^[0-9a-f]{10}$/.test(job)) throw new EngineError(400, `bad job ${job}`);
+    return this.req<{ ok: boolean; killed: boolean }>('POST', `/api/project-ask/${job}/stop`, {});
+  }
+  /** needs_rerender action: re-run these recipe items */
+  regenerate(item: string, items: string[]) {
+    return this.req<{ ok: boolean; started: boolean; simulated?: boolean }>('POST', `/api/outputs/${bid(item)}/regenerate`, { items });
   }
   /** cancel ONE earlier step; the later ones stay (refused with revert-conflict when a later step builds on it) */
   revertOutput(item: string, clip: string, step: string) {

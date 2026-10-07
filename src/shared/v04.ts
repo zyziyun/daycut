@@ -202,6 +202,83 @@ export interface AskResult {
   failed?: { provider?: string | null; code?: string | null } | null;
 }
 
+// ---------------------------------------------------------------- project-level 让 AI 改 (every clip of the page)
+export type ProjectAskStage = 'read' | 'check' | 'ask' | 'plan';
+
+export interface RerenderAction {
+  kind: 'copy-prompt' | 'open-file' | 'regenerate' | 'reveal';
+  label: EngineMsg;
+  prompt?: string;
+  file?: string;
+  line?: number;
+  items?: string[];
+}
+
+export interface RerenderPath {
+  kind: 'rerender-scripts' | 'regenerate' | 're-export';
+  message: EngineMsg;
+  files?: { file: string; line: number; text: string }[];
+  prompt?: string;
+  items?: string[];
+  actions: RerenderAction[];
+}
+
+/** The change cannot be made on these (flattened) clips: why, and the real way to get it. */
+export interface NeedsRerender {
+  clips: string[];
+  titles: string[];
+  code: string;
+  reason: EngineMsg;
+  targets: string[];
+  /** true: the rule check answered (no model call) */
+  rule?: boolean;
+  paths: RerenderPath[];
+}
+
+export interface ProjectGroup {
+  clip: string;
+  title: string;
+  mode?: string | null;
+  proposals: Proposal[];
+  dropped?: { op?: unknown; error?: EngineMsg | string }[];
+  summary?: string | null;
+  source?: string | null;
+}
+
+export interface ProjectAskResult {
+  answer: 'changes' | 'needs_rerender' | 'mixed' | 'nothing';
+  groups: ProjectGroup[];
+  needs_rerender: NeedsRerender | null;
+  summary?: string | null;
+  warnings?: EngineMsg[];
+  provider?: string | null;
+  model?: string | null;
+  routed?: string | null;
+  fallback?: { from: string; to: string; code: string; error?: string } | null;
+  /** the model call failed and no fallback answered: the rule answer is what is shown */
+  failed?: { provider?: string | null; code?: string | null } | null;
+  cost_usd?: number | null;
+  seconds?: number | null;
+  model_called?: boolean;
+  engine?: string;
+}
+
+export interface ProjectAskJob {
+  job: string;
+  item: string;
+  prompt: string;
+  state: 'running' | 'done' | 'failed' | 'cancelled';
+  stages: { stage: ProjectAskStage; at: number; n?: number | null; provider?: string | null }[];
+  notices: { kind: 'fallback' | 'watchdog'; from?: string; to?: string; code?: string; at?: number; seconds?: number }[];
+  clips: string[];
+  timeout: number;
+  elapsed: number;
+  /** the rule answer (needs_rerender) sent before the model call */
+  partial?: NeedsRerender | null;
+  result: ProjectAskResult | null;
+  error: EngineMsg | null;
+}
+
 // ---------------------------------------------------------------- intake
 export interface IntakeMaterial {
   id: string;

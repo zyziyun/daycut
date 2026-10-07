@@ -57,6 +57,10 @@ v0.4 (outputs.py, intake.py, inbox.py; engine command when available, desk imple
                                            /revert {step} (one earlier step, later ones kept); /chat {add} |
                                            {turn, set} (the clip's chat transcript; show returns it as chat);
                                            /export {targets} -> {job} + output-render events; /export-stop {job}
+  POST /api/outputs/<item>/project-ask     {prompt, clips?, context?} project-level AI (every clip) -> {job};
+                                           GET /api/project-ask/<job> {state, stages, notices, elapsed, result};
+                                           POST /api/project-ask/<job>/stop (kills the engine + model CLI);
+                                           POST /api/outputs/<item>/regenerate {items} (needs_rerender action)
   GET  /api/effects                        effects catalogue (zh labels, params, preview kind)
   POST /api/intake {prompt, inputs[]}      -> {id}; GET /api/intake/<id>; POST .../revise {prompt}; POST .../apply
                                            {plan?, run?}; GET /api/intake/recent
@@ -414,6 +418,8 @@ class Api:
         from .outputs import Outputs, probe
         runner = getattr(studio, "runner", None)
         self.outputs = Outputs(engine.data_dir, self.history, runner if engine.mode == "real" else None, bus)
+        from .projask import ProjectAsk
+        self.project_ask = ProjectAsk(self.outputs, bus)
         self.intake = Intake(engine.data_dir, bus, runner, engine.mode, probe=probe)
         self.inbox = Inbox(engine.data_dir, self.history, runner, engine.mode, bus)
         from .calendar import Calendar
@@ -438,6 +444,16 @@ class Api:
         b = body if isinstance(body, dict) else {}
         if parts[:1] == ["effects"] and method == "GET":
             return self.outputs.effects()
+        if parts[:1] == ["project-ask"] and len(parts) >= 2:
+            if len(parts) == 2 and method == "GET":
+                return self.project_ask.get(parts[1])
+            if len(parts) == 3 and parts[2] == "stop" and method == "POST":
+                return self.project_ask.stop(parts[1])
+        if parts[:1] == ["outputs"] and len(parts) == 3 and method == "POST" and parts[2] in ("project-ask", "regenerate"):
+            need(ID_RE.match(parts[1]), "bad item id")
+            if parts[2] == "regenerate":
+                return self.project_ask.regenerate(parts[1], b.get("items"))
+            return self.project_ask.start(parts[1], b.get("prompt"), clips=b.get("clips"), context=b.get("context"))
         if parts[:1] == ["outputs"] and len(parts) >= 2:
             need(ID_RE.match(parts[1]), "bad item id")
             if len(parts) == 2 and method == "GET":
