@@ -2,6 +2,7 @@
 // main with these schemas before anything happens; unknown channels are rejected by construction.
 import { z } from 'zod';
 import { AI_TASK_IDS, KEY_NAMES, PROVIDER_IDS } from './aiRoutes';
+import { recIpcSchemas } from './recIpc';
 
 const batchId = z.string().regex(/^[0-9a-f]{12}$/);
 /** batch job ids, and work-folder clip ids (file stems like A_换圈子: letters / digits of any script, . _ -) */
@@ -61,11 +62,17 @@ export const ipcSchemas = {
     defaultPlatforms: z.array(platformId).min(1).max(8).optional(),
     cleanupDays: z.number().int().min(0).max(365).optional(),
     agencyMode: z.boolean().optional(),
+    createPage: z.boolean().optional(),
+    createLocalGen: z.boolean().optional(),
   }),
   // ---------------- v0.2: first run, keys (OS keychain via safeStorage), persona, exports
   'firstRun:complete': z.strictObject({ defaultPlatforms: z.array(platformId).min(1).max(8), skipped: z.boolean().optional() }),
   'secrets:status': z.undefined(),
-  'secrets:set': z.strictObject({ name: z.enum(SECRET_NAMES), value: secretValue }),
+  'secrets:set': z.strictObject({ name: z.enum(SECRET_NAMES), value: z.string() }).superRefine((v, ctx) => {
+    // OAuth access tokens (Kling MCP) are longer than API keys
+    const ok = v.name === 'kling' ? /^[\x21-\x7e]{8,4096}$/.test(v.value) : secretValue.safeParse(v.value).success;
+    if (!ok) ctx.addIssue({ code: 'custom', path: ['value'], message: 'key: 8-400 printable characters, no spaces' });
+  }),
   'secrets:clear': z.strictObject({ name: z.enum(SECRET_NAMES) }),
   'persona:import': z.strictObject({ path: absPath.refine((p) => /\.ya?ml$/i.test(p), '.yaml / .yml only') }),
   'persona:clear': z.undefined(),
@@ -137,6 +144,8 @@ export const ipcSchemas = {
   'ai:setRoutes': z.strictObject({ routes: aiRoutes.nullable() }),
   // v0.4: a system notification when a run finishes or needs the creator (shown only while the window is not focused)
   'notify:show': z.strictObject({ title: z.string().min(1).max(120), body: z.string().max(300), route: z.string().regex(/^#\/[A-Za-z0-9/_.%-]{0,200}$/).optional() }),
+  // Create recorder (refused in main while the Create flag is off)
+  ...recIpcSchemas,
 } as const;
 
 export type IpcChannel = keyof typeof ipcSchemas;

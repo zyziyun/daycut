@@ -4,6 +4,8 @@ export interface CspOptions {
   dev: boolean;
   enginePort: number | null;
   devServerUrl?: string;
+  /** Create page on: recorded takes play back from blob: URLs */
+  create?: boolean;
 }
 
 /** Strict CSP for the desk UI. Dev only adds what Vite's HMR + React refresh need (inline preamble, ws). */
@@ -16,7 +18,7 @@ export function buildCsp(o: CspOptions): string {
     'script-src': ["'self'", ...(o.dev ? ["'unsafe-inline'"] : [])],
     'style-src': ["'self'", "'unsafe-inline'"],
     'img-src': ["'self'", 'data:', 'vsmedia:'],
-    'media-src': ["'self'", 'vsmedia:'],
+    'media-src': ["'self'", 'vsmedia:', ...(o.create ? ['blob:'] : [])],
     'font-src': ["'self'", 'data:'],
     'connect-src': ["'self'", engine, devWs].filter(Boolean),
     'object-src': ["'none'"],

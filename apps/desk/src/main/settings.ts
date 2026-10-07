@@ -28,9 +28,13 @@ export interface Settings {
   channels?: Record<string, ChannelPrefs>;
   /** 「我在帮别人做视频」: shows clients (filter in 全部项目, client field, delivery). Off: everything is her own. */
   agencyMode?: boolean;
+  /** Create page (创作): nav item, /api/create calls, recorder permissions. Off = the app as before. */
+  createPage?: boolean;
+  /** Create: local draft generation on this Mac (second flag, on top of createPage) */
+  createLocalGen?: boolean;
 }
 
-const DEFAULTS: Settings = { lang: 'en', accent: 'teal', theme: 'studio-dark', accounts: {}, channels: {}, agencyMode: false, defaultPlatforms: ['xiaohongshu:full'], cleanupDays: 0 };
+const DEFAULTS: Settings = { lang: 'en', accent: 'teal', theme: 'studio-dark', accounts: {}, channels: {}, agencyMode: false, createPage: true, createLocalGen: false, defaultPlatforms: ['xiaohongshu:full'], cleanupDays: 0 };
 
 export class SettingsStore {
   private file: string;

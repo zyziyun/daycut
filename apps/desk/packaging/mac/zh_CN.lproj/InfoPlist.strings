@@ -1,3 +1,5 @@
 /* Reelfold: the Chinese name shown by Finder, the Dock and the menu bar when macOS runs in Chinese */
 "CFBundleDisplayName" = "千剪";
 "CFBundleName" = "千剪";
+"NSCameraUsageDescription" = "只有你在「创作」里录制时，千剪才会使用摄像头。";
+"NSMicrophoneUsageDescription" = "只有你在「创作」里录制时，千剪才会使用麦克风。";

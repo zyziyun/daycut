@@ -35,7 +35,7 @@ export const PROVIDERS: Record<ProviderId, { kind: ProviderKind; name: string; s
 };
 
 /** API keys kept in the OS keychain (Electron safeStorage) and handed to the engine as these variables only. */
-export const KEY_NAMES = ['anthropic', 'openai', 'deepseek', 'qwen', 'kimi', 'glm', 'openrouter'] as const;
+export const KEY_NAMES = ['anthropic', 'openai', 'deepseek', 'qwen', 'kimi', 'glm', 'openrouter', 'minimax', 'gemini', 'ark', 'kling'] as const;
 export type KeyName = (typeof KEY_NAMES)[number];
 export const KEY_ENV: Record<KeyName, string> = {
   anthropic: 'ANTHROPIC_API_KEY',
@@ -45,6 +45,12 @@ export const KEY_ENV: Record<KeyName, string> = {
   kimi: 'MOONSHOT_API_KEY',
   glm: 'ZHIPUAI_API_KEY',
   openrouter: 'OPENROUTER_API_KEY',
+  // Create page (video generation services): MiniMax Hailuo API, Google Veo (Gemini API), Seedance via Volcengine Ark,
+  // and the Kling MCP access token the creator got from Kling's own sign-in (never read from another app)
+  minimax: 'MINIMAX_API_KEY',
+  gemini: 'GEMINI_API_KEY',
+  ark: 'ARK_API_KEY',
+  kling: 'KLING_MCP_TOKEN',
 };
 
 /** The desk's AI tasks -> the engine's routing task names. */

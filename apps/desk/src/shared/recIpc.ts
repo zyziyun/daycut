@@ -1,0 +1,55 @@
+// Recorder IPC (Create page): zod schemas merged into ipcSchemas, plus the pure permission predicate main uses.
+// Every rec:* handler refuses while the Create flag is off.
+import { z } from 'zod';
+
+export const REC_TRACKS = ['camera', 'mic', 'screen'] as const;
+export type RecTrack = (typeof REC_TRACKS)[number];
+export const MAX_CHUNK = 8 * 1024 * 1024;
+const sessionId = z.string().regex(/^\d{8}-\d{6}-[a-z0-9-]{1,40}$/);
+const line = z.string().max(500).refine((v) => !/\p{Cc}/u.test(v.replace(/\n/g, '')), 'line');
+
+export const recIpcSchemas = {
+  'rec:status': z.undefined(),
+  'rec:ask': z.strictObject({ kind: z.enum(['camera', 'microphone']) }),
+  'rec:openPrivacy': z.strictObject({ pane: z.enum(['camera', 'microphone', 'screen']) }),
+  'rec:begin': z.strictObject({
+    slug: z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/),
+    title: z.string().max(120).optional(),
+    script: z.array(line).max(300),
+    tracks: z.array(z.enum(REC_TRACKS)).min(1).max(3),
+    series: z.string().regex(/^[a-z0-9][a-z0-9-]{0,47}$/).optional(),
+    episode: z.string().regex(/^[a-z0-9][a-z0-9-]{0,47}$/).optional(),
+    shot: z.string().regex(/^\d{2,3}$/).optional(),
+    mime: z.partialRecord(z.enum(REC_TRACKS), z.string().max(80)).optional(),
+  }),
+  'rec:chunk': z.strictObject({
+    sessionId,
+    track: z.enum(REC_TRACKS),
+    seq: z.number().int().min(0).max(1_000_000),
+    data: z.instanceof(Uint8Array).refine((b) => b.byteLength > 0 && b.byteLength <= MAX_CHUNK, 'chunk: 1 byte - 8 MB'),
+    startMs: z.number().int().min(0).optional(),
+  }),
+  'rec:mark': z.strictObject({
+    sessionId,
+    t: z.number().min(0).max(36000),
+    kind: z.enum(['line', 'retake']),
+    line: z.number().int().min(0).max(300),
+  }),
+  'rec:end': z.strictObject({ sessionId }),
+  'rec:recover': z.undefined(),
+} as const;
+
+/** Allow a permission only for media (camera / mic) from the app's own UI with the Create flag on. Everything else
+ * keeps the default deny (platform pages have their own handler). */
+export function allowMedia(o: { flag: boolean; fromMainWindow: boolean; isAppUrl: boolean; permission: string; mediaTypes?: string[] }): boolean {
+  if (!o.flag || !o.fromMainWindow || !o.isAppUrl || o.permission !== 'media') return false;
+  const types = o.mediaTypes ?? [];
+  return types.length > 0 && types.every((t) => t === 'video' || t === 'audio');
+}
+
+/** DESK_CREATE=1 / 0 (tests) beats the saved setting. */
+export function createFlagFrom(saved: boolean | undefined, env: string | undefined): boolean {
+  if (env === '1') return true;
+  if (env === '0') return false;
+  return saved !== false;
+}

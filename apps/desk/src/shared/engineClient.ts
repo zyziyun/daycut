@@ -38,6 +38,8 @@ import type { AskContext, ChatTurn, ExportJob } from './chatEdit';
 import type { StripInfo, TranscribeState } from './timeline';
 import type { AskResult, CalendarDoc, CalendarPost, ClipsDoc, EditOp, EffectDef, EngineMsg, InboxDoc, IntakeJob, IntakePlan, OutputDoc, ProjectAskJob } from './v04';
 
+import { CreateClient } from './create';
+
 export class EngineError extends Error {
   constructor(
     public status: number,
@@ -129,6 +131,11 @@ export class EngineClient {
       );
     }
     return data as T;
+  }
+
+  /** Create page routes (/api/create/*) */
+  get create(): CreateClient {
+    return new CreateClient((m, p, b) => this.req(m, p, b));
   }
 
   health() {

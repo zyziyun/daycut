@@ -8,6 +8,7 @@ import { useEngine } from '../lib/engine';
 import { PlatformPicker } from './Clients';
 import { adapterName, LoginPill, useChannels } from '../v4/Channels';
 import { PlatformIcon } from '../v4/PlatformIcon';
+import { CreateSettingsCard } from '../create';
 
 /** Settings -> 发布账号: her accounts with their login state; managed on 发布 -> 账号 (built-in browser there). */
 function ChannelsCard() {
@@ -114,6 +115,7 @@ export function Settings({ onChange }: { onChange: (s: SettingsMsg) => void }) {
             </a>
           </div>
         </div>
+        <CreateSettingsCard onChange={onChange} />
         <div className="card col" data-testid="defaults-card">
           <b>{t('settings.defaults')}</b>
           <Field label={t('settings.defaultPlatforms')}>

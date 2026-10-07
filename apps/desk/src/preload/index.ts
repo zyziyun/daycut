@@ -73,6 +73,16 @@ const api: DeskApi = {
     install: () => call('update:install'),
   },
   watchHistory: (roots) => call('history:watch', { roots }),
+  rec: {
+    status: () => call('rec:status'),
+    ask: (kind) => call('rec:ask', { kind }),
+    openPrivacy: (pane) => call('rec:openPrivacy', { pane }),
+    begin: (req) => call('rec:begin', req),
+    chunk: (req) => call('rec:chunk', req),
+    mark: (req) => call('rec:mark', req),
+    end: (sessionId) => call('rec:end', { sessionId }),
+    recover: () => call('rec:recover'),
+  },
   ai: {
     status: (opts) => call('ai:status', opts ?? {}),
     test: (provider) => call('ai:test', { provider }),

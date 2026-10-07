@@ -149,7 +149,7 @@ describe('SecretStore', () => {
   it('stores only ciphertext and exposes presence, not values', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vsdesk-sec-'));
     const s = new SecretStore(dir, crypto());
-    expect(s.status()).toEqual({ backend: 'keychain', keys: { anthropic: false, openai: false, deepseek: false, qwen: false, kimi: false, glm: false, openrouter: false } });
+    expect(s.status()).toEqual({ backend: 'keychain', keys: { anthropic: false, openai: false, deepseek: false, qwen: false, kimi: false, glm: false, openrouter: false, minimax: false, gemini: false, ark: false, kling: false } });
     const st = s.set('anthropic', 'test-key-abcdef');
     expect(st.keys.anthropic).toBe(true);
     expect(JSON.stringify(st)).not.toContain('test-key-abcdef');

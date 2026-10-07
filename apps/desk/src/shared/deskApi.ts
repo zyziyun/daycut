@@ -57,6 +57,9 @@ export interface SettingsMsg {
   aiRoutes?: AiRoutes;
   channels?: Record<string, ChannelPrefs>;
   agencyMode?: boolean;
+  /** Create page flag (DESK_CREATE=1/0 overrides it) */
+  createPage?: boolean;
+  createLocalGen?: boolean;
 }
 
 export type SecretName = KeyName;
@@ -117,7 +120,7 @@ export interface DeskApi {
   showItem(path: string): Promise<void>;
   copyText(text: string): Promise<void>;
   getSettings(): Promise<SettingsMsg>;
-  setSettings(patch: Partial<Pick<SettingsMsg, 'enginePath' | 'python' | 'lang' | 'theme' | 'accent' | 'defaultPlatforms' | 'cleanupDays' | 'agencyMode'>>): Promise<SettingsMsg>;
+  setSettings(patch: Partial<Pick<SettingsMsg, 'enginePath' | 'python' | 'lang' | 'theme' | 'accent' | 'defaultPlatforms' | 'cleanupDays' | 'agencyMode' | 'createPage' | 'createLocalGen'>>): Promise<SettingsMsg>;
   openFiles(kind: 'video' | 'any'): Promise<string[]>;
   /** absolute path of a file dropped on the window (Electron webUtils; '' when unavailable) */
   pathForFile(file: File): string;
@@ -179,6 +182,17 @@ export interface DeskApi {
     kill(id: string): Promise<void>;
     routes(): Promise<AiRoutesMsg>;
     setRoutes(routes: AiRoutes | null): Promise<AiRoutesMsg>;
+  };
+  /** Create recorder (main refuses while the Create flag is off) */
+  rec: {
+    status(): Promise<{ camera: string; microphone: string; screen: string; platform: string; release: string }>;
+    ask(kind: 'camera' | 'microphone'): Promise<boolean>;
+    openPrivacy(pane: 'camera' | 'microphone' | 'screen'): Promise<void>;
+    begin(req: { slug: string; title?: string; script: string[]; tracks: ('camera' | 'mic' | 'screen')[]; series?: string; episode?: string; shot?: string; mime?: Partial<Record<'camera' | 'mic' | 'screen', string>> }): Promise<{ sessionId: string; dir: string }>;
+    chunk(req: { sessionId: string; track: 'camera' | 'mic' | 'screen'; seq: number; data: Uint8Array; startMs?: number }): Promise<{ ok: boolean; seq: number }>;
+    mark(req: { sessionId: string; t: number; kind: 'line' | 'retake'; line: number }): Promise<{ ok: boolean; n: number }>;
+    end(sessionId: string): Promise<{ dir: string; tracks: string[]; marks: number }>;
+    recover(): Promise<{ id: string; dir: string }[]>;
   };
   confirmCleanup(batchId: string): Promise<{ confirmed: boolean; trashed: string[]; failed: string[]; outside: string[] }>;
   mediaUrl(path: string): string;

@@ -139,6 +139,10 @@ export function InboxScreen() {
                 <div className="acts">
                   {x.failure && x.project.id ? (
                     <FailureActions item={x.project.id} failure={x.failure} primary={idx === 0} />
+                  ) : x.href && x.href.startsWith('#/create') ? (
+                    <a className={primary} href={x.href} data-testid="inbox-open">
+                      {t('inbox.openCreate')}
+                    </a>
                   ) : x.kind === 'confirm' || opts.length ? (
                     <button className={primary} onClick={() => void answer([x.key], { approve: [...chosen], keep: opts.filter((o) => !chosen.has(o.id)).map((o) => o.id) })} data-testid="inbox-confirm">
                       {t('inbox.confirmN', { n: chosen.size })}

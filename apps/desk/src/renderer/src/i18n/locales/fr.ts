@@ -4,6 +4,7 @@
 // Vocabulary: clip = clip, batch = lot, job = tâche, review = relecture, render = rendu, captions = sous-titres,
 // cover = couverture, hook = accroche, filler = hésitations, talking head = face caméra, engine = moteur,
 // Inbox = Boîte de réception, Needs you = Vous attend, timeline = timeline.
+import { createFr } from './create';
 import type { legacyEn } from '../legacy/en';
 import type { legacyEnV02 } from '../legacy/v02';
 import type { aiaccEn } from './aiacc';
@@ -1808,4 +1809,4 @@ const releaseFr: Record<keyof typeof releaseEn, string> = {
   'set.developerHint': 'Pour travailler sur Reelfold lui-même. Rien de tout cela n’est nécessaire pour faire des vidéos.',
 };
 
-export const fr: Record<MessageKey, string> = { ...legacyFr, ...legacyFrV02, ...v04Fr, ...aiaccFr, ...publishPlatformsFr, ...chatEditFr, ...channelsFr, ...projectAiFr, ...aboutFr, ...releaseFr };
+export const fr: Record<MessageKey, string> = { ...legacyFr, ...legacyFrV02, ...v04Fr, ...aiaccFr, ...publishPlatformsFr, ...chatEditFr, ...channelsFr, ...projectAiFr, ...aboutFr, ...releaseFr, ...createFr };

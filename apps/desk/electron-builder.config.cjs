@@ -92,7 +92,12 @@ module.exports = {
     signIgnore: [RUNTIME_NON_CODE],
     notarize: true, // only acts when the APPLE_* variables above are present
     // 千剪 for Finder / Dock / menu bar under a Chinese system language (the in-app About follows the app's language)
-    extendInfo: { LSHasLocalizedDisplayName: true },
+    // Create page recorder: macOS asks for camera / mic only when the creator presses "Allow" in Create (flag on)
+    extendInfo: {
+      LSHasLocalizedDisplayName: true,
+      NSCameraUsageDescription: 'Reelfold uses the camera only while you record in Create.',
+      NSMicrophoneUsageDescription: 'Reelfold uses the microphone only while you record in Create.',
+    },
     extraResources: [
       { from: 'packaging/mac/zh_CN.lproj/InfoPlist.strings', to: 'zh_CN.lproj/InfoPlist.strings' },
       { from: 'packaging/mac/zh_CN.lproj/InfoPlist.strings', to: 'zh-Hans.lproj/InfoPlist.strings' },

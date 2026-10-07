@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createEnabled } from '../create/flag';
 
 // Hash routes (v0.4): #/ home · #/inbox · #/projects · #/p/<id>[/<tab>] · #/p/<id>/clip/<clip> (editor)
 //   · #/p/<id>/focus (full-screen review) · #/publish · #/publish/accounts (publishing accounts) · #/settings · #/new[/recording]
@@ -25,7 +26,9 @@ export type Route =
   | { name: 'board'; batch: string }
   | { name: 'review'; batch: string }
   | { name: 'publish'; batch: string }
-  | { name: 'job'; batch: string; job: string };
+  | { name: 'job'; batch: string; job: string }
+  /** Create page (flag-gated; the sub-path is parsed in create/routes.ts) */
+  | { name: 'create'; path: string[] };
 
 const ID = /^[0-9a-f]{12}$/;
 const TABS: ProjectTab[] = ['clips', 'review', 'deliver', 'history', 'files'];
@@ -49,6 +52,8 @@ export function parseRoute(hash: string): Route {
   }
   if (p[0] === 'publish') return p[1] === 'accounts' ? { name: 'channels' } : { name: 'calendar' };
   if (p[0] === 'new') return p[1] === 'recording' ? { name: 'new', mode: 'recording' } : { name: 'new' };
+  if (p[0] === 'create') return createEnabled() ? { name: 'create', path: p.slice(1, 5) } : { name: 'home' };
+  if (p[0] === 'settings' && p[1] === 'video') return createEnabled() ? { name: 'create', path: ['settings'] } : { name: 'settings' };
   if (p[0] === 'settings') return p[1] === 'ai' ? { name: 'aiAccounts', focus: p[2] } : { name: 'settings' };
   if (p[0] === 'metrics') return { name: 'metrics' };
   if (p[0] === 'welcome') return { name: 'welcome' };
@@ -92,6 +97,9 @@ export function href(r: Route): string {
       return `#/clients/${encodeURIComponent(r.slug)}`;
     case 'job':
       return `#/b/${r.batch}/job/${encodeURIComponent(r.job)}`;
+    case 'create':
+      if (r.path[0] === 'settings') return '#/settings/video';
+      return r.path.length ? `#/create/${r.path.map(encodeURIComponent).join('/')}` : '#/create';
     default:
       return `#/b/${r.batch}/${r.name}`;
   }

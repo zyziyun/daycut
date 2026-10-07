@@ -1,5 +1,6 @@
 // Electron main process: window + security, engine sidecar, media protocol, IPC, publish browser.
 import fs from 'node:fs';
+import os from 'node:os';
 import { createServer as createNetServer, type AddressInfo } from 'node:net';
 import path from 'node:path';
 import { Readable } from 'node:stream';
@@ -24,6 +25,8 @@ import { assistedFill } from './publish/fill';
 import { PublishStore } from './publish/store';
 import { findBundledRuntime, runtimeEnv, type BundledRuntime } from './runtime';
 import { buildCsp, isAppUrl, isSafeExternal } from './security';
+import { installMediaPermissions, registerRecorderIpc, type Recorder } from './recorder';
+import { createFlagFrom } from '../shared/recIpc';
 import { SettingsStore } from './settings';
 import { HistoryWatcher } from './historyWatch';
 import { APP_NAME, applyIdentity } from './identity';
@@ -42,6 +45,12 @@ const IS_DEV = Boolean(DEV_URL);
 const APP_ORIGIN = IS_DEV ? new URL(DEV_URL!).origin : 'app://desk';
 const RENDERER_DIR = path.join(__dirname, '../renderer');
 setPackaged(app.isPackaged);
+// Create recorder e2e: Chromium's fake camera / mic and auto-accepted prompts (dev and test builds only)
+const FAKE_MEDIA = !app.isPackaged && process.env.DESK_E2E_FAKE_MEDIA === '1';
+if (FAKE_MEDIA) {
+  app.commandLine.appendSwitch('use-fake-device-for-media-stream');
+  app.commandLine.appendSwitch('use-fake-ui-for-media-stream');
+}
 const RES = app.isPackaged ? process.resourcesPath : app.getAppPath();
 /** Reelfold brand icons (scripts/brand/icons.mjs): 256 px for windows / About on Windows + Linux, 1024 px for the dev Dock. */
 const ICON_256 = path.join(RES, 'packaging/resources/icons/256x256.png');
@@ -87,6 +96,7 @@ let adapters: { adapters: Adapter[]; errors: { file: string; error: string }[] }
 let enginePromise: Promise<EngineInfo> | null = null;
 let runtime: BundledRuntime | null = null;
 let assets: AssetManager;
+let recorder: Recorder | null = null;
 
 function dataDir() {
   return path.join(app.getPath('userData'), 'engine-data');
@@ -122,8 +132,13 @@ function resolvedConfig() {
   };
 }
 
+/** Create: local draft generation (second flag) is passed to the engine as VSTUDIO_CREATE_LOCAL=1. */
+function createEnv(): Record<string, string> {
+  return createOn() && settings?.get().createLocalGen ? { VSTUDIO_CREATE_LOCAL: '1' } : {};
+}
+
 function engineEnv(bundled: boolean) {
-  if (!bundled || !runtime) return { env: assets.env() };
+  if (!bundled || !runtime) return { env: { ...assets.env(), ...createEnv() } };
   const r = runtimeEnv(runtime);
   return {
     ...r,
@@ -133,6 +148,7 @@ function engineEnv(bundled: boolean) {
       // one cache with the CLI skill: fonts / models the user already has are used, nothing is fetched twice
       VSTUDIO_CACHE: engineCacheDir(),
       ...assets.env(),
+      ...createEnv(),
     },
   };
 }
@@ -142,9 +158,14 @@ function withV02Env<T extends { env?: Record<string, string> }>(e: T): T {
   return { ...e, env: { ...e.env, ...v02EngineEnv(app.getPath('userData'), settings.get()) } };
 }
 
+/** Create page flag: the saved setting; DESK_CREATE=1/0 overrides it in dev / test builds only. */
+function createOn(): boolean {
+  return createFlagFrom(settings?.get().createPage, app.isPackaged ? undefined : process.env.DESK_CREATE);
+}
+
 function settingsMsg() {
   const s = settings.get();
-  return { ...s, firstRunDone: s.firstRunDone || process.env.DESK_SKIP_FIRST_RUN === '1', resolved: resolvedConfig(), packaged: app.isPackaged, platform: process.platform };
+  return { ...s, createPage: createOn(), firstRunDone: s.firstRunDone || process.env.DESK_SKIP_FIRST_RUN === '1', resolved: resolvedConfig(), packaged: app.isPackaged, platform: process.platform };
 }
 
 /** One engine port per app session, chosen before the first start and reused by every restart (also when the
@@ -296,7 +317,7 @@ function enginePort(): number | null {
 }
 
 function currentCsp(): string {
-  return buildCsp({ dev: IS_DEV, enginePort: enginePort(), devServerUrl: DEV_URL });
+  return buildCsp({ dev: IS_DEV, enginePort: enginePort(), devServerUrl: DEV_URL, create: createOn() });
 }
 
 /** Engine port baked into the CSP of the page the window last loaded (undefined: nothing loaded yet). */
@@ -361,8 +382,12 @@ function registerProtocols() {
 
 function hardenDefaultSession() {
   const ses = session.defaultSession;
-  ses.setPermissionRequestHandler((_wc, _perm, cb) => cb(false));
-  ses.setPermissionCheckHandler(() => false);
+  // deny by default; the one exception is camera / mic for the Create recorder in our own window (flag on)
+  installMediaPermissions(ses, { flag: createOn, mainWebContents: () => win?.webContents ?? null, isApp: (u) => isAppUrl(u, APP_ORIGIN) });
+  if (createOn() && process.platform === 'darwin' && Number(os.release().split('.')[0]) >= 24) {
+    // screen recording: the macOS system picker (15+); nothing is captured unless the creator picks a screen
+    ses.setDisplayMediaRequestHandler((_req, cb) => cb({}), { useSystemPicker: true });
+  }
   ses.on('will-download', (e) => e.preventDefault());
   if (IS_DEV) {
     ses.webRequest.onHeadersReceived((d, cb) => {
@@ -513,7 +538,7 @@ function registerIpc() {
     if (next.enginePath !== before.enginePath || next.python !== before.python) {
       void startEngine();
     }
-    return { ...settingsMsg(), ...next, firstRunDone: settingsMsg().firstRunDone, resolved: resolvedConfig(), packaged: app.isPackaged, platform: process.platform };
+    return { ...settingsMsg(), ...next, createPage: createOn(), firstRunDone: settingsMsg().firstRunDone, resolved: resolvedConfig(), packaged: app.isPackaged, platform: process.platform };
   });
 
   // ---------------- publish
@@ -629,6 +654,7 @@ function registerIpc() {
       return { python: cfg.python, env: engineProcessEnv({ ...e, enginePath: cfg.enginePath }) };
     },
   });
+  recorder = registerRecorderIpc(handle, { flag: createOn, fakeMedia: FAKE_MEDIA });
   registerCleanupIpc(handle, { win: () => win, client: () => client, lang: () => (settings.get().lang === 'zh-CN' ? 'zh' : 'en') });
 }
 
@@ -751,6 +777,7 @@ if (!app.requestSingleInstanceLock()) {
       quitConfirmed = true;
       assets.cancel();
     }
+    recorder?.closeAll();
     void engine?.stop();
   });
 }

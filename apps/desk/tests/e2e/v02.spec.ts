@@ -68,7 +68,8 @@ test('first-run wizard: brand, AI (subscriptions first, keys folded), default pl
   await expect(page.getByTestId('keys-card')).not.toContainText(/Keyboard shortcuts|快捷键/);
   await expect(page.locator('[data-testid="first-run"] .btn.primary')).toHaveCount(1);
   const keyStatus = await page.evaluate(() => window.desk.secrets.status());
-  expect(Object.keys(keyStatus.keys).sort()).toEqual(['anthropic', 'deepseek', 'glm', 'kimi', 'openai', 'openrouter', 'qwen']);
+  // + the Create page's video services (MiniMax, Gemini / Veo, Ark, the Kling MCP token)
+  expect(Object.keys(keyStatus.keys).sort()).toEqual(['anthropic', 'ark', 'deepseek', 'gemini', 'glm', 'kimi', 'kling', 'minimax', 'openai', 'openrouter', 'qwen']);
   await page.getByTestId('fr-next').click(); // -> platforms (no downloads step on a dev checkout)
   await page.getByRole('button', { name: /TikTok/ }).click();
   await page.getByTestId('fr-next').click(); // finish

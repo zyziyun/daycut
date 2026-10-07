@@ -31,6 +31,7 @@ import { OutputEditor } from './v4/OutputEditor';
 import { Project } from './v4/Project';
 import { Projects } from './v4/Projects';
 import { UiProvider } from './v4/ui';
+import { CreateNavIcon, CreateScreen, setCreatePrefs, useCreateEnabled } from './create';
 
 function NavLink({ to, on, icon, label, count, testId }: { to: Route; on: boolean; icon: React.ReactNode; label: string; count?: React.ReactNode; testId: string }) {
   return (
@@ -79,6 +80,7 @@ function Shell({ onSettings }: { onSettings: (s: SettingsMsg) => void }) {
   const { info, error } = useEngine();
   const { live } = useHistory();
   const inbox = useInbox();
+  const createOn = useCreateEnabled();
   useRunNotifications();
   const running = live.filter((i) => i.live?.state === 'running').length;
   const nIn = inbox.items.length;
@@ -98,6 +100,7 @@ function Shell({ onSettings }: { onSettings: (s: SettingsMsg) => void }) {
           <span className="sr">{t('app.name')}</span>
         </div>
         {nav({ name: 'home' }, 'nav.home', r.name === 'home' || r.name === 'new', <HomeIcon className="ico" />, 'nav-home', running > 0 ? <span className="count run" data-testid="running-badge">{running}</span> : null)}
+        {createOn && nav({ name: 'create', path: [] }, 'nav.create', r.name === 'create', <CreateNavIcon className="ico" />, 'nav-create')}
         {nav({ name: 'inbox' }, 'nav.inbox', r.name === 'inbox', <InboxIcon className="ico" />, 'nav-inbox', nIn > 0 ? <span className="count you" data-testid="inbox-badge">{nIn}</span> : null)}
         {nav({ name: 'projects' }, 'nav.projects', r.name === 'projects' || inProject, <LayoutGrid className="ico" />, 'nav-projects')}
         {nav({ name: 'calendar' }, 'nav.publishTop', r.name === 'calendar' || r.name === 'publish' || r.name === 'metrics' || r.name === 'channels', <Calendar className="ico" />, 'nav-publish')}
@@ -181,6 +184,8 @@ function Screen({ r, onSettings }: { r: Route; onSettings: (s: SettingsMsg) => v
       return <WelcomeAgain onDone={onSettings} />;
     case 'aiAccounts':
       return <AIAccounts focus={r.focus} />;
+    case 'create':
+      return <CreateScreen path={r.path} onSettings={onSettings} />;
     default:
       return <Settings onChange={onSettings} />;
   }
@@ -201,6 +206,7 @@ export function App() {
   const apply = useCallback((s: SettingsMsg) => {
     setLang(s.lang);
     setPrefs(s);
+    setCreatePrefs(s);
     applyTheme(s.theme as ThemeName, document.documentElement, (s.accent ?? 'teal') as AccentName);
     setSettings(s);
     force((n) => n + 1);
