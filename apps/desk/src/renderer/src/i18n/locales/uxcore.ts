@@ -113,6 +113,9 @@ export const uxCoreEn = {
   'keys.backForward': 'Back / forward',
 
   // ---------------------------------------------------------------- text-based editing
+  'te.chatLead': 'I watched this clip. Here’s what I’d change first — or select words in the transcript and press Delete.',
+  'te.sug.fillers': '{n, plural, one {Remove # filler word} other {Remove # filler words}}',
+  'te.sug.unsure': '{n, plural, one {Check # word I wasn’t sure of} other {Check # words I wasn’t sure of}}',
   'te.tab.transcript': 'Transcript',
   'te.tab.timeline': 'Timeline',
   'te.transcript': 'Transcript',
@@ -286,6 +289,9 @@ export const uxCoreZh: Record<keyof typeof uxCoreEn, string> = {
   'palette.set.accounts': '设置：发布账号',
   'keys.backForward': '后退 / 前进',
 
+  'te.chatLead': '我看了这条片子，先说说我会改哪里——你也可以在文字稿里选中几个词，按 Delete 删掉。',
+  'te.sug.fillers': '去掉 {n} 个口头禅',
+  'te.sug.unsure': '看看 {n} 个可能听错的词',
   'te.tab.transcript': '文字稿',
   'te.tab.timeline': '时间线',
   'te.transcript': '文字稿',
@@ -459,6 +465,9 @@ export const uxCoreFr: Record<keyof typeof uxCoreEn, string> = {
   'palette.set.accounts': 'Réglages : comptes de publication',
   'keys.backForward': 'Précédent / suivant',
 
+  'te.chatLead': 'J’ai regardé ce clip. Voici ce que je changerais d’abord — ou sélectionnez des mots dans la transcription et appuyez sur Suppr.',
+  'te.sug.fillers': '{n, plural, one {Retirer # hésitation} other {Retirer # hésitations}}',
+  'te.sug.unsure': '{n, plural, one {Vérifier # mot incertain} other {Vérifier # mots incertains}}',
   'te.tab.transcript': 'Transcription',
   'te.tab.timeline': 'Timeline',
   'te.transcript': 'Transcription',

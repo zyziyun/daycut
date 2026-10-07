@@ -326,7 +326,12 @@ test('transcript: select -> Delete -> pending + skipped in preview -> ⌘↵ = o
   await expect(w(0)).toHaveText('你在');
   // the fillers chip knows 嗯 / 那个 / 就是
   await expect(page.getByTestId('marks-filler')).toContainText('3');
+  // the chat offers the same without the model: fillers -> pending cuts
+  await expect(page.getByTestId('sug-fillers')).toContainText('Remove 3 filler words');
   await shot('T1-balanced');
+  await page.getByTestId('sug-fillers').click();
+  await expect(page.getByTestId('pending-bar')).toContainText('3 cuts pending');
+  await page.getByTestId('pending-discard').click();
   // select 去给 Lakeside City College， (a drag across words) and press Delete
   const start = (await page.evaluate(() => [...document.querySelectorAll('[data-testid=transcript-body] .w')].findIndex((e) => e.textContent?.startsWith('去给'))));
   const a = await w(start).boundingBox();

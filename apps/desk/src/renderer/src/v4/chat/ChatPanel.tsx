@@ -51,6 +51,10 @@ interface Props {
   onToggle?: () => void;
   /** a transcript cut card's "Show in transcript" */
   onShowInTranscript?: (t: number) => void;
+  /** suggestions that act in the transcript without the model (fillers -> pending cuts), shown first */
+  textSuggestions?: { id: string; icon: typeof Scissors; title: string; sub: string; run: () => void }[];
+  /** the empty state's first line (the transcript is open: "select words and press Delete") */
+  lead?: string | null;
 }
 
 interface Local {
@@ -665,9 +669,16 @@ export const ChatPanel = forwardRef<ChatApi, Props>(function ChatPanel(p, ref) {
               <Sparkles className="ico" />
             </span>
             <div className="body">
-              <div className="say">{sugs.length ? t('ce.empty.lead') : t('ce.empty.leadNoIdeas')}</div>
-              {sugs.length > 0 && (
+              <div className="say">{p.lead ?? (sugs.length ? t('ce.empty.lead') : t('ce.empty.leadNoIdeas'))}</div>
+              {sugs.length + (p.textSuggestions?.length ?? 0) > 0 && (
                 <div className="sug">
+                  {(p.textSuggestions ?? []).map((x) => (
+                    <button key={x.id} onClick={x.run} data-testid={`sug-${x.id}`}>
+                      <x.icon className="ico" />
+                      <span>{x.title}</span>
+                      <small lang="zh-CN">{x.sub}</small>
+                    </button>
+                  ))}
                   {sugs.map((s) => {
                     const Icon = SUG_ICON[s.kind];
                     const [title, sub, prompt] =

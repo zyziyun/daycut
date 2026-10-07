@@ -210,6 +210,8 @@ export function TranscriptPane(p: Props) {
         e.stopPropagation();
         p.onDiscardAll();
       } else escOnce.current = Date.now();
+    } else if (e.key === ' ' && sel && !mod) {
+      p.seek(words[Math.min(sel.a, sel.b)].t); // Space with words selected plays from them (the player toggles)
     } else if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
       e.preventDefault();
       const d = e.key === 'ArrowRight' ? 1 : -1;

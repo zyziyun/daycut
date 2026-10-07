@@ -406,6 +406,42 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
   );
 
   const view = useMemo(() => (odoc ? previewDoc(odoc, holdC ? null : preview.ops) : null), [odoc, preview.ops, holdC]);
+  // the transcript's own suggestions in the chat: fillers become pending cuts (no model), unsure words to check
+  const textSugs = useMemo(() => {
+    if (!odoc?.marks?.length) return [];
+    const out: { id: string; icon: typeof Scissors; title: string; sub: string; run: () => void }[] = [];
+    const cutAt = (i: number) => odoc.cuts.some((c) => (odoc.words[i].t + odoc.words[i].te) / 2 >= c.start && (odoc.words[i].t + odoc.words[i].te) / 2 <= c.end);
+    const fill = odoc.marks.filter((m) => m.kind === 'filler' && !cutAt(m.i0));
+    if (fill.length) {
+      const groups = new Map<string, { text: string; n: number }>();
+      for (const m of fill) groups.set(m.group, { text: m.text, n: (groups.get(m.group)?.n ?? 0) + 1 });
+      const secs = fill.reduce((a, m) => a + m.save_s, 0);
+      out.push({
+        id: 'fillers',
+        icon: Scissors,
+        title: t('te.sug.fillers', { n: fill.length }),
+        sub: [...[...groups.values()].sort((a, b) => b.n - a.n).map((g) => `${g.text} ×${g.n}`), `−${secs.toFixed(1)} s`].join(' · '),
+        run: () => {
+          split.setTab('transcript');
+          cuts.set((d) => ({ words: { ...d.words, ...Object.fromEntries(fill.flatMap((m) => Array.from({ length: m.i1 - m.i0 + 1 }, (_, k) => [m.i0 + k, d.words[m.i0 + k] ?? 'filler']))) }, gaps: d.gaps }));
+        },
+      });
+    }
+    const unsure = odoc.marks.filter((m) => m.kind === 'lowconf' && !cutAt(m.i0));
+    if (unsure.length)
+      out.push({
+        id: 'unsure',
+        icon: Type,
+        title: t('te.sug.unsure', { n: unsure.length }),
+        sub: unsure.slice(0, 3).map((m) => m.text).join(' · '),
+        run: () => {
+          split.setTab('transcript');
+          window.setTimeout(() => jumpWord(unsure[0].i0), 60);
+        },
+      });
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [odoc]);
   const marks = useMemo(() => (odoc ? markers(odoc, drafts) : []), [odoc, drafts]);
   const project = hist.data?.items.find((x) => x.id === id);
   const pinItem = q.item ? inbox.items.find((x) => x.key === q.item) ?? null : null;
@@ -698,6 +734,8 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
           onPrimary={setPrimary}
           collapsed={split.collapsed}
           onToggle={split.toggleChat}
+          lead={lowerTab === 'transcript' && words.length ? t('te.chatLead') : null}
+          textSuggestions={textSugs}
           onShowInTranscript={(x) => {
             split.setTab('transcript');
             pl.current?.seek(x);
