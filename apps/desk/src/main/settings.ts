@@ -38,6 +38,8 @@ export interface Settings {
   openAtLogin?: boolean;
   /** official posting APIs she connected: post scheduled rows of that platform through the API at their time */
   publishApi?: Partial<Record<'youtube' | 'tiktok' | 'x' | 'instagram', { auto: boolean }>>;
+  /** Help: send redacted crash reports automatically (default off; only with a crash-report endpoint) */
+  crashReportsAuto?: boolean;
 }
 
 const DEFAULTS: Settings = { lang: 'en', accent: 'teal', theme: 'studio-dark', accounts: {}, channels: {}, agencyMode: false, createPage: true, createLocalGen: false, defaultPlatforms: ['xiaohongshu:full'], cleanupDays: 0 };

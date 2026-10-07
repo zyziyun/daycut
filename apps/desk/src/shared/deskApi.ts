@@ -143,6 +143,8 @@ export interface DeskApi {
   openFile(kind: 'video' | 'segments' | 'persona' | 'python'): Promise<string | null>;
   openFolder(): Promise<string | null>;
   openExternal(url: string): Promise<void>;
+  /** feedback + problem reports (never sends by itself) */
+  support: import('./supportIpc').SupportApi;
   showItem(path: string): Promise<void>;
   /** open <userData>/logs in Finder / Explorer */
   openLogs(): Promise<void>;
@@ -216,7 +218,7 @@ export interface DeskApi {
     check(): Promise<UpdateStateMsg>;
     install(): Promise<void>;
   };
-  on(event: 'publish:state' | 'publish:fillStep' | 'engine:status' | 'assets:progress' | 'update:state' | 'history:changed' | 'notify:open' | 'term:data' | 'term:exit' | 'ai:routes' | 'publish:due' | 'publish:posted' | 'publish:channels', cb: (data: unknown) => void): () => void;
+  on(event: 'publish:state' | 'publish:fillStep' | 'engine:status' | 'assets:progress' | 'update:state' | 'history:changed' | 'notify:open' | 'term:data' | 'term:exit' | 'ai:routes' | 'publish:due' | 'publish:posted' | 'publish:channels' | 'support:problem' | 'support:open', cb: (data: unknown) => void): () => void;
   /** watch these folders for live job changes ('history:changed' events); -> the folders watched */
   watchHistory(roots: string[]): Promise<string[]>;
   /** source cleanup: a dialog lists the exact files; only on confirm are they moved to the Trash */

@@ -14,6 +14,7 @@ import { Disclosure, Dot, Page, RestartBar, Sheet } from './kit';
 import { markRestart, useRestart } from './restart';
 import type { SettingsCtx } from './registry';
 import { engineWords, pythonWords } from './words';
+import { SupportSettingsRows } from '../support/Support';
 
 const mb = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n <= 0 ? '0 MB' : `${Math.max(1, Math.round(n / 1e6))} MB`);
 const base = (p: string) => p.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || p;
@@ -242,6 +243,7 @@ export function AdvancedSection({ settings: s, save, onChange }: SettingsCtx) {
               {t('s2.diag.logs')}
             </button>
           </div>
+          <SupportSettingsRows />
           <p className="s2-rhint" data-testid="settings-platforms" style={{ padding: '4px 0 8px' }}>
             {t('about.platforms')}
           </p>

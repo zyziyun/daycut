@@ -3,7 +3,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { DeskApi } from '../shared/deskApi';
 
-const EVENTS = new Set(['publish:state', 'publish:fillStep', 'engine:status', 'assets:progress', 'update:state', 'history:changed', 'notify:open', 'term:data', 'term:exit', 'ai:routes', 'publish:due', 'publish:posted', 'publish:channels']);
+const EVENTS = new Set(['publish:state', 'publish:fillStep', 'engine:status', 'assets:progress', 'update:state', 'history:changed', 'notify:open', 'term:data', 'term:exit', 'ai:routes', 'publish:due', 'publish:posted', 'publish:channels', 'support:problem', 'support:open']);
 
 const call = (channel: string, payload?: unknown) => ipcRenderer.invoke(channel, payload);
 
@@ -13,6 +13,13 @@ const api: DeskApi = {
   openFile: (kind) => call('dialog:openFile', { kind }),
   openFolder: () => call('dialog:openFolder'),
   openExternal: (url) => call('shell:openExternal', { url }),
+  support: {
+    env: () => call('support:env'),
+    problems: () => call('support:problems'),
+    dismiss: (id) => call('support:dismiss', id ? { id } : {}),
+    report: (p) => call('support:report', p),
+    setAuto: (on) => call('support:setAuto', { on }),
+  },
   showItem: (path) => call('shell:showItem', { path }),
   openLogs: () => call('shell:openLogs'),
   copyText: (text) => call('clipboard:write', { text }),

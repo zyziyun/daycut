@@ -3,6 +3,7 @@ import { usageZh } from './usage';
 import { createZh } from './create';
 import { publishBoardZh } from './publishBoard';
 import { publishLoopZh } from './publishLoop';
+import { weekPlanZh } from './weekPlan';
 import { settingsV2Zh } from './settingsV2';
 import { legacyZh } from '../legacy/zh';
 import { aiaccZh } from './aiacc';
@@ -574,4 +575,4 @@ const v04Zh: Record<keyof typeof v04En, string> = {
   'editor.zoomFit': '全部',
 };
 
-export const zhCN: Record<MessageKey, string> = { ...legacyZh, ...legacyZhV02, ...v04Zh, ...aiaccZh, ...publishPlatformsZh, ...chatEditZh, ...channelsZh, ...projectAiZh, ...aboutZh, ...releaseZh, ...publishBoardZh, ...publishLoopZh, ...settingsV2Zh, ...createZh, ...uxCoreZh, ...usageZh };
+export const zhCN: Record<MessageKey, string> = { ...legacyZh, ...legacyZhV02, ...v04Zh, ...aiaccZh, ...publishPlatformsZh, ...chatEditZh, ...channelsZh, ...projectAiZh, ...aboutZh, ...releaseZh, ...publishBoardZh, ...publishLoopZh, ...settingsV2Zh, ...createZh, ...uxCoreZh, ...usageZh, ...weekPlanZh };

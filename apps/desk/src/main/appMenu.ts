@@ -19,6 +19,7 @@ const L = {
     view: 'View',
     window: 'Window',
     help: 'Help',
+    feedback: 'Send Feedback…',
     services: 'Services',
     undo: 'Undo',
     redo: 'Redo',
@@ -47,6 +48,7 @@ const L = {
     view: '显示',
     window: '窗口',
     help: '帮助',
+    feedback: '发送反馈…',
     services: '服务',
     undo: '撤销',
     redo: '重做',
@@ -75,6 +77,7 @@ const L = {
     view: 'Présentation',
     window: 'Fenêtre',
     help: 'Aide',
+    feedback: 'Envoyer un avis…',
     services: 'Services',
     undo: 'Annuler',
     redo: 'Rétablir',
@@ -101,6 +104,8 @@ export interface MenuDeps {
   res: string;
   win: () => BrowserWindow | null;
   iconPath?: string;
+  /** Help › Send feedback… (the renderer opens its feedback form; nothing is sent from the app) */
+  onFeedback?: () => void;
 }
 
 function licencesFile(res: string): string | null {
@@ -178,6 +183,7 @@ export function installAppMenu(d: MenuDeps) {
       ...(mac ? [] : [{ label: a['about.menu'], click: () => showAbout(d) }, { type: 'separator' as const }]),
       { label: a['about.licences'], click: () => openLicences(d), enabled: Boolean(licencesFile(d.res)) },
       { label: a['about.repo'], click: () => void shell.openExternal(REPO_URL) },
+      ...(d.onFeedback ? [{ type: 'separator' as const }, { label: t.feedback, click: () => d.onFeedback?.() }] : []),
     ],
   };
   const template: MenuItemConstructorOptions[] = [

@@ -33,6 +33,7 @@ import { OutputEditor } from './v4/OutputEditor';
 import { Project } from './v4/Project';
 import { Projects } from './v4/Projects';
 import { UiProvider } from './v4/ui';
+import { SupportLayer } from './support/Support';
 import { CreateNavIcon, CreateScreen, setCreatePrefs, useCreateEnabled } from './create';
 
 function NavLink({ to, on, icon, label, count, testId }: { to: Route; on: boolean; icon: React.ReactNode; label: string; count?: React.ReactNode; testId: string }) {
@@ -238,6 +239,7 @@ export function App() {
           <InboxProvider>
             <UiProvider theme={settings?.theme ?? 'studio-dark'} onTheme={onTheme} onLang={onLang}>
               <Shell key={settings?.lang} onSettings={apply} />
+              <SupportLayer key={`sup-${settings?.lang}`} />
             </UiProvider>
           </InboxProvider>
         </HistoryProvider>

@@ -13,6 +13,7 @@ import { useInbox } from '../lib/inbox';
 import { clipHref, itemTarget, projectHref, startTriage, triageStep, useTriageState } from '../lib/nav';
 import { go, useRouteQuery } from '../lib/router';
 import { Empty, media, Sk, Thumb } from './kit';
+import { FeedbackLink } from '../support/Support';
 import { FailureActions, failureReason } from './Failure';
 import { emsg } from './msg';
 import { TriageBar } from './TriageBar';
@@ -170,7 +171,7 @@ export function InboxScreen() {
         </div>
       ) : !shown.length ? (
         <div style={{ maxWidth: 720 }}>
-          <Empty title={t('inbox.empty')} hint={t('inbox.emptyHint')} />
+          <Empty title={t('inbox.empty')} hint={t('inbox.emptyHint')} action={<FeedbackLink />} />
         </div>
       ) : (
         <div className="ux-isplit">

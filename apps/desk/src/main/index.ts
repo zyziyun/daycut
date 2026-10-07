@@ -46,6 +46,7 @@ import { SecretStore } from './secrets';
 import { checkForUpdates, initUpdater, installUpdate } from './updater';
 import { registerCleanupIpc, registerV02Ipc, v02EngineEnv } from './v02';
 import { devOnly, setPackaged, tempOnly } from './testHooks';
+import { openFeedback, recordProblem, registerSupportIpc } from './support';
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
@@ -95,8 +96,14 @@ function mainLog(msg: string) {
     /* logging must not throw */
   }
 }
-process.on('unhandledRejection', (e) => mainLog(`[main] unhandled rejection: ${(e as Error)?.stack ?? String(e)}`));
-process.on('uncaughtException', (e) => mainLog(`[main] uncaught exception: ${e?.stack ?? String(e)}`));
+process.on('unhandledRejection', (e) => {
+  mainLog(`[main] unhandled rejection: ${(e as Error)?.stack ?? String(e)}`);
+  recordProblem('main', 'unhandled-rejection', (e as Error)?.message ?? String(e), (e as Error)?.stack);
+});
+process.on('uncaughtException', (e) => {
+  mainLog(`[main] uncaught exception: ${e?.stack ?? String(e)}`);
+  recordProblem('main', 'uncaught-exception', e?.message ?? String(e), e?.stack);
+});
 
 let win: BrowserWindow | null = null;
 let engine: EngineProcess | null = null;
@@ -224,6 +231,7 @@ function startEngine(): Promise<EngineInfo> {
       dataDir: cfg.dataDir,
       allowedOrigins: [APP_ORIGIN],
       mock: process.env.DESK_ENGINE_MOCK === '1',
+      onCrash: (code, tail) => recordProblem('sidecar', `exit ${code}`, `engine exited (${code})`, tail.join('\n')),
       port: enginePort() ?? port ?? undefined,
       ...withV02Env(engineEnv(cfg.runtime !== 'system')),
     });
@@ -857,6 +865,7 @@ function registerIpc() {
     rootsCache = { at: 0, roots: [] }; // new thumbnails / outputs become viewable at once
     return historyWatcher.set(p.roots);
   });
+  registerSupportIpc(handle, { settings: () => settings, win: () => win, engineMode: () => engine?.info?.mode ?? null });
   registerV02Ipc(handle, { userData: app.getPath('userData'), settings: () => settings, win: () => win, client: () => client, settingsMsg });
   primeAiRoutes = registerAiIpc(handle, {
     userData: app.getPath('userData'),
@@ -913,7 +922,7 @@ async function reportMigratedProfile() {
 }
 
 function menu() {
-  installAppMenu({ lang: settings?.get().lang ?? 'en', res: RES, win: () => win, iconPath: brandIcon(ICON_256) });
+  installAppMenu({ lang: settings?.get().lang ?? 'en', res: RES, win: () => win, iconPath: brandIcon(ICON_256), onFeedback: () => openFeedback(win) });
 }
 
 if (!app.requestSingleInstanceLock()) {
@@ -996,9 +1005,13 @@ if (!app.requestSingleInstanceLock()) {
   });
   app.on('render-process-gone', (_e, wc, details) => {
     mainLog(`[main] renderer gone: ${details.reason} (${details.exitCode})`);
+    if (details.reason !== 'clean-exit') recordProblem('renderer', details.reason, `window process gone: ${details.reason} (${details.exitCode})`);
     if (win && wc === win.webContents && details.reason !== 'clean-exit') win.reload();
   });
-  app.on('child-process-gone', (_e, details) => mainLog(`[main] child process gone: ${details.type} ${details.reason}`));
+  app.on('child-process-gone', (_e, details) => {
+    mainLog(`[main] child process gone: ${details.type} ${details.reason}`);
+    if (details.reason === 'crashed' || details.reason === 'oom' || details.reason === 'launch-failed') recordProblem('main', `${details.type}:${details.reason}`, `${details.type} process ${details.reason} (${details.exitCode})`);
+  });
   app.on('window-all-closed', () => {
     // a download in progress keeps the app alive (the downloads finish in the background; reopen from the dock /
     // taskbar); otherwise quit, except on macOS

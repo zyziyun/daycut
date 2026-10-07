@@ -3,6 +3,7 @@
 import { z } from 'zod';
 import { AI_TASK_IDS, KEY_NAMES, PROVIDER_IDS } from './aiRoutes';
 import { recIpcSchemas } from './recIpc';
+import { supportIpcSchemas } from './supportIpc';
 
 const batchId = z.string().regex(/^[0-9a-f]{12}$/);
 /** batch job ids, and work-folder clip ids (file stems like A_换圈子: letters / digits of any script, . _ -) */
@@ -176,6 +177,8 @@ export const ipcSchemas = {
   'notify:show': z.strictObject({ title: z.string().min(1).max(120), body: z.string().max(300), route: z.string().regex(/^#\/[A-Za-z0-9/_.%-]{0,200}$/).optional() }),
   // Create recorder (refused in main while the Create flag is off)
   ...recIpcSchemas,
+  // feedback + problem reports (main/support.ts)
+  ...supportIpcSchemas,
 } as const;
 
 export type IpcChannel = keyof typeof ipcSchemas;

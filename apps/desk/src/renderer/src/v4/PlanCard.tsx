@@ -13,6 +13,7 @@ import { failureReason } from './Failure';
 import { emsg } from './msg';
 import { useUi } from './ui';
 import { AnsweredBy, FallbackNote } from './AiChip';
+import { openReport } from '../support/Support';
 
 export function planFacts(plan: IntakePlan) {
   const projects = plan.projects ?? [];
@@ -58,10 +59,15 @@ export function PlanCard({ job, jobId, onRevise, onReset, onStarted }: { job: In
             <span className="mono">{job.error}</span>
           </details>
         )}
-        <button className="btn" onClick={onReset}>
-          <RotateCcw className="ico" />
-          {t('plan.discard')}
-        </button>
+        <div className="row">
+          <button className="btn" onClick={onReset}>
+            <RotateCcw className="ico" />
+            {t('plan.discard')}
+          </button>
+          <button className="btn ghost" onClick={() => openReport({ kind: 'job', code: job.error_code ?? 'unknown', message: job.error || 'plan failed' })} data-testid="plan-report">
+            {t('sup.rp.report')}
+          </button>
+        </div>
       </div>
     );
   }

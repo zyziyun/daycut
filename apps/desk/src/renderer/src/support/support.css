@@ -1,0 +1,21 @@
+/* feedback + problem reports */
+.sup-bar { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 80; display: flex; align-items: center; gap: 10px; padding: 10px 12px 10px 16px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 12px; box-shadow: var(--shadow); font-size: 14px; max-width: min(720px, 92vw); }
+.sup-bar > .ico { color: var(--warn); flex: none; }
+.sup-field { display: flex; flex-direction: column; gap: 6px; margin: 14px 0 0; font-size: 14px; }
+.sup-field > span:first-child { font-weight: 500; }
+.sup-field textarea.inp, .sup-field input.inp { width: 100%; font: inherit; font-size: 15px; }
+.sup-field textarea.inp { resize: vertical; min-height: 110px; padding: 10px 12px; line-height: 1.5; }
+.sup-bad { color: var(--danger); }
+.sup-check { display: flex; align-items: flex-start; gap: 10px; margin: 14px 0 0; font-size: 14px; cursor: pointer; }
+.s2-sfoot .sup-check { margin: 0; align-items: center; }
+.sup-check > span { display: flex; flex-direction: column; gap: 2px; }
+.sup-check input { margin-top: 3px; }
+.sup-details { margin-top: 10px; font-size: 13px; }
+.sup-details summary { cursor: pointer; color: var(--text-muted); }
+.sup-pre { margin: 8px 0 0; padding: 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; font-family: var(--font-mono); font-size: 12px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow: auto; user-select: text; }
+.sup-pre.tall { max-height: 46vh; margin-top: 14px; }
+.sup-link { display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; padding: 0; border: 0; background: none; color: var(--text-muted); font: inherit; font-size: 13px; cursor: pointer; }
+.sup-link:hover { color: var(--accent); }
+.sup-link .ico { width: 14px; height: 14px; }
+.s2-tgl.off { opacity: 0.45; cursor: not-allowed; }
+.s2-tgl.off input { cursor: not-allowed; }

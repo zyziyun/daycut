@@ -18,6 +18,8 @@ export interface EngineConfig {
   dataDir: string;
   allowedOrigins: string[];
   mock?: boolean;
+  /** the sidecar exited without being asked to (crash report: exit code + the last log lines) */
+  onCrash?: (code: number | null, tail: string[]) => void;
   /** extra variables (bundled runtime, downloaded assets) */
   env?: Record<string, string>;
   /** folders put in front of PATH / PYTHONPATH */
@@ -144,6 +146,11 @@ export class EngineProcess {
         this.child = null;
         // stopped on purpose (restart / quit): not an engine failure
         if (this.stopping) return done(Object.assign(new Error('engine stopped'), { stopped: true }));
+        try {
+          this.cfg.onCrash?.(code, this.log.slice(-20));
+        } catch {
+          /* reporting must not break the restart path */
+        }
         done(new Error(`engine exited (${code}): ${this.log.slice(-5).join(' | ')}`));
       });
     });

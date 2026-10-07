@@ -9,6 +9,7 @@ import { useHistory } from '../lib/history';
 import { useInbox } from '../lib/inbox';
 import { go } from '../lib/router';
 import { errText } from './msg';
+import { openReport } from '../support/Support';
 import { useUi } from './ui';
 
 const AI = new Set(['ai-login', 'ai-quota', 'ai-timeout', 'ai-missing']);
@@ -63,6 +64,9 @@ export function FailureActions({ item, failure, primary = true, onDone }: { item
           {t('fail.retryWith', { provider: providerName(other) })}
         </button>
       )}
+      <button className="btn ghost" onClick={() => openReport({ kind: 'job', code: failure.code, message: failure.error || failure.code })} data-testid="fail-report">
+        {t('sup.rp.report')}
+      </button>
     </>
   );
 }
