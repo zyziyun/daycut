@@ -9,6 +9,8 @@ import { href } from '../lib/router';
 import { WatchFoldersField } from '../components/WatchFolders';
 import { CreateSettingsCard } from '../create';
 import { UsageSettingsGroup } from '../components/UsageConsent';
+import { LiteCard } from '../components/Lite';
+import { IS_LITE } from '../../../shared/edition';
 import { PlatformPicker } from '../screens/Clients';
 import { PLATFORM_CHOICES } from '../screens/NewBatch';
 import { Group, Page, Row, Segmented, Sheet, Swatches, Toggle } from './kit';
@@ -52,6 +54,7 @@ export function GeneralSection({ settings: s, save, onChange }: SettingsCtx) {
   return (
     <Page title={t('s2.nav.general')} lead={t('s2.general.lead')} testId="settings-general">
       <Summary />
+      <LiteCard />
       <Group title={t('s2.appearance')} testId="settings-appearance">
         <Row label={t('s2.language')} hint={t('s2.languageHint')}>
           <Segmented value={s.lang} onChange={(l) => void save({ lang: l })} options={LANGS.map((l) => ({ v: l, label: LOCALES[l].label, testId: `lang-${l}` }))} testId="settings-lang" />
@@ -166,6 +169,7 @@ export function GeneralSection({ settings: s, save, onChange }: SettingsCtx) {
       {sheet === 'watch' && (
         <Sheet title={t('s2.watch')} onClose={() => setSheet(null)}>
           <p className="s2-rhint">{t('s2.watchHint')}</p>
+          {IS_LITE && <p className="s2-rhint">{t('lite.watchHint')}</p>}
           <WatchFoldersField />
         </Sheet>
       )}

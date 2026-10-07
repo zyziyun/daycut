@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { dialog, safeStorage, shell, type BrowserWindow } from 'electron';
+import { dialog, safeStorage, shell, type BrowserWindow, type OpenDialogOptions, type OpenDialogReturnValue } from 'electron';
 import type { EngineClient } from '../shared/engineClient';
 import type { IpcChannel, IpcPayload } from '../shared/ipc';
 import { cleanupPathOk } from './cleanupPolicy';
@@ -20,6 +20,8 @@ export interface V02Deps {
   client: () => EngineClient | null;
   /** settings + resolved config, as settings:get returns it */
   settingsMsg: () => unknown;
+  /** the open panel (main/index.ts pick: the Lite build also keeps a security-scoped bookmark of the pick) */
+  pick?: (opts: OpenDialogOptions) => Promise<OpenDialogReturnValue>;
 }
 
 let secrets: SecretStore | null = null;
@@ -53,7 +55,7 @@ export function registerV02Ipc(handle: Handle, d: V02Deps) {
     // 'any': the composer takes any material (video, audio, photos, pdf / docx / pptx / md, subtitles)
     const filters = p.kind === 'any' ? [] : [{ name: 'Video', extensions: ['mp4', 'mov', 'm4v', 'mkv', 'webm'] }];
     const opts = { properties: ['openFile', 'multiSelections'] as ('openFile' | 'multiSelections')[], filters };
-    const r = w ? await dialog.showOpenDialog(w, opts) : await dialog.showOpenDialog(opts);
+    const r = d.pick ? await d.pick(opts) : w ? await dialog.showOpenDialog(w, opts) : await dialog.showOpenDialog(opts);
     return r.canceled ? [] : r.filePaths.slice(0, p.kind === 'any' ? 200 : 20);
   });
   handle('file:saveText', async (p) => {

@@ -35,6 +35,7 @@ import { WeekPlanCard } from '../weekplan/WeekPlanCard';
 import '../theme/uxcore.css';
 import { orderPlatforms } from '../../../shared/platforms';
 import { errText } from './msg';
+import { IS_LITE } from '../../../shared/edition';
 
 /** First run: the starting points (title, what it does, the request it fills in). */
 const STARTS: { icon: typeof Film; title: MessageKey; sub: MessageKey; prompt: MessageKey }[] = [
@@ -270,6 +271,8 @@ export function Home() {
     setOver(false);
     const paths = [...e.dataTransfer.files].map((f) => window.desk.pathForFile?.(f) ?? '').filter(Boolean);
     if (paths.length) setFiles((f) => [...new Set([...f, ...paths])]);
+    // App Store (Lite) build: a drop is readable for this launch only - ask once to keep it (no-op elsewhere)
+    if (paths.length && IS_LITE) void window.desk.grantAccess?.(paths).catch(() => undefined);
   };
   const savePlatforms = (v: string[]) => {
     setPlatforms(v);

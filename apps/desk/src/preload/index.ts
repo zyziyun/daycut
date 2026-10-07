@@ -97,6 +97,7 @@ const api: DeskApi = {
     install: () => call('update:install'),
   },
   watchHistory: (roots) => call('history:watch', { roots }),
+  grantAccess: (paths) => call('access:grant', { paths }),
   rec: {
     status: () => call('rec:status'),
     ask: (kind) => call('rec:ask', { kind }),

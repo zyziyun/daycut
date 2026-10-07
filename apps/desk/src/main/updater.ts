@@ -4,6 +4,7 @@
 import { app } from 'electron';
 import electronUpdater from 'electron-updater';
 import type { UpdateStateMsg } from '../shared/deskApi';
+import { CAPS } from '../shared/edition';
 
 const { autoUpdater } = electronUpdater;
 const SIX_HOURS = 6 * 60 * 60 * 1000;
@@ -19,6 +20,7 @@ function set(s: UpdateStateMsg) {
 export function updatesEnabled(): boolean {
   return (
     app.isPackaged &&
+    CAPS.autoUpdate && // the Lite build (BUILD_EDITION=mas) is updated by the App Store only
     process.env.DESK_DISABLE_UPDATES !== '1' &&
     !process.windowsStore &&
     !process.mas &&

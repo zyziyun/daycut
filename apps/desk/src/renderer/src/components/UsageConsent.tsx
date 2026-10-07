@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { SettingsMsg, UsageStatusMsg } from "../../../shared/deskApi";
 import { getLang, t } from "../i18n";
 import { Group, Row, Toggle } from "../settings/kit";
+import { CAPS } from "../../../shared/edition";
 
 /** the docs page "Privacy: what Reelfold sends", in the UI language */
 export function usageDocsUrl(): string {
@@ -28,6 +29,8 @@ function DocsLink() {
 /** First run: a plain checkbox, unchecked. Saved at once (it survives a skip, a reload and a restart). */
 export function UsageFirstRunCard({ settings }: { settings: SettingsMsg }) {
   const [on, setOn] = useState(settings.usagePings === "on");
+  // the Lite (Mac App Store) build sends no usage counts at all ("Data Not Collected"): nothing to ask
+  if (!CAPS.usageCounts) return null;
   return (
     <div
       className="card col fr-usage"
@@ -61,14 +64,17 @@ export function UsageFirstRunCard({ settings }: { settings: SettingsMsg }) {
   );
 }
 
-/** Settings › General › Privacy */
-export function UsageSettingsGroup({
-  settings,
-  save,
-}: {
+type UsageGroupProps = {
   settings: SettingsMsg;
   save: (patch: { usagePings: "on" | "off" }) => Promise<unknown>;
-}) {
+};
+
+/** Settings › General › Privacy (absent in the Lite build, which sends nothing) */
+export function UsageSettingsGroup(props: UsageGroupProps) {
+  return CAPS.usageCounts ? <UsageGroup {...props} /> : null;
+}
+
+function UsageGroup({ settings, save }: UsageGroupProps) {
   const [st, setSt] = useState<UsageStatusMsg | null>(null);
   const [msg, setMsg] = useState<{ text: string; error?: boolean } | null>(
     null,
@@ -180,6 +186,10 @@ export function UsageSettingsGroup({
 
 /** One-time, non-blocking ask for an installed app whose profile predates the choice. Either button records it. */
 export function UsageAsk() {
+  return CAPS.usageCounts ? <UsageAskCard /> : null;
+}
+
+function UsageAskCard() {
   const [s, setS] = useState<SettingsMsg | null>(null);
   useEffect(() => {
     void window.desk

@@ -16,6 +16,7 @@ import { PublishingSection } from './Publishing';
 import { registerSettingsSection, useSettingsSections, type SettingsCtx, type SettingsSection } from './registry';
 import { useAccountsDot, useAdvancedDot, useAiDot } from './status';
 import './settings.css';
+import { IS_LITE } from '../../../shared/edition';
 
 registerSettingsSection({ id: 'general', order: 10, label: () => t('s2.nav.general'), icon: Settings2, render: (c) => <GeneralSection {...c} />, testId: 'snav-general' });
 registerSettingsSection({ id: 'ai', order: 20, label: () => t('s2.nav.ai'), icon: Sparkles, render: (c) => <AiSection key={c.sub ?? ''} {...c} />, useDot: useAiDot, testId: 'snav-ai' });
@@ -58,6 +59,7 @@ function VersionLine() {
   return (
     <div className="s2-version" data-testid="settings-version">
       {t('s2.version', { version: __APP_VERSION__ })}
+      {IS_LITE && ` · ${t('lite.name')} · ${t('lite.updates')}`}
       {state && ` · ${state}`}
       {u?.state === 'ready' && (
         <button className="s2-link" onClick={() => void window.desk.update.install()} data-testid="update-ready">

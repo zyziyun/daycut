@@ -3,7 +3,8 @@
 // this Mac). Sign-in runs in the sign-in sheet (the terminal is folded under "Show details").
 import { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight, Cpu, KeyRound, MoreHorizontal, Sparkles, TerminalSquare } from 'lucide-react';
-import { effective, pill, PROVIDER_IDS, PROVIDERS, providerName, type AuthRow, type ProviderId } from '../../../shared/aiRoutes';
+import { availableProviders, effective, pill, PROVIDERS, providerName, type AuthRow, type ProviderId } from '../../../shared/aiRoutes';
+import { LiteAiNote } from '../components/Lite';
 import type { AiTestMsg, SecretsStatusMsg } from '../../../shared/deskApi';
 import { AI_TASK_IDS } from '../../../shared/aiRoutes';
 import { fmtAgo, has, t, tk } from '../i18n';
@@ -17,6 +18,8 @@ import type { SettingsCtx } from './registry';
 import { takePendingSignIn } from './status';
 
 const clean = (e: unknown) => (e as Error).message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
+// what this build can use (the Lite / Mac App Store build has no subscription CLIs)
+const PROVIDER_IDS = availableProviders();
 const CLI = PROVIDER_IDS.filter((p) => PROVIDERS[p].kind === 'subscription-cli');
 const API = PROVIDER_IDS.filter((p) => PROVIDERS[p].kind === 'api');
 const LOCAL = PROVIDER_IDS.filter((p) => PROVIDERS[p].kind === 'local');
@@ -135,6 +138,7 @@ export function AiSection({ sub }: SettingsCtx) {
           {t('aiacc.probeSlow')}
         </div>
       )}
+      <LiteAiNote />
       {restart.what === 'key' && <RestartBar text={t('s2.ai.keyRestart')} onRestart={() => window.desk.restartEngine().then(() => markRestart(null))} />}
       <div className="s2-card s2-current" data-testid={cur ? `provider-${cur}` : 'provider-none'} data-provider-card={cur ?? 'none'}>
         <div className="s2-curtop">

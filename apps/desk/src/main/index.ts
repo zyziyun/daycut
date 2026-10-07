@@ -4,7 +4,7 @@ import os from 'node:os';
 import { createServer as createNetServer, type AddressInfo } from 'node:net';
 import path from 'node:path';
 import { Readable } from 'node:stream';
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Notification, protocol, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Notification, protocol, safeStorage, session, shell, type IpcMainInvokeEvent, type OpenDialogOptions } from 'electron';
 import { EngineClient } from '../shared/engineClient';
 import { channelKey, listChannels } from '../shared/channels';
 import { partitionFor, validateIpc, type IpcChannel, type IpcPayload } from '../shared/ipc';
@@ -47,6 +47,9 @@ import { checkForUpdates, initUpdater, installUpdate } from './updater';
 import { registerCleanupIpc, registerV02Ipc, v02EngineEnv } from './v02';
 import { devOnly, setPackaged, tempOnly, testSwitch } from './testHooks';
 import { openFeedback, recordProblem, registerSupportIpc } from './support';
+import { AccessStore, commonFolder } from './access';
+import { HtmlRenderService } from './htmlRender';
+import { CAPS, EDITION, IS_LITE } from '../shared/edition';
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
@@ -120,8 +123,17 @@ let scheduler: PublishScheduler | null = null;
 let vault: ApiVault;
 let youtube: YouTubeApi;
 let tray: AppTray | null = null;
+/** Lite (Mac App Store) build: the folders / files the user picked, kept as security-scoped bookmarks (main/access.ts) */
+let access: AccessStore;
+/** Lite build: HTML covers / slides rendered by this app's Chromium for the engine (no Chromium download) */
+let htmlRender: HtmlRenderService | null = null;
 /** started by the OS at login: stay in the menu bar until she opens the window */
 const HIDDEN_START = startedHidden();
+
+/** The app's own folders: always readable, also in the sandbox (its container). */
+function ownDirs(): string[] {
+  return [app.getPath('userData'), os.homedir(), os.tmpdir()];
+}
 
 function dataDir() {
   return path.join(app.getPath('userData'), 'engine-data');
@@ -157,13 +169,25 @@ function resolvedConfig() {
   };
 }
 
+/** The Lite (Mac App Store) build's engine: API / local models only (no Claude Code / Codex CLI), no default watched
+ * folder outside the sandbox, and HTML rendered by this app instead of a Chrome binary (src/shared/edition.ts). */
+function editionEnv(): Record<string, string> {
+  if (!IS_LITE) return {};
+  return {
+    VSTUDIO_LLM_NO_CLI: '1',
+    DESK_HISTORY_WATCH: '',
+    VSTUDIO_NO_CHROME: '1',
+    ...(htmlRender?.url ? { VSTUDIO_HTML_RENDER_URL: htmlRender.url, VSTUDIO_HTML_RENDER_TOKEN: htmlRender.token } : {}),
+  };
+}
+
 /** Create: local draft generation (second flag) is passed to the engine as VSTUDIO_CREATE_LOCAL=1. */
 function createEnv(): Record<string, string> {
   return createOn() && settings?.get().createLocalGen ? { VSTUDIO_CREATE_LOCAL: '1' } : {};
 }
 
 function engineEnv(bundled: boolean) {
-  if (!bundled || !runtime) return { env: { ...assets.env(), ...createEnv() } };
+  if (!bundled || !runtime) return { env: { ...assets.env(), ...createEnv(), ...editionEnv() } };
   const r = runtimeEnv(runtime);
   return {
     ...r,
@@ -176,6 +200,7 @@ function engineEnv(bundled: boolean) {
       ...(settings.get().personaPath ? {} : { VSTUDIO_ASR_LANGUAGE: 'auto' }),
       ...assets.env(),
       ...createEnv(),
+      ...editionEnv(),
     },
   };
 }
@@ -192,7 +217,7 @@ function createOn(): boolean {
 
 function settingsMsg() {
   const s = settings.get();
-  return { ...s, createPage: createOn(), firstRunDone: s.firstRunDone || testSwitch('DESK_SKIP_FIRST_RUN'), resolved: resolvedConfig(), packaged: app.isPackaged, platform: process.platform };
+  return { ...s, createPage: createOn(), firstRunDone: s.firstRunDone || testSwitch('DESK_SKIP_FIRST_RUN'), resolved: resolvedConfig(), packaged: app.isPackaged, platform: process.platform, edition: EDITION };
 }
 
 /** One engine port per app session, chosen before the first start and reused by every restart (also when the
@@ -500,6 +525,15 @@ function createWindow(route?: string, show = true) {
 }
 
 // ---------------------------------------------------------------- IPC
+/** Every open panel goes through here: in the Lite build it also returns security-scoped bookmarks, which are kept so
+ * the picked files / folders stay readable (by the app and its engine) after a relaunch. */
+async function pick(opts: OpenDialogOptions) {
+  const o = access?.active ? { ...opts, securityScopedBookmarks: true } : opts;
+  const r = win ? await dialog.showOpenDialog(win, o) : await dialog.showOpenDialog(o);
+  if (!r.canceled) access?.add(r.filePaths, r.bookmarks);
+  return r;
+}
+
 function handle<C extends IpcChannel>(channel: C, fn: (p: IpcPayload<C>, e: IpcMainInvokeEvent) => unknown) {
   ipcMain.handle(channel, async (e, payload) => {
     // only our own UI, top frame, may call
@@ -673,10 +707,10 @@ function registerIpc() {
     if (p.kind === 'board') {
       // a board file or a project folder (HyperFrames): both selectable on macOS
       const props: ('openFile' | 'openDirectory')[] = process.platform === 'darwin' ? ['openFile', 'openDirectory'] : ['openFile'];
-      const r = await dialog.showOpenDialog(win!, { properties: props, filters: [{ name: 'Board', extensions: ['md', 'markdown', 'json', 'csv', 'tsv', 'txt', 'edl', 'otio', 'xml', 'fcpxml', 'html'] }] });
+      const r = await pick({ properties: props, filters: [{ name: 'Board', extensions: ['md', 'markdown', 'json', 'csv', 'tsv', 'txt', 'edl', 'otio', 'xml', 'fcpxml', 'html'] }] });
       return r.canceled ? null : r.filePaths[0];
     }
-    const r = await dialog.showOpenDialog(win!, { properties: ['openFile', ...(p.kind === 'python' ? (['showHiddenFiles'] as const) : [])], filters });
+    const r = await pick({ properties: ['openFile', ...(p.kind === 'python' ? (['showHiddenFiles'] as const) : [])], filters });
     return r.canceled ? null : r.filePaths[0];
   });
   handle('notify:show', async (p) => {
@@ -691,8 +725,36 @@ function registerIpc() {
     n.show();
   });
   handle('dialog:openFolder', async () => {
-    const r = await dialog.showOpenDialog(win!, { properties: ['openDirectory'] });
+    const r = await pick({ properties: ['openDirectory', 'createDirectory'] });
     return r.canceled ? null : r.filePaths[0];
+  });
+  // Lite build: files dropped on the window are readable for this launch only. Ask once for their folder so they stay
+  // readable after a relaunch (a re-render needs the source). -> granted: false when she cancels (still fine today).
+  handle('access:grant', async (p) => {
+    if (!access?.active) return { needed: false, granted: true };
+    const want = p.paths.filter((x) => !access.covers(x, ownDirs()));
+    if (!want.length) return { needed: false, granted: true };
+    const dirs = want.map((x) => {
+      try {
+        return fs.statSync(x).isDirectory() ? x + path.sep + '.' : x; // a folder: itself, not its parent
+      } catch {
+        return x;
+      }
+    });
+    const folder = commonFolder(dirs) ?? path.dirname(want[0]);
+    const lang = settings.get().lang;
+    const r = await pick({
+      defaultPath: folder,
+      properties: ['openDirectory'],
+      buttonLabel: lang === 'zh-CN' ? '允许' : lang === 'fr' ? 'Autoriser' : 'Allow',
+      message:
+        lang === 'zh-CN'
+          ? '允许千剪在下次打开时仍能读取这个文件夹里的素材（App Store 版需要你确认一次）'
+          : lang === 'fr'
+            ? 'Autorisez Reelfold à relire les fichiers de ce dossier aux prochains lancements (une fois, version App Store)'
+            : 'Let Reelfold keep reading the files in this folder after you quit (asked once in the App Store version)',
+    });
+    return { needed: true, granted: !r.canceled && want.every((x) => access.covers(x, ownDirs())) };
   });
   handle('shell:openExternal', async (p) => {
     if (isSafeExternal(p.url)) await shell.openExternal(p.url);
@@ -893,10 +955,11 @@ function registerIpc() {
   handle('history:watch', async (p) => {
     historyWatcher ??= new HistoryWatcher(() => win?.webContents.send('history:changed', { at: Date.now() }));
     rootsCache = { at: 0, roots: [] }; // new thumbnails / outputs become viewable at once
-    return historyWatcher.set(p.roots);
+    // Lite build: only folders she picked (or the app's own data) are watched - never a path typed or remembered
+    return historyWatcher.set(p.roots.filter((r) => access.covers(r, ownDirs())));
   });
   registerSupportIpc(handle, { settings: () => settings, win: () => win, engineMode: () => engine?.info?.mode ?? null });
-  registerV02Ipc(handle, { userData: app.getPath('userData'), settings: () => settings, win: () => win, client: () => client, settingsMsg });
+  registerV02Ipc(handle, { userData: app.getPath('userData'), settings: () => settings, win: () => win, client: () => client, settingsMsg, pick });
   primeAiRoutes = registerAiIpc(handle, {
     userData: app.getPath('userData'),
     settings: () => settings,
@@ -918,7 +981,9 @@ function loadAssetManifest(): AssetManifest {
   try {
     // DESK_ASSETS_MANIFEST: tests point the downloader at a local server
     const file = devOnly('DESK_ASSETS_MANIFEST') || path.join(RES, 'packaging', 'assets.json');
-    return JSON.parse(fs.readFileSync(file, 'utf8')) as AssetManifest;
+    const m = JSON.parse(fs.readFileSync(file, 'utf8')) as AssetManifest;
+    // Lite (Mac App Store) build: data only - no downloaded browser binary (App Review 2.4.5); HTML renders in the app
+    return CAPS.chromiumDownload ? m : { ...m, groups: m.groups.filter((g) => !g.id.startsWith('chromium')) };
   } catch (e) {
     console.warn('[assets] no manifest:', (e as Error).message);
     return { groups: [] };
@@ -962,13 +1027,22 @@ if (!app.requestSingleInstanceLock()) {
   app.on('web-contents-created', (_e, contents) => {
     contents.on('will-attach-webview', (ev) => ev.preventDefault());
   });
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     if (testSwitch('DESK_HIDE_WINDOW')) app.dock?.hide();
     settings = new SettingsStore(app.getPath('userData'));
+    // Lite (Mac App Store) build: picked folders from earlier launches, before the engine (which reads them) starts
+    access = new AccessStore(
+      app.getPath('userData'),
+      { start: (b) => (app as unknown as { startAccessingSecurityScopedResource?: (b: string) => () => void }).startAccessingSecurityScopedResource?.(b) },
+      IS_LITE && Boolean(process.mas),
+      mainLog,
+    );
+    access.restore();
     usage = new UsageReporter({
       dir: app.getPath('userData'),
       consent: () => settings.get().usagePings === 'on',
-      allowed: usageAllowedByEnv(process.env, app.isPackaged),
+      // the Lite (Mac App Store) build sends nothing: its privacy label is "Data Not Collected"
+      allowed: CAPS.usageCounts && usageAllowedByEnv(process.env, app.isPackaged),
       version: app.getVersion(),
       platform: process.platform,
       arch: process.arch,
@@ -1009,6 +1083,10 @@ if (!app.requestSingleInstanceLock()) {
     for (const e of adapters.errors) console.warn(`[adapters] ${e.file}: ${e.error}`);
     hardenDefaultSession();
     registerProtocols();
+    if (IS_LITE) {
+      htmlRender = new HtmlRenderService({ log: mainLog, readable: (f) => access.covers(f, ownDirs()) });
+      await htmlRender.start().catch((e) => mainLog(`[html] render service: ${(e as Error).message}`));
+    }
     registerIpc();
     void startEngine().catch(() => undefined); // failures are reported through engine:status
     void primeAiRoutes?.primeRoutes().catch(() => undefined);
@@ -1069,6 +1147,7 @@ if (!app.requestSingleInstanceLock()) {
     appQuitting = true;
     recorder?.closeAll();
     scheduler?.stop();
-    void engine?.stop();
+    htmlRender?.stop();
+    void engine?.stop()?.finally(() => access?.stopAll());
   });
 }

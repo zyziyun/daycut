@@ -157,6 +157,8 @@ export const ipcSchemas = {
   'update:check': z.undefined(),
   'update:install': z.undefined(),
   'history:watch': z.strictObject({ roots: z.array(absPath).max(20) }),
+  // Lite (Mac App Store) build: keep access to dropped files / folders across launches (main/access.ts)
+  'access:grant': z.strictObject({ paths: z.array(absPath).min(1).max(200) }),
   'cleanup:confirm': z.strictObject({ batchId }),
   // AI accounts & models: status, CLI login terminal (command from the engine), routes
   'ai:status': z.strictObject({ refresh: z.boolean().optional(), probe: z.boolean().optional(), providers: z.array(provider).max(12).optional() }),

@@ -2,7 +2,7 @@
 // ("Claude Code login expired, so Codex was used this time · Log in"). Switching is explicit and saved.
 import type { MouseEvent } from 'react';
 import { ChevronDown, Cpu } from 'lucide-react';
-import { effective, fallbackNotice, pill, PROVIDER_IDS, PROVIDERS, providerName, type AiTask, type FallbackInfo, type ProviderId } from '../../../shared/aiRoutes';
+import { availableProviders, effective, fallbackNotice, pill, PROVIDERS, providerName, type AiTask, type FallbackInfo, type ProviderId } from '../../../shared/aiRoutes';
 import { t, tk } from '../i18n';
 import { refreshStatus, rowOf, switchProvider, useAi } from '../lib/ai';
 import { go } from '../lib/router';
@@ -18,7 +18,7 @@ export function ProviderChip({ task, testId }: { task: AiTask; testId?: string }
     e.stopPropagation(); // the menu closes on the next window click
     if (!status) void refreshStatus({ probe: false });
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const items: MenuItem[] = PROVIDER_IDS.filter((p) => {
+    const items: MenuItem[] = availableProviders().filter((p) => {
       const row = rowOf(status, p);
       // offer what can work here: the current choice, ready providers, and the subscription CLIs (they can log in)
       return p === cur.provider || !row || row.ready || PROVIDERS[p].kind === 'subscription-cli';

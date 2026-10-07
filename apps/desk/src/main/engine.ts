@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
+import { CAPS } from '../shared/edition';
 import type { EngineInfo, EngineMode } from '../shared/types';
 import { prependPath } from './runtime';
 import { devOnly } from './testHooks';
@@ -81,6 +82,8 @@ export function extraBinDirs(platform: NodeJS.Platform = process.platform, env: 
     ];
   }
   if (platform !== 'darwin') return [path.join(home, '.local/bin')];
+  // the Lite (Mac App Store) build is sandboxed: nothing outside the app runs, so no Homebrew / CLI folders
+  if (!CAPS.cliLogins) return [];
   return ['/opt/homebrew/bin', '/usr/local/bin', path.join(home, '.local/bin')];
 }
 

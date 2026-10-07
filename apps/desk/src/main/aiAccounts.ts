@@ -15,6 +15,7 @@ import { prependPath } from './runtime';
 import type { SettingsStore } from './settings';
 import { ptyProblem, startTerminal, type TermSession } from './terminal';
 import { devOnly } from './testHooks';
+import { CAPS } from '../shared/edition';
 
 type Handle = <C extends IpcChannel>(channel: C, fn: (p: IpcPayload<C>) => unknown) => void;
 
@@ -156,6 +157,8 @@ export function registerAiIpc(handle: Handle, d: AiDeps) {
   });
 
   handle('ai:terminal', async (p) => {
+    // the Lite (Mac App Store) build is sandboxed: it cannot run the CLIs she installed, so it has no CLI login
+    if (!CAPS.cliLogins) throw new Error('subscription sign-in is in the full version of Reelfold (reelfold.com)');
     term?.kill();
     term = null;
     const mock = readMock<Record<string, { command: string[]; display?: string; env_unset?: string[] }>>('login.json');

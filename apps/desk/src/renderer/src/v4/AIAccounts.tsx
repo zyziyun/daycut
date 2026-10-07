@@ -4,9 +4,9 @@ import { useRef, useState } from 'react';
 import { GripVertical, Plus, X } from 'lucide-react';
 import {
   AI_TASK_IDS,
+  availableProviders,
   effective,
   pill,
-  PROVIDER_IDS,
   PROVIDERS,
   providerName,
   type AiRoutes,
@@ -15,6 +15,9 @@ import {
   type ProviderId,
   type RouteChoice,
 } from '../../../shared/aiRoutes';
+
+// what this build can use (the Lite / Mac App Store build has no subscription CLIs)
+const PROVIDER_IDS = availableProviders();
 import { t, tk } from '../i18n';
 import { rowOf, saveRoutes, useAi } from '../lib/ai';
 import { useUi } from './ui';

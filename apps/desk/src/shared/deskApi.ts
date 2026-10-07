@@ -61,6 +61,8 @@ export interface SettingsMsg {
   /** a built app (engine path / Python are fixed, developer settings hidden) */
   packaged?: boolean;
   platform?: string;
+  /** 'mas': the Mac App Store (Lite) build (src/shared/edition.ts) */
+  edition?: 'full' | 'mas';
   firstRunDone?: boolean;
   defaultPlatforms?: string[];
   personaPath?: string;
@@ -222,6 +224,8 @@ export interface DeskApi {
   on(event: 'publish:state' | 'publish:fillStep' | 'engine:status' | 'assets:progress' | 'update:state' | 'history:changed' | 'notify:open' | 'term:data' | 'term:exit' | 'ai:routes' | 'publish:due' | 'publish:posted' | 'publish:channels' | 'support:problem' | 'support:open', cb: (data: unknown) => void): () => void;
   /** watch these folders for live job changes ('history:changed' events); -> the folders watched */
   watchHistory(roots: string[]): Promise<string[]>;
+  /** Lite (Mac App Store) build: ask once to keep reading dropped files after a relaunch (no-op elsewhere) */
+  grantAccess?(paths: string[]): Promise<{ needed: boolean; granted: boolean }>;
   /** source cleanup: a dialog lists the exact files; only on confirm are they moved to the Trash */
   ai: {
     status(opts?: { refresh?: boolean; probe?: boolean; providers?: string[] }): Promise<AuthStatusMsg>;

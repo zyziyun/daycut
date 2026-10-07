@@ -1,6 +1,7 @@
 // AI accounts & models: the providers the desk knows, which provider each AI task uses (default + per-task overrides
 // + an ordered fallback list), how those choices become the engine's routes file (VSTUDIO_LLM_ROUTES_FILE, read on
 // every engine call), and the "Claude's login expired, Codex answered" notice. Pure: shared by main, renderer, tests.
+import { CAPS, type EditionCaps } from './edition';
 
 export const PROVIDER_IDS = [
   'claude-code',
@@ -33,6 +34,22 @@ export const PROVIDERS: Record<ProviderId, { kind: ProviderKind; name: string; s
   lmstudio: { kind: 'local', name: 'LM Studio' },
   vllm: { kind: 'local', name: 'vLLM' },
 };
+
+/** The providers this build can use: the Lite (Mac App Store) build has no subscription CLIs (it is sandboxed and
+ * cannot run the claude / codex she installed): API keys and local model servers only. */
+export function availableProviders(caps: EditionCaps = CAPS): ProviderId[] {
+  return PROVIDER_IDS.filter((p) => caps.cliLogins || PROVIDERS[p].kind !== 'subscription-cli');
+}
+
+export function providerAllowed(p: string, caps: EditionCaps = CAPS): boolean {
+  return p === 'none' || (isProvider(p) && (caps.cliLogins || PROVIDERS[p].kind !== 'subscription-cli'));
+}
+
+/** What a fresh profile uses when nothing is configured: her subscription CLIs (Claude Code, Codex as fallback); in
+ * the Lite build the Anthropic API, then OpenAI, then a local Ollama (whichever she sets up answers). */
+export function defaultChoice(caps: EditionCaps = CAPS): RouteChoice {
+  return caps.cliLogins ? { provider: 'claude-code', model: null, fallback: ['codex'] } : { provider: 'anthropic', model: null, fallback: ['openai', 'ollama'] };
+}
 
 /** API keys kept in the OS keychain (Electron safeStorage) and handed to the engine as these variables only. */
 export const KEY_NAMES = ['anthropic', 'openai', 'deepseek', 'qwen', 'kimi', 'glm', 'openrouter', 'minimax', 'gemini', 'ark', 'kling'] as const;
@@ -80,9 +97,9 @@ export function isProvider(x: unknown): x is ProviderId {
   return typeof x === 'string' && (PROVIDER_IDS as readonly string[]).includes(x);
 }
 
-function cleanChoice(c: Partial<RouteChoice> | undefined | null): RouteChoice | null {
-  if (!c || !(isProvider(c.provider) || c.provider === 'none')) return null;
-  const fb = (c.fallback ?? []).filter((x, i, a) => isProvider(x) && x !== c.provider && a.indexOf(x) === i).slice(0, 4);
+function cleanChoice(c: Partial<RouteChoice> | undefined | null, caps: EditionCaps = CAPS): RouteChoice | null {
+  if (!c || !(isProvider(c.provider) || c.provider === 'none') || !providerAllowed(c.provider, caps)) return null;
+  const fb = (c.fallback ?? []).filter((x, i, a) => isProvider(x) && providerAllowed(x, caps) && x !== c.provider && a.indexOf(x) === i).slice(0, 4);
   return { provider: c.provider, model: c.model ? String(c.model).slice(0, 120) : null, fallback: fb };
 }
 
@@ -96,19 +113,22 @@ function ownTaskRoute(r: { source?: string }): boolean {
   return /llm\.tasks\./.test(s) || (/^env VSTUDIO_LLM_.+_PROVIDER$/.test(s) && s !== 'env VSTUDIO_LLM_PROVIDER');
 }
 
-export function routesFromEngine(engine: Record<string, { provider?: string; model?: string | null; fallback?: unknown; source?: string }> | null | undefined): AiRoutes {
+export function routesFromEngine(
+  engine: Record<string, { provider?: string; model?: string | null; fallback?: unknown; source?: string }> | null | undefined,
+  caps: EditionCaps = CAPS,
+): AiRoutes {
   const pick = (r?: { provider?: string; model?: string | null; fallback?: unknown }): RouteChoice | null =>
     r
       ? cleanChoice({
           provider: (r.provider === 'none' ? 'none' : r.provider) as ProviderId,
           model: r.model ?? null,
           fallback: (Array.isArray(r.fallback) ? r.fallback : []).map((x) => (typeof x === 'object' && x ? (x as { provider?: string }).provider : x)) as ProviderId[],
-        })
+        }, caps)
       : null;
   // nothing configured (no persona / client route: the engine reports "none") -> the subscription CLIs, which the
   // routes file then hands to the engine, so what the page shows is what runs (P1-6)
   const engineDef = pick(engine?.default);
-  const def = engineDef && engineDef.provider !== 'none' ? engineDef : { provider: 'claude-code' as ProviderId, model: null, fallback: ['codex' as ProviderId] };
+  const def = engineDef && engineDef.provider !== 'none' ? engineDef : defaultChoice(caps);
   const tasks: AiRoutes['tasks'] = {};
   for (const k of AI_TASK_IDS) {
     const raw = engine?.[AI_TASKS[k]];
@@ -195,6 +215,7 @@ export type AuthState =
   | 'ready'
   | 'server-down'
   | 'no-models'
+  | 'unavailable'
   | 'error';
 
 export interface EngineMsgLite {
@@ -253,6 +274,8 @@ export function pill(row: AuthRow | undefined): { tone: 'ok' | 'warn' | 'bad' | 
       return { tone: 'off', key: 'aiacc.st.localDown' };
     case 'no-models':
       return { tone: 'warn', key: 'aiacc.st.noModels' };
+    case 'unavailable':
+      return { tone: 'off', key: 'aiacc.st.unavailable' };
     case undefined:
       return { tone: 'off', key: 'aiacc.st.checking' };
     default:

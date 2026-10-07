@@ -17,13 +17,16 @@ import { defaultPlatformsFor } from '../lib/firstRun';
 import { LoginTerminal, type LoginReq } from '../v4/LoginTerminal';
 import { PlatformPicker } from './Clients';
 import { UsageFirstRunCard } from '../components/UsageConsent';
+import { LiteAiNote, LiteCard } from '../components/Lite';
+import { CAPS } from '../../../shared/edition';
 
 // The order of the wizard (the usage-counts consent card sits on the welcome step).
 const ALL_STEPS = ['welcome', 'ai', 'platforms'] as const;
 type Step = (typeof ALL_STEPS)[number];
 
 const STEP_KEY = 'firstRunStep';
-const SUBS: ProviderId[] = ['claude-code', 'codex'];
+// the Lite (Mac App Store) build has no subscription sign-in: API keys / local models only
+const SUBS: ProviderId[] = CAPS.cliLogins ? ['claude-code', 'codex'] : [];
 
 export function FirstRun({ settings, onDone }: { settings: SettingsMsg; onDone: (s: SettingsMsg) => void }) {
   const assets = useAssets();
@@ -106,6 +109,7 @@ export function FirstRun({ settings, onDone }: { settings: SettingsMsg; onDone: 
               ))}
             </div>
             <div className="muted small">{t('settings.privacyBody')}</div>
+            <LiteCard />
             <UsageFirstRunCard settings={settings} />
           </div>
         )}
@@ -161,6 +165,23 @@ function AiStep({ onKeys, onReady }: { onKeys: () => void; onReady: (ready: bool
   }, []);
   const ready = SUBS.find((p) => rowOf(status, p)?.state === 'logged-in');
   useEffect(() => onReady(Boolean(ready)), [ready, onReady]);
+  if (!CAPS.cliLogins) {
+    // Lite: the keys card open, local models named, and the full version for a subscription sign-in
+    return (
+      <div className="col" data-testid="fr-ai">
+        <b style={{ fontSize: 16, fontWeight: 600 }}>{t('lite.aiTitle')}</b>
+        <p className="small" style={{ margin: 0 }}>
+          {t('fr.aiWhy')}
+        </p>
+        <LiteAiNote />
+        <KeysCard onChange={onKeys} />
+        <div className="card col" style={{ gap: 4, padding: '12px 14px' }} data-testid="fr-no-ai">
+          <b style={{ fontWeight: 500 }}>{t('fr.noAiTitle')}</b>
+          <span className="muted small">{t('fr.noAiBody')}</span>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="col" data-testid="fr-ai">
       <b style={{ fontSize: 16, fontWeight: 600 }}>{t('fr.aiTitle')}</b>
