@@ -267,8 +267,9 @@ function startEngine(): Promise<EngineInfo> {
 /** The engine died after it was up: say so at once (the status dot / banner), then start a new one - at most 3 times
  * in 2 minutes, so a engine that dies at start-up does not loop; after that the banner's "Fix" link stays. */
 const crashes: number[] = [];
+let appQuitting = false;
 function onEngineCrash(gen: number, detail: string) {
-  if (gen !== engineGen) return;
+  if (gen !== engineGen || appQuitting) return; // quitting: the engine going away is expected
   mainLog(`[engine] crashed: ${detail}`);
   client = null;
   const now = Date.now();
@@ -276,7 +277,7 @@ function onEngineCrash(gen: number, detail: string) {
   crashes.push(now);
   const retry = crashes.length <= 3;
   win?.webContents.send('engine:status', { ok: false, error: detail, restarting: retry });
-  if (retry) setTimeout(() => void startEngine().catch(() => undefined), 500 * crashes.length);
+  if (retry) setTimeout(() => !appQuitting && void startEngine().catch(() => undefined), 500 * crashes.length);
 }
 
 class SupersededError extends Error {
@@ -1061,6 +1062,7 @@ if (!app.requestSingleInstanceLock()) {
       quitConfirmed = true;
       assets.cancel();
     }
+    appQuitting = true;
     recorder?.closeAll();
     scheduler?.stop();
     void engine?.stop();
