@@ -28,7 +28,7 @@ export const SITE = {
   downloadUrl: 'https://github.com/zyziyun/daycut-releases/releases/latest',
 
   /** Open-source engine (the video-studio skill) repository. */
-  githubUrl: 'https://github.com/zyziyun/video-studio',
+  githubUrl: 'https://github.com/zyziyun/daycut',
 
   /** Design-partner program size. */
   partnerSlots: 30,

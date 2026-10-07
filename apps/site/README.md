@@ -1,6 +1,6 @@
 # video-studio-site (apps/site)
 
-Lives in `apps/site/` of the [video-studio](https://github.com/zyziyun/video-studio) monorepo; MIT like the rest of
+Lives in `apps/site/` of the [video-studio](https://github.com/zyziyun/daycut) monorepo; MIT like the rest of
 the repo (see `LICENSE`). `npm install` works here or at the repo root (one npm workspace for all apps).
 
 Product website (官网) for the video-studio AI video studio: English (default) at `/`, `/privacy`, `/terms`;
@@ -53,7 +53,7 @@ screenshots/               ← home-en-*, home-zh-* (desktop + mobile) and priva
 | `contactEmail` | `hello@example.com` | Placeholder. Used in the contact section, footer, legal pages and the mailto fallback. |
 | `formEndpoint` | `''` | Empty = form is shown disabled with an "online form not open yet, email us" notice and a mailto button. Set a URL = the form POSTs there (standard `application/x-www-form-urlencoded`). |
 | `downloadUrl` | `https://github.com/zyziyun/daycut-releases/releases/latest` | Both macOS and Windows buttons point here (the Daycut releases repo; installs from before the rename also read `video-studio-desk-releases`). |
-| `githubUrl` | `https://github.com/zyziyun/video-studio` | Open-source section, contact, footer. |
+| `githubUrl` | `https://github.com/zyziyun/daycut` | Open-source section, contact, footer. |
 
 ## Form backend options (creator decides)
 

@@ -6,7 +6,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/zyziyun/video-studio.git",
+    "url": "https://github.com/zyziyun/daycut.git",
     "directory": "apps/site"
   },
   "scripts": {

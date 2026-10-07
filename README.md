@@ -80,7 +80,7 @@ what broke along the way fed the fixes listed in [`references/VALIDATION.md`](re
 ## Install
 
 ```bash
-git clone https://github.com/zyziyun/video-studio ~/.claude/skills/video-studio
+git clone https://github.com/zyziyun/daycut ~/.claude/skills/video-studio
 ~/.claude/skills/video-studio/install.sh
 cp ~/.claude/skills/video-studio/persona.example.yaml ~/.claude/skills/video-studio/persona.local.yaml
 ```

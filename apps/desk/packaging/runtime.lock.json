@@ -33,7 +33,7 @@
     }
   },
   "vstudio": {
-    "repo": "https://github.com/zyziyun/video-studio",
+    "repo": "https://github.com/zyziyun/daycut",
     "include": [
       "lib",
       "workflows",

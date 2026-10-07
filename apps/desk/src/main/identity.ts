@@ -15,7 +15,7 @@ export const APP_NAME_ZH = '日剪';
 export const APP_ID = 'com.vstudio.desk';
 /** productName before the rename: the userData folder and safeStorage key of every existing install. */
 export const LEGACY_NAME = 'video-studio desk';
-export const ENGINE_REPO_URL = 'https://github.com/zyziyun/video-studio';
+export const ENGINE_REPO_URL = 'https://github.com/zyziyun/daycut';
 
 export interface Identity {
   /** the name handed to app.setName() (keychain / libsecret key); never displayed */

@@ -1,7 +1,7 @@
 # Releasing Daycut
 
 Daycut (日剪) is the product name of the desk app (formerly video-studio desk). Its source lives in `apps/desk/` of the
-public [video-studio](https://github.com/zyziyun/video-studio) monorepo (MIT), next to the engine (`lib/`, `workflows/`)
+public [video-studio](https://github.com/zyziyun/daycut) monorepo (MIT), next to the engine (`lib/`, `workflows/`)
 it ships; the old private `zyziyun/video-studio-desk` repo was merged in with its history (git subtree) and is archived.
 What ships, how to sign it, how to cut a release, and what the store builds would need. Commands below run in
 `apps/desk/` unless they say otherwise.
@@ -65,7 +65,7 @@ Generate): Resource owner `zyziyun`, Repository access *Only select repositories
 Repository permissions → **Contents: Read and write**. Store it in the source (monorepo) repo:
 
 ```bash
-gh secret set RELEASES_TOKEN -R zyziyun/video-studio   # paste the token
+gh secret set RELEASES_TOKEN -R zyziyun/daycut   # paste the token
 ```
 
 Without `RELEASES_TOKEN` the release workflow still builds and uploads workflow artifacts, it just does not publish.
@@ -87,11 +87,11 @@ You need the Account Holder role (or an Admin with access to Developer ID certif
 5. GitHub secrets (never commit any of these):
 
 ```bash
-base64 -i DeveloperID.p12 | gh secret set MAC_CERT_P12_BASE64 -R zyziyun/video-studio
-gh secret set MAC_CERT_PASSWORD -R zyziyun/video-studio                 # the .p12 password
-gh secret set APPLE_ID -R zyziyun/video-studio                          # Apple ID e-mail
-gh secret set APPLE_APP_SPECIFIC_PASSWORD -R zyziyun/video-studio       # from step 4
-gh secret set APPLE_TEAM_ID -R zyziyun/video-studio                     # e.g. AB12CD34EF
+base64 -i DeveloperID.p12 | gh secret set MAC_CERT_P12_BASE64 -R zyziyun/daycut
+gh secret set MAC_CERT_PASSWORD -R zyziyun/daycut                 # the .p12 password
+gh secret set APPLE_ID -R zyziyun/daycut                          # Apple ID e-mail
+gh secret set APPLE_APP_SPECIFIC_PASSWORD -R zyziyun/daycut       # from step 4
+gh secret set APPLE_TEAM_ID -R zyziyun/daycut                     # e.g. AB12CD34EF
 ```
 
 Then delete the exported `.p12` from disk.
