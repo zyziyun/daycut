@@ -49,16 +49,19 @@ export const LABELS: Record<Lang, Record<Row, string> & Record<V, string> & { fe
   },
 };
 
+/** The latest release carries the Windows preview installer (unsigned). */
+const WIN = Boolean(SITE.windowsDownloadUrl);
+
 /** Reelfold's own column (same for every page). Notes per language where a bare yes/no would mislead. */
 export const REELFOLD: Record<Row, V> = {
-  free: 'yes', oss: 'yes', local: 'yes', mac: SITE.downloadReady ? 'yes' : 'partial', win: 'no', web: 'no', mobile: 'no', batch: 'yes',
+  free: 'yes', oss: 'yes', local: 'yes', mac: SITE.downloadReady ? 'yes' : 'partial', win: WIN ? 'partial' : 'no', web: 'no', mobile: 'no', batch: 'yes',
   byoai: 'yes', post: 'no', cn: 'yes', text: 'yes', filler: 'yes', pick: 'yes', team: 'no',
 };
 export const REELFOLD_NOTES: Record<Lang, Partial<Record<Row, string>>> = {
-  en: { mac: SITE.downloadReady ? 'Apple Silicon' : 'Apple Silicon; first release coming soon, build from source today', win: 'Planned', post: 'By design: fills each upload page, you press publish', free: 'MIT; you pay only for the AI you connect' },
-  zh: { mac: SITE.downloadReady ? 'Apple 芯片' : 'Apple 芯片；正式版即将发布，现在可从源码构建', win: '在计划中', post: '有意为之：替你填好上传页，由你按下发布', free: 'MIT；只为你接入的 AI 付费' },
-  fr: { mac: SITE.downloadReady ? 'Apple Silicon' : 'Apple Silicon ; première version bientôt, compilable dès aujourd’hui', win: 'Prévue', post: 'Choix délibéré : il remplit chaque page, vous publiez', free: 'MIT ; seule l’IA branchée est payante' },
-  es: { mac: SITE.downloadReady ? 'Apple Silicon' : 'Apple Silicon; primera versión muy pronto, ya se puede compilar', win: 'Prevista', post: 'A propósito: rellena cada página de subida y tú publicas', free: 'MIT; solo pagas la IA que conectes' },
+  en: { mac: SITE.downloadReady ? 'Apple Silicon' : 'Apple Silicon; first release coming soon, build from source today', win: WIN ? 'Preview: unsigned installer' : 'Planned', post: 'By design: fills each upload page, you press publish', free: 'MIT; you pay only for the AI you connect' },
+  zh: { mac: SITE.downloadReady ? 'Apple 芯片' : 'Apple 芯片；正式版即将发布，现在可从源码构建', win: WIN ? '预览版：安装包未签名' : '在计划中', post: '有意为之：替你填好上传页，由你按下发布', free: 'MIT；只为你接入的 AI 付费' },
+  fr: { mac: SITE.downloadReady ? 'Apple Silicon' : 'Apple Silicon ; première version bientôt, compilable dès aujourd’hui', win: WIN ? 'Aperçu : installateur non signé' : 'Prévue', post: 'Choix délibéré : il remplit chaque page, vous publiez', free: 'MIT ; seule l’IA branchée est payante' },
+  es: { mac: SITE.downloadReady ? 'Apple Silicon' : 'Apple Silicon; primera versión muy pronto, ya se puede compilar', win: WIN ? 'Vista previa: instalador sin firmar' : 'Prevista', post: 'A propósito: rellena cada página de subida y tú publicas', free: 'MIT; solo pagas la IA que conectes' },
 };
 
 interface Item { t: string; b: string }

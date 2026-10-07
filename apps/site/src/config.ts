@@ -1,6 +1,6 @@
 // Single source of truth for values the creator must decide before publishing.
 // Edit here, run `npm run build`, done. Nothing else in the codebase hard-codes these.
-import { resolveDownloadReady } from './lib/releaseStatus.ts';
+import { resolveReleaseStatus } from './lib/releaseStatus.ts';
 
 const GITHUB_URL = 'https://github.com/zyziyun/reelfold';
 
@@ -9,6 +9,8 @@ const GITHUB_URL = 'https://github.com/zyziyun/reelfold';
  * decides by itself (lib/releaseStatus.ts): downloads turn on once a published release with a DMG exists.
  */
 const DOWNLOAD_READY_FALLBACK = false;
+
+const RELEASE = await resolveReleaseStatus(GITHUB_URL, DOWNLOAD_READY_FALLBACK);
 
 export const SITE = {
   /** Public URL of the deployed site (canonical, hreflang, sitemap, OG tags). `astro.config.mjs` reads it. */
@@ -33,7 +35,13 @@ export const SITE = {
    * second one "Build from source", and the fine print says the macOS app is coming soon. `true`: every button on
    * every page and language switches to "Download for macOS". Force it with SITE_DOWNLOAD_READY=1 / 0.
    */
-  downloadReady: await resolveDownloadReady(GITHUB_URL, DOWNLOAD_READY_FALLBACK),
+  downloadReady: RELEASE.ready,
+
+  /**
+   * Windows (preview) download: the unsigned `Reelfold-<v>-win-x64-setup.exe` on the same latest release, or null when
+   * that release has none (or downloadReady is off). Shown as a small secondary link under the macOS button only.
+   */
+  windowsDownloadUrl: RELEASE.windowsUrl,
 } as const;
 
 export const site = SITE.url.replace(/\/$/, '');

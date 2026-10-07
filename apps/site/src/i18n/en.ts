@@ -28,6 +28,7 @@ export const en = {
     source: 'Build from source',
     fine: 'Apple Silicon · MIT licensed · also installs as a Claude Code skill',
     fineSoon: 'macOS app coming soon · MIT licensed · works today as a Claude Code skill',
+    windows: 'Windows (preview, unsigned)',
   },
   hero: {
     eyebrow: 'Free and open source · for Apple Silicon Macs',

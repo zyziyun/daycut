@@ -28,6 +28,7 @@ export const zh: Dict = {
     source: '从源码构建',
     fine: 'Apple 芯片 · MIT 开源 · 也可作为 Claude Code 技能安装',
     fineSoon: 'macOS 版即将发布 · MIT 开源 · 现在就能作为 Claude Code 技能使用',
+    windows: 'Windows 预览版（未签名）',
   },
   hero: {
     eyebrow: '免费 · 开源 · 适用于 Apple 芯片 Mac',

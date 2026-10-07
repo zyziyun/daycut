@@ -29,6 +29,7 @@ export const fr: Dict = {
     source: 'Compiler depuis les sources',
     fine: 'Apple Silicon · licence MIT · s’installe aussi comme skill Claude Code',
     fineSoon: 'App macOS bientôt disponible · licence MIT · déjà utilisable comme skill Claude Code',
+    windows: 'Windows (aperçu, non signé)',
   },
   hero: {
     eyebrow: 'Gratuit et open source · pour Mac Apple Silicon',

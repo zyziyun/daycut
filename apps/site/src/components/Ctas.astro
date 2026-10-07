@@ -1,6 +1,8 @@
 ---
 // The two main buttons + fine print. Follows SITE.downloadReady (the single "coming soon" switch in config.ts):
 // ready: [Download for macOS] [Star on GitHub]; coming soon: [Star on GitHub] [Build from source].
+// When the latest release also carries the Windows installer (SITE.windowsDownloadUrl), the fine print ends with a
+// "Windows (preview, unsigned)" link: secondary on purpose, the Mac app is the supported one.
 import { SITE, buildFromSourceUrl } from '../config';
 import { t, type Lang } from '../i18n';
 import Icon from './Icon.astro';
@@ -8,6 +10,7 @@ interface Props { lang: Lang; fine?: boolean; class?: string }
 const { lang, fine = true, class: cls = '' } = Astro.props;
 const c = t(lang);
 const ready = SITE.downloadReady;
+const win = ready ? SITE.windowsDownloadUrl : null;
 ---
 <div class={`ctas ${cls}`}>
   {ready ? (
@@ -22,4 +25,9 @@ const ready = SITE.downloadReady;
     </>
   )}
 </div>
-{fine && <p class="fine">{ready ? c.cta.fine : c.cta.fineSoon}</p>}
+{fine && (
+  <p class="fine">
+    {ready ? c.cta.fine : c.cta.fineSoon}
+    {win && <> · <a href={win}>{c.cta.windows}</a></>}
+  </p>
+)}
