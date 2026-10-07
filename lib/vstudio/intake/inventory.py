@@ -456,6 +456,8 @@ def analyze(inputs, asr="sample", use_cache=True, language=None, max_files=MAX_F
             faces = n_face_imgs < FACE_IMAGES
             n_face_imgs += 1
         key = f"{h[:24]}.v{VERSION}.{kind}.{mode}.{'h' if heavy else 'l'}{'.f' if faces else ''}"
+        if language and kind in ("video", "audio") and mode != "off":
+            key += f".{re.sub(r'[^A-Za-z0-9-]', '', str(language))[:12]}"   # an English pass never reuses a zh transcript
         facts = _cache_get(root, key) if use_cache else None
         if facts is not None and facts.get("transcript") and not os.path.exists(facts["transcript"]):
             facts = None

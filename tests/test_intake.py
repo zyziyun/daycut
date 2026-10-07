@@ -481,6 +481,27 @@ def test_inventory_synthetic(tmp_path, monkeypatch):
     assert not any(n.endswith(".asr.json") for n in os.listdir(d))       # inputs stay untouched
 
 
+@pytest.mark.skipif(not HAS_FFMPEG, reason="ffmpeg not installed")
+def test_inventory_cache_keeps_languages_apart(tmp_path, monkeypatch):
+    """An English pass of a file analyzed before (auto-detect / Chinese) transcribes again, then is cached itself."""
+    import _batch_helpers as H
+    monkeypatch.setenv("VSTUDIO_CACHE", str(tmp_path / "cache"))
+    x, _truth, dur = H.synth_speech([("hello", .4), ("everyone", .5), ("today", .4)])
+    H.make_video(str(tmp_path / "talk.mp4"), x, 48000, dur)
+    calls = []
+    monkeypatch.setattr(I, "TRANSCRIBE", lambda wav, lang: calls.append(lang) or dict(
+        language=lang or "zh", segments=[dict(start=0, end=1, text="hello everyone today")], words=[{}] * 3))
+    monkeypatch.setattr(I, "FACES", lambda img: [0.05])
+    src = [str(tmp_path / "talk.mp4")]
+    assert I.analyze(src)["files"][0]["language"] == "zh"
+    n = len(calls)
+    en = I.analyze(src, language="en")["files"][0]
+    assert len(calls) > n and en["language"] == "en" and not en["cached"]
+    n = len(calls)
+    assert I.analyze(src, language="en")["files"][0]["cached"] and len(calls) == n
+    assert I.analyze(src)["files"][0]["cached"] and I.analyze(src)["files"][0]["language"] == "zh"
+
+
 def test_visual_facts_heuristics():
     th = [dict(faces=1, face_area=0.14, edges=0.07, sat=70, flat=0.5, cap_low=40, cap_mid=0.5, cap_top=0.4)] * 6
     v = I.visual_facts(th, 1920, 1080)
