@@ -524,3 +524,31 @@ def test_interview_project_waits_for_consent_then_renders(tmp_path):
     pub = p.pending("publish")[0]
     assert pub["exports"] and pub["exports"][0]["file"].endswith("q01-douyin-vertical.mp4")
     assert os.path.exists(os.path.join(p.dir, "items", "talk", "out", "q01", "q01.en.srt"))
+
+
+@media
+def test_face_mask_stays_inside_its_picture(tmp_path, monkeypatch):
+    """The sticker / blur is clipped to the picture box: the paper header above a band never gets a cat ear."""
+    import subprocess
+    from PIL import Image
+    from vstudio import clipkit as CK, face as F
+    src = str(tmp_path / "in.mp4")
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=0x808080:s=320x480:r=30:d=1",
+                    "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", "1", "-c:v", "libx264", "-pix_fmt",
+                    "yuv420p", "-c:a", "aac", src], check=True)
+    box = (0, 200, 320, 180)
+    n = 30
+
+    def track(video, region=None, **kw):                 # a face right at the top edge of the picture box
+        assert list(region) == list(box)
+        return dict(fps=30.0, n_frames=n, hit_rate=1.0, region=region, cx=[160.0] * n, cy=[205.0] * n,
+                    w=[90.0] * n, h=[110.0] * n)
+    monkeypatch.setattr(F, "track_faces", track)
+    out = str(tmp_path / "out.mp4")
+    rep = CK.mask_part(src, out, [(box, True)], mode="sticker")
+    assert rep["masked"] and rep["hit_rates"] == [1.0] and rep["required"] == [True]
+    png = str(tmp_path / "f.png")
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", "0.5", "-i", out, "-frames:v", "1", png], check=True)
+    a = np.asarray(Image.open(png).convert("RGB")).astype(int)
+    assert np.abs(a[:195] - 128).max() <= 6                  # above the box: untouched grey
+    assert np.abs(a[200:380] - 128).max() > 40               # inside: the sticker

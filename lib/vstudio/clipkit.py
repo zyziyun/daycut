@@ -21,7 +21,8 @@ so nothing is cropped by a later reframe. Layouts (``LAYOUTS``):
   pip      main source + the camera as a picture-in-picture inset (bottom right)
   band     vertical: main source band + camera band under it; horizontal: main source left, camera column right
 Vertical masters put the picture in a band under a paper header (kind label + title + translation) that stays
-on screen for the whole clip; horizontal masters put the header in a small card top-left.
+on screen for the whole clip; horizontal masters put the header in a small card top-left. Key-term cards sit in
+the picture's top-right corner (clear of every platform's caption box) for a few seconds.
 
 Parts play in order: ``card`` (a full-canvas title / question card, silent) and ``src`` ([a, b] of the source,
 the camera follows at ``offset``: t_cam = t_src + offset). ``speed`` applies to src parts (pitch kept).
@@ -231,7 +232,7 @@ def geometry(canvas, layout, src_wh, cam_wh=None, header=True):
             ch = min(int(H * 0.30), H - cy - int(H * 0.04)) // 2 * 2
             g["camera"] = (0, cy, W, ch)
             g["camera_crop"] = (W, ch)
-            g["terms"] = (int(W * 0.06), cy + int(ch * 0.08), int(W * 0.56))
+            g["terms"] = (W - int(W * 0.5) - int(W * 0.03), top + int(W * 0.03), int(W * 0.5))
         else:
             mw, mh = _fit(sw, sh, W, int(H * 0.52))
             g["main"] = ((W - mw) // 2, top, mw, mh)
@@ -240,7 +241,7 @@ def geometry(canvas, layout, src_wh, cam_wh=None, header=True):
                 chh = int(cw * 1.0) // 2 * 2
                 g["camera"] = (W - cw - int(W * 0.04), top + mh - int(chh * 0.55), cw, chh)
                 g["camera_crop"] = (cw, chh)
-            g["terms"] = (int(W * 0.06), top + mh + int(H * 0.02), int(W * 0.62))
+            g["terms"] = (W - int(W * 0.5) - int(W * 0.03), top + int(W * 0.03), int(W * 0.5))
         g["labels"] = (int(W * 0.06), top + int(H * 0.012))
     else:
         g["header"] = (int(W * 0.025), int(H * 0.04), int(W * 0.42), int(H * 0.15)) if header else None
@@ -366,6 +367,7 @@ def mask_part(video, out, boxes, mode="sticker", sticker=None, scale=2.4, blur_g
     for bx, _req in boxes:
         try:
             tr = F.track_faces(video, region=list(bx))
+            tr["box"] = [int(v) for v in bx]
             tracks.append(tr)
             rates.append(tr["hit_rate"])
         except RuntimeError:
@@ -390,16 +392,18 @@ def mask_part(video, out, boxes, mode="sticker", sticker=None, scale=2.4, blur_g
                 break
             for tr in tracks:
                 j = min(i, len(tr["cx"]) - 1)
-                cx, cy, fw, fh = tr["cx"][j], tr["cy"][j], tr["w"][j], tr["h"][j]
+                bx, by, bw0, bh0 = tr["box"]
+                sub = fr[max(0, by):by + bh0, max(0, bx):bx + bw0]          # the mask stays inside its picture
+                cx, cy, fw, fh = tr["cx"][j] - max(0, bx), tr["cy"][j] - max(0, by), tr["w"][j], tr["h"][j]
                 if st is not None:
                     tw = max(24, int(round(fw * scale)))
                     if tw not in cache:
                         cache[tw] = np.array(Image.fromarray(st).resize((tw, int(round(tw * st.shape[0] / st.shape[1]))),
                                                                         Image.LANCZOS))
-                    D.alpha_paste(fr, cache[tw], (cx, cy - 0.031 * cache[tw].shape[0]), center=True, bgr=True)
+                    D.alpha_paste(sub, cache[tw], (cx, cy - 0.031 * cache[tw].shape[0]), center=True, bgr=True)
                 else:
                     bw, bh = fw * blur_grow, fh * blur_grow * 1.15
-                    D._redact_frame(fr, [(cx - bw / 2, cy - bh / 2, bw, bh)], "blur", factor=24)
+                    D._redact_frame(sub, [(cx - bw / 2, cy - bh / 2, bw, bh)], "blur", factor=24)
             proc.stdin.write(fr.tobytes())
             i += 1
     finally:
