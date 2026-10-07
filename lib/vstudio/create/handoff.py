@@ -13,7 +13,7 @@ import shutil
 from . import ai, formats as F, jobs, providers as PR, store, stills
 from .i18n import CreateError
 
-LANG_PLATFORMS = {"zh": ["douyin", "xiaohongshu"], "en": ["tiktok", "youtube-shorts"], "fr": ["instagram"]}
+LANG_PLATFORMS = {"zh": ["xiaohongshu", "douyin"], "en": ["youtube-shorts", "tiktok"], "fr": ["instagram"]}   # registry order
 SLOTS = [(3, "20:00"), (4, "09:00"), (5, "12:00"), (6, "20:00")]       # Thu 20:00, Fri 09:00, Sat 12:00 ...
 AI_LABEL = {"zh": "AI 生成 · 仅供娱乐", "en": "AI-generated · for fun", "fr": "Généré par IA · pour rire"}
 

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight, ChevronDown, Cloud, CircleDollarSign, Layers, Paperclip, Sparkles } from 'lucide-react';
 import type { Format, FormatId, Msg, SeriesDraft, SeriesSummary } from '../../../shared/create';
 import { yuan } from '../../../shared/create';
-import { sortPlatforms } from '../../../shared/platforms';
+import { orderPlatforms } from '../../../shared/platforms';
 import { t } from '../i18n';
 import { href } from '../lib/router';
 import { media } from '../v4/kit';
@@ -18,7 +18,7 @@ const BUDGETS = [0, 30, 60, 100, 300, 1000];
 /** the engine gives up after 200 s and the sidecar stops it at 260 s; the page stops waiting a little later */
 const PLAN_WAIT_MS = 280_000;
 // international first, Chinese after (the shared platform registry's order), everywhere they are listed
-const PLATS = sortPlatforms(['douyin', 'xiaohongshu', 'tiktok', 'youtube-shorts', 'bilibili', 'instagram'], (x) => x);
+const PLATS = orderPlatforms(['youtube-shorts', 'tiktok', 'instagram', 'xiaohongshu', 'douyin', 'bilibili']);
 const PLAT_STYLE: Record<string, { bg: string; g: string }> = {
   douyin: { bg: '#111', g: '\u6296' },
   xiaohongshu: { bg: '#e8293b', g: '\u7ea2' },
@@ -45,8 +45,8 @@ export function CreateHome() {
   const [prompt, setPrompt] = useState('');
   const [fmt, setFmt] = useState<FormatId | null>(null);
   const [budget, setBudget] = useState(60);
-  const [plats, setPlats] = useState<string[]>(['douyin', 'xiaohongshu', 'tiktok', 'youtube-shorts']);
-  const shown = useMemo(() => sortPlatforms(plats, (x) => x), [plats]);
+  const [plats, setPlats] = useState<string[]>(['youtube-shorts', 'tiktok', 'xiaohongshu', 'douyin']);
+  const shown = useMemo(() => orderPlatforms(plats), [plats]);
   const [platOpen, setPlatOpen] = useState(false);
   const act = useAction();
   const sample = useAction();
@@ -166,7 +166,7 @@ export function CreateHome() {
               <div className="cr-pop" onMouseLeave={() => setPlatOpen(false)}>
                 {PLATS.map((p) => (
                   <label key={p}>
-                    <input type="checkbox" checked={plats.includes(p)} onChange={(e) => setPlats(e.target.checked ? [...plats, p] : plats.filter((x) => x !== p))} />
+                    <input type="checkbox" checked={plats.includes(p)} onChange={(e) => setPlats(orderPlatforms(e.target.checked ? [...plats, p] : plats.filter((x) => x !== p)))} />
                     {t(`create.plat.${p}` as 'create.plat.douyin')}
                   </label>
                 ))}

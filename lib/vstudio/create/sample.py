@@ -19,7 +19,7 @@ def open_sample(lang="en"):
             return dict(ok=True, series=sid, episode=eps[0]["id"] if eps else None, existing=True)
     fmt = F.get(d["format"])
     draft = dict(format=fmt["id"], recipe=fmt["recipe"], name=tx(d["name"]), lang=lang, budget_cny=d["budget_cny"],
-                 episodes=6, platforms=["douyin", "xiaohongshu:full", "tiktok", "youtube-shorts"], sample=True,
+                 episodes=6, platforms=["youtube-shorts", "tiktok", "xiaohongshu:full", "douyin"], sample=True,
                  prompt="", bible=dict(engine=tx(d["engine"]), beats=F.expand_beats(fmt, lang),
                                        cast=[dict(id=c["id"], name=tx(c["name"]), essence=tx(c["essence"]),
                                                   look=c["look"], own=False, face_locked="kling-mcp",

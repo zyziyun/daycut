@@ -32,6 +32,12 @@ describe('chips and lists built from Chinese-first input render international fi
     const ids = orderPlatforms(CHINESE_FIRST.map((p) => p.split(':')[0]));
     expect(ids.slice(0, 2)).toEqual(['youtube-shorts', 'tiktok']);
   });
+  it('Publish onboarding "Where do you post?": international first, each group in registry order', async () => {
+    const { OB_INTL, OB_ZH } = await import('../../src/renderer/src/publish/Onboarding');
+    const all = [...OB_INTL, ...OB_ZH];
+    expect(all).toEqual(orderPlatforms(all));
+    expect(OB_INTL.every((p) => platformRank(p)[0] === 0)).toBe(true);
+  });
   it('plan card facts', async () => {
     const { planFacts } = await import('../../src/renderer/src/v4/PlanCard');
     const f = planFacts({ projects: [{ params: { platforms: ['douyin', 'xiaohongshu:vertical', 'tiktok'] } }] } as never);
@@ -43,7 +49,7 @@ describe('chips and lists built from Chinese-first input render international fi
 const ROOT = path.resolve(import.meta.dirname, '../../src');
 const GROUP = new Map(PLATFORMS.map((p) => [p.id, p.group]));
 // owned by other branches right now (qa/BUGS.md "platform order", deferred): remove an entry when its branch lands
-const DEFERRED = new Set(['renderer/src/create/CreateHome.tsx']);
+const DEFERRED = new Set<string>([]);
 
 function files(dir: string): string[] {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((d) => (d.isDirectory() ? files(path.join(dir, d.name)) : /\.(ts|tsx)$/.test(d.name) ? [path.join(dir, d.name)] : []));

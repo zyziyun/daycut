@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Check } from 'lucide-react';
 import { nextAccountLabel } from '../../../shared/channels';
+import { orderPlatforms } from '../../../shared/platforms';
 import type { Adapter } from '../../../shared/publish/adapterSchema';
 import { t } from '../i18n';
 import { sortIds } from './model';
@@ -12,8 +13,9 @@ import { PlatformIcon } from '../v4/PlatformIcon';
 import { errText } from '../v4/msg';
 import { useUi } from '../v4/ui';
 
-const ZH = ['xiaohongshu', 'douyin', 'wechat-channels', 'bilibili'];
-const INTL = ['youtube', 'tiktok', 'instagram', 'x'];
+// international first, then Chinese, each in the registry order (orderPlatforms, like every other platform list)
+export const OB_INTL = orderPlatforms(['youtube', 'tiktok', 'instagram', 'x']);
+export const OB_ZH = orderPlatforms(['xiaohongshu', 'douyin', 'wechat-channels', 'bilibili']);
 
 export function PublishOnboarding({ adapters, onDone }: { adapters: Adapter[]; onDone: () => void }) {
   const ui = useUi();
@@ -36,7 +38,7 @@ export function PublishOnboarding({ adapters, onDone }: { adapters: Adapter[]; o
   const go2 = async () => {
     setBusy(true);
     try {
-      for (const pf of sortIds(sel)) {
+      for (const pf of orderPlatforms(sortIds(sel))) {
         const a = adapters.find((x) => x.packagePlatforms.includes(pf));
         if (a) await window.desk.publish.addAccount(a.id, nextAccountLabel([]));
       }
@@ -55,9 +57,9 @@ export function PublishOnboarding({ adapters, onDone }: { adapters: Adapter[]; o
         <h2>{t('pb.ob.title')}</h2>
         <p className="muted">{t('pb.ob.body')}</p>
         <h5>{t('pb.ob.intl')}</h5>
-        <div className="pb-obgrid">{INTL.map(tile)}</div>
+        <div className="pb-obgrid">{OB_INTL.map(tile)}</div>
         <h5>{t('pb.ob.zh')}</h5>
-        <div className="pb-obgrid">{ZH.map(tile)}</div>
+        <div className="pb-obgrid">{OB_ZH.map(tile)}</div>
         <div className="pb-obfoot">
           <p className="muted">{t('pb.ob.foot')}</p>
           <button className="btn primary lg" disabled={!sel.length || busy} onClick={() => void go2()} data-testid="pb-ob-continue">
