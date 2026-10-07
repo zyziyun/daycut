@@ -96,6 +96,10 @@ in the commit log (formerly `video-studio` and `Daycut`).
   app the named-entity check found nothing and plan / recipe validation fell back to key checks. The runtime build
   and the packaged-app tests now check every package of `requirements.txt`.
 - Agent-runner lanes no longer shrink to one on machines with few cores.
+- Create: Send to Publish finds an assembled episode also when its folder is reached through a symlink
+  (`/var` and `/private/var` on macOS).
+- Windows preview: the engine no longer stops answering right after it starts (numpy is loaded before the engine
+  starts any thread).
 - Projects resume after their last Inbox answer; a run waiting at a checkpoint is listed once; waiting and
   interrupted jobs show on the project board.
 - The engine is restarted when it dies after start (never while the app quits), and engine errors are translated
