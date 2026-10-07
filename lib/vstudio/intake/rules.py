@@ -30,6 +30,9 @@ PHRASES = [
     ("call-clips", ["播客切", "访谈切", "对话切", "采访切", "podcast", "播客", "对话", "访谈", "采访", "嘉宾", "遮脸", "打码", "放个小猫", "三人同框", "zoom", "会议", "连麦"], 2),
     ("photo-story", ["文艺片", "看展", "照片做成", "照片和视频", "胶片感", "双语字幕故事", "照片故事", "配旁白", "photo story"], 2),
     ("vlog", ["vlog", "旅游", "旅行", "卡点", "快节奏", "无人机", "dji", "调色", "转场"], 2),
+    ("launch-kit", ["发布视频", "上线视频", "产品发布", "更新视频", "版本更新", "演示视频", "更新日志", "launch video",
+                    "launch kit", "launch-kit", "product hunt", "release video", "changelog", "release notes",
+                    "demo video", "update video"], 3),
     ("promo-recut", ["宣传", "左右分栏", "分屏", "截图放进去", "高亮这句", "定格", "插一段精选", "精选插片", "promo"], 2),
     ("polish", ["收尾", "第一帧黑", "响度", "导出后", "descript", "capcut", "剪映导出"], 2),
     ("cover", ["做封面", "封面", "缩略图", "thumbnail"], 1),
@@ -582,6 +585,19 @@ def rule_projects(intent, analysis, ctx):
                      params=dict(title=f"第{k + 1}集")) for k in range(n)])
             p["why"] = f"{'按剧本 ' + base if base else '按你的设定'}做 {n} 集 AI 短剧，生成前先锁剧本和预算"
             risks.append(MSG.cs("intake.risk.aigc-credits"))
+        elif rid == "launch-kit":
+            notes = [f for f in analysis["files"] if rmap[f["id"]] in ("doc", "notes") and f["id"] not in used][:1]
+            shots = [f for f in analysis["files"] if f["id"] not in used and f not in notes and
+                     (rmap[f["id"]] == "screen-recording" or f.get("kind") == "image")]
+            if notes:
+                p["inputs"]["notes"] = notes[0]["path"]
+            if shots:
+                p["inputs"]["shots"] = [f["path"] for f in shots]
+            used |= {f["id"] for f in notes + shots}
+            p["materials"] = [f["id"] for f in notes + shots]
+            p["items"] = dict(method="single", count=1)
+            p["why"] = ("用 " + os.path.basename(notes[0]["path"]) + " 起草功能列表，" if notes else "") + \
+                "录制产品操作，做演示视频、README 动图、功能短片、配图和文案"
         elif rid in ("photo-story", "vlog"):
             imgs = [f for f in _by_kind(analysis, "image") if f["id"] not in used]
             clips = [f for f in _by_kind(analysis, "video") if f["id"] not in used and rmap[f["id"]] in ("footage", "talking-head")]

@@ -1,0 +1,80 @@
+# launch.config.yaml - one file for a product launch / update kit (workflows/launch-kit/WORKFLOW.md).
+# Paths are relative to this file. Any text is a plain string or {en: ..., zh: ...}; 【term】 = the word the
+# caption highlights. Run: python3 $VSTUDIO/workflows/launch-kit/scripts/launch_kit.py all launch.config.yaml
+out: kit                                   # everything lands here (demo/, readme/, clips/, stills/, copy/, schedule/)
+
+product:
+  name: Acme Notes
+  name_zh: 速记                            # optional, used in Chinese titles
+  version: v1.4.0
+  site: https://acme.example
+  one_liner: {en: "Notes that file themselves", zh: "自己归档的笔记"}
+  description: {en: "Write anything; Acme Notes tags, links and files it for you, on your device."}
+
+brand:
+  theme: editorial                         # vstudio.theme preset: editorial | mono | soft | night
+  colors: {paper: "#F6F3EE", ink: "#1E1B18", accent: "#2F6F9F", marker: "#CFE0EE"}   # one accent; avoid red
+  logo: brand/wordmark.svg                 # end card + gallery
+  mark: brand/icon.png                     # title card
+  fonts:                                   # optional OFL font files (Latin); Chinese uses Noto Serif / Sans SC
+    display: brand/fonts/Newsreader.woff2
+    text: brand/fonts/Inter.woff2
+
+languages: [en, zh]                        # the first one is the main language
+platforms: [x, linkedin, youtube, youtube-shorts, tiktok, instagram, xiaohongshu, bilibili]   # international first
+
+release:                                   # where `features` drafts the list from (pick one)
+  changelog: CHANGELOG.md                  # + version: 1.4.0 (default: the newest section)
+  # git: {repo: ., range: v1.3.0..v1.4.0}  # Conventional Commits: feat / fix / perf become features
+  # notes: |
+  #   - Auto-tagging
+  #   - Linked notes
+
+capture:
+  shots: capture/shots.json                # written by scripts/capture.mjs (or hand-made, same schema)
+  shot_list: shots.yaml                    # what capture.mjs records (see the header of capture.mjs)
+  url: https://acme.example/app            # a web product ...
+  # app: path/to/electron/app              # ... or an Electron app (env: {KEY: value} for a demo profile)
+  # images:                                # or plain screenshots: a slow camera move to the focus box
+  #   - {id: tags, file: shots/tags.png, w: 2880, h: 1800, duration: 6, focus: [{x: .6, y: .2, w: .2, h: .1}]}
+
+features:                                  # 3-6, in the order the demo shows them
+  - id: capture
+    shot: capture                          # a shot id (default: the feature id)
+    kicker: {en: Capture, zh: 记录}
+    caption: {en: "Type anything. It's 【filed】 before you finish.", zh: "随手写，写完就【归好档】"}
+    trim: [0.5, 8.0]                       # seconds of the shot to use (default: all)
+    # rate: 1.25                           # play the recording faster
+    # post: {en: {hook: ..., body: ..., tags: [...]}, zh: {...}}   # this clip's post (default: caption + one-liner)
+  - id: links
+    kicker: {en: Links, zh: 关联}
+    caption: {en: "Related notes 【link up】 on their own.", zh: "相关笔记【自动关联】"}
+
+demo: {min_seconds: 30, max_seconds: 60}   # + shots: [ids] (default all), renders: ["en:16:9", "zh:9:16", ...]
+loop: {seconds: 15}                        # README loop (MP4 + GIF); shots default: the first three features
+clips: {min_seconds: 10, max_seconds: 20}  # one per feature; renders default: first language 1:1 + 9:16, others 9:16
+end_card:
+  cta: {en: "Free for personal use", zh: "个人免费"}
+  sub: {en: "macOS · Windows · Linux"}
+
+# music: {file: audio/bed.m4a, license: "CC0, from <source>"}   # only license-safe tracks; default none
+# voiceover: {enabled: true, engine: auto}                      # TTS per feature (features[].vo), labelled "AI voice"
+
+gallery:                                   # Product Hunt stills (1270x760) + OG image (1200x630)
+  headline: {en: "Notes that 【file themselves】"}
+  facts:                                   # only numbers you can stand behind
+    - {value: "0 folders", label: "to set up"}
+  foot: {en: "Free · On-device · macOS, Windows, Linux"}
+  note: {en: "Sample data"}                # small label on each screenshot still
+
+post:                                      # the launch post (vstudio.publish post.json shape)
+  en: {hook: "Acme Notes 1.4: notes that file themselves.", body: ["Write anything; it tags and links it for you."],
+       tags: [notes, productivity], links: {Site: "https://acme.example"}}
+  zh: {hook: "速记 1.4：笔记自己归档。", body: ["随手写，标签和关联它来做。"], tags: [效率工具, 笔记]}
+
+producthunt: {tagline: "Notes that file themselves", topics: [Productivity, Note taking]}
+
+schedule:
+  start: 2026-11-03                        # launch day (default: next Tuesday)
+  slots: {x: "09:00", xiaohongshu: "20:00"}
+  accounts: {}                             # {platform: publish-calendar account id} for `schedule --apply`

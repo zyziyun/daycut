@@ -33,7 +33,7 @@ _GUESS = [  # (type, name / report keywords)
     ("photo-story", r"story|photo|文艺|照片"),
     ("vlog", r"vlog|travel|旅行|disney"),
     ("aigc", r"aigc|ai.?video|kling|seedance|veo"),
-    ("promo", r"promo|宣传|recut"),
+    ("promo", r"promo|宣传|recut|launch"),
     ("slides", r"slides|deck|幻灯"),
     ("script", r"script|脚本|口播稿"),
 ]

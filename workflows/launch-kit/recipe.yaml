@@ -1,0 +1,175 @@
+# Recipe manifest (vstudio.project). Schema: lib/vstudio/project/manifest.schema.json - docs: references/PROJECTS.md
+# Everything content-specific is in ONE file per item: launch.config.yaml (example: examples/launch.config.example.yaml).
+id: launch-kit
+version: 1
+workflow: launch-kit
+labels: {zh: "产品发布视频", en: "Launch kit"}
+description:
+  zh: 你的产品（官网 / 应用）+ 更新日志 → 真实操作录屏 → 30–60 秒演示视频（16:9 / 9:16 / 1:1，动态字幕、推近操作处、片尾）、README 循环 GIF、每个功能一条短片、Product Hunt 图、各平台中英文文案、发布排期
+  en: your product (site or app) + release notes -> real interaction recordings -> a 30-60 s demo (16:9, 9:16, 1:1; kinetic captions, punch-ins on the action, logo end card), a README loop GIF, one short clip per feature, Product Hunt stills, post copy per platform in EN + 中文, a posting schedule
+category: package
+inputs:
+  - key: notes
+    kind: file
+    labels: {zh: "更新日志 / 发布说明（可选）", en: "Changelog or release notes (optional)"}
+    required: false
+    accept: [.md, .txt]
+    scope: project
+  - key: shots
+    kind: photos
+    labels: {zh: "截图或录屏（可选，也可自动录制）", en: "Screenshots or recordings (optional; or capture automatically)"}
+    required: false
+    multiple: true
+    accept: [.png, .jpg, .jpeg, .mp4, .mov]
+    scope: project
+  - key: brand
+    kind: photos
+    labels: {zh: "Logo / 图标（可选）", en: "Logo and icon (optional)"}
+    required: false
+    multiple: true
+    accept: [.svg, .png]
+    scope: project
+items:
+  sources: [single]
+  per_item: [title]
+  shared: [languages, quality]
+params:
+  type: object
+  properties:
+    languages:
+      type: array
+      items: {enum: [en, zh]}
+      default: [en, zh]
+      title: Languages (the first is the main one)
+      x-zh: 语言（第一个为主）
+    quality:
+      enum: [draft, looks, delivery]
+      default: delivery
+      title: Render quality
+      x-zh: 渲染质量
+    title:
+      type: string
+      default: ""
+      title: Title
+      x-zh: 标题
+      x-scope: item
+stages:
+  - id: prepare
+    resource: io
+    fn: vstudio.project.adapters.common:prepare
+    keys: []
+    produces: ["{item_dir}/inputs/ (links to the notes, shots and brand files)"]
+  - id: features
+    resource: cpu
+    deps: [prepare]
+    keys: []
+    watch: ["{item_dir}/launch.config.yaml"]
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/launch_kit.py", "features", "{item_dir}/launch.config.yaml"]
+      stdout: "{item_dir}/work/features.draft.yaml"
+      files: ["{item_dir}/work/features.draft.yaml"]
+    produces: [work/features.draft.yaml (a feature list drafted from the changelog / git range / notes)]
+    preview: {kind: text, path: "{item_dir}/work/features.draft.yaml"}
+  - id: capture
+    resource: browser
+    deps: [features]
+    watch: ["{item_dir}/launch.config.yaml", "{item_dir}/shots.yaml"]
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/launch_kit.py", "capture", "{item_dir}/launch.config.yaml"]
+      files: []
+      optional_files: ["{item_dir}/capture/shots.json"]
+    produces: [capture/<shot>.mp4, capture/<shot>.png, capture/shots.json]
+    preview: {kind: images, path: "{item_dir}/capture/*.png"}
+  - id: render
+    resource: browser
+    deps: [capture]
+    keys: [quality, languages]
+    watch: ["{item_dir}/launch.config.yaml"]
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/launch_kit.py", "render", "{item_dir}/launch.config.yaml",
+             "--quality", "{quality}"]
+      files: ["{item_dir}/kit/kit.json"]
+    produces: [kit/demo/*.mp4, kit/readme/loop-*.mp4 + .gif, kit/clips/*.mp4, a .cover.jpg per video]
+    preview: {kind: video, path: "{item_dir}/kit/demo/*.mp4"}
+  - id: stills
+    resource: browser
+    deps: [capture]
+    watch: ["{item_dir}/launch.config.yaml"]
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/launch_kit.py", "stills", "{item_dir}/launch.config.yaml"]
+      files: []
+      optional_files: ["{item_dir}/kit/stills"]
+    produces: [kit/stills/ph-gallery-*.png (1270x760), kit/stills/og-1200x630.png]
+    preview: {kind: images, path: "{item_dir}/kit/stills/*.png"}
+  - id: copy
+    resource: api:llm
+    deps: [render, stills]
+    watch: ["{item_dir}/launch.config.yaml"]
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/launch_kit.py", "copy", "{item_dir}/launch.config.yaml"]
+      files: ["{item_dir}/kit/copy/COPY.md"]
+    produces: [kit/copy/COPY.md, kit/copy/<platform>.<lang>.md]
+    preview: {kind: markdown, path: "{item_dir}/kit/copy/COPY.md"}
+  - id: schedule
+    resource: cpu
+    deps: [copy]
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/launch_kit.py", "schedule", "{item_dir}/launch.config.yaml"]
+      files: ["{item_dir}/kit/schedule/SCHEDULE.md"]
+    produces: [kit/schedule/schedule.json, kit/schedule/SCHEDULE.md]
+    preview: {kind: markdown, path: "{item_dir}/kit/schedule/SCHEDULE.md"}
+  - id: check
+    resource: cpu
+    deps: [render]
+    run:
+      argv: ["{python}", "{workflow_dir}/scripts/launch_kit.py", "check", "{item_dir}/launch.config.yaml"]
+      files: ["{item_dir}/kit/firstpass.json"]
+    produces: [kit/firstpass.json, a .firstpass.md per video]
+checkpoints:
+  - id: config
+    kind: author
+    scope: item
+    after: prepare
+    blocks: [capture]
+    labels: {zh: "产品、品牌与功能", en: "Product, brand and features"}
+    help:
+      zh: 在 launch.config.yaml 写产品名、一句话介绍、品牌色和字体、要展示的 3–6 个功能（每个一句屏幕字幕）和录制脚本
+      en: Write the product, one-liner, brand colours and fonts, the 3-6 features to show (one on-screen line each) and the shot list in launch.config.yaml
+    author:
+      file: "{item_dir}/launch.config.yaml"
+      template: workflows/launch-kit/examples/launch.config.example.yaml
+      format: launch-kit config (YAML)
+      doc: workflows/launch-kit/WORKFLOW.md
+    payload: vstudio.project.adapters.common:author_payload
+    apply: vstudio.project.adapters.common:author_apply
+    answer:
+      type: object
+      properties: {done: {type: boolean}, content: {type: string}}
+    auto: never
+  - id: publish
+    kind: publish
+    scope: item
+    after: check
+    needs: [copy, schedule]
+    labels: {zh: "审片发布", en: "Review and publish"}
+    payload: vstudio.project.adapters.common:publish_payload
+    apply: vstudio.project.adapters.common:publish_apply
+    answer:
+      type: object
+      properties: {approve: {type: boolean}, reason: {type: string}}
+      required: [approve]
+    auto: default
+outputs:
+  platforms: [x, linkedin, youtube, youtube-shorts, tiktok, instagram, xiaohongshu, bilibili, douyin]
+  collect: vstudio.project.adapters.common:collect_files
+  files: ["{item_dir}/kit/demo/*.mp4", "{item_dir}/kit/clips/*.mp4", "{item_dir}/kit/readme/*", "{item_dir}/kit/stills/*.png",
+          "{item_dir}/kit/copy/COPY.md", "{item_dir}/kit/schedule/SCHEDULE.md"]
+agent:
+  workflow_md: workflows/launch-kit/WORKFLOW.md
+  notes: Edit items/<item>/launch.config.yaml (features, captions, brand) and shots.yaml (what to record); refresh after editing.
+  edit_files: ["{item_dir}/launch.config.yaml", "{item_dir}/shots.yaml"]
+gaps:
+  - The captions, the feature pick and the shot list are authored (the features step only drafts them from the release notes).
+  - Capture needs Node + Playwright; render needs Node + npx hyperframes and Chrome.
+  - The schedule is a proposal; `schedule --apply` puts planned posts on the engine's publish calendar (vstudio.project.pubcal), not the desk board.
+capabilities: [screen-capture, kinetic-captions, punch-in, multi-aspect, readme-gif, feature-clips, gallery-stills, post-copy, schedule]

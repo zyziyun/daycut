@@ -11,7 +11,7 @@ creator persona. `$VSTUDIO` = this folder. Run scripts from the **project folder
 
 Setup once: `$VSTUDIO/install.sh` (deps, open fonts, MediaPipe models), `cp persona.example.yaml persona.local.yaml`
 (her speeds, theme, tags, term fixes, format overrides), `export PYTHONPATH="$VSTUDIO/lib:$PYTHONPATH"`.
-HyperFrames workflows (explainer, promo-recut) also need Node 18+ and `npx hyperframes`.
+HyperFrames workflows (explainer, promo-recut, launch-kit) also need Node 18+ and `npx hyperframes`.
 
 ## 1. Every job, in this order
 1. **Format first.** `python -m vstudio.formats detect "<her request>"` (or pick from `formats list`). Say its summary
@@ -41,6 +41,7 @@ HyperFrames workflows (explainer, promo-recut) also need Node 18+ and `npx hyper
 | Her own voice-over + clips / photos → vlog (`calm` or `fun` 卡点) | `workflows/vlog` |
 | Photos / clips + narration or music → 文艺片 / photo story | `workflows/photo-story` |
 | A topic → 3b1b-style explainer (AI voice, bilingual captions) | `workflows/explainer` |
+| Her product + release notes → launch / update kit: recorded demo (16:9, 9:16, 1:1), README GIF, feature clips, PH stills, EN + 中文 post copy, schedule | `workflows/launch-kit` |
 | Script / idea → AI-generated video (可灵, Seedance / 即梦, 海螺), AI series | `workflows/ai-video` |
 | An exported edit (Descript / CapCut / 剪映) → cover on frame 1, loudness, speed, cleanup | `workflows/polish` |
 | Cover / thumbnail only · square slides · script or pronunciation drill | `workflows/cover` · `workflows/slides` · `workflows/preproduction` |
