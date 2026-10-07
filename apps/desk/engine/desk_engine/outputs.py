@@ -274,9 +274,18 @@ def list_clips(entry):
     """A history entry (kind batch | project | work, dir) -> clips."""
     kind, d = entry["kind"], entry["dir"]
     if kind == "work":
-        return WK.clips(d, probe=probe)
+        return _ready(d, WK.clips(d, probe=probe))
     store = os.path.join(d, "state") if kind == "project" else d
     return _batch_clips(store)
+
+
+def _ready(d, clips):
+    """A reviewer approved the clip on a shared review page (share.py): it shows as approved (ready)."""
+    marks = (read_json(os.path.join(d, ".vstudio", "review", "ready.json"), None) or {}).get("clips") or {}
+    for c in clips:
+        if c["id"] in marks and c.get("state") == "done":
+            c.update(state="approved", review="approved")
+    return clips
 
 
 def _public_clip(c):

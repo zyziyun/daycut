@@ -83,6 +83,9 @@ v0.4 (outputs.py, intake.py, inbox.py; engine command when available, desk imple
   POST /api/weekplan {inputs[], text?, start, today, platforms, times, lang}  「一周的帖子」 -> plan (weekplan.py);
                                            GET /api/weekplan (still going) | /api/weekplan/<id>; POST .../run |
                                            .../reword {text} | .../confirm (scheduleMany, one undo) | .../dismiss
+  GET  /api/share/<item>                   share for review (share.py): clips + versions + privacy warnings;
+                                           POST {clips?, quality?, footer?, title?, expiry_note?, ack?} -> {job};
+                                           GET /api/share-jobs/<job>; POST /api/feedback/import {text} -> Inbox items
   GET  /api/inbox                          every decision waiting for the creator; POST /api/inbox/answer {keys,
                                            answer?}; POST /api/inbox/undo {keys}
 """
@@ -452,6 +455,8 @@ class Api:
         self.create = CreateApi(engine.data_dir, bus, runner if engine.mode == "real" else None, engine.mode,
                                 history=self.history, calendar=self.calendar, outputs=self.outputs)
         self.inbox.extra.append(self.create.inbox_items)
+        from .share import Share                   # share for review: static page + feedback -> Inbox
+        self.share = Share(engine.data_dir, self.history, self.outputs, self.inbox, bus)
         self.port = None
 
     def roots(self):
@@ -585,6 +590,13 @@ class Api:
                 return w.confirm(parts[1])
             if parts[2:] == ["dismiss"] and method == "POST":
                 return w.dismiss(parts[1])
+        if parts[:1] == ["share"] and len(parts) == 2:
+            need(ID_RE.match(parts[1]), "bad item id")
+            return self.share.options(parts[1]) if method == "GET" else self.share.start(parts[1], b)
+        if parts[:1] == ["share-jobs"] and len(parts) == 2 and method == "GET":
+            return self.share.job(parts[1])
+        if parts == ["feedback", "import"] and method == "POST":
+            return self.share.import_feedback(b)
         if parts[:1] == ["inbox"]:
             if parts == ["inbox"] and method == "GET":
                 return self.inbox.list()

@@ -2,7 +2,7 @@
 // versions, caption) -> tabs 成片 / (审片 / 交付) / 修改记录 / 素材和文件 -> details folded. Right: 「让 AI 改」.
 // Plain work folders show their in-progress clips and refresh live (fs watch + a 5 s timer while running).
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, CalendarPlus, Copy, FolderOpen, Maximize2, Play, Undo2, Wand2 } from 'lucide-react';
+import { ArrowLeft, CalendarPlus, Copy, FolderOpen, Maximize2, Play, Share2, Undo2, Wand2 } from 'lucide-react';
 import type { HistoryDetail } from '../../../shared/v02';
 import type { Clip, ClipsDoc, OutputDoc } from '../../../shared/v04';
 import { fmtDate, fmtMinutes, t } from '../i18n';
@@ -16,6 +16,7 @@ import { inboxTitle } from './Inbox';
 import { Elapsed, Empty, More, SkGrid, StatusPill, Thumb } from './kit';
 import { FailureActions, failureReason } from './Failure';
 import { PlayerOverlay } from './Player';
+import { ShareButton, ShareDialog } from './ShareDialog';
 import { emsg, errText } from './msg';
 import { useUi } from './ui';
 
@@ -46,6 +47,7 @@ export function Project({ id, tab }: { id: string; tab: ProjectTab }) {
   const [selId, setSelId] = useState<string | null>(null);
   const [playing, setPlaying] = useState<{ clip: Clip; aspect?: string } | null>(null);
   const [aspects, setAspects] = useState<Record<string, string>>({});
+  const [shareClip, setShareClip] = useState<string | null>(null);
   const [n, setN] = useState(0);
   const reload = useCallback(() => setN((x) => x + 1), []);
 
@@ -109,6 +111,7 @@ export function Project({ id, tab }: { id: string; tab: ProjectTab }) {
       { label: t('clip.copyCaption'), icon: <Copy className="ico" />, run: () => copyPost(c) },
       { label: t('c.reveal'), icon: <FolderOpen className="ico" />, run: () => c.files[0] && window.desk.showItem(c.files[0].path) },
       { label: t('clip.schedule'), icon: <CalendarPlus className="ico" />, run: () => schedule([c]) },
+      { label: t('share.menu'), icon: <Share2 className="ico" />, run: () => setShareClip(c.id), testId: 'menu-share' },
     ]);
   const copyPost = async (c: Clip) => {
     if (!c.post) return;
@@ -175,6 +178,7 @@ export function Project({ id, tab }: { id: string; tab: ProjectTab }) {
             <span className="sp" />
             <div className="acts">
               <StatusPill s={s} label={failure ? t('status.failed') : undefined} />
+              {!failure && done.length > 0 && <ShareButton item={id} />}
               {!failure && primary}
             </div>
           </div>
@@ -279,6 +283,7 @@ export function Project({ id, tab }: { id: string; tab: ProjectTab }) {
               <a className="btn" href={href({ name: 'deliver', batch: id })}>
                 {t('project.tab.deliver')}
               </a>
+              {done.length > 0 && <ShareButton item={id} testId="deliver-share" />}
             </div>
           )}
           {tab === 'history' && <HistoryTab id={id} clips={clips} onChanged={reload} />}
@@ -293,6 +298,7 @@ export function Project({ id, tab }: { id: string; tab: ProjectTab }) {
         liveText={s === 'run' ? item?.live?.message : null}
         onApplied={reload}
       />
+      {shareClip && <ShareDialog item={id} only={[shareClip]} onClose={() => setShareClip(null)} />}
       {playing && (
         <PlayerOverlay
           files={playing.clip.files}

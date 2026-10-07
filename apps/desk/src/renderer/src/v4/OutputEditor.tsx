@@ -27,6 +27,7 @@ import { Empty, media, Sk } from './kit';
 import { LowerPane } from './LowerPane';
 import { effectLabel, emsg, errText, setEffectLabels } from './msg';
 import { PinnedQuestion } from './PinnedQuestion';
+import { ShareButton } from './ShareDialog';
 import { Player, type PlayerApi } from './Player';
 import { Timeline } from './Timeline';
 import { TriageBar } from './TriageBar';
@@ -531,6 +532,7 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
             · {/^\d+:\d+$/.test(aspect ?? '') ? aspect! : t('c.original')}
           </span>
           <span className="sp" />
+          <ShareButton item={id} clips={[clip]} label={false} className="btn ghost icon sm" testId="editor-share" />
           <div className="grp">
             <button className="btn ghost icon sm" disabled={!doc.undo && !(pending && cuts.canUndo)} onClick={() => (pending && cuts.canUndo ? cuts.undo() : void undo())} aria-label={t('c.undo')} data-tip={`${t('c.undo')} · ⌘Z`} data-testid="editor-undo">
               <Undo2 className="ico" />

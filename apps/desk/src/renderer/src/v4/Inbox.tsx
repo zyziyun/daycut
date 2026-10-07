@@ -4,7 +4,7 @@
 // first (never file paths or raw numbers: the engine gives labels + choices), and ONE primary button. Resolving an
 // item moves on to the next one with an Undo toast; "Review all in a row" opens the triage queue in the editor.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, Check, ChevronDown, ChevronRight, Pause, Play } from 'lucide-react';
+import { ArrowRight, Check, ChevronDown, ChevronRight, FileDown, Pause, Play } from 'lucide-react';
 import type { InboxItem, InboxOption } from '../../../shared/v04';
 import { fmtClock, intlLocale, t } from '../i18n';
 import { answerOf, clipName, inboxSub, inboxTitle, issueText, money, optionLabel, secsLabel } from '../lib/inboxView';
@@ -17,6 +17,7 @@ import { FeedbackLink } from '../support/Support';
 import { FailureActions, failureReason } from './Failure';
 import { emsg } from './msg';
 import { TriageBar } from './TriageBar';
+import { ImportFeedback } from './ShareDialog';
 import { isTyping, useUi } from './ui';
 import '../theme/uxcore.css';
 
@@ -55,6 +56,7 @@ export function InboxScreen() {
   const triage = useTriageState();
   const [proj, setProj] = useState<string>('');
   const [skipped, setSkipped] = useState<string[]>([]);
+  const [importing, setImporting] = useState(false);
   const [sel, setSel] = useState<string | null>(q.item ?? null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const resolve = useResolve();
@@ -138,6 +140,11 @@ export function InboxScreen() {
           </p>
         </div>
         <span className="sp" />
+        <button className="btn lg" onClick={() => setImporting(true)} data-testid="feedback-import">
+          <FileDown className="ico" />
+          {t('feedback.import')}
+        </button>
+        {importing && <ImportFeedback onClose={() => setImporting(false)} />}
         {projects.length > 1 && (
           <label className="ux-select">
             <select value={proj} onChange={(e) => setProj(e.target.value)} aria-label={t('inbox.allProjects')} data-testid="inbox-project">
@@ -363,6 +370,10 @@ function ItemPane({ x, onDone, onSkip }: { x: InboxItem; onDone: (answer?: Recor
               ? t('inbox.confirmEdits', { n: opts.length })
               : x.kind === 'review'
                 ? t('inbox.startReview', { m: t('inbox.minutes', { n: x.minutes ?? 1 }) })
+                : x.kind === 'feedback-approve'
+                  ? t('inbox.markReady')
+                  : x.kind === 'feedback-change'
+                    ? t('inbox.feedbackDone')
                 : x.code === 'inbox.spend'
                   ? t('inbox.approveSpend', { amount: money(Number(x.params.amount), String(x.params.currency ?? 'USD')) })
                   : t('inbox.continue')}
@@ -379,6 +390,7 @@ function leadOf(x: InboxItem): string {
   if (x.kind === 'review') return x.params.total ? t('inbox.passed', { passed: x.params.passed, total: x.params.total }) : '';
   if (x.code === 'inbox.spend') return t('inbox.spendLead');
   if (x.failure) return t('inbox.failedLead');
+  if (x.source === 'feedback') return t('inbox.feedbackLead');
   return x.label ? emsg(x.label) : (x.text ?? '');
 }
 

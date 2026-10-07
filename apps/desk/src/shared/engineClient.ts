@@ -37,6 +37,7 @@ import type {
 import type { AskContext, ChatTurn, ExportJob } from './chatEdit';
 import type { StripInfo, TranscribeState } from './timeline';
 import type { WeekPlan, WeekPlanStart } from './weekPlan';
+import type { ShareJob, ShareOptions, ShareRequest } from './share';
 import type { AskResult, CalendarDoc, CalendarPost, ClipsDoc, NewPost, SchedulePlan, EditOp, EffectDef, EngineMsg, InboxDoc, IntakeJob, IntakePlan, OutputDoc, PreviewEdl, ProjectAskJob, Retimed } from './v04';
 
 import { CreateClient } from './create';
@@ -431,6 +432,21 @@ export class EngineClient {
   }
   undoInbox(keys: string[]) {
     return this.req<{ ok: boolean }>('POST', '/api/inbox/undo', { keys });
+  }
+  /** share for review: what the dialog offers (clips, versions, privacy warnings) */
+  shareOptions(item: string) {
+    return this.req<ShareOptions>('GET', `/api/share/${bid(item)}`);
+  }
+  share(item: string, body: ShareRequest) {
+    return this.req<{ ok: boolean; job: string; total: number }>('POST', `/api/share/${bid(item)}`, body);
+  }
+  shareJob(job: string) {
+    if (!/^[0-9a-f]{12}$/.test(job)) throw new EngineError(400, `bad share job ${job}`);
+    return this.req<ShareJob>('GET', `/api/share-jobs/${job}`);
+  }
+  /** a reviewer's code / .reelfold.json text -> Inbox items */
+  importFeedback(text: string) {
+    return this.req<{ ok: boolean; share: string; title: string | null; reviewer: string; project: string | null; items: number; duplicates: number; unknown: string[] }>('POST', '/api/feedback/import', { text });
   }
   calendar(start?: string, opts: { queue?: boolean } = {}) {
     const q = [start ? `start=${encodeURIComponent(start)}` : '', opts.queue === false ? 'queue=0' : ''].filter(Boolean).join('&');

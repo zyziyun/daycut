@@ -1,0 +1,37 @@
+/* Share for review dialog + Import feedback (ShareDialog.tsx) */
+.scrim .sheet.shr { width: min(640px, 94vw); max-height: 84vh; display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.scrim:has(.shr) { padding-top: 7vh; }
+.shr-hd { display: flex; align-items: center; gap: var(--s1); padding: var(--s2) var(--s3) 0; }
+.shr-hd h2 { margin: 0; }
+.shr-hd .sp, .shr-row .sp, .shr-ft .sp { flex: 1; }
+.shr-body { display: flex; flex-direction: column; gap: var(--s2); padding: var(--s2) var(--s3) var(--s3); overflow: auto; }
+.shr-body p { margin: 0; }
+.shr-sec { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.shr-row { display: flex; align-items: center; gap: var(--s1); width: 100%; }
+.shr .lnk { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font: inherit; font-size: 13px; }
+.shr-clips { display: flex; flex-direction: column; gap: 4px; width: 100%; max-height: 220px; overflow: auto; border: 1px solid var(--border); border-radius: 10px; padding: 4px; }
+.shr-clip { display: grid; grid-template-columns: auto 28px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 8px; cursor: pointer; }
+.shr-clip:hover { background: var(--surface-2); }
+.shr-clip img, .shr-clip .ph-thumb { width: 28px; height: 37px; object-fit: cover; border-radius: 4px; display: block; }
+.shr-clip:not(.on) { opacity: 0.6; }
+.shr-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
+.shr-grid label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--text-muted); }
+.shr-grid label.wide { grid-column: 1 / -1; }
+.shr-grid input, .shr-code { height: 34px; border-radius: var(--radius); border: 1px solid var(--border-strong); background: var(--bg); color: var(--text); padding: 0 10px; font: inherit; font-size: 14px; user-select: text; }
+.shr-grid small, .shr-toggle small { font-size: 12px; display: block; }
+.shr-toggle { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+.shr-toggle input { margin-top: 4px; }
+.shr-privacy { border: 1px solid var(--border-strong); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.shr-privacy.warn { border-color: color-mix(in srgb, var(--you) 55%, transparent); background: color-mix(in srgb, var(--you) 8%, transparent); }
+.shr-privacy b { display: flex; align-items: center; gap: 8px; }
+.shr-privacy.warn b .ico { color: var(--you); }
+.shr-privacy ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+.shr-how { font-size: 13px; }
+.shr-ft { display: flex; align-items: center; gap: var(--s1); padding-top: var(--s1); }
+.shr .note.err { color: var(--danger); border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent); border-radius: var(--radius); padding: 8px 10px; }
+.shr-path { display: grid; grid-template-columns: 70px minmax(0, 1fr) auto; align-items: center; gap: var(--s1); padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); }
+.shr-path code { font-size: 12px; }
+.shr-send { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; background: var(--surface-2); border-radius: 10px; font-size: 13px; }
+.shr-code { height: 140px; padding: 10px; font-family: var(--mono, ui-monospace, monospace); font-size: 12px; resize: vertical; word-break: break-all; }
+.shr-drop { display: flex; align-items: center; gap: 8px; justify-content: center; border: 1px dashed var(--border-strong); border-radius: 10px; padding: 14px; font-size: 13px; }
+.sheet.shr.over .shr-drop { border-color: var(--accent); color: var(--text); background: var(--accent-soft); }

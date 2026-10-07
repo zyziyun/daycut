@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'">
+<meta name="generator" content="Reelfold review page v1 (no tracking, no network requests)">
+<title>__TITLE__</title>
+<style>
+:root { --paper: #F4F0E8; --paper2: #ECE6DB; --card: #FBF9F5; --ink: #1C1A17; --ink2: #4F4943; --ink3: #6B6359;
+  --rule: rgba(28, 26, 23, .13); --teal: #0A7266; --teal2: #E2EFEC; --warn: #80570A; --warn2: #F6EAD3;
+  --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans SC', system-ui, sans-serif;
+  --serif: 'Iowan Old Style', 'Songti SC', Georgia, 'Noto Serif SC', serif; }
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 400 16px/1.55 var(--sans); -webkit-font-smoothing: antialiased; }
+a { color: inherit; }
+a.btn { text-decoration: none; }
+button, input, textarea { font: inherit; color: inherit; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 clamp(16px, 4vw, 40px); }
+header.top { padding: clamp(28px, 6vw, 56px) 0 20px; }
+.eyebrow { font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink3); margin: 0 0 10px; }
+h1 { font: 500 clamp(28px, 4.6vw, 44px)/1.12 var(--serif); letter-spacing: -.01em; margin: 0 0 12px; }
+.lead { color: var(--ink2); max-width: 62ch; margin: 0; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 18px; color: var(--ink3); font-size: 14px; }
+.who { display: flex; align-items: center; gap: 10px; margin-top: 22px; flex-wrap: wrap; }
+.who label { font-size: 14px; color: var(--ink2); }
+.who input { height: 40px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--rule); background: var(--card); min-width: 220px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 22px; padding: 10px 0 120px; }
+.clip { background: var(--card); border-radius: 16px; box-shadow: 0 0 0 1px var(--rule); overflow: hidden; display: flex; flex-direction: column; }
+.clip[data-decision="approve"] { box-shadow: 0 0 0 2px var(--teal); }
+.clip[data-decision="change"] { box-shadow: 0 0 0 2px var(--warn); }
+.stage { background: #14120F; display: flex; align-items: center; justify-content: center; aspect-ratio: 4 / 5; }
+.stage video { width: 100%; height: 100%; object-fit: contain; display: block; background: #14120F; }
+.body { padding: 16px 18px 18px; display: flex; flex-direction: column; gap: 12px; flex: 1; }
+.row { display: flex; align-items: center; gap: 8px; }
+.num { font-variant-numeric: tabular-nums; color: var(--ink3); font-size: 13px; }
+h2 { font: 600 18px/1.3 var(--sans); margin: 0; }
+.versions { display: flex; flex-wrap: wrap; gap: 6px; }
+.versions button { height: 30px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--rule); background: transparent; font-size: 13px; color: var(--ink2); cursor: pointer; }
+.versions button[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.caption { background: var(--paper); border-radius: 10px; padding: 10px 12px; font-size: 14px; color: var(--ink2); white-space: pre-wrap; max-height: 9.5em; overflow: auto; }
+.caption-h { font-size: 12px; letter-spacing: .05em; text-transform: uppercase; color: var(--ink3); }
+.acts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: auto; }
+.btn { height: 44px; white-space: nowrap; font-size: 15px; border-radius: 999px; border: 1px solid var(--rule); background: transparent; cursor: pointer; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 0 14px; }
+.btn:hover { background: var(--paper2); }
+.btn:focus-visible, .versions button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+.btn.ok[aria-pressed="true"] { background: var(--teal); border-color: var(--teal); color: #fff; }
+.btn.chg[aria-pressed="true"] { background: var(--warn); border-color: var(--warn); color: #fff; }
+.btn.primary { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.btn.primary:hover { background: #000; }
+.btn[disabled] { opacity: .45; cursor: default; }
+textarea { width: 100%; min-height: 76px; resize: vertical; border-radius: 10px; border: 1px solid var(--rule); background: #fff; padding: 10px 12px; font-size: 14px; }
+.hint { font-size: 13px; color: var(--ink3); margin: 0; }
+.bar { position: fixed; left: 0; right: 0; bottom: 0; background: color-mix(in srgb, var(--paper) 92%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: 0 -1px 0 var(--rule); }
+.bar .wrap { display: flex; align-items: center; gap: 14px; min-height: 72px; flex-wrap: wrap; padding-top: 10px; padding-bottom: 10px; }
+.bar .sp { flex: 1; }
+dialog { border: 0; border-radius: 18px; padding: 0; width: min(620px, calc(100vw - 24px)); background: var(--card); color: var(--ink); box-shadow: 0 30px 80px -30px rgba(0, 0, 0, .5); }
+dialog::backdrop { background: rgba(20, 18, 15, .45); }
+.dlg { padding: 24px; display: flex; flex-direction: column; gap: 14px; }
+.dlg h3 { font: 500 24px/1.2 var(--serif); margin: 0; }
+.sum { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 14px; max-height: 30vh; overflow: auto; }
+.sum li { display: flex; gap: 8px; }
+.sum b { font-weight: 600; }
+.tag { font-size: 12px; padding: 2px 8px; border-radius: 999px; white-space: nowrap; height: fit-content; }
+.tag.approve { background: var(--teal2); color: var(--teal); }
+.tag.change { background: var(--warn2); color: var(--warn); }
+.code { font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; min-height: 90px; background: var(--paper); word-break: break-all; }
+.dacts { display: flex; flex-wrap: wrap; gap: 8px; }
+.dacts .sp { flex: 1; }
+.toast { position: fixed; left: 50%; bottom: 92px; transform: translateX(-50%); background: var(--ink); color: var(--paper); padding: 10px 16px; border-radius: 999px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+.toast.on { opacity: 1; }
+footer.made { padding: 0 0 100px; text-align: center; color: var(--ink3); font-size: 13px; }
+footer.made a { color: var(--ink2); text-decoration: none; border-bottom: 1px solid var(--rule); }
+.empty { padding: 60px 0; color: var(--ink3); }
+@media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
+@media (max-width: 520px) { .grid { grid-template-columns: 1fr; } .who input { min-width: 0; flex: 1; } }
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <p class="eyebrow" id="eyebrow"></p>
+  <h1 id="title"></h1>
+  <p class="lead" id="lead"></p>
+  <div class="meta" id="meta"></div>
+  <div class="who"><label for="reviewer" id="who-l"></label><input id="reviewer" autocomplete="name" maxlength="80"></div>
+</div></header>
+<main class="wrap"><div class="grid" id="grid" data-testid="clips"></div></main>
+<footer class="made" id="made" hidden></footer>
+<div class="bar" role="region" id="bar-r"><div class="wrap">
+  <span id="progress" class="num" aria-live="polite"></span>
+  <span class="sp"></span>
+  <span class="hint" id="kept"></span>
+  <button class="btn primary" id="send" type="button"></button>
+</div></div>
+<dialog id="dlg" aria-labelledby="dlg-h"><div class="dlg">
+  <h3 id="dlg-h"></h3>
+  <p class="hint" id="dlg-lead"></p>
+  <ul class="sum" id="sum"></ul>
+  <label class="caption-h" for="code" id="code-l"></label>
+  <textarea class="code" id="code" readonly></textarea>
+  <div class="dacts">
+    <button class="btn primary" id="copy" type="button"></button>
+    <a class="btn" id="mail" href="#"></a>
+    <button class="btn" id="dl" type="button"></button>
+    <span class="sp"></span>
+    <button class="btn" id="close" type="button"></button>
+  </div>
+</div></dialog>
+<div class="toast" id="toast" role="status"></div>
+<script type="application/json" id="review-data">__REVIEW_DATA__</script>
+<script>
+(function () {
+  'use strict';
+  var D = JSON.parse(document.getElementById('review-data').textContent);
+  var I18N = {
+    en: {
+      eyebrow: 'For your review', lead: 'Watch each clip, then approve it or ask for a change. Your answers stay on this page until you send them back.',
+      clips: function (n) { return n === 1 ? '1 clip' : n + ' clips'; }, from: 'From {who}', expiry: '{note}',
+      who: 'Your name', whoPh: 'So they know who replied', approve: 'Approve', change: 'Request a change',
+      approved: 'Approved', changeAsked: 'Change requested', commentPh: 'What should change? Point at a moment if you can, for example "0:12 the caption covers my face".',
+      notePh: 'Anything to add? (optional)', caption: 'Post caption', copyCaption: 'Copy caption', versions: 'Versions',
+      progress: '{done} of {n} answered', send: 'Send my feedback', sendNone: 'Answer at least one clip first',
+      kept: 'Saved on this device', dlgH: 'Send your feedback', dlgLead: 'Send this back to {who} any way you like: paste it into a chat or an email, or attach the file. Nothing is uploaded from this page.',
+      code: 'Your feedback code', copy: 'Copy', copied: 'Copied', mail: 'Email', dl: 'Download file', close: 'Close',
+      mailSubject: 'Feedback: {title}', mailIntro: 'Here is my feedback on "{title}".', mailCode: 'Feedback code (paste it into Reelfold: Inbox > Import feedback):',
+      made: 'Made with Reelfold', privacy: 'This page has no tracking and makes no network requests.', anonymous: 'a reviewer',
+      needComment: 'Add a short note so they know what to change.'
+    },
+    zh: {
+      eyebrow: '请你审片', lead: '看完每条片子后，点「通过」或「需要修改」。你的选择会先保存在这个页面里，直到你发回去。',
+      clips: function (n) { return n + ' 条'; }, from: '来自 {who}', expiry: '{note}',
+      who: '你的名字', whoPh: '让对方知道是谁回复的', approve: '通过', change: '需要修改',
+      approved: '已通过', changeAsked: '需要修改', commentPh: '哪里要改？最好说明时间点，例如「0:12 字幕挡住了脸」。',
+      notePh: '还有补充吗？（可不填）', caption: '发布文案', copyCaption: '复制文案', versions: '版本',
+      progress: '已回复 {done} / {n}', send: '发送我的意见', sendNone: '请先回复至少一条',
+      kept: '已保存在本设备', dlgH: '发回你的意见', dlgLead: '用任何方式发给 {who}：粘贴到聊天或邮件里，或者把文件发过去。这个页面不会上传任何东西。',
+      code: '你的反馈码', copy: '复制', copied: '已复制', mail: '发邮件', dl: '下载文件', close: '关闭',
+      mailSubject: '审片意见：{title}', mailIntro: '这是我对「{title}」的意见。', mailCode: '反馈码（在 Reelfold 收件箱 > 导入反馈 里粘贴）：',
+      made: '由 Reelfold 制作', privacy: '这个页面没有任何追踪，也不会发出网络请求。', anonymous: '审片人',
+      needComment: '写一句要改什么，对方才知道怎么改。'
+    }
+  };
+  var lang = D.lang === 'zh' || D.lang === 'en' ? D.lang : (/^zh/i.test(navigator.language || '') ? 'zh' : 'en');
+  var T = I18N[lang];
+  document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+  function fmt(s, v) { return String(s).replace(/\{(\w+)\}/g, function (_, k) { return v && v[k] != null ? v[k] : ''; }); }
+  function el(tag, attrs, kids) {
+    var e = document.createElement(tag);
+    for (var k in attrs || {}) {
+      if (k === 'text') e.textContent = attrs[k];
+      else if (k.slice(0, 2) === 'on') e.addEventListener(k.slice(2), attrs[k]);
+      else e.setAttribute(k, attrs[k]);
+    }
+    (kids || []).forEach(function (c) { if (c) e.appendChild(c); });
+    return e;
+  }
+  var KEY = 'reelfold.review.' + D.share;
+  var S = { reviewer: '', clips: {} };
+  try { var saved = JSON.parse(localStorage.getItem(KEY) || 'null'); if (saved && saved.clips) S = saved; } catch (e) { /* private mode */ }
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* private mode: kept in memory */ } }
+  var owner = D.owner || T.anonymous;
+
+  document.title = D.title;
+  document.getElementById('eyebrow').textContent = T.eyebrow;
+  document.getElementById('title').textContent = D.title;
+  document.getElementById('lead').textContent = T.lead;
+  var meta = document.getElementById('meta');
+  meta.appendChild(el('span', { text: T.clips(D.clips.length) }));
+  if (D.owner) meta.appendChild(el('span', { text: fmt(T.from, { who: D.owner }) }));
+  if (D.expiry_note) meta.appendChild(el('span', { text: fmt(T.expiry, { note: D.expiry_note }), 'data-testid': 'expiry' }));
+  document.getElementById('who-l').textContent = T.who;
+  var who = document.getElementById('reviewer');
+  who.placeholder = T.whoPh;
+  who.value = S.reviewer || '';
+  who.addEventListener('input', function () { S.reviewer = who.value.slice(0, 80); save(); });
+  document.getElementById('bar-r').setAttribute('aria-label', T.send);
+
+  var grid = document.getElementById('grid');
+  D.clips.forEach(function (c, i) {
+    var st = S.clips[c.id] || (S.clips[c.id] = { d: null, c: '' });
+    var vids = c.versions || [];
+    var video = el('video', { controls: '', playsinline: '', preload: 'metadata', poster: c.poster || '' });
+    function setVersion(k) {
+      var v = vids[k];
+      if (!v) return;
+      var t = video.currentTime || 0;
+      video.src = v.file;
+      video.parentNode && (video.parentNode.style.aspectRatio = v.w && v.h ? v.w + ' / ' + v.h : '4 / 5');
+      try { if (t) video.currentTime = t; } catch (e) { /* not loaded yet */ }
+      vbtns.forEach(function (b, j) { b.setAttribute('aria-pressed', String(j === k)); });
+    }
+    var vbtns = vids.map(function (v, k) { return el('button', { type: 'button', text: v.label, 'aria-pressed': 'false', onclick: function () { setVersion(k); } }); });
+    var stage = el('div', { class: 'stage' }, [video]);
+    var note = el('textarea', { 'aria-label': T.commentPh, maxlength: '2000' });
+    note.value = st.c || '';
+    var hint = el('p', { class: 'hint', role: 'note' });
+    var card;
+    var ok = el('button', { class: 'btn ok', type: 'button', 'aria-pressed': 'false', 'data-testid': 'approve', onclick: function () { decide('approve'); } }, [document.createTextNode(T.approve)]);
+    var chg = el('button', { class: 'btn chg', type: 'button', 'aria-pressed': 'false', 'data-testid': 'change', onclick: function () { decide('change'); } }, [document.createTextNode(T.change)]);
+    function paint() {
+      card.setAttribute('data-decision', st.d || '');
+      ok.setAttribute('aria-pressed', String(st.d === 'approve'));
+      chg.setAttribute('aria-pressed', String(st.d === 'change'));
+      ok.lastChild.textContent = st.d === 'approve' ? T.approved : T.approve;
+      chg.lastChild.textContent = st.d === 'change' ? T.changeAsked : T.change;
+      note.hidden = !st.d;
+      note.placeholder = st.d === 'change' ? T.commentPh : T.notePh;
+      hint.textContent = st.d === 'change' && !st.c.trim() ? T.needComment : '';
+      hint.hidden = !hint.textContent;
+    }
+    function decide(d) {
+      st.d = st.d === d ? null : d;
+      save(); paint(); bar();
+      if (st.d === 'change') note.focus();
+    }
+    note.addEventListener('input', function () { st.c = note.value.slice(0, 2000); save(); paint(); bar(); });
+    var cap = null;
+    if (c.caption) {
+      cap = el('div', {}, [
+        el('div', { class: 'row' }, [el('span', { class: 'caption-h', text: T.caption }), el('span', { style: 'flex:1' }),
+          el('button', { class: 'btn', type: 'button', style: 'height:30px;font-size:13px;padding:0 12px', text: T.copyCaption, onclick: function () { copy(c.caption); } })]),
+        el('div', { class: 'caption', text: c.caption, lang: /[㐀-鿿]/.test(c.caption) ? 'zh-CN' : 'en' })
+      ]);
+    }
+    card = el('article', { class: 'clip', 'data-clip': c.id, 'data-testid': 'clip', 'aria-label': c.title }, [
+      stage,
+      el('div', { class: 'body' }, [
+        el('div', { class: 'row' }, [el('span', { class: 'num', text: String(i + 1).padStart(2, '0') }), el('h2', { text: c.title })]),
+        vids.length > 1 ? el('div', { class: 'versions', role: 'group', 'aria-label': T.versions }, vbtns) : null,
+        cap,
+        el('div', { class: 'acts' }, [ok, chg]),
+        note, hint
+      ])
+    ]);
+    grid.appendChild(card);
+    setVersion(0);
+    paint();
+  });
+
+  var made = document.getElementById('made');
+  if (D.footer) {
+    made.hidden = false;
+    made.appendChild(el('p', { text: T.privacy }));
+    made.appendChild(el('p', {}, [el('a', { href: 'https://reelfold.com', rel: 'noopener noreferrer', target: '_blank', text: T.made, 'data-testid': 'made-with' })]));
+  } else {
+    made.hidden = false;
+    made.appendChild(el('p', { text: T.privacy }));
+  }
+
+  function answers() {
+    return D.clips.filter(function (c) { return S.clips[c.id] && S.clips[c.id].d; }).map(function (c) {
+      var s = S.clips[c.id];
+      return { id: c.id, title: c.title, decision: s.d, comment: (s.c || '').trim() };
+    });
+  }
+  var sendBtn = document.getElementById('send');
+  function bar() {
+    var a = answers();
+    document.getElementById('progress').textContent = fmt(T.progress, { done: a.length, n: D.clips.length });
+    document.getElementById('kept').textContent = a.length ? T.kept : '';
+    sendBtn.textContent = T.send;
+    sendBtn.disabled = !a.length;
+    sendBtn.title = a.length ? '' : T.sendNone;
+  }
+  bar();
+
+  function b64url(s) {
+    var bytes = new TextEncoder().encode(s), bin = '';
+    for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+  function feedback() {
+    return { kind: 'reelfold-review-feedback', version: 1, share: D.share, title: D.title,
+      reviewer: (S.reviewer || '').trim(), at: new Date().toISOString(), clips: answers() };
+  }
+  function codeOf(f) {
+    var short = { k: 'rf', v: 1, s: f.share, n: f.reviewer, t: f.at, c: f.clips.map(function (x) { return [x.id, x.decision === 'approve' ? 'a' : 'c', x.comment]; }) };
+    return 'RFB1.' + b64url(JSON.stringify(short));
+  }
+  var toastT;
+  function toast(s) {
+    var t = document.getElementById('toast');
+    t.textContent = s; t.classList.add('on');
+    clearTimeout(toastT); toastT = setTimeout(function () { t.classList.remove('on'); }, 1600);
+  }
+  function copy(text) {
+    function fallback() {
+      var ta = el('textarea', { style: 'position:fixed;left:-9999px' }); ta.value = text;
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch (e) { /* the code stays selectable */ }
+      ta.remove(); toast(T.copied);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(function () { toast(T.copied); }, fallback);
+    else fallback();
+  }
+  var dlg = document.getElementById('dlg');
+  var cur = null;
+  sendBtn.addEventListener('click', function () {
+    cur = feedback();
+    var code = codeOf(cur);
+    document.getElementById('dlg-h').textContent = T.dlgH;
+    document.getElementById('dlg-lead').textContent = fmt(T.dlgLead, { who: owner });
+    var sum = document.getElementById('sum');
+    sum.textContent = '';
+    cur.clips.forEach(function (x) {
+      sum.appendChild(el('li', {}, [el('span', { class: 'tag ' + x.decision, text: x.decision === 'approve' ? T.approved : T.changeAsked }),
+        el('span', {}, [el('b', { text: x.title }), x.comment ? document.createTextNode(' · ' + x.comment) : null])]));
+    });
+    document.getElementById('code-l').textContent = T.code;
+    var ta = document.getElementById('code');
+    ta.value = code;
+    document.getElementById('copy').textContent = T.copy;
+    document.getElementById('dl').textContent = T.dl;
+    document.getElementById('close').textContent = T.close;
+    var mail = document.getElementById('mail');
+    mail.textContent = T.mail;
+    var lines = [fmt(T.mailIntro, { title: D.title }), ''];
+    cur.clips.forEach(function (x) { lines.push('- ' + x.title + ': ' + (x.decision === 'approve' ? T.approved : T.changeAsked) + (x.comment ? ' (' + x.comment + ')' : '')); });
+    lines.push('', T.mailCode, code);
+    mail.href = 'mailto:' + encodeURIComponent(D.reply_to || '') + '?subject=' + encodeURIComponent(fmt(T.mailSubject, { title: D.title })) + '&body=' + encodeURIComponent(lines.join('\n'));
+    if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', '');
+    ta.focus(); ta.select();
+  });
+  document.getElementById('copy').addEventListener('click', function () { copy(document.getElementById('code').value); });
+  document.getElementById('dl').addEventListener('click', function () {
+    var blob = new Blob([JSON.stringify(cur, null, 1)], { type: 'application/json' });
+    var a = el('a', { href: URL.createObjectURL(blob), download: 'feedback-' + D.share.slice(0, 8) + '.reelfold.json' });
+    document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  });
+  document.getElementById('close').addEventListener('click', function () { if (dlg.close) dlg.close(); else dlg.removeAttribute('open'); });
+  window.__reelfold = { feedback: feedback, code: function () { return codeOf(feedback()); } };
+})();
+</script>
+</body>
+</html>

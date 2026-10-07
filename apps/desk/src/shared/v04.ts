@@ -431,7 +431,7 @@ export interface InboxItem {
   jobs?: string[];
   minutes?: number;
   failure?: import('./v02').PilotFailure;
-  source: 'picks' | 'batch' | 'live' | 'engine' | 'pilot' | 'create';
+  source: 'picks' | 'batch' | 'live' | 'engine' | 'pilot' | 'create' | 'feedback';
   at?: number | null;
   /** Create items open their own screen (#/create/...) instead of being answered here */
   href?: string;

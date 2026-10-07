@@ -9,6 +9,7 @@ import { bytes, hms } from '../lib/format';
 import { href } from '../lib/router';
 import { ClientField } from './NewBatch';
 import { trackUsage } from '../lib/usage';
+import { ShareButton } from '../v4/ShareDialog';
 
 export function Deliver({ batch }: { batch: string }) {
   const { client } = useEngine();
@@ -87,6 +88,7 @@ export function Deliver({ batch }: { batch: string }) {
         <span className="muted small">{st.data?.meta.name}</span>
         {d && <span className="badge accent">{t('deliver.delivered')}</span>}
         <div className="sp" />
+        {approved.length > 0 && <ShareButton item={batch} clips={approved.map((j) => j.id)} testId="deliver-share" />}
       </div>
       <div className="page col" style={{ maxWidth: 860, gap: 14 }}>
         <ErrorBox error={err ?? st.error ?? del.error} />

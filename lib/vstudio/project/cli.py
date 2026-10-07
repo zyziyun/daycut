@@ -31,6 +31,13 @@ references/PROJECTS.md.
   calendar account add --id A --platform P [--times 12:00,19:00] [--per-day N] [--days 0,1,2,3,4]
   calendar plan --project P [--accounts a,b] [--start ISO] | calendar set --post ID --state S [--at ISO] [--url U]
   calendar list [--start ISO] [--end ISO] [--account A] | calendar add --account A --at ISO [--title T]
+  share --dir P [--outputs a,b] [--items a,b] [--out D] [--quality small|standard|high] [--no-footer] [--title T]
+      [--expiry-note T] [--reply-to EMAIL] [--owner-name N] [--lang auto|en|zh] [--no-zip] [--scan]
+                                                      static review page (index.html + previews + posters +
+                                                      captions + review.json, + zip); --scan: privacy warnings only
+  feedback import (--file F | --text T | stdin) [--dir P] [--no-pin] | list --dir P [--all] | resolve --dir P --id X
+                                                      reviewer answers -> feedback items (approve -> ready; change
+                                                      -> comment pinned in the clip's chat)
 --json: one JSON document on stdout; --json-events: one JSON event per line on stdout (logs -> stderr).
 Exit codes: 0 ok, 1 failed items, 2 refused (budget), 3 paused, 4 pilot waits, 5 bad input, 6 busy, 7 needs you.
 """
@@ -457,6 +464,57 @@ def cmd_calendar(a):
     return 0
 
 
+def cmd_share(a):
+    from . import share as SH
+    if a.scan:
+        clips = SH.collect_clips(_dir_or_work(a), outputs=_csv(a.outputs), items=_csv(a.items))
+        r = SH.privacy_scan(_dir_or_work(a), clips)
+        _out(a, dict(r, clips=[dict(id=c["id"], title=c["title"], versions=len(c["versions"])) for c in clips]),
+             "\n".join(f"{w['level']}: {w['message']}" for w in r["warnings"]) or "no privacy warnings")
+        return 0
+    r = SH.share(_dir_or_work(a), out=a.out, outputs=_csv(a.outputs), items=_csv(a.items), quality=a.quality,
+                 footer=not a.no_footer, title=a.title, lang=a.lang, expiry_note=a.expiry_note, reply_to=a.reply_to,
+                 owner_name=a.owner_name, make_zip=not a.no_zip)
+    lines = [f"review page: {r['index']}", f"zip: {r['zip']}" if r["zip"] else "", f"share id: {r['share']}"]
+    lines += [f"{w['level']}: {w['message']}" for w in r["privacy"]["warnings"]]
+    _out(a, r, "\n".join(x for x in lines if x))
+    return 0
+
+
+def _dir_or_work(a):
+    d = os.path.abspath(a.dir or os.getcwd())
+    if os.path.exists(os.path.join(d, "batch.db")):          # a plain vstudio.batch folder: shared as is
+        return d
+    from . import outputs as O
+    return O._owner(d)[0]
+
+
+def cmd_feedback(a):
+    from . import share as SH
+    if a.action == "import":
+        if a.file:
+            with open(a.file, encoding="utf-8", errors="replace") as f:
+                text = f.read(SH.MAX_FEEDBACK_BYTES + 1)
+        elif a.text:
+            text = a.text
+        else:
+            text = sys.stdin.read(SH.MAX_FEEDBACK_BYTES + 1)
+        r = SH.import_feedback(text, owner=os.path.abspath(a.dir) if a.dir else None, pin=not a.no_pin)
+        _out(a, r, f"{len(r['items'])} new feedback item(s) for {r['title']} ({r['owner']})"
+             + (f", {r['duplicates']} already imported" if r["duplicates"] else ""))
+        return 0
+    owner = _dir_or_work(a)
+    if a.action == "resolve":
+        if not a.id:
+            raise SH.ShareError("bad-param", "--id is required", "需要 --id")
+        _out(a, SH.resolve(owner, a.id))
+        return 0
+    rows = SH.feedback_items(owner, status="all" if a.all else "open")
+    _out(a, dict(ok=True, items=rows), "\n".join(f"{x['id']}  {x['decision']:8s} {x['clip']}  {x['comment']}"
+                                                   for x in rows) or "no open feedback")
+    return 0
+
+
 # --------------------------------------------------------------------------- parser
 def build_parser():
     ap = argparse.ArgumentParser(prog="python -m vstudio.project", description=__doc__.split("\n")[0],
@@ -624,6 +682,26 @@ def build_parser():
     p.add_argument("--at")
     p.add_argument("--url")
     p.add_argument("--title")
+    p = add("share", cmd_share, "static review page for a project / clips (share for review)")
+    p.add_argument("--outputs", help="comma list of output ids or clip ids (default: every finished clip)")
+    p.add_argument("--items", help="comma list of item ids")
+    p.add_argument("--out", help="the review folder (default <project>/review-links/<title>-<id>)")
+    p.add_argument("--quality", default="standard", help="small (540p) | standard (720p, default) | high (1080p)")
+    p.add_argument("--no-footer", action="store_true", help='leave out the "Made with Reelfold" footer')
+    p.add_argument("--title")
+    p.add_argument("--lang", default="auto", choices=["auto", "en", "zh"], help="page language (auto: the browser's)")
+    p.add_argument("--expiry-note", help='shown on the page, e.g. "Please reply by Friday"')
+    p.add_argument("--reply-to", help="email address the page's Email button writes to")
+    p.add_argument("--owner-name", help='"From <name>" on the page')
+    p.add_argument("--no-zip", action="store_true")
+    p.add_argument("--scan", action="store_true", help="only the privacy warnings + the clips that would be shared")
+    p = add("feedback", cmd_feedback, "reviewer feedback: import / list / resolve")
+    p.add_argument("action", nargs="?", choices=["import", "list", "resolve"], default="list")
+    p.add_argument("--file", help="import: the .reelfold.json file (or any text with the feedback code)")
+    p.add_argument("--text", help="import: the pasted code / text")
+    p.add_argument("--no-pin", action="store_true", help="import: do not add change requests to the clip chat")
+    p.add_argument("--all", action="store_true", help="list: also resolved items")
+    p.add_argument("--id", help="resolve: the feedback item id")
     return ap
 
 
@@ -635,9 +713,10 @@ def main(argv=None):
     from .manifests import ManifestError
     from .pubcal import CalendarError
     from .outputs import OutputError
+    from .share import ShareError
     try:
         return a.fn(a)
-    except OutputError as e:
+    except (OutputError, ShareError) as e:
         if getattr(a, "json", False) or getattr(a, "json_events", False):
             print(json.dumps(dict(ok=False, error=e.info["message"], **e.info), ensure_ascii=False, default=str))
         else:

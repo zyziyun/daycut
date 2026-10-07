@@ -8,6 +8,7 @@ import { emsg } from '../v4/msg';
 /** The card's title from the engine's code + params (UI language); the engine's own text otherwise. */
 export function inboxTitle(x: InboxItem): string {
   if (x.code === 'inbox.spend' && typeof x.params.amount === 'number') return t('inbox.spend', { amount: money(x.params.amount, String(x.params.currency ?? 'USD')) });
+  if (x.source === 'feedback' && x.code && has(x.code)) return tk(x.code, { ...x.params, who: x.params.who || t('inbox.reviewer') });
   if (x.code && has(x.code)) return tk(x.code, x.params);
   if (x.kind && has(`checkpoint.${x.kind}`)) return tk(`checkpoint.${x.kind}`);
   return x.text ?? t('inbox.checkpoint');

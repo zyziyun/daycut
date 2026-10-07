@@ -42,6 +42,7 @@ export const sidebar = [
     'guides/multi-platform',
     'guides/batch-100',
     'guides/scheduling-publishing',
+    'guides/share-for-review',
     'guides/studios',
   ]),
   g('Example prompts', '示例指令', 'Exemples de demandes', 'Ejemplos de peticiones', ['examples']),

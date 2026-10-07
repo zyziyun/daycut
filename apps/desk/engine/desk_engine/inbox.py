@@ -119,6 +119,8 @@ class Inbox:
         self._lock = threading.Lock()
         self._real = None
         self.extra = []          # more sources: callables -> [item] (Create: takes to pick, paused runs ...)
+        self.handlers = {}       # source -> fn(item, answer): desk-side items that act when answered (feedback)
+        self.undo_hooks = []     # fn(keys): an answer taken back
 
     def real(self):
         if self._real is None:
@@ -245,6 +247,8 @@ class Inbox:
                     args += ["--item", str(eng["item"])]
                 args += ["--answer", json.dumps(answer, ensure_ascii=False)] if answer else ["--default"]
                 self.runner.sibling("vstudio.project").json(args + ["--json"], timeout=300)
+            elif it["source"] in self.handlers:
+                self.handlers[it["source"]](it, answer)
             done.append(k)
         with self._lock:
             a = self._answers()
@@ -263,6 +267,8 @@ class Inbox:
             a = self._answers()
             back = [k for k in keys if a.pop(k, None) is not None]
             write_json(self.path, a)
+        for f in self.undo_hooks:
+            f(back)
         if self.bus:
             self.bus.publish("inbox")
         return dict(ok=True, restored=back)

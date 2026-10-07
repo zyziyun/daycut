@@ -62,13 +62,13 @@ Every workflow as a recipe; projects, runs, checkpoints, inbox, outputs, calenda
 
 ```text
 usage: python -m vstudio.project [-h]
-                                 {recipes,new,plan-items,show,status,preview,context,refresh,run,resume,checkpoint,set,export,list,adopt,touch,output,ai,series,inbox,calendar}
+                                 {recipes,new,plan-items,show,status,preview,context,refresh,run,resume,checkpoint,set,export,list,adopt,touch,output,ai,series,inbox,calendar,share,feedback}
                                  ...
 
 python -m vstudio.project - every workflow as a recipe; projects of N items (N=1 = one video). See
 
 positional arguments:
-  {recipes,new,plan-items,show,status,preview,context,refresh,run,resume,checkpoint,set,export,list,adopt,touch,output,ai,series,inbox,calendar}
+  {recipes,new,plan-items,show,status,preview,context,refresh,run,resume,checkpoint,set,export,list,adopt,touch,output,ai,series,inbox,calendar,share,feedback}
     recipes             list recipe manifests
     new                 create a project
     plan-items          planner recipes: draft the items (segments of a recording)
@@ -90,6 +90,8 @@ positional arguments:
     series              series presets
     inbox               pending checkpoints across projects
     calendar            publish calendar
+    share               static review page for a project / clips (share for review)
+    feedback            reviewer feedback: import / list / resolve
 
 options:
   -h, --help            show this help message and exit
@@ -127,6 +129,13 @@ references/PROJECTS.md.
   calendar account add --id A --platform P [--times 12:00,19:00] [--per-day N] [--days 0,1,2,3,4]
   calendar plan --project P [--accounts a,b] [--start ISO] | calendar set --post ID --state S [--at ISO] [--url U]
   calendar list [--start ISO] [--end ISO] [--account A] | calendar add --account A --at ISO [--title T]
+  share --dir P [--outputs a,b] [--items a,b] [--out D] [--quality small|standard|high] [--no-footer] [--title T]
+      [--expiry-note T] [--reply-to EMAIL] [--owner-name N] [--lang auto|en|zh] [--no-zip] [--scan]
+                                                      static review page (index.html + previews + posters +
+                                                      captions + review.json, + zip); --scan: privacy warnings only
+  feedback import (--file F | --text T | stdin) [--dir P] [--no-pin] | list --dir P [--all] | resolve --dir P --id X
+                                                      reviewer answers -> feedback items (approve -> ready; change
+                                                      -> comment pinned in the clip's chat)
 --json: one JSON document on stdout; --json-events: one JSON event per line on stdout (logs -> stderr).
 Exit codes: 0 ok, 1 failed items, 2 refused (budget), 3 paused, 4 pilot waits, 5 bad input, 6 busy, 7 needs you.
 ```
