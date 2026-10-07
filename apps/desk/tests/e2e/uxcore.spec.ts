@@ -1,7 +1,7 @@
 // Home + Inbox + how the pages connect (ux/home-redesign) and text-based editing (ux/text-edit), window hidden,
 // mock engine (desk implementation), isolated profile:
 //   Home busy (Inbox top 3 + n more, Running only while running, Going out today, editable platform chip, no AI chip)
-//   Home quiet (All clear + Continue) and first run (six starting points), en / zh / dark
+//   Home quiet (All clear + Continue) and first run (the starting points), en / zh / dark
 //   Inbox: list + preview, plain-language options (no paths / raw numbers), Confirm -> auto-advance + Undo, ↑ ↓ / E
 //   Review all in a row: the editor's triage bar + the pinned question, Skip / Next / ← Inbox
 //   ⌘K jumps to clips / posts / settings, ⌘[ goes back
@@ -542,7 +542,7 @@ test('Home quiet: All clear + Continue once nothing runs and nothing needs her',
   await shot('A2-home-quiet');
 });
 
-test('first run: no projects yet -> six starting points', async () => {
+test('first run: no projects yet -> the starting points (8 with lesson and q&a)', async () => {
   const empty = path.join(tmp, 'empty');
   fs.mkdirSync(empty, { recursive: true });
   const app2 = await electron.launch({
@@ -558,7 +558,7 @@ test('first run: no projects yet -> six starting points', async () => {
     });
     await p2.reload();
     await expect(p2.getByTestId('home-starts')).toBeVisible({ timeout: 30000 });
-    await expect(p2.getByTestId('home-start')).toHaveCount(6);
+    await expect(p2.getByTestId('home-start')).toHaveCount(8); // + lesson clips, interview q&a (801678c)
     await expect(p2.locator('.ux-hello h1')).toHaveText('What do you want to make?');
     await p2.getByTestId('home-start').nth(1).click();
     await expect(p2.getByTestId('composer-input')).not.toHaveValue('');
