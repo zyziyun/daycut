@@ -281,14 +281,29 @@ class RealEngine:
             self.cancel(bid)
 
     # ------------------------------------------------------------------ review
+    @staticmethod
+    def _project_of(bdir):
+        """A project's state batch (<project>/state) -> the project folder, else None."""
+        d = os.path.dirname(os.path.abspath(bdir))
+        return d if os.path.basename(os.path.abspath(bdir)) == "state" and \
+            os.path.isfile(os.path.join(d, "project.yaml")) else None
+
+    @staticmethod
+    def _at_publish(pdir):
+        """{job: checkpoint id} of a project's clips waiting at its publish check (exported, waiting for her yes)."""
+        from vstudio.project.core import Project
+        return {x["item"]: x["id"] for x in Project(pdir).pending() if x.get("kind") == "publish" and x.get("item")}
+
     def review_items(self, bid):
         from vstudio.batch import review
+        bdir = self._dir(bid)
+        pdir = self._project_of(bdir)
+        waiting = self._at_publish(pdir) if pdir else {}
         st = self._store(bid)
         try:
-            items = review.collect(st)
+            items = review.collect(st, also=list(waiting))
         finally:
             st.close()
-        bdir = self._dir(bid)
         rdir = os.path.join(bdir, "review")
         for it in items:                      # collect() returns paths relative to <batch>/review -> absolute
             for k in ("sheet", "snippet"):
@@ -301,11 +316,27 @@ class RealEngine:
         return items
 
     def apply_review(self, bid, decisions):
+        """Her review decisions. A project's clip waiting at the publish check is answered there (approve / send back
+        with the reason), like the Inbox does, and the project is named in ``resume`` so its run goes on."""
         from vstudio.batch import review
-        r = review.apply_decisions(self._dir(bid), decisions)
+        bdir = self._dir(bid)
+        pdir = self._project_of(bdir)
+        waiting = self._at_publish(pdir) if pdir else {}
+        dec = dict(decisions.get("decisions") or {})
+        approved, rejected = [], []
+        if waiting:
+            from vstudio.project.core import Project
+            p = Project(pdir)
+            for jid in [j for j in dec if j in waiting and j not in (decisions.get("cleanup") or {})]:
+                d = dec.pop(jid)
+                ok = d.get("decision") == "approve"
+                p.answer(waiting[jid], dict(approve=ok, **({"reason": d["reason"]} if not ok and d.get("reason") else {})),
+                         items=[jid])
+                (approved if ok else rejected).append(jid)
+        r = review.apply_decisions(bdir, dict(decisions, decisions=dec))
         self._push_status(bid)
-        return dict(approved=r["approved"], rejected=r["rejected"], replied=r["replied"],
-                    skipped=[list(x) for x in r["skipped"]])
+        return dict(approved=approved + r["approved"], rejected=rejected + r["rejected"], replied=r["replied"],
+                    skipped=[list(x) for x in r["skipped"]], resume=[pdir] if approved or rejected else [])
 
     # ------------------------------------------------------------------ package
     def package(self, bid, opts):

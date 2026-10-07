@@ -58,7 +58,8 @@ export function Focus({ id }: { id: string }) {
           r = await client.review(id);
         }
         const flagged = new Set(inbox.items.find((x) => x.project.id === id && x.kind === 'review')?.jobs ?? []);
-        const todo = flagged.size ? r.filter((x) => flagged.has(x.id)) : r.filter((x) => x.qc === 'red' || ((x.state === 'done' || x.state === 'pilot-review') && !x.review));
+        // 'waiting': a project's clip parked at its publish check (exported, waiting for her yes)
+        const todo = flagged.size ? r.filter((x) => flagged.has(x.id)) : r.filter((x) => x.qc === 'red' || (['done', 'pilot-review', 'waiting'].includes(x.state) && !x.review));
         todo.sort((a, b) => Number(b.qc === 'red') - Number(a.qc === 'red'));
         const c = await client.clips(id).catch(() => null);
         if (!alive) return;

@@ -341,9 +341,14 @@ class Inbox:
             write_json(self.path, a)
         if self.bus:
             self.bus.publish("inbox")
-        if dirs:
-            threading.Thread(target=self._resume, args=(dirs,), daemon=True).start()
+        self.resume(dirs)
         return dict(ok=True, answered=done)
+
+    def resume(self, dirs):
+        """Answers recorded for these projects: continue their runs in the background (nothing when nothing waits)."""
+        self._forget_engine()
+        if dirs:
+            threading.Thread(target=self._resume, args=(list(dirs),), daemon=True).start()
 
     def _resume(self, dirs):
         """The last open question of a project answered: its run goes on (pilot.resume_after_answer)."""

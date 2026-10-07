@@ -85,12 +85,17 @@ def _captions(rows, store, prr):
                 fillers=prr.get("fillers_left") or [])
 
 
-def collect(store):
+def collect(store, also=()):
+    """Review rows of the finished (and failed) jobs; ``also``: job ids to list whatever their state (a project's
+    clips waiting at its publish check: exported, not yet "done")."""
     from vstudio import cleanup as C
     base = os.path.join(store.dir, "review")
     out = []
     pol = C.load_policy()
-    for j in store.jobs(REVIEW_STATES + ("failed",)):
+    jobs = store.jobs(REVIEW_STATES + ("failed",))
+    seen = {j["id"] for j in jobs}
+    jobs += [j for j in store.jobs() if j["id"] in set(also) and j["id"] not in seen]
+    for j in jobs:
         rows = store.stage_rows(j["id"])
         pv = (rows.get("preview") or {}).get("out") or {}
         ex = (rows.get("export") or {}).get("out") or {}

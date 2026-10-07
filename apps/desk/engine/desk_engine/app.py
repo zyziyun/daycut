@@ -791,7 +791,11 @@ class Api:
         if method == "GET" and rest == ["review"]:
             return e.review_items(bid)
         if method == "POST" and rest == ["review", "apply"]:
-            return e.apply_review(bid, validate_decisions(body))
+            r = e.apply_review(bid, validate_decisions(body))
+            self.inbox.resume(r.pop("resume", None) or [])   # a project's publish check answered: its run goes on
+            if self.bus:
+                self.bus.publish("inbox")
+            return r
         if rest == ["package"] and method in ("GET", "POST") and self.workpkg.owns(bid):
             # a work folder / project: clips x platforms -> per-platform package (workpkg.py)
             return self.workpkg.package(bid, body or {}) if method == "POST" else self.workpkg.manifest(bid)
