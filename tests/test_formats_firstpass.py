@@ -155,6 +155,40 @@ def test_cover_rules(media):
     assert "cover-bright" in _ids(r, sev="warn") and "cover-aspect" not in _ids(r)
 
 
+def test_export_cover_matches_each_output_and_firstpass_agrees(media, tmp_path):
+    """Parity bug: a 1080x1920 小红书 video got a 1080x1440 cover. Each output's cover has that output's own canvas
+    (the 3:4 cover only for the 3:4 version); firstpass confirms it on the real export."""
+    from PIL import Image
+    from vstudio import export as X
+    cov = tmp_path / "picked.jpg"
+    Image.new("RGB", (1080, 1920), (190, 190, 190)).save(cov)       # the picked 9:16 frame of the video
+    man = X.export(media["fast"], ["xiaohongshu:full", "xiaohongshu:vertical"], str(tmp_path / "ex"),
+                   covers=[str(cov)], preset="ultrafast", captions=False)
+    sizes = {}
+    for e in man["exports"]:
+        video, cover = str(tmp_path / "ex" / e["file"]), str(tmp_path / "ex" / e["cover"])
+        sizes[e["orientation"]] = Image.open(cover).size
+        assert tuple(e["cover_size"]) == sizes[e["orientation"]]
+        r = FP.run(video, "talking-head", f"xiaohongshu:{e['orientation']}", media_checks=False, cover=cover)
+        assert not {"cover", "cover-aspect"} & _ids(r), (e["orientation"], r["items"])
+    assert sizes == {"full": (1080, 1920), "vertical": (1080, 1440)}
+    full = next(e for e in man["exports"] if e["orientation"] == "full")
+    assert not any("blurred pad" in n for n in full["notes"])         # the 9:16 frame is used as is, not padded
+    assert os.path.exists(tmp_path / "ex" / "xiaohongshu-full.cover.feed.jpg")   # the feed's centre 3:4 preview
+
+
+def test_only_named_platforms_ask_for_a_cover_shape_other_than_the_video():
+    """Covers follow the video's own canvas; the exceptions are upload forms that demand another shape."""
+    from vstudio import platform as P
+    odd = set()
+    for k in P.list_profiles():
+        p = P.profile(k, use_persona=False)
+        cw, ch = P.cover_size(p)
+        if abs((cw / ch) / (p.w / p.h) - 1) > 0.02:
+            odd.add(k)
+    assert odd == {"bilibili:horizontal", "bilibili:vertical", "wechat-channels:vertical"}, odd
+
+
 def test_caption_checks(media, tmp_path):
     cues = [dict(start=0, end=2, text="我去了宏都拉斯"), dict(start=2, end=4, text="用 cloud code 写代码"),
             dict(start=4, end=6, text="嗯嗯 那个那个 然后"), dict(start=6, end=8, text="副业复盘01")]

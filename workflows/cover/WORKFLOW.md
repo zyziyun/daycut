@@ -84,7 +84,8 @@ Cover sizes come from `vstudio.platform.cover_size` (PLATFORMS.md):
 
 | platform | cover | feed shows |
 |---|---|---|
-| 小红书 (`xiaohongshu`, 3:4 / 9:16 posts) | 1080x1440 | whole cover |
+| 小红书 3:4 (`xiaohongshu`, `xiaohongshu:vertical`) | 1080x1440 | whole cover |
+| 小红书 9:16 (`xiaohongshu:full`) | 1080x1920 (same canvas as the video) | **centre 3:4** (y 240..1680) |
 | 小红书 horizontal (`xiaohongshu:horizontal`) | 1920x1080 | **centre 4:3** (x 240..1680) |
 | 抖音 / TikTok (`douyin`, `tiktok`) | 1080x1920 | profile grid: centre 3:4 |
 | YouTube Shorts | 1080x1920 | whole cover |

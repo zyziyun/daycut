@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Cover from the retouched body, styled like the video (same fonts, grade, keyword colours).
-Size per platform (vstudio.platform.cover_size): 小红书 3:4 1080x1440 (default), 抖音 / TikTok / Shorts 9:16
-1080x1920 (title kept inside the centre 3:4 the profile grid shows), YouTube 1280x720, B站 1146x717.
+Size per platform (vstudio.platform.cover_size) = the video's own canvas: 小红书 3:4 1080x1440 (xiaohongshu:vertical),
+小红书 9:16 / 抖音 / TikTok / Shorts 1080x1920 (title kept inside the centre 3:4 the profile grid shows), YouTube 1280x720, B站 1146x717.
 Reads the COVER dict from the compose config:
 
     COVER = dict(SRC="body3_rt.mp4",            # the FINAL body (frame times are in its timeline)

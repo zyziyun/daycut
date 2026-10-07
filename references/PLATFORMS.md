@@ -107,7 +107,8 @@ horizontal 44-60 px, 22 CJK / 48 latin. 小红书 9:16 band centred on y ≈ 152
 
 | profile | size | title-safe / feed crop | tag |
 |---|---|---|---|
-| xiaohongshu vertical/full | 1080x1440 3:4 | – | [S] |
+| xiaohongshu vertical | 1080x1440 3:4 | – | [S] |
+| xiaohongshu full | 1080x1920 9:16 (same canvas as the video) | **feed tile shows centre 3:4** → `.feed.jpg` preview | [S] + her rule: the cover has the video's size |
 | xiaohongshu horizontal | 1920x1080 | **feed shows centre 4:3** → `.feed.jpg` preview | [3P + workflows/cover] |
 | douyin / tiktok vertical | 1080x1920 | profile grid shows centre 3:4 | [3P] |
 | youtube | 1280x720, ≤ 2 MB (desktop now allows larger) | bottom-right timestamp: title-safe ends at x 1100 | [S] |

@@ -85,8 +85,10 @@ PLATFORMS = {
             full=dict(w=1080, h=1920, aspect="9:16",
                       safe=dict(top=240, bottom=260, left=60, right=60, right_lower=dict(w=160, from_y=960)),
                       caption=dict(_VERT_CAPTION, band=[1420, 1640]),
-                      cover=dict(w=1080, h=1440, aspect="3:4", title_safe=[60, 120, 1020, 1240], feed_crop=None),
-                      cover_aspect="3:4"),
+                      # the cover has the video's own 9:16 canvas (a 3:4 cover is only for the 3:4 version); the
+                      # feed tile shows its centre 3:4, so the title stays inside y 240-1680
+                      cover=dict(w=1080, h=1920, aspect="9:16", title_safe=[60, 300, 1020, 1620], feed_crop="3:4"),
+                      cover_aspect="9:16"),
             horizontal=dict(w=1920, h=1080, aspect="16:9", feed_crop="4:3",
                             safe=dict(top=60, bottom=60, left=280, right=280),
                             caption=dict(_HORZ_CAPTION, band=[880, 1030], max_chars_zh=18),

@@ -260,6 +260,14 @@ def test_compose_cues_carry_keepouts_and_keyword_markup(comp):
 
 
 @need_ff
+def test_compose_clean_only_skips_the_captioned_render(comp):
+    """vstudio.batch only uses the caption-free master + cues: --clean-only renders that once, not twice."""
+    _run("compose.py", "config.py", "all", "--clean-only", cwd=comp)
+    assert (comp / "out.clean.mp4").exists() and (comp / "out.cues.json").exists()
+    assert not (comp / "out.mp4").exists()
+
+
+@need_ff
 def test_cover_platform_names_do_not_overwrite(comp):
     _run("cover.py", "config.py", cwd=comp)
     assert (comp / "cover.jpg").exists()
@@ -268,4 +276,4 @@ def test_cover_platform_names_do_not_overwrite(comp):
     assert (comp / "cover.jpg").stat().st_mtime_ns == m0           # the 小红书 cover is untouched
     from PIL import Image
     assert Image.open(comp / "cover.douyin-vertical.jpg").size == (1080, 1920)
-    assert Image.open(comp / "cover.jpg").size == (1080, 1440)
+    assert Image.open(comp / "cover.jpg").size == (1080, 1920)     # 9:16 video (xiaohongshu:full) -> 9:16 cover
