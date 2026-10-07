@@ -3,7 +3,7 @@
 
 export const SITE = {
   /** Public URL of the deployed site (used for canonical/hreflang/OG tags). Change when you pick a domain. */
-  url: 'https://example.com',
+  url: 'https://reelfold.com',
 
   /** Brand name shown in the header and titles (logo: assets/brand, favicons + OG: scripts/brand.mjs). */
   name: 'Daycut',

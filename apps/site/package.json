@@ -14,7 +14,8 @@
     "build": "ASTRO_TELEMETRY_DISABLED=1 astro build",
     "preview": "ASTRO_TELEMETRY_DISABLED=1 astro preview",
     "images": "./scripts/optimize-images.sh",
-    "check:copy": "node scripts/check-copy.mjs"
+    "check:copy": "node scripts/check-copy.mjs",
+    "deploy": "npm run build && npx -y wrangler@4 deploy"
   },
   "dependencies": {
     "astro": "^7.3.5"

@@ -1,0 +1,16 @@
+// Cloudflare Worker that serves the static site (dist/) on reelfold.com.
+// Deploy: npm run deploy   (first time: npx wrangler login)
+{
+  "name": "reelfold-site",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "404-page",
+    "html_handling": "auto-trailing-slash"
+  },
+  "routes": [
+    { "pattern": "reelfold.com", "custom_domain": true },
+    { "pattern": "www.reelfold.com", "custom_domain": true }
+  ],
+  "workers_dev": false
+}
