@@ -132,6 +132,14 @@ def test_privacy_rects_and_clip():
     assert LS._title_parts("RAG就两条线：一条写一条读") == ("RAG就两条线", "一条写一条读")
 
 
+def test_title_parts_split_on_word_boundaries():
+    assert LS._title_parts("Every index makes writes slower") == ("Every index makes", "writes slower")
+    assert LS._title_parts("Two rules for storing passwords") == ("Two rules for", "storing passwords")
+    assert LS._title_parts("向量数据库的两条主线") == ("向量数据库", "的两条主线")
+    assert LS._title_parts("一行代码搞定Postgres全文搜索") == ("一行代码搞定", "Postgres全文搜索")
+    assert LS._title_parts("Supercalifragilistic") == ("Supercalifragilistic", "")
+
+
 def test_segments_yaml_adapter_plan_and_estimate(tmp_path, share):
     segs = _seg_yaml(tmp_path, share)
     r = plan_batch(_spec(tmp_path, share, segs, inputs={}), echo=False)    # source from the segments header

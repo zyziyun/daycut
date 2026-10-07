@@ -181,6 +181,9 @@ def _hook_lines(h):
     return lines
 
 
+_LATIN_WORD = re.compile(r"[A-Za-z0-9\u00C0-\u024F'’-]")
+
+
 def _title_parts(title):
     """Cover big1 / big2 from a title: split at the first strong punctuation, else in the middle."""
     t = (title or "").strip()
@@ -189,8 +192,14 @@ def _title_parts(title):
         return t[:m.start() + (1 if t[m.start()] in "？?！!" else 0)], t[m.end():].strip()
     if len(t) <= 8:
         return t, ""
-    k = len(t) // 2
-    return t[:k], t[k:]
+    # nearest-to-middle cut that never lands inside a Latin word (CJK may split between any characters)
+    cuts = [i for i in range(1, len(t))
+            if not (_LATIN_WORD.match(t[i - 1]) and _LATIN_WORD.match(t[i]))
+            and t[:i].strip() and t[i:].strip()]
+    if not cuts:
+        return t, ""
+    k = min(cuts, key=lambda i: abs(len(t) - 2 * i))
+    return t[:k].rstrip(), t[k:].lstrip()
 
 
 def _post_body(p):
