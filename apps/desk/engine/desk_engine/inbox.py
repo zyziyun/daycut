@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 import sqlite3
 import threading
 import time
@@ -236,7 +237,7 @@ class Inbox:
                                                                        for k in keys), "keys: 1-200 inbox keys")
         need(answer is None or (isinstance(answer, dict) and len(json.dumps(answer)) < 20000), "answer: object")
         cur = {i["key"]: i for i in self.list()["items"]}
-        done = []
+        done, dirs = [], []
         for k in keys:
             it = cur.get(k)
             need(it is not None, f"no inbox item {k}")
@@ -247,6 +248,8 @@ class Inbox:
                     args += ["--item", str(eng["item"])]
                 args += ["--answer", json.dumps(answer, ensure_ascii=False)] if answer else ["--default"]
                 self.runner.sibling("vstudio.project").json(args + ["--json"], timeout=300)
+                if eng.get("dir") and eng["dir"] not in dirs:
+                    dirs.append(eng["dir"])
             elif it["source"] in self.handlers:
                 self.handlers[it["source"]](it, answer)
             done.append(k)
@@ -259,7 +262,19 @@ class Inbox:
             write_json(self.path, a)
         if self.bus:
             self.bus.publish("inbox")
+        if dirs:
+            threading.Thread(target=self._resume, args=(dirs,), daemon=True).start()
         return dict(ok=True, answered=done)
+
+    def _resume(self, dirs):
+        """The last open question of a project answered: its run goes on (pilot.resume_after_answer)."""
+        from . import pilot
+        for d in dirs:
+            try:
+                if pilot.resume_after_answer(self.runner, d, bus=self.bus) and self.bus:
+                    self.bus.publish("batches")
+            except Exception as e:  # noqa: BLE001  (the answer itself is saved; say why nothing ran)
+                print(f"[inbox] resume after answer failed for {d}: {e}", file=sys.stderr, flush=True)
 
     def undo(self, keys):
         need(isinstance(keys, list) and 0 < len(keys) <= 200, "keys: list")

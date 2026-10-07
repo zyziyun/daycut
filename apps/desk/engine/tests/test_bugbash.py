@@ -69,5 +69,47 @@ class DefaultWatchOnlyWhenPresent(unittest.TestCase):
         self.assertEqual(got, [tempfile.gettempdir()])
 
 
+class ResumeAfterInboxAnswer(unittest.TestCase):
+    """Answering a project's last open question in the Inbox continues its run (it only did in the week plan)."""
+
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        open(os.path.join(self.d, "project.yaml"), "w").write("name: p\nrecipe: talkinghead\n")
+
+    def runner(self, entries, items):
+        class Cli:
+            def json(self_, args, timeout=None):
+                return dict(entries=entries) if args[0] == "inbox" else dict(items=items)
+
+        class R:
+            python, env = "py", {}
+
+            def sibling(self_, mod):
+                return Cli()
+        return R()
+
+    def resume(self, entries, items):
+        from desk_engine import pilot
+        calls = []
+        r = pilot.resume_after_answer(self.runner(entries, items), self.d, spawner=lambda *a, **k: calls.append(k["args"]) or {})
+        return r, calls
+
+    def test_last_answer_resumes_the_run(self):
+        _, calls = self.resume([], [dict(id="a", state="done"), dict(id="b", state="waiting", waiting=["publish"])])
+        self.assertEqual(calls, [["py", "-m", "vstudio.project", "resume", "--dir", self.d, "--json-events"]])
+
+    def test_nothing_runs_while_she_still_has_a_question(self):
+        _, calls = self.resume([dict(project=self.d, id="publish", item="b")], [dict(id="b", state="waiting")])
+        self.assertEqual(calls, [])
+
+    def test_nothing_runs_when_finished_or_already_running(self):
+        self.assertEqual(self.resume([], [dict(id="a", state="done"), dict(id="b", state="failed")])[1], [])
+        self.assertEqual(self.resume([], [dict(id="a", state="running"), dict(id="b", state="planned")])[1], [])
+
+    def test_only_projects(self):
+        from desk_engine import pilot
+        self.assertIsNone(pilot.resume_after_answer(self.runner([], [dict(state="planned")]), tempfile.mkdtemp()))
+
+
 if __name__ == "__main__":
     unittest.main()

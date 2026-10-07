@@ -169,6 +169,30 @@ def spawn(python, env, d, provider=None, bus=None, args=None):
     return rec
 
 
+def resume_after_answer(runner, d, bus=None, spawner=None):
+    """She answered a project's question in the Inbox (e.g. the per-clip review): answering records the decision but
+    runs nothing, so the project sat paused until something restarted it (only the week plan did). When nothing in
+    the project waits for her any more, no run is going and items are unfinished, continue it in the background:
+    ``vstudio.project resume --dir d --json-events``. -> the run record, or None when there is nothing to do."""
+    if runner is None or not d or not os.path.isfile(os.path.join(d, "project.yaml")) or running(d):
+        return None
+    cli = runner.sibling("vstudio.project")
+    rd = os.path.realpath(d)
+    pend = cli.json(["inbox", "--json"], timeout=120)
+    entries = (pend.get("entries") or pend.get("items") or []) if isinstance(pend, dict) else []
+    if any(os.path.realpath(e.get("project") or e.get("dir") or "") == rd for e in entries if isinstance(e, dict)):
+        return None                                           # another question still waits for her
+    st = cli.json(["status", "--dir", d, "--json"], timeout=120)
+    items = (st.get("items") or []) if isinstance(st, dict) else []
+    if not items or any(it.get("state") == "running" for it in items):
+        return None
+    if all(it.get("state") in ("done", "failed", "dropped") for it in items):
+        return None
+    py = runner.python
+    return (spawner or spawn)(py, runner.env, d, bus=bus,
+                              args=[py, "-m", "vstudio.project", "resume", "--dir", d, "--json-events"])
+
+
 def record_mock(d, ok, error=None, provider=None):
     """Mock mode: the same files a real pilot leaves behind (DESK_MOCK_PILOT_FAIL drives the failure)."""
     with open(os.path.join(d, LOG), "a", encoding="utf-8") as f:
