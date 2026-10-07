@@ -292,6 +292,11 @@ def test_posts_per_platform_and_language(cfg, tmp_path):
     page = open(tmp_path / "copy" / "COPY.md", encoding="utf-8").read()
     assert "Nothing here has been posted" in page and page.index("### X") < page.index("### 小红书")
     assert (tmp_path / "copy" / "clips" / "review" / "tiktok.en.md").exists()
+    from vstudio import publish as PB
+    t = res["clips"]["review"]["xiaohongshu"]["zh"]["title"]
+    assert t and PB.check_title(t, "xiaohongshu")[0]                       # "Name｜caption" too long -> caption
+    assert "https://" not in res["launch"]["tiktok"]["en"]["text"]           # no dead links where they can't click
+    assert "https://acme.example" in res["launch"]["x"]["en"]["text"]
 
 
 def test_posts_without_a_post_block_fail_loudly_without_a_model(cfg, tmp_path, monkeypatch):

@@ -47,7 +47,8 @@ def clip_post(cfg, feat):
     for lang in cfg["languages"]:
         b = base.get(lang) or {}
         name = p["name"] + (f"（{p['name_zh']}）" if lang == "zh" and p.get("name_zh") else "")
-        out[lang] = dict(hook=C.plain(C.text(feat.get("caption"), lang)),
+        cap = C.plain(C.text(feat.get("caption"), lang))
+        out[lang] = dict(title=(f"{name}: {cap}" if lang == "en" else f"{name}｜{cap}"), hook=cap,
                          body=[f"{name}: {C.text(p.get('one_liner'), lang)}" if lang == "en" else
                                f"{name}：{C.text(p.get('one_liner'), lang)}"],
                          tags=list(b.get("tags") or []), links=b.get("links"))
@@ -72,8 +73,19 @@ def source_text(cfg):
 
 def render_post(post, platform, lang):
     warns = []
-    text, c = PB.platform_post(post, platform, lang=lang, warn=warns.append)
     prof = PF.profile(platform, use_persona=False)
+    if not PF.link_policy(prof).get("clickable"):        # a dead link in the text: point to the profile instead
+        post = json.loads(json.dumps(post))
+        for k in [None] + list(C.LANGS):
+            b = post if k is None else post.get(k)
+            if isinstance(b, dict) and b.get("links"):
+                b["links"] = []
+    base = platform.split(":")[0]
+    b = post.get(lang) if isinstance(post.get(lang), dict) else None
+    if b and b.get("title") and b.get("hook") and not PB.check_title(b["title"], base)[0]:
+        post = json.loads(json.dumps(post))           # "Name: caption" too long here: the caption alone
+        post[lang]["title"] = post[lang]["hook"]
+    text, c = PB.platform_post(post, platform, lang=lang, warn=warns.append)
     warns += PF.check_text(prof, title=None if platform.split(":")[0] in PB.NO_TITLE else c.get("title"), body=text,
                            tags=c.get("tags"))
     return text, c.get("title"), sorted(set(warns))
