@@ -12,7 +12,7 @@ import { Modal } from '../components/ui';
 import { fmtAgo, getLang, t } from '../i18n';
 import { Empty } from './kit';
 import { errText } from './msg';
-import { PlatformIcon } from './PlatformIcon';
+import { PlatformIcon, SCHEDULE_PLATFORMS } from './PlatformIcon';
 import { useUi } from './ui';
 
 export const adapterName = (a: Adapter) => (getLang() === 'zh-CN' ? a.nameZh : a.name);
@@ -125,7 +125,13 @@ export function Channels() {
         <div className="pubg" style={{ gridTemplateColumns: 'minmax(340px, 420px) 1fr' }}>
           <aside className="col" style={{ gap: 10 }} data-testid="channel-list">
             {!channels.length && <Empty title={t('ch.empty')} hint={t('ch.emptyHint')} />}
-            {adapters.map((a) => {
+            {[...adapters]
+              .sort((x, y) => {
+                const has = (a: Adapter) => (channels.some((c) => c.adapterId === a.id) ? 0 : 1);
+                const rank = (a: Adapter) => SCHEDULE_PLATFORMS.indexOf(a.packagePlatforms[0]) + 1 || 99;
+                return has(x) - has(y) || rank(x) - rank(y);
+              })
+              .map((a) => {
               const mine = channels.filter((c) => c.adapterId === a.id);
               return (
                 <div key={a.id} className="card col" style={{ gap: 6 }} data-testid="channel-platform" data-adapter={a.id}>
