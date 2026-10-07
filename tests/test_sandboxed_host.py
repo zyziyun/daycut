@@ -137,3 +137,31 @@ def test_lgpl_ffmpeg_skips_gpl_polish_filters(monkeypatch):
     assert cmd[4] == "null,format=yuv420p"
     keep = ["/x/ffprobe", "-vf", "eq=1"]
     assert media._portable_cmd(keep) is keep
+
+
+def test_glossary_without_usable_ai_falls_back_to_rules(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    from vstudio import proofread as PR
+    from vstudio.batch import stages
+    real = PR.build_glossary
+    seen = []
+
+    def build(text, provider="auto", **kw):
+        seen.append(provider)
+        if provider != "none":
+            err = llm.LLMError("provider openai needs OPENAI_API_KEY")
+            err.attempts = [dict(provider="openai", code="key-missing", error=str(err))]
+            raise err
+        return real(text, provider=provider, **kw)
+    monkeypatch.setattr(PR, "build_glossary", build)
+    monkeypatch.setattr(stages, "transcript_text", lambda tr, tf: "hello world")
+    monkeypatch.setattr(stages, "proofread_opts", lambda spec: dict(call=None, glossary_provider="openai",
+                                                                     glossary_model=None, provider="openai", model=None))
+    (tmp_path / "t.json").write_text("{}", encoding="utf-8")
+    logs = []
+    ctx = SimpleNamespace(spec={}, params={}, inputs={"asr": {"transcript": str(tmp_path / "t.json")}},
+                          path=lambda n: str(tmp_path / n), log=logs.append)
+    out = stages.run_glossary(ctx)
+    assert seen[-1] == "none" and out["terms"] == 0
+    assert any("AI unavailable (key-missing)" in m for m in logs)
+    assert json.load(open(out["glossary"]))["degraded"]["codes"] == ["key-missing"]

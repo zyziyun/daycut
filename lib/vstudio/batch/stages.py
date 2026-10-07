@@ -473,6 +473,7 @@ def transcript_text(transcript, term_fixes=None):
 def run_glossary(ctx):
     """ONE proofreading glossary per source (shared): domain terms + recurring ASR confusions from the whole
     transcript, validated (vstudio.proofread.build_glossary); every job's proofread applies the same fixes."""
+    from vstudio import llm as LLM
     from vstudio import proofread as PR
     o = proofread_opts(ctx.spec)
     tr = read_json(ctx.inputs["asr"]["transcript"])
@@ -480,8 +481,17 @@ def run_glossary(ctx):
     text = transcript_text(tr, tf)
     series = (ctx.spec.get("vertical") or {}).get("series") or ctx.params.get("series")
     call = import_ref(o["call"]) if o["call"] else None
-    res = PR.build_glossary(text, context=dict(topic=series, glossary=_gloss_context(ctx.spec)),
-                            provider=o["glossary_provider"], model=_glossary_model(o), call=call, prices=ctx.spec.get("prices"))
+    gctx = dict(topic=series, glossary=_gloss_context(ctx.spec))
+    try:
+        res = PR.build_glossary(text, context=gctx, provider=o["glossary_provider"], model=_glossary_model(o),
+                                call=call, prices=ctx.spec.get("prices"))
+    except LLM.LLMError as e:
+        # the glossary only sharpens captions: no usable AI (no key yet, a sandboxed app without CLIs, a local model
+        # that is not pulled) must not fail the whole job - the rules-only glossary, and the reason in the log
+        codes = sorted({a.get("code") or "failed" for a in LLM.attempts_of(e)})
+        ctx.log(f"glossary: AI unavailable ({', '.join(codes)}) - rules only: {str(e)[:200]}")
+        res = PR.build_glossary(text, context=gctx, provider="none", prices=ctx.spec.get("prices"))
+        res["degraded"] = dict(codes=codes, error=str(e)[:300])
     path = write_json(ctx.path("glossary.json"), res)
     ctx.log(f"glossary ({res['provider']}): {len(res['terms'])} term(s), {len(res['fixes'])} fix(es), "
             f"{len(res['rejected'])} rejected")
