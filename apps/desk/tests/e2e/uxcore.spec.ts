@@ -223,7 +223,7 @@ test('Home busy: the Inbox top 3 + n more, Running, Going out today, the platfor
   await expect(page.getByTestId('home-today').getByTestId('home-post')).toHaveCount(4);
   await expect(page.getByTestId('home-all-clear')).toHaveCount(0);
   await expect(page.getByTestId('composer-provider-chip')).toHaveCount(0); // where AI runs lives in Settings now
-  await expect(page.getByTestId('composer-platforms')).toContainText('Xiaohongshu, Douyin +3');
+  await expect(page.getByTestId('composer-platforms')).toContainText('YouTube, TikTok +3'); // international first, whatever order they were picked in
   await expect(page.getByTestId('home-idea').first()).toBeVisible();
   await expect(page.locator('.btn.primary:visible')).toHaveCount(0); // Make a plan lights up once there is something to plan
   await noMissingKeys();
@@ -233,7 +233,7 @@ test('Home busy: the Inbox top 3 + n more, Running, Going out today, the platfor
   await expect(page.getByTestId('platform-popover')).toBeVisible();
   await page.getByTestId('platform-popover').locator('button[data-pf="bilibili"]').click();
   await page.keyboard.press('Escape');
-  await expect(page.getByTestId('composer-platforms')).toContainText('Xiaohongshu, Douyin +2');
+  await expect(page.getByTestId('composer-platforms')).toContainText('YouTube, TikTok +2');
   expect((await page.evaluate(() => window.desk.getSettings())).defaultPlatforms).not.toContain('bilibili');
   // the paperclip opens Add files / Add folder and the menu stays open (the opening click must not close it)
   await page.getByTestId('composer-attach').click();
