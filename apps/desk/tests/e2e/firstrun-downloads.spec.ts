@@ -90,6 +90,8 @@ test.beforeAll(async () => {
     DESK_HISTORY_WATCH: '', // never scan the user's folders
     DESK_HIDE_WINDOW: '1', // never on the user's screen
     DESK_RUNTIME_DIR: fakeRuntime(),
+    // CI exports DESK_PYTHON; it outranks the runtime, which would make the app "system" and drop the downloads step
+    DESK_PYTHON: '',
     DESK_ASSETS_MANIFEST: mf,
     DESK_DISABLE_UPDATES: '1',
     DESK_SKIP_FIRST_RUN: '',
