@@ -2,6 +2,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { EngineClient } from '../../../shared/engineClient';
 import type { EngineInfo, StreamEvent } from '../../../shared/types';
+import { t } from '../i18n';
 
 interface Ctx {
   client: EngineClient | null;
@@ -34,8 +35,9 @@ export function EngineProvider({ children }: { children: ReactNode }) {
       })
       .catch((e: Error) => alive && setError(e.message));
     const off = window.desk.on('engine:status', (d) => {
-      const s = d as { ok: boolean; error?: string };
-      if (!s.ok) setError(s.error ?? 'engine stopped');
+      const s = d as { ok: boolean; error?: string; restarting?: boolean };
+      // a crash the main process is already restarting from: say so instead of the raw exit log
+      if (!s.ok) setError(s.restarting ? t('engine.restarting') : (s.error ?? t('engine.stopped')));
       else setNonce((n) => n + 1);
     });
     return () => {

@@ -233,6 +233,7 @@ function startEngine(): Promise<EngineInfo> {
       mock: process.env.DESK_ENGINE_MOCK === '1',
       onCrash: (code, tail) => recordProblem('sidecar', `exit ${code}`, `engine exited (${code})`, tail.join('\n')),
       port: enginePort() ?? port ?? undefined,
+      onDied: (detail) => onEngineCrash(gen, detail),
       ...withV02Env(engineEnv(cfg.runtime !== 'system')),
     });
     engine = next;
@@ -261,6 +262,21 @@ function startEngine(): Promise<EngineInfo> {
     win?.webContents.send('engine:status', { ok: false, error: String(e?.message ?? e) });
   });
   return enginePromise;
+}
+
+/** The engine died after it was up: say so at once (the status dot / banner), then start a new one - at most 3 times
+ * in 2 minutes, so a engine that dies at start-up does not loop; after that the banner's "Fix" link stays. */
+const crashes: number[] = [];
+function onEngineCrash(gen: number, detail: string) {
+  if (gen !== engineGen) return;
+  mainLog(`[engine] crashed: ${detail}`);
+  client = null;
+  const now = Date.now();
+  while (crashes.length && now - crashes[0] > 120_000) crashes.shift();
+  crashes.push(now);
+  const retry = crashes.length <= 3;
+  win?.webContents.send('engine:status', { ok: false, error: detail, restarting: retry });
+  if (retry) setTimeout(() => void startEngine().catch(() => undefined), 500 * crashes.length);
 }
 
 class SupersededError extends Error {

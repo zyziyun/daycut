@@ -30,6 +30,8 @@ export interface EngineConfig {
   /** ask for this port (a restart keeps the old one so the page's CSP stays valid); the engine falls back to a
    * random port when it is taken */
   port?: number;
+  /** the engine died on its own after it was up (crash, OOM, killed): not called for stop() / a failed start */
+  onDied?: (detail: string) => void;
 }
 
 export function newToken(): string {
@@ -151,7 +153,11 @@ export class EngineProcess {
         } catch {
           /* reporting must not break the restart path */
         }
-        done(new Error(`engine exited (${code}): ${this.log.slice(-5).join(' | ')}`));
+        const detail = `engine exited (${code ?? child.signalCode}): ${this.log.slice(-5).join(' | ')}`;
+        // after a successful start nobody awaits the promise any more: tell the owner, or the app keeps saying
+        // "Ready" while every request fails with "engine unreachable"
+        if (settled) this.cfg.onDied?.(detail);
+        done(new Error(detail));
       });
     });
   }
