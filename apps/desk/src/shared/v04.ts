@@ -384,6 +384,8 @@ export interface IntakeJob {
   error_code?: import('./v02').FailureCode | null;
   error_provider?: string | null;
   applied?: { dir: string; name: string; recipe: string }[];
+  /** how long the last plan / revision really took, reading the files and the AI call included (seconds) */
+  seconds?: number | null;
 }
 
 // ---------------------------------------------------------------- inbox

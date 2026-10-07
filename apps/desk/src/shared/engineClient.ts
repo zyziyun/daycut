@@ -417,6 +417,10 @@ export class EngineClient {
   intake(id: string) {
     return this.req<IntakeJob>('GET', `/api/intake/${pid(id)}`);
   }
+  /** a failed plan card's 「Try again」: the same request (or the revision that failed) again */
+  retryIntake(id: string) {
+    return this.req<{ id: string }>('POST', `/api/intake/${pid(id)}/retry`, {});
+  }
   reviseIntake(id: string, prompt: string) {
     return this.req<{ id: string }>('POST', `/api/intake/${pid(id)}/revise`, { prompt: prompt.slice(0, 500) });
   }

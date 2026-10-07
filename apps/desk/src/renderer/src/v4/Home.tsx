@@ -234,6 +234,22 @@ export function Home() {
       ui.toast(errText(e), { error: true });
     }
   };
+  /** a failed plan card's Try again: the same request (or the failed revision) again, followed until it ends */
+  const retry = async () => {
+    if (!client || !jobId) return;
+    try {
+      await client.retryIntake(jobId);
+      setJob((j) => (j ? { ...j, state: 'running', error: null, error_code: null } : j));
+      for (let i = 0; i < 3000; i++) {
+        const j = await client.intake(jobId);
+        setJob(j);
+        if (j.state !== 'running') return;
+        await new Promise((res) => setTimeout(res, 600));
+      }
+    } catch (e) {
+      ui.toast(errText(e), { error: true });
+    }
+  };
   const reset = () => {
     setJobId(null);
     setJob(null);
@@ -400,7 +416,7 @@ export function Home() {
             </div>
           </div>
         )}
-        {planning && <PlanCard job={job} jobId={jobId!} onRevise={revise} onReset={reset} onStarted={started} sample={sample} />}
+        {planning && <PlanCard job={job} jobId={jobId!} onRevise={revise} onRetry={() => void retry()} onReset={reset} onStarted={started} sample={sample} />}
         {!planning && !waitDl && (firstRun ? <FirstRunStarts onPick={(p) => fill(p)} onSample={() => void trySample()} /> : <Below />)}
       </div>
     </div>

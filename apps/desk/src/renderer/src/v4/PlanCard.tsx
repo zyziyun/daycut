@@ -27,7 +27,7 @@ export function planFacts(plan: IntakePlan) {
   return { clips, sizes, plats, wall, usd };
 }
 
-export function PlanCard({ job, jobId, onRevise, onReset, onStarted, sample = false }: { job: IntakeJob | null; jobId: string; onRevise: (s: string) => void; onReset: () => void; onStarted: () => void; sample?: boolean }) {
+export function PlanCard({ job, jobId, onRevise, onRetry, onReset, onStarted, sample = false }: { job: IntakeJob | null; jobId: string; onRevise: (s: string) => void; onRetry: () => void; onReset: () => void; onStarted: () => void; sample?: boolean }) {
   const { client } = useEngine();
   const { reload } = useHistory();
   const ui = useUi();
@@ -62,6 +62,9 @@ export function PlanCard({ job, jobId, onRevise, onReset, onStarted, sample = fa
           </details>
         )}
         <div className="row">
+          <button className="btn primary" onClick={onRetry} data-testid="plan-retry">
+            {t('c.retry')}
+          </button>
           <button className="btn" onClick={onReset}>
             <RotateCcw className="ico" />
             {t('plan.discard')}
@@ -142,7 +145,7 @@ export function PlanCard({ job, jobId, onRevise, onReset, onStarted, sample = fa
     <div className="card plan" data-testid="plan-card" aria-busy={running}>
       <div className="row">
         <b style={{ fontWeight: 500, fontSize: 15 }}>{noAi ? t('plan.titleRules') : t('plan.title')}</b>
-        <span className="muted">· {t('plan.read', { n: plan.materials.length, s: Math.max(1, Math.round(plan.planner?.seconds ?? 1)) })}</span>
+        <span className="muted" data-testid="plan-took">· {t('plan.took', { n: plan.materials.length, s: Math.max(1, Math.round(job?.seconds ?? plan.planner?.seconds ?? 1)) })}</span>
         <span className="sp" />
         {running && <span className="muted">{t('plan.revising')}</span>}
       </div>

@@ -430,7 +430,7 @@ export interface SampleInfo {
   duration?: number | null;
   licence?: string;
 }
-export type FailureCode = 'ai-login' | 'ai-quota' | 'ai-timeout' | 'ai-missing' | 'engine' | 'disk' | 'media' | 'unknown';
+export type FailureCode = 'ai-login' | 'ai-quota' | 'ai-timeout' | 'ai-missing' | 'engine' | 'intake' | 'disk' | 'media' | 'unknown';
 export interface PilotFailure {
   state: 'failed';
   code: FailureCode;
