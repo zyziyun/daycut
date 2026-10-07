@@ -213,7 +213,7 @@ describe('bundled runtime', () => {
     expect(runtimeEnv(rt, { VSTUDIO_H264_ENCODER: 'h264_mf', DESK_H264_ENCODER: 'libx264' }).env.VSTUDIO_H264_ENCODER).toBe('h264_mf');
     const win = { ...rt, manifest: { ...rt.manifest, target: 'win32-x64' } };
     expect(runtimeEnv(win, {}).env.VSTUDIO_FFMPEG).toBe(path.join(rt.ffmpegBin, 'ffmpeg.exe'));
-    expect(e.path).toEqual([rt.ffmpegBin]);
+    expect(e.path).toEqual([path.dirname(rt.python), rt.ffmpegBin]); // scripts' `python3` is the bundled one
   });
 
   it('prependPath keeps a single PATH key whatever its case', () => {

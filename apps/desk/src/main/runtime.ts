@@ -53,7 +53,9 @@ export function runtimeEnv(rt: BundledRuntime, env = process.env) {
       VSTUDIO_FFMPEG: path.join(rt.ffmpegBin, `ffmpeg${exe}`),
       VSTUDIO_FFPROBE: path.join(rt.ffmpegBin, `ffprobe${exe}`),
     },
-    path: [rt.ffmpegBin],
+    // the workflow scripts call `python3` / `ffmpeg` by name: the bundled ones, never /usr/bin/python3 (an xcrun shim
+    // that refuses to run inside the App Sandbox, and without the engine's packages anyway)
+    path: [path.dirname(rt.python), rt.ffmpegBin],
   };
 }
 
