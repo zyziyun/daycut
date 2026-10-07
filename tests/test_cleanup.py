@@ -631,3 +631,28 @@ def test_subword_pieces_merge_so_er_is_not_cut_from_english_words():
         dict(word=" er", start=2.0, end=2.2), dict(word="对", start=2.6, end=2.8)])]
     W = cleanup.load_words(dict(segments=segs))
     assert [w["w"] for w in W] == ["非常", "engineer", "导向", "er", "对"]
+
+
+def _char_words(toks, step=0.2):
+    ws, t = [], 0.0
+    for x in toks:
+        ws.append(dict(word=x, start=t, end=t + step - 0.02))
+        t += step
+    return cleanup.load_words(dict(segments=[dict(start=0.0, end=t, text="", words=ws)]))
+
+
+@pytest.mark.parametrize("toks,doubled", [
+    (["人生", "起", "起", "落", "落", "很", "正常"], {"起", "落"}),        # AABB: 起起落落
+    (["来", "来", "回", "回", "跑"], {"来", "回"}),
+    (["不能", "泛", "泛", "而", "谈"], {"泛"}),                             # 泛泛而谈
+])
+def test_deliberate_doubling_is_never_auto_cut_even_tight(toks, doubled):
+    """A real job lost 起起落落 / 泛泛 to `tight` AUTO cuts: whisper splits these words into characters."""
+    E = cleanup.detect(_char_words(toks), profile="tight")
+    auto = {e["text"] for e in E if e["action"] == "auto" and e["kind"] in ("stammer", "repeat")}
+    assert not (auto & doubled), E
+
+
+def test_a_real_stammer_is_still_auto_cut():
+    E = cleanup.detect(_char_words(["我", "我", "觉得", "很", "好"]), profile="tight")
+    assert any(e["action"] == "auto" and e["kind"] == "stammer" and e["text"] == "我" for e in E)

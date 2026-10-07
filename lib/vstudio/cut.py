@@ -412,7 +412,8 @@ def syllables(text):
 
 # Single characters whisper often splits out of a reduplicated word (刚刚, 慢慢, 谢谢): "A A" is the
 # word, not a stutter.
-REDUP_ZH = set("刚慢常天谢好看试想说等稍渐偷悄往人年个宝爸妈哥姐弟妹星明久早轻静默处时样点些每各渐纷频")
+REDUP_ZH = set("刚慢常天谢好看试想说等稍渐偷悄往人年个宝爸妈哥姐弟妹星明久早轻静默处时样点些每各渐纷频"
+               "泛匆暗微略屡区满足白偏仅深浅远隐")   # 泛泛而谈 匆匆 暗暗 微微 略略 屡屡 区区 满满 足足 白白 偏偏 仅仅 深深 ...
 
 
 def suggest_fillers(words, audio=None, fillers=None, drops=(), per_char=0.22):

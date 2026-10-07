@@ -520,6 +520,20 @@ def _stacked_rows(R, cx):
     return out
 
 
+def _single_cjk(w):
+    return len(w["n"]) == 1 and bool(_CJK.search(w["n"]))
+
+
+def _aabb(R, k):
+    """R[k:k+4] reads A A B B (single CJK characters, A != B): an AABB reduplicated word (起起落落, 来来回回,
+    干干净净) that whisper split into characters. Deliberate, never a pair of stammers."""
+    if k + 3 >= len(R):
+        return False
+    a, a2, b, b2 = R[k:k + 4]
+    return (_single_cjk(a) and _single_cjk(b) and a["n"] == a2["n"] and b["n"] == b2["n"] and a["n"] != b["n"]
+            and all(R[i + 1]["t"] - R[i]["te"] <= 0.25 for i in range(k, k + 3)))
+
+
 def _repeat_rows(R, cx):
     out, k = [], 0
     st = cx.st
@@ -543,6 +557,9 @@ def _repeat_rows(R, cx):
             gap = cx.gap(R[last - 1], R[last])
             if u in HESITATION or u in cx.never:
                 k = last + n
+                continue
+            if n == 1 and last == k + 1 and _aabb(R, k):           # 起起落落 / 来来回回: a word, not two stammers
+                k += 4
                 continue
             if n == 1 and (u in REPEAT_OK or u in cut.EMPHASIS or (len(u) == 1 and u in cut.REDUP_ZH)):
                 conf, kind, why = 0.35, "repeat", "doubling that can be deliberate (对对 / very very / 慢慢)"
