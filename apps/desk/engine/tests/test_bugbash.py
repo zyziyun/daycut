@@ -1,7 +1,9 @@
 """Regressions found in the 2026-10 bug bash (qa/BUGS.md)."""
+import json
 import os
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -275,3 +277,59 @@ class EnglishTranscriptWords(unittest.TestCase):
         zh = [dict(w=x, t=i * 0.5, te=i * 0.5 + 0.4) for i, x in enumerate(["我们", "今天", "讲一下", "检索增强生成", "的", "原理"])]
         r = OU.propose(dict(words=zh, duration=3.0), "弹", dict(range=[0.0, 2.9]))
         self.assertEqual(r["proposals"][0]["op"]["params"]["text"], "我们今天讲一下")
+
+
+class RealAppRecording(unittest.TestCase):
+    """Found while recording the real app with the real engine: a run's stale "needs you" status listed a second
+    "A decision is waiting" item, and two answers in a row started two runs (the second one "busy")."""
+
+    def test_a_project_s_stale_needs_you_is_not_an_item(self):
+        from desk_engine import inbox as IB
+        from vstudio.project import inbox as PI
+        d = tempfile.mkdtemp()
+
+        class Hist:
+            def list(self):
+                return dict(items=[dict(id="p1", dir=d, name="P", kind="project", live=dict(
+                    needs_you=True, heartbeat=1.0, message="checkpoint: filler"))])
+
+            def allow_media(self, paths):
+                pass
+        ib = IB.Inbox(tempfile.mkdtemp(), Hist(), InboxPollIsCheap.Runner(), "real")
+        with mock.patch.object(PI, "inbox", return_value=dict(entries=[])):    # every question answered
+            self.assertEqual(ib.list()["items"], [])
+        ib._forget_engine()
+        with mock.patch.object(PI, "inbox", side_effect=RuntimeError("engine down")):
+            self.assertEqual([i["source"] for i in ib.list()["items"]], ["live"])   # no engine: the status says so
+
+    def test_two_answers_in_a_row_start_one_run(self):
+        import threading
+        from desk_engine import pilot
+        d = tempfile.mkdtemp()
+        open(os.path.join(d, "project.yaml"), "w").write("name: p\n")
+
+        class Cli:
+            def json(self_, args, timeout=None):
+                return dict(entries=[]) if args[0] == "inbox" else dict(items=[dict(id="a", state="planned")])
+
+        class R:
+            python, env = "py", {}
+
+            def sibling(self_, mod):
+                return Cli()
+        calls = []
+
+        def spawner(*a, **k):
+            time.sleep(0.2)
+            calls.append(k["args"])
+            rec = dict(pid=os.getpid(), started=time.time(), exit=None)
+            with open(os.path.join(d, pilot.REC), "w") as f:
+                json.dump(rec, f)
+            return rec
+        ts = [threading.Thread(target=pilot.resume_after_answer, args=(R(), d), kwargs=dict(spawner=spawner))
+              for _ in range(2)]
+        for t in ts:
+            t.start()
+        for t in ts:
+            t.join()
+        self.assertEqual(len(calls), 1)
