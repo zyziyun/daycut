@@ -66,9 +66,9 @@ jobs:
           fi
           echo "all 5 signing / notarization secrets are set"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { fetch-depth: 0 } # tags + history for the release notes
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with: { node-version: 22, cache: npm }
 
       - name: Version and tag
@@ -87,7 +87,7 @@ jobs:
           echo "Reelfold $v ($tag), dry run: $DRY_RUN_RELEASE"
 
       - name: Cache Electron downloads
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/Library/Caches/electron
@@ -97,7 +97,7 @@ jobs:
       - run: npm ci
         working-directory: .
       - name: Cache runtime downloads (python, wheels, conda packages)
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: apps/desk/build/.cache
           key: runtime-darwin-arm64-${{ hashFiles('apps/desk/packaging/runtime.lock.json', 'apps/desk/packaging/requirements/*.txt', 'apps/desk/packaging/ffmpeg/*.txt') }}
@@ -150,7 +150,7 @@ jobs:
           done
           ls -lh "$out"
           echo "dir=$out" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: reelfold-${{ steps.version.outputs.version }}-mac-arm64
           path: ${{ steps.files.outputs.dir }}
@@ -211,22 +211,22 @@ jobs:
         shell: bash
         working-directory: apps/desk
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with: { node-version: 22, cache: npm }
       - run: npm ci
         working-directory: .
       - run: npm run lint
       - run: npm run test:unit
       - name: Cache runtime downloads
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: apps/desk/build/.cache
           key: runtime-win32-x64-${{ hashFiles('apps/desk/packaging/runtime.lock.json', 'apps/desk/packaging/requirements/*.txt', 'apps/desk/packaging/ffmpeg/*.txt') }}
           restore-keys: runtime-win32-x64-
       - run: node scripts/runtime/bundle.mjs --target=win32-x64
       - run: npm run dist:win
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: reelfold-win32-x64-unsigned
           retention-days: 7

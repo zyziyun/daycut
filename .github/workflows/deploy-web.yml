@@ -46,13 +46,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # a release event points at the tag; the site is always deployed from main
           ref: ${{ github.event_name == 'release' && github.event.repository.default_branch || '' }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with: { node-version: 22, cache: npm }
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with: { python-version: '3.12', cache: pip, cache-dependency-path: requirements.txt }
 
       - name: check_skill (personal paths / secrets)
@@ -82,7 +82,7 @@ jobs:
       - name: Docs internal links
         run: npm run check:links -w apps/docs
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with: { name: web-dist, path: apps/site/dist, retention-days: 3, if-no-files-found: error }
 
   deploy:
@@ -112,16 +112,16 @@ jobs:
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: steps.secrets.outputs.ready == 'true'
         with:
           ref: ${{ github.event_name == 'release' && github.event.repository.default_branch || '' }}
           sparse-checkout: apps/site/wrangler.jsonc
           sparse-checkout-cone-mode: false
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         if: steps.secrets.outputs.ready == 'true'
         with: { name: web-dist, path: apps/site/dist }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         if: steps.secrets.outputs.ready == 'true'
         with: { node-version: 22 }
       - name: wrangler deploy
