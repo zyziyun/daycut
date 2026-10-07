@@ -6,7 +6,7 @@ import { Check, ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import type { SchedulePlan } from '../../../shared/v04';
 import { fmtDate, fmtList, t } from '../i18n';
 import { href } from '../lib/router';
-import { useChannels } from '../v4/Channels';
+import { useChannels, useChosenPlatforms } from '../v4/Channels';
 import { platformName } from '../v4/Home';
 import { PlatformIcon } from '../v4/PlatformIcon';
 import { Seg } from '../v4/kit';
@@ -15,7 +15,8 @@ import { useUi } from '../v4/ui';
 import { MonthGrid, SlotPicker, WeekGrid, type DragData, type Proposed } from './Board';
 import { DataView } from './DataView';
 import { PostDrawer } from './Drawer';
-import { addDays, base, groupPosts, iso, weekStart, type PostGroup } from './model';
+import { addDays, base, groupPosts, iso, sortIds, weekStart, type PostGroup } from './model';
+import { DueBanner } from './DueBanner';
 import { NlBar } from './NlBar';
 import { PublishOnboarding } from './Onboarding';
 import { clipKey, QueuePanel } from './Queue';
@@ -44,7 +45,8 @@ export function PublishBoard() {
   const ui = useUi();
   const { data, actions, client, reload } = usePublishData();
   const { adapters, channels, reload: reloadChannels } = useChannels();
-  const accounts = useAccounts(adapters, channels);
+  const chosen = useChosenPlatforms();
+  const accounts = useAccounts(adapters, channels, chosen);
   const [view, setViewS] = useState<View>(() => load('pb.view', ['week', 'month', 'data'] as const, 'week'));
   const setView = (v: View) => (setViewS(v), save('pb.view', v));
   const [off, setOff] = useState(0);
@@ -69,7 +71,7 @@ export function PublishBoard() {
 
   const posts = useMemo(() => data?.posts ?? [], [data]);
   const queue = useMemo(() => data?.queue ?? [], [data]);
-  const known = [...new Set([...accounts.connected, ...posts.filter((p) => p.at.slice(0, 10) >= range[0] && p.at.slice(0, 10) <= range[1]).map((p) => base(p.platform))])];
+  const known = sortIds([...new Set([...accounts.connected, ...posts.filter((p) => p.at.slice(0, 10) >= range[0] && p.at.slice(0, 10) <= range[1]).map((p) => base(p.platform))])]);
   const activeFilter = filter !== 'all' && known.includes(filter) ? filter : 'all';
   const targets = activeFilter === 'all' ? accounts.connected : [activeFilter];
   const allGroups = useMemo(() => groupPosts(posts, accounts.connected), [posts, accounts.connected]);
@@ -80,7 +82,7 @@ export function PublishBoard() {
   const toConfirm = inRange.filter((g) => g.on.some((p) => p.state === 'planned')).length;
   const freeTime = targets.length ? accounts.timeOf(targets[0]) : null;
   const countOn = (pf: string) => inRange.reduce((n, g) => n + g.on.filter((p) => base(p.platform) === pf).length, 0);
-  const noAccounts = data !== null && !accounts.connected.length && channels.length === 0 && adapters.length > 0;
+  const noAccounts = data !== null && channels.length === 0 && adapters.length > 0;
 
   const proposed: Proposed[] | null = plan?.ok
     ? Object.values(
@@ -207,6 +209,7 @@ export function PublishBoard() {
           )}
         </header>
 
+        <DueBanner />
         {view !== 'data' && (
           <NlBar ref={nlRef} text={nl} setText={setNl} busy={planBusy} plan={plan} onPreview={() => void preview()} onApply={() => void apply()} onCancel={() => setPlan(null)} />
         )}

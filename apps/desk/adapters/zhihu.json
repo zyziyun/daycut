@@ -47,6 +47,7 @@
     "cover": null
   },
   "publishButton": null,
+  "session": { "cookies": ["z_c0"], "domains": ["zhihu.com", "*.zhihu.com"] },
   "disclosure": {
     "zh": "含 AI 内容时，在「发布设置 → 创作声明」里选「包含 AI 辅助创作」。标题必填（≤ 30 字），简介 ≤ 300 字；话题在单独的「话题」栏里选，不写 #。站外导流会失去优质视频资格。",
     "en": "If AI was used, choose 发布设置 → 创作声明 → 包含AI辅助创作. Title required (<= 30), intro <= 300; topics go in the separate topic field (no #). Off-site links cost the 优质 status."

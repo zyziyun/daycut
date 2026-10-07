@@ -17,13 +17,16 @@ describe('adapter JSON schema', () => {
     );
   });
 
-  it('TikTok + YouTube are fillable (unverified), 小红书 + 抖音 are TODO placeholders', () => {
+  it('TikTok, YouTube, 小红书 and 抖音 are fillable (unverified, tuned from a page capture later)', () => {
     const { adapters } = loadAdapters([dir]);
     const by = Object.fromEntries(adapters.map((a) => [a.id, a]));
     expect(by.tiktok.status).toBe('unverified');
     expect(by['youtube-studio'].status).toBe('unverified');
-    expect(by.xiaohongshu.status).toBe('todo');
-    expect(by.douyin.status).toBe('todo');
+    expect(by.xiaohongshu.status).toBe('unverified');
+    expect(by.douyin.status).toBe('unverified');
+    expect(by.xiaohongshu.fields.title?.maxLength).toBe(20);
+    expect(by.xiaohongshu.session?.cookies.length).toBeGreaterThan(0);
+    expect(by.douyin.success?.urls.length).toBeGreaterThan(0);
     for (const a of adapters) {
       expect(a.disclosure.zh.length).toBeGreaterThan(10);
       expect(a.disclosure.en.length).toBeGreaterThan(10);

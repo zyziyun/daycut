@@ -14,18 +14,23 @@ import { base, type PostGroup } from './model';
 export const SLOT_TIME: Record<string, string> = { x: '09:00', instagram: '18:00', 'wechat-channels': '12:00' };
 
 export interface Accounts {
-  /** platforms with a publishing account, in the shared platform order */
+  /** the platforms she posts to, in the shared platform order: the ones she chose ("Platforms for new projects");
+   * before she chose any, the ones she has a publishing account for */
   connected: string[];
+  /** every platform an adapter can post (for "+ Add platform") */
+  all: string[];
   timeOf: (pf: string) => string;
   accountOf: (pf: string) => ChannelMsg | undefined;
+  adapterOf: (pf: string) => Adapter | undefined;
 }
 
-export function useAccounts(adapters: Adapter[], channels: ChannelMsg[]): Accounts {
+export function useAccounts(adapters: Adapter[], channels: ChannelMsg[], chosen: string[] | null = null): Accounts {
   return useMemo(() => {
     const adapterOf = (pf: string) => adapters.find((a) => a.packagePlatforms.includes(pf));
-    const connected = [
-      ...new Set(adapters.filter((a) => channels.some((c) => c.adapterId === a.id)).map((a) => a.packagePlatforms[0])),
-    ].sort((a, b) => PLATFORM_IDS.indexOf(a) - PLATFORM_IDS.indexOf(b));
+    const order = (a: string, b: string) => PLATFORM_IDS.indexOf(a) - PLATFORM_IDS.indexOf(b);
+    const withAccount = [...new Set(adapters.filter((a) => channels.some((c) => c.adapterId === a.id)).map((a) => a.packagePlatforms[0]))];
+    const connected = (chosen?.length ? [...new Set(chosen.map(base))] : withAccount).sort(order);
+    const all = [...new Set(adapters.flatMap((a) => a.packagePlatforms))].sort(order);
     const accountOf = (pf: string) => {
       const a = adapterOf(base(pf));
       return a ? channels.find((c) => c.adapterId === a.id) : undefined;
@@ -35,8 +40,8 @@ export function useAccounts(adapters: Adapter[], channels: ChannelMsg[]): Accoun
       const c = a && channels.find((x) => x.adapterId === a.id && x.times.length);
       return c?.times[0] ?? SLOT_TIME[base(pf)] ?? '19:00';
     };
-    return { connected, timeOf, accountOf };
-  }, [adapters, channels]);
+    return { connected, all, timeOf, accountOf, adapterOf: (pf: string) => adapterOf(base(pf)) };
+  }, [adapters, channels, chosen]);
 }
 
 export function usePublishData() {
@@ -134,6 +139,22 @@ export function usePublishData() {
           }
         }),
       caption: (p: CalendarPost, text: string | null) => run(() => c().updatePost(p.id, { caption: text })),
+      /** the card's title, on every row of the card (a platform's own title still wins there) - one undo */
+      retitle: (g: PostGroup, title: string) =>
+        run(async () => {
+          const rows = g.posts.filter((p) => p.title !== title);
+          if (!rows.length) return;
+          const before = rows.map((p) => [p.id, p.title] as const);
+          for (const p of rows) await c().updatePost(p.id, { title });
+          ui.toast(t('pl.t.retitled'), {
+            undo: async () => {
+              for (const [id, tt] of before) await c().updatePost(id, { title: tt });
+              reload();
+            },
+          });
+        }),
+      /** one platform's own title (null: back to the card's title) */
+      postTitle: (p: CalendarPost, title: string | null) => run(() => c().updatePost(p.id, { platform_title: title })),
       setState: (p: CalendarPost, state: CalendarPost['state']) => run(() => c().updatePost(p.id, { state })),
       stats: (p: CalendarPost, stats: { views?: number; likes?: number }) => run(() => c().updatePost(p.id, { stats })),
       fillWeek: (start: string, platforms: string[], times: Record<string, string>, clips?: { item: string; clip: string }[]) =>

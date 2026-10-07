@@ -68,6 +68,7 @@ export const ipcSchemas = {
     createPage: z.boolean().optional(),
     createLocalGen: z.boolean().optional(),
     usagePings: z.enum(['on', 'off']).optional(),
+    openAtLogin: z.boolean().optional(),
   }),
   // opt-in anonymous usage counts (main/usage.ts): small integers only, never text
   'usage:status': z.undefined(),
@@ -140,6 +141,15 @@ export const ipcSchemas = {
   }),
   'publish:caption': z.strictObject({ batchId, job: jobId, platform: packageKey }),
   'publish:postedLog': z.strictObject({ batchId: batchId.optional() }),
+  // the publish loop: due posts (ticks the scheduler), fill one scheduled post, capture the open page, official APIs
+  'publish:due': z.undefined(),
+  'publish:fillPost': z.strictObject({ postId: z.string().regex(/^[0-9a-f]{12}$/), account: accountName.optional() }),
+  'publish:capture': z.undefined(),
+  'publish:apiStatus': z.undefined(),
+  'publish:apiClient': z.strictObject({ id: z.literal('youtube'), clientId: z.string().min(10).max(220), clientSecret: z.string().min(8).max(220) }),
+  'publish:apiConnect': z.strictObject({ id: z.literal('youtube') }),
+  'publish:apiDisconnect': z.strictObject({ id: z.literal('youtube'), forgetClient: z.boolean().optional() }),
+  'publish:apiAuto': z.strictObject({ id: z.literal('youtube'), auto: z.boolean() }),
   'assets:status': z.undefined(),
   'assets:install': z.strictObject({ ids: z.array(z.string().regex(/^[a-z0-9-]{1,40}$/)).max(20).optional() }),
   'assets:cancel': z.strictObject({ id: z.string().regex(/^[a-z0-9-]{1,40}$/).optional() }).optional(),
@@ -190,7 +200,7 @@ export function validateIpc<C extends IpcChannel>(channel: C, payload: unknown):
 }
 
 /** Events main -> renderer. */
-export const IPC_EVENTS = ['publish:state', 'publish:fillStep', 'engine:status'] as const;
+export const IPC_EVENTS = ['publish:state', 'publish:fillStep', 'engine:status', 'publish:due', 'publish:posted', 'publish:channels'] as const;
 export type IpcEvent = (typeof IPC_EVENTS)[number];
 
 export function partitionFor(adapter: string, account: string): string {

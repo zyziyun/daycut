@@ -3,9 +3,10 @@
 // the counter, the overflow marked, "Shorten for X"), Back to queue (unschedule, undo; files never touched),
 // Duplicate…, Done.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, CalendarDays, Clock, Copy, CornerUpLeft, ExternalLink, Sparkles, X } from 'lucide-react';
+import { AlertTriangle, CalendarDays, Clock, Copy, CornerUpLeft, ExternalLink, Plus, Sparkles, X } from 'lucide-react';
 import type { CalendarPost } from '../../../shared/v04';
 import { xWeightedLength } from '../../../shared/publish/postCopy';
+import { titleLength } from '../../../shared/publish/postNow';
 import { fmtClock, fmtDate, t } from '../i18n';
 import { go } from '../lib/router';
 import { platformName } from '../v4/Home';
@@ -13,7 +14,7 @@ import { PlatformIcon } from '../v4/PlatformIcon';
 import { Thumb } from '../v4/kit';
 import { useUi } from '../v4/ui';
 import { StatusMark } from './Board';
-import { addDays, base, dayOf, iso, overflowAt, parseWhen, type PostGroup } from './model';
+import { addDays, base, dayOf, iso, overflowAt, parseWhen, sortIds, type PostGroup } from './model';
 import type { Accounts, usePublishData } from './usePublish';
 
 type Actions = ReturnType<typeof usePublishData>['actions'];
@@ -38,13 +39,29 @@ export function PostDrawer({
   const [typed, setTyped] = useState('');
   const [typedErr, setTypedErr] = useState(false);
   const rows = useMemo(() => {
-    const pfs = [...new Set([...accounts.connected, ...g.posts.map((p) => base(p.platform))])];
+    // her platforms + the ones already on this card, in the shared order (international first, then Chinese)
+    const pfs = sortIds([...new Set([...accounts.connected, ...g.posts.map((p) => base(p.platform))])]);
     return pfs.map((pf) => ({ pf, post: g.posts.find((p) => base(p.platform) === pf) ?? null }));
   }, [accounts.connected, g.posts]);
   const onRows = rows.filter((r) => r.post && r.post.enabled !== false) as { pf: string; post: CalendarPost }[];
   const [tab, setTab] = useState<string>(() => onRows.find((r) => r.post.warnings?.some((w) => w.kind === 'caption_too_long'))?.pf ?? onRows[0]?.pf ?? '');
   const cur = onRows.find((r) => r.pf === tab) ?? onRows[0];
   const fixes = new Set(g.warnings.filter((w) => w.kind !== 'slot_clash').map((w) => w.platform)).size;
+  /** the platforms of this card that have a title field, with their limit (the adapter's, else the engine's) */
+  const titleLimits = onRows
+    .map(({ pf, post }) => ({ pf, post, limit: titleLimitOf(pf, post, accounts) }))
+    .filter((x): x is { pf: string; post: CalendarPost; limit: number } => x.limit !== null);
+  const addable = accounts.all.filter((pf) => !rows.some((r) => r.pf === pf));
+  const addPlatform = (e: React.MouseEvent) =>
+    ui.menu(
+      e,
+      addable.map((pf) => ({
+        label: platformName(pf),
+        icon: <PlatformIcon id={pf} size={14} />,
+        testId: `pb-add-${pf}`,
+        run: () => void actions.togglePlatform(g, pf, true, `${g.day}T${accounts.timeOf(pf)}`, platformName(pf)),
+      })),
+    );
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -89,7 +106,7 @@ export function PostDrawer({
         <div className="pb-dclip">
           <Thumb src={g.cover} ratio="3/4" />
           <div className="col" style={{ gap: 6, minWidth: 0 }}>
-            <h3 lang="zh-CN">{g.title}</h3>
+            <TitleEdit g={g} actions={actions} limits={titleLimits} />
             <span className="muted num">{[g.project, g.duration ? fmtClock(g.duration) : null].filter(Boolean).join(' · ')}</span>
             <span className="row" style={{ gap: 6 }}>
               <StatusMark s={g.status} views={g.views} />
@@ -145,7 +162,7 @@ export function PostDrawer({
                 <span className="sp" />
                 {on && w ? (
                   <button className="pb-amber pb-link" onClick={() => setTab(pf)}>
-                    {w.kind === 'caption_too_long' ? t('pb.d.tooLong') : t('pb.d.noCaption')}
+                    {w.kind === 'caption_too_long' ? t('pb.d.tooLong') : w.kind === 'title_too_long' ? t('pl.d.titleTooLong') : t('pb.d.noCaption')}
                   </button>
                 ) : on ? (
                   <span className="muted row" style={{ gap: 6 }}>
@@ -177,6 +194,12 @@ export function PostDrawer({
               </div>
             );
           })}
+          {addable.length > 0 && (
+            <button className="pb-link pb-addpf" onClick={addPlatform} data-testid="pb-where-add">
+              <Plus className="ico" />
+              {t('pl.d.addPlatform')}
+            </button>
+          )}
         </div>
 
         {cur && (
@@ -191,6 +214,10 @@ export function PostDrawer({
                 </button>
               ))}
             </div>
+            {(() => {
+              const tl = titleLimits.find((x) => x.pf === cur.pf);
+              return tl ? <PostTitleEdit key={`t:${cur.post.id}:${cur.post.platform_title ?? cur.post.title}`} post={cur.post} limit={tl.limit} actions={actions} /> : null;
+            })()}
             <CaptionEditor key={cur.post.id} post={cur.post} actions={actions} shorten={shorten} />
           </>
         )}
@@ -316,6 +343,114 @@ function CaptionEditor({ post, actions, shorten }: { post: CalendarPost; actions
           <AlertTriangle className="ico" /> {t('pb.d.clash')}
         </p>
       )}
+    </div>
+  );
+}
+
+/** A platform's title limit for this post: the adapter's title field (none = the platform has no title), else the
+ * engine's platform rule. */
+function titleLimitOf(pf: string, post: CalendarPost, accounts: Accounts): number | null {
+  const a = accounts.adapterOf(pf);
+  if (a) return a.fields.title ? a.fields.title.maxLength ?? post.title_limit ?? null : null;
+  return post.title_limit ?? null;
+}
+
+/** The card's title, edited in place: Enter / leaving the field saves it on every platform of the card (a
+ * platform's own title still wins there); Escape puts it back. Counters for the platforms that limit titles (小红书 20, …). */
+function TitleEdit({ g, actions, limits }: { g: PostGroup; actions: Actions; limits: { pf: string; post: CalendarPost; limit: number }[] }) {
+  const [v, setV] = useState(g.title);
+  const saved = useRef(g.title);
+  useEffect(() => {
+    setV(g.title);
+    saved.current = g.title;
+  }, [g.title]);
+  const commit = () => {
+    const x = v.replace(/\s*\n\s*/g, ' ').trim();
+    if (!x) return setV(saved.current);
+    if (x !== saved.current) {
+      saved.current = x;
+      void actions.retitle(g, x);
+    }
+  };
+  const shared = limits.filter((l) => !l.post.title_custom);
+  return (
+    <div className="col" style={{ gap: 4, minWidth: 0 }}>
+      <input
+        className="pb-title-input"
+        lang="zh-CN"
+        value={v}
+        maxLength={300}
+        onChange={(e) => setV(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur();
+          if (e.key === 'Escape') {
+            e.stopPropagation();
+            setV(saved.current);
+          }
+        }}
+        aria-label={t('pl.d.title')}
+        data-testid="pb-title"
+      />
+      {shared.length > 0 && (
+        <span className="pb-tcount" data-testid="pb-title-counts">
+          {shared.map((l) => {
+            const n = titleLength(l.pf, v.trim());
+            return (
+              <span key={l.pf} className={`num ${n > l.limit ? 'pb-amber' : 'muted'}`} data-pf={l.pf} data-over={n > l.limit}>
+                <PlatformIcon id={l.pf} size={12} /> {fmtNum(n)}/{l.limit}
+              </span>
+            );
+          })}
+        </span>
+      )}
+    </div>
+  );
+}
+
+const fmtNum = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
+
+/** One platform's own title (in its caption tab): typing gives it its own title; "Use the card's title" resets. */
+function PostTitleEdit({ post, limit, actions }: { post: CalendarPost; limit: number; actions: Actions }) {
+  const pf = base(post.platform);
+  const own = post.platform_title ?? post.title;
+  const [v, setV] = useState(own);
+  const saved = useRef(own);
+  const n = titleLength(pf, v.trim());
+  const commit = () => {
+    const x = v.replace(/\s*\n\s*/g, ' ').trim();
+    if (!x) return setV(saved.current);
+    if (x !== saved.current) {
+      saved.current = x;
+      void actions.postTitle(post, x === post.title ? null : x);
+    }
+  };
+  return (
+    <div className="pb-ptitle">
+      <label className="pb-ptitle-l">
+        <span className="muted small">{t('pl.d.titleFor', { pf: platformName(pf) })}</span>
+        <input
+          className={`input ${n > limit ? 'bad' : ''}`}
+          value={v}
+          onChange={(e) => setV(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => e.key === 'Enter' && (e.currentTarget as HTMLInputElement).blur()}
+          data-testid="pb-post-title"
+          data-pf={pf}
+        />
+      </label>
+      <div className="pb-cfoot">
+        <span className={`num ${n > limit ? 'pb-amber' : 'muted'}`} data-testid="pb-title-counter">
+          <b>{fmtNum(n)}</b> / {limit}
+        </span>
+        {pf === 'xiaohongshu' && <span className="muted small">{t('pl.d.xhsCount')}</span>}
+        <span className="sp" />
+        {post.title_custom && (
+          <button className="pb-link muted" onClick={() => void actions.postTitle(post, null)} data-testid="pb-title-reset">
+            {t('pl.d.titleReset')}
+          </button>
+        )}
+      </div>
     </div>
   );
 }

@@ -7,7 +7,7 @@ import { t, tk } from '../i18n';
 import { refreshStatus, rowOf, useAi } from '../lib/ai';
 import { useEngine } from '../lib/engine';
 import { go } from '../lib/router';
-import { adapterName, useChannels } from '../v4/Channels';
+import { adapterName, inUse, useChannels, useChosenPlatforms } from '../v4/Channels';
 import type { Dot } from './registry';
 
 export interface Status {
@@ -44,7 +44,9 @@ export function useStatus(): Status {
   const { info, error } = useEngine();
   const { status, routes } = useAiStatus();
   const assets = useAssets();
-  const { adapters, channels } = useChannels();
+  const { adapters, channels: all } = useChannels();
+  // only the platforms she posts to (Platforms for new projects): an account she does not use never nags
+  const channels = inUse(all, adapters, useChosenPlatforms());
   if (error) return { tone: 'error', title: t('s2.st.engineDown'), body: t('s2.st.engineDownBody'), action: { label: t('s2.st.restart'), run: () => void window.desk.restartEngine().catch(() => undefined) } };
   if (info?.mode === 'mock') return { tone: 'warn', title: t('s2.st.demo'), body: t('s2.st.demoBody'), action: { label: t('s2.st.demoFix'), run: () => (location.hash = '#/settings/advanced') } };
   const def = routes?.routes.default.provider;
@@ -108,7 +110,8 @@ export function useAiDot(): Dot {
 }
 
 export function useAccountsDot(): Dot {
-  const { channels } = useChannels();
+  const { adapters, channels: all } = useChannels();
+  const channels = inUse(all, adapters, useChosenPlatforms());
   if (!channels.length) return null;
   return channels.some((c) => c.login.state === 'out') ? 'warn' : channels.every((c) => c.login.state === 'in') ? 'ok' : null;
 }

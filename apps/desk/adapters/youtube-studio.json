@@ -65,6 +65,7 @@
       "ytcp-button#done-button"
     ]
   },
+  "session": { "cookies": ["LOGIN_INFO", "SID", "__Secure-3PSID"], "domains": ["youtube.com", "*.youtube.com", "google.com", "*.google.com"] },
   "disclosure": {
     "zh": "在「详细信息 → 加工或合成的内容（Altered content）」里如实选择「是」（逼真的 AI 生成/修改内容必须披露）；同时选择「是否为儿童打造」。未通过审计的 API 项目上传会被锁成私密——这里走网页手动发布，不受此限。",
     "en": "Under Details → \"Altered or synthetic content\", answer \"Yes\" when realistic content was made or changed with AI; also set \"Made for kids\". (Unaudited API uploads are forced private - this web flow is not affected.)"

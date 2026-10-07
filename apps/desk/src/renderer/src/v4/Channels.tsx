@@ -15,6 +15,7 @@ import { errText } from './msg';
 import { sortPlatforms } from '../../../shared/platforms';
 import { PlatformIcon } from './PlatformIcon';
 import { useUi } from './ui';
+import { capturePage } from '../publish/BrowserPane';
 
 export const adapterName = (a: Adapter) => (getLang() === 'zh-CN' ? a.nameZh : a.name);
 
@@ -25,6 +26,25 @@ export function LoginPill({ c }: { c: ChannelMsg }) {
       <i className={`dot ${cls}`} /> {t(`ch.state.${c.login.state}`)}
     </span>
   );
+}
+
+/** The platforms she chose (Settings › General › Platforms for new projects), as base ids; null while loading or
+ * when she never chose any (then the platforms she has an account for count). */
+export function useChosenPlatforms(): string[] | null {
+  const [chosen, setChosen] = useState<string[] | null>(null);
+  useEffect(() => {
+    void window.desk
+      .getSettings()
+      .then((s) => setChosen(s.defaultPlatforms?.length ? [...new Set(s.defaultPlatforms.map((p) => p.split(':')[0]))] : null))
+      .catch(() => undefined);
+  }, []);
+  return chosen;
+}
+
+/** Accounts she posts with: on a platform she chose (or every account when she chose none). */
+export function inUse<T extends { adapterId: string }>(channels: T[], adapters: Adapter[], chosen: string[] | null): T[] {
+  if (!chosen?.length) return channels;
+  return channels.filter((c) => adapters.find((a) => a.id === c.adapterId)?.packagePlatforms.some((p) => chosen.includes(p)));
 }
 
 /** Adapters + channels, refreshed when the built-in browser reports a page (the login state may have changed). */
@@ -43,8 +63,11 @@ export function useChannels() {
       if (tmr) clearTimeout(tmr);
       tmr = setTimeout(() => void reload().catch(() => undefined), 3500); // after the page-signal check in main
     });
+    // main saw a login state change (session cookie set / gone, a login page): at once
+    const offLogin = window.desk.on('publish:channels', () => void reload().catch(() => undefined));
     return () => {
       off();
+      offLogin();
       if (tmr) clearTimeout(tmr);
     };
   }, [reload]);
@@ -208,6 +231,9 @@ export function Channels() {
                 ⟳
               </button>
               <span className="url mono">{browserOpen ? `${bstate?.loading ? '… ' : ''}${bstate?.url}` : ''}</span>
+              <button className="btn ghost sm" disabled={!browserOpen} onClick={() => void capturePage(ui)} data-tip={t('pl.capture.hint')} data-testid="capture-page">
+                {t('pl.capture')}
+              </button>
             </div>
             <div className="browser-slot" ref={slot} style={{ flex: 1, minHeight: 520 }} data-testid="channel-slot">
               {!browserOpen && <span>{t('ch.slotHint')}</span>}

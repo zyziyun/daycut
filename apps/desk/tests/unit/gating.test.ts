@@ -10,7 +10,7 @@ const load = (f: string): Adapter => {
   if (!r.ok) throw new Error(r.error);
   return r.adapter;
 };
-const adapters = [load('tiktok.json'), load('xiaohongshu.json')];
+const adapters = [load('tiktok.json'), load('xiaohongshu.json'), load('kwai.json')];
 
 const manifest: Manifest = {
   batch: 'demo',
@@ -55,7 +55,7 @@ describe('manifest-hash gating', () => {
   });
 
   it('refuses TODO adapters', () => {
-    expect(checkFill({ ...req, platform: 'xiaohongshu-full', adapterId: 'xiaohongshu' }, manifest, ok, conf, adapters)).toMatchObject({ ok: false, reason: 'adapter-todo' });
+    expect(checkFill({ ...req, platform: 'kwai-vertical', adapterId: 'kwai' }, { ...manifest, items: [...manifest.items, { ...manifest.items[0], platform: 'kwai-vertical' }] }, ok, conf, adapters)).toMatchObject({ ok: false, reason: 'adapter-todo' });
   });
 
   it('resolves package files only inside the package folder', () => {

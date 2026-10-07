@@ -42,6 +42,7 @@
     "cover": null
   },
   "publishButton": null,
+  "session": { "cookies": ["sessionid"], "domains": ["threads.net", "*.threads.net", "threads.com", "*.threads.com", "instagram.com", "*.instagram.com"] },
   "disclosure": {
     "zh": "Threads 用 Meta 的「AI 信息」标签。正文最多 500 字；每条只有一个话题标签（在编辑框里加，不显示 #），这里不会自动填。视频最长 5 分钟。",
     "en": "Threads uses Meta's \"AI info\" label. Post text up to 500 characters; one topic tag per post (added in the composer, shown without #) - not filled here. Video up to 5 minutes."

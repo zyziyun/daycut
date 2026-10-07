@@ -1,0 +1,26 @@
+<!doctype html><html><head><meta charset="utf-8"><title>mock 抖音创作者中心 upload</title><script src="_common.js"></script></head><body>
+<!-- Hashed class names on purpose. The real page moves to /content/post/video after the file is set. -->
+<div class="semi-nav"><div class="header-user"><span class="name-x1">抖音号 12345678</span></div><button class="b-q2" onclick="window.__sideClicked = true">发布视频</button></div>
+<div id="up"><input type="file" accept="video/mp4,video/x-m4v,video/*" id="f"><span>点击上传 或直接将视频文件拖入此区域</span></div>
+<div id="form" style="display:none">
+  <div class="c-a8"><div class="c-a9">作品标题</div><input class="semi-input" type="text" placeholder="填写作品标题，为作品获得更多流量"></div>
+  <div class="c-b1"><div class="c-b2">作品简介</div><div class="zone-container editor-kit-container" contenteditable="true" data-placeholder="添加作品简介"></div></div>
+  <div class="c-cover">选择封面</div>
+  <div class="c-btns"><button class="button-dhlUZE primary-cECiOJ" onclick="window.__clicked = true">发布</button><button class="button-dhlUZE">取消</button></div>
+</div>
+<script>
+  const f = document.getElementById('f');
+  f.addEventListener('change', () => {
+    window.__file = f.files[0] && f.files[0].name;
+    setTimeout(() => { document.getElementById('up').style.display = 'none'; document.getElementById('form').style.display = 'block'; }, 300);
+  });
+  window.__state = () => ({
+    file: window.__file,
+    title: document.querySelector('#form input').value,
+    desc: document.querySelector('.zone-container').innerText,
+    clicked: __clicked,
+    sideClicked: !!window.__sideClicked,
+    outline: document.querySelector('.primary-cECiOJ').style.outline,
+    sideOutline: document.querySelector('.b-q2').style.outline,
+  });
+</script></body></html>

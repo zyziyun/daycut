@@ -2,26 +2,71 @@
   "id": "douyin",
   "name": "Douyin creator center",
   "nameZh": "抖音创作者中心",
-  "status": "todo",
+  "status": "unverified",
   "lastVerified": null,
   "packagePlatforms": ["douyin"],
   "uploadUrl": "https://creator.douyin.com/creator-micro/content/upload",
   "loginUrl": "https://creator.douyin.com/",
   "allowedHosts": ["douyin.com", "*.douyin.com", "*.douyinpic.com", "*.douyinstatic.com", "*.bytedance.com"],
   "fields": {
-    "file": { "selectors": ["TODO-input[type=\"file\"]"] },
-    "title": { "selectors": ["TODO-title-input"], "kind": "input", "maxLength": 30, "clear": true },
-    "description": { "selectors": ["TODO-description-editor"], "kind": "contenteditable", "maxLength": 1000, "clear": true },
+    "file": {
+      "selectors": ["input[type=\"file\"][accept*=\"video\"]", "input[type=\"file\"][accept*=\"mp4\"]", "input[type=\"file\"]"],
+      "timeoutMs": 30000
+    },
+    "title": {
+      "selectors": [
+        "input[placeholder*=\"填写作品标题\"]",
+        "input[placeholder*=\"作品标题\"]",
+        "input[placeholder*=\"标题\"]",
+        "input:near-text(作品标题)"
+      ],
+      "kind": "input",
+      "maxLength": 30,
+      "clear": true,
+      "timeoutMs": 120000
+    },
+    "description": {
+      "selectors": [
+        ".zone-container[contenteditable=\"true\"]",
+        "[contenteditable=\"true\"][data-placeholder*=\"简介\"]",
+        ".editor-kit-container [contenteditable=\"true\"]",
+        "[contenteditable=\"true\"]:near-text(作品简介)",
+        "[contenteditable=\"true\"]:near-text(作品描述)"
+      ],
+      "kind": "contenteditable",
+      "maxLength": 1000,
+      "clear": true,
+      "timeoutMs": 30000
+    },
     "tags": { "mode": "append-to-description", "format": "#{tag} ", "max": 5 },
     "cover": null
   },
-  "publishButton": null,
+  "publishButton": {
+    "selectors": ["button:has-text(/^\\s*发布\\s*$/)", "[class*=\"button\"]:has-text(/^\\s*发布\\s*$/)"]
+  },
+  "session": {
+    "cookies": ["sessionid", "sessionid_ss", "sid_guard", "sid_tt"],
+    "domains": ["douyin.com", "*.douyin.com"]
+  },
+  "success": {
+    "urls": ["/creator-micro/content/manage", "/content/manage"],
+    "texts": ["发布成功"],
+    "postUrl": "https://www\\.douyin\\.com/video/\\d{8,24}"
+  },
+  "guide": {
+    "zh": "视频上传后页面会跳到发布设置，标题和简介会自动填好。封面请点「选择封面」自己选。最后由你点「发布」。",
+    "en": "After the video uploads the page moves to the post settings; title and description are filled for you. Pick the cover under \"Choose cover\". You press Publish."
+  },
+  "herChoices": {
+    "zh": ["选择封面", "话题：输入 # 后从列表中选", "作品声明（含 AI 生成内容）", "定时发布 / 谁可以看"],
+    "en": ["Cover", "Topics: type # and pick from the list", "Content statement (AI-generated content)", "Scheduled publish / who can see it"]
+  },
   "disclosure": {
     "zh": "含 AI 生成内容时，请在发布页「作品声明」中选择「内容由 AI 生成」（以平台当前选项为准）。",
     "en": "If the video contains AI-generated content, choose the AI-generated declaration under the publish page's content statement."
   },
   "notes": [
-    "TODO: selectors not written yet - fill is disabled; upload by hand in the built-in browser.",
-    "To enable: inspect the upload page, replace the TODO selectors, set status to unverified."
+    "UNVERIFIED selectors, written without a logged-in session: placeholder / text selectors with fallbacks. Tune them from a 'Capture this page' snapshot and set status to verified + lastVerified.",
+    "The upload page moves to /creator-micro/content/post/video once the file is set; the fill waits up to 120 s for the title."
   ]
 }

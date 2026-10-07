@@ -1,7 +1,7 @@
 """Publish calendar (发布): scheduled posts per day + the clips not scheduled yet.
 
 Desk store ``<DESK_DATA_DIR>/calendar.json`` [{id, item, clip, title, platform, at "YYYY-MM-DDTHH:MM", state
-planned|ready|filled|posted, cover, caption?, enabled?, stats?}]. One row = one clip on one platform at one time;
+planned|ready|filled|posted, cover, caption?, enabled?, stats?, platform_title?, url?, posted_at?, via?}]. One row = one clip on one platform at one time;
 the desk groups the rows of one clip on one day into a single card. ``vstudio.project calendar`` (pubcal) is the
 engine's own planner; the desk keeps this store until the two are joined (the desk never posts: the assisted-fill
 browser stops before 发布, ``filled`` = the form is filled and waits for her to press publish).
@@ -9,7 +9,10 @@ browser stops before 发布, ``filled`` = the form is filled and waits for her t
 Every list row also carries what the board shows without asking again: ``status`` (draft | ready | filled | posted),
 ``caption`` (her per-platform text, else the clip's post copy), ``limit`` / ``length`` (the platform's post-text
 limit, counted the platform's way: X weighs CJK as 2) and ``warnings`` [{kind caption_too_long | no_caption |
-slot_clash, platform, ...}]. Unscheduling only removes rows: video files are never touched.
+slot_clash | title_too_long, platform, ...}] plus ``title_limit`` / ``title_length`` (the platform's title rule:
+小红书 counts CJK 1 and latin 0.5). ``title`` is the card's title (the drawer edits it on every row of the card);
+``platform_title`` is her own title for one platform (``title_custom`` says it is set) and wins on that platform. ``posted`` rows may carry the post ``url`` and ``via``
+(assisted | api). Unscheduling only removes rows: video files are never touched.
 """
 import datetime as dt
 import hashlib
@@ -29,6 +32,8 @@ STATUS = dict(planned="draft", ready="ready", filled="filled", posted="posted")
 PLATFORM_RE = re.compile(r"^[a-z][a-z-]{0,30}(:[a-z]{3,12})?$")
 ITEM_RE = re.compile(r"^[0-9a-f]{12}$")
 MAX_CAPTION = 40000
+MAX_TITLE = 300
+URL_RE = re.compile(r"^https://[^\s]{4,2040}$")
 MAX_MANY = 200
 
 # post-text limits when the engine's platform table (vstudio.platform) is not importable: chars, X weighted
@@ -56,6 +61,27 @@ def text_limit(platform, text):
     except Exception:  # noqa: BLE001  (engine not on the path, or a platform it does not know)
         lim = FALLBACK_LIMITS.get(base)
         return (_xlen(text) if base == "x" else len(text or "")), lim
+
+
+# title limits when vstudio.platform is not importable (0 = the platform has no title)
+FALLBACK_TITLES = {"xiaohongshu": 20, "douyin": 55, "tiktok": 55, "youtube": 100, "youtube-shorts": 100, "bilibili": 80,
+                   "wechat-channels": 16, "reddit": 300, "pinterest": 100, "weibo": 30, "zhihu": 30, "dailymotion": 255}
+
+
+def _xhs_len(text):
+    return sum(0.5 if ord(c) < 0x2E80 else 1.0 for c in text or "")
+
+
+def title_limit(platform, title):
+    """(title length counted the platform's way, the platform's title limit or None when it has no title)."""
+    base = (platform or "").split(":")[0]
+    try:
+        from vstudio import platform as PF
+        p = PF.profile(base, use_persona=False)
+        return PF.title_len(p, title or ""), (p.title_max or None)
+    except Exception:  # noqa: BLE001
+        lim = FALLBACK_TITLES.get(base) or None
+        return (_xhs_len(title) if base == "xiaohongshu" else float(len(title or ""))), lim
 
 
 def post_text(post):
@@ -157,17 +183,22 @@ class Calendar:
                     warn.append(dict(kind="no_caption", platform=pf))
                 elif lim and n > lim:
                     warn.append(dict(kind="caption_too_long", platform=pf, n=n, max=lim))
+                tn, tlim = title_limit(r["platform"], r.get("platform_title") or r.get("title") or clip.get("title") or "")
+                if tlim and tn > tlim:
+                    warn.append(dict(kind="title_too_long", platform=pf, n=tn, max=tlim))
                 clash = [x for x in slots.get((pf, r["at"]), []) if x != r["id"]]
                 if clash:
                     warn.append(dict(kind="slot_clash", platform=pf, at=r["at"], other=clash[0]))
+            tn, tlim = title_limit(r["platform"], r.get("platform_title") or r.get("title") or clip.get("title") or r["clip"])
             r.update(status=STATUS.get(r.get("state"), "draft"), enabled=r.get("enabled", True) is not False,
+                     title_limit=tlim, title_length=tn, title_custom=bool(r.get("platform_title")),
                      caption=text, caption_custom=isinstance(own, str), length=n, limit=lim, warnings=warn,
                      project=names.get(r["item"]), duration=clip.get("duration"),
                      cover=r.get("cover") or clip.get("cover"), title=r.get("title") or clip.get("title") or r["clip"])
             out.append(r)
         return out
 
-    def list(self, start=None, days=7):
+    def list(self, start=None, days=7, queue=True):
         allrows = self._rows()
         rows = allrows
         if start:
@@ -176,8 +207,8 @@ class Calendar:
             rows = [r for r in rows if start <= r["at"][:10] < ends]
         cache = {}
         scheduled = {(r["item"], r["clip"]) for r in allrows}
-        queue = []
-        for e in self.history.list()["items"]:
+        out_queue = []
+        for e in (self.history.list()["items"] if queue else []):
             if (e.get("live") or {}).get("state") in ("running", "waiting") or e.get("status") not in (
                     "done", "delivered", "packaged"):
                 continue
@@ -189,13 +220,13 @@ class Calendar:
             for c in cl:
                 if c["state"] in ("done", "approved", "packaged") and not c.get("extra") and \
                         (e["id"], c["id"]) not in scheduled and c.get("files"):
-                    queue.append(dict(item=e["id"], clip=c["id"], title=c["title"], project=e.get("name"),
+                    out_queue.append(dict(item=e["id"], clip=c["id"], title=c["title"], project=e.get("name"),
                                       cover=c.get("cover"), aspects=[f["aspect"] for f in c["files"]],
                                       duration=c.get("duration"), has_post=bool(post_text(c.get("post")))))
-                if len(queue) >= 200:
+                if len(out_queue) >= 200:
                     break
         posts = self.decorate(sorted(rows, key=lambda r: r["at"]), cache, allrows)
-        return dict(posts=posts, queue=queue, at=time.time())
+        return dict(posts=posts, queue=out_queue, at=time.time())
 
     # ------------------------------------------------------------------ write
     def _row(self, b, clips_cache):
@@ -254,7 +285,8 @@ class Calendar:
     def restore(self, posts):
         """Undo of remove_many: the same rows back (same ids, captions, states)."""
         need(isinstance(posts, list) and 0 < len(posts) <= MAX_MANY, f"posts: 1-{MAX_MANY} rows")
-        keep = ("id", "item", "clip", "title", "cover", "platform", "at", "state", "caption", "enabled", "stats")
+        keep = ("id", "item", "clip", "title", "cover", "platform", "at", "state", "caption", "enabled", "stats",
+                "platform_title", "url", "posted_at", "via")
         clean = []
         for p in posts:
             need(isinstance(p, dict) and isinstance(p.get("id"), str) and ITEM_RE.match(p["id"]), "post id")
@@ -290,7 +322,35 @@ class Calendar:
                     row["at"] = b["at"]
                 if b.get("state") is not None:
                     need(b["state"] in STATES, "state: planned | ready | filled | posted")
+                    if b["state"] == "posted" and row.get("state") != "posted":
+                        row["posted_at"] = dt.datetime.now().isoformat(timespec="seconds")
+                    elif b["state"] != "posted":
+                        for k in ("posted_at", "url", "via"):
+                            row.pop(k, None)
                     row["state"] = b["state"]
+                if "url" in b:
+                    u = b["url"]
+                    need(u is None or (isinstance(u, str) and URL_RE.match(u)), "url: https://...")
+                    if u is None:
+                        row.pop("url", None)
+                    else:
+                        row["url"] = u
+                if b.get("via") is not None:
+                    need(b["via"] in ("assisted", "api", "manual"), "via: assisted | api | manual")
+                    row["via"] = b["via"]
+                for key in ("title", "platform_title"):
+                    if key not in b:
+                        continue
+                    tt = b[key]
+                    need(tt is None or (isinstance(tt, str) and 0 < len(tt.strip()) <= MAX_TITLE and "\n" not in tt),
+                         f"{key}: 1-{MAX_TITLE} chars, one line")
+                    if tt is not None:
+                        row[key] = tt.strip()
+                    elif key == "platform_title":
+                        row.pop("platform_title", None)     # back to the card's title
+                    else:                                    # back to the clip's own title
+                        clip = self._clips({}, row["item"]).get(row["clip"]) or {}
+                        row["title"] = clip.get("title") or row["clip"]
                 if "caption" in b:
                     cap = b["caption"]
                     need(cap is None or (isinstance(cap, str) and len(cap) <= MAX_CAPTION), f"caption: up to {MAX_CAPTION} chars")

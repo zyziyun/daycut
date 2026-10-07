@@ -15,6 +15,8 @@ export type Route =
   | { name: 'focus'; id: string }
   | { name: 'calendar' }
   | { name: 'channels' }
+  /** #/publish/post/<id>: "Time to post" for one scheduled post (fill its upload page, she presses Publish) */
+  | { name: 'postNow'; id: string }
   | { name: 'new'; mode?: 'recording' }
   /** #/settings[/<section>[/<sub>]]: a section of the settings registry (settings/registry.ts) */
   | { name: 'settings'; section?: string; sub?: string }
@@ -57,7 +59,7 @@ export function parseRoute(hash: string): Route {
     if (p[2] === 'focus') return { name: 'focus', id: p[1] };
     return { name: 'project', id: p[1], tab: TABS.includes(p[2] as ProjectTab) ? (p[2] as ProjectTab) : undefined };
   }
-  if (p[0] === 'publish') return p[1] === 'accounts' ? { name: 'channels' } : { name: 'calendar' };
+  if (p[0] === 'publish') return p[1] === 'accounts' ? { name: 'channels' } : p[1] === 'post' && p[2] && ID.test(p[2]) ? { name: 'postNow', id: p[2] } : { name: 'calendar' };
   if (p[0] === 'new') return p[1] === 'recording' ? { name: 'new', mode: 'recording' } : { name: 'new' };
   if (p[0] === 'create') return createEnabled() ? { name: 'create', path: p.slice(1, 5) } : { name: 'home' };
   if (p[0] === 'settings') return p[1] === 'ai' ? { name: 'aiAccounts', focus: p[2] } : p[1] ? { name: 'settings', section: p[1], sub: p[2] } : { name: 'settings' };
@@ -90,6 +92,8 @@ export function href(r: Route): string {
       return '#/publish';
     case 'channels':
       return '#/publish/accounts';
+    case 'postNow':
+      return `#/publish/post/${r.id}`;
     case 'aiAccounts':
       return r.focus ? `#/settings/ai/${encodeURIComponent(r.focus)}` : '#/settings/ai';
     case 'new':

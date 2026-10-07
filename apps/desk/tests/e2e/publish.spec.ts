@@ -84,7 +84,8 @@ test('publishing accounts: name, default times, login state, remove', async () =
   await expect(page.getByTestId('channels')).toBeVisible();
   const row = page.locator('[data-testid="channel-platform"][data-adapter="douyin"] [data-testid="channel-row"]');
   await expect(row).toHaveCount(1);
-  await expect(row.getByTestId('channel-state')).toHaveAttribute('data-state', 'unknown');
+  // no session cookie in the account's own (empty, temp-profile) partition: signed out
+  await expect(row.getByTestId('channel-state')).toHaveAttribute('data-state', 'out');
   await row.getByTestId('channel-edit').click();
   await page.getByTestId('channel-name').fill('@我的抖音');
   await page.getByTestId('channel-times').fill('12:30, 20:00');

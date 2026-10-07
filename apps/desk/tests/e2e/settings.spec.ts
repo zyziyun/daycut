@@ -79,7 +79,7 @@ test('Publishing lists the accounts with their state; Sign in goes to the built-
   await page.evaluate(() => window.desk.publish.addAccount('douyin', 'main'));
   await hash('#/settings/accounts');
   await expect(page.getByTestId('settings-channel')).toHaveCount(1);
-  await expect(page.getByTestId('settings-channel').getByTestId('channel-state')).toHaveAttribute('data-state', 'unknown');
+  await expect(page.getByTestId('settings-channel').getByTestId('channel-state')).toHaveAttribute('data-state', 'out'); // no session cookie
   await expect(page.getByTestId('open-channels')).toHaveAttribute('href', '#/publish/accounts');
 });
 

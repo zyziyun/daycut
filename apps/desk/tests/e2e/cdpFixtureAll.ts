@@ -15,17 +15,20 @@ import tiktok from '../../adapters/tiktok.json';
 import wechat from '../../adapters/wechat-channels.json';
 import x from '../../adapters/x.json';
 import youtube from '../../adapters/youtube-studio.json';
+import xiaohongshu from '../../adapters/xiaohongshu.json';
+import douyin from '../../adapters/douyin.json';
+import { CAPTURE_JS } from '../../src/main/publish/capture';
 
 const [mocks, video, cover, postMd, title, shotArg] = process.argv.slice(-6);
 const shots = shotArg === '-' ? '' : shotArg;
-const MOCK: Record<string, string> = { bilibili: 'bilibili', instagram: 'instagram', tiktok: 'tiktok', 'wechat-channels': 'wechat-channels', 'x-web': 'x', 'youtube-studio': 'youtube-studio' };
+const MOCK: Record<string, string> = { bilibili: 'bilibili', instagram: 'instagram', tiktok: 'tiktok', 'wechat-channels': 'wechat-channels', 'x-web': 'x', 'youtube-studio': 'youtube-studio', xiaohongshu: 'xiaohongshu', douyin: 'douyin' };
 
 app.on('window-all-closed', () => undefined);
 app.whenReady().then(async () => {
   app.dock?.hide();
   const md = fs.readFileSync(postMd, 'utf8');
   const out: Record<string, unknown> = {};
-  for (const raw of [bilibili, instagram, tiktok, wechat, x, youtube]) {
+  for (const raw of [bilibili, instagram, tiktok, wechat, x, youtube, xiaohongshu, douyin]) {
     const r = parseAdapter(raw);
     if (!r.ok) throw new Error(r.error);
     const a: Adapter = r.adapter;
@@ -39,6 +42,8 @@ app.whenReady().then(async () => {
     const results = await runFill((m, p) => (sent.push(m), dbg.sendCommand(m, p)), steps);
     dbg.detach();
     const page = await win.webContents.executeJavaScript('window.__state()');
+    // the developer "Capture this page" snapshot of the filled page (what a creator would send to tune selectors)
+    if (a.id === 'xiaohongshu' || a.id === 'douyin') page.capture = ((await win.webContents.executeJavaScriptInIsolatedWorld(1003, [{ code: CAPTURE_JS }])) as { html: string }).html;
     if (shots) fs.writeFileSync(path.join(shots, `mock-${a.id}.png`), (await win.webContents.capturePage()).toPNG());
     out[a.id] = { results, page, methods: [...new Set(sent)] };
     win.destroy();

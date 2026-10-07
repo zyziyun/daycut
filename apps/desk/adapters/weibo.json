@@ -55,6 +55,7 @@
     "cover": null
   },
   "publishButton": null,
+  "session": { "cookies": ["SUB"], "domains": ["weibo.com", "*.weibo.com"] },
   "disclosure": {
     "zh": "含 AI 生成内容时，在「选择内容声明」里选「内容由 AI 生成」。投稿标题至少 6 个字；话题写成 #话题#（两个 #）。个人网站链接常会被提示风险或拦截。",
     "en": "If the video has AI content, choose 选择内容声明 → 内容由 AI 生成. 投稿 titles need at least 6 characters; topics are #话题# (two hashes). Links to personal sites often get a risk prompt or are blocked."

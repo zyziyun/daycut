@@ -7,6 +7,7 @@
 import { usageFr } from './usage';
 import { createFr } from './create';
 import { publishBoardFr } from './publishBoard';
+import { publishLoopFr } from './publishLoop';
 import { settingsV2Fr } from './settingsV2';
 import type { legacyEn } from '../legacy/en';
 import type { legacyEnV02 } from '../legacy/v02';
@@ -1813,4 +1814,4 @@ const releaseFr: Record<keyof typeof releaseEn, string> = {
   'set.developerHint': 'Pour travailler sur Reelfold lui-même. Rien de tout cela n’est nécessaire pour faire des vidéos.',
 };
 
-export const fr: Record<MessageKey, string> = { ...legacyFr, ...legacyFrV02, ...v04Fr, ...aiaccFr, ...publishPlatformsFr, ...chatEditFr, ...channelsFr, ...projectAiFr, ...aboutFr, ...releaseFr, ...publishBoardFr, ...settingsV2Fr, ...createFr, ...uxCoreFr, ...usageFr };
+export const fr: Record<MessageKey, string> = { ...legacyFr, ...legacyFrV02, ...v04Fr, ...aiaccFr, ...publishPlatformsFr, ...chatEditFr, ...channelsFr, ...projectAiFr, ...aboutFr, ...releaseFr, ...publishBoardFr, ...publishLoopFr, ...settingsV2Fr, ...createFr, ...uxCoreFr, ...usageFr };

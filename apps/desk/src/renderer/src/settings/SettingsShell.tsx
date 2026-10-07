@@ -21,7 +21,7 @@ registerSettingsSection({ id: 'general', order: 10, label: () => t('s2.nav.gener
 registerSettingsSection({ id: 'ai', order: 20, label: () => t('s2.nav.ai'), icon: Sparkles, render: (c) => <AiSection key={c.sub ?? ''} {...c} />, useDot: useAiDot, testId: 'snav-ai' });
 // Create page (Labs): Settings › Video generation, only while the Create page is on
 registerSettingsSection({ id: 'video', order: 25, label: () => t('create.set.title'), icon: Clapperboard, render: (c) => <VideoGenSection onSettings={c.onChange} />, useVisible: useCreateEnabled, testId: 'snav-video' });
-registerSettingsSection({ id: 'accounts', order: 30, label: () => t('s2.nav.accounts'), icon: Send, render: () => <PublishingSection />, useDot: useAccountsDot, testId: 'snav-accounts' });
+registerSettingsSection({ id: 'accounts', order: 30, label: () => t('s2.nav.accounts'), icon: Send, render: (c) => <PublishingSection {...c} />, useDot: useAccountsDot, testId: 'snav-accounts' });
 registerSettingsSection({ id: 'advanced', order: 90, label: () => t('s2.nav.advanced'), icon: Wrench, render: (c) => <AdvancedSection {...c} />, useDot: useAdvancedDot, testId: 'snav-advanced' });
 
 const BACK = 'set.back';

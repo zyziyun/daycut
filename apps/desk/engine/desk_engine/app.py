@@ -540,7 +540,8 @@ class Api:
         if parts[:1] == ["calendar"]:
             if parts == ["calendar"] and method == "GET":
                 st = (query.get("start") or [None])[0]
-                return self.calendar.list(start=st)
+                # queue=0: the posts only (the desk's publish clock reads them every 30 s; the queue scans projects)
+                return self.calendar.list(start=st, queue=(query.get("queue") or ["1"])[0] != "0")
             if parts == ["calendar"] and method == "POST":
                 return self.calendar.add(b)
             if parts == ["calendar", "confirm"] and method == "POST":

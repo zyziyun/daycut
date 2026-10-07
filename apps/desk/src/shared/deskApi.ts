@@ -3,6 +3,7 @@ import type { AiRoutes, AuthStatusMsg, KeyName } from './aiRoutes';
 import type { AssetsStatusMsg } from './assets';
 import type { ChannelMsg, ChannelPrefs } from './channels';
 import type { Adapter } from './publish/adapterSchema';
+import type { ApiStatusMsg } from './publish/apiPlatforms';
 import type { Confirmation } from './publish/gating';
 import type { EngineInfo } from './types';
 
@@ -27,6 +28,16 @@ export interface FillStepMsg {
 export type FillResult =
   | { ok: true; results: FillStepMsg[]; job: string; platform: string }
   | { ok: false; reason: string; detail?: string };
+
+export interface DueMsg {
+  ids: string[];
+  /** an official API is handling (or failed) this post */
+  api: Record<string, { status: 'uploading' | 'done' | 'failed'; detail?: string; tries: number } | null>;
+}
+
+export type PostFillMsg =
+  | { ok: true; postId: string; adapterId: string; account: string; results: FillStepMsg[]; video: string; cover: string | null }
+  | { ok: false; reason: 'no-post' | 'posted' | 'no-adapter' | 'adapter-todo' | 'no-account' | 'no-file' | 'file-missing' | 'login-required' | 'page-failed' | 'debugger-busy'; detail?: string; adapterId?: string; account?: string };
 
 export interface PostedEntryMsg {
   batchId: string;
@@ -62,6 +73,8 @@ export interface SettingsMsg {
   createLocalGen?: boolean;
   /** anonymous usage counts: 'on' only after she chose it; unset (never asked) = off */
   usagePings?: 'on' | 'off';
+  openAtLogin?: boolean;
+  publishApi?: Partial<Record<'youtube' | 'tiktok' | 'x' | 'instagram', { auto: boolean }>>;
 }
 
 export interface UsageStatusMsg {
@@ -135,7 +148,7 @@ export interface DeskApi {
   openLogs(): Promise<void>;
   copyText(text: string): Promise<void>;
   getSettings(): Promise<SettingsMsg>;
-  setSettings(patch: Partial<Pick<SettingsMsg, 'enginePath' | 'python' | 'lang' | 'theme' | 'accent' | 'defaultPlatforms' | 'cleanupDays' | 'agencyMode' | 'createPage' | 'createLocalGen' | 'usagePings'>>): Promise<SettingsMsg>;
+  setSettings(patch: Partial<Pick<SettingsMsg, 'enginePath' | 'python' | 'lang' | 'theme' | 'accent' | 'defaultPlatforms' | 'cleanupDays' | 'agencyMode' | 'createPage' | 'createLocalGen' | 'usagePings' | 'openAtLogin'>>): Promise<SettingsMsg>;
   openFiles(kind: 'video' | 'any'): Promise<string[]>;
   /** absolute path of a file dropped on the window (Electron webUtils; '' when unavailable) */
   pathForFile(file: File): string;
@@ -178,6 +191,19 @@ export interface DeskApi {
     markPosted(req: FillRequestMsg & { url?: string }): Promise<PostedEntryMsg>;
     caption(batchId: string, job: string, platform: string): Promise<{ title: string; description: string; tags: string[]; video: string }>;
     postedLog(batchId?: string): Promise<PostedEntryMsg[]>;
+    /** posts whose time has come and that she still has to publish (ticks the scheduler first) */
+    due(): Promise<DueMsg>;
+    /** open the upload page of a scheduled post in its account's session and fill it (never presses Publish) */
+    fillPost(postId: string, account?: string): Promise<PostFillMsg>;
+    /** redacted snapshot of the page open in the built-in browser -> a local file (selector tuning) */
+    capture(): Promise<{ file: string; nodes: number }>;
+    api: {
+      status(): Promise<ApiStatusMsg[]>;
+      setClient(clientId: string, clientSecret: string): Promise<ApiStatusMsg[]>;
+      connect(): Promise<ApiStatusMsg[]>;
+      disconnect(forgetClient?: boolean): Promise<ApiStatusMsg[]>;
+      setAuto(auto: boolean): Promise<ApiStatusMsg[]>;
+    };
   };
   assets: {
     status(): Promise<AssetsStatusMsg & { bundled: boolean }>;
@@ -190,7 +216,7 @@ export interface DeskApi {
     check(): Promise<UpdateStateMsg>;
     install(): Promise<void>;
   };
-  on(event: 'publish:state' | 'publish:fillStep' | 'engine:status' | 'assets:progress' | 'update:state' | 'history:changed' | 'notify:open' | 'term:data' | 'term:exit' | 'ai:routes', cb: (data: unknown) => void): () => void;
+  on(event: 'publish:state' | 'publish:fillStep' | 'engine:status' | 'assets:progress' | 'update:state' | 'history:changed' | 'notify:open' | 'term:data' | 'term:exit' | 'ai:routes' | 'publish:due' | 'publish:posted' | 'publish:channels', cb: (data: unknown) => void): () => void;
   /** watch these folders for live job changes ('history:changed' events); -> the folders watched */
   watchHistory(roots: string[]): Promise<string[]>;
   /** source cleanup: a dialog lists the exact files; only on confirm are they moved to the Trash */

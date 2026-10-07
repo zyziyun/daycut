@@ -2,6 +2,7 @@
 import { usageEn } from './usage';
 import { createEn } from './create';
 import { publishBoardEn } from './publishBoard';
+import { publishLoopEn } from './publishLoop';
 import { settingsV2En } from './settingsV2';
 import { legacyEn } from '../legacy/en';
 import { aiaccEn } from './aiacc';
@@ -572,5 +573,5 @@ export const v04En = {
   'editor.zoomFit': 'Fit',
 };
 
-export const en = { ...legacyEn, ...legacyEnV02, ...v04En, ...aiaccEn, ...publishPlatformsEn, ...chatEditEn, ...channelsEn, ...projectAiEn, ...aboutEn, ...releaseEn, ...publishBoardEn, ...settingsV2En, ...createEn, ...uxCoreEn, ...usageEn };
+export const en = { ...legacyEn, ...legacyEnV02, ...v04En, ...aiaccEn, ...publishPlatformsEn, ...chatEditEn, ...channelsEn, ...projectAiEn, ...aboutEn, ...releaseEn, ...publishBoardEn, ...publishLoopEn, ...settingsV2En, ...createEn, ...uxCoreEn, ...usageEn };
 export type MessageKey = keyof typeof en;

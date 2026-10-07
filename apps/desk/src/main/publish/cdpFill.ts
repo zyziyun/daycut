@@ -2,6 +2,7 @@
 // isolated world per frame (page scripts cannot see or tamper with them); files go through
 // DOM.setFileInputFiles; text is typed with Input.insertText like a keyboard would. Nothing is ever clicked.
 import type { FillStep } from '../../shared/publish/fillPlan';
+import { findJs } from '../../shared/publish/selectors';
 
 export type Send = (method: string, params?: Record<string, unknown>) => Promise<any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
@@ -38,18 +39,11 @@ export function guardedSend(raw: Send): Send {
   };
 }
 
-/** First element matching any selector; for fields to type into, only rendered (visible) ones count - file
- * inputs are usually hidden on purpose, so they are taken as they are. Open shadow roots are searched too
- * (视频号助手 renders its pages inside a micro-frontend's shadow DOM). */
+/** First element matching any selector (CSS or the text forms in shared/publish/selectors); for fields to type
+ * into, only rendered (visible) ones count - file inputs are usually hidden on purpose, so they are taken as they
+ * are. Open shadow roots are searched too (视频号助手 renders its pages inside a micro-frontend's shadow DOM). */
 function findExpr(selectors: string[], visible: boolean): string {
-  const vis = visible ? '&& el.getClientRects().length > 0' : '';
-  return `(() => {
-  const roots = [document];
-  for (let i = 0; i < roots.length && i < 400; i++) {
-    for (const el of roots[i].querySelectorAll('*')) if (el.shadowRoot) roots.push(el.shadowRoot);
-  }
-  for (const s of ${JSON.stringify(selectors)}) { for (const r of roots) { try { for (const el of r.querySelectorAll(s)) { if (el ${vis}) return el; } } catch (e) {} } }
-  return null; })()`;
+  return findJs(selectors, visible);
 }
 
 const FOCUS_FN = `function (clear) {

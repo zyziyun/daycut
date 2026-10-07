@@ -34,6 +34,10 @@ export interface Settings {
   createLocalGen?: boolean;
   /** anonymous usage counts (main/usage.ts): 'on' only after she chose it; unset (never asked) = off */
   usagePings?: 'on' | 'off';
+  /** start hidden at login, with a menu-bar icon, so scheduled posts get their "Time to post" notification */
+  openAtLogin?: boolean;
+  /** official posting APIs she connected: post scheduled rows of that platform through the API at their time */
+  publishApi?: Partial<Record<'youtube' | 'tiktok' | 'x' | 'instagram', { auto: boolean }>>;
 }
 
 const DEFAULTS: Settings = { lang: 'en', accent: 'teal', theme: 'studio-dark', accounts: {}, channels: {}, agencyMode: false, createPage: true, createLocalGen: false, defaultPlatforms: ['xiaohongshu:full'], cleanupDays: 0 };

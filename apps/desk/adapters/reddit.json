@@ -69,6 +69,7 @@
       "shreddit-composer button[type=\"submit\"]"
     ]
   },
+  "session": { "cookies": ["reddit_session"], "domains": ["reddit.com", "*.reddit.com"] },
   "disclosure": {
     "zh": "Reddit 没有 AI 开关：按社区规则在标题或正文里说明 AI 生成。先看版规：很多社区限制或禁止自我推广，发自己的视频要说明是自己做的；不要同时发到很多社区。NSFW / 剧透 / flair 由你选。",
     "en": "Reddit has no AI switch: say it is AI-made in the title or text if the community asks. Read the rules first: many communities limit or ban self-promotion - say it is your own video, and do not post it to many communities at once. NSFW / spoiler / flair are yours to set."

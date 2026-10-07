@@ -31,6 +31,7 @@
   "publishButton": {
     "selectors": ["button[data-e2e=\"post_video_button\"]", "[data-e2e=\"post_video_button\"]"]
   },
+  "session": { "cookies": ["sessionid", "sessionid_ss", "sid_tt"], "domains": ["tiktok.com", "*.tiktok.com"] },
   "disclosure": {
     "zh": "发布前请在「更多选项」里打开「AI 生成内容」开关（内容含 AI 生成或明显修改的画面/声音时必须标注）。检查「谁可以看」与评论/合拍设置。",
     "en": "Before posting, turn on \"AI-generated content\" under \"Show more\" when the video contains AI-generated or significantly edited images or audio. Check \"Who can watch\" and the comment / duet settings."

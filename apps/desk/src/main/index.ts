@@ -23,6 +23,17 @@ import { loadAdapters } from './publish/adapters';
 import { PublishBrowser } from './publish/browser';
 import { assistedFill } from './publish/fill';
 import { PublishStore } from './publish/store';
+import { ApiVault } from './publish/api/vault';
+import { YouTubeApi } from './publish/api/youtube';
+import { CAPTURE_JS, saveCapture, type CaptureResult } from './publish/capture';
+import { probeLogin } from './publish/loginProbe';
+import { fillScheduledPost } from './publish/postFill';
+import { PublishScheduler } from './publish/scheduler';
+import { AppTray, applyLoginItem, startedHidden } from './tray';
+import { copyForPost, pickFile } from '../shared/publish/postNow';
+import { API_PLATFORMS, type ApiStatusMsg } from '../shared/publish/apiPlatforms';
+import { PLATFORMS } from '../shared/platforms';
+import type { CalendarPost } from '../shared/v04';
 import { findBundledRuntime, runtimeEnv, type BundledRuntime } from './runtime';
 import { buildCsp, isAppUrl, isSafeExternal } from './security';
 import { installMediaPermissions, registerRecorderIpc, type Recorder } from './recorder';
@@ -98,6 +109,12 @@ let enginePromise: Promise<EngineInfo> | null = null;
 let runtime: BundledRuntime | null = null;
 let assets: AssetManager;
 let recorder: Recorder | null = null;
+let scheduler: PublishScheduler | null = null;
+let vault: ApiVault;
+let youtube: YouTubeApi;
+let tray: AppTray | null = null;
+/** started by the OS at login: stay in the menu bar until she opens the window */
+const HIDDEN_START = startedHidden();
 
 function dataDir() {
   return path.join(app.getPath('userData'), 'engine-data');
@@ -403,7 +420,7 @@ function hardenDefaultSession() {
   }
 }
 
-function createWindow() {
+function createWindow(route?: string, show = true) {
   win = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -425,7 +442,7 @@ function createWindow() {
     },
   });
   // DESK_HIDE_WINDOW=1: automated tests drive the app without putting windows on the user's screen
-  if (process.env.DESK_HIDE_WINDOW !== '1') win.once('ready-to-show', () => win?.show());
+  if (process.env.DESK_HIDE_WINDOW !== '1' && show) win.once('ready-to-show', () => win?.show());
   const wc = win.webContents;
   wc.setWindowOpenHandler(({ url }) => {
     if (isSafeExternal(url)) void shell.openExternal(url);
@@ -440,7 +457,7 @@ function createWindow() {
   browser = new PublishBrowser(win, (s) => win?.webContents.send('publish:state', s), noteLogin);
   // Load once the engine is up (or failed / is slow) so the page's CSP already carries the engine port;
   // startEngine() reloads the page if the port changes later.
-  const url = IS_DEV ? DEV_URL! : 'app://desk/index.html';
+  const url = (IS_DEV ? DEV_URL! : 'app://desk/index.html') + (route && /^#\/[A-Za-z0-9/_.%?=&-]{0,200}$/.test(route) ? route : '');
   const engineSettled = currentEngine().then(() => {}, () => {});
   void Promise.race([engineSettled, new Promise((r) => setTimeout(r, 15000))]).then(() => win?.loadURL(url));
   win.on('closed', () => {
@@ -466,9 +483,122 @@ function needClient(): EngineClient {
   return client;
 }
 
+/** Show the window on a route (a notification / the menu-bar item was clicked); recreate it when it was closed. */
+function openRoute(route?: string) {
+  if (!win) {
+    createWindow(route);
+    return;
+  }
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+  if (route) win.webContents.send('notify:open', { route });
+}
+
+const MAIN_COPY = {
+  en: { time: (t: string, pf: string) => `Time to post: ${t} → ${pf}`, body: 'Click to open the upload page with everything filled in. You press Publish.', many: (n: number) => `${n} posts are due`, manyBody: (l: string) => l, open: 'Open Reelfold', quit: 'Quit Reelfold', none: 'Nothing due', due: (n: number) => (n === 1 ? '1 post is due' : `${n} posts are due`) },
+  'zh-CN': { time: (t: string, pf: string) => `该发了：${t} → ${pf}`, body: '点击打开上传页，内容都会填好，最后由你点发布。', many: (n: number) => `有 ${n} 条该发了`, manyBody: (l: string) => l, open: '打开千剪', quit: '退出千剪', none: '暂时没有要发的', due: (n: number) => `有 ${n} 条该发了` },
+  fr: { time: (t: string, pf: string) => `C’est l’heure de publier : ${t} → ${pf}`, body: 'Cliquez pour ouvrir la page d’envoi déjà remplie. C’est vous qui publiez.', many: (n: number) => `${n} publications à faire`, manyBody: (l: string) => l, open: 'Ouvrir Reelfold', quit: 'Quitter Reelfold', none: 'Rien à publier', due: (n: number) => (n === 1 ? '1 publication à faire' : `${n} publications à faire`) },
+};
+const mainCopy = () => MAIN_COPY[settings?.get().lang ?? 'en'] ?? MAIN_COPY.en;
+const pfLabel = (platform: string) => {
+  const p = PLATFORMS.find((x) => x.id === platform.split(':')[0]);
+  const l = settings?.get().lang ?? 'en';
+  return p ? (l === 'zh-CN' ? p.labels.zh : l === 'fr' ? p.labels.fr : p.labels.en) : platform;
+};
+
+function notifyDue(due: CalendarPost[]) {
+  if (!Notification.isSupported()) return;
+  const rank = (p: CalendarPost) => PLATFORMS.findIndex((x) => x.id === p.platform.split(':')[0]);
+  const fresh = [...due].sort((a, b) => a.at.localeCompare(b.at) || rank(a) - rank(b));
+  const c = mainCopy();
+  const one = fresh.length === 1 ? fresh[0] : null;
+  const n = new Notification({
+    title: one ? c.time(one.title, pfLabel(one.platform)) : c.many(fresh.length),
+    body: one ? c.body : c.manyBody(fresh.slice(0, 4).map((p) => `${p.title} → ${pfLabel(p.platform)}`).join('\n')),
+    silent: false,
+  });
+  n.on('click', () => openRoute(one ? `#/publish/post/${one.id}?go=1` : '#/publish'));
+  n.show();
+  mainLog(`[scheduler] due: ${fresh.map((p) => `${p.id} ${p.platform} ${p.at}`).join(', ')}`);
+}
+
+function apiStatus(): ApiStatusMsg[] {
+  const st = settings.get();
+  return API_PLATFORMS.map((a) => {
+    const yt = a.id === 'youtube' ? youtube.status() : { hasClient: false, connected: false, connectedAt: null };
+    return { id: a.id, availability: a.availability, platforms: a.platforms, scopes: a.scopes, ...yt, auto: !!st.publishApi?.[a.id]?.auto && yt.connected, keychain: vault.keychain() };
+  });
+}
+
+/** Rendered file + copy of a calendar row, for an API upload. */
+async function apiPublish(p: CalendarPost, publishAt: Date | null): Promise<{ ok: true; url: string | null } | { ok: false; error: string }> {
+  try {
+    const doc = await needClient().clips(p.item);
+    const clip = doc.clips.find((c) => c.id === p.clip);
+    const file = clip ? pickFile(clip.files, p.platform) : null;
+    if (!clip || !file || !fs.existsSync(file.path)) return { ok: false, error: 'the rendered video is missing' };
+    const copy = copyForPost(p, true, [clip.title, clip.post?.title ?? ''].filter(Boolean));
+    const r = await youtube.upload({ file: file.path, title: copy.title, description: copy.description, tags: copy.tags, publishAt });
+    return { ok: true, url: r.url };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+function startScheduler() {
+  scheduler = new PublishScheduler({
+    load: async () => {
+      await currentEngine();
+      return (await needClient().calendar(undefined, { queue: false })).posts;
+    },
+    now: () => new Date(),
+    notify: notifyDue,
+    onChange: (due) => {
+      win?.webContents.send('publish:due', { ids: due.map((p) => p.id) });
+      tray?.update(due);
+    },
+    markPosted: async (p, url, via) => {
+      await needClient().updatePost(p.id, { state: 'posted', via, ...(url ? { url } : {}) });
+      win?.webContents.send('publish:posted', { postId: p.id, url });
+    },
+    api: {
+      wants: (p) => ['youtube', 'youtube-shorts'].includes(p.platform.split(':')[0]) && !!settings.get().publishApi?.youtube?.auto && youtube.status().connected,
+      publish: apiPublish,
+    },
+    stateFile: path.join(app.getPath('userData'), 'publish', 'scheduler.json'),
+    log: mainLog,
+  });
+  scheduler.start();
+}
+
+/** Every publishing account's login state from its own partition's session cookies (the partition the built-in
+ * browser panel uses: persist:<adapter>-<account>). */
+let loginsAt = 0;
+async function refreshLogins(force = false) {
+  if (!force && Date.now() - loginsAt < 5000) return;
+  loginsAt = Date.now();
+  const st = settings.get();
+  await Promise.all(
+    Object.entries(st.accounts).flatMap(([adapterId, list]) =>
+      list.map(async (account) => {
+        const a = adapters.adapters.find((x) => x.id === adapterId);
+        if (!a) return;
+        const state = await probeLogin(session.fromPartition(partitionFor(adapterId, account)), a);
+        if (state) noteLogin(adapterId, account, state);
+      }),
+    ),
+  );
+}
+
 function channelList() {
   const st = settings.get();
-  return listChannels(st.accounts, st.channels, adapters.adapters.map((a) => a.id));
+  // international platforms first, then Chinese, then other languages (the shared registry order)
+  const rank = (a: Adapter) => {
+    const i = PLATFORMS.findIndex((p) => p.id === a.packagePlatforms[0]);
+    return i < 0 ? 1e6 : i;
+  };
+  return listChannels(st.accounts, st.channels, [...adapters.adapters].sort((a, b) => rank(a) - rank(b)).map((a) => a.id));
 }
 
 /** The built-in browser saw an account's page: remember signed in / signed out (no cookies, only the state). */
@@ -479,6 +609,7 @@ function noteLogin(adapterId: string, account: string, state: 'in' | 'out') {
   const cur = st.channels?.[key] ?? {};
   if (cur.login?.state === state && Date.now() - Date.parse(cur.login.at) < 60_000) return;
   settings.set({ channels: { ...(st.channels ?? {}), [key]: { ...cur, login: { state, at: new Date().toISOString() } } } });
+  if (cur.login?.state !== state) win?.webContents.send('publish:channels', { adapterId, account, state });
 }
 
 function adapterById(id: string): Adapter {
@@ -553,6 +684,10 @@ function registerIpc() {
     const next = settings.set(p);
     if (next.lang !== before.lang) menu();
     if (p.usagePings !== undefined && p.usagePings !== before.usagePings) usage?.consentChanged(p.usagePings === 'on');
+    if (p.openAtLogin !== undefined && p.openAtLogin !== before.openAtLogin) {
+      applyLoginItem(p.openAtLogin);
+      tray?.set(p.openAtLogin);
+    }
     // engine path / Python apply on the next engine start: Settings shows "Restart to apply" (one click)
     return { ...settingsMsg(), ...next, createPage: createOn(), firstRunDone: settingsMsg().firstRunDone, resolved: resolvedConfig(), packaged: app.isPackaged, platform: process.platform };
   });
@@ -561,14 +696,25 @@ function registerIpc() {
   handle('publish:adapters', async () => adapters);
   handle('publish:accounts', async () => settings.get().accounts);
   handle('publish:addAccount', async (p) => {
-    adapterById(p.adapterId);
-    const acc = settings.get().accounts;
+    const adapter = adapterById(p.adapterId);
+    const st = settings.get();
+    const acc = st.accounts;
     const list = new Set(acc[p.adapterId] ?? []);
     list.add(p.account);
     acc[p.adapterId] = [...list];
-    return settings.set({ accounts: acc }).accounts;
+    // adding an account = "I post here": the platform joins her platforms (Settings › General), so it shows on the
+    // board and in a post's Where; an account added earlier for a platform she then dropped stays out of the way
+    const pf = adapter.packagePlatforms[0];
+    const mine = st.defaultPlatforms ?? [];
+    const defaultPlatforms = mine.some((x) => x.split(':')[0] === pf) || mine.length >= 8 ? mine : [...mine, pf];
+    const out = settings.set({ accounts: acc, defaultPlatforms }).accounts;
+    await refreshLogins(true); // a session already signed in (the same label added again) counts at once
+    return out;
   });
-  handle('publish:channels', async () => channelList());
+  handle('publish:channels', async () => {
+    await refreshLogins();
+    return channelList();
+  });
   handle('publish:updateChannel', async (p) => {
     adapterById(p.adapterId);
     const st = settings.get();
@@ -642,6 +788,59 @@ function registerIpc() {
     return { ...parsePostCopy(md, item.title), video: video ?? '' };
   });
   handle('publish:postedLog', async (p) => pstore.posted(p.batchId));
+  // ---------------- the publish loop: due posts, fill one scheduled post, page capture, official APIs
+  handle('publish:due', async () => {
+    const r = scheduler ? await scheduler.tick() : { due: [] };
+    return { ids: r.due.map((p) => p.id), api: Object.fromEntries(r.due.map((p) => [p.id, scheduler?.apiState(p.id) ?? null])) };
+  });
+  handle('publish:fillPost', async (p) => {
+    const out = await fillScheduledPost(
+      {
+        client: needClient(),
+        adapters: adapters.adapters,
+        browser: browser!,
+        accounts: settings.get().accounts,
+        onStep: (r) => win?.webContents.send('publish:fillStep', r),
+        onPosted: (postId, url) => {
+          win?.webContents.send('publish:posted', { postId, url });
+          void scheduler?.tick();
+        },
+        log: mainLog,
+      },
+      p,
+    );
+    if (!out.ok) mainLog(`[publish] fill ${p.postId}: ${out.reason}${out.detail ? ` (${out.detail})` : ''}`);
+    return out;
+  });
+  handle('publish:capture', async () => {
+    const e = browser?.active;
+    if (!e) throw new Error('open a platform page first');
+    const c = (await e.view.webContents.executeJavaScriptInIsolatedWorld(1003, [{ code: CAPTURE_JS }])) as CaptureResult;
+    const file = saveCapture(path.join(app.getPath('userData'), 'captures'), e.adapter.id, c);
+    mainLog(`[publish] page capture ${e.adapter.id}: ${file} (${c.nodes} nodes)`);
+    return { file, nodes: c.nodes };
+  });
+  handle('publish:apiStatus', async () => apiStatus());
+  handle('publish:apiClient', async (p) => {
+    youtube.setClient(p.clientId.trim(), p.clientSecret.trim());
+    return apiStatus();
+  });
+  handle('publish:apiConnect', async () => {
+    await youtube.connect();
+    return apiStatus();
+  });
+  handle('publish:apiDisconnect', async (p) => {
+    await youtube.disconnect();
+    if (p.forgetClient) vault.set('youtube', null);
+    settings.set({ publishApi: { ...(settings.get().publishApi ?? {}), youtube: { auto: false } } });
+    return apiStatus();
+  });
+  handle('publish:apiAuto', async (p) => {
+    if (p.auto && !youtube.status().connected) throw new Error('connect YouTube first');
+    settings.set({ publishApi: { ...(settings.get().publishApi ?? {}), [p.id]: { auto: p.auto } } });
+    void scheduler?.tick();
+    return apiStatus();
+  });
 
   // ---------------- first-run assets
   handle('assets:status', async () => ({ ...assets.status(), restartWhenIdle, bundled: resolvedConfig().runtime !== 'system' }));
@@ -720,12 +919,7 @@ function menu() {
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
-    if (win) {
-      if (win.isMinimized()) win.restore();
-      win.focus();
-    }
-  });
+  app.on('second-instance', () => openRoute());
   app.on('web-contents-created', (_e, contents) => {
     contents.on('will-attach-webview', (ev) => ev.preventDefault());
   });
@@ -770,6 +964,8 @@ if (!app.requestSingleInstanceLock()) {
     mainLog(`[assets] dir ${assetsDir()} · engine cache ${engineCacheDir()} · hf hub ${hfHubDir() ?? '-'}`);
     // already on disk (CLI install.sh, Hugging Face cache)? startEngine() scans first, so the first engine has them
     pstore = new PublishStore(path.join(app.getPath('userData'), 'publish'));
+    vault = new ApiVault(app.getPath('userData'), safeStorage);
+    youtube = new YouTubeApi({ vault, openExternal: (u) => shell.openExternal(u), log: mainLog });
     adapters = loadAdapters([path.join(RES, 'adapters'), path.join(app.getPath('userData'), 'adapters')]);
     for (const e of adapters.errors) console.warn(`[adapters] ${e.file}: ${e.error}`);
     hardenDefaultSession();
@@ -777,11 +973,25 @@ if (!app.requestSingleInstanceLock()) {
     registerIpc();
     void startEngine().catch(() => undefined); // failures are reported through engine:status
     void primeAiRoutes?.primeRoutes().catch(() => undefined);
-    createWindow();
+    createWindow(undefined, !HIDDEN_START);
+    void refreshLogins(true).catch(() => undefined);
+    startScheduler();
+    if (process.env.DESK_HIDE_WINDOW !== '1') {
+      tray = new AppTray(
+        brandIcon(ICON_256),
+        () => {
+          const c = mainCopy();
+          return { open: c.open, quit: c.quit, nothingDue: c.none, due: c.due, item: (p: CalendarPost) => `${p.at.slice(11, 16)} ${p.title} → ${pfLabel(p.platform)}` };
+        },
+        { open: (route) => openRoute(route), quit: () => app.quit() },
+      );
+      tray.set(!!settings.get().openAtLogin);
+    }
     if (IDENTITY.migrated) void reportMigratedProfile();
     initUpdater((u) => win?.webContents.send('update:state', u));
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
+      else if (win && !win.isVisible()) openRoute(); // started hidden at login: the Dock icon shows it
     });
   });
   app.on('render-process-gone', (_e, wc, details) => {
@@ -792,7 +1002,8 @@ if (!app.requestSingleInstanceLock()) {
   app.on('window-all-closed', () => {
     // a download in progress keeps the app alive (the downloads finish in the background; reopen from the dock /
     // taskbar); otherwise quit, except on macOS
-    if (process.platform !== 'darwin' && !assets?.busy) app.quit();
+    // the menu-bar icon (Open at login) keeps it running too, so scheduled posts still get their notification
+    if (process.platform !== 'darwin' && !assets?.busy && !tray?.active) app.quit();
   });
   let quitConfirmed = false;
   app.on('before-quit', (e) => {
@@ -813,6 +1024,7 @@ if (!app.requestSingleInstanceLock()) {
       assets.cancel();
     }
     recorder?.closeAll();
+    scheduler?.stop();
     void engine?.stop();
   });
 }

@@ -28,7 +28,7 @@ export function sha256File(p: string): Promise<string> {
   });
 }
 
-function waitLoaded(wc: WebContents, timeoutMs = 30000): Promise<void> {
+export function waitLoaded(wc: WebContents, timeoutMs = 30000): Promise<void> {
   return new Promise((resolve) => {
     if (!wc.isLoading()) return resolve();
     const t = setTimeout(resolve, timeoutMs);
@@ -39,7 +39,7 @@ function waitLoaded(wc: WebContents, timeoutMs = 30000): Promise<void> {
   });
 }
 
-function onUploadPage(url: string, a: Adapter, target = a.uploadUrl): boolean {
+export function onUploadPage(url: string, a: Adapter, target = a.uploadUrl): boolean {
   try {
     const u = new URL(url);
     const up = new URL(target);

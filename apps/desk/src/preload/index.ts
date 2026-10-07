@@ -3,7 +3,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { DeskApi } from '../shared/deskApi';
 
-const EVENTS = new Set(['publish:state', 'publish:fillStep', 'engine:status', 'assets:progress', 'update:state', 'history:changed', 'notify:open', 'term:data', 'term:exit', 'ai:routes']);
+const EVENTS = new Set(['publish:state', 'publish:fillStep', 'engine:status', 'assets:progress', 'update:state', 'history:changed', 'notify:open', 'term:data', 'term:exit', 'ai:routes', 'publish:due', 'publish:posted', 'publish:channels']);
 
 const call = (channel: string, payload?: unknown) => ipcRenderer.invoke(channel, payload);
 
@@ -63,6 +63,16 @@ const api: DeskApi = {
     markPosted: (req) => call('publish:markPosted', req),
     caption: (batchId, job, platform) => call('publish:caption', { batchId, job, platform }),
     postedLog: (batchId) => call('publish:postedLog', { batchId }),
+    due: () => call('publish:due'),
+    fillPost: (postId, account) => call('publish:fillPost', account ? { postId, account } : { postId }),
+    capture: () => call('publish:capture'),
+    api: {
+      status: () => call('publish:apiStatus'),
+      setClient: (clientId, clientSecret) => call('publish:apiClient', { id: 'youtube', clientId, clientSecret }),
+      connect: () => call('publish:apiConnect', { id: 'youtube' }),
+      disconnect: (forgetClient) => call('publish:apiDisconnect', forgetClient ? { id: 'youtube', forgetClient } : { id: 'youtube' }),
+      setAuto: (auto) => call('publish:apiAuto', { id: 'youtube', auto }),
+    },
   },
   on: (event, cb) => {
     if (!EVENTS.has(event)) throw new Error(`unknown event ${event}`);

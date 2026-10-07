@@ -58,5 +58,29 @@ test('every adapter fills its mock upload form and never clicks publish', () => 
   expect(xt.match(/#/g)?.length).toBe(2);
 
   expect(ok('youtube-studio')).toEqual(['file:ok', 'title:ok', 'description:ok', 'cover:ok', 'publish:ok']);
+
+  // 小红书 / 抖音: hashed class names, found by placeholder / text; title cut to the platform limit; only the exact
+  // 发布 button is outlined (not the sidebar's 发布笔记 / 发布视频), nothing clicked
+  for (const id of ['xiaohongshu', 'douyin']) {
+    expect(ok(id), id).toEqual(['file:ok', 'title:ok', 'description:ok', 'publish:ok']);
+    expect(String(r[id].page.outline), id).toContain('solid');
+    expect(r[id].page.sideOutline, id).toBe('');
+    expect(r[id].page.sideClicked, id).toBe(false);
+    // the redacted capture: structure kept, her name / ids / typed text gone
+    const cap = String(r[id].page.capture);
+    expect(cap).toContain('placeholder=');
+    expect(cap).not.toContain('ziyun');
+    expect(cap).not.toContain('95270001234');
+    expect(cap).not.toContain('12345678');
+    expect(cap).not.toContain('副业对我最大的价值');
+    expect(cap).not.toContain(title);
+    expect(cap).toContain('[editor contents removed]');
+  }
+  expect(Array.from(String(r.xiaohongshu.page.title)).length).toBeLessThanOrEqual(20);
+  expect(r.xiaohongshu.page.title).toBe(title);
+  expect(String(r.xiaohongshu.page.desc)).toContain('副业对我最大的价值');
+  expect(String(r.xiaohongshu.page.desc)).toContain('#副业');
+  expect(r.douyin.page.title).toBe(title);
+  expect(String(r.douyin.page.desc).match(/#/g)?.length).toBe(5);
   expect(r['youtube-studio'].page).toMatchObject({ title, cover: 'cover.jpg', kids: false });
 });

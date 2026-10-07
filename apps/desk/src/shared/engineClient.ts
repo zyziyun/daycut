@@ -431,15 +431,28 @@ export class EngineClient {
   undoInbox(keys: string[]) {
     return this.req<{ ok: boolean }>('POST', '/api/inbox/undo', { keys });
   }
-  calendar(start?: string) {
-    return this.req<CalendarDoc>('GET', `/api/calendar${start ? `?start=${encodeURIComponent(start)}` : ''}`);
+  calendar(start?: string, opts: { queue?: boolean } = {}) {
+    const q = [start ? `start=${encodeURIComponent(start)}` : '', opts.queue === false ? 'queue=0' : ''].filter(Boolean).join('&');
+    return this.req<CalendarDoc>('GET', `/api/calendar${q ? `?${q}` : ''}`);
   }
   schedule(body: { item: string; clip: string; platform?: string; at: string }) {
     return this.req<CalendarPost>('POST', '/api/calendar', { ...body, item: bid(body.item) });
   }
   updatePost(
     id: string,
-    body: { at?: string; state?: CalendarPost['state']; remove?: boolean; caption?: string | null; platform?: string; enabled?: boolean; stats?: { views?: number; likes?: number } },
+    body: {
+      at?: string;
+      state?: CalendarPost['state'];
+      remove?: boolean;
+      caption?: string | null;
+      platform?: string;
+      enabled?: boolean;
+      stats?: { views?: number; likes?: number };
+      title?: string | null;
+      platform_title?: string | null;
+      url?: string | null;
+      via?: 'assisted' | 'api' | 'manual';
+    },
   ) {
     return this.req<{ ok: boolean; post: CalendarPost; before: CalendarPost }>('POST', `/api/calendar/${bid(id)}`, body);
   }

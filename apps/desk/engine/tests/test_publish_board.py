@@ -160,6 +160,60 @@ class Board(unittest.TestCase):
         self.assertEqual(nxt["drafts"][0]["at"], "2026-10-12T12:00")
 
 
+class TitleAndPostedTest(Board):
+    def test_title_edit_per_row_limit_and_reset(self):
+        r = self.cal.add_many([dict(item=self.item, clip=A, platform=p, at="2026-10-07T20:00") for p in ("xiaohongshu", "youtube")])
+        xhs, yt = r["ids"]
+        p = next(x for x in self.posts() if x["id"] == xhs)
+        original = p["title"]
+        self.assertEqual(p["title_limit"], 20)
+        self.assertFalse(p["title_custom"])
+        self.cal.update(xhs, dict(title="再小的博主，也是博主"))
+        self.cal.update(yt, dict(platform_title="Even a small creator is a creator"))
+        ps = {x["id"]: x for x in self.posts()}
+        self.assertEqual(ps[xhs]["title"], "再小的博主，也是博主")
+        self.assertEqual(ps[xhs]["title_length"], 10)
+        self.assertTrue(ps[yt]["title_custom"])
+        self.assertEqual(ps[yt]["platform_title"], "Even a small creator is a creator")
+        self.assertEqual(ps[yt]["title"], original)              # the card's title is untouched
+        self.assertEqual(ps[yt]["title_limit"], 100)
+        # 小红书 counts CJK as 1, latin as 0.5: 21 CJK characters are over, 30 latin letters are not
+        self.cal.update(xhs, dict(platform_title="一" * 21))
+        self.assertIn("title_too_long", [w["kind"] for w in next(x for x in self.posts() if x["id"] == xhs)["warnings"]])
+        self.cal.update(xhs, dict(platform_title="a" * 30))
+        self.assertNotIn("title_too_long", [w["kind"] for w in next(x for x in self.posts() if x["id"] == xhs)["warnings"]])
+        with self.assertRaises(BadRequest):
+            self.cal.update(xhs, dict(title="two\nlines"))
+        with self.assertRaises(BadRequest):
+            self.cal.update(xhs, dict(title="   "))
+        self.cal.update(yt, dict(platform_title=None))
+        p = next(x for x in self.posts() if x["id"] == yt)
+        self.assertNotIn("platform_title", p)
+        self.assertFalse(p["title_custom"])
+        self.cal.update(xhs, dict(title=None))
+        self.assertEqual(next(x for x in self.posts() if x["id"] == xhs)["title"], original)
+
+    def test_posts_only_skips_the_queue_scan(self):
+        self.cal.add_many([dict(item=self.item, clip=A, platform="xiaohongshu", at="2026-10-07T20:00")])
+        full, lean = self.cal.list(), self.cal.list(queue=False)
+        self.assertTrue(full["queue"])
+        self.assertEqual(lean["queue"], [])
+        self.assertEqual([p["id"] for p in lean["posts"]], [p["id"] for p in full["posts"]])
+
+    def test_posted_keeps_url_and_via_and_unposting_clears_them(self):
+        pid = self.cal.add_many([dict(item=self.item, clip=A, platform="xiaohongshu", at="2026-10-07T20:00")])["ids"][0]
+        self.cal.update(pid, dict(state="posted", url="https://www.xiaohongshu.com/explore/abc", via="assisted"))
+        p = next(x for x in self.posts() if x["id"] == pid)
+        self.assertEqual((p["state"], p["url"], p["via"]), ("posted", "https://www.xiaohongshu.com/explore/abc", "assisted"))
+        self.assertTrue(p["posted_at"])
+        with self.assertRaises(BadRequest):
+            self.cal.update(pid, dict(url="javascript:alert(1)"))
+        self.cal.update(pid, dict(state="ready"))
+        p = next(x for x in self.posts() if x["id"] == pid)
+        self.assertNotIn("url", p)
+        self.assertNotIn("posted_at", p)
+
+
 class ShortenTest(Board):
     def test_rules_make_it_fit_and_keep_tags(self):
         long = ("Small creators are still creators. I posted for 8 months to 300 followers before one video changed "

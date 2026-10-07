@@ -14,13 +14,15 @@ A post is public and goes out under your name. The last look should be yours: th
 1. **One persistent login per account.** You sign in to each platform once inside the app's browser. The app never stores your passwords or cookies itself, and when it detects a login page it stops filling.
 2. **Fill.** For each post, the app opens the upload page, sets the video file and types the title, body and tags where the page allows it.
 3. **You publish.** You review, set category, audience, AI label, subreddit or board as needed, and press the platform's publish button. The app may outline that button; it never clicks it. There is no way to express a click in an adapter.
-4. **Mark it posted.** You mark the post as posted, with its URL, so your week board stays accurate.
+4. **Posted.** Reelfold watches the page after your click; when the platform confirms, the post is marked posted, with its link when the page shows one. You can also mark it by hand.
+
+Scheduled posts are not just calendar entries: at each post's time Reelfold sends a "Time to post" notification, and clicking it opens the filled upload page. Posts that came due while the app was closed wait at the top of Publish. See [How scheduling works](/docs/guides/scheduling-publishing/#how-scheduling-works).
 
 Each platform's fill steps live in a small adapter file. You can add or override adapters without rebuilding the app, in `~/Library/Application Support/Reelfold/adapters/`. Adapters written without a live session are marked unverified until someone checks them against the real page.
 
 ### Official APIs: opt-in only
 
-A few platforms have an official upload API. Reelfold can use one only when you turn it on explicitly in a series or project file (`uploader: <name>`), with credentials kept outside the repo. Even then, each upload requires the confirm code of the exact package you reviewed. Nothing schedules or posts without that review.
+A few platforms have an official upload API. In the Mac app you can connect one yourself in **Settings › Publishing › Post automatically** (YouTube today, with your own Google Cloud OAuth client; TikTok, X and Instagram are documented but not available yet). Only then do that platform's scheduled posts go out on their own. Sign-in happens on the platform's page in your system browser, the permissions are shown first, and tokens stay in the macOS keychain. With the skill, you turn one on explicitly in a series or project file (`uploader: <name>`), with credentials kept outside the repo, and each upload requires the confirm code of the exact package you reviewed.
 
 ### Without the Mac app
 

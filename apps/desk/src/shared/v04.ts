@@ -469,10 +469,21 @@ export interface CalendarPost {
   project?: string | null;
   duration?: number | null;
   stats?: { views?: number; likes?: number };
+  /** the platform's title limit (null: the platform has no title) and this title's length, counted its way */
+  title_limit?: number | null;
+  title_length?: number;
+  /** her own title for this platform (wins over the card's `title` there); title_custom = it is set */
+  platform_title?: string;
+  title_custom?: boolean;
+  /** posted: the post's page when it was detected / typed, when, and how (her click in the built-in browser, an
+   * official API, or marked by hand) */
+  url?: string;
+  posted_at?: string;
+  via?: 'assisted' | 'api' | 'manual';
 }
 
 export interface PostWarning {
-  kind: 'caption_too_long' | 'no_caption' | 'slot_clash';
+  kind: 'caption_too_long' | 'no_caption' | 'slot_clash' | 'title_too_long';
   platform: string;
   n?: number;
   max?: number;

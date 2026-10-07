@@ -13,6 +13,7 @@ import type { HistoryItem } from '../../../shared/v02';
 import type { CalendarPost, InboxItem, IntakeJob } from '../../../shared/v04';
 import { fmtAgo, fmtTime, getLang, t, tk, type MessageKey } from '../i18n';
 import { useEngine, useLoad } from '../lib/engine';
+import { DueBanner } from '../publish/DueBanner';
 import { useHistory } from '../lib/history';
 import { useInbox } from '../lib/inbox';
 import { inboxHref, itemTarget, postHref, projectHref } from '../lib/nav';
@@ -403,6 +404,7 @@ function Below() {
   const quiet = !inbox.items.length && !runs.length;
   return (
     <>
+      <DueBanner />
       {inbox.items.length > 0 && <HomeInbox items={inbox.items} />}
       {runs.length > 0 && <Running runs={runs} />}
       {quiet && <AllClear next={next ?? null} />}

@@ -58,6 +58,31 @@ export function loginState(url: string, a: Pick<Adapter, 'uploadUrl' | 'loginUrl
   return null;
 }
 
+/** A cookie as Electron's session.cookies.get returns it (only name / domain / expiry are looked at; the value
+ * only for being non-empty - it is never stored, logged or sent anywhere). */
+export interface CookieLike {
+  name: string;
+  value: string;
+  domain?: string;
+  expirationDate?: number;
+}
+
+/** Signed in or out from the account's own session cookies: one of the adapter's session cookies set (not empty,
+ * not expired, on one of its domains) = signed in; none = signed out. null when the adapter names no session
+ * cookie (then only what the pages show counts). Works on any page of the platform (小红书's creator home, not
+ * just the upload page), and without opening a page at all. */
+export function sessionLoginState(cookies: CookieLike[], a: Pick<Adapter, 'session'>, nowSec = Date.now() / 1000): Exclude<LoginState, 'unknown'> | null {
+  const s = a.session;
+  if (!s) return null;
+  const hit = cookies.some((c) => {
+    if (!s.cookies.includes(c.name) || !c.value) return false;
+    if (c.expirationDate !== undefined && c.expirationDate > 0 && c.expirationDate < nowSec) return false;
+    if (s.domains?.length && c.domain && !hostAllowed(c.domain.replace(/^\./, ''), s.domains)) return false;
+    return true;
+  });
+  return hit ? 'in' : 'out';
+}
+
 /** Runs inside the platform page (isolated world): only reads whether the two kinds of form are there. */
 export const PAGE_SIGNALS_JS = `(() => {
   const vis = (el) => el && el.getClientRects().length > 0;

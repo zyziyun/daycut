@@ -10,6 +10,7 @@ import { InboxProvider, useInbox } from './lib/inbox';
 import { agencyMode, setPrefs } from './lib/prefs';
 import { trackUsage } from './lib/usage';
 import { href, useRoute, type Route } from './lib/router';
+import { PostNow } from './publish/PostNow';
 import { Board } from './screens/Board';
 import { ClientDetail } from './screens/ClientDetail';
 import { Clients } from './screens/Clients';
@@ -110,7 +111,7 @@ function Shell({ onSettings }: { onSettings: (s: SettingsMsg) => void }) {
         {createOn && nav({ name: 'create', path: [] }, 'nav.create', r.name === 'create', <CreateNavIcon className="ico" />, 'nav-create')}
         {nav({ name: 'inbox' }, 'nav.inbox', r.name === 'inbox', <InboxIcon className="ico" />, 'nav-inbox', nIn > 0 ? <span className="count you" data-testid="inbox-badge">{nIn}</span> : null)}
         {nav({ name: 'projects' }, 'nav.projects', r.name === 'projects' || inProject, <LayoutGrid className="ico" />, 'nav-projects')}
-        {nav({ name: 'calendar' }, 'nav.publishTop', r.name === 'calendar' || r.name === 'publish' || r.name === 'metrics' || r.name === 'channels', <Calendar className="ico" />, 'nav-publish')}
+        {nav({ name: 'calendar' }, 'nav.publishTop', r.name === 'calendar' || r.name === 'publish' || r.name === 'metrics' || r.name === 'channels' || r.name === 'postNow', <Calendar className="ico" />, 'nav-publish')}
         <div className="grow" />
         <UpdateBadge />
         {nav({ name: 'settings' }, 'nav.settings', r.name === 'clients' || r.name === 'client', <SettingsIcon className="ico" />, 'nav-settings')}
@@ -186,6 +187,8 @@ function Screen({ r, onSettings }: { r: Route; onSettings: (s: SettingsMsg) => v
       return <ClientDetail key={r.slug} slug={r.slug} />;
     case 'channels':
       return <Channels />;
+    case 'postNow':
+      return <PostNow key={r.id} id={r.id} />;
     case 'metrics':
       return <Metrics />;
     case 'welcome':

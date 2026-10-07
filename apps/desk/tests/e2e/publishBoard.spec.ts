@@ -52,6 +52,8 @@ test.beforeAll(async () => {
     for (const a of ['xiaohongshu', 'douyin', 'x-web']) await window.desk.publish.addAccount(a, 'main');
     await window.desk.publish.updateChannel('xiaohongshu', 'main', { name: '@me', times: ['20:00'] });
     await window.desk.publish.updateChannel('douyin', 'main', { times: ['12:30'] });
+    // the board shows the platforms she chose (Platforms for new projects)
+    await window.desk.setSettings({ defaultPlatforms: ['xiaohongshu:full', 'douyin', 'x'] });
   });
   await page.reload();
   await page.waitForURL(/^app:\/\/desk\//);

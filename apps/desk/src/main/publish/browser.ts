@@ -7,6 +7,7 @@ import { partitionFor } from '../../shared/ipc';
 import { hostAllowed, type Adapter } from '../../shared/publish/adapterSchema';
 import { loginState, PAGE_SIGNALS_JS, type PageSignals } from '../../shared/channels';
 import { isLocalEngineRequest, isSafeExternal, REMOTE_ALLOWED_PERMISSIONS } from '../security';
+import { probeLogin } from './loginProbe';
 import { cleanUserAgent } from './ua';
 
 /** Sign-in providers platforms open in popups (kept in the same partition so the login sticks). */
@@ -114,13 +115,19 @@ export class PublishBrowser {
     const emit = () => this.emit();
     // login state: the URL first, then what the page shows a moment after it settled (SPAs redirect late)
     let check: NodeJS.Timeout | null = null;
+    // the session cookies decide when the adapter names them (any page of the platform counts, 小红书's creator home
+    // too); otherwise the URL and what the page shows
     const seen = () => {
       if (check) clearTimeout(check);
-      const url = wc.getURL();
-      const quick = loginState(url, entry.adapter, null);
-      if (quick) this.onLogin(entry.adapter.id, account, quick);
+      void probeLogin(ses, entry.adapter).then((st) => {
+        if (st) return this.onLogin(entry.adapter.id, account, st);
+        const quick = loginState(wc.isDestroyed() ? '' : wc.getURL(), entry.adapter, null);
+        if (quick) this.onLogin(entry.adapter.id, account, quick);
+      });
       check = setTimeout(async () => {
         if (wc.isDestroyed()) return;
+        const byCookie = await probeLogin(ses, entry.adapter);
+        if (byCookie) return this.onLogin(entry.adapter.id, account, byCookie);
         let page: PageSignals | null = null;
         try {
           page = (await wc.executeJavaScriptInIsolatedWorld(1001, [{ code: PAGE_SIGNALS_JS }])) as PageSignals;
@@ -133,6 +140,18 @@ export class PublishBrowser {
     };
     wc.on('did-stop-loading', seen);
     wc.on('did-navigate-in-page', seen);
+    // signing in inside the panel (or its sign-in popup) sets the session cookie: re-check right away
+    let cookieTimer: NodeJS.Timeout | null = null;
+    const names = new Set(adapter.session?.cookies ?? []);
+    const onCookie = (_e: unknown, c: { name: string }) => {
+      if (!names.has(c.name) || wc.isDestroyed()) return;
+      if (cookieTimer) clearTimeout(cookieTimer);
+      cookieTimer = setTimeout(() => void probeLogin(ses, entry.adapter).then((st) => st && this.onLogin(entry.adapter.id, account, st)), 800);
+    };
+    if (names.size) {
+      ses.cookies.on('changed', onCookie);
+      wc.once('destroyed', () => ses.cookies.removeListener('changed', onCookie));
+    }
     for (const ev of ['did-navigate', 'did-navigate-in-page', 'page-title-updated', 'did-start-loading', 'did-stop-loading'] as const) {
       wc.on(ev as 'did-navigate', emit);
     }

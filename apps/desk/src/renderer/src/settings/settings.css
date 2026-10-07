@@ -144,3 +144,4 @@
 .s2-labs > .card { padding: 16px 20px; border-radius: 12px; font-size: 15px; }
 .s2-labs .cr-labs { display: flex; gap: 12px; align-items: flex-start; }
 .s2 .cr-set > a.back { display: none; } /* the settings sub-nav already has Back */
+.s2-row.s2-muted .s2-rlabel, .s2-row.s2-muted .s2-pico { opacity: 0.6; }

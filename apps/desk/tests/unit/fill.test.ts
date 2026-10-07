@@ -28,7 +28,7 @@ function fakePage(dom: Record<string, { file?: boolean }>, frames = 1) {
       case 'Page.createIsolatedWorld':
         return { executionContextId: 1 };
       case 'Runtime.evaluate': {
-        const sels: string[] = JSON.parse(/for \(const s of (\[.*?\])\)/.exec(String(params!.expression))![1]);
+        const sels: string[] = (JSON.parse(/const SELS = (.*);\n/.exec(String(params!.expression))![1]) as { css: string }[]).map((p) => p.css);
         const hit = sels.find((s) => s in dom);
         if (!hit) return { result: { type: 'object', subtype: 'null' } };
         const id = `obj:${hit}`;

@@ -42,6 +42,7 @@
   "publishButton": {
     "selectors": ["span.submit-add", ".submit-add", "button.submit-add"]
   },
+  "session": { "cookies": ["SESSDATA", "DedeUserID"], "domains": ["bilibili.com", "*.bilibili.com"] },
   "disclosure": {
     "zh": "含 AI 生成内容时，在「创作声明」里勾选「该视频使用人工智能合成技术」。分区和「自制 / 转载」由你自己选，应用不会填写。封面会被裁成 16:10、4:3（手机首页）和 16:9：标题放在中间。",
     "en": "For AI-generated content, tick \"This video uses AI synthesis\" under 创作声明 (creator declaration). The category (分区) and 自制 / 转载 (original / repost) are yours to choose; the app never fills them. The cover is cropped to 16:10, 4:3 (phone home feed) and 16:9: keep the headline in the middle."

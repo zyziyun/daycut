@@ -2,26 +2,83 @@
   "id": "xiaohongshu",
   "name": "Xiaohongshu creator center",
   "nameZh": "小红书创作服务平台",
-  "status": "todo",
+  "status": "unverified",
   "lastVerified": null,
   "packagePlatforms": ["xiaohongshu"],
-  "uploadUrl": "https://creator.xiaohongshu.com/publish/publish",
+  "uploadUrl": "https://creator.xiaohongshu.com/publish/publish?from=menu&target=video",
   "loginUrl": "https://creator.xiaohongshu.com/login",
   "allowedHosts": ["xiaohongshu.com", "*.xiaohongshu.com", "*.xhscdn.com"],
   "fields": {
-    "file": { "selectors": ["TODO-input[type=\"file\"]"] },
-    "title": { "selectors": ["TODO-title-input"], "kind": "input", "maxLength": 20, "clear": true },
-    "description": { "selectors": ["TODO-description-editor"], "kind": "contenteditable", "maxLength": 1000, "clear": true },
+    "file": {
+      "selectors": [
+        "input.upload-input[type=\"file\"]",
+        "input[type=\"file\"][accept*=\"mp4\"]",
+        "input[type=\"file\"][accept*=\"video\"]",
+        "input[type=\"file\"]"
+      ],
+      "timeoutMs": 30000
+    },
+    "title": {
+      "selectors": [
+        "input[placeholder*=\"填写标题\"]",
+        "input[placeholder*=\"标题\"]",
+        ".title-container input",
+        ".titleInput input",
+        "input.d-text:near-text(标题)"
+      ],
+      "kind": "input",
+      "maxLength": 20,
+      "clear": true,
+      "timeoutMs": 120000
+    },
+    "description": {
+      "selectors": [
+        "div.tiptap.ProseMirror[contenteditable=\"true\"]",
+        "div.ql-editor[contenteditable=\"true\"]",
+        "#post-textarea",
+        "[contenteditable=\"true\"][data-placeholder*=\"正文\"]",
+        "[contenteditable=\"true\"]:near-text(正文)",
+        ".edit-container [contenteditable=\"true\"]"
+      ],
+      "kind": "contenteditable",
+      "maxLength": 1000,
+      "clear": true,
+      "timeoutMs": 30000
+    },
     "tags": { "mode": "append-to-description", "format": "#{tag} ", "max": 10 },
     "cover": null
   },
-  "publishButton": null,
+  "publishButton": {
+    "selectors": [
+      "button.publishBtn",
+      ".submit button:has-text(/^\\s*发布\\s*$/)",
+      "button:has-text(/^\\s*发布\\s*$/)"
+    ]
+  },
+  "session": {
+    "cookies": ["access-token-creator.xiaohongshu.com", "galaxy_creator_session_id", "galaxy.creator.beaker.session.id", "x-user-id-creator.xiaohongshu.com"],
+    "domains": ["xiaohongshu.com", "*.xiaohongshu.com"]
+  },
+  "success": {
+    "urls": ["/publish/success", "/new/note-manager", "/creator/notemanage", "published=true"],
+    "texts": ["发布成功", "笔记发布成功"],
+    "postUrl": "https://www\\.xiaohongshu\\.com/(explore|discovery/item)/[0-9a-f]{16,32}"
+  },
+  "guide": {
+    "zh": "上传页默认是「上传视频」。视频传完后标题、正文会自动填好；封面请点「设置封面」自己选（可用「在访达中显示封面」）。最后由你点「发布」。",
+    "en": "The page opens on \"Upload video\". Title and text are filled once the video is uploading; pick the cover yourself under \"Set cover\" (\"Show cover in Finder\" helps). You press Publish."
+  },
+  "herChoices": {
+    "zh": ["设置封面（自定义封面需你点开上传）", "话题：输入 # 后从列表中选，正文里的 #标签 只是文字", "内容类型声明 / AI 生成声明", "定时发布（需要的话）", "谁可以看"],
+    "en": ["Cover (open \"Set cover\" and upload yours)", "Topics: type # and pick from the list - the #tags in the text stay plain text", "Content-type / AI-content declaration", "Scheduled publish (if you want it)", "Who can see it"]
+  },
   "disclosure": {
-    "zh": "如内容含 AI 生成画面/声音，请在发布页勾选「内容含 AI 生成」类声明（以平台当前选项为准）。标题 ≤ 20 字。",
-    "en": "If the post contains AI-generated images or audio, tick the platform's AI-content declaration on the publish page. Title max 20 characters."
+    "zh": "如内容含 AI 生成画面/声音，请在发布页勾选「内容含 AI 生成」类声明（以平台当前选项为准）。标题 ≤ 20 字（英文/数字按半个字算）。",
+    "en": "If the post contains AI-generated images or audio, tick the platform's AI-content declaration on the publish page. Title max 20 characters (latin letters and digits count half)."
   },
   "notes": [
-    "TODO: selectors not written yet - fill is disabled. Use the browser to upload by hand: 'Show in Finder' + 'Copy caption'.",
-    "To enable: inspect the publish page, replace the TODO selectors, set status to unverified."
+    "UNVERIFIED selectors, written without a logged-in session: role / text selectors with fallbacks. Tune them from a 'Capture this page' snapshot (Publish -> the browser's ... menu) and set status to verified + lastVerified.",
+    "The title / text fields appear after the video starts uploading: the fill waits up to 120 s for them.",
+    "Custom cover upload needs a click on 设置封面 (the app never clicks), so the cover is left to her."
   ]
 }

@@ -33,6 +33,7 @@
     "cover": null
   },
   "publishButton": null,
+  "session": { "cookies": ["sessionid", "ds_user_id"], "domains": ["instagram.com", "*.instagram.com"] },
   "disclosure": {
     "zh": "视频以 Reels 发布。含逼真的 AI 生成或修改内容时，在「高级设置」里打开「添加 AI 标签」（Meta 也可能自动标注「AI 信息」）。每条最多 5 个话题标签（说明文字和评论合计）。",
     "en": "Video posts are shared as Reels. For photorealistic AI-made or edited content, turn on \"Add AI label\" under Advanced settings (Meta may also add \"AI info\" itself). At most 5 hashtags per post (caption and comments together)."

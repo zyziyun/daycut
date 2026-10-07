@@ -1,0 +1,24 @@
+<!doctype html><html><head><meta charset="utf-8"><title>mock 小红书创作服务平台 publish</title><script src="_common.js"></script></head><body>
+<!-- Hashed class names on purpose: only placeholder / text-based adapter selectors can find the fields. -->
+<div class="x9a1-side"><div class="x9a1-user-info"><span class="x9a1-nick">@ziyun 的小号</span><span>小红书号：95270001234</span></div>
+  <button class="x9a1-btn" onclick="window.__sideClicked = true">发布笔记</button></div>
+<div class="x9a1-tabs"><span class="x9a1-tab active">上传视频</span><span class="x9a1-tab">上传图文</span></div>
+<div class="x9a1-drag"><input class="upload-input" type="file" accept=".mp4,.mov,.flv,.f4v,.mkv,.rm,.rmvb,.m4v,.mpg,.mpeg,.ts" id="f" style="display:none"><button class="x9a1-up">上传视频</button></div>
+<div id="form" style="display:none">
+  <div class="x9a1-c1"><div class="x9a1-c2"><input class="d-text" type="text" placeholder="填写标题会有更多赞哦～" value=""></div><span class="x9a1-count">0/20</span></div>
+  <div class="x9a1-ed"><div class="x9a1-pm" contenteditable="true" data-placeholder="输入正文描述，真诚有价值的分享予人温暖"></div></div>
+  <div class="x9a1-cover"><span>设置封面</span></div>
+  <div class="x9a1-submit"><button class="x9a1-b1 x9a1-red" onclick="window.__clicked = true; history.pushState({}, '', '?published=true'); document.body.insertAdjacentHTML('beforeend', '<div>发布成功</div>')"><span>发布</span></button><button class="x9a1-b1"><span>暂存离开</span></button></div>
+</div>
+<script>
+  __reveal(document.getElementById('f'), 'form');
+  window.__state = () => ({
+    file: window.__file,
+    title: document.querySelector('#form input').value,
+    desc: document.querySelector('[contenteditable]').innerText,
+    clicked: __clicked,
+    sideClicked: !!window.__sideClicked,
+    outline: document.querySelector('.x9a1-red').style.outline,
+    sideOutline: document.querySelector('.x9a1-btn').style.outline,
+  });
+</script></body></html>

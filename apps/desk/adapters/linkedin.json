@@ -49,6 +49,7 @@
       "div[role=\"dialog\"] button[aria-label=\"Post\"]"
     ]
   },
+  "session": { "cookies": ["li_at"], "domains": ["linkedin.com", "*.linkedin.com"] },
   "disclosure": {
     "zh": "LinkedIn 没有单独的 AI 开关：AI 生成或逼真修改的视频请在正文说明。正文最多 3000 字，链接可点；话题标签 1–3 个就够。",
     "en": "LinkedIn has no AI switch: say in the text when the video is AI-made or realistically altered. Post text up to 3,000 characters, links are clickable; 1-3 hashtags are enough."

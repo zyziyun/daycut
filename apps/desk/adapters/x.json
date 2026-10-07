@@ -32,6 +32,7 @@
   "publishButton": {
     "selectors": ["div[role=\"dialog\"] button[data-testid=\"tweetButton\"]", "button[data-testid=\"tweetButton\"]", "button[data-testid=\"tweetButtonInline\"]"]
   },
+  "session": { "cookies": ["auth_token"], "domains": ["x.com", "*.x.com", "twitter.com", "*.twitter.com"] },
   "disclosure": {
     "zh": "X 的帖子没有「AI 生成」开关：视频是 AI 生成或做过逼真的修改时，在文字里说明（X 合成与篡改媒体政策）。普通账号：正文按加权计 280 字（中文、emoji 算 2，链接算 23），视频 ≤ 140 秒 / 512 MB；Premium 更长。发布前检查「谁可以回复」。",
     "en": "X posts have no \"AI-generated\" switch: when the video is AI-made or realistically altered, say so in the text (X synthetic and manipulated media policy). Standard accounts: 280 weighted characters (CJK and emoji count 2, a link 23), video <= 140 s / 512 MB; Premium allows more. Check \"Who can reply\" before posting."

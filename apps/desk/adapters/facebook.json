@@ -46,6 +46,7 @@
     "cover": null
   },
   "publishButton": null,
+  "session": { "cookies": ["c_user"], "domains": ["facebook.com", "*.facebook.com"] },
   "disclosure": {
     "zh": "Meta 的「AI 信息」标签：视频是逼真的 AI 生成或修改时，在发布页打开「AI 信息」（或在文字里说明）。Reel 竖屏 9:16；动态视频 4:5 或 16:9。正文里的链接在动态里可点，在 Reel 文案里不一定。",
     "en": "Meta \"AI info\": when the video is realistic AI-made or AI-altered, turn on the AI label on the post page (or say so in the text). Reels 9:16; feed video 4:5 or 16:9. Links in the text are clickable in feed posts, not reliably in Reels captions."

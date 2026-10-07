@@ -1,6 +1,7 @@
 // Per-platform "assisted fill" adapter files (adapters/*.json). Strict schema: there is deliberately no way to
 // express a click - the app only sets the video file and types text; the creator presses publish herself.
 import { z } from 'zod';
+import { selectorError } from './selectors';
 
 const selectorList = z.array(z.string().min(1).max(300)).min(1).max(12);
 
@@ -74,6 +75,26 @@ export const adapterSchema = z
     notes: z.array(z.string().max(400)).max(20).default([]),
     /** Values the creator types before the page opens (Reddit: the subreddit). Each one picks a different upload
      * page: uploadUrl with {value} replaced (the value must match pattern; the page must stay inside allowedHosts). */
+    /** Signed in = one of these session cookies is set in the account's own partition (only the names are read,
+     * never a value). Checked when the built-in browser loads a page and when the accounts list is shown. */
+    session: z
+      .strictObject({
+        cookies: z.array(z.string().regex(/^[A-Za-z0-9_.:-]{1,80}$/)).min(1).max(10),
+        /** cookie domains that count (default: any domain in this account's partition) */
+        domains: z.array(hostPattern).max(10).optional(),
+      })
+      .nullable()
+      .default(null),
+    /** After she presses publish herself: how the app sees it worked (URL or text on the page, regular expressions)
+     * and where the new post's link is (postUrl: a regex over links on the page / the URL). */
+    success: z
+      .strictObject({
+        urls: z.array(z.string().min(2).max(200)).max(10).default([]),
+        texts: z.array(z.string().min(2).max(120)).max(10).default([]),
+        postUrl: z.string().min(2).max(200).optional(),
+      })
+      .nullable()
+      .default(null),
     params: z
       .array(
         z.strictObject({
@@ -92,6 +113,25 @@ export const adapterSchema = z
     }
     if (a.fields.tags?.mode === 'separate' && !a.fields.tags.selectors) {
       ctx.addIssue({ code: 'custom', message: 'tags.mode separate needs selectors' });
+    }
+    const sels = [
+      ...a.fields.file.selectors,
+      ...(a.fields.title?.selectors ?? []),
+      ...(a.fields.description?.selectors ?? []),
+      ...(a.fields.tags?.selectors ?? []),
+      ...(a.fields.cover?.selectors ?? []),
+      ...(a.publishButton?.selectors ?? []),
+    ];
+    for (const s of sels) {
+      const err = selectorError(s);
+      if (err) ctx.addIssue({ code: 'custom', message: err });
+    }
+    for (const r of [...(a.success?.urls ?? []), ...(a.success?.texts ?? []), ...(a.success?.postUrl ? [a.success.postUrl] : [])]) {
+      try {
+        new RegExp(r);
+      } catch {
+        ctx.addIssue({ code: 'custom', message: `success: bad pattern ${r}` });
+      }
     }
     for (const p of a.params) {
       try {

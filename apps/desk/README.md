@@ -40,3 +40,15 @@ without rebuilding in `~/Library/Application Support/Reelfold/adapters/` (an old
 adapters included, is copied there on the first Reelfold launch). Selectors marked
 `"status": "unverified"` were written without a live session — verify them, then set `verified` + `lastVerified`.
 The app never clicks publish; there is no way to express a click in an adapter.
+Adapters may name `session.cookies` (signed in = one of them is set in the account's own partition
+`persist:<adapter>-<account>`, the one the browser panel uses; names only, values never read out) and `success`
+(URL / text regexes that show her publish click worked, plus `postUrl` for the new post's link). Selectors are CSS or
+`css:has-text(…)` / `css:near-text(…)` (text or `/regex/`) for pages with hashed class names (小红书, 抖音).
+"Capture this page" (browser bar) writes a redacted DOM snapshot to `<userData>/captures/` for tuning selectors.
+
+Publish loop (`src/main/publish/scheduler.ts`): every 30 s (and at launch) due calendar rows get one "Time to post"
+notification; clicking opens `#/publish/post/<id>?go=1`, which fills the upload page (`postFill.ts`) and watches for
+the adapter's success signal -> `posted` (`via: assisted`). Overdue rows show as a banner on Publish / Home.
+Settings › Publishing: Open at login (menu-bar icon, `tray.ts`) and official APIs (`api/youtube.ts`: her own Google
+OAuth client, PKCE + loopback in the system browser, refresh token in safeStorage via `api/vault.ts`; uploads ahead
+with `publishAt`). TikTok / X / Instagram are documented as not available (`shared/publish/apiPlatforms.ts`).

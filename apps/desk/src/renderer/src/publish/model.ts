@@ -3,6 +3,7 @@
 // Pure functions only (unit-tested in tests/unit/publishBoard.test.ts).
 import type { CalendarPost, PostWarning, QueueClip } from '../../../shared/v04';
 import { xWeightedLength } from '../../../shared/publish/postCopy';
+import { PLATFORM_IDS } from '../../../shared/platforms';
 
 export type GroupStatus = 'draft' | 'ready' | 'filled' | 'posted';
 
@@ -31,6 +32,17 @@ export interface PostGroup {
 export const pad = (n: number) => String(n).padStart(2, '0');
 export const iso = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 export const base = (pf: string) => pf.split(':')[0];
+
+/** Platform ids in the shared registry order: international first, then Chinese, then other languages (unknown
+ * ids last, as given). Never insertion or click order. */
+export function pfRank(id: string): number {
+  const i = PLATFORM_IDS.indexOf(base(id));
+  return i < 0 ? 1e6 : i;
+}
+
+export function sortIds(ids: string[]): string[] {
+  return ids.map((id, i) => ({ id, i })).sort((a, b) => pfRank(a.id) - pfRank(b.id) || a.i - b.i).map((x) => x.id);
+}
 
 export function weekStart(d: Date, offset = 0): Date {
   const x = new Date(d);

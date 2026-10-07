@@ -5,6 +5,7 @@ import { Check } from 'lucide-react';
 import { nextAccountLabel } from '../../../shared/channels';
 import type { Adapter } from '../../../shared/publish/adapterSchema';
 import { t } from '../i18n';
+import { sortIds } from './model';
 import { go } from '../lib/router';
 import { platformName } from '../v4/Home';
 import { PlatformIcon } from '../v4/PlatformIcon';
@@ -35,7 +36,7 @@ export function PublishOnboarding({ adapters, onDone }: { adapters: Adapter[]; o
   const go2 = async () => {
     setBusy(true);
     try {
-      for (const pf of sel) {
+      for (const pf of sortIds(sel)) {
         const a = adapters.find((x) => x.packagePlatforms.includes(pf));
         if (a) await window.desk.publish.addAccount(a.id, nextAccountLabel([]));
       }
@@ -53,10 +54,10 @@ export function PublishOnboarding({ adapters, onDone }: { adapters: Adapter[]; o
         <span className="pb-obstep">{t('pb.ob.step')}</span>
         <h2>{t('pb.ob.title')}</h2>
         <p className="muted">{t('pb.ob.body')}</p>
-        <h5>{t('pb.ob.zh')}</h5>
-        <div className="pb-obgrid">{ZH.map(tile)}</div>
         <h5>{t('pb.ob.intl')}</h5>
         <div className="pb-obgrid">{INTL.map(tile)}</div>
+        <h5>{t('pb.ob.zh')}</h5>
+        <div className="pb-obgrid">{ZH.map(tile)}</div>
         <div className="pb-obfoot">
           <p className="muted">{t('pb.ob.foot')}</p>
           <button className="btn primary lg" disabled={!sel.length || busy} onClick={() => void go2()} data-testid="pb-ob-continue">
