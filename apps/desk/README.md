@@ -24,7 +24,9 @@ copied from this checkout's root at build time — no separate engine checkout o
 
 Engine: `engine/server.py` (stdlib HTTP, 127.0.0.1, random port, per-launch token). It finds the engine repo via
 Settings → `VSTUDIO_ENGINE_PATH` → the monorepo root (`../..`) → a sibling `../video-studio` (old layout), and Python via Settings → `DESK_PYTHON` → miniconda/Homebrew.
-`DESK_ENGINE_MOCK=1` forces the in-memory mock engine (also used when `vstudio` cannot be imported).
+Tests only: `DESK_ENGINE_MOCK=1` starts the in-memory test engine from `engine/tests/fixtures/desk_mock` (fake
+batches, rule plans, simulated pilots, fake Create services and AI). A dev build only: a packaged app ignores it and does
+not ship `engine/tests`. A `vstudio` that cannot be imported fails the start with the reason; nothing fake stands in.
 
 AI accounts & models (Settings → AI accounts & models, `#/settings/ai`): provider status from the engine
 (`python -m vstudio.llm auth status --json`; Claude Code is checked with a one-line round-trip, so an expired login
