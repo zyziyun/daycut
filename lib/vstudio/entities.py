@@ -189,7 +189,12 @@ def _words(s):
 
 
 def _glossary_fixes(text, terms):
+    """Glossary spellings, language- and case-aware: whole words only; a case fix only ADDS the term's capitals
+    (redis -> Redis, oauth -> OAuth; never Port -> port at a sentence start); a sound-alike respelling only for a
+    mangled token - in English speech (``en_common.english_text``) a plain lowercase word is what was said
+    (part is never port), in Chinese speech an English term written by ear still is (rewanking -> reranking)."""
     from .proofread import faithful, sound_alike
+    english = EN.english_text(text)
     out, ents = [], []
     toks = list(re.finditer(r"[A-Za-z0-9][A-Za-z0-9&'-]*", text or ""))
     for term in dict.fromkeys(str(t).strip() for t in terms or () if str(t).strip()):
@@ -207,9 +212,13 @@ def _glossary_fixes(text, terms):
                 ents.append(dict(text=span, standard=term, kind="term", source="glossary"))
                 continue
             if span.lower() == term.lower():
-                out.append(dict(**{"from": span, "to": term}, kind="term", source="glossary", guess=False,
-                                why="the glossary spelling (case)"))
+                if any(a.islower() and b.isupper() for a, b in zip(span, term)) and \
+                        not any(a.isupper() and b.islower() for a, b in zip(span, term)):
+                    out.append(dict(**{"from": span, "to": term}, kind="term", source="glossary", guess=False,
+                                    why="the glossary spelling (case)"))
                 continue
+            if english and re.fullmatch(r"[a-z]+(?: [a-z]+)*", span):
+                continue                                  # an English word spelled normally: said as heard
             sc = sound_alike(span, term)
             if sc is not None and sc >= GLOSSARY_MIN and span[:1].lower() == term[:1].lower() \
                     and not faithful(span, term):

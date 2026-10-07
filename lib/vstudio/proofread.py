@@ -20,8 +20,12 @@ mangled English terms such as RM -> LLM). Every proposal goes through ``faithful
 CJK character / latin word) nothing may be deleted or added, each replaced run must sound alike (syllables within
 1, same language, never a swap of function words only such as and -> or), the cue stays >= 60 % similar; rejected
 ones are logged with the reason. A glossary fix never starts from an everyday English word (part -> port:
-``vstudio.en_common``). An accepted term fix is propagated to the job's other cues (never a function word; an
-everyday word only in the same surrounding words); spans the term fixes / glossary fixed are never re-edited. Fillers are never
+``vstudio.en_common``), glossary spellings match whole words and only add a term's capitals, and in English speech
+a plain lowercase word is never respelled by sound (``vstudio.entities``). An LLM fix must be justified word by
+word (``unjustified``): an everyday English word changes only when the ASR was unsure of it (p < ``low_conf``) or
+the second hearing disagrees - never make -> mock on a word heard at p 0.97. An accepted fix is copied to the
+job's other cues only when its target is a glossary term (never one and -> or edit on every cue), each copy
+checked again on its own cue; spans the term fixes / glossary fixed are never re-edited. Fillers are never
 removed here - that is cleanup's job (the audio would still say them).
 
 Providers (``provider``; every call goes through ``vstudio.llm.complete``, tasks ``proofread`` / ``glossary``):
@@ -391,17 +395,59 @@ def diff_spans(before, after):
     return out
 
 
-def _around(text, m):
-    """(previous, next) spoken unit around regex match ``m`` in ``text`` (lowercase, None at the edge)."""
-    if not m:
-        return None
-    pre, post = tokens(text[:m.start()]), tokens(text[m.end():])
-    return (pre[-1].lower() if pre else None, post[0].lower() if post else None)
+def cue_evidence(words, cues):
+    """What the ASR heard in each cue: [{word (lowercase latin word): [p, ...]} or None] - None when no word with
+    a probability falls inside the cue. ``words``: ASR words (``word``/``w``, ``start``/``t``, ``end``/``te``,
+    ``p``/``probability``); a whisper piece without a leading space ("-off", "kito") joins the word before it."""
+    out = [None] * len(cues)
+    prev = None
+    merged = []
+    for w in words or ():
+        raw = str(w.get("word", w.get("w", "")) or "")
+        p = w.get("p", w.get("probability"))
+        t = float(w.get("start", w.get("t", 0.0)) or 0.0)
+        te = float(w.get("end", w.get("te", t)) or t)
+        if prev is not None and raw and not raw[:1].isspace() and re.match(r"[A-Za-z'\-]", raw) and \
+                abs(t - prev["te"]) < 0.05 and re.search(r"[A-Za-z]$", prev["w"]):
+            prev["w"] += raw
+            prev["te"] = te
+            if p is not None:
+                prev["p"] = float(p) if prev["p"] is None else min(prev["p"], float(p))
+            continue
+        prev = dict(w=raw, t=t, te=te, p=None if p is None else float(p))
+        merged.append(prev)
+    for m in merged:
+        if m["p"] is None:
+            continue
+        mid = (m["t"] + m["te"]) / 2
+        i = next((k for k, c in enumerate(cues) if c["start"] - 0.05 <= mid <= c["end"] + 0.05), None)
+        if i is None:
+            continue
+        ev = out[i] if out[i] is not None else {}
+        for lw in EN.latin_words(m["w"]):
+            ev.setdefault(lw.lower(), []).append(m["p"])
+        out[i] = ev
+    return out
 
 
-def _same_around(text, m, need):
-    have = _around(text, m)
-    return all(w is None or w == h for w, h in zip(need, have))
+def unjustified(before, after, evidence, low_conf=0.5):
+    """None when every everyday English word a fix changes has ASR evidence of a mis-hearing, else why not.
+    Per changed latin word of ``before``: a rare token / non-word (Mokito, RM) needs nothing more; an everyday
+    word (part, make, after, client) changes only when the ASR was unsure of it (p < ``low_conf``) or the second
+    hearing did not hear it there. A word heard clearly, or a cue without any confidence data, keeps the word as
+    said. CJK is not judged here (homophones need the LLM + ``faithful``)."""
+    for o, _ in diff_spans(before, after):
+        for w in EN.latin_words(o):
+            if not EN.is_common(w):
+                continue
+            if evidence is None:
+                return f"'{w}' is an everyday English word and no ASR confidence says it was mis-heard"
+            ps = evidence.get(w.lower())
+            if ps is None or min(ps) < low_conf:
+                continue                               # unsure, or the second hearing heard something else
+            return (f"'{w}' was heard clearly (p={min(ps):.2f}) and is an everyday English word "
+                    "(not a mis-hearing)")
+    return None
 
 
 def _valid(text, fx, max_span=12):
@@ -606,13 +652,13 @@ def _drop_contradictions(fixes, rejected, terms=()):
     """``fixes`` without the ones that undo a term or each other: a ``from`` that is itself a glossary term
     (OAuth -> OAuth2 when OAuth is a term), and both halves of a pair A -> B / B -> A; the dropped go to
     ``rejected`` with the reason."""
-    tos = {f["to"].lower() for f in fixes}
     keep = []
     for f in fixes:
         a, b = f["from"].lower(), f["to"].lower()
-        if any(g["from"].lower() == b and g["to"].lower() == a for g in fixes):
+        if any(g is not f and g["from"].lower() == b and g["to"].lower() == a and
+               (a != b or (g["from"] == f["to"] and g["to"] == f["from"])) for g in fixes):
             rejected.append(dict(f, reason=f"contradicts {f['to']} -> {f['from']} (both directions proposed)"))
-        elif a in terms or a in tos:
+        elif a in terms or any(g is not f and g["to"].lower() == a for g in fixes):
             rejected.append(dict(f, reason="'from' is itself a glossary term"))
         else:
             keep.append(f)
@@ -688,8 +734,8 @@ def _overlaps(text, span, kept):
 
 def apply_glossary(text, fixes):
     """Every glossary fix on ``text`` (longest ``from`` first, latin spans only at word boundaries)."""
-    for fx in fixes or ():
-        text = _pattern(fx["from"]).sub(lambda m: fx["to"], text)
+    for fx in sorted(fixes or (), key=lambda f: -len(f["from"])):
+        text = _pattern(fx["from"]).sub(lambda m, to=fx["to"]: to, text)
     return text
 
 
@@ -910,7 +956,9 @@ def proofread(cues, term_fixes=None, provider="auto", model=None, context=None, 
     ``warnings``), (2) ``glossary`` fixes (``build_glossary``: one per source, the same on every job), (3) the
     named-entity check (``vstudio.entities``: CLDR place names / cities / glossary spellings, ``entities``: False
     off, or a locale such as "zh_Hant"), (4) the LLM per-cue pass with the glossary in its context, every fix
-    through ``_valid`` (``faithful``), (5) an accepted LLM fix of a term is applied to the job's other cues holding the same span (``llm-propagated``).
+    through ``_valid`` (``faithful``) and ``unjustified`` (the ASR confidence of ``words`` + ``heard``), (5) an
+    accepted LLM fix whose target is a glossary term is applied to the job's other cues holding the same span
+    (``llm-propagated``, each copy checked on its own cue).
 
     ``cache`` (a ``CueCache`` or a directory): the LLM result of every cue is stored under its normalized ASR text
     + ``context_hash`` (prompt, provider / model, glossary, term fixes, topic); a cue seen before is NOT sent again
@@ -992,6 +1040,7 @@ def proofread(cues, term_fixes=None, provider="auto", model=None, context=None, 
         ctx["glossary"] = list(ctx.get("glossary") or []) + list((glossary or {}).get("terms") or [])
     accepted = []
     cstat = dict(hits=0, sent=0, stored=0)
+    ev = cue_evidence(list(words or ()) + list(heard or ()), C)
     if prov != "none" and C:
         fn = call or _call_llm(prov)
         cc = CueCache(cache) if isinstance(cache, str) else cache
@@ -1002,6 +1051,10 @@ def proofread(cues, term_fixes=None, provider="auto", model=None, context=None, 
             if i in locked:
                 continue
             hit = cc.get(cue_key(raw[i], ch)) if cc is not None else None
+            if hit and any((EN.all_function(o) and EN.all_function(n)) or
+                           unjustified(x.get("before") or "", x.get("after") or "", ev[i], low_conf)
+                           for x in hit.get("changes") or [] for o, n in (x.get("diff") or []) if o and n):
+                hit = None                            # stored before today's rules: asked again, never re-applied
             if hit and hit.get("pre") == c["text"]:
                 c["text"] = hit["text"]
                 for x in hit.get("changes") or []:
@@ -1053,6 +1106,9 @@ def proofread(cues, term_fixes=None, provider="auto", model=None, context=None, 
                 if not bad and loc and any(_overlaps(c["text"], loc, t) and t not in str(fx.get("to") or "")
                                            for t in keep_terms):
                     bad = "touches a term the creator listed (term fixes / glossary)"
+                if not bad and loc:
+                    bad = unjustified(c["text"], _swap(c["text"], c["text"].find(loc), loc, str(fx.get("to") or "")),
+                                      ev[i], low_conf)
                 if bad:
                     rejected.append(dict(i=i, text=c["text"], **{k: fx.get(k) for k in ("from", "to", "why")},
                                          reason=bad))
@@ -1073,20 +1129,19 @@ def proofread(cues, term_fixes=None, provider="auto", model=None, context=None, 
                 cc.put(cue_key(raw[i], ch), dict(pre=pre[i], text=C[i]["text"], changes=mine))
                 cstat["stored"] += 1
     if propagate:
+        # one accepted fix becomes a job-wide fix only when it lands on a glossary term (expir -> expiry stays in its
+        # cue; RM -> LLM with LLM a term goes everywhere); every copy is checked again on its own cue
+        gterms = {t.lower() for t in keep_terms} | {str(t).strip().lower() for t in (glossary or {}).get("terms") or []}
         for o, n, src in dict.fromkeys(accepted):
-            if not _term_like(o) or EN.all_function(o):          # and -> or is never a source-wide fix
+            if not _term_like(o) or EN.all_function(o) or n.strip().lower() not in gterms:
                 continue
             pat = _pattern(o)
-            # an everyday word (part -> port) only where the same words surround it, never on every cue
-            need = _around(src, pat.search(src)) if EN.all_common(o) else None
-            if EN.all_common(o) and not any(need or ()):
-                continue
             for i, c in enumerate(C):
-                m = next((m for m in pat.finditer(c["text"]) if need is None or _same_around(c["text"], m, need)),
-                         None) if i not in locked else None
+                m = pat.search(c["text"]) if i not in locked else None
                 if not m:
                     continue
-                bad = _valid(c["text"], {"from": o, "to": n})
+                bad = _valid(c["text"], {"from": o, "to": n}) or \
+                    unjustified(c["text"], _swap(c["text"], m.start(), o, n), ev[i], low_conf)
                 if bad:
                     rejected.append(dict(i=i, text=c["text"], **{"from": o, "to": n}, source="llm-propagated",
                                          reason=bad))
@@ -1094,7 +1149,7 @@ def proofread(cues, term_fixes=None, provider="auto", model=None, context=None, 
                 before = c["text"]
                 c["text"] = _swap(before, m.start(), o, n)
                 changes.append(dict(i=i, start=c["start"], end=c["end"], before=before, after=c["text"],
-                                    source="llm-propagated", why=f"same fix as elsewhere: {o} -> {n}"))
+                                    source="llm-propagated", why=f"same fix as elsewhere: {o} -> {n} (glossary term)"))
     flag_guesses(changes, gsafe, context)
     fb = next((x.get("fallback") for x in getattr(fn, "results", None) or [] if x and x.get("fallback")), None) \
         if prov != "none" and C else None
@@ -1156,7 +1211,8 @@ class CueCache:
         os.replace(tmp, p)
 
 
-__all__ = ["proofread", "resolve_provider", "low_confidence", "caption_fillers", "words_of", "SYSTEM",
+__all__ = ["proofread", "resolve_provider", "low_confidence", "cue_evidence", "unjustified", "caption_fillers",
+           "words_of", "SYSTEM",
            "GLOSSARY_SYSTEM", "build_glossary", "apply_glossary", "check_glossary_fix", "faithful", "faithful_swap",
            "diff_spans", "tokens", "fix_filler_edges", "flag_guesses", "guess_check", "sound_alike", "pinyin_of",
            "CueCache", "cue_key", "context_hash", "norm_cue"]

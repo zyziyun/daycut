@@ -71,18 +71,23 @@ def test_function_word_swaps_are_rejected_and_never_propagated():
     assert any("function words" in r["reason"] for r in res["rejected"])
 
 
-def test_a_common_word_fix_propagates_only_in_the_same_context():
+def test_a_fix_propagates_only_to_a_glossary_term_and_needs_evidence_per_cue():
     cues = [dict(start=0, end=1, text="we open part 8080 here"), dict(start=1, end=2, text="then open part 8080 again"),
             dict(start=2, end=3, text="the first part of the class"), dict(start=3, end=4, text="Chunk the doc in trunking mode"),
             dict(start=4, end=5, text="trunking is next")]
+    heard = [dict(word=" part", start=0.4, end=0.6, p=0.3), dict(word=" part", start=1.4, end=1.6, p=0.95),
+             dict(word=" part", start=2.4, end=2.6, p=0.99)]
 
     def llm(system, prompt, model):
         return json.dumps({"fixes": [{"i": 0, "from": "part", "to": "port"},
                                      {"i": 3, "from": "trunking", "to": "chunking"}]}), {"input": 1, "output": 1}
-    res = PR.proofread(cues, call=llm, passes=1, entities=False)
+    res = PR.proofread(cues, call=llm, passes=1, entities=False, heard=heard, context=dict(glossary=["port"]))
     texts = [c["text"] for c in res["cues"]]
-    assert texts[:3] == ["we open port 8080 here", "then open port 8080 again", "the first part of the class"]
-    assert texts[4] == "chunking is next"                       # a rare token still propagates everywhere
+    # cue 0: the ASR was unsure of "part" -> port; cues 1-2 heard "part" clearly: a copy is refused there
+    assert texts[:3] == ["we open port 8080 here", "then open part 8080 again", "the first part of the class"]
+    assert texts[3:] == ["Chunk the doc in chunking mode", "trunking is next"]   # chunking is no glossary term
+    res = PR.proofread(cues, call=llm, passes=1, entities=False, context=dict(glossary=["chunking"]))
+    assert [c["text"] for c in res["cues"]][3:] == ["Chunk the doc in chunking mode", "chunking is next"]
 
 
 def test_glossary_spelling_check_never_respells_common_words_or_other_terms():

@@ -175,7 +175,10 @@ def test_llm_fix_propagates_to_the_jobs_other_cues_and_respects_glossary():
         assert "Known ASR confusions" in prompt and "Summer -> summary" in prompt
         return json.dumps({"fixes": [{"i": 0, "from": "RM", "to": "LLM"},
                                      {"i": 2, "from": "summary", "to": "summarizer"}]}), {"input": 1, "output": 1}
-    res = PR.proofread([dict(cues[0]), dict(cues[1]), dict(cues[2], text="先转成Summer")], call=llm, glossary=g)
+    cs = [dict(cues[0]), dict(cues[1]), dict(cues[2], text="先转成Summer")]
+    res = PR.proofread(cs, call=llm, glossary=g)                      # LLM is no glossary term: stays in its cue
+    assert [c["text"] for c in res["cues"]][:2] == ["撑爆你整个的LLM的context", "因为你RM的context的话"]
+    res = PR.proofread(cs, call=llm, glossary=g, context=dict(glossary=["LLM"]))
     texts = [c["text"] for c in res["cues"]]
     assert texts[:2] == ["撑爆你整个的LLM的context", "因为你LLM的context的话"]
     assert texts[2] == "先转成summary"                                # the glossary fix is not re-edited

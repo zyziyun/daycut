@@ -7,6 +7,7 @@ time in normal use (part, make, after, client side) is never one, however much i
     EN.is_function("and")              # True: and / or / the / a / to ... never swapped or propagated on their own
     EN.is_common("parts")              # True: inflections of a common word count too
     EN.all_common("client side")       # True: every latin word of the span is common
+    EN.english_text(transcript)        # True: English speech (vs English terms inside Chinese speech)
 """
 import re
 
@@ -103,9 +104,18 @@ def all_common(span):
     return bool(ws) and not re.search(r"[0-9㐀-鿿]", span) and all(is_common(w) for w in ws)
 
 
+def english_text(text):
+    """True when ``text`` is English speech (latin words outnumber CJK characters 4:1). Its ASR spells everyday
+    words correctly, so the sound-alike respellings meant for English terms inside Chinese speech (派篮 ->
+    pipeline, Rewanking -> reranking) never apply to its plain lowercase words."""
+    words = len(latin_words(text))
+    cjk = len(re.findall(r"[㐀-鿿豈-﫿]", text or ""))
+    return words > 0 and words >= 4 * cjk
+
+
 def all_function(span):
     ws = latin_words(span)
     return bool(ws) and not re.search(r"[0-9㐀-鿿]", span) and all(is_function(w) for w in ws)
 
 
-__all__ = ["FUNCTION", "COMMON", "is_function", "is_common", "all_common", "all_function", "latin_words"]
+__all__ = ["FUNCTION", "COMMON", "is_function", "is_common", "all_common", "all_function", "latin_words", "english_text"]
