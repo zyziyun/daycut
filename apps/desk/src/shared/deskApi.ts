@@ -140,7 +140,8 @@ export interface UpdateStateMsg {
 export interface DeskApi {
   engineInfo(): Promise<EngineInfo>;
   restartEngine(): Promise<EngineInfo>;
-  openFile(kind: 'video' | 'segments' | 'persona' | 'python'): Promise<string | null>;
+  /** 'board': a board file OR a project folder (HyperFrames) - Create's Import board */
+  openFile(kind: 'video' | 'segments' | 'persona' | 'python' | 'board'): Promise<string | null>;
   openFolder(): Promise<string | null>;
   openExternal(url: string): Promise<void>;
   /** feedback + problem reports (never sends by itself) */

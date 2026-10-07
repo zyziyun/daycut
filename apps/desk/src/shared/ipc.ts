@@ -48,7 +48,7 @@ const fileName = z.string().regex(/^[A-Za-z0-9\u4e00-\u9fff][A-Za-z0-9\u4e00-\u9
 export const ipcSchemas = {
   'engine:info': z.undefined(),
   'engine:restart': z.undefined(),
-  'dialog:openFile': z.strictObject({ kind: z.enum(['video', 'segments', 'persona', 'python']) }),
+  'dialog:openFile': z.strictObject({ kind: z.enum(['video', 'segments', 'persona', 'python', 'board']) }),
   'dialog:openFiles': z.strictObject({ kind: z.enum(['video', 'any']) }),
   'dialog:openFolder': z.undefined(),
   'shell:openExternal': z.strictObject({ url: httpsUrl }),

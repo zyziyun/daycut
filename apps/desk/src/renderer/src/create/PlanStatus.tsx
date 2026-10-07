@@ -11,12 +11,12 @@ export const aiName = (p: unknown) => (typeof p === 'string' && p ? (NAMES[p] ??
 
 export function stepText(step: Record<string, unknown> | null): string {
   const s = String(step?.step ?? 'start');
-  if (s === 'bible') return t('create.plan.step.bible', { provider: aiName(step?.provider) });
-  if (s === 'fallback') return t('create.plan.step.fallback', { from: aiName(step?.from), to: aiName(step?.to) });
-  if (s === 'ideas') return t('create.plan.step.ideas');
-  if (s === 'template') return t('create.plan.step.template');
-  if (s === 'read') return t('create.plan.step.read');
-  return t('create.plan.step.start');
+  if (s === 'bible') return t('create.planjob.step.bible', { provider: aiName(step?.provider) });
+  if (s === 'fallback') return t('create.planjob.step.fallback', { from: aiName(step?.from), to: aiName(step?.to) });
+  if (s === 'ideas') return t('create.planjob.step.ideas');
+  if (s === 'template') return t('create.planjob.step.template');
+  if (s === 'read') return t('create.planjob.step.read');
+  return t('create.planjob.step.start');
 }
 
 export function PlanProgress({ step, since }: { step: Record<string, unknown> | null; since: number }) {
@@ -30,7 +30,7 @@ export function PlanProgress({ step, since }: { step: Record<string, unknown> | 
     <div className="cr-plan-progress" role="status" aria-live="polite" data-testid="create-plan-step" data-step={String(step?.step ?? 'start')}>
       <span className="cr-dot-spin" aria-hidden />
       <span>{stepText(step)}</span>
-      <span className="muted num">{t('create.plan.elapsed', { n: secs })}</span>
+      <span className="muted num">{t('create.planjob.elapsed', { n: secs })}</span>
     </div>
   );
 }
@@ -39,12 +39,12 @@ export function planErrorText(m: Msg): string {
   const p = (m.params ?? {}) as Record<string, unknown>;
   if (m.code === 'create.ai-failed') {
     const reason = String(p.reason ?? 'failed');
-    const key = `create.plan.fail.${reason}`;
+    const key = `create.planjob.fail.${reason}`;
     const vars = { provider: aiName(p.provider), seconds: Number(p.seconds ?? 0) };
-    return has(key) ? tk(key, vars) : t('create.plan.fail.failed', vars);
+    return has(key) ? tk(key, vars) : t('create.planjob.fail.failed', vars);
   }
-  if (m.code === 'create.job-timeout') return t('create.plan.fail.stopped', { seconds: Number(p.seconds ?? 0) });
-  return has(m.code) ? tk(m.code, p as Record<string, string | number>) : t('create.plan.fail.failed', { provider: 'AI', seconds: 0 });
+  if (m.code === 'create.job-timeout') return t('create.planjob.fail.stopped', { seconds: Number(p.seconds ?? 0) });
+  return has(m.code) ? tk(m.code, p as Record<string, string | number>) : t('create.planjob.fail.failed', { provider: 'AI', seconds: 0 });
 }
 
 export function PlanError({ msg, onRetry, onTemplate, busy }: { msg: Msg; onRetry: () => void; onTemplate: () => void; busy: boolean }) {
@@ -53,23 +53,23 @@ export function PlanError({ msg, onRetry, onTemplate, busy }: { msg: Msg; onRetr
   return (
     <div className="cr-plan-fail" role="alert" data-testid="create-plan-error" data-reason={reason || msg.code}>
       <div className="t1">{planErrorText(msg)}</div>
-      <div className="t2 muted">{t('create.plan.fail.hint')}</div>
+      <div className="t2 muted">{t('create.planjob.fail.hint')}</div>
       <div className="row">
         {reason !== 'not-set-up' && (
           <button className="btn primary" disabled={busy} onClick={onRetry} data-testid="create-plan-retry">
-            {t('create.plan.retry')}
+            {t('create.planjob.retry')}
           </button>
         )}
         {setup && (
           <a className="btn" href={href({ name: 'aiAccounts' })} data-testid="create-plan-setup-ai">
-            {t('create.plan.setupAi')}
+            {t('create.planjob.setupAi')}
           </a>
         )}
-        <button className="btn" disabled={busy} onClick={onTemplate} data-testid="create-plan-template" title={t('create.plan.templateNote')}>
-          {t('create.plan.template')}
+        <button className="btn" disabled={busy} onClick={onTemplate} data-testid="create-plan-template" title={t('create.planjob.templateNote')}>
+          {t('create.planjob.template')}
         </button>
       </div>
-      <div className="t3 muted">{t('create.plan.templateNote')}</div>
+      <div className="t3 muted">{t('create.planjob.templateNote')}</div>
     </div>
   );
 }

@@ -9,6 +9,8 @@
   --src-record: #c23b3b;
   --src-reuse: #8c8379;
   --src-card: #b08a2e;
+  --src-plugin: #5a7f2e;
+  --src-agent: #3a5ba8;
 }
 :root[data-theme='studio-dark'] {
   --src-local: #a797da;
@@ -38,6 +40,8 @@
 .cr-sw.sw-record { background: var(--src-record); }
 .cr-sw.sw-reuse { background: var(--src-reuse); }
 .cr-sw.sw-card { background: var(--src-card); }
+.cr-sw.sw-plugin { background: var(--src-plugin); }
+.cr-sw.sw-agent { background: var(--src-agent); }
 .cr-pill { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 6px; font-size: 14px; white-space: nowrap; background: var(--surface-2); color: var(--text-muted); }
 .cr-pill.you { background: color-mix(in srgb, var(--you) 14%, transparent); color: var(--you); }
 .cr-pill.run { background: color-mix(in srgb, var(--run) 12%, transparent); color: var(--run); }

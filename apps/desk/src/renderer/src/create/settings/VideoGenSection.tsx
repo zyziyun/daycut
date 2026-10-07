@@ -11,6 +11,7 @@ import { href } from '../../lib/router';
 import { useAction, useCreate, useCreateLoad } from '../api';
 import { localGenEnabled, useCreateEnabled } from '../flag';
 import { createHref } from '../routes';
+import { PluginsCard } from './PluginsCard';
 
 const CAPS = [100, 300, 500, 1000, 0];
 
@@ -274,6 +275,7 @@ export function VideoGenSection({ onSettings }: { onSettings?: (s: SettingsMsg) 
         </div>
       </div>
       <div className="cr-lic">{t('create.set.licenses')}</div>
+      <PluginsCard />
     </div>
   );
 }

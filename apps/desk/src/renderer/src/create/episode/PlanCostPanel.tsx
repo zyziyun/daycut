@@ -27,7 +27,9 @@ export function PlanCostPanel({ ep, busy, onPrimary }: { ep: EpisodeView; busy: 
   const scale = Math.max(budget ?? 0, spent + est.subtotal_cny, 1);
   const next = ep.next;
   const label =
-    next.step === 'stills'
+    next.step === 'make'
+      ? t('create.make.button', { n: next.n ?? 0 })
+      : next.step === 'stills'
       ? t('create.plan.doStills')
       : next.step === 'animatic'
         ? t('create.plan.doAnimatic')

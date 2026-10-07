@@ -6,7 +6,7 @@ import type { EpisodeView } from '../../../../shared/create';
 import { t } from '../../i18n';
 import { href } from '../../lib/router';
 import { media } from '../../v4/kit';
-import { useAction, useCreate, useCreateLoad, useCreateRefresh, waitJob } from '../api';
+import { msgText, useAction, useCreate, useCreateLoad, useCreateRefresh, waitJob } from '../api';
 import { Crumbs, l10n, Tabs } from '../bits';
 import { createHref, goCreate, type EpisodeTab } from '../routes';
 import { ScriptBody } from '../series/EpisodesView';
@@ -14,10 +14,11 @@ import { PlanCostPanel } from './PlanCostPanel';
 import { ShotBoard } from './ShotBoard';
 import { SpendSheet } from './SpendSheet';
 import { TakesView } from './TakesView';
+import { BoardDrop, ImportBoardButton, ImportNote, useBoardImport } from '../ImportBoard';
 
 export function EpisodeScreen({ eid, tab }: { eid: string; tab: EpisodeTab }) {
   const { data, setData, error, reload } = useCreateLoad((c) => c.episode(eid), [eid]);
-  const running = data?.run?.state === 'running';
+  const running = data?.run?.state === 'running' || data?.make?.state === 'running';
   useCreateRefresh(reload, running, 2000);
   if (error) return <div className="cr cr-wrap cr-err">{error}</div>;
   if (!data) return <div className="cr cr-wrap" data-testid="create-episode-loading" />;
@@ -29,6 +30,7 @@ function Episode({ ep, tab, reload, setEp }: { ep: EpisodeView; tab: EpisodeTab;
   const [sheet, setSheet] = useState(false);
   const [animatic, setAnimatic] = useState(false);
   const act = useAction();
+  const imp = useBoardImport({ eid: ep.id, shots: ep.shots.length, onDone: () => reload() });
   const askRef = useRef<((text: string) => void) | null>(null);
   const cover = ep.shots.find((s) => s.still)?.still;
   const nTakes = ep.shots.filter((s) => s.takes.length > 1 && !s.pick).length;
@@ -41,6 +43,14 @@ function Episode({ ep, tab, reload, setEp }: { ep: EpisodeView; tab: EpisodeTab;
     if (step === 'ready') return goCreate({ screen: 'series', sid: ep.series, tab: 'ready' });
     void act.run(async () => {
       if (!c) return;
+      if (step === 'make') {
+        // plugin / agent shots: parallel lanes, each shot in its own job folder; progress shows on the board
+        const { job } = await c.make(ep.id);
+        reload();
+        await waitJob(c, job, () => undefined, 1500);
+        reload();
+        return;
+      }
       if (step === 'assemble') {
         const { job } = await c.handoff(ep.id, ep.bible.languages, false);
         await waitJob(c, job);
@@ -87,6 +97,16 @@ function Episode({ ep, tab, reload, setEp }: { ep: EpisodeView; tab: EpisodeTab;
           { id: 'edit', key: 'create.tab.edit' },
         ]}
       />
+      {tab === 'storyboard' && (
+        <BoardDrop onPath={(p) => void imp.run(p)}>
+          <div className="row" style={{ gap: 10, alignItems: 'center', margin: '0 0 12px' }}>
+            <ImportBoardButton imp={imp} testId="create-storyboard-import" small />
+            {ep.imported?.importer && <span className="muted" style={{ fontSize: 13 }}>{t('create.import.done', { n: ep.shots.length, importer: ep.imported.importer })}</span>}
+            {ep.make && <MakeStatus ep={ep} />}
+          </div>
+          <ImportNote imp={imp} errorsOnly />
+        </BoardDrop>
+      )}
       {tab === 'storyboard' && (
         <div className="cr-board">
           <ShotBoard ep={ep} askRef={askRef} onChanged={(v) => (v ? setEp(v) : reload())} />
@@ -149,5 +169,25 @@ function Episode({ ep, tab, reload, setEp }: { ep: EpisodeView; tab: EpisodeTab;
         </div>
       )}
     </div>
+  );
+}
+
+/** Plugin / agent shots: "3 of 7 made · 2 lanes", the shots waiting for you or failed (with the reason). */
+function MakeStatus({ ep }: { ep: EpisodeView }) {
+  const m = ep.make;
+  if (!m) return null;
+  const units = Object.entries(m.units ?? {});
+  const done = units.filter(([, u]) => u.state === 'done').length;
+  const lanes = Object.values(m.lanes ?? {}).reduce((a, b) => a + b, 0);
+  const odd = units.filter(([, u]) => u.state === 'failed' || u.state === 'manual-waiting');
+  return (
+    <span className="muted" style={{ fontSize: 13 }} data-testid="create-make-status" data-state={m.state}>
+      {m.state === 'running' ? t('create.make.running', { done, total: units.length, lanes }) : t('create.make.done', { done, total: units.length })}
+      {odd.slice(0, 2).map(([no, u]) => (
+        <span key={no} className={u.state === 'failed' ? 'cr-err' : ''} style={{ marginLeft: 10 }} data-testid="create-make-issue">
+          {u.code ? msgText({ code: u.code, params: (u.params ?? {}) as Record<string, string> }) : no}
+        </span>
+      ))}
+    </span>
   );
 }

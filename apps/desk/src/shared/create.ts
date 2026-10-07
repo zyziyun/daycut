@@ -130,7 +130,7 @@ export interface SeriesView {
   counts: { making: number; ready: number };
 }
 
-export type SourceKind = 'cloud' | 'mcp' | 'manual' | 'local' | 'record' | 'card' | 'reuse' | 'placeholder';
+export type SourceKind = 'cloud' | 'mcp' | 'manual' | 'local' | 'record' | 'card' | 'reuse' | 'placeholder' | 'plugin' | 'agent';
 
 export interface Route {
   no: string;
@@ -261,7 +261,10 @@ export interface EpisodeView {
   policy: Record<string, string | boolean>;
   warnings: Msg[];
   estimate: Estimate;
-  next: { step: 'stills' | 'animatic' | 'finals' | 'pick' | 'making' | 'assemble' | 'ready'; n?: number; cny?: number };
+  next: { step: 'stills' | 'animatic' | 'make' | 'finals' | 'pick' | 'making' | 'assemble' | 'ready'; n?: number; cny?: number };
+  /** plugin / agent shots made in parallel lanes (vstudio.plugins.lanes) */
+  make?: MakeRecord | null;
+  imported?: { importer?: string; path?: string } | null;
   status: Msg;
   connected: string[];
   runtime: number;
@@ -290,6 +293,65 @@ export interface MakingRow {
   total: number;
   paused?: Msg | null;
   eta_min?: number | null;
+  make?: { state: string | null; lanes: Record<string, number>; total: number; done: number; failed: ({ no: string } & Msg)[]; waiting: ({ no: string } & Msg)[] } | null;
+}
+
+export interface MakeUnit {
+  state: 'queued' | 'running' | 'done' | 'failed' | 'manual-waiting' | 'stopped';
+  runner: string;
+  kind: 'plugin' | 'agent';
+  name?: string;
+  code?: string | null;
+  params?: Record<string, unknown>;
+  progress?: number | null;
+  message?: string;
+  dir?: string;
+  n_takes?: number;
+}
+export interface MakeRecord {
+  id: string;
+  state: 'running' | 'done' | 'stopped';
+  units: Record<string, MakeUnit>;
+  lanes: Record<string, number>;
+  done?: number;
+  failed?: number;
+  waiting?: number;
+}
+
+/** A plugin (Settings › Video generation › Plugins). key = "<kind>:<id>". */
+export interface PluginRow {
+  key: string;
+  id: string;
+  kind: 'importer' | 'shot-provider' | 'agent-runner';
+  label: string;
+  version: string;
+  origin: 'builtin' | 'folder' | 'package';
+  where: string;
+  description: string | L10n;
+  homepage?: string | null;
+  permissions: string[];
+  cost: { kind: 'free' | 'local' | 'subscription' | 'paid'; notes?: Partial<Record<Lang3, string>> };
+  enabled: boolean;
+  error: string | null;
+  status?: { ready: boolean; code: string; params: Record<string, unknown> };
+  provider_kind?: string;
+  concurrency: number;
+  /** parallel lanes in use (the user's setting, else the manifest's concurrency) */
+  lanes: number;
+  configured: string[];
+}
+export interface PluginList {
+  api: number;
+  dirs: string[];
+  plugins: PluginRow[];
+}
+export interface ImportResult {
+  ok: boolean;
+  series?: string;
+  episode: string;
+  n: number;
+  importer: string;
+  title: string;
 }
 
 export interface MakingView {
@@ -329,7 +391,8 @@ export interface CreateJob<T = unknown> {
 // ------------------------------------------------------------------ validation (mirrors the engine's)
 export const SID_RE = /^[a-z0-9][a-z0-9-]{0,47}$/;
 export const SHOT_RE = /^\d{2,3}$/;
-export const SOURCE_RE = /^(cloud|manual|local):[a-z0-9-]+(\/[\w.-]+)?$|^(record|card)$|^reuse:[a-z0-9-]+\/\d{2,3}$/;
+export const SOURCE_RE = /^(cloud|manual|local):[a-z0-9-]+(\/[\w.-]+)?$|^(record|card)$|^reuse:[a-z0-9-]+\/\d{2,3}$|^(plugin|agent):[a-z][a-z0-9-]{1,40}$/;
+export const PLUGIN_KEY_RE = /^(importer|shot-provider|agent-runner):[a-z][a-z0-9-]{1,40}$/;
 export const CODE_RE = /^[0-9a-f]{8}$/;
 
 function sid(v: string): string {
@@ -439,6 +502,29 @@ export class CreateClient {
   setCap(cap: number) {
     return this.req<Spend>('POST', '/api/create/spend/cap', { cap_cny: cap });
   }
+  // ---------------------------------------------------------------- plugins (docs/PLUGINS.md)
+  plugins(lang: Lang3 = 'en') {
+    return this.req<PluginList>('GET', `/api/create/plugins?lang=${lang}`);
+  }
+  setPlugin(key: string, body: { enabled?: boolean; settings?: Record<string, unknown> }) {
+    if (!PLUGIN_KEY_RE.test(key)) throw new Error('bad plugin key');
+    return this.req<{ plugin: PluginRow }>('POST', `/api/create/plugins/${key}`, body);
+  }
+  /** A board (HyperFrames project, shot list, EDL / OTIO / XML) -> a new series + episode. -> {job}; done: ImportResult */
+  importBoard(path: string, body: { importer?: string; format?: FormatId; lang?: Lang3 } = {}) {
+    return this.req<{ job: string }>('POST', '/api/create/import', { path, ...body });
+  }
+  sniffBoard(path: string) {
+    return this.req<{ importers: { key: string; id: string; name: string; score: number }[] }>('POST', '/api/create/import/sniff', { path });
+  }
+  /** Replace an episode's storyboard with a board. -> {job}; done: ImportResult */
+  importBoardInto(id: string, path: string, importer?: string) {
+    return this.req<{ job: string }>('POST', `/api/create/episodes/${sid(id)}/import-board`, importer ? { path, importer } : { path });
+  }
+  /** Make the plugin: / agent: shots in parallel lanes. -> {job}; done: MakeRecord */
+  make(id: string, body: { only?: string[]; lanes?: number } = {}) {
+    return this.req<{ job: string }>('POST', `/api/create/episodes/${sid(id)}/make`, body);
+  }
   job<T = unknown>(id: string) {
     if (!/^[0-9a-f]{12}$/.test(id)) throw new Error('bad job id');
     return this.req<CreateJob<T>>('GET', `/api/create/jobs/${id}`);
@@ -457,6 +543,8 @@ export function swatch(kind: SourceKind | string, provider?: string | null): str
   if (kind === 'card') return 'card';
   if (kind === 'reuse') return 'reuse';
   if (kind === 'local' || kind === 'placeholder') return 'local';
+  if (kind === 'plugin') return 'plugin';
+  if (kind === 'agent') return 'agent';
   if (provider === 'kling-mcp') return 'kling';
   if (provider === 'minimax') return 'hailuo';
   if (provider === 'veo') return 'veo';

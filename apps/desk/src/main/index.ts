@@ -646,6 +646,12 @@ function registerIpc() {
           : p.kind === 'python'
             ? []
             : [{ name: 'Segments', extensions: ['yaml', 'yml', 'csv', 'json'] }];
+    if (p.kind === 'board') {
+      // a board file or a project folder (HyperFrames): both selectable on macOS
+      const props: ('openFile' | 'openDirectory')[] = process.platform === 'darwin' ? ['openFile', 'openDirectory'] : ['openFile'];
+      const r = await dialog.showOpenDialog(win!, { properties: props, filters: [{ name: 'Board', extensions: ['md', 'markdown', 'json', 'csv', 'tsv', 'txt', 'edl', 'otio', 'xml', 'fcpxml', 'html'] }] });
+      return r.canceled ? null : r.filePaths[0];
+    }
     const r = await dialog.showOpenDialog(win!, { properties: ['openFile', ...(p.kind === 'python' ? (['showHiddenFiles'] as const) : [])], filters });
     return r.canceled ? null : r.filePaths[0];
   });

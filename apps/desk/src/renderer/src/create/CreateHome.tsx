@@ -10,6 +10,7 @@ import { href } from '../lib/router';
 import { media } from '../v4/kit';
 import { JobError, lastStep, msgText, useAction, useCreate, useCreateLoad, waitJob } from './api';
 import { PlanError, PlanProgress } from './PlanStatus';
+import { BoardDrop, ImportBoardButton, ImportNote, useBoardImport } from './ImportBoard';
 import { FormatArt, l10n, uiLang3 } from './bits';
 import { createHref, goCreate } from './routes';
 
@@ -49,6 +50,7 @@ export function CreateHome() {
   const [platOpen, setPlatOpen] = useState(false);
   const act = useAction();
   const sample = useAction();
+  const imp = useBoardImport();
   const ta = useRef<HTMLTextAreaElement | null>(null);
 
   // a recording that survived an app quit: hand it to the engine once (it remuxes, the inbox says so)
@@ -100,7 +102,7 @@ export function CreateHome() {
     <div className="cr cr-home" data-testid="create-home">
       <h1 className="hello">{t('create.home.title')}</h1>
       <div className="tag">{firstRun ? t('create.home.tagFirst') : t('create.home.tag')}</div>
-      <div className="cr-cmp">
+      <BoardDrop className="cr-cmp" onPath={(p) => void imp.run(p)}>
         <textarea
           ref={ta}
           value={prompt}
@@ -116,9 +118,9 @@ export function CreateHome() {
           }}
         />
         <div className="ft">
-          <span className="cr-opt icon" title={t('create.home.attach')}>
+          <button className="cr-opt icon" title={t('create.import.hint')} aria-label={t('create.import.button')} onClick={() => void imp.pick()} disabled={!!imp.busy}>
             <Paperclip className="ico" />
-          </span>
+          </button>
           <label className="cr-opt" data-testid="create-format">
             <Layers className="ico" />
             {fmtName ? t('create.home.formatIs', { name: l10n(fmtName.labels) }) : t('create.home.formatAuto')}
@@ -178,7 +180,14 @@ export function CreateHome() {
             {act.busy ? t('create.home.planning') : t('create.home.plan')}
           </button>
         </div>
+      </BoardDrop>
+      <div className="row" style={{ gap: 10, marginTop: 10, alignItems: 'center' }}>
+        <ImportBoardButton imp={imp} testId="create-import-board" small />
+        <span className="muted" style={{ fontSize: 13 }}>
+          {t('create.import.hint')}
+        </span>
       </div>
+      <ImportNote imp={imp} />
       {act.busy && <PlanProgress step={step} since={since} />}
       {!act.busy && planErr && <PlanError msg={planErr} busy={act.busy} onRetry={() => void plan('auto')} onTemplate={() => void plan('template')} />}
       {act.error && (

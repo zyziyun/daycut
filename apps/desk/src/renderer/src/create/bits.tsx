@@ -113,6 +113,8 @@ export function sourceLabel(r: Pick<Route, 'kind' | 'label' | 'provider' | 'mode
   if (r.kind === 'local') return `${t('create.board.thisMac')} · LTX-2`;
   if (r.kind === 'placeholder') return tk('create.kind.placeholder');
   if (r.provider === 'jimeng') return `${tk('create.svc.jimeng')} Seedance`;
+  if (r.kind === 'agent') return t('create.src.agent', { name: r.label ?? r.provider ?? '' });
+  if (r.kind === 'plugin') return t('create.src.plugin', { name: r.label ?? r.provider ?? '' });
   return r.label ?? r.model ?? r.provider ?? '';
 }
 
