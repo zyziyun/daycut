@@ -431,6 +431,10 @@ def test_speed_ramp_on_idle_stretches(tmp_path):
     assert TM.length(f) == pytest.approx(3.0, abs=1e-3) and TM.fit(segs, 60) == segs   # never slows down
     assert TM.to_scene(segs, 0.0) == 0 and TM.to_scene(segs, 7.0) == pytest.approx(TM.length(segs))
     assert TM.to_scene(segs, 6.0) == pytest.approx(TM.length(segs) - 1.0, abs=0.01)    # after the ramp: real time
+    end = TM.segments(0.0, 9.0, [(2.0, 4.0), (6.0, 9.0)])                               # ends frozen on the result
+    assert end[-1] == (4.0, 6.0 + TM.END_HOLD, 1.0)
+    held = TM.fit([(0.0, 8.0, 1.0), (8.0, 9.8, 1.0)], 6.0)
+    assert held[-1] == (8.0, 9.8, 1.0) and TM.length(held) == pytest.approx(6.0, abs=1e-3)   # the result keeps its pace
 
 
 def test_ramped_shot_becomes_back_to_back_clips(cfg, shots, tmp_path):

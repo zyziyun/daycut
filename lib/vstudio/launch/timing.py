@@ -14,6 +14,7 @@ import subprocess
 IDLE_RATE = 4.0          # how fast a frozen stretch plays
 KEEP = 0.35              # of every frozen stretch, this much still plays at normal speed (the result is seen)
 MIN_IDLE = 0.8           # shorter pauses are part of the action
+END_HOLD = 1.8           # a take that ends frozen ends on its result: hold that much of it at normal speed
 NOISE = 0.00002          # freezedetect noise: UI typing changes few pixels, so the threshold is very low
 
 
@@ -59,6 +60,9 @@ def segments(a, b, spans, rate=1.0, idle_rate=IDLE_RATE):
     """[a, b] media seconds -> [(m0, m1, rate)]: idle spans (minus a KEEP lead-in) at idle_rate, the rest at rate."""
     out, t = [], a
     for s0, s1 in spans:
+        if s1 >= b - 0.05 and s0 < b:                       # the final state is the payoff: show it, then stop
+            b = min(b, max(s0, a) + END_HOLD)
+            break
         s0, s1 = max(s0 + KEEP, a), min(s1, b)
         if s1 - s0 < 0.3:
             continue
@@ -76,10 +80,16 @@ def length(segs):
 
 
 def fit(segs, dur):
-    """Scale every rate up when the ramped take is longer than ``dur`` (never slows down)."""
+    """Scale rates up when the ramped take is longer than ``dur`` (never slows down). The last segment (the
+    result the take ends on) keeps its speed when the rest can absorb the difference."""
     n = length(segs)
     if n <= dur or n <= 0:
         return segs
+    last = (segs[-1][1] - segs[-1][0]) / segs[-1][2]
+    head = n - last
+    if len(segs) > 1 and head > 0 and dur - last >= 0.35 * head:
+        k = head / (dur - last)
+        return [(m0, m1, round(r * k, 4)) for m0, m1, r in segs[:-1]] + [segs[-1]]
     k = n / dur
     return [(m0, m1, round(r * k, 4)) for m0, m1, r in segs]
 
