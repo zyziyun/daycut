@@ -1201,6 +1201,7 @@ const v04Fr: Record<keyof typeof v04En, string> = {
   'em.op-export-remove': 'Retirer la version {target}',
   'em.op-loudness': 'Loudness',
   'em.op-reset': 'Revenir à l’original',
+  'em.op-theme': 'Style : {theme}',
   'em.flattened': 'Les modifications s’appliquent par-dessus la vidéo finie (il n’y a pas de master propre).',
   'em.captions-add-only': 'Les sous-titres sont incrustés dans cette vidéo. Vous pouvez en ajouter de nouveaux (dans un bandeau ou sur un masque), mais pas changer le style des anciens.',
   'em.relayout-crops-burned': 'Un nouveau format recadre la vidéo : le texte incrusté près des bords risque d’être coupé. La mise en page avec bandeau garde l’image entière.',

@@ -29,7 +29,7 @@ import time
 from . import works as WK
 from .common import BadRequest, need, read_json, write_json
 
-OPS = ("trim", "cut", "cut_remove", "speed", "loudness", "captions", "caption_text", "caption_style", "caption_add",
+OPS = ("trim", "cut", "cut_remove", "speed", "loudness", "captions", "caption_text", "caption_style", "caption_add", "theme",
        "caption_remove", "caption_placement", "title", "effect_add", "effect_update", "effect_remove", "cover",
        "export_add", "export_remove", "reset")
 TARGET_RE = re.compile(r"^([a-z][a-z-]{0,30}(:[a-z]{3,12})?|\d{1,2}:\d{1,2})$")
@@ -408,6 +408,12 @@ def apply_op(state, o, base):
         state["title"] = dict(text=txt[:60], sub=(o.get("sub") or "")[:60]) if txt else None
         return _m("op-title", "title band" if txt else "remove the title band", "标题条" if txt else "去掉标题条",
                   text=txt), None
+    if op == "theme":                                 # the design theme (engine vstudio.theme); the desk only records it
+        name = o.get("theme") if isinstance(o.get("theme"), str) else None
+        if name and not re.match(r"^[\w-]{1,24}$", name):
+            raise EngineMessage(_m("unknown-theme", f"unknown theme {name}", f"未知的配色主题 {name}", theme=name))
+        state["theme"] = name
+        return _m("op-theme", f"theme {name or 'default'}", f"配色主题：{name or '默认'}", theme=name), None
     if op == "effect_add":
         eid = ALIASES.get(o["effect"], o["effect"])
         fx = EFFECT_BY_ID.get(eid)

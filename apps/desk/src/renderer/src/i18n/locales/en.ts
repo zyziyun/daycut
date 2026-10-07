@@ -518,6 +518,7 @@ export const v04En = {
   'em.op-export-remove': 'Remove the {target} version',
   'em.op-loudness': 'Loudness',
   'em.op-reset': 'Back to the original',
+  'em.op-theme': 'Look: {theme}',
   'em.flattened': 'Edits go on top of the finished video (there’s no clean master).',
   'em.captions-add-only': 'Captions are burned into this video. You can add new ones (in a band or over a mask), but not restyle the old ones.',
   'em.relayout-crops-burned': 'A new size reframes the video, so burned-in text near the edges may be cut off. The band layout keeps the whole frame.',

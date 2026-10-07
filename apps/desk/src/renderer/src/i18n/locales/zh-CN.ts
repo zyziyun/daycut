@@ -519,6 +519,7 @@ const v04Zh: Record<keyof typeof v04En, string> = {
   'em.op-export-remove': '去掉 {target} 版本',
   'em.op-loudness': '响度',
   'em.op-reset': '恢复原片',
+  'em.op-theme': '配色主题：{theme}',
   'em.flattened': '在成片上叠加编辑（没有干净母版）。',
   'em.captions-add-only': '这条的字幕已经烧进画面：可以新增字幕（字幕条或遮罩上），旧字幕不能改样式。',
   'em.relayout-crops-burned': '换尺寸会重新取景，边缘的烧录文字可能被裁掉；字幕条布局能保留整幅画面。',
