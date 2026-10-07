@@ -15,7 +15,7 @@ import { go, useRouteQuery } from '../lib/router';
 import { Empty, media, Sk, Thumb } from './kit';
 import { FeedbackLink } from '../support/Support';
 import { FailureActions, failureReason } from './Failure';
-import { emsg } from './msg';
+import { emsg, errText } from './msg';
 import { TriageBar } from './TriageBar';
 import { ImportFeedback } from './ShareDialog';
 import { isTyping, useUi } from './ui';
@@ -42,7 +42,7 @@ export function useResolve() {
         });
         return true;
       } catch (e) {
-        ui.toast((e as Error).message, { error: true });
+        ui.toast(errText(e), { error: true });
         return false;
       }
     },

@@ -10,7 +10,7 @@ import { go, href } from '../lib/router';
 import { platformName } from './Home';
 import { Elapsed, More, Sk } from './kit';
 import { failureReason } from './Failure';
-import { emsg } from './msg';
+import { emsg, errText } from './msg';
 import { useUi } from './ui';
 import { AnsweredBy, FallbackNote } from './AiChip';
 import { openReport } from '../support/Support';
@@ -130,7 +130,7 @@ export function PlanCard({ job, jobId, onRevise, onReset, onStarted }: { job: In
         }
       }
     } catch (e) {
-      ui.toast((e as Error).message, { error: true });
+      ui.toast(errText(e), { error: true });
     } finally {
       setStarting(false);
     }

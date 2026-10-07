@@ -32,6 +32,7 @@ import { useWeekPlan } from '../weekplan/useWeekPlan';
 import { WeekPlanCard } from '../weekplan/WeekPlanCard';
 import '../theme/uxcore.css';
 import { orderPlatforms } from '../../../shared/platforms';
+import { errText } from './msg';
 
 /** First run: the starting points (title, what it does, the request it fills in). */
 const STARTS: { icon: typeof Film; title: MessageKey; sub: MessageKey; prompt: MessageKey }[] = [
@@ -153,7 +154,7 @@ export function Home() {
       const r = await client.startIntake(prompt.trim(), files, platforms ?? undefined);
       setJobId(r.id);
     } catch (e) {
-      ui.toast((e as Error).message, { error: true });
+      ui.toast(errText(e), { error: true });
     } finally {
       setBusy(false);
     }
@@ -176,7 +177,7 @@ export function Home() {
       };
       void poll();
     } catch (e) {
-      ui.toast((e as Error).message, { error: true });
+      ui.toast(errText(e), { error: true });
     }
   };
   const reset = () => {
