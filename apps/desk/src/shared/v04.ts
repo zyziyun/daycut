@@ -445,6 +445,7 @@ export interface InboxDoc {
 }
 
 // ---------------------------------------------------------------- calendar
+/** One clip on one platform at one time (the board groups a clip's rows of one day into one card). */
 export interface CalendarPost {
   id: string;
   item: string;
@@ -453,11 +454,69 @@ export interface CalendarPost {
   cover: string | null;
   platform: string;
   at: string;
-  state: 'planned' | 'ready' | 'posted';
+  /** planned = draft; filled = the upload form is filled, waiting for her to press publish */
+  state: 'planned' | 'ready' | 'filled' | 'posted';
+  // decorated by the engine (older engines leave them out)
+  status?: 'draft' | 'ready' | 'filled' | 'posted';
+  enabled?: boolean;
+  /** her text for this platform, else the clip's post copy */
+  caption?: string;
+  caption_custom?: boolean;
+  /** caption length counted the platform's way (X: CJK = 2) and the platform's limit */
+  length?: number;
+  limit?: number | null;
+  warnings?: PostWarning[];
+  project?: string | null;
+  duration?: number | null;
+  stats?: { views?: number; likes?: number };
+}
+
+export interface PostWarning {
+  kind: 'caption_too_long' | 'no_caption' | 'slot_clash';
+  platform: string;
+  n?: number;
+  max?: number;
+  at?: string;
+  other?: string;
+}
+
+export interface QueueClip {
+  item: string;
+  clip: string;
+  title: string;
+  project: string | null;
+  cover: string | null;
+  aspects: string[];
+  duration?: number | null;
+  has_post?: boolean;
+}
+
+export interface NewPost {
+  item: string;
+  clip: string;
+  platform: string;
+  at: string;
+  caption?: string;
+}
+
+/** 「一句话排期」 preview (never written; Apply = scheduleMany(drafts)). */
+export interface SchedulePlan {
+  ok: boolean;
+  reason: 'not_understood' | 'no_clips' | 'no_days' | null;
+  text: string;
+  start: string;
+  drafts: (NewPost & { title?: string; cover?: string | null; project?: string | null })[];
+  adjustments: { kind: 'moved'; platform: string; frm: string; to: string }[];
+  platforms?: string[];
+  time?: string | null;
+  days?: number[];
+  per_day?: number;
+  clips?: number;
+  from_selection?: boolean;
 }
 
 export interface CalendarDoc {
   posts: CalendarPost[];
-  queue: { item: string; clip: string; title: string; project: string | null; cover: string | null; aspects: string[] }[];
+  queue: QueueClip[];
   at: number;
 }

@@ -36,7 +36,7 @@ import type {
 } from './v02';
 import type { AskContext, ChatTurn, ExportJob } from './chatEdit';
 import type { StripInfo, TranscribeState } from './timeline';
-import type { AskResult, CalendarDoc, CalendarPost, ClipsDoc, EditOp, EffectDef, EngineMsg, InboxDoc, IntakeJob, IntakePlan, OutputDoc, PreviewEdl, ProjectAskJob, Retimed } from './v04';
+import type { AskResult, CalendarDoc, CalendarPost, ClipsDoc, NewPost, SchedulePlan, EditOp, EffectDef, EngineMsg, InboxDoc, IntakeJob, IntakePlan, OutputDoc, PreviewEdl, ProjectAskJob, Retimed } from './v04';
 
 import { CreateClient } from './create';
 
@@ -437,8 +437,33 @@ export class EngineClient {
   schedule(body: { item: string; clip: string; platform?: string; at: string }) {
     return this.req<CalendarPost>('POST', '/api/calendar', { ...body, item: bid(body.item) });
   }
-  updatePost(id: string, body: { at?: string; state?: CalendarPost['state']; remove?: boolean }) {
-    return this.req<{ ok: boolean; post: CalendarPost }>('POST', `/api/calendar/${bid(id)}`, body);
+  updatePost(
+    id: string,
+    body: { at?: string; state?: CalendarPost['state']; remove?: boolean; caption?: string | null; platform?: string; enabled?: boolean; stats?: { views?: number; likes?: number } },
+  ) {
+    return this.req<{ ok: boolean; post: CalendarPost; before: CalendarPost }>('POST', `/api/calendar/${bid(id)}`, body);
+  }
+  /** several rows at once (all or none): one undo step */
+  scheduleMany(posts: NewPost[]) {
+    return this.req<{ ok: boolean; posts: CalendarPost[]; ids: string[] }>('POST', '/api/calendar/many', { posts: posts.map((p) => ({ ...p, item: bid(p.item) })) });
+  }
+  /** back to the queue (calendar rows only, never files) -> the removed rows, for restorePosts (undo) */
+  unscheduleMany(ids: string[]) {
+    return this.req<{ ok: boolean; removed: CalendarPost[] }>('POST', '/api/calendar/remove', { ids: ids.map(bid) });
+  }
+  restorePosts(posts: CalendarPost[]) {
+    return this.req<{ ok: boolean; ids: string[] }>('POST', '/api/calendar/restore', { posts });
+  }
+  fillWeek(body: { start: string; platforms: string[]; times: Record<string, string>; clips?: { item: string; clip: string }[]; today?: string }) {
+    return this.req<{ ok: boolean; posts: CalendarPost[]; ids: string[]; reason?: 'no_clips' | 'no_free_days' }>('POST', '/api/calendar/fill-week', body);
+  }
+  /** 「为 X 缩短」: a caption that fits the platform (the post-copy AI, else rules); nothing is saved */
+  shortenCaption(body: { text: string; platform: string; max?: number }) {
+    return this.req<{ text: string; provider: string; length: number; limit: number }>('POST', '/api/calendar/shorten', body);
+  }
+  /** preview only: nothing is written */
+  planSchedule(body: { text: string; start: string; platforms: string[]; times: Record<string, string>; clips?: { item: string; clip: string }[]; today?: string }) {
+    return this.req<SchedulePlan>('POST', '/api/calendar/plan', body);
   }
   confirmWeek(start: string) {
     return this.req<{ ok: boolean; ready: number }>('POST', '/api/calendar/confirm', { start });

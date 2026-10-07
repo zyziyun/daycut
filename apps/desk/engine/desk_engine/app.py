@@ -74,7 +74,12 @@ v0.4 (outputs.py, intake.py, inbox.py; engine command when available, desk imple
                                            {plan?, run?}; POST .../stop (planning / revising); GET /api/intake/recent
   POST /api/pilot/retry {item, provider?}  re-run a failed pilot (provider: every model task on it, e.g. codex)
   GET  /api/calendar?start=YYYY-MM-DD      {posts, queue}; POST /api/calendar {item, clip, platform, at};
-                                           POST /api/calendar/<id> {at?, state?, remove?}; POST .../confirm {start}
+                                           POST /api/calendar/<id> {at?, state?, remove?, caption?, platform?,
+                                           enabled?, stats?}; POST .../confirm {start}; .../many {posts[]} (one
+                                           undo); .../remove {ids} -> removed rows; .../restore {posts}; .../fill-week
+                                           {start, platforms, times, clips?}; .../plan {text, start, platforms, times,
+                                           clips?} (preview only, never written); .../shorten
+                                           {text, platform, max?} (「为 X 缩短」, nothing saved)
   GET  /api/inbox                          every decision waiting for the creator; POST /api/inbox/answer {keys,
                                            answer?}; POST /api/inbox/undo {keys}
 """
@@ -434,7 +439,7 @@ class Api:
         self.intake = Intake(engine.data_dir, bus, runner, engine.mode, probe=probe)
         self.inbox = Inbox(engine.data_dir, self.history, runner, engine.mode, bus)
         from .calendar import Calendar
-        self.calendar = Calendar(engine.data_dir, self.history, self.outputs, bus)
+        self.calendar = Calendar(engine.data_dir, self.history, self.outputs, bus, mode=engine.mode)
         from .workpkg import WorkPackages
         self.workpkg = WorkPackages(engine.data_dir, self.history, self.outputs)
         from .create import CreateApi              # Create page: idle until the desk calls /api/create (flag)
@@ -540,6 +545,18 @@ class Api:
                 return self.calendar.add(b)
             if parts == ["calendar", "confirm"] and method == "POST":
                 return self.calendar.confirm_week(b.get("start"))
+            if parts == ["calendar", "many"] and method == "POST":
+                return self.calendar.add_many(b.get("posts"))
+            if parts == ["calendar", "remove"] and method == "POST":
+                return self.calendar.remove_many(b.get("ids"))
+            if parts == ["calendar", "restore"] and method == "POST":
+                return self.calendar.restore(b.get("posts"))
+            if parts == ["calendar", "fill-week"] and method == "POST":
+                return self.calendar.fill_week(b)
+            if parts == ["calendar", "plan"] and method == "POST":
+                return self.calendar.plan(b)
+            if parts == ["calendar", "shorten"] and method == "POST":
+                return self.calendar.shorten(b)
             if len(parts) == 2 and method == "POST":
                 need(ID_RE.match(parts[1]), "bad post id")
                 return self.calendar.update(parts[1], b)
