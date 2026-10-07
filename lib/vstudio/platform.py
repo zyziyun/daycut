@@ -824,6 +824,17 @@ def ordered(names, connected=()):
     return [n for _, n in sorted(enumerate(names), key=key)]
 
 
+def order_key(name):
+    """Position of a platform in the display order for any spelling the engine uses: "douyin", "douyin:vertical",
+    a package key "xiaohongshu-full" / "youtube-shorts-vertical", an alias ("视频号"). Unknown -> after all."""
+    s = str(name or "").strip().lower()
+    base = canonical(s.split(":")[0])
+    if base not in ORDER:
+        hits = [n for n in ORDER if s.startswith(n + "-")]
+        base = canonical(max(hits, key=len)) if hits else canonical(s.rpartition("-")[0] or s)
+    return ORDER.index(base) if base in ORDER else len(ORDER)
+
+
 def youtube_format(aspect, seconds=None):
     """"shorts" for a vertical / square video of <= 3 min, else "long" (YouTube decides the same way)."""
     a = _ratio(aspect)

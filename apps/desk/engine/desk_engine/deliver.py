@@ -25,6 +25,18 @@ PLATFORM_NAMES = {
     "xiaohongshu": "小红书", "douyin": "抖音", "tiktok": "TikTok", "youtube-shorts": "YouTube Shorts",
     "youtube": "YouTube", "bilibili": "B站", "kuaishou": "快手", "weixin-channels": "视频号",
 }
+# display order: international platforms first, then Chinese (the registry order of vstudio.platform / the desk UI)
+_ORDER = ["youtube", "youtube-shorts", "tiktok", "instagram", "x", "facebook", "linkedin", "threads", "reddit",
+          "pinterest", "snapchat", "xiaohongshu", "douyin", "wechat-channels", "weixin-channels", "bilibili",
+          "kuaishou", "weibo", "zhihu", "dailymotion", "kwai"]
+
+
+def _order(key):
+    s = str(key or "").split(":")[0]
+    hits = [n for n in _ORDER if s == n or s.startswith(n + "-")]
+    return _ORDER.index(max(hits, key=len)) if hits else len(_ORDER)
+
+
 AI_REMINDER = ("【AI 标识提醒】本批视频使用了 AI 辅助剪辑/字幕/文案。发布时请按平台要求勾选 AI 生成内容声明"
                "（小红书「笔记含 AI 合成内容」、抖音「内容由 AI 生成」、YouTube「Altered or synthetic content」），"
                "避免限流或下架。")
@@ -89,8 +101,11 @@ def build(pkg_dir, manifest, out_root, client_name, batch_name, jobs=None, make_
     keys = sorted({it["platform"] for it in items})
     counters, files, posts, sched = {}, [], [], []
     total_s = 0.0
-    for it in sorted(items, key=lambda x: (x.get("date") or "", x.get("time") or "", x["platform"], x["job"])):
+    lrank = {}
+    for it in sorted(items, key=lambda x: (x.get("date") or "", x.get("time") or "", _order(x["platform"]), x["platform"],
+                                           x["job"])):
         label = platform_label(it["platform"], keys)
+        lrank.setdefault(label, _order(it["platform"]))
         n = counters[label] = counters.get(label, 0) + 1
         ov = (copy_overrides or {}).get(it["job"]) or {}
         post_src = os.path.join(pkg_dir, it["files"]["post"]) if (it.get("files") or {}).get("post") else None
@@ -146,7 +161,7 @@ def build(pkg_dir, manifest, out_root, client_name, batch_name, jobs=None, make_
     notes = [f"# 交付说明 · {client_name}", "",
              f"- 批次：{batch_name}", f"- 交付日期：{today.isoformat()}",
              f"- 条数：{len(job_ids)} 条内容 · {len(posts)} 个平台文件",
-             f"- 平台：{'、'.join(sorted(counters))}",
+             f"- 平台：{'、'.join(sorted(counters, key=lambda x: (lrank.get(x, 999), x)))}",
              f"- 总时长：{int(total_s // 60)} 分 {int(total_s % 60)} 秒",
              f"- 发布包确认码：{manifest.get('confirmation_code') or '—'}", "",
              "## 质检说明", "",

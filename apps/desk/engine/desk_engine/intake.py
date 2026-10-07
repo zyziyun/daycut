@@ -24,10 +24,10 @@ AUDIO = {".wav", ".mp3", ".m4a", ".aac", ".flac"}
 IMAGE = {".jpg", ".jpeg", ".png", ".webp", ".heic"}
 TEXT = {".pdf", ".docx", ".pptx", ".md", ".txt", ".srt", ".vtt", ".ass", ".json"}
 
-PLATFORMS = [("小红书|xiaohongshu|rednote", "xiaohongshu", "小红书"), ("抖音|douyin", "douyin", "抖音"),
-             ("视频号|channels", "shipinhao", "视频号"),
-             ("b站|B站|bilibili", "bilibili", "B 站"), ("youtube|油管", "youtube-shorts", "YouTube"),
-             ("tiktok", "tiktok", "TikTok")]
+# in display order (international first, then Chinese): the plan lists platforms in this order
+PLATFORMS = [("tiktok", "tiktok", "TikTok"), ("youtube|油管", "youtube-shorts", "YouTube"),
+             ("小红书|xiaohongshu|rednote", "xiaohongshu", "小红书"), ("抖音|douyin", "douyin", "抖音"),
+             ("视频号|channels", "shipinhao", "视频号"), ("b站|B站|bilibili", "bilibili", "B 站")]
 RECIPES = [  # (pattern, recipe, zh label, role)
     (r"切片|切成|剪成.*条|拆成|单独发|剪出来", "longform-to-short", "切片", "slices"),
     (r"课|系列|分集|课程", "longform-to-short", "切片", "slices"),

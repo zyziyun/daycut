@@ -145,8 +145,12 @@ def deliver(batch_dir, client=None, make_zip=False, cleanup_days=None, out=None,
         items = list(man.get("items") or [])
         keys = sorted({it["platform"] for it in items})
         counters, files, posts, sched, total_s = {}, [], [], [], 0.0
-        for it in sorted(items, key=lambda x: (x.get("date") or "", x.get("time") or "", x["platform"], x["job"])):
+        lrank = {}                                         # label -> display order
+        from vstudio.platform import order_key           # international platforms first, then Chinese, then other
+        for it in sorted(items, key=lambda x: (x.get("date") or "", x.get("time") or "", order_key(x["platform"]),
+                                               x["platform"], x["job"])):
             label = platform_label(it["platform"], keys)
+            lrank.setdefault(label, order_key(it["platform"]))
             n = counters[label] = counters.get(label, 0) + 1
             p = (jobs.get(it["job"]) or {}).get("params") or {}
             title = p.get("title") or it.get("title") or it["job"]
@@ -192,7 +196,7 @@ def deliver(batch_dir, client=None, make_zip=False, cleanup_days=None, out=None,
                 warns += [(j, w_) for w_ in qr.get("warn") or []]
         due = today + dt.timedelta(days=int(cleanup_days)) if cleanup_days else None
         notes = [f"# 交付说明 · {cname}", "", f"- 批次：{bname}", f"- 交付日期：{today.isoformat()}",
-                 f"- 条数：{len(job_ids)} 条内容 · {len(posts)} 个平台文件", f"- 平台：{'、'.join(sorted(counters))}",
+                 f"- 条数：{len(job_ids)} 条内容 · {len(posts)} 个平台文件", f"- 平台：{'、'.join(sorted(counters, key=lambda x: (lrank.get(x, 999), x)))}",
                  f"- 总时长：{int(total_s // 60)} 分 {int(total_s % 60)} 秒",
                  f"- 发布包确认码：{man.get('confirmation_code') or '—'}", "", "## 质检说明", "",
                  "每条视频都过了自动质检（响度、字幕与音频一致、字幕安全区、标题长度、黑帧 / 定格、音画同步）和人工审片。", ""]
