@@ -23,6 +23,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import threading
 import time
 
@@ -1316,13 +1317,19 @@ class Outputs:
         return t["id"]
 
     def effects(self):
+        # the catalogue is fixed for the engine this process runs: ask the CLI once (each call is a ~3 s Python start,
+        # paid on every editor open before this cache)
+        hit = getattr(self, "_effects_cache", None)
+        if hit is not None:
+            return hit
         if self.real():
             try:
                 doc = self._cli(["effects", "--no-thumbs"], timeout=60)
                 if isinstance(doc, dict) and isinstance(doc.get("effects"), list):
-                    return dict(effects=doc["effects"], engine="real")
-            except Exception:  # noqa: BLE001
-                pass
+                    self._effects_cache = dict(effects=doc["effects"], engine="real")
+                    return self._effects_cache
+            except Exception as e:  # noqa: BLE001
+                print(f"[outputs] effects catalogue from the engine failed: {e}", file=sys.stderr, flush=True)
         return dict(effects=EFFECTS, engine="desk")
 
     def _publish(self, item_id, clip_id):
