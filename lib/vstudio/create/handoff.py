@@ -166,7 +166,7 @@ def handoff(eid, languages=None, schedule=True, register=True, on_event=None):
                None)
     with jobs.lock(eid):
         ep = store.load_episode(eid)
-        item_id = hashlib.sha1(os.path.abspath(d).encode()).hexdigest()[:12]      # the desk's history id
+        item_id = hashlib.sha1(os.path.realpath(d).encode()).hexdigest()[:12]      # the desk's history id (real folder)
         ep["handoff"] = dict(dir=d, file=dst, clip=clip, item_id=item_id, languages=rows, posts=posts, at=store.stamp(),
                              spent=round(spent, 1), approved=approved,
                              under=None if not est else round(float(est.get("subtotal_cny") or 0) - spent, 1),

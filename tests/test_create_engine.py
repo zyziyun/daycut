@@ -508,6 +508,10 @@ def test_handoff_creates_a_normal_work_folder(home):
     post = open(os.path.join(h["dir"], "post.md"), encoding="utf-8").read()
     assert "AI" in post
     assert os.path.exists(os.path.join(h["dir"], "final", f"{h['clip']}.en.srt"))
+    # the desk lists the folder under the id of its real path (desk_engine.common.batch_id): /var and /private/var
+    # spellings of one folder are one item, so Send to Publish finds it
+    import hashlib
+    assert h["item_id"] == hashlib.sha1(os.path.realpath(h["dir"]).encode()).hexdigest()[:12]
 
 
 def test_spend_summary_and_cap(home):
