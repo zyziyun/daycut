@@ -41,7 +41,7 @@ in the commit log (formerly `video-studio` and `Daycut`).
   - Plugins on the Create page: board importers (HyperFrames, CSV / JSON shot lists) and agent runners that make
     shots in parallel lanes, each in its own job folder, with takes and Inbox items for failures.
   - Optional anonymous usage counts, asked once and off until you agree.
-- **Windows x64 preview** (unsigned NSIS installer, not attached to the release yet): the app, its engine sidecar
+- **Windows x64 preview** (unsigned NSIS installer `Reelfold-<v>-win-x64-setup.exe`, attached to the release): the app, its engine sidecar
   and the bundled runtime run on Windows (Media Foundation or OpenH264 for H.264, faster-whisper for speech).
 - **Engine**:
   - `vstudio.intake`: one sentence plus the material becomes a validated plan (rule fallback when no model is set).

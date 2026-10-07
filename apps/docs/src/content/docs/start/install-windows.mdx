@@ -1,12 +1,12 @@
 ---
 title: Install on Windows (preview)
-description: Reelfold for Windows 10 and 11 (x64) is a preview. Build it from source today, or try an unsigned test installer from CI, then connect your own AI.
+description: Reelfold for Windows 10 and 11 (x64) is a preview. Download the unsigned installer from GitHub Releases (or build from source), then connect your own AI.
 ---
 
 import { Steps, Aside } from '@astrojs/starlight/components';
 
 <Aside type="caution" title="Preview">
-Windows support is new and less tested than the Mac app. There is no Windows release yet: no download on GitHub Releases and no automatic updates. The steps below build the app from source. Please report anything that breaks on [GitHub Issues](https://github.com/zyziyun/reelfold/issues).
+Windows support is new and less tested than the Mac app, and the installer is **not code-signed** yet, so Windows warns before running it. Please report anything that breaks on [GitHub Issues](https://github.com/zyziyun/reelfold/issues).
 </Aside>
 
 ## Requirements
@@ -22,7 +22,21 @@ Windows support is new and less tested than the Mac app. There is no Windows rel
 | Speech recognition | MLX Whisper on the GPU | faster-whisper on the CPU, which is noticeably slower than on a Mac. An NVIDIA GPU can be used, see below |
 | H.264 encoding | VideoToolbox | Media Foundation (built into Windows), falling back to OpenH264 when Media Foundation has no H.264 encoder (for example Windows N without the Media Feature Pack) |
 | API keys | macOS keychain | Encrypted with Windows DPAPI under your user account |
-| Installer | Signed and notarized DMG | Not released yet. Test installers are unsigned, so SmartScreen warns |
+| Installer | Signed and notarized DMG, updates itself | Unsigned NSIS installer on GitHub Releases, so SmartScreen warns. Checks the same releases for updates |
+
+## Install with the installer
+
+<Steps>
+
+1. Open the [latest release](https://github.com/zyziyun/reelfold/releases/latest) and download `Reelfold-<version>-win-x64-setup.exe` (from v0.2.0 on, next to the Mac DMG).
+
+2. Run it. Because the installer is not code-signed, Windows shows **Windows protected your PC**: choose **More info → Run anyway**. Only run installers downloaded from this repository's Releases page.
+
+3. The installer installs Reelfold for your user (no admin rights needed; you can change the folder) and adds a Start menu shortcut. It contains its own Python, ffmpeg and engine, like the Mac app.
+
+</Steps>
+
+Reelfold checks GitHub Releases for updates and installs them when you quit. Updates on Windows are new: if one fails, download the next installer from Releases and run it over the old one. Your projects and settings are kept.
 
 ## Build from source
 
@@ -52,9 +66,9 @@ You need [Node.js 22+](https://nodejs.org/), [Python 3.12](https://www.python.or
 
 Fonts and face models are downloaded by the app on first launch (**Settings → Models, fonts and tools**). The Whisper model is downloaded the first time you transcribe.
 
-### Test installer (unsigned)
+### Test builds from CI
 
-Maintainers can build an unsigned NSIS installer in CI (Actions → *Desk release* → *Run workflow* with **windows** ticked). It contains its own Python, ffmpeg and engine, like the Mac app. Because it is not code-signed, Windows shows **Windows protected your PC**: choose **More info → Run anyway**. Only run installers from this repository's own Actions runs.
+Maintainers can build the same unsigned installer for any branch in CI (Actions → *Desk release* → *Run workflow* with **windows** ticked); it is kept as a workflow artifact for 7 days. Only run installers from this repository's own Releases or Actions runs.
 
 ## Connect your AI
 
@@ -73,7 +87,7 @@ By default faster-whisper runs on the CPU on Windows, because the CUDA libraries
 
 - Very deep folders: Windows limits paths to 260 characters unless long paths are enabled (Group Policy *Enable Win32 long paths*). Keep projects in a short folder such as `D:\Reelfold` if a render fails with a path error.
 - The publish browser, scheduled publishing and the Create page's recorder are less tested on Windows.
-- No automatic updates until Windows releases ship.
+- The installer and the app are unsigned, so SmartScreen (and some antivirus tools) warn until signing is set up.
 
 ## Where your data lives
 

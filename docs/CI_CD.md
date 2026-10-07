@@ -153,6 +153,11 @@ the job's permissions and a final step `gh workflow run deploy-web.yml --ref mai
 
 ## Windows
 
-The *windows* job in `desk-release.yml` is an experimental, unsigned build that only runs on a manual run with
-*windows* ticked, never blocks the macOS release and is never attached to a release. Shipping it needs Windows code
-signing (`apps/desk/docs/RELEASING.md` §3) and an upload step like the macOS one.
+The *windows* job in `desk-release.yml` builds the **unsigned** Windows x64 NSIS installer on every tag push (and on a
+manual run with *windows* ticked). It does not block the macOS files: the mac job never waits for it. When both are
+done, the *windows-release* job checks the files (`latest.yml` must point at the `.exe` with the right sha512) and
+attaches `Reelfold-<v>-win-x64-setup.exe`, its `.blockmap` and `latest.yml` (the Windows update feed) to the same draft
+release, creating the draft if it is somehow missing. If the Windows build fails the run turns red and its summary says
+"Windows installer NOT attached"; the macOS draft is complete, and *Re-run failed jobs* attaches the installer later.
+A dry run with *windows* ticked does the same checks and prints the upload it would do. Signing it later:
+`apps/desk/docs/RELEASING.md` §3.

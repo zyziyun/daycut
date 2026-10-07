@@ -12,7 +12,7 @@ What ships, how to sign it, how to cut a release, and what the store builds woul
 |---|---|---|---|
 | macOS arm64 (macOS 14+) | `Reelfold-<v>-mac-arm64.dmg` (+ `.zip` for the updater) | Developer ID Application, hardened runtime, notarized | electron-updater |
 | macOS x64 (macOS 12+, best effort) | `…-mac-x64.dmg/.zip` | same | electron-updater |
-| Windows x64 | `Reelfold-<v>-win-x64.exe` (NSIS, per user) | Azure Trusted Signing or a code-signing cert; unsigned if neither | electron-updater |
+| Windows x64 (preview) | `Reelfold-<v>-win-x64-setup.exe` (NSIS, per user) + `.blockmap` + `latest.yml` | Azure Trusted Signing or a code-signing cert; unsigned if neither | electron-updater |
 | Microsoft Store (later) | `.appx` (`npm run dist:appx`) | the Store | the Store |
 | Mac App Store ("Lite", sandboxed) | `Reelfold-<v>-*.pkg` (`npm run release:mas`, [MAS.md](MAS.md)) | Apple Distribution + Mac Installer Distribution, provisioning profile | the Mac App Store |
 
@@ -121,23 +121,27 @@ Full walk-through and the one-time secrets: [`docs/CI_CD.md`](../../../docs/CI_C
    Publishing also redeploys the website, whose download buttons turn on automatically.
 
 A manual run (Actions → Desk release → Run workflow) is a dry run by default: everything except the GitHub Release, the
-files kept as a workflow artifact. Tick *windows* for the experimental unsigned Windows installer (artifact only; see
-Windows below); untick *mac* for a Windows-only run.
+files kept as a workflow artifact. Tick *windows* for the unsigned Windows installer (a tag push always builds it and attaches
+it to the draft; see Windows below); untick *mac* for a Windows-only run.
 macOS x64 is no longer built by CI (`npm run dist:mac` on an Intel Mac if ever needed).
 
 ## Windows (preview, unsigned)
 
-Status: Windows 10 / 11 x64 runs from source and as an **unsigned** NSIS test installer built in CI. Nothing is
-released for Windows yet: no installer on GitHub Releases, so no `latest.yml` feed and no auto-update. The v0.2 release
-is macOS only and the Windows job never touches a release.
+Status: Windows 10 / 11 x64 ships as an **unsigned preview**. Every tag push builds the NSIS installer in the
+`windows` job and the `windows-release` job attaches `Reelfold-<v>-win-x64-setup.exe`, its `.blockmap` and `latest.yml`
+(the electron-updater feed, so installed Windows apps update from the releases like the Mac app) to the same draft as
+the macOS files, after the mac job (`needs:`). The mac job never waits for Windows: a Windows failure leaves the macOS
+draft complete, turns the run red and the summary says "Windows installer NOT attached" (*Re-run failed jobs* attaches
+it later).
 
 **Test installer.** Actions → *Desk release* → *Run workflow* on the branch to test, tick **windows** (untick **mac**
-for a Windows-only run; *dry run* stays ticked). The `windows` job (windows-latest, `continue-on-error`) runs lint +
+for a Windows-only run; *dry run* stays ticked). The `windows` job (windows-latest) runs lint +
 unit tests, builds the runtime (`bundle.mjs --target=win32-x64`: python-build-standalone, the hash-locked pip set
 with faster-whisper / CTranslate2, the conda-forge LGPL ffmpeg with `h264_mf` and libopenh264, the engine), runs the
 runtime checks (imports, bundled ffmpeg has `h264_mf` + libopenh264 and no GPL encoders, the engine's H.264 test
-encode, longest path), runs `npm run dist:win` and uploads `Reelfold-<v>-win-x64.exe`, its `.blockmap` and `latest.yml`
-as the workflow artifact `reelfold-win32-x64-unsigned` (kept 7 days). Then it checks the real thing: the packaged-app
+encode, longest path), runs `npm run dist:win` and uploads `Reelfold-<v>-win-x64-setup.exe`, its `.blockmap` and `latest.yml`
+as the workflow artifact `reelfold-win32-x64-unsigned` (kept 7 days); on a dry run `windows-release` then checks those
+files and prints the release upload it would do. Then it checks the real thing: the packaged-app
 suite on `dist/win-unpacked` (engine from the bundle, fuses, plus a real transcription of a public-domain recording with
 the bundled faster-whisper, `DESK_TEST_ASR=1`), a silent install (`/S`, per user), the same suite on the installed
 `Reelfold.exe`, and a silent uninstall. The CLI equivalent:
@@ -147,7 +151,7 @@ gh workflow run desk-release.yml --ref <branch> -f windows=true -f mac=false -f 
 gh run watch <run-id> && gh run download <run-id> -n reelfold-win32-x64-unsigned
 ```
 
-Sizes (v0.2.0 test build, Oct 2026): installer `Reelfold-0.2.0-win-x64.exe` 348 MB, installed 1.3 GB (runtime ≈ 1 GB);
+Sizes (v0.2.0 test build, Oct 2026): installer `Reelfold-0.2.0-win-x64-setup.exe` 348 MB, installed 1.3 GB (runtime ≈ 1 GB);
 the Whisper large-v3-turbo CTranslate2 weights (1.6 GB) are a first-run download as on macOS. A full run of the job takes
 about 40 minutes (runtime build ~25, NSIS ~5, checks ~5).
 

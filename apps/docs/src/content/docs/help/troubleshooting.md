@@ -39,7 +39,7 @@ Face tracking, retouch, cover frame picking and matting use the MediaPipe face l
 
 ### The Mac app can't find the engine
 
-If the app shows **Demo mode** instead of **Ready on this Mac**, it couldn't import the engine and is running a stand-in.
+If the app shows **Demo mode** instead of **Ready on this computer**, it couldn't import the engine and is running a stand-in.
 
 1. Open Settings → **Engine**. It shows the engine folder, Python and data folder **In use**.
 2. Set **Engine folder (Reelfold repo)** to the folder that contains `lib/vstudio`, and **Python** to an interpreter that has `requirements.txt` installed.

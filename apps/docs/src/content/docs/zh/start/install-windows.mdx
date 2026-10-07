@@ -1,12 +1,12 @@
 ---
 title: 在 Windows 上安装（预览）
-description: 千剪 Windows 版（Windows 10 / 11，x64）目前是预览版。现在可以从源码构建，或试用 CI 打出的未签名测试安装包，然后接上你自己的 AI。
+description: 千剪 Windows 版（Windows 10 / 11，x64）目前是预览版。从 GitHub Releases 下载未签名的安装包（或从源码构建），然后接上你自己的 AI。
 ---
 
 import { Steps, Aside } from '@astrojs/starlight/components';
 
 <Aside type="caution" title="预览版">
-Windows 支持刚加入，测试得比 Mac 版少。目前还没有 Windows 正式版：GitHub Releases 上没有下载，也没有自动更新。下面的步骤是从源码构建。遇到问题请在 [GitHub Issues](https://github.com/zyziyun/reelfold/issues) 反馈。
+Windows 支持刚加入，测试得比 Mac 版少；安装包暂时**没有代码签名**，运行前 Windows 会弹出提示。遇到问题请在 [GitHub Issues](https://github.com/zyziyun/reelfold/issues) 反馈。
 </Aside>
 
 ## 准备
@@ -22,7 +22,21 @@ Windows 支持刚加入，测试得比 Mac 版少。目前还没有 Windows 正�
 | 语音识别 | MLX Whisper，用 GPU | faster-whisper，用 CPU，明显比 Mac 慢。可以用 NVIDIA 显卡，见下文 |
 | H.264 编码 | VideoToolbox | Windows 自带的 Media Foundation；没有可用的 Media Foundation H.264 编码器时（例如没装媒体功能包的 Windows N 版）自动改用 OpenH264 |
 | API key | macOS 钥匙串 | 用 Windows DPAPI 按你的用户账户加密保存 |
-| 安装包 | 已签名、已公证的 DMG | 尚未发布。测试安装包没有代码签名，SmartScreen 会提示 |
+| 安装包 | 已签名、已公证的 DMG，自动更新 | GitHub Releases 上的未签名 NSIS 安装包，SmartScreen 会提示；同样从 Releases 检查更新 |
+
+## 用安装包安装
+
+<Steps>
+
+1. 打开 [最新发布](https://github.com/zyziyun/reelfold/releases/latest)，下载 `Reelfold-<版本>-win-x64-setup.exe`（从 v0.2.0 起，和 Mac 的 DMG 放在一起）。
+
+2. 运行它。安装包没有代码签名，Windows 会弹出「Windows 已保护你的电脑」：点 **更多信息 → 仍要运行**。只运行从本仓库 Releases 页面下载的安装包。
+
+3. 安装包会为当前用户安装千剪（不需要管理员权限，可以改安装目录），并在开始菜单里加快捷方式。它和 Mac 版一样自带 Python、ffmpeg 和引擎。
+
+</Steps>
+
+千剪会从 GitHub Releases 检查更新，退出时自动安装。Windows 上的自动更新是新功能：如果更新失败，从 Releases 下载新版安装包直接覆盖安装即可，项目和设置都会保留。
 
 ## 从源码构建
 
@@ -52,9 +66,9 @@ Windows 支持刚加入，测试得比 Mac 版少。目前还没有 Windows 正�
 
 字体和人脸模型会在首次启动时由应用下载（**设置 → 模型、字体和工具**）。Whisper 模型在第一次转写时下载。
 
-### 测试安装包（未签名）
+### CI 测试版
 
-维护者可以在 CI 里打一个未签名的 NSIS 安装包（Actions → *Desk release* → *Run workflow*，勾选 **windows**）。它和 Mac 版一样自带 Python、ffmpeg 和引擎。因为没有代码签名，Windows 会弹出「Windows 已保护你的电脑」：点 **更多信息 → 仍要运行**。只运行本仓库自己的 Actions 打出的安装包。
+维护者可以在 CI 里为任意分支打同样的未签名安装包（Actions → *Desk release* → *Run workflow*，勾选 **windows**），作为工作流产物保留 7 天。只运行本仓库自己的 Releases 或 Actions 打出的安装包。
 
 ## 接上你的 AI
 
@@ -73,7 +87,7 @@ Windows 上 faster-whisper 默认用 CPU，因为它需要的 CUDA 库（CUDA 12
 
 - 路径太深：Windows 默认限制路径 260 个字符，除非开启长路径（组策略「启用 Win32 长路径」）。如果渲染报路径错误，把项目放在短一点的目录，例如 `D:\Reelfold`。
 - 发布浏览器、定时发布和「创作」页的录制在 Windows 上测试得较少。
-- Windows 正式版发布之前没有自动更新。
+- 安装包和应用都没有签名，在配置签名之前 SmartScreen（以及部分杀毒软件）会提示。
 
 ## 数据放在哪里
 
