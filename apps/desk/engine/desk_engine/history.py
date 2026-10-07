@@ -4,7 +4,7 @@ Sources (deduplicated by real path):
   * the desk registry (``<DESK_DATA_DIR>/batches.json``);
   * the engine's batch registry (``$VSTUDIO_HOME/batches.json``, written by ``vstudio.batch plan``);
   * the engine's projects + series (``$VSTUDIO_HOME/projects.json`` / ``series/``, i.e. ``vstudio.project list``);
-  * watched folders (default ``~/Desktop/video-studio-demos``; ``DESK_HISTORY_WATCH`` = ``os.pathsep`` list
+  * watched folders (default ``~/Desktop/video-studio-demos``; ``DESK_HISTORY_WATCH`` = ``os.pathsep`` list  (check-skill: allow)
     overrides the default, empty = none): the folder and up to 2 levels below it are scanned for ``batch.db``
     (a batch) or ``project.yaml`` (a project, whose batch store is ``<project>/state``).
 
@@ -26,7 +26,7 @@ from . import works as WK
 from .common import (batch_id, is_temp_path, keep_entry, live_status, need, prune_json_registry, read_json,
                      write_json)
 
-DEFAULT_WATCH = ["~/Desktop/video-studio-demos"]
+DEFAULT_WATCH = ["~/Desktop/video-studio-demos"]  # check-skill: allow (documented default; DESK_HISTORY_WATCH overrides)
 SKIP_DIRS = {"node_modules", ".git", "jobs", "cache", "delivery", "package", "review", "__pycache__", "state"}
 MAX_ENTRIES = 500
 

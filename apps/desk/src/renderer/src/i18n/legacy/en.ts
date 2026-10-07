@@ -271,7 +271,7 @@ export const legacyEn = {
   'settings.resolved': 'In use',
   'settings.notFound': 'video-studio not found',
   'settings.enginePath': 'video-studio repo',
-  'settings.enginePathHint': 'The folder with lib/vstudio; empty = auto (VSTUDIO_ENGINE_PATH or a sibling video-studio folder)',
+  'settings.enginePathHint': 'The folder with lib/vstudio; empty = auto (VSTUDIO_ENGINE_PATH, else the video-studio repo this app lives in)',
   'settings.python': 'Python',
   'settings.pythonHint': 'Needs the video-studio requirements (numpy, PyYAML, mediapipe…)',
   'settings.saveRestart': 'Save and restart the engine',

@@ -1,0 +1,25 @@
+{
+  "name": "video-studio-monorepo",
+  "private": true,
+  "description": "video-studio: the open-source video-editing skill + engine (repo root), the Daycut desktop app (apps/desk) and the website (apps/site).",
+  "license": "MIT",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w apps/desk",
+    "desk": "npm run dev -w apps/desk",
+    "site": "npm run dev -w apps/site",
+    "lint": "npm run lint -w apps/desk",
+    "test": "npm run test -w apps/desk",
+    "build:site": "npm run build -w apps/site",
+    "check": "python3 scripts/check_skill.py"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zyziyun/video-studio.git"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

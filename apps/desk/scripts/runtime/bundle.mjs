@@ -1,7 +1,7 @@
 // Build the self-contained engine runtime for one target into build/runtime/<target>/:
 //   python/   python-build-standalone + the pinned pip set (packaging/requirements/<target>.txt, hash-checked)
 //   ffmpeg/   LGPL ffmpeg/ffprobe + only the shared libraries they load (packaging/ffmpeg/<target>.txt)
-//   vstudio/  the video-studio repo at the commit pinned in packaging/runtime.lock.json
+//   vstudio/  the engine from this monorepo's root (lib/, workflows/, SKILL.md ...; packaging/runtime.lock.json -> vstudio.include)
 //   licenses/ licence texts + component lists for everything above (feeds THIRD_PARTY_LICENSES.md)
 //   runtime.json  what was built (read by the app at startup and shown in Settings)
 // Usage: node scripts/runtime/bundle.mjs [--target=darwin-arm64] [--skip=python,ffmpeg,vstudio]
@@ -9,7 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { machoClosure, peClosure } from './binaries.mjs';
-import { arg, CACHE, download, log, micromamba, pbsUrl, readLock, rmrf, ROOT, run, TAR, targetFromArgs } from './common.mjs';
+import { arg, CACHE, download, ENGINE_ROOT, engineCommit, log, micromamba, pbsUrl, readLock, rmrf, ROOT, run, TAR, targetFromArgs } from './common.mjs';
 
 const lock = readLock();
 const target = targetFromArgs();
@@ -152,23 +152,22 @@ function ffmpegLicenses(prefix, files, extraRoots) {
   if (gpl.length) log('WARNING: GPL-licensed components in the ffmpeg closure:', gpl.map((r) => `${r.name} (${r.license})`).join(', '));
 }
 
-// ------------------------------------------------------------------ vstudio (pinned commit)
+// ------------------------------------------------------------------ vstudio (this repo's engine)
+// The engine ships from the same checkout as the app (monorepo root), so a desk build always carries the engine it
+// was tested against. COMMIT records the checkout's HEAD (+ "-dirty" for local engine changes).
+const vstudioCommit = engineCommit();
 async function buildVstudio() {
-  const { commit, include, exclude } = lock.vstudio;
-  const tgz = await download(`https://codeload.github.com/zyziyun/video-studio/tar.gz/${commit}`, path.join(CACHE, `video-studio-${commit}.tar.gz`));
-  const tmp = path.join(CACHE, `vstudio-${commit}`);
-  rmrf(tmp);
-  fs.mkdirSync(tmp, { recursive: true });
-  run(TAR, ['-xzf', tgz, '-C', tmp, '--strip-components=1']);
+  const { include, exclude } = lock.vstudio;
   const dst = path.join(OUT, 'vstudio');
   rmrf(dst);
   fs.mkdirSync(dst, { recursive: true });
   const drop = new Set(exclude);
   for (const e of include) {
-    fs.cpSync(path.join(tmp, e), path.join(dst, e), { recursive: true, filter: (src) => !drop.has(path.basename(src)) });
+    fs.cpSync(path.join(ENGINE_ROOT, e), path.join(dst, e), { recursive: true, filter: (src) => !drop.has(path.basename(src)) });
   }
-  fs.writeFileSync(path.join(dst, 'COMMIT'), commit + '\n');
-  fs.copyFileSync(path.join(tmp, 'LICENSE'), path.join(OUT, 'licenses', 'video-studio-LICENSE.txt'));
+  fs.writeFileSync(path.join(dst, 'COMMIT'), vstudioCommit + '\n');
+  fs.copyFileSync(path.join(ENGINE_ROOT, 'LICENSE'), path.join(OUT, 'licenses', 'video-studio-LICENSE.txt'));
+  log(`vstudio from ${ENGINE_ROOT} @ ${vstudioCommit.slice(0, 12)}`);
 }
 
 // ------------------------------------------------------------------ checks
@@ -210,7 +209,7 @@ function manifest() {
     target,
     python: lock.python.version,
     pbsRelease: lock.python.release,
-    vstudioCommit: lock.vstudio.commit,
+    vstudioCommit,
     ffmpeg: lock.ffmpeg.spec,
     h264Encoder: T.h264,
     asr: isMac && target.endsWith('arm64') ? 'mlx-whisper' : 'faster-whisper',

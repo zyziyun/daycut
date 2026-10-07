@@ -1,4 +1,7 @@
-# video-studio-site
+# video-studio-site (apps/site)
+
+Lives in `apps/site/` of the [video-studio](https://github.com/zyziyun/video-studio) monorepo; MIT like the rest of
+the repo (see `LICENSE`). `npm install` works here or at the repo root (one npm workspace for all apps).
 
 Product website (官网) for the video-studio AI video studio: English (default) at `/`, `/privacy`, `/terms`;
 中文 at `/zh/`, `/zh/privacy`, `/zh/terms`. The old `/en/*` URLs are static redirect pages to the English
@@ -10,7 +13,7 @@ opens the same page in the other language.
 SEO: every page has `<html lang>` (`en` / `zh-CN`), a canonical URL, and hreflang alternates `en`, `zh-CN` and
 `x-default` (= English). There is no sitemap.
 
-Not deployed. No GitHub repo created. Everything the creator must decide is listed at the bottom.
+Not deployed. Everything the creator must decide is listed at the bottom.
 
 ## Run
 
@@ -49,7 +52,7 @@ screenshots/               ← home-en-*, home-zh-* (desktop + mobile) and priva
 | `url` | `https://example.com` | Your domain; used for canonical, hreflang and OG tags. `astro.config.mjs` reads it. |
 | `contactEmail` | `hello@example.com` | Placeholder. Used in the contact section, footer, legal pages and the mailto fallback. |
 | `formEndpoint` | `''` | Empty = form is shown disabled with an "online form not open yet, email us" notice and a mailto button. Set a URL = the form POSTs there (standard `application/x-www-form-urlencoded`). |
-| `downloadUrl` | `https://github.com/zyziyun/video-studio-desk-releases/releases/latest` | Both macOS and Windows buttons point here (a placeholder; the repo does not exist yet). |
+| `downloadUrl` | `https://github.com/zyziyun/daycut-releases/releases/latest` | Both macOS and Windows buttons point here (the Daycut releases repo; installs from before the rename also read `video-studio-desk-releases`). |
 | `githubUrl` | `https://github.com/zyziyun/video-studio` | Open-source section, contact, footer. |
 
 ## Form backend options (creator decides)
@@ -119,7 +122,7 @@ tiles and a 1200×630 `og.jpg`. Total image weight on the home page is roughly 1
 4. **Legal review** of `/privacy` and `/terms` (both languages): operating entity name, governing law, payment and
    refund terms, retention periods (30 days after delivery is a proposal), cross-border transfer consent wording
    (PIPL), and the AI-label rules per platform. Remove the draft banner only after review.
-5. **Desktop downloads**: create the `video-studio-desk-releases` repo (or change `downloadUrl`), and confirm the
+5. **Desktop downloads**: create the `daycut-releases` repo (or change `downloadUrl`), and confirm the
    note about MediaPipe usage statistics matches what the app actually shows.
 6. **Promises on the page**: 72-hour delivery, "we reply to everyone", 7-day deletion turnaround, one free round of
    fixes (terms §5), early prices. Keep or edit; they are commitments once live.

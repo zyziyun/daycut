@@ -1,0 +1,59 @@
+# Daycut desk app (apps/desk): lint + typecheck, unit tests, sidecar engine tests (against this repo's engine) and
+# the Electron e2e suite (hidden windows) on macOS.
+name: Desk CI
+on:
+  pull_request:
+    paths:
+      - 'apps/desk/**'
+      - 'lib/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/desk-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/desk/**'
+      - 'lib/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/desk-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: desk-ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    runs-on: macos-14
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apps/desk
+    env:
+      DESK_HIDE_WINDOW: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12', cache: pip }
+      - name: Engine deps for the sidecar's real-engine tests (no local ASR models)
+        working-directory: .
+        run: |
+          grep -v whisper requirements.txt > "$RUNNER_TEMP/req.txt"
+          python -m pip install -r "$RUNNER_TEMP/req.txt"
+          brew install ffmpeg
+      - run: npm ci
+        working-directory: .
+      - name: check_skill (personal paths / secrets in apps/)
+        working-directory: .
+        run: python scripts/check_skill.py
+      - run: npm run lint
+      - run: npm run test:unit
+      - run: npm run test:engine
+      - name: Electron e2e (hidden windows, mock + real engine)
+        run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with: { name: desk-test-results, path: apps/desk/test-results, retention-days: 7 }

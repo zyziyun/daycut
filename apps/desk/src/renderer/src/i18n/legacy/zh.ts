@@ -270,7 +270,7 @@ export const legacyZh = {
   'settings.resolved': '当前使用',
   'settings.notFound': '未找到 video-studio',
   'settings.enginePath': 'video-studio 仓库路径',
-  'settings.enginePathHint': '包含 lib/vstudio 的文件夹；留空则自动找（环境变量 VSTUDIO_ENGINE_PATH 或旁边的 video-studio）',
+  'settings.enginePathHint': '包含 lib/vstudio 的文件夹；留空则自动找（环境变量 VSTUDIO_ENGINE_PATH，否则用本应用所在的 video-studio 仓库）',
   'settings.python': 'Python 路径',
   'settings.pythonHint': '需要装好 video-studio 的依赖（numpy、PyYAML、mediapipe…）',
   'settings.saveRestart': '保存并重启引擎',

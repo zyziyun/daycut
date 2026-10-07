@@ -19,7 +19,7 @@ for d in (HOME, DATA):
 os.environ["VSTUDIO_HOME"] = HOME
 os.environ["VSTUDIO_CLIENTS"] = os.path.join(HOME, "clients")
 os.environ["DESK_DATA_DIR"] = DATA
-os.environ["DESK_HISTORY_WATCH"] = ""          # never scan the real ~/Desktop/video-studio-demos
+os.environ["DESK_HISTORY_WATCH"] = ""          # never scan the real ~/Desktop/video-studio-demos  (check-skill: allow)
 os.environ.setdefault("VSTUDIO_BATCH_BENCH", os.path.join(ROOT, "bench.json"))
 
 atexit.register(shutil.rmtree, ROOT, True)

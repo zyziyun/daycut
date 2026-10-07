@@ -1,0 +1,48 @@
+# Engine (repo root: lib/vstudio, workflows/, scripts/) - pytest + the skill's pre-publish check.
+name: Engine
+on:
+  pull_request:
+    paths:
+      - 'lib/**'
+      - 'workflows/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'references/**'
+      - 'SKILL.md'
+      - 'requirements.txt'
+      - 'pyproject.toml'
+      - '.github/workflows/engine.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'lib/**'
+      - 'workflows/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'references/**'
+      - 'SKILL.md'
+      - 'requirements.txt'
+      - 'pyproject.toml'
+      - '.github/workflows/engine.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: engine-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12', cache: pip }
+      - name: ffmpeg
+        run: sudo apt-get update -q && sudo apt-get install -yq ffmpeg
+      - name: Python deps
+        run: python -m pip install -r requirements.txt pytest
+      - name: check_skill (frontmatter, personal paths, secrets - also scans apps/)
+        run: python scripts/check_skill.py
+      - name: pytest
+        run: python -m pytest -q

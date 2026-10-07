@@ -1,0 +1,37 @@
+# Website (apps/site, Astro static build): build + copy rules.
+name: Site
+on:
+  pull_request:
+    paths:
+      - 'apps/site/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/site.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/site/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/site.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: site-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: check_skill (personal paths / secrets in apps/)
+        run: python scripts/check_skill.py
+      - run: npm ci --ignore-scripts
+      - run: npm run build -w apps/site
+      - run: npm run check:copy -w apps/site

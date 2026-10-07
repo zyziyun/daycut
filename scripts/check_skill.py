@@ -12,12 +12,18 @@ Checks:
      check marks stay allowed). Spoken-copy defaults in references or templates are not scanned unless --all-md.
   4. No absolute personal paths: /Users/<name>/ and /home/<name>/ are errors everywhere; ~/Desktop, ~/Downloads,
      ~/Movies are errors in code / config and warnings in .md prose ("~/Desktop/..." placeholders are fine).
-     persona.local.yaml and caches are excluded.
+     persona.local.yaml and caches are excluded. Placeholder homes (/Users/me/, /Users/you/) are fine.
+     Covers the apps too (apps/desk, apps/site: .ts/.tsx/.cjs/.astro ...), skipping node_modules / dist / out /
+     build output. A line that must keep such a path on purpose (a documented product default) carries the
+     marker `check-skill: allow`.
   5. Relative markdown links in SKILL.md / WORKFLOW.md point at files that exist (warning only).
+  6. No committed secrets anywhere (API keys / tokens / private keys by their well-known shapes) and no secret
+     files (.env, .p12, .pfx, .pem, .key, cookies) in the tree.
 """
 import argparse
 import pathlib
 import re
+import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -30,10 +36,21 @@ DESC_MAX, DESC_WARN = 1024, 900
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 # Hard: a concrete user home. Soft: a home-relative personal folder (an error in code / config, a warning in prose
 # docs, which sometimes have to say what a port replaced). "~/Desktop/..." with a literal ellipsis is a placeholder.
-PERSONAL = re.compile(r"/Users/(?!\.\.\.|<|\$)[A-Za-z0-9._-]+/|/home/(?!<|\$)[A-Za-z0-9._-]+/")
+PERSONAL = re.compile(r"/Users/(?!\.\.\.|<|\$|(?:me|you)/)[A-Za-z0-9._-]+/|/home/(?!<|\$|(?:me|you)/)[A-Za-z0-9._-]+/")
 PERSONAL_SOFT = re.compile(r"~/(Desktop|Downloads|Movies)\b(?!/\.\.\.)")
-TEXT_EXT = {".md", ".py", ".sh", ".html", ".json", ".yaml", ".yml", ".toml", ".txt", ".js", ".mjs", ".css", ".ass", ".srt"}
-SKIP_DIRS = {".git", "__pycache__", "node_modules", ".pytest_cache", ".venv", "venv", "cache", ".cache"}
+TEXT_EXT = {".md", ".py", ".sh", ".html", ".json", ".yaml", ".yml", ".toml", ".txt", ".js", ".mjs", ".css", ".ass", ".srt",
+            ".ts", ".tsx", ".jsx", ".cjs", ".astro", ".ps1", ".plist", ".xml", ".svg", ".webmanifest"}
+SKIP_DIRS = {".git", "__pycache__", "node_modules", ".pytest_cache", ".venv", "venv", "cache", ".cache",
+             # app build output / test artifacts (apps/desk, apps/site)
+             "dist", "out", "build", ".astro", "test-results", "playwright-report"}
+ALLOW_MARK = "check-skill: allow"
+# Well-known secret shapes: OpenAI / Anthropic keys, GitHub tokens, AWS access keys, Slack tokens, Google API keys,
+# PEM private keys. Placeholders (sk-..., xxxx) do not match.
+SECRET = re.compile(r"\b(sk-(?:ant-|proj-)?[A-Za-z0-9_-]{24,}|gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}"
+                    r"|AKIA[0-9A-Z]{16}|xox[abprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{35})\b"
+                    r"|-----BEGIN (?:RSA |EC |OPENSSH |DSA |ENCRYPTED )?PRIVATE KEY-----")
+SECRET_FILES = re.compile(r"(^\.env(\..+)?$|\.(p12|pfx|pem|key|keychain|mobileprovision)$|^cookies?(\.[a-z]+)?$)", re.I)
+SECRET_FILES_OK = {".env.example", ".env.sample"}
 SKIP_FILES = {"persona.local.yaml"}
 # Files that quote the forbidden patterns on purpose (rule text, this checker).
 ALLOW_PATH_MENTIONS = {"references/PORTING.md", "scripts/check_skill.py"}
@@ -85,7 +102,29 @@ def emoji_hits(text):
 
 def personal_path_hits(text, soft=False):
     rx = PERSONAL_SOFT if soft else PERSONAL
-    return [(i, m.group(0)) for i, ln in enumerate(text.splitlines(), 1) for m in rx.finditer(ln)]
+    return [(i, m.group(0)) for i, ln in enumerate(text.splitlines(), 1) if ALLOW_MARK not in ln for m in rx.finditer(ln)]
+
+
+def secret_hits(text):
+    """-> [(line_no, redacted match)] for strings shaped like real credentials."""
+    return [(i, m.group(0)[:8] + "...") for i, ln in enumerate(text.splitlines(), 1) for m in SECRET.finditer(ln)]
+
+
+def tracked_files(root):
+    """-> the git-tracked files under root (ignored local files such as a .env are not "in the tree"), or None."""
+    try:
+        r = subprocess.run(["git", "-C", str(root), "ls-files", "-z"], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return [root / f for f in r.stdout.split("\0") if f] if r.returncode == 0 and r.stdout else None
+
+
+def secret_files(root):
+    files = tracked_files(root)
+    for p in (files if files is not None else root.rglob("*")):
+        if p.is_file() and SECRET_FILES.search(p.name) and p.name not in SECRET_FILES_OK \
+                and p.name not in SKIP_FILES and not any(part in SKIP_DIRS for part in p.relative_to(root).parts):
+            yield p
 
 
 def md_links(text):
@@ -146,6 +185,10 @@ def run(root=ROOT, all_md=False):
             errs.append(f"{rel}:{i}: personal absolute path {hit!r}")
         for i, hit in personal_path_hits(text, soft=True):
             (warns if p.suffix == ".md" else errs).append(f"{rel}:{i}: personal folder path {hit!r}")
+        for i, hit in secret_hits(text):
+            errs.append(f"{rel}:{i}: looks like a secret {hit!r}")
+    for p in secret_files(root):
+        errs.append(f"{p.relative_to(root).as_posix()}: secret-like file in the tree (.env / certificate / key / cookies)")
     return errs, warns
 
 

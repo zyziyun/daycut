@@ -8,6 +8,18 @@ import { fileURLToPath } from 'node:url';
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 export const LOCK_FILE = path.join(ROOT, 'packaging', 'runtime.lock.json');
 export const CACHE = process.env.DESK_BUILD_CACHE || path.join(ROOT, 'build', '.cache');
+// The engine (vstudio library, workflows, SKILL.md) is this monorepo's root: apps/desk -> ../.. ($VSTUDIO_ENGINE_SRC overrides).
+export const ENGINE_ROOT = path.resolve(process.env.VSTUDIO_ENGINE_SRC || path.join(ROOT, '..', '..'));
+
+/** Commit of the engine checkout (+ "-dirty" when lib/ workflows/ references/ or requirements.txt have local changes). */
+export function engineCommit() {
+  if (!fs.existsSync(path.join(ENGINE_ROOT, 'lib', 'vstudio'))) throw new Error(`no engine at ${ENGINE_ROOT} (expected lib/vstudio)`);
+  const git = (args) => spawnSync('git', ['-C', ENGINE_ROOT, ...args], { encoding: 'utf8' });
+  const head = git(['rev-parse', 'HEAD']);
+  if (head.status !== 0) return 'unknown';
+  const dirty = git(['status', '--porcelain', '--', 'lib', 'workflows', 'references', 'requirements.txt', 'SKILL.md']).stdout.trim();
+  return head.stdout.trim() + (dirty ? '-dirty' : '');
+}
 
 export function readLock() {
   return JSON.parse(fs.readFileSync(LOCK_FILE, 'utf8'));

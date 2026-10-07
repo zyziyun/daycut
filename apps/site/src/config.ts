@@ -23,7 +23,7 @@ export const SITE = {
   /**
    * Desktop app download page (one URL for macOS and Windows; GitHub "latest release" page).
    * Proposed public releases repo for Daycut; create it before publishing (the desk app's update feed uses the same
-   * repo, see video-studio-desk electron-builder.config.cjs DESK_RELEASES_REPO).
+   * repo, see apps/desk/electron-builder.config.cjs DESK_RELEASES_REPO).
    */
   downloadUrl: 'https://github.com/zyziyun/daycut-releases/releases/latest',
 

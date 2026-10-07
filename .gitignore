@@ -13,3 +13,12 @@ persona.local.yaml
 persona.yaml
 *.egg-info/
 .cache/
+
+# apps (npm workspaces; each app also has its own .gitignore)
+dist/
+out/
+test-results/
+playwright-report/
+.astro/
+apps/desk/build/runtime/
+apps/desk/build/.cache/

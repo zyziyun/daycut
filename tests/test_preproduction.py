@@ -86,6 +86,10 @@ def test_check_skill_helpers():
     assert cs.personal_path_hits(f"see {home}someone/x and {home}.../y")[0][1] == home + "someone/"
     assert len(cs.personal_path_hits(f"{home}.../y")) == 0
     assert cs.personal_path_hits(desk + "/foo", soft=True) and not cs.personal_path_hits(desk + "/...", soft=True)
+    assert not cs.personal_path_hits(f"{home}me/Movies/a.mp4") and not cs.personal_path_hits(f"{home}someone/x  (check-skill: allow)")
+    fake = "sk" + "-proj-" + "A1b2C3d4" * 4                 # split so this file doesn't trip the repo scan
+    assert cs.secret_hits(f"key = '{fake}'") and not cs.secret_hits("OPENAI_API_KEY=sk-...  xxxx-xxxx-xxxx-xxxx")
+    assert cs.SECRET_FILES.search(".env") and cs.SECRET_FILES.search("DeveloperID.p12") and not cs.SECRET_FILES.search("env.ts")
 
 
 def test_check_skill_repo_clean():

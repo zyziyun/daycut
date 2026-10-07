@@ -1,11 +1,13 @@
-# video-studio desk
+# Daycut (日剪) desk app
 
-Electron desktop workbench for the [video-studio](../video-studio) skill's batch engine (`python -m vstudio.batch`).
+Electron desktop workbench for the [video-studio](../../README.md) skill's engine (`python -m vstudio.batch`,
+`vstudio.project`), in `apps/desk/` of the video-studio monorepo. MIT, like the rest of the repo (see `LICENSE`).
+Formerly the separate `video-studio-desk` repo (history kept via git subtree).
 Batches → board → review → job detail (transcript edits) → publish (built-in browser with assisted fill).
 
 ```bash
-npm install
-npm run dev          # Vite + Electron; engine sidecar starts automatically
+npm install          # here or at the repo root: one npm workspace install (node_modules at the repo root)
+npm run dev          # Vite + Electron; engine sidecar starts automatically, using this repo's lib/ (../..)
 npm run test         # vitest (unit) + python unittest (engine/tests)
 npm run test:e2e     # builds, then Playwright Electron smoke + CDP fill fixture
 npm run lint         # eslint + tsc
@@ -15,11 +17,11 @@ npm run dist:mac:unsigned && npm run test:packaged   # DMG with the bundled engi
 ```
 
 Distribution (signed/notarized DMG, Windows installer, auto-update, store plans): [docs/RELEASING.md](docs/RELEASING.md).
-Installed builds run the engine from the bundled runtime (`resources/runtime`: Python, LGPL ffmpeg, video-studio at a
-pinned commit) and download fonts/models on first run; Settings → Python / video-studio repo still override it.
+Installed builds run the engine from the bundled runtime (`resources/runtime`: Python, LGPL ffmpeg, and the engine
+copied from this checkout's root at build time — no separate engine checkout or pinned commit) and download fonts/models on first run; Settings → Python / video-studio repo still override it.
 
 Engine: `engine/server.py` (stdlib HTTP, 127.0.0.1, random port, per-launch token). It finds the engine repo via
-Settings → `VSTUDIO_ENGINE_PATH` → `../video-studio`, and Python via Settings → `DESK_PYTHON` → miniconda/Homebrew.
+Settings → `VSTUDIO_ENGINE_PATH` → the monorepo root (`../..`) → a sibling `../video-studio` (old layout), and Python via Settings → `DESK_PYTHON` → miniconda/Homebrew.
 `DESK_ENGINE_MOCK=1` forces the in-memory mock engine (also used when `vstudio` cannot be imported).
 
 AI accounts & models (Settings → AI accounts & models, `#/settings/ai`): provider status from the engine

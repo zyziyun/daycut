@@ -35,8 +35,14 @@ const azure =
 // scripts/runtime/bundle.mjs fails the build if a Mach-O file outside this pattern appears.
 const RUNTIME_NON_CODE = String.raw`/Contents/Resources/runtime/(?!.*\.(so|dylib)$)(?!python/bin/python3\.\d+$)(?!ffmpeg/bin/ff(mpeg|probe)$)`;
 
+// npm workspaces hoist electron to the monorepo's node_modules, where electron-builder cannot read the installed
+// version from apps/desk: give it the exact one that is installed (resolved from here).
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- CommonJS config file
+const electronVersion = require(require.resolve('electron/package.json', { paths: [__dirname] })).version;
+
 /** @type {import('electron-builder').Configuration} */
 module.exports = {
+  electronVersion,
   // Kept from video-studio desk on purpose: the same bundle id / AppUserModelID / NSIS GUID means Daycut installs
   // over the old app (same Keychain ACL, same Start-menu identity, auto-update keeps working). User data stays in the
   // old folder too (src/main/identity.ts).

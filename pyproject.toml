@@ -6,3 +6,8 @@ requires-python = ">=3.10"
 
 [tool.setuptools.packages.find]
 where = ["lib"]
+
+[tool.pytest.ini_options]
+# engine tests only; the desk sidecar's tests (apps/desk/engine/tests) run with `npm run test:engine` in apps/desk
+testpaths = ["tests"]
+norecursedirs = ["apps", "node_modules", ".git"]

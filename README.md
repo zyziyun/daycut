@@ -154,11 +154,14 @@ lib/vstudio/              shared library (media, audio, asr, cut, subs, tts, fac
 references/               EFFECTS.md (generated catalogue), ADDING_EFFECTS, PLATFORMS, RETOUCH, SOUND,
                           AESTHETICS, VALIDATION (real-media test record)
 tests/                    pytest on synthetic media (python3 -m pytest tests -q)
+apps/desk/                Daycut (日剪) desktop app: Electron workbench on this engine (README there)
+apps/site/                product website (Astro static site)
+package.json              npm workspaces for apps/* (the skill itself needs no Node)
 ```
 
 ## Credits and licences
 
-- Code: MIT (see `LICENSE`).
+- Code: MIT (see `LICENSE`), including `apps/desk` and `apps/site`.
 - Fonts and models are downloaded at install time from their upstream projects under their own licences
   (SIL OFL 1.1; Apache-2.0) and are not redistributed here.
 - The optional RVM matting engine in `workflows/cover` is GPL-3.0 and is fetched at runtime only if you choose it.

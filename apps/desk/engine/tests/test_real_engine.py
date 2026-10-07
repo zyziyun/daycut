@@ -14,8 +14,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import _isolate  # noqa: E402,F401  (VSTUDIO_HOME / DESK_DATA_DIR -> a temp folder, first)
 
-ENGINE = os.environ.get("VSTUDIO_ENGINE_PATH") or os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "..", "video-studio"))
+ENGINE = os.environ.get("VSTUDIO_ENGINE_PATH") or os.path.abspath(       # monorepo root: apps/desk/engine/tests -> ../../../..
+    os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
 HAVE = os.path.isdir(os.path.join(ENGINE, "lib", "vstudio", "batch"))
 
 

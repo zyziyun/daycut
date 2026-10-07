@@ -33,8 +33,7 @@
     }
   },
   "vstudio": {
-    "repo": "https://github.com/zyziyun/video-studio.git",
-    "commit": "aa43742cd51af92549386860c6294dc7280e0753",
+    "repo": "https://github.com/zyziyun/video-studio",
     "include": [
       "lib",
       "workflows",
@@ -50,7 +49,7 @@
       "__pycache__",
       ".pytest_cache"
     ],
-    "$comment": "Fetched at build time as a tarball of this exact commit (codeload.github.com); include = top-level entries copied, exclude = directory names dropped anywhere."
+    "$comment": "Copied at build time from this monorepo's root (apps/desk -> ../..; VSTUDIO_ENGINE_SRC overrides), never fetched: include = top-level entries copied, exclude = directory names dropped anywhere. runtime.json / COMMIT record the checkout's git HEAD."
   },
   "pip": {
     "$comment": "Added to the pinned repo's requirements.txt per target. torch is overridden away (mlx-whisper only needs it to convert checkpoints).",

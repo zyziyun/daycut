@@ -358,7 +358,7 @@ class RebaseTest(unittest.TestCase):
         b = tempfile.mkdtemp()
         os.makedirs(os.path.join(b, "jobs", "ep01", "preview"))
         open(os.path.join(b, "jobs", "ep01", "preview", "sheet.jpg"), "wb").close()
-        old = "/Users/someone/Desktop/old-place/batch-rag/jobs/ep01/preview/sheet.jpg"
+        old = "/Users/me/Desktop/old-place/batch-rag/jobs/ep01/preview/sheet.jpg"
         self.assertEqual(rebase(old, b), os.path.join(b, "jobs", "ep01", "preview", "sheet.jpg"))
         self.assertEqual(rebase("/elsewhere/x.jpg", b), "/elsewhere/x.jpg")
         self.assertEqual(rebase("rel/x.jpg", b), "rel/x.jpg")

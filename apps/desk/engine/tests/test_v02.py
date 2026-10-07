@@ -22,7 +22,7 @@ from desk_engine.common import BadRequest, EventBus, Registry  # noqa: E402
 from desk_engine.mock import MockEngine  # noqa: E402
 from desk_engine.studio import Studio, downstream  # noqa: E402
 
-GTM_CSV = os.path.join(os.path.dirname(__file__), "..", "..", "..", "video-studio-app", "gtm", "05_weekly_metrics.csv")
+GTM_CSV = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..", "video-studio-app", "gtm", "05_weekly_metrics.csv")
 
 TOP_HELP = """usage: python -m vstudio.batch [-h]
   {plan,estimate,run,status,review,job,package,verify-manifest,clean,du,bench,recipes,plan-segments,client,deliver,metrics,timing} ...

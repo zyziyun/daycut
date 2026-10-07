@@ -52,8 +52,10 @@ export function findPython(preferred?: string): string {
   return process.platform === 'win32' ? 'python' : 'python3';
 }
 
+// Dev: the monorepo root (apps/desk -> ../..) holds the engine; a sibling video-studio checkout is the pre-monorepo layout.
 export function defaultEnginePath(appPath: string, preferred?: string, bundled?: string): string | undefined {
-  for (const p of [preferred, process.env.VSTUDIO_ENGINE_PATH, bundled, path.resolve(appPath, '..', 'video-studio')]) {
+  const candidates = [preferred, process.env.VSTUDIO_ENGINE_PATH, bundled, path.resolve(appPath, '..', '..'), path.resolve(appPath, '..', 'video-studio')];
+  for (const p of candidates) {
     if (p && fs.existsSync(path.join(p, 'lib', 'vstudio'))) return p;
   }
   return undefined;
