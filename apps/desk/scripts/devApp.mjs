@@ -1,7 +1,7 @@
 // macOS dev identity. The bold app menu in the menu bar, the Dock tooltip and Cmd-Tab take the name from the bundle's
 // Info.plist (CFBundleName), which app.setName() cannot change: launched from node_modules/electron, the app says
-// "Electron" with the atom icon. `npm run dev` therefore launches a copy of Electron.app renamed to Daycut.app
-// (CFBundleName / CFBundleDisplayName "Daycut", bundle id com.vstudio.desk.dev, the Daycut icon.icns), made once
+// "Electron" with the atom icon. `npm run dev` therefore launches a copy of Electron.app renamed to Reelfold.app
+// (CFBundleName / CFBundleDisplayName "Reelfold", bundle id app.reelfold.desk.dev, the Reelfold icon.icns), made once
 // under build/.cache/dev-app and rebuilt when the Electron version, the icon or this recipe changes. The original
 // bundle in node_modules is never modified. Other platforms (and any failure here) use the stock binary.
 import { execFileSync } from 'node:child_process';
@@ -10,9 +10,9 @@ import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 
-const RECIPE = 1; // bump when the steps below change
-export const DEV_BUNDLE_ID = 'com.vstudio.desk.dev';
-export const DEV_APP_NAME = 'Daycut';
+const RECIPE = 2; // bump when the steps below change
+export const DEV_BUNDLE_ID = 'app.reelfold.desk.dev';
+export const DEV_APP_NAME = 'Reelfold';
 
 /** What the cached copy was built from; any change rebuilds it. */
 export function devAppStamp({ electronVersion, iconBytes }) {
@@ -22,7 +22,7 @@ export function devAppStamp({ electronVersion, iconBytes }) {
 
 /** Info.plist keys set on the copy. */
 export function devPlistEdits() {
-  return { CFBundleName: DEV_APP_NAME, CFBundleDisplayName: DEV_APP_NAME, CFBundleIdentifier: DEV_BUNDLE_ID, CFBundleIconFile: 'daycut.icns' };
+  return { CFBundleName: DEV_APP_NAME, CFBundleDisplayName: DEV_APP_NAME, CFBundleIdentifier: DEV_BUNDLE_ID, CFBundleIconFile: 'reelfold.icns' };
 }
 
 function plistSet(plist, key, value) {
@@ -34,7 +34,7 @@ function plistSet(plist, key, value) {
 }
 
 /**
- * Path of the Electron binary `npm run dev` should launch: <cache>/Daycut.app/Contents/MacOS/Electron on macOS
+ * Path of the Electron binary `npm run dev` should launch: <cache>/Reelfold.app/Contents/MacOS/Electron on macOS
  * (built if missing or stale), else `electronPath`.
  */
 export function devElectronBinary({ root, electronPath, log = console.log }) {
@@ -62,13 +62,20 @@ export function devElectronBinary({ root, electronPath, log = console.log }) {
     }
     const plist = path.join(app, 'Contents/Info.plist');
     for (const [k, v] of Object.entries(devPlistEdits())) plistSet(plist, k, v);
-    fs.copyFileSync(icns, path.join(app, 'Contents/Resources/daycut.icns'));
+    fs.copyFileSync(icns, path.join(app, 'Contents/Resources/reelfold.icns'));
+    // 千剪 under a Chinese system language, as in the packaged app (electron-builder.config.cjs mac.extraResources)
+    const zh = path.join(root, 'packaging/mac/zh_CN.lproj/InfoPlist.strings');
+    for (const lproj of ['zh_CN.lproj', 'zh-Hans.lproj']) {
+      fs.mkdirSync(path.join(app, 'Contents/Resources', lproj), { recursive: true });
+      fs.copyFileSync(zh, path.join(app, 'Contents/Resources', lproj, 'InfoPlist.strings'));
+    }
+    execFileSync('plutil', ['-replace', 'LSHasLocalizedDisplayName', '-bool', 'true', plist]);
     // the edited Info.plist breaks the stock ad-hoc seal: re-seal the outer bundle (the helpers are untouched)
     execFileSync('codesign', ['--force', '--sign', '-', app], { stdio: 'ignore' });
     fs.writeFileSync(stampFile, stamp);
     return bin;
   } catch (e) {
-    log(`[dev] could not make the Daycut dev app (${e.message.split('\n')[0]}); using the stock Electron.app`);
+    log(`[dev] could not make the Reelfold dev app (${e.message.split('\n')[0]}); using the stock Electron.app`);
     return electronPath;
   }
 }

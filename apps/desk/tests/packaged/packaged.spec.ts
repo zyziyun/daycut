@@ -17,9 +17,9 @@ function appExecutable(): string {
   if (process.env.DESK_APP_PATH) return process.env.DESK_APP_PATH;
   if (process.platform === 'darwin') {
     const dir = path.join(ROOT, 'dist', process.arch === 'arm64' ? 'mac-arm64' : 'mac');
-    return path.join(dir, 'Daycut.app', 'Contents', 'MacOS', 'Daycut');
+    return path.join(dir, 'Reelfold.app', 'Contents', 'MacOS', 'Reelfold');
   }
-  return path.join(ROOT, 'dist', 'win-unpacked', 'Daycut.exe');
+  return path.join(ROOT, 'dist', 'win-unpacked', 'Reelfold.exe');
 }
 
 function resourcesDir(exe: string) {
@@ -219,5 +219,58 @@ test('AI accounts never show raw engine errors (paths, Python tracebacks)', asyn
     expect(text).not.toMatch(/No module named|Traceback|\/Users\/|\/Applications\/|vstudio\.llm/);
   } finally {
     await app.close();
+  }
+});
+
+test('the bundle is Reelfold (bundle id, names, 千剪 under a Chinese system language)', async () => {
+  test.skip(process.platform !== 'darwin', 'macOS bundle');
+  const contents = path.resolve(path.dirname(appExecutable()), '..');
+  const plist = (k: string) => spawnSync('plutil', ['-extract', k, 'raw', path.join(contents, 'Info.plist')], { encoding: 'utf8' }).stdout.trim();
+  expect(plist('CFBundleIdentifier')).toBe('app.reelfold.desk');
+  expect(plist('CFBundleName')).toBe('Reelfold');
+  expect(plist('LSHasLocalizedDisplayName')).toBe('true');
+  for (const l of ['zh_CN.lproj', 'zh-Hans.lproj']) expect(fs.readFileSync(path.join(contents, 'Resources', l, 'InfoPlist.strings'), 'utf8')).toContain('"CFBundleDisplayName" = "千剪";');
+  const feed = fs.readFileSync(path.join(contents, 'Resources', 'app-update.yml'), 'utf8');
+  expect(feed).toMatch(/owner: zyziyun/);
+  expect(feed).toMatch(/repo: reelfold\n/);
+});
+
+test('an old profile migrates into Reelfold and its API keys still decrypt with the old keychain item', async () => {
+  // A unique keychain name per run: the item is created by this (ad-hoc signed) build itself, so macOS never asks
+  // for access; it is deleted at the end. Run 1 plays the old app (a profile whose recorded key is NAME), run 2 finds
+  // it as an old "NAME" install, copies it and must still read the key.
+  test.skip(process.platform !== 'darwin', 'keychain');
+  const NAME = `Reelfold Packaged Test ${Date.now()}`;
+  const appData = fs.mkdtempSync(path.join(os.tmpdir(), 'reelfold-pkg-migrate-'));
+  const cur = path.join(appData, 'Reelfold');
+  fs.mkdirSync(cur);
+  fs.writeFileSync(path.join(cur, 'settings.json'), JSON.stringify({ lang: 'fr', firstRunDone: true }));
+  fs.writeFileSync(path.join(cur, 'migrated-from.json'), JSON.stringify({ from: 'seed', safeStorageName: NAME, at: 'seed' }));
+  const env = { DESK_APP_DATA: appData, DESK_LEGACY_NAMES: NAME, DESK_USER_DATA: '', DESK_ENGINE_MOCK: '1', DESK_SKIP_FIRST_RUN: '1' };
+  try {
+    const a = await launch(env);
+    try {
+      const st = await a.page.evaluate(() => window.desk.secrets.set('openai', 'packaged-test-key-0123456789'));
+      expect(st.keys.openai).toBe(true);
+    } finally {
+      await a.close();
+    }
+    // turn it into an old install named NAME
+    const old = path.join(appData, NAME);
+    fs.renameSync(cur, old);
+    fs.rmSync(path.join(old, 'migrated-from.json'));
+    fs.rmSync(path.join(old, 'logs'), { recursive: true, force: true });
+    const b = await launch(env);
+    try {
+      expect((await b.page.evaluate(() => window.desk.getSettings())).lang).toBe('fr');
+      expect((await b.page.evaluate(() => window.desk.secrets.status())).keys.openai).toBe(true);
+      await expect.poll(() => fs.readFileSync(path.join(cur, 'logs', 'main.log'), 'utf8'), { timeout: 20000 }).toContain('API keys readable 1/1');
+    } finally {
+      await b.close();
+    }
+    expect(JSON.parse(fs.readFileSync(path.join(cur, 'migrated-from.json'), 'utf8')).safeStorageName).toBe(NAME);
+    expect(fs.existsSync(path.join(old, 'settings.json'))).toBe(true); // the old folder stays
+  } finally {
+    spawnSync('security', ['delete-generic-password', '-s', `${NAME} Safe Storage`], { stdio: 'ignore' });
   }
 });

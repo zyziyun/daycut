@@ -1,7 +1,7 @@
 // npm run dev: Vite dev server (renderer, HMR) + esbuild watch (main, preload) + Electron, restarted when
 // main/preload change. A previous dev run of this repo that is still alive (port 5173 / its Electron) is stopped
 // first through the pidfile it recorded (scripts/devLock.mjs) instead of failing with "Port 5173 is already in use".
-// On macOS Electron runs from a cached Daycut.app copy so the menu bar / Dock / About say Daycut (scripts/devApp.mjs).
+// On macOS Electron runs from a cached Reelfold.app copy so the menu bar / Dock / About say Reelfold (scripts/devApp.mjs).
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { context } from 'esbuild';

@@ -13,12 +13,11 @@
 // See docs/RELEASING.md.
 const env = process.env;
 
-// Public releases repo (electron-updater feed + website download links). Override until it exists:
-//   DESK_RELEASES_OWNER=zyziyun DESK_RELEASES_REPO=daycut-releases
-// Installs from before the Daycut rename read zyziyun/video-studio-desk-releases (baked into their app-update.yml):
-// publish the first Daycut release there too so they update across.
+// Installers + the electron-updater feed are GitHub Releases on the source repo itself (zyziyun/reelfold); the
+// website's download button links to its /releases/latest. Override for a fork / test feed:
+//   DESK_RELEASES_OWNER=<owner> DESK_RELEASES_REPO=<repo>
 const RELEASES_OWNER = env.DESK_RELEASES_OWNER || 'zyziyun';
-const RELEASES_REPO = env.DESK_RELEASES_REPO || 'daycut-releases';
+const RELEASES_REPO = env.DESK_RELEASES_REPO || 'reelfold';
 
 const azure =
   env.AZURE_TENANT_ID && env.AZURE_CLIENT_ID && env.AZURE_CLIENT_SECRET && env.AZURE_SIGNING_ENDPOINT && env.AZURE_SIGNING_ACCOUNT && env.AZURE_SIGNING_PROFILE
@@ -43,13 +42,12 @@ const electronVersion = require(require.resolve('electron/package.json', { paths
 /** @type {import('electron-builder').Configuration} */
 module.exports = {
   electronVersion,
-  // Kept from video-studio desk on purpose: the same bundle id / AppUserModelID / NSIS GUID means Daycut installs
-  // over the old app (same Keychain ACL, same Start-menu identity, auto-update keeps working). User data stays in the
-  // old folder too (src/main/identity.ts).
-  appId: 'com.vstudio.desk',
-  productName: 'Daycut',
+  // New bundle id / AppUserModelID for Reelfold (nothing was released under the old com.vstudio.desk). The profile
+  // of an earlier dev / test install is copied over once and keeps its keychain key (src/main/identity.ts APP_ID).
+  appId: 'app.reelfold.desk',
+  productName: 'Reelfold',
   copyright: 'Copyright © 2026 zyziyun',
-  artifactName: 'Daycut-${version}-${os}-${arch}.${ext}',
+  artifactName: 'Reelfold-${version}-${os}-${arch}.${ext}',
   directories: { output: 'dist', buildResources: 'packaging/resources' },
   files: ['out/**', 'package.json', '!**/*.map'],
   npmRebuild: false,
@@ -68,7 +66,7 @@ module.exports = {
   publish: [{ provider: 'github', owner: RELEASES_OWNER, repo: RELEASES_REPO, releaseType: 'draft' }],
   // Electron fuses (flipped in the binary, then signed): no "run as node", no NODE_OPTIONS / --inspect, the app code
   // only from an integrity-checked app.asar, encrypted cookies, no extra file:// privileges. Without these any local
-  // process could run code as the signed Daycut and read its keychain item (the stored API keys).
+  // process could run code as the signed Reelfold and read its keychain item (the stored API keys).
   // Packaged tests attach over CDP (--remote-debugging-port), not the Node inspector (tests/packaged).
   electronFuses: {
     runAsNode: false,
@@ -93,11 +91,17 @@ module.exports = {
     entitlementsInherit: 'packaging/mac/entitlements.mac.inherit.plist',
     signIgnore: [RUNTIME_NON_CODE],
     notarize: true, // only acts when the APPLE_* variables above are present
+    // 千剪 for Finder / Dock / menu bar under a Chinese system language (the in-app About follows the app's language)
+    extendInfo: { LSHasLocalizedDisplayName: true },
+    extraResources: [
+      { from: 'packaging/mac/zh_CN.lproj/InfoPlist.strings', to: 'zh_CN.lproj/InfoPlist.strings' },
+      { from: 'packaging/mac/zh_CN.lproj/InfoPlist.strings', to: 'zh-Hans.lproj/InfoPlist.strings' },
+    ],
   },
   dmg: {
     sign: false,
     writeUpdateInfo: false,
-    title: 'Daycut', // volume name
+    title: 'Reelfold', // volume name
     background: 'packaging/resources/background.png', // + background@2x.png
     window: { width: 540, height: 380 },
     contents: [
@@ -120,16 +124,16 @@ module.exports = {
     allowToChangeInstallationDirectory: true,
     differentialPackage: true,
     deleteAppDataOnUninstall: false,
-    shortcutName: 'Daycut',
-    uninstallDisplayName: 'Daycut',
+    shortcutName: 'Reelfold',
+    uninstallDisplayName: 'Reelfold',
     installerIcon: 'packaging/resources/icon.ico',
     uninstallerIcon: 'packaging/resources/icon.ico',
   },
   linux: {
     icon: 'packaging/resources/icons',
     category: 'AudioVideo',
-    executableName: 'daycut',
-    synopsis: 'Turn one recording into a month of short videos',
+    executableName: 'reelfold',
+    synopsis: 'One recording, folded out into every cut for every platform',
   },
   appx: {
     // Microsoft Store (MSIX). Values come from Partner Center; the Store re-signs the package.
@@ -137,7 +141,7 @@ module.exports = {
     publisher: env.MS_STORE_PUBLISHER || 'CN=00000000-0000-0000-0000-000000000000',
     publisherDisplayName: env.MS_STORE_PUBLISHER_NAME || 'PLACEHOLDER',
     applicationId: 'VideoStudioDesk',
-    displayName: 'Daycut',
+    displayName: 'Reelfold',
     languages: ['zh-CN', 'en-US'],
     backgroundColor: '#0E1113',
     showNameOnTiles: true,

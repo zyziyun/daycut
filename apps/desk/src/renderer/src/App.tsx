@@ -92,9 +92,9 @@ function Shell({ onSettings }: { onSettings: (s: SettingsMsg) => void }) {
       <nav className="side" aria-label={t('nav.main')}>
         {/* solo creator first: the app itself, no workspace / account switcher */}
         <div className="brand" title={t('app.name')} data-testid="app-brand">
-          <BrandSymbol size={22} />
+          <BrandSymbol size={30} />
           <BrandWordmark height={17} />
-          {getLang() === 'zh-CN' ? <span className="zh" aria-hidden="true">日剪</span> : null}
+          {getLang() === 'zh-CN' ? <span className="zh" aria-hidden="true">千剪</span> : null}
           <span className="sr">{t('app.name')}</span>
         </div>
         {nav({ name: 'home' }, 'nav.home', r.name === 'home' || r.name === 'new', <HomeIcon className="ico" />, 'nav-home', running > 0 ? <span className="count run" data-testid="running-badge">{running}</span> : null)}

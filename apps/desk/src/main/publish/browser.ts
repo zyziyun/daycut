@@ -43,7 +43,7 @@ function hardenSession(ses: Session) {
   ses.on('will-download', (e) => e.preventDefault());
   ses.webRequest.onBeforeRequest((details, cb) => cb({ cancel: isLocalEngineRequest(details.url) }));
   // the real Chrome version without the app / Electron tokens (x.com, Instagram and Google sign-in refuse those)
-  ses.setUserAgent(cleanUserAgent(ses.getUserAgent(), [app.getName(), 'video-studio-desk', 'video-studio desk']));
+  ses.setUserAgent(cleanUserAgent(ses.getUserAgent(), [app.getName(), 'Reelfold', 'Daycut', 'video-studio-desk', 'video-studio desk']));
 }
 
 interface Entry {

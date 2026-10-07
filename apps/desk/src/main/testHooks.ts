@@ -1,4 +1,4 @@
-// Test / development hooks read from the environment. A packaged (signed) Daycut must not let another local
+// Test / development hooks read from the environment. A packaged (signed) Reelfold must not let another local
 // process steer it into running other code or loading other files through them, so:
 //   - devOnly(): ignored in packaged builds (commands for the login terminal, another Python / runtime, another
 //     asset manifest);

@@ -1,4 +1,4 @@
-// Application menu + About panel, always labelled "Daycut" (every label is explicit, none is left to Electron's
+// Application menu + About panel, always labelled "Reelfold" (every label is explicit, none is left to Electron's
 // role defaults). About strings come from the i18n adapter (en / zh-CN / fr). Rebuilt when the UI language changes.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -110,7 +110,7 @@ function licencesFile(res: string): string | null {
 
 const COPYRIGHT_YEAR = 2026; // electron-builder.config.cjs: copyright
 
-/** "Daycut" (en / fr) or "日剪 Daycut" (zh): the name the About panel shows. */
+/** "Reelfold" (en / fr) or "千剪 Reelfold" (zh): the name the About panel shows. */
 export function displayName(lang: string): string {
   return lang.startsWith('zh') ? `${APP_NAME_ZH} ${APP_NAME}` : APP_NAME;
 }
@@ -135,12 +135,12 @@ function setAbout(d: MenuDeps) {
     copyright: a['about.copyright'],
     credits: aboutCredits(d.lang),
     website: REPO_URL,
-    // macOS takes the icon from the bundle (packaged: icon.icns; dev: the Daycut.app copy + app.dock.setIcon)
+    // macOS takes the icon from the bundle (packaged: icon.icns; dev: the Reelfold.app copy + app.dock.setIcon)
     ...(d.iconPath && process.platform !== 'darwin' ? { iconPath: d.iconPath } : {}),
   });
 }
 
-/** Windows: a message box with the same content (Daycut icon, "Daycut · Version x.y.z", repo, versions, licences). */
+/** Windows: a message box with the same content (Reelfold icon, "Reelfold · Version x.y.z", repo, versions, licences). */
 function showAbout(d: MenuDeps) {
   if (process.platform !== 'win32') return app.showAboutPanel();
   const a = aboutText(d.lang);

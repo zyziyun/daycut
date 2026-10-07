@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import { createServer as createNetServer, type AddressInfo } from 'node:net';
 import path from 'node:path';
 import { Readable } from 'node:stream';
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Notification, protocol, session, shell, type IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Notification, protocol, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron';
 import { EngineClient } from '../shared/engineClient';
 import { channelKey, listChannels } from '../shared/channels';
 import { partitionFor, validateIpc, type IpcChannel, type IpcPayload } from '../shared/ipc';
@@ -27,6 +27,7 @@ import { buildCsp, isAppUrl, isSafeExternal } from './security';
 import { SettingsStore } from './settings';
 import { HistoryWatcher } from './historyWatch';
 import { APP_NAME, applyIdentity } from './identity';
+import { SecretStore } from './secrets';
 import { checkForUpdates, initUpdater, installUpdate } from './updater';
 import { registerCleanupIpc, registerV02Ipc, v02EngineEnv } from './v02';
 import { devOnly, setPackaged, tempOnly } from './testHooks';
@@ -42,14 +43,14 @@ const APP_ORIGIN = IS_DEV ? new URL(DEV_URL!).origin : 'app://desk';
 const RENDERER_DIR = path.join(__dirname, '../renderer');
 setPackaged(app.isPackaged);
 const RES = app.isPackaged ? process.resourcesPath : app.getAppPath();
-/** Daycut brand icons (scripts/brand/icons.mjs): 256 px for windows / About on Windows + Linux, 1024 px for the dev Dock. */
+/** Reelfold brand icons (scripts/brand/icons.mjs): 256 px for windows / About on Windows + Linux, 1024 px for the dev Dock. */
 const ICON_256 = path.join(RES, 'packaging/resources/icons/256x256.png');
 const ICON_DOCK = path.join(RES, 'packaging/resources/icon.png');
 const brandIcon = (f: string) => (fs.existsSync(f) ? f : undefined);
 
-// Daycut name + the profile folder / keychain key of this install (old video-studio desk installs keep theirs);
-// DESK_USER_DATA: tests, isolated profile
-const IDENTITY = applyIdentity(app);
+// Reelfold name + profile folder (an old Daycut / video-studio desk profile is copied over once) + the keychain key
+// its encrypted data needs; DESK_USER_DATA: tests, isolated profile
+const IDENTITY = applyIdentity(app, process.env.DESK_USER_DATA, (s) => mainLog(s));
 // Chromium's own widgets (date / time inputs) follow the UI language: read it before 'ready' (a change applies on
 // the next launch); the app's copy itself switches live through the i18n adapter
 try {
@@ -110,7 +111,7 @@ function hfHubDir(): string | null {
 /** Settings override everything; then env vars; then the runtime bundled in the app; then a dev checkout. */
 function resolvedConfig() {
   const s = settings.get();
-  // packaged: the bundled runtime only (a renderer-set Python / engine path would run another binary as Daycut)
+  // packaged: the bundled runtime only (a renderer-set Python / engine path would run another binary as Reelfold)
   const python = (!app.isPackaged && s.python) || devOnly('DESK_PYTHON') || runtime?.python || findPython();
   const bundled = Boolean(runtime && python === runtime.python);
   return {
@@ -645,6 +646,31 @@ function loadAssetManifest(): AssetManifest {
 }
 
 // ---------------------------------------------------------------- lifecycle
+/**
+ * A profile copied from Daycut / video-studio desk keeps its old keychain key (identity.ts): log whether its encrypted
+ * data still reads (API keys in secrets.json, cookies of the publish browser's signed-in sessions), so a denied
+ * keychain prompt shows up in main.log instead of as silently missing logins. Counts only, never values.
+ */
+async function reportMigratedProfile() {
+  try {
+    const ud = app.getPath('userData');
+    const keys = Object.values(new SecretStore(ud, safeStorage).status().keys);
+    const stored = (() => {
+      try {
+        return Object.values(JSON.parse(fs.readFileSync(path.join(ud, 'secrets.json'), 'utf8')) as Record<string, string>).filter(Boolean).length;
+      } catch {
+        return 0;
+      }
+    })();
+    const parts = fs.existsSync(path.join(ud, 'Partitions')) ? fs.readdirSync(path.join(ud, 'Partitions')) : [];
+    let signedIn = 0;
+    for (const p of parts) if ((await session.fromPartition(`persist:${p}`).cookies.get({})).some((c) => c.value !== '')) signedIn++;
+    mainLog(`[identity] migrated profile, keychain key "${IDENTITY.internalName} Safe Storage": API keys readable ${keys.filter(Boolean).length}/${stored}; sessions with readable cookies ${signedIn}/${parts.length}`);
+  } catch (e) {
+    mainLog(`[identity] could not check the migrated profile: ${(e as Error).message}`);
+  }
+}
+
 function menu() {
   installAppMenu({ lang: settings?.get().lang ?? 'en', res: RES, win: () => win, iconPath: brandIcon(ICON_256) });
 }
@@ -664,10 +690,10 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     if (process.env.DESK_HIDE_WINDOW === '1') app.dock?.hide();
     settings = new SettingsStore(app.getPath('userData'));
-    mainLog(`[main] ${APP_NAME} ${app.getVersion()} · profile ${app.getPath('userData')}${IDENTITY.legacy ? ' (kept from video-studio desk)' : ''}`);
+    mainLog(`[main] ${APP_NAME} ${app.getVersion()} · profile ${app.getPath('userData')}${IDENTITY.migrated ? ` (migrated; keychain key "${IDENTITY.internalName} Safe Storage")` : ''}`);
     menu();
-    // dev: the Dock (and the About panel, which uses the same NSApp icon) shows Daycut, not the Electron atom. The
-    // packaged app and the dev Daycut.app copy (scripts/devApp.mjs) carry icon.icns already; this covers `electron .`.
+    // dev: the Dock (and the About panel, which uses the same NSApp icon) shows Reelfold, not the Electron atom. The
+    // packaged app and the dev Reelfold.app copy (scripts/devApp.mjs) carry icon.icns already; this covers `electron .`.
     if (!app.isPackaged && process.platform === 'darwin' && brandIcon(ICON_DOCK)) app.dock?.setIcon(ICON_DOCK);
     syncRoutesFile(app.getPath('userData'), settings.get().aiRoutes);
     runtime = findBundledRuntime(RES, app.isPackaged);
@@ -691,6 +717,7 @@ if (!app.requestSingleInstanceLock()) {
     void startEngine().catch(() => undefined); // failures are reported through engine:status
     void primeAiRoutes?.primeRoutes().catch(() => undefined);
     createWindow();
+    if (IDENTITY.migrated) void reportMigratedProfile();
     initUpdater((u) => win?.webContents.send('update:state', u));
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();

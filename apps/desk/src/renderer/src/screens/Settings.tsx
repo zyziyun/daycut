@@ -211,7 +211,7 @@ export function Settings({ onChange }: { onChange: (s: SettingsMsg) => void }) {
                 <>
                   <Field label={t('settings.enginePath')} hint={t('settings.enginePathHint')}>
                     <div className="row">
-                      <input className="input" style={{ flex: 1 }} value={enginePath} onChange={(e) => setEnginePath(e.target.value)} placeholder="/Users/…/video-studio" />
+                      <input className="input" style={{ flex: 1 }} value={enginePath} onChange={(e) => setEnginePath(e.target.value)} placeholder="/Users/…/reelfold" />
                       <button className="btn" onClick={async () => setEnginePath((await window.desk.openFolder()) ?? enginePath)}>
                         {t('common.choose')}
                       </button>

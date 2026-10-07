@@ -14,7 +14,7 @@ describe('app:// file resolution', () => {
       expect(resolveAppFile(root, p), p).toBeNull();
   });
   it('stays inside the root on Windows paths too', () => {
-    const w = 'C:\\Program Files\\Daycut\\resources\\app.asar\\out\\renderer';
+    const w = 'C:\\Program Files\\Reelfold\\resources\\app.asar\\out\\renderer';
     expect(resolveAppFile(w, '/..%5C..%5Cx.js', path.win32)).toBeNull();
     expect(resolveAppFile(w, '/assets/a.js', path.win32)).toBe(path.win32.join(w, 'assets', 'a.js'));
   });

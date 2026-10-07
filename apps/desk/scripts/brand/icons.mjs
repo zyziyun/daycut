@@ -1,4 +1,4 @@
-// Daycut app icons from the brand SVGs in packaging/brand (masters live in video-studio-app/brand/daycut).
+// Reelfold app icons from the brand SVGs in packaging/brand (masters live in video-studio-app/brand/round3/reelfold).
 //   node scripts/brand/icons.mjs
 // Writes (committed, so packaging needs no SVG tooling):
 //   packaging/resources/icon.icns        macOS (16/32 px slices from the simplified small mark, 64+ from the 1024 master)
@@ -15,7 +15,7 @@ import path from 'node:path';
 const ROOT = path.resolve(import.meta.dirname, '../..');
 const SRC = path.join(ROOT, 'packaging/brand');
 const OUT = path.join(ROOT, 'packaging/resources');
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'daycut-icons-'));
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'reelfold-icons-'));
 
 const MAC_MASTER = path.join(SRC, 'icon-macos-1024.svg');
 const MAC_SMALL = path.join(SRC, 'icon-macos-small.svg');
@@ -80,14 +80,14 @@ fs.writeFileSync(path.join(OUT, 'icon.ico'), Buffer.concat([header, ...entries.m
 for (const s of [16, 24, 32, 48, 64, 128, 256, 512]) png(s <= 32 ? WIN_SMALL : WIN, s, path.join(OUT, 'icons', `${s}x${s}.png`));
 
 // ---------------------------------------------------------------- DMG background (540x380 window, icons at 140/400 x 200)
-const word = fs.readFileSync(path.join(SRC, 'wordmark-text-only-dark.svg'), 'utf8').replace(/^<svg[^>]*>/, '').replace(/<\/svg>\s*$/, '');
+const word = fs.readFileSync(path.join(SRC, 'wordmark-on-dark.svg'), 'utf8').replace(/^<svg[^>]*>/, '').replace(/<\/svg>\s*$/, '');
 const dmg = `<svg xmlns="http://www.w3.org/2000/svg" width="540" height="380" viewBox="0 0 540 380">
 <defs><linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#22201D"/><stop offset="1" stop-color="#141311"/></linearGradient></defs>
 <rect width="540" height="380" fill="url(#bg)"/>
-<svg x="225" y="34" width="90" height="32" viewBox="0 0 692 246" opacity=".9">${word}</svg>
+<svg x="195" y="34" width="150" height="32" viewBox="0 0 1163 246" opacity=".95">${word}</svg>
 <g fill="none" stroke="#F2EDE6" stroke-opacity=".35" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 <path d="M232 200 H304"/><path d="M294 190 L306 200 L294 210"/></g>
-<text x="270" y="330" text-anchor="middle" font-family="-apple-system, Helvetica Neue, Arial" font-size="13" fill="#F2EDE6" fill-opacity=".55">Drag Daycut to Applications · 拖到「应用程序」</text>
+<text x="270" y="330" text-anchor="middle" font-family="-apple-system, Helvetica Neue, Arial" font-size="13" fill="#F2EDE6" fill-opacity=".55">Drag Reelfold to Applications · 拖到「应用程序」</text>
 </svg>`;
 const dmgSvg = path.join(tmp, 'dmg.svg');
 fs.writeFileSync(dmgSvg, dmg);

@@ -59,9 +59,9 @@ export function FirstRun({ settings, onDone }: { settings: SettingsMsg; onDone: 
       <div className="frcard col">
         <div className="row">
           <span className="fr-brand" data-testid="fr-brand">
-            <BrandSymbol size={26} />
+            <BrandSymbol size={34} />
             <BrandWordmark height={18} />
-            {lang === 'zh-CN' ? <span className="zh">日剪</span> : null}
+            {lang === 'zh-CN' ? <span className="zh">千剪</span> : null}
           </span>
           <div style={{ flex: 1 }} />
           <button className="btn ghost sm" onClick={() => finish(true)} data-testid="fr-skip">

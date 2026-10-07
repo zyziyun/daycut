@@ -1,4 +1,4 @@
-# Daycut desk app (apps/desk): lint + typecheck, unit tests, sidecar engine tests (against this repo's engine) and
+# Reelfold desk app (apps/desk): lint + typecheck, unit tests, sidecar engine tests (against this repo's engine) and
 # the Electron e2e suite (hidden windows) on macOS.
 name: Desk CI
 on:

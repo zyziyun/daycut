@@ -52,9 +52,23 @@ export class SecretStore {
     fs.renameSync(tmp, this.file);
   }
 
+  /** A stored key counts as set only if it still decrypts: one encrypted under a keychain item this app can no longer
+   *  read (another machine, a denied keychain prompt after the Reelfold rename) shows as not set, so the creator is
+   *  asked for it again instead of runs failing later. */
+  private readable(v: string | undefined): boolean {
+    if (!v) return false;
+    if (!this.crypto.isEncryptionAvailable()) return false;
+    try {
+      this.crypto.decryptString(Buffer.from(v, 'base64'));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   status(): { backend: 'keychain' | 'basic' | 'unavailable'; keys: Record<SecretName, boolean> } {
     const d = this.read();
-    return { backend: this.backend(), keys: Object.fromEntries(KEY_NAMES.map((k) => [k, Boolean(d[k])])) as Record<SecretName, boolean> };
+    return { backend: this.backend(), keys: Object.fromEntries(KEY_NAMES.map((k) => [k, this.readable(d[k])])) as Record<SecretName, boolean> };
   }
 
   set(name: SecretName, value: string) {

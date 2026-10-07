@@ -42,7 +42,7 @@ export const aboutFr: Record<AboutKey, string> = {
 };
 
 export interface AboutInfo {
-  /** display name: "Daycut" (en / fr) or "日剪 Daycut" (zh) */
+  /** display name: "Reelfold" (en / fr) or "千剪 Reelfold" (zh) */
   app: string;
   version: string;
   url: string;

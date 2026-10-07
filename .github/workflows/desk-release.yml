@@ -1,19 +1,19 @@
-# Daycut release (apps/desk): on a tag v<version> (must equal apps/desk/package.json "version"), build the engine
+# Reelfold release (apps/desk): on a tag v<version> (must equal apps/desk/package.json "version"), build the engine
 # runtime (python + ffmpeg + this repo's own lib/ and workflows/, nothing fetched from git) + installers for
 # macOS arm64, macOS x64 (best effort) and Windows x64, sign/notarize when the secrets exist (unsigned otherwise),
-# run the packaged-app check, upload artifacts, and attach everything to a DRAFT release in
-# the public releases repo (repo variables DESK_RELEASES_OWNER / DESK_RELEASES_REPO, default zyziyun/daycut-releases),
-# which electron-updater reads. Publish the draft by hand.
+# run the packaged-app check, upload artifacts, and attach everything to a DRAFT GitHub Release on this repository
+# (zyziyun/reelfold; repo variables DESK_RELEASES_OWNER / DESK_RELEASES_REPO override), which electron-updater and the
+# website's download link read. Publish the draft by hand. The Windows job is built too (experimental for now).
 #
 # Secrets (see docs/RELEASING.md). Test builds (workflow_dispatch without "publish") work without any and are unsigned;
-# a tag / publish run FAILS at "Signing setup" when the signing, notarization or RELEASES_TOKEN secrets are missing.
+# a tag / publish run FAILS at "Signing setup" when the signing or notarization secrets are missing.
 # Local alternative (Developer ID in the login keychain + notarytool profile): npm run release:mac
 #   mac signing   MAC_CERT_P12_BASE64, MAC_CERT_PASSWORD
 #   notarization  APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID
 #   win signing   AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, AZURE_SIGNING_ENDPOINT,
 #                 AZURE_SIGNING_ACCOUNT, AZURE_SIGNING_PROFILE, AZURE_SIGNING_PUBLISHER
 #                 or WIN_CERT_PFX_BASE64, WIN_CERT_PASSWORD
-#   publishing    RELEASES_TOKEN  (fine-grained PAT: Contents read/write on the releases repo)
+#   publishing    the workflow's own GITHUB_TOKEN (contents: write); RELEASES_TOKEN only if the releases live elsewhere
 name: Desk release
 on:
   push:
@@ -21,11 +21,11 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: 'Attach to a draft release in the releases repo'
+        description: 'Attach to a draft GitHub Release on this repo'
         type: boolean
         default: false
 permissions:
-  contents: read
+  contents: write # electron-builder creates / fills the draft release on this repo
 jobs:
   build:
     name: ${{ matrix.target }}
@@ -81,7 +81,6 @@ jobs:
           WIN_CERT_PASSWORD: ${{ secrets.WIN_CERT_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then
             if [ -n "$MAC_CERT_P12_BASE64" ]; then
@@ -112,7 +111,6 @@ jobs:
             elif [ -z "$AZURE_CLIENT_ID" ] && [ -z "$WIN_CERT_PFX_BASE64" ]; then
               missing="$missing AZURE_*|WIN_CERT_PFX_BASE64"
             fi
-            [ -n "$RELEASES_TOKEN" ] || missing="$missing RELEASES_TOKEN"
             if [ -n "$missing" ]; then
               echo "::error title=Release not signed::publishing needs these repository secrets:$missing (docs/RELEASING.md). Or build and notarize locally: npm run release:mac"
               exit 1
@@ -125,7 +123,7 @@ jobs:
       - name: Build installers
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN || github.token }}
           DESK_RELEASES_OWNER: ${{ vars.DESK_RELEASES_OWNER }}
           DESK_RELEASES_REPO: ${{ vars.DESK_RELEASES_REPO }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -162,7 +160,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: daycut-${{ matrix.target }}
+          name: reelfold-${{ matrix.target }}
           if-no-files-found: error
           retention-days: 14
           path: |

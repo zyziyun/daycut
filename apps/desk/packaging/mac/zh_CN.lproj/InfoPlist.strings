@@ -1,0 +1,3 @@
+/* Reelfold: the Chinese name shown by Finder, the Dock and the menu bar when macOS runs in Chinese */
+"CFBundleDisplayName" = "千剪";
+"CFBundleName" = "千剪";

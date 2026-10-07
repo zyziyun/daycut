@@ -14,37 +14,37 @@ const versions = { electron: '44.5.1', chrome: '152.0.7977.130', node: '24.11.0'
 describe('About panel copy', () => {
   it('en: name, version, open-source repo, runtime versions, licences, copyright', () => {
     const a = aboutText('en', '1.2.3', versions);
-    expect(a['about.heading']).toBe('Daycut · Version 1.2.3');
-    expect(a['about.openSource']).toBe('Open source: github.com/zyziyun/daycut');
+    expect(a['about.heading']).toBe('Reelfold · Version 1.2.3');
+    expect(a['about.openSource']).toBe('Open source: github.com/zyziyun/reelfold');
     expect(a['about.runtime']).toBe('Electron 44.5.1 · Chromium 152 · Node.js 24');
     expect(a['about.licences']).toBe('Third-party Licences');
     expect(a['about.copyright']).toBe('Copyright © 2026 zyziyun');
-    expect(a['about.menu']).toBe('About Daycut');
-    expect(a['about.repo']).toBe('Daycut on GitHub');
+    expect(a['about.menu']).toBe('About Reelfold');
+    expect(a['about.repo']).toBe('Reelfold on GitHub');
   });
 
   it('zh-CN and fr', () => {
     const zh = aboutText('zh-CN', '1.2.3', versions);
-    expect(zh['about.heading']).toBe('日剪 Daycut · 版本 1.2.3');
-    expect(zh['about.openSource']).toBe('开源地址：github.com/zyziyun/daycut');
-    expect(zh['about.menu']).toBe('关于 日剪 Daycut');
+    expect(zh['about.heading']).toBe('千剪 Reelfold · 版本 1.2.3');
+    expect(zh['about.openSource']).toBe('开源地址：github.com/zyziyun/reelfold');
+    expect(zh['about.menu']).toBe('关于 千剪 Reelfold');
     const fr = aboutText('fr', '1.2.3', versions);
-    expect(fr['about.heading']).toBe('Daycut · Version 1.2.3');
-    expect(fr['about.openSource']).toBe('Open source : github.com/zyziyun/daycut');
+    expect(fr['about.heading']).toBe('Reelfold · Version 1.2.3');
+    expect(fr['about.openSource']).toBe('Open source : github.com/zyziyun/reelfold');
     expect(fr['about.licences']).toBe('Licences tierces');
-    expect(fr['about.menu']).toBe('À propos de Daycut');
-    expect(aboutText('de', '1.2.3', versions)['about.menu']).toBe('About Daycut'); // unknown -> en
+    expect(fr['about.menu']).toBe('À propos de Reelfold');
+    expect(aboutText('de', '1.2.3', versions)['about.menu']).toBe('About Reelfold'); // unknown -> en
   });
 
   it('credits: repo, versions, where the licences are; no old engine / repo name', () => {
     const c = aboutCredits('en', '0.1.0', versions);
-    expect(c.split('\n')).toEqual(['Open source: github.com/zyziyun/daycut', 'This version is for macOS (Apple silicon). A Windows version is coming later.', '', 'Electron 44.5.1 · Chromium 152 · Node.js 24', 'Licences: Help → Third-party Licences']);
+    expect(c.split('\n')).toEqual(['Open source: github.com/zyziyun/reelfold', 'This version is for macOS (Apple silicon). A Windows version is coming later.', '', 'Electron 44.5.1 · Chromium 152 · Node.js 24', 'Licences: Help → Third-party Licences']);
     for (const lang of ['en', 'zh-CN', 'fr']) {
       const all = Object.values(aboutText(lang, '0.1.0', versions)).join('\n') + aboutCredits(lang, '0.1.0', versions);
       expect(all).not.toMatch(/video-studio|zyziyun\/video-studio/);
     }
-    expect(displayName('en')).toBe('Daycut');
-    expect(displayName('zh-CN')).toBe('日剪 Daycut');
+    expect(displayName('en')).toBe('Reelfold');
+    expect(displayName('zh-CN')).toBe('千剪 Reelfold');
   });
 
   it('every locale has every key, and the renderer locales carry them', () => {
@@ -58,9 +58,9 @@ describe('About panel copy', () => {
   });
 });
 
-describe('dev Daycut.app copy', () => {
-  it('is named Daycut with its own bundle id and the Daycut icon', () => {
-    expect(devPlistEdits()).toEqual({ CFBundleName: 'Daycut', CFBundleDisplayName: 'Daycut', CFBundleIdentifier: 'com.vstudio.desk.dev', CFBundleIconFile: 'daycut.icns' });
+describe('dev Reelfold.app copy', () => {
+  it('is named Reelfold with its own bundle id and the Reelfold icon', () => {
+    expect(devPlistEdits()).toEqual({ CFBundleName: 'Reelfold', CFBundleDisplayName: 'Reelfold', CFBundleIdentifier: 'app.reelfold.desk.dev', CFBundleIconFile: 'reelfold.icns' });
   });
 
   it('is rebuilt when the Electron version or the icon changes', () => {

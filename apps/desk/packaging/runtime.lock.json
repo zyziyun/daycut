@@ -33,7 +33,7 @@
     }
   },
   "vstudio": {
-    "repo": "https://github.com/zyziyun/daycut",
+    "repo": "https://github.com/zyziyun/reelfold",
     "include": [
       "lib",
       "workflows",
