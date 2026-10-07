@@ -289,6 +289,9 @@ class Inbox:
         # which has the options
         asked = {i["project"]["id"] for i in items if i["source"] == "engine"}
         items = [i for i in items if not (i["source"] == "live" and i["project"]["id"] in asked)]
+        # a run waiting at a checkpoint also writes "needs you" in its status: the engine's own item says what it is
+        asked = {i["project"]["id"] for i in items if i["source"] == "engine"}
+        items = [i for i in items if not (i["source"] == "live" and i["project"]["id"] in asked)]
         for src in self.extra:
             try:
                 items += [i for i in src() if i["key"] not in answers]

@@ -217,3 +217,40 @@ class EditorOpenWithoutCli(unittest.TestCase):
             with self.assertRaises(OU.EngineMessage) as cm:
                 o._read("show", "/x", "x")
         self.assertEqual((cm.exception.doc["code"], cm.exception.doc["params"]), ("no-output", {"id": "x"}))
+
+
+class LaunchVideoInbox(unittest.TestCase):
+    """Found while capturing the launch video: an engine filler question read as a bare "So" checkbox with its
+    before / after words dropped, and a project waiting at a checkpoint was listed twice."""
+
+    def test_an_engine_cut_reads_as_a_cut_with_its_sentence(self):
+        from desk_engine import inbox_labels as L
+        o = L.engine_option(dict(id=3, kind="filler", text="So", t0=12.4, t1=12.7, before="thanks for all the posts.",
+                                 after="today we look at RAG"), default=None)
+        self.assertEqual((o["label"]["code"], o["label"]["params"]["word"]), ("inbox.opt.cutWord", "So"))
+        self.assertEqual(o["quote"], "…thanks for all the posts ⟨So⟩ today we look at RAG…")
+        self.assertEqual((o["id"], o["secs"], o["kind"]), ("3", -0.3, "filler"))
+        zh = L.engine_option(dict(id=1, text="那个", t0=1.0, t1=1.4, before="我们今天", after="讲一下"))
+        self.assertEqual(zh["quote"], "…我们今天⟨那个⟩讲一下…")
+        plain = L.engine_option(dict(id="a", labels=dict(en="Hook A", zh="开头 A")))
+        self.assertEqual(plain["label"]["code"], "inbox.opt.engine")             # labelled options are unchanged
+
+    def test_a_waiting_run_is_listed_once(self):
+        from desk_engine import inbox as IB
+        from vstudio.project import inbox as PI
+        d = tempfile.mkdtemp()
+
+        class Hist:
+            def list(self):
+                return dict(items=[dict(id="p1", dir=d, name="P", kind="project", live=dict(
+                    needs_you=True, heartbeat=1.0, message="checkpoint: filler"))])
+
+            def allow_media(self, paths):
+                pass
+        ib = IB.Inbox(tempfile.mkdtemp(), Hist(), InboxPollIsCheap.Runner(), "real")
+        entry = dict(project=d, id="filler", item="01", kind="filler-confirm", options=[
+            dict(id=1, text="So", t0=1, t1=1.2, before="a", after="b")])
+        with mock.patch.object(PI, "inbox", return_value=dict(entries=[entry])):
+            items = ib.list()["items"]
+        self.assertEqual([i["source"] for i in items], ["engine"])
+        self.assertEqual(items[0]["options"][0]["label"]["code"], "inbox.opt.cutWord")
