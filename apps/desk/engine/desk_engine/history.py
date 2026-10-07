@@ -420,6 +420,12 @@ class History:
             store_dir = os.path.join(d, "state") if kind_ == "project" else d
             bid = batch_id(store_dir)
             live = live_status(d) or (live_status(store_dir) if store_dir != d else None)
+            if live and live.get("updated_by") == "output-edit" and live.get("state") in ("interrupted", "failed"):
+                # a clip edit that was cut off (or failed) is a note on that edit, never the project's state: the
+                # project's own clips and pilot decide whether it is done / failed
+                info["edit_note"] = dict(state=live["state"], stage=live.get("stage"), message=live.get("message"),
+                                         at=live.get("heartbeat"))
+                live = None
             fail = None if kind_ == "batch" else pilot_failure(d)
             if fail and live and live.get("state") in ("running", "waiting") and \
                     (live.get("heartbeat") or 0) > (fail.get("at") or 0) + 5:

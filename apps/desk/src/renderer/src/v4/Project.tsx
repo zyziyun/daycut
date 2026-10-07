@@ -234,6 +234,11 @@ export function Project({ id, tab: asked }: { id: string; tab: ProjectTab }) {
               </div>
             </div>
           )}
+          {!failure && item?.edit_note && (
+            <p className="muted" role="status" data-testid="project-edit-note">
+              {t(item.edit_note.state === 'failed' ? 'project.editFailed' : 'project.editInterrupted', { what: item.edit_note.message ?? '' })}
+            </p>
+          )}
           {!failure && s === 'run' && !clips.length && item && (
             <div className="banner run" role="status" data-testid="project-running">
               <i className="dot run" />

@@ -201,6 +201,31 @@ class HistoryTest(unittest.TestCase):
         self.assertTrue(det["log"]["text"].endswith("line 99"))
         self.assertEqual(len(det["log"]["text"].splitlines()), 40)
 
+    def test_interrupted_clip_edit_is_not_a_project_failure(self):
+        """BB-24: a stale "running" output edit (its process gone) marks that edit, not the whole project Error."""
+        import socket
+        import time
+        w = os.path.join(self.root, "demos")
+        job = os.path.join(w, "talk")
+        os.makedirs(os.path.join(job, "work"))
+        open(os.path.join(job, "work", "compose.py"), "w").close()
+        self.h.set_watch([w])
+        os.makedirs(os.path.join(job, ".vstudio"))
+        with open(os.path.join(job, ".vstudio", "status.json"), "w") as f:
+            json.dump(dict(status="running", stage="output-edit:render", progress=0.5, message="clip A: captions",
+                           started=time.time() - 90000, heartbeat=time.time() - 86000, pid=999999,
+                           host=socket.gethostname(), updated_by="output-edit"), f)
+        row = self.h.list()["items"][0]
+        self.assertIsNone(row["live"])
+        self.assertNotEqual(row.get("status"), "failed")
+        self.assertEqual((row["edit_note"]["state"], row["edit_note"]["message"]), ("interrupted", "clip A: captions"))
+        with open(os.path.join(job, ".vstudio", "status.json"), "w") as f:     # a project run's own stall still shows
+            json.dump(dict(status="running", stage="render", heartbeat=time.time() - C.LIVE_STALE_S - 5, pid=999999,
+                           host=socket.gethostname(), updated_by="workflow"), f)
+        row = self.h.list()["items"][0]
+        self.assertEqual(row["live"]["state"], "interrupted")
+        self.assertNotIn("edit_note", row)
+
     def test_readonly(self):
         b = make_batch(os.path.join(self.root, "w", "batch-ro"), name="ro")
         before = os.path.getmtime(os.path.join(b, "batch.db"))

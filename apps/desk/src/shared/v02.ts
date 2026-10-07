@@ -415,6 +415,8 @@ export interface HistoryItem {
   error?: string;
   /** the last pilot the desk started failed (engine/desk_engine/pilot.py): code -> UI words, never the raw error */
   failure?: PilotFailure | null;
+  /** a clip edit that was cut off (its process gone) or failed: a note on that edit, not the project's state */
+  edit_note?: { state: 'interrupted' | 'failed'; stage?: string | null; message?: string | null; at?: number | null } | null;
   /** the pilot the desk started is still running */
   pilot?: { started: number | null; provider: string | null } | null;
   /** made from the built-in sample recording (labelled, deletable) */
