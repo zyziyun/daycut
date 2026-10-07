@@ -157,10 +157,16 @@ def text_layer(runs, font, stroke=6, pad=16):
 def colorize(s, base=WHITE, hi=YEL + (255,)):
     """KEYWORDS (and 【】 markup) in `hi`, the rest in `base` -> [(text, colour)] runs."""
     return [(t, hi if h else base) for t, h in D.runs(s, _KW)] or [(s, base)]
+_CAP_MAX = float((PROF.caption or {}).get('max_chars_zh') or 14)   # one caption line on this canvas (CJK 1, latin 0.5)
 def split_sub(text):
+    """Chunks of one sentence: '|' / a space between CJK marks a chunk; an unmarked sentence longer than one caption
+    line is wrapped into balanced chunks (latin runs whole) so a batch run never burns an over-long caption."""
     out = []
     for part in text.split('|'): out += re.split(r'(?<=[一-鿿]) (?=[一-鿿])', part)
-    return [c.strip() for c in out if c.strip()]
+    res = []
+    for c in (c.strip() for c in out if c.strip()):
+        res += [x.strip() for x in vsubs.balanced_wrap(c, _CAP_MAX) if x.strip()] if vsubs.text_width(c) > _CAP_MAX else [c]
+    return res
 def fit_layer(make, size, max_w, floor=0.6):
     """Render with make(size); shrink the font until the layer fits max_w (captions on narrow boxes)."""
     im = make(size); s = size

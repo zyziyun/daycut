@@ -313,7 +313,7 @@ def post_body(hook, body, chapters=None, links=None, tags=None, platform=None, t
     tg = hashtags(tags, pl, use_persona=use_persona_tags, tag_set=tag_set, warn=warn)
     if tg:
         out += ["", tg]
-    text = "\n".join(out).strip() + "\n"
+    text = re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip() + "\n"     # an empty hook / body leaves no gap
     if warn:
         for w in voice_warnings(text):
             warn(w)

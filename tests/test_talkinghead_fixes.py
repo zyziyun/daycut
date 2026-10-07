@@ -268,6 +268,20 @@ def test_compose_clean_only_skips_the_captioned_render(comp):
 
 
 @need_ff
+def test_compose_wraps_an_overlong_sentence_into_caption_chunks(comp):
+    """Batch runs have no hand-placed '|': a sentence longer than one caption line is split into balanced chunks."""
+    segs = json.load(open(comp / "segs.json"))
+    segs["subs"][1]["text"] = "只要是L5也就是比entry level要稍微高一个档进来的人都很不适应"
+    json.dump(segs, open(comp / "segs.json", "w"), ensure_ascii=False)
+    _run("compose.py", "config.py", "cues", cwd=comp)
+    from vstudio import subs as S
+    cues = json.load(open(comp / "out.cues.json"))["cues"]
+    texts = [c["text"].replace("【", "").replace("】", "") for c in cues]
+    assert all(S.text_width(t) <= 14 for t in texts), texts
+    assert any(t.endswith("entry") for t in texts) and any(t.startswith("level") for t in texts)   # words whole
+
+
+@need_ff
 def test_cover_platform_names_do_not_overwrite(comp):
     _run("cover.py", "config.py", cwd=comp)
     assert (comp / "cover.jpg").exists()
