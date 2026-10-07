@@ -178,8 +178,11 @@ own list: applied even when a fix deletes words, but such a fix is listed under 
 the LLM reads the WHOLE transcript and lists the domain terms and the recurring confusions (`RM -> LLM`,
 `称爆 -> 撑爆`), a second focused look goes over every latin token with its contexts, and a third look rejects
 guesses; each fix is validated (a term: latin or 2+ characters, found in the transcript, confidence >= 0.97,
-sound-alike, no words dropped or added, no translation, not case-only) and applied with word boundaries (RM never
-hits ARM / RMS). `glossary.json` keeps terms, fixes, rejected ones with the reason and the raw replies;
+sound-alike, no words dropped or added, no translation, not case-only, `from` a rare token or non-word - never
+an everyday English word such as `part -> port`, `after -> avatar`, `client side -> client ID` (`vstudio.en_common`),
+never itself a glossary term, never one half of a contradictory pair such as `OAuth -> OAuth2` + `OAuth2 -> OAuth`;
+the glossary-spelling check of `vstudio.entities` follows the same rules, and a glossary.json built before a rule
+existed is re-checked when applied) and applied with word boundaries (RM never hits ARM / RMS). `glossary.json` keeps terms, fixes, rejected ones with the reason and the raw replies;
 (c) an LLM pass per job (`vstudio.proofread`, two looks for recall): it sees the cues, the glossary (known
 confusions), the verify re-ASR of the same audio (a second hearing), the low-confidence words and the topic
 (asr prompt, term-fix targets, series, chapter, notes) and returns minimal per-cue fixes as JSON
@@ -187,8 +190,10 @@ confusions), the verify re-ASR of the same audio (a second hearing), the low-con
 substitutions of mis-heard spans: on the spoken units (one per CJK character / latin word) no unit may be deleted
 (`整个的RM -> 整个LLM` drops 的) or added, each replaced run must sound alike (syllables within 1) and stay in its
 language; the cue stays >= 60 % similar; a whole-caption "from" is reduced to the words that change. A span the
-term fixes / glossary already fixed is never re-edited, and an accepted term fix is applied to the job's other cues
-with the same span (`llm-propagated`). Everything rejected is logged with the reason. Providers:
+term fixes / glossary already fixed is never re-edited; a swap of function words only (`and -> or`, `a -> the`) is
+rejected (a meaning change, not a mis-hearing). An accepted term fix is applied to the job's other cues with the same
+span (`llm-propagated`): never a function word, and an everyday word (`part -> port`) only where the same words
+surround it (`open part 8080`), never on every cue. Everything rejected is logged with the reason. Providers:
 `auto` (default: the configured `vstudio.llm` route for tasks `proofread` / `glossary`, else `claude` when
 `ANTHROPIC_API_KEY` is set, else `none`), `claude` (anthropic SDK, imported lazily; `claude-opus-5-5`), `openai` (only
 when set explicitly; `OPENAI_API_KEY`; default `gpt-4.1-mini`), any other `vstudio.llm` provider (deepseek, qwen,

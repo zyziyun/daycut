@@ -31,6 +31,8 @@ import difflib
 import functools
 import re
 
+from . import en_common as EN
+
 CJK = r"㐀-鿿豈-﫿"
 LOCALES = ("zh_Hans", "zh_Hant", "zh_Hant_HK")
 
@@ -270,6 +272,11 @@ def verify(text, locale=None, glossary=None, llm_entities=None):
         have = {x["from"] for x in fixes}
         fixes += [x for x in f if x["from"] not in have]
         flagged += fl
+    # never re-spell an everyday word (part -> port, after -> avatar, go -> Go) or one glossary term into another
+    # (OAuth -> OAuth2 when both are terms): a sound-alike of a term is not a mis-hearing of it
+    terms = {str(t).strip().lower() for t in glossary or () if str(t).strip()}
+    fixes = [x for x in fixes if not EN.all_common(x["from"])
+             and (x["from"].lower() not in terms or x["from"].lower() == x["to"].lower())]
     flagged += [x for x in fixes if x.get("guess")]
     fixes = [x for x in fixes if not x.get("guess")]
     for f in fixes:

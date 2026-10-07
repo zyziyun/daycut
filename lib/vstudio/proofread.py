@@ -18,8 +18,10 @@ over the latin tokens, a second look, confidence >= 0.97) is applied the same wa
 LLM pass may only swap a short mis-heard span for what the speaker actually said (homophones such as 称爆 -> 撑爆,
 mangled English terms such as RM -> LLM). Every proposal goes through ``faithful``: on the spoken units (one per
 CJK character / latin word) nothing may be deleted or added, each replaced run must sound alike (syllables within
-1, same language), the cue stays >= 60 % similar; rejected ones are logged with the reason. An accepted term fix
-is propagated to the job's other cues; spans the term fixes / glossary fixed are never re-edited. Fillers are never
+1, same language, never a swap of function words only such as and -> or), the cue stays >= 60 % similar; rejected
+ones are logged with the reason. A glossary fix never starts from an everyday English word (part -> port:
+``vstudio.en_common``). An accepted term fix is propagated to the job's other cues (never a function word; an
+everyday word only in the same surrounding words); spans the term fixes / glossary fixed are never re-edited. Fillers are never
 removed here - that is cleanup's job (the audio would still say them).
 
 Providers (``provider``; every call goes through ``vstudio.llm.complete``, tasks ``proofread`` / ``glossary``):
@@ -43,6 +45,7 @@ import os
 import re
 
 from . import asr
+from . import en_common as EN
 from . import llm
 
 DEFAULT_MODELS = {"claude": "claude-opus-5-5", "openai": "gpt-4.1-mini"}
@@ -388,6 +391,19 @@ def diff_spans(before, after):
     return out
 
 
+def _around(text, m):
+    """(previous, next) spoken unit around regex match ``m`` in ``text`` (lowercase, None at the edge)."""
+    if not m:
+        return None
+    pre, post = tokens(text[:m.start()]), tokens(text[m.end():])
+    return (pre[-1].lower() if pre else None, post[0].lower() if post else None)
+
+
+def _same_around(text, m, need):
+    have = _around(text, m)
+    return all(w is None or w == h for w, h in zip(need, have))
+
+
 def _valid(text, fx, max_span=12):
     a, b = str(fx.get("from") or ""), str(fx.get("to") or "")
     if not a or a == b:
@@ -406,6 +422,8 @@ def _valid(text, fx, max_span=12):
     for o, n in diff_spans(text, new):                 # the words that really change must each be short
         if _span_len(o) > max_span or _span_len(n) > _span_len(o) + 6:
             return "span too long (only short mis-heard spans may change)"
+        if EN.all_function(o) and EN.all_function(n):
+            return f"'{o}' -> '{n}' only swaps function words (changes the meaning, not a mis-hearing)"
     return None
 
 
@@ -463,6 +481,8 @@ def check_glossary_fix(fx, text=None):
         return "empty / no-op fix"
     if not _term_like(a):
         return "too generic ('from' must be a term: latin, or 2+ characters)"
+    if EN.all_common(a):
+        return "'from' is a common English word in normal use (only rare tokens / non-words are mis-hearings)"
     if text is not None and not _pattern(a).search(text):
         return "'from' is not in the transcript"
     if _span_len(a) > 12 or _span_len(b) > _span_len(a) + 6:
@@ -542,6 +562,7 @@ def build_glossary(text, context=None, provider="auto", model=None, call=None, p
         seen.add(fx["from"])
         cand.append(dict(fx, count=len(_pattern(fx["from"]).findall(text))))
     listed = {str(g).strip().lower() for g in ctx.get("glossary") or [] if str(g).strip()}
+    cand = _drop_contradictions(cand, out["rejected"], listed | {t.lower() for t in out["terms"]})
     sure = [fx for fx in cand if fx["to"].lower() in listed and re.fullmatch(r"[A-Za-z0-9]+", fx["from"])]
     out["fixes"] += [dict(fx, checked="creator term") for fx in sure]     # RM -> LLM when the creator listed LLM
     cand = [fx for fx in cand if fx not in sure]
@@ -578,6 +599,41 @@ def build_glossary(text, context=None, provider="auto", model=None, call=None, p
     out["entities"] = dict(locale=ev["locale"], found=ev["entities"], flagged=ev["flagged"])
     out["cost_usd"] = cost_usd(mdl, out["usage"], prices, prov)
     out["fixes"].sort(key=lambda f: -len(f["from"]))
+    return out
+
+
+def _drop_contradictions(fixes, rejected, terms=()):
+    """``fixes`` without the ones that undo a term or each other: a ``from`` that is itself a glossary term
+    (OAuth -> OAuth2 when OAuth is a term), and both halves of a pair A -> B / B -> A; the dropped go to
+    ``rejected`` with the reason."""
+    tos = {f["to"].lower() for f in fixes}
+    keep = []
+    for f in fixes:
+        a, b = f["from"].lower(), f["to"].lower()
+        if any(g["from"].lower() == b and g["to"].lower() == a for g in fixes):
+            rejected.append(dict(f, reason=f"contradicts {f['to']} -> {f['from']} (both directions proposed)"))
+        elif a in terms or a in tos:
+            rejected.append(dict(f, reason="'from' is itself a glossary term"))
+        else:
+            keep.append(f)
+    return keep
+
+
+def safe_glossary_fixes(fixes, rejected=None):
+    """The glossary fixes still valid under today's rules (``check_glossary_fix`` without the transcript, no
+    contradictions): a glossary.json built before a rule existed never applies a fix the rule now refuses."""
+    rej = [] if rejected is None else rejected
+    ok = []
+    for f in fixes or ():
+        f = dict(f, **{"from": str(f.get("from") or "").strip(), "to": str(f.get("to") or "").strip()})
+        bad = check_glossary_fix(f)
+        if bad:
+            rej.append(dict(f, source="glossary", reason=bad))
+        else:
+            ok.append(f)
+    out = _drop_contradictions(ok, rej)
+    for r in rej:
+        r.setdefault("source", "glossary")
     return out
 
 
@@ -877,7 +933,8 @@ def proofread(cues, term_fixes=None, provider="auto", model=None, context=None, 
                 warnings.append(dict(i=i, before=c["text"], after=new, source="term_fix",
                                      reason=f"{bad} - kept: the creator's own term fix"))
             c["text"] = new
-    gfix = list((glossary or {}).get("fixes") or [])
+    gfix = safe_glossary_fixes((glossary or {}).get("fixes"), rejected)
+    gsafe = dict(glossary, fixes=gfix) if glossary else glossary
     protected = {i: [] for i in range(len(C))}
     for ch in changes:
         protected[ch["i"]] += [n for _, n in diff_spans(ch["before"], ch["after"]) if n]
@@ -886,7 +943,7 @@ def proofread(cues, term_fixes=None, provider="auto", model=None, context=None, 
     keep_terms = [str(f[1]) for f in term_fixes or [] if isinstance(f, (list, tuple)) and len(f) > 1
                   and str(f[1]).strip() and not re.search(r"\\\d|\\g<", str(f[1]))]
     keep_terms += [str(g) for g in (context or {}).get("glossary") or [] if str(g).strip()]
-    keep_terms += [f["to"] for f in (glossary or {}).get("fixes") or []]
+    keep_terms += [f["to"] for f in gfix]
     keep_terms = sorted({t.strip() for t in keep_terms if len(t.strip()) >= 2}, key=len, reverse=True)
     for i, c in enumerate(C):
         if i in locked:
@@ -950,7 +1007,7 @@ def proofread(cues, term_fixes=None, provider="auto", model=None, context=None, 
                 for x in hit.get("changes") or []:
                     x = dict(x, i=i, start=c["start"], end=c["end"], cached=True)
                     changes.append(x)
-                    accepted += [(o, n) for o, n in (x.get("diff") or []) if o and n]
+                    accepted += [(o, n, x.get("before") or "") for o, n in (x.get("diff") or []) if o and n]
                 cstat["hits"] += 1
             else:
                 todo.append(i)
@@ -1004,7 +1061,7 @@ def proofread(cues, term_fixes=None, provider="auto", model=None, context=None, 
                 fx = dict(fx, **{"from": _locate(before, str(fx["from"]))})
                 c["text"] = _swap(before, before.find(fx["from"]), fx["from"], fx["to"])
                 spans = diff_spans(before, c["text"])
-                accepted += [(o, n) for o, n in spans if o and n]
+                accepted += [(o, n, before) for o, n in spans if o and n]
                 changes.append(dict(i=i, start=c["start"], end=c["end"], before=before, after=c["text"], source="llm",
                                     why=str(fx.get("why") or ""), span=[fx["from"], fx["to"]], diff=spans))
         if cc is not None:
@@ -1016,12 +1073,17 @@ def proofread(cues, term_fixes=None, provider="auto", model=None, context=None, 
                 cc.put(cue_key(raw[i], ch), dict(pre=pre[i], text=C[i]["text"], changes=mine))
                 cstat["stored"] += 1
     if propagate:
-        for o, n in dict.fromkeys(accepted):
-            if not _term_like(o):
+        for o, n, src in dict.fromkeys(accepted):
+            if not _term_like(o) or EN.all_function(o):          # and -> or is never a source-wide fix
                 continue
             pat = _pattern(o)
+            # an everyday word (part -> port) only where the same words surround it, never on every cue
+            need = _around(src, pat.search(src)) if EN.all_common(o) else None
+            if EN.all_common(o) and not any(need or ()):
+                continue
             for i, c in enumerate(C):
-                m = pat.search(c["text"]) if i not in locked else None
+                m = next((m for m in pat.finditer(c["text"]) if need is None or _same_around(c["text"], m, need)),
+                         None) if i not in locked else None
                 if not m:
                     continue
                 bad = _valid(c["text"], {"from": o, "to": n})
@@ -1033,7 +1095,7 @@ def proofread(cues, term_fixes=None, provider="auto", model=None, context=None, 
                 c["text"] = _swap(before, m.start(), o, n)
                 changes.append(dict(i=i, start=c["start"], end=c["end"], before=before, after=c["text"],
                                     source="llm-propagated", why=f"same fix as elsewhere: {o} -> {n}"))
-    flag_guesses(changes, glossary, context)
+    flag_guesses(changes, gsafe, context)
     fb = next((x.get("fallback") for x in getattr(fn, "results", None) or [] if x and x.get("fallback")), None) \
         if prov != "none" and C else None
     return dict(cues=C, changes=changes, rejected=rejected, warnings=warnings, low_confidence=low, fallback=fb,
