@@ -571,7 +571,8 @@ def build_glossary(text, context=None, provider="auto", model=None, call=None, p
                     llm_entities=llm_entities)
     have = {f["from"] for f in out["fixes"]}
     for f in ev["fixes"]:
-        if f["from"] not in have and not check_glossary_fix(dict(f), text):
+        if f["from"] not in have and not check_glossary_fix(dict(f), text) \
+                and apply_glossary(f["from"], out["fixes"]) != f["to"]:      # not already covered by a token fix
             out["fixes"].append(dict(**{"from": f["from"], "to": f["to"]}, why=f["why"], confidence=1.0,
                                      count=f.get("count", 1), checked=f"entity:{f['source']}"))
     out["entities"] = dict(locale=ev["locale"], found=ev["entities"], flagged=ev["flagged"])

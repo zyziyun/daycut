@@ -163,8 +163,9 @@ def translate(edl, prj, en=None):
             nxt = W[g[-1] + 1] if g[-1] + 1 < len(W) else None
             c0 = (prev["te"] + first["t"]) / 2 if prev else first["t"] - 0.05
             c1 = (last["te"] + nxt["t"]) / 2 if nxt else last["te"] + 0.1
-            if en is not None and nxt:                  # the dropped word sounds past whisper's end: cut its tail too
-                c1 = max(c1, min(cleanup.word_tail(en, last["te"], nxt["te"], quiet_run=0.03), nxt["te"]))
+            if en is not None and nxt:                  # the dropped word sounds past whisper's end: cut its tail too,
+                lim = max(last["te"], nxt["t"])          # but never into the next word (no quiet run found in a short
+                c1 = max(c1, min(cleanup.word_tail(en, last["te"], lim, quiet_run=0.03), lim))   # gap: stop at its start)
             c0 = cleanup.safe_edge(W, c0, en, side="end") if prev else c0
             c1 = cleanup.safe_edge(W, c1, en, side="start") if nxt else c1
             if c1 > c0:
