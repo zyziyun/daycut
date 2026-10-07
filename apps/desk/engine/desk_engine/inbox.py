@@ -159,21 +159,43 @@ class Inbox:
         self.history, self.runner, self.mode, self.bus = history, runner, mode, bus
         self._lock = threading.Lock()
         self._real = None
+        self._engine_doc = (0.0, None)
+        self._engine_lock = threading.Lock()
         self.extra = []          # more sources: callables -> [item] (Create: takes to pick, paused runs ...)
         self.handlers = {}       # source -> fn(item, answer): desk-side items that act when answered (feedback)
         self.undo_hooks = []     # fn(keys): an answer taken back
 
     def real(self):
+        """The engine has project checkpoints (``vstudio.project.inbox``): checked in this process, no CLI start."""
         if self._real is None:
             ok = False
             if self.mode == "real" and self.runner is not None:
                 try:
-                    txt = self.runner.sibling("vstudio.project").text(["inbox", "--help"])
-                    ok = "answer" in txt and "invalid choice" not in txt
-                except Exception:  # noqa: BLE001
-                    ok = False
+                    from vstudio.project import inbox as PI
+                    ok = callable(getattr(PI, "inbox", None)) and callable(getattr(PI, "answer", None))
+                except Exception as e:  # noqa: BLE001
+                    print(f"[inbox] the engine's project inbox does not load: {e}", file=sys.stderr, flush=True)
             self._real = ok
         return self._real
+
+    ENGINE_TTL = 5.0
+
+    def _engine_inbox(self):
+        """``vstudio.project inbox`` (every project's pending checkpoints), read in this process and kept for a few
+        seconds: the Inbox, Home and the sidebar badge poll it, and a CLI start per poll cost 1.5-4.5 s of CPU while
+        the app sat idle. An answer / undo drops the copy."""
+        with self._engine_lock:
+            at, doc = self._engine_doc
+            if doc is not None and time.time() - at < self.ENGINE_TTL:
+                return doc
+            from vstudio.project import inbox as PI
+            doc = json.loads(json.dumps(PI.inbox(), ensure_ascii=False, default=str))   # the CLI's JSON, same shape
+            self._engine_doc = (time.time(), doc)
+            return doc
+
+    def _forget_engine(self):
+        with self._engine_lock:
+            self._engine_doc = (0.0, None)
 
     def _answers(self):
         a = read_json(self.path, {}) or {}
@@ -230,7 +252,7 @@ class Inbox:
                                       text=live.get("message"), minutes=1, source="live", at=live.get("heartbeat")))
         if self.real():
             try:
-                doc = self.runner.sibling("vstudio.project").json(["inbox", "--json"], timeout=120)
+                doc = self._engine_inbox()
                 by_dir = {os.path.realpath(e["dir"]): e for e in hist}
                 for p in (doc.get("entries") or doc.get("items") or doc.get("pending") or []) if isinstance(doc, dict) else []:
                     if not isinstance(p, dict):
@@ -298,7 +320,10 @@ class Inbox:
                     args += ["--item", str(eng["item"])]
                 value = engine_answer(it.get("kind"), answer)
                 args += ["--answer", json.dumps(value, ensure_ascii=False)] if value is not None else ["--default"]
-                self.runner.sibling("vstudio.project").json(args + ["--json"], timeout=300)
+                try:
+                    self.runner.sibling("vstudio.project").json(args + ["--json"], timeout=300)
+                finally:
+                    self._forget_engine()
                 if eng.get("dir") and eng["dir"] not in dirs:
                     dirs.append(eng["dir"])
             elif it["source"] in self.handlers:
@@ -333,6 +358,7 @@ class Inbox:
             a = self._answers()
             back = [k for k in keys if a.pop(k, None) is not None]
             write_json(self.path, a)
+        self._forget_engine()
         for f in self.undo_hooks:
             f(back)
         if self.bus:

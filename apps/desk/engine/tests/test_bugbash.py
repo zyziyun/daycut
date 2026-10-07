@@ -113,3 +113,51 @@ class ResumeAfterInboxAnswer(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class InboxPollIsCheap(unittest.TestCase):
+    """BB-19: every /api/inbox poll started a `vstudio.project inbox` CLI (1.5-4.5 s of CPU while idle)."""
+
+    class Hist:
+        def list(self):
+            return dict(items=[])
+
+        def allow_media(self, paths):
+            pass
+
+    class Runner:
+        def __init__(self):
+            self.calls = []
+
+        def sibling(self, mod):
+            runner = self
+
+            class S:
+                def json(self, args, timeout=None, **kw):
+                    runner.calls.append((mod, args))
+                    return {}
+
+                def text(self, args, timeout=None, **kw):
+                    runner.calls.append((mod, args))
+                    return ""
+            return S()
+
+    def test_engine_inbox_is_read_in_process_and_cached(self):
+        from desk_engine import inbox as IB
+        from vstudio.project import inbox as PI
+        runner = self.Runner()
+        ib = IB.Inbox(tempfile.mkdtemp(), self.Hist(), runner, "real")
+        reads = []
+
+        def fake_inbox(projects=None):
+            reads.append(1)
+            return dict(entries=[], groups=[], counts={}, total=0, errors=[])
+        with mock.patch.object(PI, "inbox", side_effect=fake_inbox):
+            self.assertTrue(ib.real())
+            for _ in range(5):
+                ib.list()
+            self.assertEqual(len(reads), 1)
+            ib.undo(["0" * 16])                       # an answer / undo reads it again
+            ib.list()
+            self.assertEqual(len(reads), 2)
+        self.assertEqual(runner.calls, [], "no CLI is started to list or probe the inbox")
