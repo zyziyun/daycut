@@ -4,7 +4,8 @@
     res = CP.make_all(cfg, kit, "kit/copy")     # -> {"launch": {platform: {lang: text}}, "clips": {...}, "warnings": [...]}
 
 The launch post is the config's ``post`` block (the post.json shape vstudio.publish understands:
-``{en: {title, hook, body, tags, links}, zh: {...}}``); each feature clip uses ``features[].post`` or, when that
+``{en: {title, hook, body, tags, links, by_platform: {x: {hook, body}}}, zh: {...}}``; ``by_platform`` = a
+hand-written version for one platform, e.g. a tighter X post); each feature clip uses ``features[].post`` or, when that
 is missing, its caption as the hook plus the product line. ``vstudio.publish.platform_post`` lays each one out per
 platform (title fields, hashtag caps, 小红书 / B站 conventions, X weighted 280) and ``vstudio.platform.check_text``
 reports what is still over a limit. Platforms are listed international first, then Chinese
@@ -82,7 +83,12 @@ def render_post(post, platform, lang):
                 b["links"] = []
     base = platform.split(":")[0]
     b = post.get(lang) if isinstance(post.get(lang), dict) else None
-    if b and b.get("title") and b.get("hook") and not PB.check_title(b["title"], base)[0]:
+    if b and isinstance((b.get("by_platform") or {}).get(base), dict):
+        post = json.loads(json.dumps(post))           # a hand-written version for this platform wins
+        post[lang].update(post[lang].pop("by_platform")[base])
+        b = post[lang]
+    if b and b.get("title") and b.get("hook") and not PB.check_title(b["title"], base)[0] \
+            and PB.check_title(b["hook"], base)[0]:
         post = json.loads(json.dumps(post))           # "Name: caption" too long here: the caption alone
         post[lang]["title"] = post[lang]["hook"]
     text, c = PB.platform_post(post, platform, lang=lang, warn=warns.append)

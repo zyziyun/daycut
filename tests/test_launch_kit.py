@@ -297,6 +297,10 @@ def test_posts_per_platform_and_language(cfg, tmp_path):
     assert t and PB.check_title(t, "xiaohongshu")[0]                       # "Name｜caption" too long -> caption
     assert "https://" not in res["launch"]["tiktok"]["en"]["text"]           # no dead links where they can't click
     assert "https://acme.example" in res["launch"]["x"]["en"]["text"]
+    c2 = dict(cfg, post=dict(cfg["post"], en=dict(cfg["post"]["en"], by_platform={"x": {"hook": "Short X hook.", "body": []}})))
+    r2 = PO.make_all(c2, str(tmp_path / "copy2"))
+    assert r2["launch"]["x"]["en"]["text"].startswith("Short X hook.")
+    assert not r2["launch"]["linkedin"]["en"]["text"].startswith("Short X hook.")
 
 
 def test_posts_without_a_post_block_fail_loudly_without_a_model(cfg, tmp_path, monkeypatch):

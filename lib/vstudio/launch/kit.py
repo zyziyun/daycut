@@ -123,7 +123,9 @@ def posts(cfg):
             sel = SC.pick(pl, "clip", have, langs)
             if sel:
                 clip_for[(fid, pl)] = have[sel]
-    gallery = sorted(glob.glob(os.path.join(cfg["out"], "stills", "ph-gallery-*.png")))
+    other = tuple(f"-{x}.png" for x in langs[1:])
+    gallery = sorted((p for p in glob.glob(os.path.join(cfg["out"], "stills", "ph-gallery-*.png")) if not p.endswith(other)),
+                     key=lambda p: int(os.path.basename(p).split("-")[2]))
     lead = demo.get((langs[0], "16:9"))
     res = PO.make_all(cfg, os.path.join(cfg["out"], "copy"),
                       kit=dict(demo=lead, gallery=gallery, demo_for=demo_for, clip_for=clip_for))
