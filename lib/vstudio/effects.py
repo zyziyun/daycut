@@ -534,6 +534,11 @@ _add("music-bed", "Music bed + ducking", "audio", "Loops music, ducks it under t
 _add("loudness", "Loudness", "audio", "Two-pass loudnorm to -14 LUFS", [AU], {AU: ["vstudio.audio:loudnorm_2pass", "vstudio.audio:normalize_stem"]},
      "`audio.py:loudnorm_2pass`, `normalize_stem`", [("lufs", -14, "platform target"), ("tp", -1.5, "")], "Last step of every workflow",
      "n/a", "-", "always", [], "tests/test_core.py", "`audio.loudnorm_2pass(src, dst)`")
+_add("studio-sound", "Studio sound (voice enhance)", "audio", "Denoise, dereverb, voice EQ, de-ess, gentle compression (local)", [AU],
+     {AU: ["vstudio.studiosound:enhance", "vstudio.studiosound:enhance_array"]}, "`lib/vstudio/studiosound.py`",
+     [("strength", "standard", "light keeps some room; strong for fans / AC / echoey rooms")], "Phone / laptop / room recordings, 降噪, 人声增强",
+     "n/a", "whole video", "1", ["Run before music and SFX are mixed in"], "tests/test_studiosound.py",
+     "`studiosound.enhance(src, dst, strength=\"standard\")`")
 _add("voice-anonymize", "Voice anonymize", "audio", "Pitch shift, duration preserved", [AU, FF],
      {AU: ["vstudio.audio:pitch_shift_filter"]}, "`audio.py:pitch_shift_filter`; longform `pitches.windows`",
      [("semitones", -3, "-2 is subtle, -5 sounds processed")], "Privacy for a voice", "n/a", "window", "as needed", [], "tests/test_core.py",

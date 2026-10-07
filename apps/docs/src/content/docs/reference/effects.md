@@ -210,6 +210,7 @@ exact = same look; near = same idea, small visual difference; approx = closest s
 | Card stinger <sub>`card-stinger`</sub> | 1.6 s noise whoosh + 110 Hz thump at -19 dBFS | audio | `longform-to-short/scripts/make_audio_assets.py` -> `card_sting.wav` | `level=-19 dBFS` | Under a chapter card | med | 1.6 s | 1 per chapter | Copy the WAV under any chapter card | - |
 | Music bed + ducking <sub>`music-bed`</sub> | Loops music, ducks it under the voice, optional carve EQ, fades | audio | `audio.py:mix_bed`; `vlog/scripts/add_music.py`; explainer `make_bgm_bed.py` + `carve.mjs` | `duck_db=-10`, `music_lufs=-30` | Every narrated video | n/a | whole video | 1 bed (+ a no-music version, A13) | `audio.mix_bed(voice, music, out)` | `test_core.py` |
 | Loudness <sub>`loudness`</sub> | Two-pass loudnorm to -14 LUFS | audio | `audio.py:loudnorm_2pass`, `normalize_stem` | `lufs=-14`, `tp=-1.5` | Last step of every workflow | n/a | - | always | `audio.loudnorm_2pass(src, dst)` | `test_core.py` |
+| Studio sound (voice enhance) <sub>`studio-sound`</sub> | Denoise, dereverb, voice EQ, de-ess, gentle compression (local) | audio | `lib/vstudio/studiosound.py` | `strength=standard` | Phone / laptop / room recordings, 降噪, 人声增强 | n/a | whole video | 1 | `studiosound.enhance(src, dst, strength="standard")` | `test_studiosound.py` |
 | Voice anonymize <sub>`voice-anonymize`</sub> | Pitch shift, duration preserved | audio + ffmpeg | `audio.py:pitch_shift_filter`; longform `pitches.windows` | `semitones=-3` | Privacy for a voice | n/a | window | as needed | `-af` with `audio.pitch_shift_filter(-3)` on the window | `test_core.py` |
 
 ## 10. Progress / chapter bars
@@ -233,7 +234,7 @@ exact = same look; near = same idea, small visual difference; approx = closest s
 | Photo-story cover <sub>`photo-story-cover`</sub> | Title zone + hero split polaroid + taped polaroid row with red circles | PIL | `photostory/cover.py` | `COVER=spec` | Photo stories | n/a | still | 1 | `polaroid()`, `circled()` | - |
 | Frame scoring <sub>`frame-scoring`</sub> | Picks smiling, eyes-open, centred frames | PIL | `cover.py:score_frames`, `contact_sheet` | `top_n=6`, `min_gap=2.0` | Choosing a cover frame | n/a | - | - | Run on any talking video | `test_visual.py` |
 
-**Count**: 91 registry entries in 11 sections (196 counting named variants). By engine: PIL 44, ffmpeg 20, HF 26, HTML 5, audio 6. Parameter feel, pitfalls and entry points: `python -m vstudio.effects --show <id>`.
+**Count**: 92 registry entries in 11 sections (197 counting named variants). By engine: PIL 44, ffmpeg 20, HF 26, HTML 5, audio 7. Parameter feel, pitfalls and entry points: `python -m vstudio.effects --show <id>`.
 
 <!-- END GENERATED: effects registry -->
 

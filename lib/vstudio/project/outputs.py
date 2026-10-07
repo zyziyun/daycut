@@ -1998,6 +1998,13 @@ def _rule_ops(text, dur, ctx=None):
         ops.append(dict(op="effect_add", effect="progress-bar-pil", start=0))
     if re.search(r"淡出|fade out", text, re.I):
         ops.append(dict(op="effect_add", effect="end-fade", start=0))
+    if re.search(r"降噪|噪音|杂音|底噪|人声增强|人声优化|去回声|回音|studio sound|denoise|noise", text, re.I):
+        lv = "strong" if re.search(r"强|很吵|厉害|strong|heavy", text, re.I) else \
+            ("light" if re.search(r"轻|一点点|稍微|light|subtle", text, re.I) else "standard")
+        ops.append(dict(op="effect_add", effect="studio-sound", start=0, params=dict(strength=lv)))
+    if re.search(r"背景音乐|配乐|bgm|background music", text, re.I) and not re.search(r"去掉|删掉|不要|remove", text, re.I):
+        from vstudio import music as MU
+        ops.append(dict(op="effect_add", effect="music-bed", start=0, params=dict(mood=MU.mood_of(text))))
     m = re.search(r"(-\d+(?:\.\d+)?)\s*LUFS", text, re.I)
     if m:
         ops.append(dict(op="loudness", lufs=float(m.group(1))))

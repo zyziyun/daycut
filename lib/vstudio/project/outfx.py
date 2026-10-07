@@ -178,9 +178,14 @@ SPECS = {
         params=dict(name=_str("pop", "音效", enum=_sfx_names()), gain=_num(1.0, 0.0, 3.0, "音量倍数"))),
     "music-bed": dict(
         zh="背景音乐", en="Music bed", kind="audio", stage="audio", default_dur=None,
-        what_zh="铺背景音乐，人声处自动压低",
-        params=dict(file=_str(None, "音乐文件", True), duck_db=_num(-10, -30, 0, "压低 dB"),
-                    music_lufs=_num(-30, -45, -14, "音乐响度 LUFS"))),
+        what_zh="铺背景音乐，人声处自动压低（自己的音乐文件，或内置的免版权氛围音乐）",
+        params=dict(file=_str(None, "音乐文件"), mood=_str(None, "内置音乐风格",
+                                                         enum=["calm", "warm", "bright", "tech", "story"]),
+                    duck_db=_num(-10, -30, 0, "压低 dB"), music_lufs=_num(-30, -45, -14, "音乐响度 LUFS"))),
+    "studio-sound": dict(
+        zh="人声增强", en="Studio sound", kind="audio", stage="audio", default_dur=None,
+        what_zh="降噪、去回声、人声 EQ（整条片子，本地处理，不上传）",
+        params=dict(strength=_str("standard", "强度", enum=["light", "standard", "strong"]))),
     "xfade-joins": dict(
         zh="转场", en="Transition", kind="join", stage="timeline", default_dur=0.4,
         what_zh="剪辑点上的转场（淡化 / 推移 / 闪白 ...）；不在剪辑点时做一次闪 / 黑场过渡",
@@ -212,6 +217,9 @@ ALIASES = {
     "hf-progress": "progress-bar-pil", "进度条": "progress-bar-pil",
     "sfx": "sfx-placement", "sound": "sfx-placement", "sfx-bank": "sfx-placement", "音效": "sfx-placement",
     "music": "music-bed", "bgm": "music-bed", "配乐": "music-bed", "背景音乐": "music-bed",
+    "studio": "studio-sound", "studio_sound": "studio-sound", "voice-enhance": "studio-sound",
+    "denoise": "studio-sound", "降噪": "studio-sound", "人声增强": "studio-sound", "去噪音": "studio-sound",
+    "去回声": "studio-sound", "人声优化": "studio-sound",
     "transition": "xfade-joins", "xfade": "xfade-joins", "转场": "xfade-joins", "light-leak": "xfade-joins",
     "fade-out": "end-fade", "淡出": "end-fade",
     "grade": "vlog-grade", "look": "vlog-grade", "调色": "vlog-grade",
@@ -335,8 +343,16 @@ def validate(eid, params, partial=False):
         for p, d in spec.items():
             if d.get("required") and clean.get(p) in (None, "", []):
                 raise ValueError(f"{k}: {p} is required ({d.get('x-zh', p)})")
-        if k == "music-bed" and not os.path.exists(str(clean.get("file") or "")):
-            raise ValueError(f"music-bed: no file {clean.get('file')!r}")
+        if k == "music-bed" and clean.get("file") and not os.path.exists(str(clean["file"])):
+            from vstudio import music as MU
+            f = str(clean["file"])
+            m = f.split(":", 1)[1] if f.startswith("builtin:") else f
+            if m in MU.moods():                          # "calm" / "builtin:warm" given as the file
+                clean["file"], clean["mood"] = None, m
+            else:
+                raise ValueError(f"music-bed: no file {clean.get('file')!r}")
+        if k == "music-bed" and not clean.get("file") and not clean.get("mood"):
+            raise ValueError("music-bed: file or mood is required (mood: calm / warm / bright / tech / story)")
         if k == "overlay-images" and clean.get("style") == "image" and not os.path.exists(str(clean.get("image") or "")):
             raise ValueError(f"overlay-images: style image needs an existing image file, got {clean.get('image')!r}")
         if k == "overlay-images" and not clean.get("image") and not clean.get("text"):

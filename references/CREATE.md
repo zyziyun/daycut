@@ -80,6 +80,6 @@ submit time wins.
 | TTS | Qwen3-TTS, CosyVoice, Kokoro | Apache-2.0 | yes |
 | TTS | F5-TTS weights, Fish / OpenAudio | non-commercial | never |
 | Lip-sync | Wav2Lip | non-commercial | never |
-| Denoise | ffmpeg afftdn + loudnorm | ffmpeg (LGPL build) | MVP studio sound |
+| Denoise | `vstudio.studiosound` (spectral denoise, dereverb, voice EQ) + loudnorm | numpy + ffmpeg (LGPL build) | studio sound, local |
 
 No model weights or GPL / non-commercial code are vendored in this repository.

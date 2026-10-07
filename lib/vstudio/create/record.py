@@ -20,7 +20,6 @@ from . import store
 from .i18n import CreateError
 
 TRACKS = ("camera", "mic", "screen")
-STUDIO_SOUND = "afftdn=nf=-25,highpass=f=70,loudnorm=I=-16:TP=-1.5:LRA=11"
 
 
 def _ff():
@@ -154,9 +153,9 @@ def cut(src, edl, out, studio=True):
         f.writelines(f"file '{p}'\n" for p in parts)
     joined = os.path.join(work, "joined.mp4")
     _run([_ff(), "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", lst, "-c", "copy", joined])
-    if studio:
-        _run([_ff(), "-v", "error", "-y", "-i", joined, "-c:v", "copy", "-af", STUDIO_SOUND, "-c:a", "aac",
-              "-ar", "48000", "-movflags", "+faststart", out])
+    if studio:                                 # local denoise + dereverb + voice EQ, -16 LUFS (vstudio.studiosound)
+        from vstudio import studiosound
+        studiosound.enhance(joined, out, "standard", lufs=-16.0)
     else:
         shutil.copy2(joined, out)
     return out

@@ -119,11 +119,17 @@ def plan(rec, doc, st, tg, quality):
     sfx = sorted([[round(tl.to_edit(e["start"], "start") or 0.0, 3), e["params"]["name"], e["params"].get("gain", 1.0)]
                   for e in effs if e["effect"] == "sfx-placement" and tl.span(e["start"], e["start"] + 0.05)])
     music = next((dict(e["params"], sig=OUT.file_sig(e["params"]["file"]))
-                  for e in effs if e["effect"] == "music-bed" and os.path.exists(e["params"].get("file") or "")), None)
+                  if os.path.exists(e["params"].get("file") or "") else dict(e["params"], sig=["mood", e["params"]["mood"]])
+                  for e in effs if e["effect"] == "music-bed" and (os.path.exists(e["params"].get("file") or "")
+                                                                   or e["params"].get("mood"))), None)
     prof = tg.get("profile")
     lufs = st["loudness"].get("lufs") or (prof.loudness["lufs"] if prof is not None else -14.0)
     tp = st["loudness"].get("tp") or (prof.loudness["tp"] if prof is not None else -1.5)
+    studio = next((dict(strength=e["params"].get("strength") or "standard")
+                   for e in effs if e["effect"] == "studio-sound"), None)
     audio = dict(sfx=sfx, music=music, lufs=lufs, tp=tp, has_audio=info["has_audio"])
+    if studio:
+        audio["studio"] = studio
     audio["op"] = "none" if not (info["has_audio"] or sfx or music) else "mix"
     audio["key"] = sha1_json(["audio", timeline["key"], audio], 16)
     vis = visual_spec(rec, st, tl, tg, band)
@@ -335,6 +341,9 @@ def run_audio(spec, src, out, duration, workdir):
     has_a = m.probe(src)["has_audio"]
     if has_a:
         x = A.decode_audio(src, sr=A.SR, channels=2)
+        if spec.get("studio"):
+            from vstudio import studiosound
+            x, _ = studiosound.enhance_array(x, A.SR, spec["studio"].get("strength") or "standard")
     else:
         x = np.zeros((int(round(duration * A.SR)), 2), np.float32)
     if spec["sfx"]:
@@ -345,7 +354,11 @@ def run_audio(spec, src, out, duration, workdir):
     if spec["music"]:
         mm = spec["music"]
         bed = os.path.join(workdir, "bed.wav")
-        A.mix_bed(mix, mm["file"], bed, duck_db=float(mm.get("duck_db", -10)), music_lufs=float(mm.get("music_lufs", -30)))
+        src_m = mm.get("file") if os.path.exists(mm.get("file") or "") else None
+        if not src_m:                                  # a built-in mood: generated to this length (cached)
+            from vstudio import music as MU
+            src_m = MU.make(mm["mood"], max(4.0, len(x) / A.SR))
+        A.mix_bed(mix, src_m, bed, duck_db=float(mm.get("duck_db", -10)), music_lufs=float(mm.get("music_lufs", -30)))
         mix = bed
     A.loudnorm_2pass(mix, out, lufs=float(spec["lufs"]), tp=float(spec["tp"]))
     return out
