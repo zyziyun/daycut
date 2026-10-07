@@ -99,6 +99,13 @@ cleanup:                   # shared 气口 / filler / repeat tool (python -m vst
   # policy: true           # answer low-risk confirm edits automatically (batch stages do by default); learned
   #                        # answers live in ~/.config/vstudio/cleanup_policy.json (or policy_file: <path>)
 
+formats: {}                # recurring formats (python -m vstudio.formats list): first-pass defaults per kind of post.
+# Override only what differs for you; the job's own request still wins. e.g.
+#   talking-head: {speed: {body: 1.3, hook: 1.5}, hooks: none}
+#   call-clips: {speed: {body: 1.2}, guests: ask-mask}
+#   lecture-slices: {series_labels: ask}
+#   vlog: {tag_set: travel}       # publish.tag_sets entry; "" = only the post's own tags
+
 # AI providers per step (references/PROVIDERS.md). Unset = Anthropic API when ANTHROPIC_API_KEY is set, else rules.
 # Keys never go here: name the env variable (api_key_env). Check: cd lib && python3 -m vstudio.llm providers
 # llm:
