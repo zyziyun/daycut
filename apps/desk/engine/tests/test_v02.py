@@ -22,7 +22,8 @@ from desk_engine.common import BadRequest, EventBus, Registry  # noqa: E402
 from desk_engine.mock import MockEngine  # noqa: E402
 from desk_engine.studio import Studio, downstream  # noqa: E402
 
-GTM_CSV = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..", "video-studio-app", "gtm", "05_weekly_metrics.csv")
+# header of the gtm weekly metrics sheet (copied into the repo so the test needs nothing outside it)
+GTM_CSV = os.path.join(os.path.dirname(__file__), "..", "..", "tests", "fixtures", "weekly_metrics.csv")
 
 TOP_HELP = """usage: python -m vstudio.batch [-h]
   {plan,estimate,run,status,review,job,package,verify-manifest,clean,du,bench,recipes,plan-segments,client,deliver,metrics,timing} ...
@@ -362,9 +363,13 @@ class MockFlowTest(unittest.TestCase):
         w = R("GET", "/api/metrics/weekly")
         header = next(csv.reader(io.StringIO(w["csv"])))
         self.assertEqual(header, M.WEEKLY_COLUMNS)
-        if os.path.exists(GTM_CSV):
-            with open(GTM_CSV, encoding="utf-8-sig") as f:
-                self.assertEqual(header, next(csv.reader(f)))
+        with open(GTM_CSV, encoding="utf-8-sig") as f:
+            self.assertEqual(header, next(csv.reader(f)))
+        # a value saved under the column's old name still shows under the new one
+        self.st.store.update("weekly_manual", lambda d: d.setdefault("W1", {}).update({"工作室号有效线索": 4}))
+        row = next(r for r in R("GET", "/api/metrics/weekly")["rows"] if str(r["周"]).startswith("W1("))
+        self.assertEqual(row["千剪号有效线索"], 4)
+        self.assertNotIn("工作室号有效线索", row)
 
     def test_validators(self):
         with self.assertRaises(BadRequest):

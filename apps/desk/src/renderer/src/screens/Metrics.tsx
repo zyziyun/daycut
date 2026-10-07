@@ -1,6 +1,7 @@
 // Metrics (P0-5): per batch / client / all. Review s/clip median, rework rate, red rate, cost/clip, deliveries;
 // the manual funnel per client (lead -> pilot -> paid) + 7-day data; weekly_metrics.csv export matching
-// gtm/05_weekly_metrics.csv (the 内容号 / 工作室号 columns are entered here by hand).
+// the gtm weekly metrics sheet (tests/fixtures/weekly_metrics.csv; the 内容号 / 千剪号 / release / LOI / B2B
+// columns are entered here by hand).
 import { useState } from 'react';
 import { FUNNEL, MANUAL_WEEKLY_COLUMNS, type FunnelStage, type MetricsSummary } from '../../../shared/v02';
 import { Empty, ErrorBox } from '../components/ui';

@@ -25,7 +25,7 @@ from vstudio.batch.store import Store
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 GTM_HEADER = ("周,线索数,沟通数,样片数,确认试点数,交付数,回传数据数,付费数,收入(¥),交付条数,人审秒数中位数/条,返工率,质检红灯率,"
-              "每条成本($),内容号播放中位数,内容号收藏率,内容号涨粉,工作室号有效线索")
+              "每条成本($),内容号播放中位数,内容号收藏率,内容号涨粉,千剪号有效线索,Release下载数,跑完一批的外部用户数,带价LOI数,B2B对话数")
 
 
 @pytest.fixture(autouse=True)

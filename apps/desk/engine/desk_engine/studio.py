@@ -164,7 +164,7 @@ class Studio:
 
     def _write_client(self, slug, cfg):
         write_text(os.path.join(self.client_dir(slug), "client.yaml"),
-                   "# client.yaml - overrides the global persona for this client's batches (Daycut)\n"
+                   "# client.yaml - overrides the global persona for this client's batches (Reelfold)\n"
                    + dump_yaml(cfg))
 
     def create_client(self, body):
@@ -759,7 +759,7 @@ class Studio:
                                 r[c] = d[c]
                     manual = self.store.get("weekly_manual", {}) or {}
                     for r in rows:
-                        for c, v in (manual.get(str(r.get("周", "")).split("(")[0]) or {}).items():
+                        for c, v in M.manual_values(manual.get(str(r.get("周", "")).split("(")[0])).items():
                             if v not in (None, ""):
                                 r[c] = v
                     return dict(csv=M.to_csv(rows), rows=rows, columns=M.WEEKLY_COLUMNS, source="engine")

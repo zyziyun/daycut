@@ -132,9 +132,8 @@ describe('segment helpers', () => {
     expect(median([])).toBeNull();
   });
 
-  it('weekly columns match gtm/05_weekly_metrics.csv', () => {
-    const f = path.resolve(import.meta.dirname, '../../../../../video-studio-app/gtm/05_weekly_metrics.csv');
-    if (!fs.existsSync(f)) return;
+  it('weekly columns match the gtm weekly metrics sheet (header kept in tests/fixtures)', () => {
+    const f = path.resolve(import.meta.dirname, '../fixtures/weekly_metrics.csv');
     expect(fs.readFileSync(f, 'utf8').replace(/^\uFEFF/, '').split('\n')[0].split(',')).toEqual([...WEEKLY_COLUMNS]);
   });
 });

@@ -226,6 +226,6 @@ test('metrics dashboard and weekly_metrics.csv export', async () => {
   await page.getByTestId('export-weekly').click();
   await expect.poll(() => fs.existsSync(csvOut)).toBe(true);
   expect(fs.readFileSync(csvOut, 'utf8').split('\n')[0]).toBe(
-    '周,线索数,沟通数,样片数,确认试点数,交付数,回传数据数,付费数,收入(¥),交付条数,人审秒数中位数/条,返工率,质检红灯率,每条成本($),内容号播放中位数,内容号收藏率,内容号涨粉,工作室号有效线索',
+    '周,线索数,沟通数,样片数,确认试点数,交付数,回传数据数,付费数,收入(¥),交付条数,人审秒数中位数/条,返工率,质检红灯率,每条成本($),内容号播放中位数,内容号收藏率,内容号涨粉,千剪号有效线索,Release下载数,跑完一批的外部用户数,带价LOI数,B2B对话数',
   );
 });

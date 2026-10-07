@@ -3,7 +3,7 @@
 Per job: review seconds (sum of active review time sent by the desk), rework (re-renders after edits +
 rejections), QC, cost. Per batch / client / all: counts, median review s per clip, rework rate, red rate,
 cost per clip, deliveries, turnaround. Clients also carry the manual funnel (lead -> contacted -> sample ->
-pilot -> delivered -> data -> paid) and 7-day post data. ``weekly_csv`` matches gtm/05_weekly_metrics.csv.
+pilot -> delivered -> data -> paid) and 7-day post data. ``weekly_csv`` matches the gtm weekly metrics sheet (header kept in tests/fixtures/weekly_metrics.csv).
 """
 import csv
 import datetime as dt
@@ -13,9 +13,11 @@ import statistics
 FUNNEL = ("lead", "contacted", "sample", "pilot", "delivered", "data", "paid")
 WEEKLY_COLUMNS = ["周", "线索数", "沟通数", "样片数", "确认试点数", "交付数", "回传数据数", "付费数", "收入(¥)", "交付条数",
                   "人审秒数中位数/条", "返工率", "质检红灯率", "每条成本($)", "内容号播放中位数", "内容号收藏率", "内容号涨粉",
-                  "工作室号有效线索"]
+                  "千剪号有效线索", "Release下载数", "跑完一批的外部用户数", "带价LOI数", "B2B对话数"]
+# columns renamed in the gtm sheet: values saved under the old name still show (and export) under the new one
+RENAMED_COLUMNS = {"工作室号有效线索": "千剪号有效线索"}
 MANUAL_COLUMNS = WEEKLY_COLUMNS[14:]
-WEEK0 = dt.date(2026, 10, 6)                # W1 starts 10/6 (gtm/05_weekly_metrics.csv)
+WEEK0 = dt.date(2026, 10, 6)                # W1 starts 10/6 (the gtm weekly metrics sheet)
 
 
 def median(xs):
@@ -67,6 +69,16 @@ def week_label(n, week0=WEEK0):
     return f"W{n}({a.month}/{a.day}-{b.month}/{b.day})"
 
 
+def manual_values(week_values):
+    """{column: value} as saved, with renamed columns mapped to their current name (the current name wins)."""
+    out = {}
+    for c, v in (week_values or {}).items():
+        n = RENAMED_COLUMNS.get(c, c)
+        if n not in out or c == n:
+            out[n] = v
+    return out
+
+
 def weekly_rows(crm, deliveries, timing_jobs, manual, weeks=None, week0=WEEK0, today=None):
     """crm: {client: {history: [{stage, at}], revenue: [{at, amount}], posts: [...]}};
     deliveries: [{at, items, jobs}]; timing_jobs: [{at, review_s, rework, qc, cost}] (one per reviewed job,
@@ -101,7 +113,7 @@ def weekly_rows(crm, deliveries, timing_jobs, manual, weeks=None, week0=WEEK0, t
         if qcd:
             row["质检红灯率"] = rate(sum(1 for t in qcd if t["qc"] == "red"), len(qcd))
         for c in MANUAL_COLUMNS:
-            v = ((manual or {}).get(f"W{n}") or {}).get(c)
+            v = manual_values((manual or {}).get(f"W{n}")).get(c)
             if v not in (None, ""):
                 row[c] = v
         out.append(row)
