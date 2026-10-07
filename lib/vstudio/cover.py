@@ -70,6 +70,8 @@ def score_frames(video, top_n=6, step=5, min_gap=2.0, analysis_width=540, landma
         cap.set(cv2.CAP_PROP_POS_FRAMES, p["frame"]); ok, img = cap.read()
         p["image"] = img if ok else None
     cap.release()
+    if landmarker is None:      # ours: close it now (one garbage-collected on a worker thread deadlocks mediapipe)
+        lm.close()
     return picks
 
 
@@ -99,6 +101,7 @@ def _face_and_retouch(photo, retouch_opts, face_x):
     if face_x != "auto" and not retouch_opts:
         return photo, float(face_x if face_x is not None else 0.5)
     fx = 0.5 if face_x == "auto" or face_x is None else float(face_x)
+    lm = None
     try:
         import cv2
         from . import face as F
@@ -119,6 +122,9 @@ def _face_and_retouch(photo, retouch_opts, face_x):
             photo = Image.fromarray(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB))
     except Exception as e:  # noqa: BLE001 - the cover must render without the model
         print("split_cover: face/retouch skipped:", e)
+    finally:
+        if lm is not None:      # close here: a landmarker garbage-collected later on a worker thread deadlocks
+            lm.close()
     return photo, fx
 
 

@@ -271,7 +271,7 @@ def th(tmp_path_factory):
     try:
         from vstudio.project.core import Project
         p = Project.create(str(d / "th"), recipe="talkinghead", inputs=dict(video=[src]),
-                           params=dict(preset="ultrafast", speed=1.0, platforms=["xiaohongshu:full", "douyin"]),
+                           params=dict(pipeline="fast", preset="ultrafast", speed=1.0, platforms=["xiaohongshu:full", "douyin"]),
                            auto=["hook", "filler", "cover"],
                            spec=dict(plugins=["vstudio.project.registry", "_batch_helpers"],
                                      asr=dict(transcriber="_batch_helpers:fake_transcriber"),
