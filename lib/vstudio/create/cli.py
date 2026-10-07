@@ -2,7 +2,7 @@
 exit code 2). ``--json-events``: progress as JSON lines (``{"event": ...}``) before the final ``{"result": ...}``.
 
     formats                                   providers [--detect] [--local]
-    plan --prompt P [--format F] [--budget CNY] [--platforms a,b] [--lang zh|en|fr]   -> series draft (not saved)
+    plan --prompt P [--format F] [--budget CNY] [--platforms a,b] [--lang zh|en|fr] [--mode template] -> draft
     series new --draft FILE|--draft-json JSON | series show SID | series list | sample [--lang L]
     bible revise SID (--instruction TEXT | --patch-json JSON)      ideas SID [--n 4]
     episodes add SID --ideas i1,i2            script write EID | script revise EID --instruction TEXT
@@ -45,6 +45,8 @@ def parser():
     s.add_argument("--budget", type=float)
     s.add_argument("--platforms")
     s.add_argument("--lang", default="en")
+    s.add_argument("--mode", choices=["auto", "template"], default="auto",
+                   help="template = the format's own outline, no AI call ('Start from the template')")
     s = sub.add_parser("series")
     s.add_argument("action", choices=["new", "show", "list", "set"])
     s.add_argument("sid", nargs="?")
@@ -133,7 +135,8 @@ def dispatch(a, on_event=None):
     if c == "plan":
         if a.format:
             F.get(a.format)
-        return dict(draft=BI.plan_series(a.prompt, a.format, a.budget, _csv(a.platforms), a.lang))
+        return dict(draft=BI.plan_series(a.prompt, a.format, a.budget, _csv(a.platforms), a.lang, mode=a.mode,
+                                         on_event=on_event))
     if c == "series":
         if a.action == "list":
             return dict(series=views.list_series())

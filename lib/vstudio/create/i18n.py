@@ -9,7 +9,7 @@ CODES = (
     "create.plan-changed",
     "create.over-budget", "create.over-cap", "create.unknown-rate", "create.low-credits", "create.price-changed",
     "create.provider-not-ready", "create.max-too-low", "create.nothing-to-make", "create.not-found",
-    "create.bad-input", "create.manual-only", "create.local-off",
+    "create.bad-input", "create.manual-only", "create.local-off", "create.ai-failed",
     # progress / inbox
     "create.pick-takes", "create.budget", "create.hard-shots-failed", "create.recording-recovered",
     "create.manual-waiting", "create.unknown-charge", "create.shot-failed", "create.done",

@@ -355,7 +355,9 @@ export class CreateClient {
   testProvider(id: string) {
     return this.req<{ ok: boolean; code: string; params: Record<string, unknown> }>('POST', `/api/create/providers/${sid(id)}/test`);
   }
-  plan(body: { prompt?: string; format?: FormatId; budget_cny?: number; platforms?: string[]; lang?: Lang3 }) {
+  /** mode: auto = the AI writes the plan (a clear create.ai-failed when none answers); template = the format's own
+   *  outline, no AI call ("Start from the template"). Progress: ``create.step`` events on the job. */
+  plan(body: { prompt?: string; format?: FormatId; budget_cny?: number; platforms?: string[]; lang?: Lang3; mode?: 'auto' | 'template' }) {
     return this.req<{ job: string }>('POST', '/api/create/plan', body);
   }
   createSeries(draft: SeriesDraft) {

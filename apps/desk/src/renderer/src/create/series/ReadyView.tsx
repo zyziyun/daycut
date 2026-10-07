@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Film, Mic, Pencil, Plus, Send } from 'lucide-react';
 import type { EpisodeRow, Handoff, SeriesView } from '../../../../shared/create';
+import { sortPlatforms } from '../../../../shared/platforms';
 import { yuan } from '../../../../shared/create';
 import { fmtDate, fmtTime, t } from '../../i18n';
 import { useEngine } from '../../lib/engine';
@@ -151,7 +152,7 @@ function ReadyEpisode({ s, ep, reload }: { s: SeriesView; ep: EpisodeRow; reload
               <div key={p.lang} className="row">
                 <b style={{ fontWeight: 500 }}>{`${fmtDate(p.at, { weekday: 'short' })} ${fmtTime(p.at)}`}</b>
                 <span className="muted">
-                  {t('create.ready.versionRow', { lang: t(`create.lang.${p.lang}` as 'create.lang.zh'), platforms: p.platforms.map((x) => t(`create.plat.${x}` as 'create.plat.douyin')).join(', ') })}
+                  {t('create.ready.versionRow', { lang: t(`create.lang.${p.lang}` as 'create.lang.zh'), platforms: sortPlatforms(p.platforms, (x) => x.split(':')[0]).map((x) => t(`create.plat.${x}` as 'create.plat.douyin')).join(', ') })}
                 </span>
                 <a className="link" href={href({ name: 'calendar' })}>
                   {t('create.ready.change')}

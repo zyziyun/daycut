@@ -37,7 +37,7 @@ def test_format_label_fallback_and_unknown():
 # ------------------------------------------------------------------------------------------- planning
 def test_plan_series_rules_fallback(home):
     d = BI.plan_series("5-episode series ad for my matcha brand, office comedy, 30 s each, Chinese + English")
-    assert d["format"] == "series-ad" and d["source"] == "rules"
+    assert d["format"] == "series-ad" and d["source"] == "template"
     assert d["episodes"] == 5 and d["bible"]["length_s"] == 30
     assert d["bible"]["languages"] == ["zh", "en"]
     assert len(d["ideas"]) == 4 and d["ideas"][0]["picked"]
@@ -47,6 +47,7 @@ def test_plan_series_rules_fallback(home):
 def test_plan_series_with_fake_llm(home, monkeypatch):
     from vstudio import llm
     monkeypatch.setenv("VSTUDIO_CREATE_NO_LLM", "0")
+    monkeypatch.setenv("VSTUDIO_LLM_SCRIPT_PROVIDER", "codex")
     PR.set_fake(False)
     seen = {}
 
@@ -62,13 +63,80 @@ def test_plan_series_with_fake_llm(home, monkeypatch):
     assert seen["task"] == "script" and "ideas" in seen["schema"]["properties"]
 
 
-def test_plan_series_llm_failure_falls_back(home, monkeypatch):
+def test_plan_series_llm_failure_is_a_clear_error_then_template_works(home, monkeypatch):
+    from vstudio import llm
+    monkeypatch.setenv("VSTUDIO_CREATE_NO_LLM", "0")
+    monkeypatch.setenv("VSTUDIO_LLM_SCRIPT_PROVIDER", "claude-code")
+    PR.set_fake(False)
+    monkeypatch.setattr(llm, "complete", lambda *a, **k: (_ for _ in ()).throw(llm.LLMError("claude CLI: 401 expired")))
+    with pytest.raises(CreateError) as ei:
+        BI.plan_series("脱口秀段子，讲副业")
+    assert ei.value.code == "create.ai-failed" and ei.value.params["reason"] == "auth-expired"
+    assert ei.value.params["provider"] == "claude-code"
+    d = BI.plan_series("脱口秀段子，讲副业", mode="template")                    # "Start from the template"
+    assert d["format"] == "talk-show" and d["source"] == "template" and d["lang"] == "zh"
+
+
+def test_plan_series_no_ai_set_up_is_a_clear_error_never_a_silent_swap(home, monkeypatch):
     from vstudio import llm
     monkeypatch.setenv("VSTUDIO_CREATE_NO_LLM", "0")
     PR.set_fake(False)
-    monkeypatch.setattr(llm, "complete", lambda *a, **k: (_ for _ in ()).throw(llm.LLMError("expired")))
-    d = BI.plan_series("脱口秀段子，讲副业")
-    assert d["format"] == "talk-show" and d["source"] == "rules" and d["lang"] == "zh"
+    called = []
+    monkeypatch.setattr(llm, "complete", lambda *a, **k: called.append(1))
+    monkeypatch.setattr(llm, "route", lambda *a, **k: llm.Route("none", None, {}, "legacy-auto"))
+    steps = []
+    with pytest.raises(CreateError) as ei:
+        BI.plan_series("", "series-ad", budget=60, lang="zh", on_event=steps.append)
+    assert ei.value.params["reason"] == "not-set-up" and not called
+    assert [s["step"] for s in steps] == ["read", "ai-failed"]
+    steps.clear()
+    d = BI.plan_series("", "series-ad", budget=60, platforms=["douyin", "xiaohongshu:full", "tiktok", "youtube-shorts"],
+                       lang="zh", mode="template", on_event=steps.append)
+    assert not called and d["source"] == "template" and d["format"] == "series-ad"
+    assert [s["step"] for s in steps] == ["read", "template"]
+    assert d["name"] and len(d["ideas"]) == 4 and all(c["look"] for c in d["bible"]["cast"])
+    assert d["budget_cny"] == 60 and len(d["platforms"]) == 4
+    with pytest.raises(CreateError):
+        BI.plan_series("", "series-ad", mode="rules")
+
+
+def test_plan_series_hanging_ai_times_out_with_steps(home, monkeypatch):
+    """Her bug: Claude Code (expired login) never answers -> Plan spun forever. Now: bounded, steps, clear error."""
+    import threading
+    from vstudio import llm
+    monkeypatch.setenv("VSTUDIO_CREATE_NO_LLM", "0")
+    monkeypatch.setenv("VSTUDIO_LLM_SCRIPT_PROVIDER", "claude-code")
+    monkeypatch.setenv("VSTUDIO_CREATE_AI_TIMEOUT", "0.2")
+    monkeypatch.setenv("VSTUDIO_CREATE_AI_DEADLINE", "0.6")
+    PR.set_fake(False)
+    gate = threading.Event()
+    seen = {}
+
+    def hang(task, system, prompt, **kw):
+        seen.update(kw)
+        kw["on_fallback"]({"from": "claude-code", "to": "codex", "code": "timeout", "error": "timed out"})
+        gate.wait(5)
+    monkeypatch.setattr(llm, "complete", hang)
+    steps = []
+    t0 = time.time()
+    with pytest.raises(CreateError) as ei:
+        BI.plan_series("", "series-ad", budget=60, lang="zh", on_event=steps.append)
+    gate.set()
+    assert time.time() - t0 < 3
+    assert ei.value.params["reason"] == "timeout"
+    assert seen["cli_timeout"] == 0.2 and seen["timeout"] == 0.2              # each CLI attempt is capped
+    names = [s["step"] for s in steps]
+    assert names[:2] == ["read", "bible"] and "fallback" in names and names[-1] == "ai-failed"
+    assert next(s for s in steps if s["step"] == "fallback")["to"] == "codex"
+
+
+def test_plan_cli_template_mode_and_events(home, capsys):
+    from vstudio.create import cli
+    assert cli.main(["--json-events", "plan", "--format", "series-ad", "--budget", "60", "--platforms",
+                     "douyin,xiaohongshu:full", "--lang", "zh", "--mode", "template"]) == 0
+    lines = [json.loads(x) for x in capsys.readouterr().out.splitlines() if x.startswith("{")]
+    assert [x["step"] for x in lines if x.get("event") == "create.step"] == ["read", "template"]
+    assert lines[-1]["result"]["draft"]["source"] == "template"
 
 
 def test_create_series_writes_files_without_secrets(home, monkeypatch):

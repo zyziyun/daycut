@@ -36,15 +36,24 @@ export class JobError extends Error {
   }
 }
 
-/** Poll a background job until it finishes -> its result (JobError on failure). */
-export async function waitJob<T>(c: CreateClient, id: string, onTick?: (j: CreateJob<T>) => void, every = 400): Promise<T> {
+/** Poll a background job until it finishes -> its result (JobError on failure). ``limitMs``: give up waiting
+ *  (JobError create.job-timeout) - the engine and the sidecar stop it on their side too; nothing spins forever. */
+export async function waitJob<T>(c: CreateClient, id: string, onTick?: (j: CreateJob<T>) => void, every = 400, limitMs?: number): Promise<T> {
+  const t0 = Date.now();
   for (;;) {
     const j = await c.job<T>(id);
     onTick?.(j);
     if (j.state === 'done') return j.result as T;
     if (j.state === 'error') throw new JobError(j.error ?? { code: 'create.failed', params: {} });
+    if (limitMs && Date.now() - t0 > limitMs) throw new JobError({ code: 'create.job-timeout', params: { seconds: Math.round(limitMs / 1000) } });
     await new Promise((r) => setTimeout(r, every));
   }
+}
+
+/** The latest ``create.step`` event of a job (plan progress), or null. */
+export function lastStep(j: CreateJob<unknown>): Record<string, unknown> | null {
+  for (let i = j.events.length - 1; i >= 0; i--) if (j.events[i]?.event === 'create.step') return j.events[i] as Record<string, unknown>;
+  return null;
 }
 
 /** Run one action at a time with busy / error state: run(() => c.something()). */

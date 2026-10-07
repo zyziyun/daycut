@@ -332,3 +332,22 @@
   .cr-board, .cr-two { grid-template-columns: minmax(0, 1fr) 340px; }
   .cr-ready { grid-template-columns: 380px minmax(0, 1fr); }
 }
+
+/* plan progress / failure (PlanStatus.tsx) and board import (ImportBoard.tsx) */
+.cr-plan-progress { display: flex; align-items: center; gap: 10px; margin-top: 12px; font-size: 14px; }
+.cr-dot-spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--border); border-top-color: var(--accent); animation: cr-spin 0.9s linear infinite; flex: none; }
+@keyframes cr-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .cr-dot-spin { animation: none; } }
+.cr-plan-fail { margin-top: 12px; padding: 14px 16px; border: 1px solid var(--border); border-left: 3px solid var(--danger); border-radius: 10px; display: grid; gap: 6px; }
+.cr-plan-fail .t1 { font-weight: 500; }
+.cr-plan-fail .t3 { font-size: 13px; }
+.cr-plan-fail .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.cr-import { display: inline-flex; align-items: center; gap: 8px; }
+.cr-drop { outline: 2px dashed var(--accent); outline-offset: 4px; border-radius: 12px; }
+.cr-import-note { margin-top: 10px; font-size: 14px; }
+.cr-plugins { display: grid; gap: 8px; }
+.cr-plugin { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; }
+.cr-plugin .nm { font-weight: 500; }
+.cr-plugin .meta { font-size: 13px; color: var(--text-muted); }
+.cr-plugin .perm { display: inline-block; font-size: 12px; padding: 1px 6px; border-radius: 6px; background: var(--surface-2); margin: 2px 4px 0 0; }
+.cr-plugin.bad { border-color: var(--danger); }

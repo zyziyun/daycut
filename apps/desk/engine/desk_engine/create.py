@@ -12,7 +12,7 @@ refused here unless it carries an estimate id + an 8-hex confirm code + max_cny,
 Routes (GET / POST, Bearer auth like everything else):
   GET  formats | providers | series | series/<sid> | episodes/<eid> | episodes/<eid>/estimate?stage=&only=
        | episodes/<eid>/prompts | runs?series= | spend?series= | jobs/<id>
-  POST plan {prompt, format?, budget_cny?, platforms?, lang?} -> {job}      series {draft}       sample {lang}
+  POST plan {prompt, format?, budget_cny?, platforms?, lang?, mode? auto|template} -> {job} (steps: create.step)      series {draft}       sample {lang}
        providers/<id>/test     series/<sid>/bible {instruction}|{patch}    series/<sid>/ideas {n}
        series/<sid>/episodes {idea_ids}   series/<sid>/settings {budget_cny?, platforms?, routing?}
        episodes/<eid>/shots/<no> {source}  episodes/<eid>/route {instruction, apply?}
@@ -24,6 +24,7 @@ Routes (GET / POST, Bearer auth like everything else):
 import json
 import os
 import re
+import signal
 import subprocess
 import threading
 import time
@@ -41,6 +42,7 @@ PROVIDER_RE = re.compile(r"^[a-z][a-z0-9-]{1,30}$")
 LANGS = ("zh", "en", "fr")
 STAGES = ("stills", "animatic", "drafts", "finals")
 PLATFORM_RE = re.compile(r"^[a-z][a-z-]{0,30}(:[a-z]{3,12})?$")
+PLAN_LIMIT_S = float(os.environ.get("DESK_CREATE_PLAN_LIMIT_S") or 260)   # the engine gives up at 200 s itself
 FORMATS = ("series-ad", "product-spot", "interview", "talk-show", "sketch", "record")
 
 
@@ -131,8 +133,9 @@ class CreateApi:
             raise Refused(e["code"], e.get("params") or {}, int(e.get("status") or 409))
         return doc
 
-    def job(self, kind, args, meta=None, after=None):
-        """Background job: -> {job}. ``after(result)`` runs here when it succeeds (calendar, history)."""
+    def job(self, kind, args, meta=None, after=None, limit=None):
+        """Background job: -> {job}. ``after(result)`` runs here when it succeeds (calendar, history). ``limit``:
+        seconds before a real-mode job's process is stopped (``create.job-timeout``) - a job never spins forever."""
         self.used = True
         jid = uuid.uuid4().hex[:12]
         rec = dict(id=jid, kind=kind, state="running", started=time.time(), meta=meta or {}, events=[],
@@ -149,7 +152,7 @@ class CreateApi:
 
         def go():
             try:
-                res = self._run_job(args, on_event)
+                res = self._run_job(args, on_event, limit)
                 if after:
                     res = after(res) or res
                 rec.update(state="done", result=res)
@@ -163,7 +166,7 @@ class CreateApi:
         threading.Thread(target=go, daemon=True).start()
         return dict(job=jid, kind=kind)
 
-    def _run_job(self, args, on_event):
+    def _run_job(self, args, on_event, limit=None):
         if not self.real():
             cli = self.engine()
             from vstudio.create.i18n import CreateError
@@ -176,6 +179,21 @@ class CreateApi:
         cmd = [r.python, "-m", "vstudio.create", "--json-events", *args]
         p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=r.env,
                              stdin=subprocess.DEVNULL, start_new_session=True)
+        killed = []
+        watchdog = None
+        if limit:
+            def stop():
+                killed.append(1)
+                try:                                     # its own session: the model CLI it started goes too
+                    os.killpg(p.pid, signal.SIGKILL)
+                except OSError:
+                    try:
+                        p.kill()
+                    except OSError:
+                        pass
+            watchdog = threading.Timer(limit, stop)
+            watchdog.daemon = True
+            watchdog.start()
         result = None
         for line in p.stdout:
             line = line.strip()
@@ -191,6 +209,12 @@ class CreateApi:
                 on_event(doc)
         err = p.stderr.read()
         p.wait()
+        p.stdout.close()
+        p.stderr.close()
+        if watchdog:
+            watchdog.cancel()
+        if killed:
+            raise Refused("create.job-timeout", dict(seconds=int(limit)), 504)
         if result is None:
             raise Refused("create.failed", dict(error=(err or "").strip().splitlines()[-1:] or ["no output"]), 500)
         return self._check(result)
@@ -349,7 +373,10 @@ class CreateApi:
             if b.get("lang"):
                 need(b["lang"] in ("en", "zh", "fr"), "lang")
                 args += ["--lang", b["lang"]]
-            return self.job("plan", args)
+            if b.get("mode") is not None:
+                need(b["mode"] in ("auto", "template"), "mode: auto | template")
+                args += ["--mode", b["mode"]]
+            return self.job("plan", args, limit=PLAN_LIMIT_S)
         if p == ["series"]:
             d = b.get("draft")
             need(isinstance(d, dict) and d.get("format") in FORMATS and isinstance(d.get("bible"), dict),

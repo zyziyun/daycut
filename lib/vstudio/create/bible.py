@@ -134,31 +134,67 @@ def rule_ideas(fmt, topic, n, start=1, lang="en"):
 def rules_draft(prompt, fmt, lang, info):
     zh = lang.startswith("zh")
     topic = _name_from(prompt, fmt, lang)
-    cast = [dict(id=c["id"], name=F.text(c.get("role"), lang), essence="", look="", own=bool(c.get("own")))
-            for c in fmt["cast_slots"]]
+    looks = (["同一套衣服、发型每集不变，自然妆", "日常便装，每集同一身，表情夸张一点"] if zh else
+             ["Same outfit and hair every episode, natural make-up", "Everyday clothes, the same every episode, "
+              "expressive face"])
+    cast = [dict(id=c["id"], name=F.text(c.get("role"), lang), essence=F.text(c.get("role"), lang),
+                 look=looks[i % len(looks)], own=bool(c.get("own"))) for i, c in enumerate(fmt["cast_slots"])]
     return dict(name=topic, engine=F.text(fmt.get("engine"), lang), cast=cast,
                 always=[F.text(r, lang) for r in fmt["rules"].get("always") or []],
                 never=[F.text(r, lang) for r in fmt["rules"].get("never") or []],
-                ideas=rule_ideas(fmt, topic, 4, lang="zh" if zh else lang), source="rules")
+                ideas=rule_ideas(fmt, topic, 4, lang="zh" if zh else lang), source="template")
 
 
-def plan_series(prompt, fmt=None, budget=None, platforms=None, lang="en", episodes=None):
+def _step(on_event, step, **params):
+    if on_event:
+        try:
+            on_event(dict(event="create.step", step=step, **params))
+        except Exception:  # noqa: BLE001  (progress never breaks the plan)
+            pass
+
+
+def plan_series(prompt, fmt=None, budget=None, platforms=None, lang="en", episodes=None, mode="auto", on_event=None):
+    """``mode``: auto = the AI writes the plan (the ``script`` route: her Claude Code -> Codex). No AI set up, or
+    none answers in time -> ``create.ai-failed`` {reason not-set-up | timeout | auth-expired | ..., provider,
+    seconds}: never a silent swap. template = the format's own outline (its engine, beats, cast slots, rules and
+    stock episode angles), no AI call - what the desk offers as "Start from the template", labelled as such
+    (draft ``source: "template"``). The test harness (fake services / VSTUDIO_CREATE_NO_LLM=1) plans with the
+    template too."""
     prompt = str(prompt or "").strip()
     if not prompt and not fmt:
         raise CreateError("bad-input", field="prompt")
+    if mode not in ("auto", "template"):
+        raise CreateError("bad-input", field="mode")
     info = parse_prompt(prompt)
     if info["cjk"] and lang == "en":
         lang = "zh"
     fid = fmt or guess_format(prompt)
     f = F.get(fid)
-    got = ai.ask(SYSTEM.format(lang=ai.lang_name(lang)),
+    _step(on_event, "read", format=fid)
+    use_ai = mode == "auto" and ai.enabled()
+    if use_ai and not ai.configured():
+        _step(on_event, "ai-failed", code="not-set-up", provider="none", seconds=0)
+        raise CreateError("ai-failed", status=503, reason="not-set-up", provider="none", seconds=0)
+    got = None
+    if use_ai:
+        _step(on_event, "bible", provider=ai.provider())
+        try:
+            got = ai.ask(SYSTEM.format(lang=ai.lang_name(lang)),
                  f"Request: {prompt}\nSuggested format: {fid} ({F.label(f, 'en')}: {F.text(f['blurb'], 'en')}).\n"
                  f"Beats of the format: {', '.join(b['label'] for b in F.expand_beats(f, 'en'))}.\n"
                  f"Cast slots: {', '.join(c['id'] + ' = ' + F.text(c['role'], 'en') for c in f['cast_slots'])}.\n"
                  "Return the series plan: format, a short name, the engine (one sentence: what every episode does), "
                  "the cast (id A/B..., name, essence, a concrete look), always / never rules, and 4 episode ideas.",
-                 PLAN_SCHEMA)
-    if got and got.get("format") in F.IDS:
+                 PLAN_SCHEMA, on_event=on_event, strict=True)
+        except ai.AIFailed as e:
+            raise CreateError("ai-failed", status=503, reason=e.code, provider=e.provider or "",
+                              seconds=e.seconds, tried=e.tried) from e
+        if not (got and got.get("format") in F.IDS):
+            raise CreateError("ai-failed", status=503, reason="bad-answer", provider=ai.provider(), seconds=0)
+        _step(on_event, "ideas")
+    else:
+        _step(on_event, "template")
+    if got:
         f = F.get(got["format"]) if not fmt else f
         d = dict(name=got["name"][:60], engine=got["engine"], cast=[dict(c, own=False) for c in got["cast"][:4]],
                  always=got["always"][:6], never=got["never"][:6], ideas=got["ideas"][:6], source="ai")

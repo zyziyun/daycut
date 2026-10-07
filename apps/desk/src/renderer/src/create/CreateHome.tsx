@@ -2,17 +2,22 @@
 // and on first run (no service connected) a calm notice + the sample series.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight, ChevronDown, Cloud, CircleDollarSign, Layers, Paperclip, Sparkles } from 'lucide-react';
-import type { Format, FormatId, SeriesDraft, SeriesSummary } from '../../../shared/create';
+import type { Format, FormatId, Msg, SeriesDraft, SeriesSummary } from '../../../shared/create';
 import { yuan } from '../../../shared/create';
+import { sortPlatforms } from '../../../shared/platforms';
 import { t } from '../i18n';
 import { href } from '../lib/router';
 import { media } from '../v4/kit';
-import { msgText, useAction, useCreate, useCreateLoad, waitJob } from './api';
+import { JobError, lastStep, msgText, useAction, useCreate, useCreateLoad, waitJob } from './api';
+import { PlanError, PlanProgress } from './PlanStatus';
 import { FormatArt, l10n, uiLang3 } from './bits';
 import { createHref, goCreate } from './routes';
 
 const BUDGETS = [0, 30, 60, 100, 300, 1000];
-const PLATS = ['douyin', 'xiaohongshu', 'tiktok', 'youtube-shorts', 'bilibili', 'instagram'] as const;
+/** the engine gives up after 200 s and the sidecar stops it at 260 s; the page stops waiting a little later */
+const PLAN_WAIT_MS = 280_000;
+// international first, Chinese after (the shared platform registry's order), everywhere they are listed
+const PLATS = sortPlatforms(['douyin', 'xiaohongshu', 'tiktok', 'youtube-shorts', 'bilibili', 'instagram'], (x) => x);
 const PLAT_STYLE: Record<string, { bg: string; g: string }> = {
   douyin: { bg: '#111', g: '\u6296' },
   xiaohongshu: { bg: '#e8293b', g: '\u7ea2' },
@@ -40,6 +45,7 @@ export function CreateHome() {
   const [fmt, setFmt] = useState<FormatId | null>(null);
   const [budget, setBudget] = useState(60);
   const [plats, setPlats] = useState<string[]>(['douyin', 'xiaohongshu', 'tiktok', 'youtube-shorts']);
+  const shown = useMemo(() => sortPlatforms(plats, (x) => x), [plats]);
   const [platOpen, setPlatOpen] = useState(false);
   const act = useAction();
   const sample = useAction();
@@ -60,14 +66,27 @@ export function CreateHome() {
   const fmts: Format[] = useMemo(() => formats.data?.formats ?? [], [formats.data]);
   const fmtName = useMemo(() => fmts.find((f) => f.id === fmt), [fmts, fmt]);
 
-  const plan = () =>
+  const [step, setStep] = useState<Record<string, unknown> | null>(null);
+  const [since, setSince] = useState(0);
+  const [planErr, setPlanErr] = useState<Msg | null>(null);
+  const plan = (mode: 'auto' | 'template' = 'auto') =>
     act.run(async () => {
       if (!c) return;
       if (fmt === 'record' && !prompt.trim()) return goCreate({ screen: 'record' });
-      const { job } = await c.plan({ prompt: prompt.trim() || undefined, format: fmt ?? undefined, budget_cny: budget || undefined, platforms: plats.map((p) => (p === 'xiaohongshu' ? 'xiaohongshu:full' : p)), lang: uiLang3() });
-      const res = await waitJob<{ draft: SeriesDraft }>(c, job);
-      const made = await c.createSeries(res.draft);
-      goCreate({ screen: 'series', sid: made.series, tab: 'bible' });
+      setPlanErr(null);
+      setStep(null);
+      setSince(Date.now());
+      try {
+        const { job } = await c.plan({ prompt: prompt.trim() || undefined, format: fmt ?? undefined, budget_cny: budget || undefined, platforms: shown.map((p) => (p === 'xiaohongshu' ? 'xiaohongshu:full' : p)), lang: uiLang3(), mode });
+        const res = await waitJob<{ draft: SeriesDraft }>(c, job, (j) => setStep(lastStep(j)), 400, PLAN_WAIT_MS);
+        const made = await c.createSeries(res.draft);
+        goCreate({ screen: 'series', sid: made.series, tab: 'bible' });
+      } catch (e) {
+        if (e instanceof JobError) setPlanErr(e.msg);
+        else throw e;
+      } finally {
+        setStep(null);
+      }
     });
 
   const pickFormat = (f: Format) => {
@@ -92,7 +111,7 @@ export function CreateHome() {
           onKeyDown={(e) => {
             if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
               e.preventDefault();
-              void plan();
+              void plan('auto');
             }
           }}
         />
@@ -128,16 +147,16 @@ export function CreateHome() {
           <span style={{ position: 'relative' }}>
             <button className="cr-opt" onClick={() => setPlatOpen(!platOpen)} data-testid="create-platforms">
               <span className="cr-plats">
-                {plats.slice(0, 3).map((p) => (
+                {shown.slice(0, 3).map((p) => (
                   <i key={p} style={{ background: PLAT_STYLE[p]?.bg }}>
                     {PLAT_STYLE[p]?.g}
                   </i>
                 ))}
               </span>
-              {plats.length
-                ? plats.length > 2
-                  ? t('create.home.platforms', { first: plats.slice(0, 2).map((p) => t(`create.plat.${p}` as 'create.plat.douyin')).join(', '), n: plats.length - 2 })
-                  : plats.map((p) => t(`create.plat.${p}` as 'create.plat.douyin')).join(', ')
+              {shown.length
+                ? shown.length > 2
+                  ? t('create.home.platforms', { first: shown.slice(0, 2).map((p) => t(`create.plat.${p}` as 'create.plat.douyin')).join(', '), n: shown.length - 2 })
+                  : shown.map((p) => t(`create.plat.${p}` as 'create.plat.douyin')).join(', ')
                 : t('create.home.platformsNone')}
               <ChevronDown className="ico" />
             </button>
@@ -154,12 +173,14 @@ export function CreateHome() {
           </span>
           <span className="sp" />
           <span className="cr-hint">⌘↵</span>
-          <button className="btn primary lg" disabled={act.busy || (!prompt.trim() && !fmt)} onClick={() => void plan()} data-testid="create-plan">
+          <button className="btn primary lg" disabled={act.busy || (!prompt.trim() && !fmt)} onClick={() => void plan('auto')} data-testid="create-plan">
             <Sparkles className="ico" />
             {act.busy ? t('create.home.planning') : t('create.home.plan')}
           </button>
         </div>
       </div>
+      {act.busy && <PlanProgress step={step} since={since} />}
+      {!act.busy && planErr && <PlanError msg={planErr} busy={act.busy} onRetry={() => void plan('auto')} onTemplate={() => void plan('template')} />}
       {act.error && (
         <div className="cr-err" style={{ marginTop: 10 }} data-testid="create-plan-error">
           {act.error}

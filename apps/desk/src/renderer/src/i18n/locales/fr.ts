@@ -6,6 +6,7 @@
 // Inbox = Boîte de réception, Needs you = Vous attend, timeline = timeline.
 import { usageFr } from './usage';
 import { createFr } from './create';
+import { pluginsFr } from './plugins';
 import { publishBoardFr } from './publishBoard';
 import { publishLoopFr } from './publishLoop';
 import { weekPlanFr } from './weekPlan';
@@ -1815,4 +1816,4 @@ const releaseFr: Record<keyof typeof releaseEn, string> = {
   'set.developerHint': 'Pour travailler sur Reelfold lui-même. Rien de tout cela n’est nécessaire pour faire des vidéos.',
 };
 
-export const fr: Record<MessageKey, string> = { ...legacyFr, ...legacyFrV02, ...v04Fr, ...aiaccFr, ...publishPlatformsFr, ...chatEditFr, ...channelsFr, ...projectAiFr, ...aboutFr, ...releaseFr, ...publishBoardFr, ...publishLoopFr, ...settingsV2Fr, ...createFr, ...uxCoreFr, ...usageFr, ...weekPlanFr };
+export const fr: Record<MessageKey, string> = { ...legacyFr, ...legacyFrV02, ...v04Fr, ...aiaccFr, ...publishPlatformsFr, ...chatEditFr, ...channelsFr, ...projectAiFr, ...aboutFr, ...releaseFr, ...publishBoardFr, ...publishLoopFr, ...settingsV2Fr, ...createFr, ...pluginsFr, ...uxCoreFr, ...usageFr, ...weekPlanFr };
