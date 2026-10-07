@@ -21,6 +21,7 @@ export const sidebar = [
     'concepts/output-edits',
     'concepts/themes',
     'concepts/ai-providers',
+    'concepts/plugins',
     'concepts/publishing',
     'concepts/privacy',
     'concepts/usage-counts',
