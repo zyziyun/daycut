@@ -234,8 +234,9 @@ def post_body(hook, body, chapters=None, links=None, tags=None, platform=None, t
     out += [p for p in paras if p is not None]
     links = list(links.items()) if isinstance(links, dict) else list(links or [])
     if links:
-        sep = ": " if pl == "youtube" else "："
-        out += [""] + [f"{lab}{sep}{url}" for lab, url in links]
+        def sep(lab):                     # a Chinese label takes the full-width colon, an English one ": "
+            return "：" if pl != "youtube" and re.search(r"[\u4e00-\u9fff]", str(lab)) else ": "
+        out += [""] + [f"{lab}{sep(lab)}{url}" for lab, url in links]
     if chapters:
         intro = chapter_intro if chapter_intro is not None else _p("publish.chapter_line", "")
         if pl == "youtube":
