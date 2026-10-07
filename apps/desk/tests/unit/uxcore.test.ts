@@ -28,6 +28,7 @@ import {
   segments,
   selectionInfo,
   spaceBefore,
+  textLang,
   wordsText,
   toggleGap,
   toggleRange,
@@ -141,6 +142,11 @@ describe('the transcript', () => {
     expect(joinWords(['3.', '5', 'x'].map(w), 0, 2)).toBe('3.5 x');
     expect(wordsText(en.slice(3, 5))).toBe('posts. Hi,');
     expect(selectionInfo(W, 3, 1)).toEqual({ n: 3, secs: 1.6 - 0.45 });
+  });
+  it('tags English words en and Chinese words zh-CN, so English is not set as Chinese text', () => {
+    expect(['posts.', 'Hi', 'basically,', '"Really"', '3.5'].map(textLang)).toEqual(['en', 'en', 'en', 'en', 'en']);
+    expect(['我们', 'RAG，', '你好。', 'カメラ', '「好」'].map(textLang)).toEqual(['zh-CN', 'zh-CN', 'zh-CN', 'zh-CN', 'zh-CN']);
+    expect(textLang(null)).toBe('en');
   });
   it('kept ranges <-> what the player skips; applied cuts collapse to a marker', () => {
     const keep = segments(10, [

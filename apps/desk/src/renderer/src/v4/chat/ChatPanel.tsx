@@ -11,6 +11,7 @@ import { fmtClock, getLang, intlLocale, t, type MessageKey } from '../../i18n';
 import { cardFor, cardState, contextOf, costLine, lengthChange, offlineFrom, slashCommand, slashMatches, suggestions, undoPlan, undoToCount, SLASH, type Primary, type Suggestion } from '../../lib/chatEdit';
 import { useEngine } from '../../lib/engine';
 import { go } from '../../lib/router';
+import { textLang } from '../../lib/transcript';
 import { ProviderChip } from '../AiChip';
 import { Sk } from '../kit';
 import { effectLabel, emsg, errText } from '../msg';
@@ -534,7 +535,7 @@ export const ChatPanel = forwardRef<ChatApi, Props>(function ChatPanel(p, ref) {
 
   const meBubble = (txt: string | null | undefined, ctx?: AskContext | null) =>
     txt ? (
-      <div className="cc-me" lang="zh-CN" data-testid="chat-me">
+      <div className="cc-me" lang={textLang(txt)} data-testid="chat-me">
         {ctx?.range && <span className="cctx"><span className="mono">{`${r1(ctx.range[0])}–${r1(ctx.range[1])}`}</span></span>}
         {txt}
       </div>

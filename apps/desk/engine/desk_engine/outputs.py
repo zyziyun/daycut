@@ -533,13 +533,9 @@ def words_sig(words):
 
 
 def _join(ws):
-    out = ""
-    for w in ws:
-        x = w["w"]
-        if out and re.match(r"^[A-Za-z0-9]", x) and re.search(r"[A-Za-z0-9]$", out):
-            out += " "
-        out += x
-    return out
+    """Words as one line, spaced like the engine's transcript ("posts. Hi", "basically, the"; Chinese runs together)."""
+    from vstudio.cleanup import join_words
+    return join_words(ws)
 
 
 def word_cut(W, o):
@@ -1458,7 +1454,9 @@ def _failure_code(err):
 
 # ------------------------------------------------------------------ rule-based proposals (no model)
 def _find_word(words, needle):
-    """Where the transcript (joined) contains ``needle`` -> (start, end) seconds."""
+    """Where the transcript (joined) contains ``needle`` -> (start, end) seconds. Words are joined without spaces,
+    so the needle is too ("So basically" finds the words So / basically,)."""
+    needle = re.sub(r"\s+", "", needle or "")
     if not needle:
         return None
     joined, idx = "", []
@@ -1514,7 +1512,12 @@ def propose(doc, prompt, context=None):
             add(dict(op="cut", start=a, end=z), _m("op-cut", f"cut {a:g}-{z:g}s", f"剪掉 {a:g}-{z:g} 秒", start=a, end=z),
                 _m("why-selection", "the part you selected", "你选中的这一段"))
         elif re.search(r"弹|pop", p, re.I):
-            said = "".join(w["w"] for w in words if w["t"] >= a - 0.01 and w["te"] <= z + 0.01)[:12]
+            said = ""
+            for k, w in enumerate(x for x in words if x["t"] >= a - 0.01 and x["te"] <= z + 0.01):
+                nxt = _join([dict(w=said), w]) if said else w["w"]
+                if k and len(nxt) > 12:          # a short pop word, cut between words
+                    break
+                said = nxt
             if said:
                 add(dict(op="effect_add", effect="pop-words", start=a, end=round(min(z, a + 1.8), 3), params=dict(text=said)),
                     _m("op-effect-add", f"add Pop word at {a:.1f}s", f"在 {a:.1f} 秒加弹出大字「{said}」",

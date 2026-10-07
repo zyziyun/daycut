@@ -218,6 +218,13 @@ export function joinWords(words: Word[], a: number, b: number): string {
   return s;
 }
 
+const CJK = /[\u3000-\u303f\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/;
+
+/** The lang for spoken text: zh-CN (CJK glyphs, CJK line breaking) only when it has CJK, en for an English transcript. */
+export function textLang(text: string | null | undefined): 'zh-CN' | 'en' {
+  return CJK.test(text ?? '') ? 'zh-CN' : 'en';
+}
+
 /** Plain text of a list of words (same spacing rules). */
 export function wordsText(words: Word[]): string {
   return joinWords(words, 0, words.length - 1);

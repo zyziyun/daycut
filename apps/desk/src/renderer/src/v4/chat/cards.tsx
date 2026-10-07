@@ -8,7 +8,7 @@ import type { EditOp, EffectDef, EffectInstance } from '../../../../shared/v04';
 import { fmtClock, getLang, has, t, tk, type MessageKey } from '../../i18n';
 import { pauses } from '../../lib/chatEdit';
 import { snapEdge } from '../../lib/timeline';
-import { wordsText } from '../../lib/transcript';
+import { textLang, wordsText } from '../../lib/transcript';
 import { media } from '../kit';
 import { effectLabel, humanizeParam } from '../msg';
 import { FrameAt } from './Frame';
@@ -266,7 +266,7 @@ export function WordRange({ doc, rng, onChange }: { doc: ChatDoc; rng: [number, 
     <>
       <div className="wstrip" ref={box} data-testid="fx-words">
         {slots.map((s, i) => (
-          <span key={i} lang="zh-CN" style={{ color: i >= li && i <= ri ? 'var(--text)' : undefined }}>
+          <span key={i} lang={textLang(s.l)} style={{ color: i >= li && i <= ri ? 'var(--text)' : undefined }}>
             {s.l}
           </span>
         ))}
@@ -352,7 +352,7 @@ export function CaptionsCard({ env, ops, onSubmit, onCancel, okLabel }: { env: C
             <span className="lbl">{t('ce.cap.keywords')}</span>
             <div className="chips">
               {cands.map((w) => (
-                <span key={w} className="kw" lang="zh-CN">
+                <span key={w} className="kw" lang={textLang(w)}>
                   {w}
                   {['#E5484D', '#FFD60A'].map((c) => (
                     <button
@@ -503,12 +503,12 @@ export function TrimCard({ env, ops, onSubmit, onCancel, onCompare, comparing, o
         <div className="trends">
           <button onClick={() => env.playRange(a, Math.min(b, a + 3))}>
             <Play className="ico" />
-            <span lang="zh-CN">{t('ce.trim.startOn', { w: headW })}</span>
+            <span lang={textLang(headW)}>{t('ce.trim.startOn', { w: headW })}</span>
             <small>{t('ce.trim.cutsHead', { s: (Math.round(Math.max(0, firstT - a) * 10) / 10).toFixed(1) })}</small>
           </button>
           <button onClick={() => env.playRange(Math.max(a, b - 3), b)}>
             <Play className="ico" />
-            <span lang="zh-CN">{t('ce.trim.endOn', { w: tailW })}</span>
+            <span lang={textLang(tailW)}>{t('ce.trim.endOn', { w: tailW })}</span>
             <small>{t('ce.trim.cutsTail', { s: (Math.round(Math.max(0, b - lastTe) * 10) / 10).toFixed(1) })}</small>
           </button>
         </div>

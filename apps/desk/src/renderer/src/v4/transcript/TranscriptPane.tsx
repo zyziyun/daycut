@@ -9,7 +9,7 @@ import { AudioLines, Pencil, Play, RotateCcw, Scissors, Trash2 } from 'lucide-re
 import type { OutputDoc, TextMark, Word } from '../../../../shared/v04';
 import type { TranscribeState } from '../../../../shared/timeline';
 import { fmtClock, t } from '../../i18n';
-import { appliedRuns, draftSpans, joinWords, paragraphs, selectionInfo, spaceBefore, toggleGap, toggleRange, wordIndexAt, type Drafts } from '../../lib/transcript';
+import { appliedRuns, draftSpans, joinWords, paragraphs, selectionInfo, spaceBefore, textLang, toggleGap, toggleRange, wordIndexAt, type Drafts } from '../../lib/transcript';
 import { listenEstimate } from '../../lib/timeline';
 import { FixWordPopover } from './FixWordPopover';
 import { TranscriptMinimap } from './TranscriptMinimap';
@@ -407,7 +407,7 @@ const Para = memo(
             <Scissors className="ico" />
             {t('te.cutMark', { s: secs.toFixed(1) })}
             <span className="cm-pop" onPointerDown={(e) => e.stopPropagation()}>
-              <s lang="zh-CN">{joinWords(p.words, run.i0, run.i1)}</s>
+              <s lang={textLang(joinWords(p.words, run.i0, run.i1))}>{joinWords(p.words, run.i0, run.i1)}</s>
               <button onClick={() => p.onRestoreCut(run.cut.index)} data-testid="cut-marker-restore">
                 <RotateCcw className="ico" />
                 {t('te.restore')}
@@ -437,7 +437,7 @@ const Para = memo(
       let end = i;
       if (first) while (p.drafts.words[end + 1] && end + 1 <= p.i1) end++;
       out.push(
-        <span key={i} className={cls.join(' ')} data-i={i} lang="zh-CN">
+        <span key={i} className={cls.join(' ')} data-i={i} lang={textLang(p.fixed[i] ?? w.w)}>
           {sp}
           {p.fixed[i] ?? w.w}
           {first && (

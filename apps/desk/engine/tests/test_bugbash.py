@@ -254,3 +254,24 @@ class LaunchVideoInbox(unittest.TestCase):
             items = ib.list()["items"]
         self.assertEqual([i["source"] for i in items], ["engine"])
         self.assertEqual(items[0]["options"][0]["label"]["code"], "inbox.opt.cutWord")
+
+
+class EnglishTranscriptWords(unittest.TestCase):
+    """Recording the desk on an English take: a cut's words, a pop word and a quoted phrase read "posts.Hi" or
+    were not found, the desk's joiner only spaced two letters / digits."""
+    W = [dict(w=x, t=i * 0.5, te=i * 0.5 + 0.4) for i, x in enumerate(
+        ["Thanks", "for", "the", "posts.", "Hi", "everyone.", "So", "basically,", "the", "idea"])]
+
+    def test_said_words_keep_their_spaces(self):
+        self.assertEqual(OU._join(self.W[3:9]), "posts. Hi everyone. So basically, the")
+        self.assertEqual(OU._join([dict(w="我们"), dict(w="讲"), dict(w="RAG"), dict(w="。")]), "我们讲RAG。")
+        cut = OU.word_cut(self.W, dict(words=[3, 5]))
+        self.assertEqual(cut["said"], "posts. Hi everyone.")
+
+    def test_pop_word_and_quoted_phrase(self):
+        r = OU.propose(dict(words=self.W, duration=5.0), "pop", dict(range=[1.5, 2.9]))
+        self.assertEqual(r["proposals"][0]["op"]["params"]["text"], "posts. Hi")
+        self.assertEqual(OU._find_word(self.W, "So basically"), (3.0, 3.9))
+        zh = [dict(w=x, t=i * 0.5, te=i * 0.5 + 0.4) for i, x in enumerate(["我们", "今天", "讲一下", "检索增强生成", "的", "原理"])]
+        r = OU.propose(dict(words=zh, duration=3.0), "弹", dict(range=[0.0, 2.9]))
+        self.assertEqual(r["proposals"][0]["op"]["params"]["text"], "我们今天讲一下")
