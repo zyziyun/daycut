@@ -14,7 +14,6 @@ import hashlib
 import json
 import os
 import re
-import subprocess
 import threading
 import time
 
@@ -208,6 +207,7 @@ class Intake:
         self.bus, self.runner, self.mode, self.probe = bus, runner, mode, probe
         self.defaults = defaults or (lambda: {})
         self.jobs = {}
+        self._procs = {}               # plan id -> running engine children (stop kills them)
         self._lock = threading.Lock()
         self._real = None
 
@@ -228,6 +228,8 @@ class Intake:
 
     def _set(self, pid, **kw):
         with self._lock:
+            if (self.jobs.get(pid) or {}).get("state") == "stopped" and kw.get("state") in ("done", "error"):
+                return dict(self.jobs[pid])          # stopped by her: a late answer / the kill's error is dropped
             self.jobs[pid] = dict(self.jobs.get(pid) or {}, **kw)
             job = dict(self.jobs[pid])
         if self.bus:
@@ -275,18 +277,20 @@ class Intake:
                 if inputs:
                     args += ["--inputs", *inputs]
                 self._set(pid, step="plan")
-                plan = self.runner.sibling("vstudio.intake").json(args, timeout=1800)
+                plan = self.runner.sibling("vstudio.intake").json(args, timeout=1800,
+                                                                  track=self._procs.setdefault(pid, []))
                 plan["id"] = plan.get("id") or pid
                 plan["desk_id"] = pid
                 write_json(out, plan)
             else:
                 time.sleep(float(os.environ.get("DESK_MOCK_STEP", "0.25")))
                 self._set(pid, step="plan")
+                time.sleep(float(os.environ.get("DESK_MOCK_PLAN_DELAY", "0")))   # tests: a slow model
                 plan = rule_plan(prompt, inputs, self.probe, pid, self.defaults())
                 write_json(self._path(pid), plan)
             self._set(pid, state="done", step="done", plan=plan)
         except Exception as e:  # noqa: BLE001
-            self._set(pid, state="error", error=str(e)[:500])
+            self._fail(pid, e)
 
     def revise(self, pid, prompt):
         j = self.get(pid)
@@ -297,16 +301,33 @@ class Intake:
             try:
                 if self.real():
                     p = self.runner.sibling("vstudio.intake").json(["revise", "--plan", self._path(pid), "--prompt",
-                                                                    prompt, "--in-place", "--json"], timeout=900)
+                                                                    prompt, "--in-place", "--json"], timeout=900,
+                                                                   track=self._procs.setdefault(pid, []))
                 else:
                     time.sleep(float(os.environ.get("DESK_MOCK_STEP", "0.25")) / 2)
                     p = rule_revise(j["plan"], prompt)
                     write_json(self._path(pid), p)
                 self._set(pid, state="done", step="done", plan=p)
             except Exception as e:  # noqa: BLE001
-                self._set(pid, state="error", error=str(e)[:500])
+                self._fail(pid, e)
         threading.Thread(target=go, daemon=True).start()
         return dict(id=pid)
+
+    def _fail(self, pid, e):
+        """A plain reason code for the card (pilot.classify) and the error without paths."""
+        from . import pilot
+        txt = str(e)
+        self._set(pid, state="error", error=pilot.scrub(txt, 500), error_code=pilot.classify(txt),
+                  error_provider=pilot.provider_of(txt))
+
+    def stop(self, pid):
+        """「停止」 while planning / revising: ends the engine (and the model CLI it started); the composer is back."""
+        from .caps import kill_tracked
+        j = self.get(pid)
+        killed = kill_tracked(self._procs.get(pid) or [])
+        if j.get("state") == "running":
+            self._set(pid, state="stopped", step="stopped", error=None)
+        return dict(ok=True, id=pid, killed=killed)
 
     # ---------------------------------------------------------- apply (+ pilot)
     def apply(self, pid, plan=None, run=True, out_root=None):
@@ -335,11 +356,27 @@ class Intake:
             self.bus.publish("batches")
         return dict(ok=True, projects=projects, series=plan.get("series"))
 
-    def _spawn_pilot(self, d):
-        log = open(os.path.join(d, "desk-pilot.log"), "ab")  # noqa: SIM115  (handed to the child)
-        subprocess.Popen([self.runner.python, "-m", "vstudio.project", "run", "--dir", d, "--pilot", "1",
-                          "--json-events"], stdout=log, stderr=log, stdin=subprocess.DEVNULL, env=self.runner.env,
-                         start_new_session=True)
+    def _spawn_pilot(self, d, provider=None):
+        from . import pilot
+        pilot.spawn(self.runner.python, self.runner.env, d, provider=provider, bus=self.bus)
+
+    def retry_pilot(self, d, provider=None):
+        """「换 Codex 重试」/「重试」 after a failed pilot: the same run, every model task on ``provider``."""
+        from . import pilot
+        need(provider is None or provider in pilot.PROVIDERS, f"provider: {' | '.join(pilot.PROVIDERS)}")
+        need(os.path.isdir(d), "no such project folder")
+        if self.real():
+            self._spawn_pilot(d, provider)
+        else:
+            rec = read_json(os.path.join(d, ".vstudio", "work.json"), {}) or {}
+            proj = dict(name=rec.get("title") or os.path.basename(d), items=dict(count=int(rec.get("count") or 3)))
+            write_json(os.path.join(d, pilot.REC), dict(pid=os.getpid(), started=time.time(), exit=None,
+                                                        provider=provider))
+            threading.Thread(target=self._mock_pilot, args=(d, proj, provider), daemon=True).start()
+        if self.bus:
+            self.bus.publish("batches")
+            self.bus.publish("inbox")
+        return dict(ok=True, provider=provider)
 
     def _mock_apply(self, plan, out_root, home, run):
         projects = []
@@ -352,7 +389,7 @@ class Intake:
                        dict(kind="work", title=proj["name"], recipe=proj["recipe"], type=proj.get("type") or "other",
                             outputs=[], covers=[], posts=[], sheets=[], notes=[], sources=[], client=None,
                             created=time.strftime("%Y-%m-%dT%H:%M:%S"), updated=time.strftime("%Y-%m-%dT%H:%M:%S"),
-                            plan=plan["id"]))
+                            plan=plan["id"], count=proj["items"]["count"]))
             with open(os.path.join(d, "PLAN.md"), "w", encoding="utf-8") as f:
                 f.write(f"# {proj['name']}\n\n{plan.get('summary_zh', '')}\n")
             reg = [r for r in reg if not (isinstance(r, dict) and r.get("dir") == d)]
@@ -364,13 +401,29 @@ class Intake:
         write_json(reg_path, reg)
         return projects
 
-    def _mock_pilot(self, d, proj):
-        """A simulated pilot: heartbeats like vstudio.batch.livestatus, then 'waiting' (needs you) after item 1."""
+    def _mock_pilot(self, d, proj, provider=None):
+        """A simulated pilot: heartbeats like vstudio.batch.livestatus, then 'waiting' (needs you) after item 1.
+        ``DESK_MOCK_PILOT_FAIL=auth`` (tests): fails at 选段 like an expired Claude Code login, unless retried
+        with another provider."""
         import socket
+        from . import pilot
         step = float(os.environ.get("DESK_MOCK_STEP", "0.25"))
         started = time.time()
         n = proj["items"]["count"]
+        fail = os.environ.get("DESK_MOCK_PILOT_FAIL") if provider in (None, "claude-code") else None
         for k, stage in enumerate(("读素材", "选段", "去停顿", "加字幕", "导出")):
+            if fail and k == 1:
+                write_json(os.path.join(d, ".vstudio", "status.json"),
+                           dict(status="failed", stage=stage, progress=0.1, message="", started=started,
+                                heartbeat=time.time(), pid=os.getpid(), host=socket.gethostname(),
+                                updated_by="desk-mock"))
+                pilot.record_mock(d, False, "plan-segments failed (exit 5): claude CLI: Failed to authenticate. "
+                                  "API Error: 401 {\"type\":\"error\"} see /Users/someone/.claude/logs/x.log",  # check-skill: allow
+                                  provider="claude-code")
+                if self.bus:
+                    self.bus.publish("batches")
+                    self.bus.publish("inbox")
+                return
             write_json(os.path.join(d, ".vstudio", "status.json"),
                        dict(status="running", stage=stage, progress=round((k + 1) / 6, 2),
                             message=f"第 1 条：{stage}", eta=int((5 - k) * step * 4), started=started,
@@ -382,5 +435,6 @@ class Intake:
                    dict(status="waiting", stage="试看", progress=round(1 / max(n, 1), 2),
                         message="第 1 条做好了，等你看一眼", started=started, heartbeat=time.time(), pid=os.getpid(),
                         host=socket.gethostname(), needs_you=True, updated_by="desk-mock"))
+        pilot.record_mock(d, True, provider=provider)
         if self.bus:
             self.bus.publish("batches")

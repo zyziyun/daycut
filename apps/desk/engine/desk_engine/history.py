@@ -23,6 +23,7 @@ import threading
 import time
 
 from . import works as WK
+from .pilot import failure as pilot_failure, running as pilot_running
 from .common import (batch_id, is_temp_path, keep_entry, live_status, need, prune_json_registry, read_json,
                      write_json)
 
@@ -411,6 +412,18 @@ class History:
             store_dir = os.path.join(d, "state") if kind_ == "project" else d
             bid = batch_id(store_dir)
             live = live_status(d) or (live_status(store_dir) if store_dir != d else None)
+            fail = None if kind_ == "batch" else pilot_failure(d)
+            if fail and live and live.get("state") in ("running", "waiting") and \
+                    (live.get("heartbeat") or 0) > (fail.get("at") or 0) + 5:
+                fail = None                         # a newer run is going: the old failure is history
+            run = None if kind_ == "batch" or fail else pilot_running(d)
+            if run:
+                info["pilot"] = run
+            if fail:
+                info["status"] = "failed"
+                info["failure"] = fail
+                if live and live.get("state") in ("running", "interrupted"):
+                    live = dict(live, state="failed")
             if names.get(rp):
                 info["name"] = names[rp]
             if rp in clients:

@@ -23,11 +23,17 @@ def dump_yaml(obj):
 
 
 def load_yaml(text):
+    """YAML text -> object. Without PyYAML only JSON (what dump_yaml writes then) can be read: real YAML fails with a
+    clear message instead of a bare JSONDecodeError."""
     try:
         import yaml
-        return yaml.safe_load(text)
     except ImportError:
-        return json.loads(text)
+        try:
+            return json.loads(text)
+        except ValueError as e:
+            raise RuntimeError("PyYAML is required to read this YAML file (pip install pyyaml); the bundled engine "
+                               "runtime has it") from e
+    return yaml.safe_load(text)
 
 
 def write_text(path, text):

@@ -128,6 +128,15 @@ class Inbox:
                                           reasons=[dict(code=c, n=n) for c, n in codes.items()], text=None,
                                           minutes=max(1, round((len(rv["red"]) or len(rv["todo"])) * 1.2)),
                                           jobs=rv["red"] or rv["todo"], source="batch", at=e.get("updated")))
+            fail = e.get("failure")
+            if fail:
+                k = _key(e["dir"], "failed", str(fail.get("at")))
+                if k not in answers:
+                    items.append(dict(key=k, kind="failed", group="failed", project=proj,
+                                      code=f"inbox.failed.{fail.get('code') or 'unknown'}",
+                                      params=dict(provider=fail.get("provider")), text=None, minutes=1,
+                                      failure=fail, source="pilot", at=fail.get("at")))
+                continue
             live = e.get("live") or {}
             if live.get("needs_you") and not any(i["project"]["id"] == e["id"] for i in items):
                 k = _key(e["dir"], "live", live.get("heartbeat"))
@@ -157,7 +166,8 @@ class Inbox:
                 pass
         thumbs = [i["project"]["thumb"] for i in items if i["project"].get("thumb")]
         self.history.allow_media(thumbs)
-        items.sort(key=lambda i: ({"choose": 0, "spend": 1, "review": 2}.get(i["group"], 3), -(i.get("at") or 0)))
+        items.sort(key=lambda i: ({"failed": -1, "choose": 0, "spend": 1, "review": 2}.get(i["group"], 3),
+                                  -(i.get("at") or 0)))
         return dict(items=items, at=time.time())
 
     # ---------------------------------------------------------- answering

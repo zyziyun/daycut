@@ -476,6 +476,12 @@ def apply_op(state, o, base):
     raise EngineMessage(_m("unknown-op", f"unknown op {op}", f"不认识的操作 {op}", op=op))
 
 
+def _has_word(txt, word):
+    """``word`` appears in ``txt`` as a whole token. ``\\b`` cannot be used: it never matches before ``--context``
+    (both sides of the boundary are non-word characters), and it would match ``chat`` inside ``chat-x``."""
+    return re.search(rf"(?<![\w-]){re.escape(word)}(?![\w-])", txt) is not None
+
+
 class Outputs:
     """Clip listing + the output editor, via the engine command when it exists, else the desk implementation."""
 
@@ -496,9 +502,9 @@ class Outputs:
             if self.runner is not None:
                 try:
                     txt = self.runner.sibling("vstudio.project").text(["output", "--help"])
-                    ok = all(re.search(rf"\b{v}\b", txt) for v in ("show", "edit", "render", "undo")) and \
+                    ok = all(_has_word(txt, v) for v in ("show", "edit", "render", "undo")) and \
                         "invalid choice" not in txt
-                    self._ext = ok and all(re.search(rf"\b{v}\b", txt) for v in ("revert", "chat", "--context"))
+                    self._ext = ok and all(_has_word(txt, v) for v in ("revert", "chat", "--context"))
                 except Exception:  # noqa: BLE001
                     ok = False
             self._real = ok
@@ -1015,7 +1021,7 @@ class Outputs:
                            cost_usd=r.get("cost_usd"), seconds=r.get("seconds") or round(time.time() - t0, 2),
                            context=r.get("context", context), turn=r.get("turn"))
                 if not out["turn"]:
-                    out["turn"] = self._record_ask(e, clip_id, prompt, context, out)
+                    out["turn"] = self._record_ask(e, clip_id, prompt, context, out, oid)
                 return out
             except EngineMessage as m:
                 if m.doc.get("code") not in ("llm-failed", "llm-bad-json"):
@@ -1031,18 +1037,28 @@ class Outputs:
             r["warnings"] = [_m("no-model", "no AI model is connected: only simple requests are understood",
                                 "没有连上 AI 模型，只听得懂简单的说法")] + r.get("warnings", [])
         r.update(context=context, cost_usd=0.0, seconds=round(time.time() - t0, 2))
-        r["turn"] = self._record_ask(e, clip_id, prompt, context, r)
+        r["turn"] = self._record_ask(e, clip_id, prompt, context, r, oid)
         return r
 
-    def _record_ask(self, e, clip_id, prompt, context, r):
-        """The desk keeps the turn when the engine does not (desk implementation / older engine / rules)."""
+    def _record_ask(self, e, clip_id, prompt, context, r, oid=None):
+        """Records the turn where ``show`` reads the transcript: the engine's when it keeps one (a model failed and
+        the desk rules answered), else the desk's (desk implementation / older engine)."""
+        turn = dict(role="ai", text=prompt, context=context, summary=r.get("summary"),
+                    proposed=r.get("proposals") or [], dropped=r.get("dropped") or [],
+                    warnings=r.get("warnings") or [], provider=r.get("provider"),
+                    model=r.get("model"), cost_usd=r.get("cost_usd"), seconds=r.get("seconds"),
+                    status="draft" if r.get("proposals") else "note")
+        if oid and self._ext:
+            try:
+                doc = self._cli(["chat", "--project", e["dir"], "--output", oid, "--add",
+                                 json.dumps(_clean_turn(turn), ensure_ascii=False, default=str)])
+                if (doc.get("turn") or {}).get("id"):
+                    return doc["turn"]["id"]
+            except Exception:  # noqa: BLE001  (fall through: the desk keeps it)
+                pass
         with self._lock:
             st = self._desk(e, clip_id)
-            t = _desk_turn_add(st, dict(role="ai", text=prompt, context=context, summary=r.get("summary"),
-                                        proposed=r.get("proposals") or [], dropped=r.get("dropped") or [],
-                                        warnings=r.get("warnings") or [], provider=r.get("provider"),
-                                        model=r.get("model"), cost_usd=r.get("cost_usd"), seconds=r.get("seconds"),
-                                        status="draft" if r.get("proposals") else "note"))
+            t = _desk_turn_add(st, turn)
             self._save(e, clip_id, st)
         return t["id"]
 

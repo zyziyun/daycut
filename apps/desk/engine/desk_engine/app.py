@@ -68,7 +68,8 @@ v0.4 (outputs.py, intake.py, inbox.py; engine command when available, desk imple
                                            POST|GET .../transcribe 「听一遍」 -> output-transcribe events
   GET  /api/effects                        effects catalogue (zh labels, params, preview kind)
   POST /api/intake {prompt, inputs[]}      -> {id}; GET /api/intake/<id>; POST .../revise {prompt}; POST .../apply
-                                           {plan?, run?}; GET /api/intake/recent
+                                           {plan?, run?}; POST .../stop (planning / revising); GET /api/intake/recent
+  POST /api/pilot/retry {item, provider?}  re-run a failed pilot (provider: every model task on it, e.g. codex)
   GET  /api/calendar?start=YYYY-MM-DD      {posts, queue}; POST /api/calendar {item, clip, platform, at};
                                            POST /api/calendar/<id> {at?, state?, remove?}; POST .../confirm {start}
   GET  /api/inbox                          every decision waiting for the creator; POST /api/inbox/answer {keys,
@@ -514,6 +515,12 @@ class Api:
             if parts[2:] == ["apply"] and method == "POST":
                 need(b.get("run") in (None, True, False), "run must be a boolean")
                 return self.intake.apply(parts[1], b.get("plan"), run=b.get("run", True) is not False)
+            if parts[2:] == ["stop"] and method == "POST":
+                return self.intake.stop(parts[1])
+        if parts == ["pilot", "retry"] and method == "POST":
+            e = self.history.find(b.get("item"))
+            need(e["kind"] in ("project", "work"), "only a project's pilot can be retried")
+            return self.intake.retry_pilot(e["dir"], b.get("provider"))
         if parts[:1] == ["calendar"]:
             if parts == ["calendar"] and method == "GET":
                 st = (query.get("start") or [None])[0]

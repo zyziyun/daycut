@@ -71,20 +71,34 @@ class CliRunner:
         """The same Python + env for another engine module (vstudio.project, vstudio.intake)."""
         return CliRunner(self.python, self.env, self.timeout, module)
 
-    def _run(self, args, timeout=None, cwd=None):
+    def _run(self, args, timeout=None, cwd=None, track=None):
+        """``track``: a list the child is appended to while it runs (its own process group, so a stop can kill it
+        together with the model CLI it started: :func:`kill_tracked`)."""
+        cmd = [self.python, "-m", self.module, *args]
         try:
-            p = subprocess.run([self.python, "-m", self.module, *args], capture_output=True, text=True,
-                               env=self.env, timeout=timeout or self.timeout, cwd=cwd, stdin=subprocess.DEVNULL)
-        except (OSError, subprocess.SubprocessError) as e:
+            p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self.env,
+                                 cwd=cwd, stdin=subprocess.DEVNULL, start_new_session=track is not None)
+        except OSError as e:
             raise CliError(f"{self.module} {args[0]}: {e}") from e
-        return p
+        if track is not None:
+            track.append(p)
+        try:
+            out, err = p.communicate(timeout=timeout or self.timeout)
+        except subprocess.TimeoutExpired as e:
+            kill_tracked([p])
+            p.communicate()
+            raise CliError(f"{self.module} {args[0]}: timed out after {e.timeout:.0f} s") from e
+        finally:
+            if track is not None and p in track:
+                track.remove(p)
+        return subprocess.CompletedProcess(cmd, p.returncode, out, err)
 
     def text(self, args, timeout=30):
         p = self._run(args, timeout=timeout)
         return (p.stdout or "") + (p.stderr or "")
 
-    def json(self, args, timeout=None, cwd=None):
-        p = self._run(args, timeout=timeout, cwd=cwd)
+    def json(self, args, timeout=None, cwd=None, track=None):
+        p = self._run(args, timeout=timeout, cwd=cwd, track=track)
         out = (p.stdout or "").strip()
         try:
             doc = json.loads(out) if out else None
@@ -101,6 +115,27 @@ class CliRunner:
         if isinstance(doc, dict) and doc.get("ok") is False and p.returncode != 0:
             raise CliError(str(doc.get("error") or doc.get("message") or doc.get("reason") or f"{args[0]} failed"), doc)
         return doc
+
+
+def kill_tracked(procs):
+    """Ends each child and its process group (the engine + any model CLI it started). -> how many were running."""
+    import signal
+    n = 0
+    for p in list(procs):
+        if p.poll() is not None:
+            continue
+        n += 1
+        try:
+            if os.name == "posix":
+                os.killpg(p.pid, signal.SIGTERM)
+            else:
+                p.terminate()
+        except (OSError, ProcessLookupError):
+            try:
+                p.kill()
+            except OSError:
+                pass
+    return n
 
 
 class Capabilities:
