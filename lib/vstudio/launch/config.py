@@ -124,7 +124,7 @@ def load(path, overrides=None):
     if (rel.get("git") or {}).get("repo"):
         rel["git"]["repo"] = _abs(root, rel["git"]["repo"])
     cap = cfg.setdefault("capture", {}) or {}
-    for k in ("shots", "shot_list", "app"):
+    for k in ("shots", "shot_list", "app", "env_json"):
         if cap.get(k):
             cap[k] = _abs(root, cap[k])
     for im in cap.get("images") or []:

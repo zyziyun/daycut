@@ -34,7 +34,8 @@ capture:
   shots: capture/shots.json                # written by scripts/capture.mjs (or hand-made, same schema)
   shot_list: shots.yaml                    # what capture.mjs records (see the header of capture.mjs)
   url: https://acme.example/app            # a web product ...
-  # app: path/to/electron/app              # ... or an Electron app (env: {KEY: value} for a demo profile)
+  # app: path/to/electron/app              # ... or an Electron app; env: {KEY: value} or env_json: demo.env.json
+  #                                        # (a throwaway profile with sample data; see examples/reelfold/seed.py)
   # images:                                # or plain screenshots: a slow camera move to the focus box
   #   - {id: tags, file: shots/tags.png, w: 2880, h: 1800, duration: 6, focus: [{x: .6, y: .2, w: .2, h: .1}]}
 

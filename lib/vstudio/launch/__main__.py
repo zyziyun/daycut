@@ -61,6 +61,8 @@ def capture(cfg):
         raise C.ConfigError("capture: set app (an Electron app dir) or url")
     for k, v in (cap.get("env") or {}).items():
         cmd += ["--env", f"{k}={v}"]
+    if cap.get("env_json"):
+        cmd += ["--env-json", cap["env_json"]]
     if cap.get("size"):
         cmd += ["--size", str(cap["size"])]
     if cap.get("scale"):

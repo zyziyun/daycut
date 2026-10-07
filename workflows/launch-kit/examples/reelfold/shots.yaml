@@ -1,0 +1,168 @@
+# Reelfold capturing itself (dogfood for the launch-kit capture step): the real app, the real engine, a throwaway
+# profile seeded by seed.py (no AI account: intake and chat edits use the engine's real rule fallback).
+#
+#   python3 seed.py --root "$ROOT" --shared-cache <the skill's cache> [--explainer <finished explainer outputs>]
+#   (cd <repo>/apps/desk && npm run build)
+#   node ../../scripts/capture.mjs --shots shots.yaml --out <capture dir> --electron <repo>/apps/desk \
+#        --env-json "$ROOT/env.json"
+#
+# Setups run unrecorded; ${NAME} comes from env.json (seed.py writes it). Shots run in order on one app session and
+# change its state (shot 2 starts the project shot 1 plans; shot 5 plans the week): re-seed a fresh ROOT to re-run.
+#
+# Desk workarounds (reported upstream, not product changes) live in seed.py: see expose_exports / prune_state_batches.
+
+shots:
+  - id: home-plan
+    title: Say it in one sentence
+    caption: One sentence in. A plan out.
+    setup:
+      - waitFor: testid=home
+        timeout: 120000
+      # the talk is already attached (drag and drop is an OS gesture a page cannot be scripted to receive)
+      - eval: "sessionStorage.setItem('v4.composer', JSON.stringify({prompt: '', files: ['${REELFOLD_DEMO_TALK}']}))"
+      - goto: "#/inbox"
+      - goto: "#/"
+      - waitFor: testid=composer-files
+      - wait: 2000
+    actions:
+      - type: testid=composer-input
+        text: Cut this talk into vertical clips for TikTok and Xiaohongshu
+        cps: 18
+      - click: testid=make-plan
+        pause: 400
+      - waitFor: testid=plan-facts
+        timeout: 180000
+      - wait: 900
+      - focus: testid=plan-facts
+      - wait: 1800
+      - hover: testid=plan-start
+      - still: true
+    hold_after: 1.2
+
+  - id: project-running
+    title: It runs on your Mac
+    caption: Every clip, every platform. Running locally.
+    setup:
+      - click: testid=plan-start
+      - waitFor: testid=project-title
+        timeout: 60000
+      # the pilot parks at "approve the segments": approve them and run the rest with the engine CLI
+      - sh: '"$DESK_PYTHON" "$REELFOLD_SEED" --root "$REELFOLD_SEED_ROOT" --continue-latest'
+      # reopen the project so the page reads the new state (the app learns of CLI answers only on its next poll)
+      - click: testid=nav-projects
+      - click: testid=project-card
+        has_text: longform-to-short
+    actions:
+      - waitFor: testid=clip-card
+        has_text: Rendering
+        timeout: 60000
+      - focus: testid=clips
+      - wait: 4000
+      - hover: testid=clip-card
+      - wait: 5000
+      - click: testid=nav-home
+      - waitFor: testid=live-lane
+      - focus: testid=live-lane
+      - wait: 4000
+    hold_after: 1
+
+  - id: inbox-review
+    title: It only asks when it matters
+    caption: Only the calls that need you.
+    setup:
+      - goto: "#/inbox"
+      - waitFor: testid=inbox-item
+        timeout: 60000
+      - wait: 1500
+    actions:
+      - click: testid=inbox-item
+        has_text: Confirm the filler cuts
+      - waitFor: testid=inbox-option
+      - wait: 900
+      - focus: testid=inbox-option
+      - hover: testid=inbox-option
+      - wait: 1200
+      # keep this one: uncheck it (Continue is not pressed: the desk sends option ids as strings and the engine
+      # rejects the answer, reported)
+      - click: testid=inbox-option-check
+      - wait: 1500
+      - hover: testid=inbox-confirm
+      - wait: 1200
+    hold_after: 0.8
+
+  - id: transcript-cut
+    title: Edit the words, the video follows
+    caption: Delete a word. The cut follows.
+    setup:
+      - goto: "#/projects"
+      - click: testid=project-card
+        has_text: Workshop talk
+      - click: testid=clip-card
+        timeout: 60000
+      - click: testid=player-edit
+      - waitFor: testid=editor
+        timeout: 30000
+      - click: testid=tab-transcript
+      # the transcript of the finished clip: a real ASR pass on it ("Listen to this clip")
+      - click: testid=transcript-listen
+      - waitFor: "[data-testid=transcript-body] .w"
+        timeout: 300000
+      - wait: 2000
+    actions:
+      - click: "[data-testid=transcript-body] .w"
+        has_text: basically
+      - wait: 1200
+      - focus: testid=player-video
+      - press: Delete
+      - wait: 1200
+      - focus: testid=pending-bar
+      - click: testid=pending-apply
+      - wait: 1500
+    hold_after: 0.5
+
+  - id: chat-edit
+    title: Or just say it
+    caption: Say the change. Review it. Apply.
+    setup:
+      # the transcript cut re-renders the clip first (about half a minute); this shot starts once it has landed
+      - waitFor: testid=cut-marker
+        timeout: 300000
+      - waitFor: testid=chat-input
+      - wait: 1500
+    actions:
+      - type: testid=chat-input
+        text: Add a progress bar and fade out at the end
+        cps: 18
+      - press: Enter
+      - waitFor: testid=change-card
+        timeout: 120000
+      - wait: 1200
+      - focus: testid=change-card
+      - click: testid=change-apply
+      - wait: 2500
+    hold_after: 1
+
+  - id: publish-board
+    title: Plan the week
+    caption: A week of posts, planned.
+    setup:
+      - goto: "#/publish"
+      - waitFor: testid=pub-week
+        timeout: 60000
+      - waitFor: testid=pub-queue-item
+        timeout: 60000
+      - wait: 2000
+    actions:
+      - hover: testid=pub-queue-item
+      - wait: 600
+      - click: "button:has-text('Fill my week')"
+      - waitFor: testid=pub-post
+        timeout: 30000
+      - wait: 1500
+      - focus: testid=pub-week
+      - click: testid=pub-post
+      - waitFor: testid=pb-drawer
+      - wait: 1200
+      - focus: testid=pb-drawer
+      - wait: 1500
+    hold_after: 1

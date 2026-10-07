@@ -41,7 +41,9 @@ Everything content-specific lives in ONE file, `launch.config.yaml`; start from
    profile), at 2× device scale, records the page with CDP screencast frames assembled at a constant 30 fps (not
    Playwright's low-bitrate recorder), draws a smooth cursor with a click ripple, and types at a human pace. It writes
    `capture/<shot>.mp4`, a still per shot, and `capture/shots.json` with the **focus boxes**: where and when each
-   click / typed field happened. The camera uses them for the punch-ins. Seed the product with sample data that is
+   click / typed field happened. An Electron app gets its throwaway profile through `capture.env` / `capture.env_json`
+   (`--env-json`); `examples/reelfold/` is a full example (Reelfold recording itself: `seed.py` builds a temp profile
+   with real engine data on a synthetic talk, `shots.yaml` drives Home → plan → project → transcript → chat → publish). The camera uses them for the punch-ins. Seed the product with sample data that is
    safe to show (no real names, emails, handles or other people). Already have screenshots? List them under
    `capture.images` with a focus box; the camera then makes a slow move to it.
 3. **Build + render.**
