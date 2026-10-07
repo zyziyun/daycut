@@ -2,7 +2,8 @@
 #   pull_request              unit tests + typecheck only
 #   push to main              tests, then: find or create the D1 database "reelfold-usage" (idempotent), apply the
 #                             migrations in apps/telemetry/migrations, deploy, set STATS_TOKEN (if that secret
-#                             exists), smoke-test /api/v1/health (and /api/v1/stats with the token)
+#                             exists), then a real round trip: ping -> row in D1 -> DELETE -> gone, and
+#                             scripts/metrics/usage.py against the live stats endpoint (when STATS_TOKEN is set)
 #   workflow_dispatch         manual redeploy (main only)
 # Needs CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID (docs/CI_CD.md). The token also needs "Account > D1 > Edit"
 # (the "Edit Cloudflare Workers" template does not include it); without it the deploy stops with that message.
@@ -123,10 +124,26 @@ jobs:
           done
           [ "$ok" = 1 ] || { echo "::error title=Smoke test failed::https://t.reelfold.com/api/v1/health"; exit 1; }
           echo "ok  /api/v1/health"
-          # the database answers (and the stats token works), without printing any numbers here
+          # real round trip through the live Worker and D1, with a fixed CI install id that is marked internal first
+          # (never counted) and deleted again through the public DELETE endpoint
+          SMOKE=00000000-0000-4000-8000-000000000001
+          q() { npx -y wrangler@4 d1 execute "$DB_NAME" --remote --json --command "$1" | node -e '
+            let s = require("fs").readFileSync(0, "utf8"); s = s.slice(s.indexOf("["));
+            const r = JSON.parse(s)[0].results; process.stdout.write(String(r[0] ? Object.values(r[0])[0] : ""));'; }
+          q "INSERT OR IGNORE INTO internal_installs (install_id, note, added_day) VALUES ('$SMOKE', 'ci smoke test', date('now'))" > /dev/null
+          body=$(printf '{"events":[{"id":"%s","v":"0.0.0","os":"linux","arch":"x64","locale":"en","ev":"app_open","day":"%s"}]}' "$SMOKE" "$(date -u +%F)")
+          code=$(curl -sS -o ping.json -w '%{http_code}' -X POST -H 'content-type: application/json' --data "$body" https://t.reelfold.com/api/v1/ping)
+          [ "$code" = "202" ] || { echo "::error title=Ping::HTTP $code $(cat ping.json)"; exit 1; }
+          n=$(q "SELECT COUNT(*) FROM events WHERE install_id = '$SMOKE'")
+          [ "$n" = "1" ] || { echo "::error title=Ping not stored::rows for the smoke id: $n"; exit 1; }
+          echo "ok  POST /api/v1/ping -> 1 row in D1"
+          code=$(curl -sS -o del.json -w '%{http_code}' -X DELETE "https://t.reelfold.com/api/v1/installs/$SMOKE")
+          n=$(q "SELECT COUNT(*) FROM events WHERE install_id = '$SMOKE'")
+          [ "$code" = "200" ] && [ "$n" = "0" ] || { echo "::error title=Delete::HTTP $code, rows left: $n"; exit 1; }
+          echo "ok  DELETE /api/v1/installs/<id> -> 0 rows"
+          # the stats script reads the live endpoint (output not printed: this log is public)
           if [ -n "$STATS_TOKEN" ]; then
-            code=$(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $STATS_TOKEN" https://t.reelfold.com/api/v1/stats || echo 000)
-            [ "$code" = "200" ] || { echo "::error title=Stats endpoint::HTTP $code"; exit 1; }
-            echo "ok  /api/v1/stats (authorized)"
+            python3 ../../scripts/metrics/usage.py --json > /dev/null || { echo "::error title=Stats::scripts/metrics/usage.py failed against the live endpoint"; exit 1; }
+            echo "ok  scripts/metrics/usage.py (authorized)"
           fi
           echo "### Telemetry deployed: https://t.reelfold.com/api/v1/health" >> "$GITHUB_STEP_SUMMARY"
