@@ -92,16 +92,16 @@ def negations(text):
 
 
 def platforms_of(text):
-    """Platforms named in a request, in the order the request names them."""
+    """Platforms named in a request, in the platform registry's display order (international first, then Chinese,
+    then the rest; ``vstudio.platform.ordered``), whatever order the request names them in."""
+    from vstudio.platform import ordered
     t = _norm(text)
-    out, pos = [], {}
+    out = []
     for w, p in PLATFORM_WORDS:
         if w in t and p not in out:
             if p == "youtube" and "youtube-shorts" in out and "shorts" in t and t.count("youtube") <= 1:
                 continue
             out.append(p)
-            pos[p] = t.find(w)
-    out.sort(key=lambda p: pos[p])
     toks = re.findall(r"[a-z0-9.]+|[^\sa-z0-9.]", t)
     for i, tok in enumerate(toks):
         p = TOKEN_PLATFORMS.get(tok)
@@ -109,7 +109,7 @@ def platforms_of(text):
         if p and p not in out and not (tok == "x" and re.fullmatch(r"[0-9.]+", prev or "")):
             out.append(p)
     unsup = [name for w, name in UNSUPPORTED_PLATFORMS if w in t]
-    return out, unsup
+    return ordered(out), unsup
 
 
 def parse_prompt(text):

@@ -609,7 +609,10 @@ def _out_seconds(p, analysis):
 
 
 def enrich(p, analysis, ctx, auto=()):
+    from vstudio.platform import ordered
     m = M.get(p["recipe"])
+    if p["params"].get("platforms"):           # stored in registry order (international first), never request order
+        p["params"]["platforms"] = ordered(p["params"]["platforms"])
     p["checkpoints"] = checkpoints_for(p, auto)
     p["auto"] = list(auto)
     src, out = _out_seconds(p, analysis)

@@ -285,7 +285,9 @@ def test_parse_prompt():
     assert R.parse_prompt("把这节课切成二十条")["count"] == 20
     assert R.parse_prompt("不要讲解视频")["exclude"] == ["explainer"]
     it = R.parse_prompt("发视频号和小红书，还有快手")
-    assert it["platforms"] == ["wechat-channels", "xiaohongshu"] and it["unsupported_platforms"] == ["快手"]   # request order
+    assert it["platforms"] == ["xiaohongshu", "wechat-channels"] and it["unsupported_platforms"] == ["快手"]   # registry order
+    # international first whatever order the request names them in (the creator's rule, everywhere)
+    assert R.parse_prompt("发抖音、小红书和 TikTok")["platforms"] == ["tiktok", "xiaohongshu", "douyin"]
     assert sorted(R.parse_prompt("发布方案还要支持 X 和 ins")["platforms"]) == ["instagram", "x"]
     assert R.parse_prompt("1.2x 速度，发 B站")["platforms"] == ["bilibili"]
 
@@ -322,6 +324,23 @@ def test_revise_rules(tmp_path):
         assert any("没看懂" in w for w in p5["warnings"]) and len(p5["projects"]) == len(p4["projects"])
     finally:
         I.analyze = orig
+
+
+def test_plan_stores_platforms_international_first(tmp_path):
+    a = build("talk", tmp_path)
+    plan = PL.make_plan("这段口播剪干净，发抖音、小红书和 TikTok", analysis=a, asr="off")
+    plats = plan["projects"][0]["params"]["platforms"]
+    assert [x.split(":")[0] for x in plats] == ["tiktok", "xiaohongshu", "douyin"]
+
+    def call(system, prompt):        # a model answer in Chinese-first order is stored in registry order too
+        cur = plan["projects"][0]
+        return dict(json=dict(projects=[dict(recipe="talkinghead", name=cur["name"], inputs=cur["inputs"],
+                                             items=dict(method="per-file"),
+                                             params=dict(cur["params"], platforms=["douyin", "youtube-shorts"]))],
+                              summary_zh="ok"), model="mock")
+    p2 = PL.make_plan("这段口播剪干净", analysis=a, asr="off", call=call)
+    assert [x.split(":")[0] for x in p2["projects"][0]["params"]["platforms"]] == ["youtube-shorts", "douyin"]
+    assert [x.split(":")[0] for x in p2["projects"][0]["outputs"]["platforms"]] == ["youtube-shorts", "douyin"]
 
 
 def test_revise_with_model(tmp_path):
