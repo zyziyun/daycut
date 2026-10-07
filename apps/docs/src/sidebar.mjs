@@ -35,6 +35,7 @@ export const sidebar = [
     'guides/bilingual-subtitles',
     'guides/course-slicing',
     'guides/promo-recut',
+    'guides/launch-videos',
     'guides/photo-story',
     'guides/vlog',
     'guides/explainer',

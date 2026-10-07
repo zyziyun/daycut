@@ -188,6 +188,7 @@ those stages. `state/` is never edited by hand; budget / consent answers are the
 | `longform-course` 剪成课程 | recordings | keep (author config), filler, privacy (QA mosaics), publish | speaker aliases, transient / zoom targets, demo re-record by hand |
 | `call-clips` 播客 / 对话 (podcast-clips) | planned segments | segments, consent (project), masks, publish | tile rects asked in the wizard; build_clips filler review not a checkpoint; landscape EN two-pass |
 | `promo-recut` 宣传片 | talks | keep (author), filler, package (author), publish | packaging config authored; --verify not a gate; render needs npx hyperframes |
+| `launch-kit` 产品发布视频 | single (one release) | config (author: product, brand, features, shot list), publish | captions + shot list authored; capture needs Node + Playwright; schedule --apply goes to pubcal, not the desk board |
 | `explainer` 讲解视频 | topics / scripts | script, storyboard, voice (paid TTS), cues (author), scenes (agent-authored compositions), publish | scene HTML, sketches, music bed, hyperframes init are agent work |
 | `photo-story` 文艺片 | stories / episodes | story (spec.py author), layout, publish | the spec is the creative step (agent) |
 | `vlog` | trips / episodes / platform variants | edit (edit.json author), cover, publish | window selection from contact sheets; music catalog |
