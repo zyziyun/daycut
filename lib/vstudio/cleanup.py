@@ -250,7 +250,8 @@ def join_words(words):
         txt = str(w.get("w", w.get("word", w.get("text", ""))) if isinstance(w, dict) else w).strip()
         if not txt:
             continue
-        if s and not (_WIDE.search(s[-1:]) or _WIDE.search(txt[:1])) and not re.match(r"[，。,.!?！？、;:；：)）]", txt):
+        if s and not (_WIDE.search(s[-1:]) or _WIDE.search(txt[:1])) and not re.match(r"[，。,.!?！？、;:；：)）]", txt) \
+                and not re.match(r"['’](?:s|re|ve|ll|d|m|t)\b|n['’]t\b", txt, re.I):       # that 's -> that's
             s += " "
         s += txt
     return s

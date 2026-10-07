@@ -262,7 +262,8 @@ def _point(sents, a, b, k, lang, kind=None, title=None, gloss=None, extra=None):
              title=title or _title(kind, anc["terms"] or terms, anc["text"], lang), phrase=phrase,
              gloss=gloss or next((t.get("gloss") for t in terms if phrase and t["term"].lower() == phrase.lower()
                                   and t.get("gloss")), None),
-             terms=terms[:3], summary=anc["text"], examples=exs, anchor=[round(anc["t"], 2), round(anc["te"], 2)],
+             terms=terms[:3], summary=anc["text"], quote=anc["text"], examples=exs,
+             anchor=[round(anc["t"], 2), round(anc["te"], 2)],
              sent=[a, b], score=round(sum(s["anchor"] for s in win) / max(1.0, (win[-1]["te"] - win[0]["t"]) / 30), 2))
     if extra:
         p.update({k2: v for k2, v in extra.items() if v is not None})
@@ -436,10 +437,12 @@ def notes_markdown(plan, title=None, ui="zh"):
             if t["term"] in (p.get("phrase"), p["title"]):
                 continue
             out.append(f"- **{L('term')}**: {t['term']}" + (f" ({t['gloss']})" if t.get("gloss") else ""))
-        if p.get("summary"):
-            out.append(f"- **{'In class' if ui == 'en' else '课上原话'}**: {p['summary']}")
+        if p.get("summary") and p["summary"] != p.get("quote"):
+            out.append(f"- **{'Summary' if ui == 'en' else '要点'}**: {p['summary']}")
+        if p.get("quote"):
+            out.append(f"- **{'In class' if ui == 'en' else '课上原话'}**: {p['quote']}")
         for e in p.get("examples") or []:
-            if e != p.get("summary"):
+            if e not in (p.get("summary"), p.get("quote")):
                 out.append(f"- **{L('example')}**: {e}")
         if p.get("translation"):
             out.append(f"- **{'Translation' if ui == 'en' else '翻译'}**: {p['translation']}")

@@ -565,7 +565,7 @@ def cues_from_words(words, max_chars=None, max_gap=0.45, linger=0.3, fixes=None)
         s = ""
         for t, _, _ in items:
             t = t.strip()
-            if s and re.match(r"[\"'“‘(]?[A-Za-z0-9]", t[:2]) and (
+            if s and re.match(r"[\"“‘(]?[A-Za-z0-9]", t[:2]) and (
                     re.match(r"[A-Za-z0-9%]", s[-1])
                     or (s[-1] in ",.!?;:)]" and not (len(s) > 1 and s[-2].isdigit() and s[-1] in ",." and t[:1].isdigit()))):
                 s += " "                      # latin words (also after latin punctuation: "everyone, welcome")

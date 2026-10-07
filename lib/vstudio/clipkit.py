@@ -239,7 +239,7 @@ def geometry(canvas, layout, src_wh, cam_wh=None, header=True):
             if layout == "pip" and cam_wh:
                 cw = int(W * 0.34) // 2 * 2
                 chh = int(cw * 1.0) // 2 * 2
-                g["camera"] = (W - cw - int(W * 0.04), top + mh - int(chh * 0.55), cw, chh)
+                g["camera"] = (W - cw - int(W * 0.03), top + mh - chh - int(W * 0.03), cw, chh)   # inside the band
                 g["camera_crop"] = (cw, chh)
             g["terms"] = (W - int(W * 0.5) - int(W * 0.03), top + int(W * 0.03), int(W * 0.5))
         g["labels"] = (int(W * 0.06), top + int(H * 0.012))
