@@ -1,0 +1,28 @@
+// Cloudflare Worker for Reelfold's opt-in usage counts (src/index.ts), on its own custom domain t.reelfold.com.
+//
+// Why a custom domain and not a route such as reelfold.com/api/*: reelfold.com is a Custom Domain of the site
+// Worker (apps/site/wrangler.jsonc), and a Custom Domain takes precedence over routes on the same hostname, so a
+// route there would never reach this Worker.
+//
+// Deploy: automatic on push to main (.github/workflows/deploy-telemetry.yml). The workflow finds or creates the D1
+// database "reelfold-usage" and writes its id below before `wrangler d1 migrations apply` + `wrangler deploy`
+// (the placeholder id is never deployed). By hand: see docs/CI_CD.md § Usage counts.
+{
+  "name": "reelfold-telemetry",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "routes": [{ "pattern": "t.reelfold.com", "custom_domain": true }],
+  "workers_dev": false,
+  // no request logs: nothing about a request (address, headers) is kept by Workers Logs either
+  "observability": { "enabled": false },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "reelfold-usage",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  // daily: per-day aggregates (no install id, kept forever) + delete raw rows older than 13 months
+  "triggers": { "crons": ["17 3 * * *"] }
+}

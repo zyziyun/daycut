@@ -1,0 +1,132 @@
+# Usage counts backend (apps/telemetry) -> the Cloudflare Worker "reelfold-telemetry" on https://t.reelfold.com + D1.
+#   pull_request              unit tests + typecheck only
+#   push to main              tests, then: find or create the D1 database "reelfold-usage" (idempotent), apply the
+#                             migrations in apps/telemetry/migrations, deploy, set STATS_TOKEN (if that secret
+#                             exists), smoke-test /api/v1/health (and /api/v1/stats with the token)
+#   workflow_dispatch         manual redeploy (main only)
+# Needs CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID (docs/CI_CD.md). The token also needs "Account > D1 > Edit"
+# (the "Edit Cloudflare Workers" template does not include it); without it the deploy stops with that message.
+# Optional: STATS_TOKEN (the maintainer's secret for the stats endpoint; without it /api/v1/stats answers 503).
+name: Deploy telemetry
+on:
+  pull_request:
+    paths:
+      - 'apps/telemetry/**'
+      - '.github/workflows/deploy-telemetry.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/telemetry/**'
+      - '.github/workflows/deploy-telemetry.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: deploy-telemetry-${{ github.event_name == 'pull_request' && github.ref || 'production' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: { node-version: 22, cache: npm }
+      - run: npm ci --ignore-scripts
+      - run: npm test -w apps/telemetry
+      - run: npm run typecheck -w apps/telemetry
+
+  deploy:
+    name: Deploy to Cloudflare
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/telemetry
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      STATS_TOKEN: ${{ secrets.STATS_TOKEN }}
+      DB_NAME: reelfold-usage
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: { node-version: 22 }
+      - name: Cloudflare secrets present?
+        id: secrets
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::warning title=Deploy skipped::missing CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID (docs/CI_CD.md)"
+            echo "### Telemetry deploy skipped: missing Cloudflare secrets" >> "$GITHUB_STEP_SUMMARY"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: D1 database (find or create, idempotent)
+        if: steps.secrets.outputs.ready == 'true'
+        run: |
+          set -uo pipefail
+          find_id() {
+            npx -y wrangler@4 d1 list --json 2> d1.err | node -e '
+              let s = require("fs").readFileSync(0, "utf8"); s = s.slice(s.indexOf("["));
+              const d = JSON.parse(s).find((x) => x.name === process.env.DB_NAME);
+              process.stdout.write(d ? String(d.uuid || d.database_id || d.id || "") : "");'
+          }
+          denied() {
+            echo "::error title=The Cloudflare token cannot use D1::Edit the CLOUDFLARE_API_TOKEN token at dash.cloudflare.com > My Profile > API Tokens and add the permission Account > D1 > Edit (docs/CI_CD.md, Usage counts). Then re-run this workflow."
+            {
+              echo "### Telemetry deploy stopped: the Cloudflare token cannot use D1"
+              echo "Add **Account → D1 → Edit** to the CLOUDFLARE_API_TOKEN token (dash.cloudflare.com → My Profile → API Tokens → Edit), then re-run *Deploy telemetry*."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          }
+          id=$(find_id) || { cat d1.err; denied; }
+          if [ -z "$id" ]; then
+            echo "creating D1 database $DB_NAME"
+            npx -y wrangler@4 d1 create "$DB_NAME" || { denied; }
+            id=$(find_id) || { cat d1.err; denied; }
+          fi
+          [ -n "$id" ] || { echo "::error::D1 database $DB_NAME not found after create"; exit 1; }
+          echo "D1 $DB_NAME = $id"
+          sed -i "s/00000000-0000-0000-0000-000000000000/$id/" wrangler.jsonc
+          grep -q "$id" wrangler.jsonc
+
+      - name: Apply migrations
+        if: steps.secrets.outputs.ready == 'true'
+        run: npx -y wrangler@4 d1 migrations apply "$DB_NAME" --remote
+
+      - name: wrangler deploy
+        if: steps.secrets.outputs.ready == 'true'
+        run: npx -y wrangler@4 deploy
+
+      - name: STATS_TOKEN secret on the Worker
+        if: steps.secrets.outputs.ready == 'true'
+        run: |
+          if [ -n "$STATS_TOKEN" ]; then
+            printf '%s' "$STATS_TOKEN" | npx -y wrangler@4 secret put STATS_TOKEN
+          else
+            echo "::warning title=No STATS_TOKEN::the stats endpoint stays off until the STATS_TOKEN repository secret is set (docs/CI_CD.md, Usage counts)"
+          fi
+
+      - name: Smoke test t.reelfold.com
+        if: steps.secrets.outputs.ready == 'true'
+        run: |
+          ok=0
+          for i in $(seq 1 12); do
+            code=$(curl -sS -o health.json -w '%{http_code}' https://t.reelfold.com/api/v1/health || echo 000)
+            if [ "$code" = "200" ]; then ok=1; break; fi
+            echo "try $i: HTTP $code (a new custom domain can take a minute or two)"; sleep 15
+          done
+          [ "$ok" = 1 ] || { echo "::error title=Smoke test failed::https://t.reelfold.com/api/v1/health"; exit 1; }
+          echo "ok  /api/v1/health"
+          # the database answers (and the stats token works), without printing any numbers here
+          if [ -n "$STATS_TOKEN" ]; then
+            code=$(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $STATS_TOKEN" https://t.reelfold.com/api/v1/stats || echo 000)
+            [ "$code" = "200" ] || { echo "::error title=Stats endpoint::HTTP $code"; exit 1; }
+            echo "ok  /api/v1/stats (authorized)"
+          fi
+          echo "### Telemetry deployed: https://t.reelfold.com/api/v1/health" >> "$GITHUB_STEP_SUMMARY"
