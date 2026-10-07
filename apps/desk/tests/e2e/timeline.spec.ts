@@ -7,6 +7,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { closeApp } from './closeApp';
 
 let app: ElectronApplication;
 let page: Page;
@@ -48,7 +49,7 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-  await app?.close();
+  await closeApp(app);
 });
 
 async function open(clip: string, lang: 'en' | 'zh-CN' = 'zh-CN') {

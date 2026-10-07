@@ -5,6 +5,7 @@ import { _electron as electron, expect, test, type ElectronApplication, type Pag
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { closeApp } from './closeApp';
 
 let app: ElectronApplication;
 let page: Page;
@@ -20,7 +21,7 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-  await app?.close();
+  await closeApp(app);
 });
 
 test('window is locked down', async () => {

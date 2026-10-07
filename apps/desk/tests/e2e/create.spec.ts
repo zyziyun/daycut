@@ -7,6 +7,7 @@ import { _electron as electron, expect, test, type ElectronApplication, type Pag
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { closeApp } from './closeApp';
 
 const SHOTS = process.env.CREATE_SHOTS || '';
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vsdesk-create-'));
@@ -58,7 +59,7 @@ test.describe('Create on', () => {
   });
 
   test.afterAll(async () => {
-    await app?.close();
+    await closeApp(app);
   });
 
   test('nav shows Create; first run offers the sample', async () => {
@@ -252,7 +253,7 @@ test.describe('Create off', () => {
       });
       expect(roots.some((r) => r.includes('create-mock'))).toBe(false);
     } finally {
-      await app.close();
+      await closeApp(app);
     }
   });
 });

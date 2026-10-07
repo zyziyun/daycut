@@ -11,6 +11,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { closeApp } from './closeApp';
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vsdesk-smoke-'));
 const watch = path.join(tmp, 'demos');
@@ -88,7 +89,7 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-  await app?.close();
+  await closeApp(app);
 });
 
 async function ids(): Promise<{ batch: string; work: string }> {

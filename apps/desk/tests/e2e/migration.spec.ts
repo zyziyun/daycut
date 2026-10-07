@@ -12,6 +12,7 @@ import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
+import { closeApp } from './closeApp';
 
 const LEGACY = 'Reelfold E2E Legacy';
 const ROOT = path.resolve(import.meta.dirname, '../..');
@@ -96,7 +97,7 @@ test('the second launch reuses the copy (no new migration) and still decrypts', 
     expect(r.settings.lang).toBe('fr'); // the Reelfold copy, not the old folder
     expect(r.settings.accent).toBe('red');
   } finally {
-    await app.close();
+    await closeApp(app);
   }
   expect(fs.readFileSync(path.join(newDir, 'migrated-from.json'), 'utf8')).toBe(rec);
   expect(mainLog().match(/copied the profile/g)?.length).toBe(1);

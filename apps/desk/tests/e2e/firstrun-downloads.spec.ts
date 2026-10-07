@@ -11,6 +11,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
+import { closeApp } from './closeApp';
 
 const ROOT = path.resolve(import.meta.dirname, '../..');
 const tmp = (p: string) => fs.mkdtempSync(path.join(os.tmpdir(), p));
@@ -104,7 +105,7 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-  await app?.close();
+  await closeApp(app);
   server?.close();
 });
 
@@ -152,7 +153,7 @@ test('queued downloads keep the wizard on its step, the window open and the page
 });
 
 test('a restart finds everything installed: zero network requests, nothing offered for download', async () => {
-  await app.close();
+  await closeApp(app);
   const before = requests;
   app = await electron.launch({ args: [ROOT], env: launchEnv });
   page = await app.firstWindow();
@@ -166,7 +167,7 @@ test('a restart finds everything installed: zero network requests, nothing offer
 });
 
 test('assets already on disk at start: in the first engine env, zero engine restarts, first API call succeeds', async () => {
-  await app.close();
+  await closeApp(app);
   // Whisper "already in the Hugging Face cache" (content-addressed blob) - found by the start-up scan
   const hub = tmp('vsdesk-hub-');
   const snap = path.join(hub, 'models--org--whisper', 'snapshots', 'rev1');

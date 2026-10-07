@@ -13,6 +13,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { closeApp } from './closeApp';
 
 let app: ElectronApplication;
 let page: Page;
@@ -177,7 +178,7 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-  await app?.close();
+  await closeApp(app);
 });
 
 /** The engine's HTTP API from the test process (the page's CSP forbids building functions from strings). */

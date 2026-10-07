@@ -12,6 +12,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
+import { closeApp } from './closeApp';
 
 const ROOT = path.resolve(import.meta.dirname, '../..');
 type Hit = { method: string; url: string; body: { events?: Record<string, unknown>[] } | null };
@@ -90,7 +91,7 @@ test('first run: the choice is off by default, persists, and only then is anythi
 
   // skip the rest of the wizard, quit, relaunch: still on, same id
   await page.getByTestId('fr-skip').click();
-  await app.close();
+  await closeApp(app);
   app = await launch(dir);
   page = await open(app);
   await page.evaluate(() => (location.hash = '#/settings/general'));
@@ -110,14 +111,14 @@ test('first run: the choice is off by default, persists, and only then is anythi
   await page.evaluate(() => window.desk.usage.track('export_done', { count: 3 }));
   await page.waitForTimeout(1000);
   expect(hits.length).toBe(n);
-  await app.close();
+  await closeApp(app);
   app = await launch(dir);
   page = await open(app);
   await page.evaluate(() => (location.hash = '#/settings/general'));
   await expect(page.getByTestId('usage-toggle')).not.toBeChecked({ timeout: 30000 });
   await page.waitForTimeout(1000);
   expect(hits.length).toBe(n);
-  await app.close();
+  await closeApp(app);
 });
 
 test('a profile that never opts in sends nothing', async () => {
@@ -135,5 +136,5 @@ test('a profile that never opts in sends nothing', async () => {
   await page.waitForTimeout(1500);
   expect(hits).toHaveLength(0);
   expect(fs.existsSync(path.join(dir, 'profile', 'usage.json'))).toBe(false);
-  await app.close();
+  await closeApp(app);
 });
