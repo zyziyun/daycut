@@ -55,12 +55,21 @@ def make_engine(data_dir, bus):
     return RealEngine(data_dir, reg, bus, engine_path=engine_path), None
 
 
-def warm(api):
-    """Off the start-up path: import what opening a clip and the inbox poll use in this process and probe the
-    engine's output commands once, so the first editor open does not pay for them."""
+def preload():
+    """Import what opening a clip and the inbox poll use in this process, in the main thread BEFORE any other thread
+    starts. Windows: loading numpy's DLLs (OpenBLAS starts its thread pool under the DLL loader lock) in a background
+    thread while other threads are being created (request threads, subprocess pipe readers) deadlocks the whole
+    process - it stays alive, prints "ready" and never answers a request. ~0.2 s on a Mac."""
     try:
         import vstudio.project.inbox  # noqa: F401
         import vstudio.project.outputs  # noqa: F401
+    except Exception as e:  # noqa: BLE001  (the calls themselves report a broken engine)
+        print(f"[engine] preload: {e}", file=sys.stderr, flush=True)
+
+
+def warm(api):
+    """Off the start-up path: probe the engine's output commands once, so the first editor open does not pay."""
+    try:
         api.outputs.real()
     except Exception as e:  # noqa: BLE001  (the calls themselves report a broken engine)
         print(f"[engine] warm-up: {e}", file=sys.stderr, flush=True)
@@ -81,6 +90,7 @@ def main():
         print(json.dumps(dict(ready=False, error=f"the video engine (vstudio) cannot be loaded: {e}")), flush=True)
         return 3
     if engine.mode == "real":
+        preload()                                                     # before any thread (see preload)
         runner = CliRunner(engine.python, runner_env(engine.engine_path))
         caps = Capabilities(runner)
         threading.Thread(target=caps.probe, daemon=True).start()      # warm the cache off the start-up path
