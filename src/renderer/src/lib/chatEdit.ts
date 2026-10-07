@@ -88,7 +88,7 @@ export interface Marker {
 export function markers(doc: OutputDoc, drafts: { turn: string; ops: EditOp[] }[]): Marker[] {
   const out: Marker[] = [];
   for (const c of doc.cuts) out.push({ id: `cut${c.index}`, a: c.start, b: c.end, tone: 'applied', kind: 'cut' });
-  for (const e of doc.effects) out.push({ id: e.id, a: e.start, b: e.end, tone: 'applied', kind: 'fx' });
+  for (const e of doc.effects) if (e.end - e.start <= doc.duration * 0.6) out.push({ id: e.id, a: e.start, b: e.end, tone: 'applied', kind: 'fx' }); // a progress bar / grade is not a place
   for (const d of drafts)
     d.ops.forEach((op, i) => {
       const r = opRange(op, doc);

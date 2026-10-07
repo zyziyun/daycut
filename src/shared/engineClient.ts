@@ -35,6 +35,7 @@ import type {
   WeeklyDoc,
 } from './v02';
 import type { AskContext, ChatTurn, ExportJob } from './chatEdit';
+import type { StripInfo, TranscribeState } from './timeline';
 import type { AskResult, CalendarDoc, CalendarPost, ClipsDoc, EditOp, EffectDef, EngineMsg, InboxDoc, IntakeJob, IntakePlan, OutputDoc, ProjectAskJob } from './v04';
 
 export class EngineError extends Error {
@@ -298,6 +299,17 @@ export class EngineClient {
   }
   output(item: string, clip: string) {
     return this.req<OutputDoc>('GET', `/api/outputs/${bid(item)}/${clipId(clip)}`);
+  }
+  /** the timeline's filmstrip sprite + audio peaks (made once per file, cached by the engine) */
+  outputStrip(item: string, clip: string, signal?: AbortSignal) {
+    return this.req<StripInfo>('GET', `/api/outputs/${bid(item)}/${clipId(clip)}/strip`, undefined, signal);
+  }
+  /** 「听一遍这条片子」: transcribe the output in the background; output-transcribe events follow */
+  transcribeOutput(item: string, clip: string) {
+    return this.req<TranscribeState>('POST', `/api/outputs/${bid(item)}/${clipId(clip)}/transcribe`, {});
+  }
+  transcribeState(item: string, clip: string) {
+    return this.req<TranscribeState>('GET', `/api/outputs/${bid(item)}/${clipId(clip)}/transcribe`);
   }
   /** turn: the chat card these ops come from (marked applied in the clip's transcript) */
   editOutput(item: string, clip: string, ops: EditOp[], turn?: string | null) {

@@ -288,6 +288,7 @@ export type StreamEvent =
   | { type: 'plan'; plan: string; state: string; progress: string; ts: number }
   | { type: 'job-edit'; batch: string; job: string; ts: number }
   | { type: 'output-edit'; item: string; clip: string; ts: number }
+  | { type: 'output-transcribe'; item: string; clip: string; state: 'running' | 'done' | 'failed'; error?: string; words?: number; ts: number }
   | { type: 'output-render'; item: string; clip: string; job: string; event: 'target-start' | 'stage-done' | 'target-done' | 'render-done' | 'stopped' | 'failed'; target?: string; stage?: string; progress?: number; file?: string; error?: string; simulated?: boolean; ts: number }
   | { type: 'intake'; id: string; state: string; ts: number }
   | { type: 'inbox'; ts: number }

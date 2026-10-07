@@ -10,24 +10,11 @@
 .ce-stage { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: stretch; padding: var(--s2) var(--s3) var(--s1); }
 .ce-stage .pl { flex: 1; min-height: 0; width: 100%; box-shadow: none; border: 0; padding: 0; background: transparent; display: flex; flex-direction: column; }
 .ce-stage .pl .stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
-.ce-stage .pl .frame video { max-height: calc(100vh - 52px - 290px); min-height: 220px; border-radius: 10px; }
-.ce-stage .pl .ctl { max-width: 560px; width: 100%; margin: 0 auto; }
-.ce-stage .pl .scrub { max-width: 560px; width: 100%; margin: 8px auto 0; }
-.ce-tl { border-top: 1px solid var(--border); padding: 8px var(--s3) 12px; position: relative; }
-.ce-tl .hd { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--text-faint); height: 22px; }
-.ce-tl .lg { display: inline-flex; align-items: center; gap: 6px; }
-.ce-tl .lg i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
-.ce-tl .lg .d { background: var(--warn); }
-.ce-tl .lg .a { background: var(--accent); }
-.ce-tl .tline { border: 0; background: transparent; padding: 4px 0 0; }
-.ce-tl .tline .thumbs, .ce-tl .tline .thumbs canvas { height: 34px; }
-.ce-tl .tline .wave { height: 24px; }
-.tline .tmk { position: absolute; top: 0; bottom: 0; pointer-events: auto; cursor: pointer; z-index: 2; border-radius: 2px; transition: background var(--t) var(--ease); }
-.tline .tmk.draft { background: color-mix(in srgb, var(--warn) 22%, transparent); border-left: 2px solid var(--warn); border-right: 2px solid var(--warn); }
-.tline .tmk.draft.fx, .tline .tmk.draft.point { background: color-mix(in srgb, var(--warn) 30%, transparent); }
-.tline .tmk.applied.cut { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--accent) 34%, transparent) 0 5px, transparent 5px 10px); border-left: 1px solid var(--accent); border-right: 1px solid var(--accent); pointer-events: none; }
-.tline .tmk.hot { background: color-mix(in srgb, var(--warn) 45%, transparent); }
-.ce-tl .tline .cutz { display: none; }
+.ce-stage .pl .frame video { max-height: calc(100vh - 52px - 360px); min-height: 220px; border-radius: 10px; }
+.ce-stage .pl { gap: 6px; }
+.ce-stage .pl .ctl { width: 100%; }
+.ce-stage .pl .scrub2 { margin-top: 6px; }
+.ce-tl { border-top: 1px solid var(--border); padding: 6px var(--s3) 12px; position: relative; }
 
 .ce-split { grid-column: 2; grid-row: 2; cursor: col-resize; position: relative; }
 .ce-split::after { content: ''; position: absolute; top: 0; bottom: 0; left: 2px; width: 1px; background: var(--border); transition: background var(--t) var(--ease); }
@@ -214,13 +201,8 @@
 
 /* in the editor the player is quiet: the timeline does the scrubbing */
 .ce-stage .pl .stage { background: transparent; }
-.ce-stage .pl .scrub { display: none; }
-.ce-stage .pl .ctl { justify-content: center; margin-top: 10px; }
 .ce-stage .pl .ctl > .btn.icon.sm:first-child, .ce-stage .pl .ctl > .btn.icon.sm:nth-child(3), .ce-stage .pl .ctl select { display: none; }
 .cmp .bot .chips { -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent); mask-image: linear-gradient(90deg, #000 85%, transparent); }
-.ce-tl .tline .tlane .lbl { left: 2px; }
-.ce-tl .tline .tlview { overflow-x: hidden; }
-.tline .fxb.draft { background: color-mix(in srgb, var(--warn) 24%, var(--surface-2)); border-color: color-mix(in srgb, var(--warn) 70%, transparent); border-style: dashed; }
 .card2 .cft { padding: 10px 12px; gap: 6px; }
 .card2 .cft .btn { padding: 0 11px; }
 .card2 .chd b { white-space: nowrap; }

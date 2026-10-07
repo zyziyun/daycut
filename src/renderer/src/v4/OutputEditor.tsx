@@ -17,6 +17,7 @@ import { Empty, Sk } from './kit';
 import { effectLabel, emsg, errText, setEffectLabels } from './msg';
 import { Player, type PlayerApi } from './Player';
 import { Timeline } from './Timeline';
+import { useStrip, useTranscribe } from '../lib/timelineMedia';
 import { isTyping, useUi } from './ui';
 
 type Tab = 'trim' | 'captions' | 'effects' | 'cover' | 'export';
@@ -36,6 +37,7 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
   const [err, setErr] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('trim');
   const [time, setTime] = useState(0);
+  const [playing, setPlaying] = useState(false);
   const [sel, setSel] = useState<{ a: number; b: number } | null>(null);
   const [fxSel, setFxSel] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ ops: EditOp[] | null; compare: boolean }>({ ops: null, compare: false });
@@ -193,6 +195,8 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
       pl.current?.pause();
     }
   }, []);
+  const { strip, failed: stripFailed } = useStrip(client, id, clip, doc?.files[0]?.path ?? null);
+  const transcribe = useTranscribe(client, subscribe, id, clip, reload);
   const onPreview = useCallback((v: { ops: EditOp[] | null; compare: boolean }) => setPreview(v), []);
 
   const odoc = doc as unknown as OutputDoc | null;
@@ -286,6 +290,9 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
             cuts={fresh.length ? [] : view.cuts}
             trim={fresh.length ? null : view.trim}
             onTime={onTime}
+            onPlaying={setPlaying}
+            strip={strip}
+            ticks={marks.map((m) => ({ t: m.a, b: m.b, tone: m.tone }))}
             onSelection={setSel}
             compare={compare}
             badge={holdC ? t('ce.original') : null}
@@ -293,31 +300,33 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
           />
         </section>
         <section className="ce-tl">
-          <div className="hd">
-            {marks.some((m) => m.tone === 'draft') || doc.steps.length ? (
-              <>
-                <span className="lg">
-                  <i className="d" />
-                  {t('ce.legend.draft')}
-                </span>
-                <span className="lg">
-                  <i className="a" />
-                  {t('ce.legend.applied')}
-                </span>
-              </>
-            ) : (
-              <span>{t('ce.tlHint')}</span>
-            )}
-            <span className="sp" />
-            {preview.compare && <span>{t('ce.holdC')}</span>}
-          </div>
           <Timeline
             doc={view}
             time={time}
+            playing={playing}
             selection={sel}
             selectedFx={fxSel}
-            zoom={false}
-            fit
+            strip={strip}
+            stripFailed={stripFailed}
+            transcribe={transcribe}
+            defs={effects}
+            header={
+              marks.some((m) => m.tone === 'draft') || doc.steps.length ? (
+                <>
+                  <span className="lg">
+                    <i className="d" />
+                    {t('ce.legend.draft')}
+                  </span>
+                  <span className="lg">
+                    <i className="a" />
+                    {t('ce.legend.applied')}
+                  </span>
+                  {preview.compare && <span>{t('ce.holdC')}</span>}
+                </>
+              ) : doc.words.length ? (
+                <span>{t('ce.tlHint')}</span>
+              ) : null
+            }
             markers={marks}
             onMarker={(turn) => chat.current?.focusTurn(turn)}
             onSeek={(x) => pl.current?.seek(x)}

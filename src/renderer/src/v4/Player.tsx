@@ -4,10 +4,12 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from 'react';
 import { Maximize2, Minimize2, Pause, Play, Repeat, ScanLine, StepBack, StepForward, Subtitles, Wand2, X } from 'lucide-react';
 import type { CaptionCue, ClipFile, EffectInstance } from '../../../shared/v04';
+import type { StripInfo } from '../../../shared/timeline';
 import { fmtClock, t } from '../i18n';
 import { clamp, frameTime, loopTime, safeAreas, shuttle, step, timecode } from '../lib/player';
 import { isTyping } from './ui';
 import { media } from './kit';
+import { Scrubber, type ScrubTick } from './Scrubber';
 
 export interface PlayerApi {
   seek(t: number): void;
@@ -31,6 +33,11 @@ export interface PlayerProps {
   cuts?: { start: number; end: number }[];
   trim?: { start: number; end: number } | null;
   marks?: number[];
+  /** chapter / edit ticks on the scrub bar (amber draft, teal applied) */
+  ticks?: ScrubTick[];
+  /** the timeline's sprite sheet: a frame preview while hovering the scrub bar */
+  strip?: StripInfo | null;
+  onPlaying?: (playing: boolean) => void;
   title?: string;
   /** overlay mode: Esc closes, the player owns the keyboard */
   onClose?: () => void;
@@ -70,6 +77,7 @@ export const Player = forwardRef<PlayerApi, PlayerProps>(function Player(p, ref)
   const [safe, setSafe] = useState(false);
   const [full, setFull] = useState(false);
   const [err, setErr] = useState(false);
+  const [buffered, setBuffered] = useState<[number, number][]>([]);
   const selRef = useRef(sel);
   selRef.current = sel;
   const setSel = useCallback(
@@ -251,6 +259,11 @@ export const Player = forwardRef<PlayerApi, PlayerProps>(function Player(p, ref)
         setRate(0);
         el.pause();
         seek(step(el.currentTime, k === 'ArrowRight' ? 1 : -1, fps, el.duration || dur, e.shiftKey));
+      } else if (k === 'Home' || k === 'End') {
+        e.preventDefault();
+        setRate(0);
+        el.pause();
+        seek(k === 'Home' ? (p.trim?.start ?? 0) : (p.trim?.end ?? (el.duration || dur)));
       } else if (lower === 'i') {
         const a = el.currentTime;
         setSel({ a, b: Math.max(a + 0.1, selRef.current?.b ?? Math.min(dur, a + 3)) });
@@ -267,16 +280,8 @@ export const Player = forwardRef<PlayerApi, PlayerProps>(function Player(p, ref)
     };
     window.addEventListener('keydown', on);
     return () => window.removeEventListener('keydown', on);
-  }, [keysOn, onClose, toggle, toggleFull, seek, setSel, fps, dur, full]);
+  }, [keysOn, onClose, toggle, toggleFull, seek, setSel, fps, dur, full, p.trim]);
 
-  // scrub (pointer): frame-accurate
-  const drag = useRef(false);
-  const posToT = (e: React.PointerEvent) => {
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    return clamp(((e.clientX - r.left) / r.width) * (dur || 0), 0, dur || 0);
-  };
-  const D = dur || 1;
-  const pct = (x: number) => `${(x / D) * 100}%`;
   const areas = safeAreas(file?.aspect ?? '', file?.safe_box, file?.caption_box, file?.w, file?.h);
   const cue = caps ? (p.captions ?? []).find((c) => !c.removed && cur >= c.start && cur <= c.end) : undefined;
   const style = p.captionStyle ?? {};
@@ -326,8 +331,12 @@ export const Player = forwardRef<PlayerApi, PlayerProps>(function Player(p, ref)
               preload="auto"
               playsInline
               autoPlay={p.autoPlay}
-              onPlay={() => setPlaying(true)}
-              onPause={() => setPlaying(false)}
+              onPlay={() => (setPlaying(true), p.onPlaying?.(true))}
+              onPause={() => (setPlaying(false), p.onPlaying?.(false))}
+              onProgress={(e) => {
+                const b = (e.target as HTMLVideoElement).buffered;
+                setBuffered(Array.from({ length: b.length }, (_, i) => [b.start(i), b.end(i)] as [number, number]));
+              }}
               onLoadedMetadata={(e) => setDur((e.target as HTMLVideoElement).duration || dur)}
               onError={() => setErr(true)}
               onClick={() => toggle()}
@@ -379,34 +388,17 @@ export const Player = forwardRef<PlayerApi, PlayerProps>(function Player(p, ref)
         )}
         {err && <div className="note" style={{ position: 'absolute', bottom: 12 }}>{t('player.cantPlay')}</div>}
       </div>
-      <div
-        className="scrub"
-        role="slider"
-        aria-label={t('player.play')}
-        aria-valuemin={0}
-        aria-valuemax={Math.round(dur)}
-        aria-valuenow={Math.round(cur)}
-        onPointerDown={(e) => {
-          drag.current = true;
-          (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-          seek(posToT(e));
-        }}
-        onPointerMove={(e) => drag.current && seek(posToT(e))}
-        onPointerUp={(e) => {
-          drag.current = false;
-          seek(frameTime(posToT(e), fps));
-        }}
-        data-testid="scrub"
-      >
-        <div className="track" />
-        {p.trim && <div className="selr" style={{ left: pct(p.trim.start), width: pct(p.trim.end - p.trim.start), background: 'transparent', borderColor: 'var(--you)' }} />}
-        {sel && <div className="selr" style={{ left: pct(sel.a), width: pct(sel.b - sel.a) }} data-testid="selection" />}
-        <div className="fill" style={{ width: pct(cur) }} />
-        {(p.marks ?? []).map((m, i) => (
-          <i key={i} className="mk" style={{ left: pct(m) }} />
-        ))}
-        <div className="head" style={{ left: pct(cur) }} />
-      </div>
+      <Scrubber
+        duration={dur}
+        time={cur}
+        buffered={buffered}
+        strip={p.strip}
+        ticks={[...(p.ticks ?? []), ...(p.marks ?? []).map((m) => ({ t: m, tone: 'chapter' as const }))]}
+        selection={sel}
+        trim={p.trim}
+        label={t('player.seek')}
+        onSeek={(x, final) => seek(final ? frameTime(x, fps) : x)}
+      />
       <div className="ctl">
         <button className="btn icon sm" onClick={() => seek(step(cur, -1, fps, dur))} aria-label={t('player.frameBack')} data-tip={`${t('player.frameBack')} · ←`}>
           <StepBack className="ico" />
@@ -418,7 +410,7 @@ export const Player = forwardRef<PlayerApi, PlayerProps>(function Player(p, ref)
           <StepForward className="ico" />
         </button>
         <span className="tc num" data-testid="timecode">
-          {timecode(cur, fps)} / {fmtClock(dur)}
+          <TC v={timecode(cur, fps)} /> <span className="of">/ {fmtClock(dur)}</span>
         </span>
         {rate !== 0 && rate !== 1 && <span className="muted num">{rate > 0 ? `${rate}×` : `◀ ${-rate}×`}</span>}
         <span className="sp" />
@@ -470,6 +462,18 @@ export const Player = forwardRef<PlayerApi, PlayerProps>(function Player(p, ref)
 });
 
 const pct2 = (f: number) => `${f * 100}%`;
+
+/** 00:00:23:12 with the leading zero groups dimmed (the text stays the full timecode). */
+function TC({ v }: { v: string }) {
+  const m = /^((?:00:)*)(.*)$/.exec(v);
+  const lead = m?.[1] ?? '';
+  return (
+    <>
+      {lead && <span className="z">{lead}</span>}
+      {m?.[2] ?? v}
+    </>
+  );
+}
 
 function highlight(text: string, kws: { word: string; color: string }[], fallback?: string): ReactNode {
   if (!kws.length) return text;
