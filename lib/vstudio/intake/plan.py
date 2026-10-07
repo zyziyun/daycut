@@ -32,7 +32,9 @@ FOCUS_FULL_ASR_MAX_S = 45 * 60          # transcribe a whole video at plan time 
 TRANSCRIPT_CHARS = 60000
 PLATFORM_ZH = {"xiaohongshu": "小红书", "douyin": "抖音", "tiktok": "TikTok", "youtube": "YouTube",
                "youtube-shorts": "YouTube Shorts", "bilibili": "B站", "wechat-channels": "视频号", "x": "X",
-               "instagram": "Instagram"}
+               "instagram": "Instagram", "facebook": "Facebook", "linkedin": "LinkedIn", "threads": "Threads",
+               "reddit": "Reddit", "pinterest": "Pinterest", "snapchat": "Snapchat", "kuaishou": "快手", "weibo": "微博",
+               "zhihu": "知乎", "dailymotion": "Dailymotion", "kwai": "Kwai"}
 ORIENT_ZH = {"full": "竖屏 9:16", "vertical": "竖屏 3:4", "horizontal": "横屏"}
 
 

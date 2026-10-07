@@ -1,6 +1,9 @@
 """Platform profiles: canvas, UI safe zones, caption style, length / loudness / encode guidance, cover
-and post-copy limits for 小红书, 抖音, TikTok, YouTube, YouTube Shorts, B站, 视频号 (WeChat Channels),
-X (Twitter) and Instagram (Reels / feed).
+and post-copy limits (title / text / hashtags / link handling) for
+  English / global: YouTube (long-form + Shorts), TikTok, Instagram (Reels / feed), X, Facebook (Reels / feed),
+                    LinkedIn, Threads, Reddit, Pinterest, Snapchat (Spotlight)
+  Chinese:          小红书, 抖音, 视频号 (WeChat Channels), B站, 快手, 微博, 知乎
+  other languages:  Dailymotion (France), Kwai (Latin America / Brazil)
 
     from vstudio import platform as P
     p = P.profile("xiaohongshu", "vertical")      # Profile(w=1080, h=1440, ...); persona overrides merged
@@ -12,6 +15,17 @@ X (Twitter) and Instagram (Reels / feed).
     P.best_orientation("x", 9 / 16) -> "vertical"   (the orientation closest to a master's aspect)
     P.cover_crops(p)     -> ["4:5", "3:4", "1:1"]   every crop a surface shows of the cover (feed / grid)
     P.text_len(p, body)  -> X: weighted length (CJK / emoji = 2, URL = 23); else characters
+    P.ordered(["douyin", "x", "kwai"], connected=["douyin"]) -> ["x", "douyin", "kwai"]   (display order, below)
+    P.youtube_format(9 / 16, 75) -> "shorts";  P.check_format(p, aspect, seconds) -> warnings
+    P.link_policy(p)     -> {"clickable": False, ...}   (check_text warns about links that won't work)
+    P.publishing(name)   -> {"mode": "assisted", "upload_url": ..., "api": {...}}   (see references/PUBLISHING.md)
+
+Order: every list of platforms shown to a person (pickers, publish page, accounts, calendar, website) uses
+``ORDER``: English / global first, then Chinese, then other-language platforms; ``ordered`` floats the platforms
+with a connected account to the top WITHIN their group.
+
+YouTube is ONE channel with two formats: ``youtube`` (long-form, 16:9) and ``youtube-shorts`` (vertical / square,
+<= 3 min). ``channel_of("youtube-shorts") == "youtube"``; ``FORMATS["youtube"]`` maps format -> profile name.
 
 Account tiers: a profile may carry ``tiers`` (X: premium / premium_plus); ``account: premium`` (persona
 ``platforms.x.account`` or ``overrides``) merges that tier's limits (longer videos, longer posts).
@@ -27,7 +41,12 @@ canvas; applied to the 1920-tall orientation).
 import copy
 from dataclasses import asdict, dataclass, field
 
-ALIASES = {"xhs": "xiaohongshu", "rednote": "xiaohongshu", "小红书": "xiaohongshu", "dy": "douyin", "抖音": "douyin",
+ALIASES = {"fb": "facebook", "facebook-reels": "facebook", "meta": "facebook", "脸书": "facebook",
+           "li": "linkedin", "领英": "linkedin", "threads.net": "threads", "threads.com": "threads",
+           "pin": "pinterest", "snap": "snapchat", "spotlight": "snapchat", "snapchat-spotlight": "snapchat",
+           "ks": "kuaishou", "快手": "kuaishou", "微博": "weibo", "sina-weibo": "weibo", "知乎": "zhihu",
+           "dm": "dailymotion", "kwai-app": "kwai", "youtube-long": "youtube", "long": "youtube",
+           "xhs": "xiaohongshu", "rednote": "xiaohongshu", "小红书": "xiaohongshu", "dy": "douyin", "抖音": "douyin",
            "yt": "youtube", "shorts": "youtube-shorts", "yt-shorts": "youtube-shorts", "youtube_shorts": "youtube-shorts",
            "b站": "bilibili", "bili": "bilibili", "tt": "tiktok",
            "twitter": "x", "x.com": "x", "推特": "x", "ig": "instagram", "ins": "instagram", "insta": "instagram",
@@ -49,6 +68,7 @@ _LOUD = dict(lufs=-14.0, tp=-1.5)        # repo default (persona audio.loudness_
 PLATFORMS = {
     "xiaohongshu": dict(
         label="小红书 RedNote", default="vertical",
+        group="zh", links=dict(clickable=False, avoid=True, note="off-site links count as 导流 and are removed"),
         title_max=20, title_count="xhs", desc_max=1000,
         hashtags=dict(style="inline", max=10, note="#话题 at the end of the body; counts toward 1000"),
         chapters=dict(supported=False, note="no native chapters; a 时间线 list in the body is the convention",
@@ -75,12 +95,14 @@ PLATFORMS = {
         )),
     "douyin": dict(
         label="抖音 Douyin", default="vertical",
+        group="zh", links=dict(clickable=False, avoid=True, note="no clickable links in captions; 导流 is penalised"),
         title_max=55, title_count="chars", desc_max=1000,
         hashtags=dict(style="inline", max=10, note="#话题 / @ inside the caption text; counts toward the 1000 limit"),
         chapters=dict(supported=False, note="auto 章节 on some long videos only; not author-controlled"),
         loudness=dict(_LOUD), fps=dict(default=30, max=60),
         encode=dict(crf=20, maxrate="12M", bufsize="24M"),
-        length=dict(sweet=[15, 60], max=900, min=3),
+        length=dict(sweet=[15, 60], max=900, min=3, note="web 15 min / 4 GB (open-platform spec agrees)"),
+        limits=dict(max_bytes=4_000_000_000),
         orientations=dict(
             vertical=dict(w=1080, h=1920, aspect="9:16",
                           safe=dict(top=160, bottom=440, left=60, right=150, right_lower=dict(w=180, from_y=900)),
@@ -96,12 +118,14 @@ PLATFORMS = {
         )),
     "tiktok": dict(
         label="TikTok", default="vertical",
+        group="global", links=dict(clickable=False, note="links only in the bio (business / 1k+ followers)"),
         title_max=55, title_count="chars", desc_max=4000,
         hashtags=dict(style="inline", max=30, note="in the caption; counts toward 4000 (2200 via API)"),
         chapters=dict(supported=False),
         loudness=dict(_LOUD), fps=dict(default=30, max=60),
         encode=dict(crf=20, maxrate="12M", bufsize="24M"),
-        length=dict(sweet=[21, 60], max=600, min=3),
+        length=dict(sweet=[21, 60], max=3600, min=3, note="uploads up to 60 min (some accounts still 10 min); "
+                    "in-app recording 10 min"),
         orientations=dict(
             vertical=dict(w=1080, h=1920, aspect="9:16",
                           safe=dict(top=130, bottom=484, left=60, right=140),
@@ -111,8 +135,9 @@ PLATFORMS = {
                           cover_aspect="9:16"),
         )),
     "youtube": dict(
-        label="YouTube", default="horizontal",
-        title_max=100, title_count="chars", desc_max=5000,
+        label="YouTube (long-form)", default="horizontal",
+        group="global", formats=dict(long="youtube", shorts="youtube-shorts"), links=dict(clickable=True),
+        title_max=100, title_count="chars", title_required=True, desc_max=5000,
         hashtags=dict(style="description", max=15, note="first 3 show above the title; >60 = all ignored"),
         chapters=dict(supported=True, min_count=3, min_len=10, first_zero=True),
         loudness=dict(_LOUD), fps=dict(default=30, max=60),
@@ -128,6 +153,7 @@ PLATFORMS = {
         )),
     "youtube-shorts": dict(
         label="YouTube Shorts", default="vertical",
+        group="global", channel="youtube", format="shorts", links=dict(clickable=False, note="links in Shorts descriptions / comments are not clickable since 2023-08; use the Related video link"),
         title_max=100, title_count="chars", desc_max=5000,
         hashtags=dict(style="description", max=3),
         chapters=dict(supported=False),
@@ -143,7 +169,8 @@ PLATFORMS = {
         )),
     "bilibili": dict(
         label="B站 Bilibili", default="horizontal",
-        title_max=80, title_count="chars", desc_max=2000,
+        group="zh", links=dict(clickable=False, avoid=True, note="站外 links in 简介 are not linked; 导流 is limited"),
+        title_max=80, title_count="chars", title_required=True, desc_max=2000,
         hashtags=dict(style="tags_line", max=10, tag_max=20, note="separate tag field, <=10 tags, <=20 chars each"),
         category=dict(required=True, field="分区 (tid)", note="pick the 分区 in the uploader (or `tid` via the open "
                       "platform); 自制 / 转载 (creation type) is the creator's own choice - never pre-filled"),
@@ -167,6 +194,7 @@ PLATFORMS = {
         )),
     "wechat-channels": dict(
         label="视频号 WeChat Channels", default="vertical",
+        group="zh", links=dict(clickable=False, avoid=True, note="only a 公众号 article via the 扩展链接 field"),
         title_max=16, title_count="chars", desc_max=1000,
         hashtags=dict(style="inline", max=10, note="#话题 / @ inside the description; counts toward 1000"),
         chapters=dict(supported=False),
@@ -189,6 +217,7 @@ PLATFORMS = {
         )),
     "x": dict(
         label="X (Twitter)", default="horizontal", auto_orientation=True,
+        group="global", links=dict(clickable=True, note="every URL counts 23"),
         title_max=0, title_count="chars", desc_max=280, desc_count="x",
         copy_lang="intl",
         hashtags=dict(style="inline", max=2, recommend=[1, 2], note="1-2 tags in the post text; more reads as spam"),
@@ -222,6 +251,7 @@ PLATFORMS = {
         )),
     "instagram": dict(
         label="Instagram", default="reels",
+        group="global", links=dict(clickable=False, note="caption links are not clickable: link in bio / sticker"),
         title_max=0, title_count="chars", desc_max=2200,
         copy_lang="intl",
         hashtags=dict(style="inline", max=5, recommend=[3, 5], hard=True,
@@ -248,10 +278,354 @@ PLATFORMS = {
                                  crops=["3:4", "1:1"]),
                       cover_aspect="4:5"),
         )),
+
+    # ------------------------------------------------------------------ added 2026-10 (see PLATFORMS.md)
+    "facebook": dict(
+        label="Facebook", default="reels", group="global",
+        title_max=0, title_count="chars", desc_max=2200,
+        copy_lang="intl",
+        hashtags=dict(style="inline", max=5, recommend=[3, 5], note="up to ~30 work; 3-5 recommended; low impact"),
+        links=dict(clickable=True, note="feed posts: URLs are clickable; Reels captions: not reliably"),
+        chapters=dict(supported=False),
+        loudness=dict(_LOUD), fps=dict(default=30, max=60),
+        encode=dict(crf=20, maxrate="12M", bufsize="24M"),
+        length=dict(sweet=[15, 90], max=14400, min=3,
+                    note="since 2025-06 most uploads publish as Reels, no Reel length cap; 240 min / 4 GB upload cap; "
+                         "the Reels API still says 3-90 s"),
+        limits=dict(max_bytes=4_000_000_000),
+        orient_aliases={"vertical": "reels", "full": "reels", "9:16": "reels", "reel": "reels", "4:5": "feed",
+                        "portrait": "feed", "post": "feed", "16:9": "horizontal"},
+        orientations=dict(
+            reels=dict(w=1080, h=1920, aspect="9:16",
+                       safe=dict(top=269, bottom=672, left=65, right=65),
+                       caption=dict(_VERT_CAPTION, band=[1040, 1240]),
+                       cover=dict(w=1080, h=1920, aspect="9:16", title_safe=[65, 269, 1015, 1248], feed_crop=None,
+                                  crops=["4:5"]),
+                       cover_aspect="9:16"),
+            feed=dict(w=1080, h=1350, aspect="4:5",
+                      safe=dict(top=60, bottom=120, left=60, right=60),
+                      caption=dict(_VERT_CAPTION, band=[1010, 1200]),
+                      cover=dict(w=1080, h=1350, aspect="4:5", title_safe=[60, 60, 1020, 1290], feed_crop=None),
+                      cover_aspect="4:5"),
+            horizontal=dict(w=1920, h=1080, aspect="16:9",
+                            safe=dict(top=54, bottom=90, left=96, right=96),
+                            caption=dict(_HORZ_CAPTION, band=[870, 990]),
+                            cover=dict(w=1920, h=1080, aspect="16:9", title_safe=[160, 80, 1760, 1000], feed_crop=None),
+                            cover_aspect="16:9"),
+        )),
+    "linkedin": dict(
+        label="LinkedIn", default="horizontal", group="global", auto_orientation=True,
+        title_max=0, title_count="chars", desc_max=3000,
+        copy_lang="intl",
+        hashtags=dict(style="inline", max=3, recommend=[1, 3], note="keyword signal only since hashtag following "
+                      "was removed; stuffing hurts"),
+        links=dict(clickable=True, note="URLs in the post are clickable; a reach penalty for links is disputed"),
+        chapters=dict(supported=False),
+        loudness=dict(_LOUD), fps=dict(default=30, max=60),
+        encode=dict(crf=20, maxrate="12M", bufsize="24M"),
+        length=dict(sweet=[30, 120], max=900, min=3, note="15 min organic (API / ads 30 min)"),
+        limits=dict(max_bytes=5_000_000_000, aspect_range=[1 / 2.4, 2.4]),
+        captions=dict(burn="recommended", reason="LinkedIn autoplays muted in the feed: burn the captions (or add one "
+                      "SRT on upload)"),
+        orientations=dict(
+            horizontal=dict(w=1920, h=1080, aspect="16:9",
+                            safe=dict(top=54, bottom=90, left=96, right=96),
+                            caption=dict(_HORZ_CAPTION, band=[870, 990]),
+                            cover=dict(w=1920, h=1080, aspect="16:9", title_safe=[160, 80, 1760, 1000], feed_crop=None),
+                            cover_aspect="16:9"),
+            square=dict(w=1080, h=1080, aspect="1:1",
+                        safe=dict(top=54, bottom=90, left=60, right=60),
+                        caption=dict(size=[46, 64], max_chars_zh=16, max_chars_en=36, max_lines=2, stroke=0.09,
+                                     band=[800, 980]),
+                        cover=dict(w=1080, h=1080, aspect="1:1", title_safe=[60, 60, 1020, 1020], feed_crop=None),
+                        cover_aspect="1:1"),
+            feed=dict(w=1080, h=1350, aspect="4:5",
+                      safe=dict(top=60, bottom=120, left=60, right=60),
+                      caption=dict(_VERT_CAPTION, band=[1010, 1200]),
+                      cover=dict(w=1080, h=1350, aspect="4:5", title_safe=[60, 60, 1020, 1290], feed_crop=None),
+                      cover_aspect="4:5"),
+        )),
+    "threads": dict(
+        label="Threads", default="vertical", group="global", auto_orientation=True,
+        title_max=0, title_count="chars", desc_max=500,
+        copy_lang="intl",
+        hashtags=dict(style="topic", max=1, hard=True, note="one topic tag per post (shown without #)"),
+        links=dict(clickable=True, max=5, note="links are clickable; no preview card on video posts"),
+        chapters=dict(supported=False),
+        loudness=dict(_LOUD), fps=dict(default=30, max=60),
+        encode=dict(crf=20, maxrate="12M", bufsize="24M"),
+        length=dict(sweet=[15, 90], max=300, min=1),
+        limits=dict(max_bytes=1_000_000_000, max_w=1920),
+        orientations=dict(
+            vertical=dict(w=1080, h=1920, aspect="9:16",
+                          safe=dict(top=160, bottom=380, left=60, right=120),
+                          caption=dict(_VERT_CAPTION, band=[1240, 1460]),
+                          cover=dict(w=1080, h=1920, aspect="9:16", title_safe=[60, 240, 1020, 1680], feed_crop=None,
+                                     crops=["4:5"]),
+                          cover_aspect="9:16"),
+            horizontal=dict(w=1920, h=1080, aspect="16:9",
+                            safe=dict(top=54, bottom=90, left=96, right=96),
+                            caption=dict(_HORZ_CAPTION, band=[870, 990]),
+                            cover=dict(w=1920, h=1080, aspect="16:9", title_safe=[160, 80, 1760, 1000], feed_crop=None),
+                            cover_aspect="16:9"),
+        )),
+    "reddit": dict(
+        label="Reddit", default="horizontal", group="global", auto_orientation=True,
+        title_max=300, title_count="chars", title_required=True, desc_max=40000,
+        copy_lang="intl",
+        hashtags=dict(style="none", max=0, note="Reddit does not use hashtags; tags are left out"),
+        links=dict(clickable=True, note="markdown links in the body are clickable; a video post is not a link post"),
+        community=dict(required=True, field="subreddit", note="the creator types the subreddit; read its rules "
+                       "(self-promotion share, flair, account age / karma, NSFW) before posting"),
+        chapters=dict(supported=False),
+        loudness=dict(_LOUD), fps=dict(default=30, max=30),
+        encode=dict(crf=20, maxrate="12M", bufsize="24M"),
+        length=dict(sweet=[15, 120], max=900, min=1),
+        limits=dict(max_bytes=1_000_000_000),
+        orientations=dict(
+            horizontal=dict(w=1920, h=1080, aspect="16:9",
+                            safe=dict(top=54, bottom=90, left=96, right=96),
+                            caption=dict(_HORZ_CAPTION, band=[870, 990]),
+                            cover=dict(w=1920, h=1080, aspect="16:9", title_safe=[160, 80, 1760, 1000], feed_crop=None),
+                            cover_aspect="16:9"),
+            square=dict(w=1080, h=1080, aspect="1:1",
+                        safe=dict(top=54, bottom=90, left=60, right=60),
+                        caption=dict(size=[46, 64], max_chars_zh=16, max_chars_en=36, max_lines=2, stroke=0.09,
+                                     band=[800, 980]),
+                        cover=dict(w=1080, h=1080, aspect="1:1", title_safe=[60, 60, 1020, 1020], feed_crop=None),
+                        cover_aspect="1:1"),
+            vertical=dict(w=1080, h=1920, aspect="9:16",
+                          safe=dict(top=160, bottom=300, left=60, right=60),
+                          caption=dict(_VERT_CAPTION, band=[1300, 1520]),
+                          cover=dict(w=1080, h=1920, aspect="9:16", title_safe=[60, 240, 1020, 1620], feed_crop=None),
+                          cover_aspect="9:16"),
+        )),
+    "pinterest": dict(
+        label="Pinterest", default="vertical", group="global",
+        title_max=100, title_count="chars", desc_max=500,
+        copy_lang="intl",
+        hashtags=dict(style="none", max=0, note="hashtags were replaced by topics (up to 10, picked on the page) "
+                      "and keywords in the title / description"),
+        links=dict(clickable=False, field="link", note="a separate destination-link field; not in the text"),
+        chapters=dict(supported=False),
+        loudness=dict(_LOUD), fps=dict(default=30, max=60),
+        encode=dict(crf=20, maxrate="12M", bufsize="24M"),
+        length=dict(sweet=[6, 60], max=900, min=4, note="sources disagree: 15 min vs 5 min for organic pins"),
+        limits=dict(max_bytes=2_000_000_000, aspect_range=[0.5, 1.91]),
+        orient_aliases={"2:3": "feed", "pin": "feed"},
+        orientations=dict(
+            vertical=dict(w=1080, h=1920, aspect="9:16",
+                          safe=dict(top=270, bottom=790, left=65, right=195),
+                          caption=dict(_VERT_CAPTION, band=[920, 1120]),
+                          cover=dict(w=1080, h=1920, aspect="9:16", title_safe=[65, 270, 885, 1130], feed_crop="2:3"),
+                          cover_aspect="9:16"),
+            feed=dict(w=1000, h=1500, aspect="2:3",
+                      safe=dict(top=60, bottom=160, left=60, right=60),
+                      caption=dict(_VERT_CAPTION, band=[1120, 1330]),
+                      cover=dict(w=1000, h=1500, aspect="2:3", title_safe=[60, 60, 940, 1340], feed_crop=None),
+                      cover_aspect="2:3"),
+            square=dict(w=1080, h=1080, aspect="1:1",
+                        safe=dict(top=60, bottom=120, left=60, right=60),
+                        caption=dict(size=[46, 64], max_chars_zh=16, max_chars_en=36, max_lines=2, stroke=0.09,
+                                     band=[780, 950]),
+                        cover=dict(w=1080, h=1080, aspect="1:1", title_safe=[60, 60, 1020, 1020], feed_crop=None),
+                        cover_aspect="1:1"),
+        )),
+    "snapchat": dict(
+        label="Snapchat Spotlight", default="vertical", group="global",
+        title_max=0, title_count="chars", desc_max=160,
+        copy_lang="intl",
+        hashtags=dict(style="inline", max=3, recommend=[1, 3], note="#Topics; irrelevant topics raise the rejection "
+                      "risk; the 160-char description caps them"),
+        links=dict(clickable=False, note="no links on Spotlight"),
+        chapters=dict(supported=False),
+        loudness=dict(_LOUD), fps=dict(default=30, max=60),
+        encode=dict(crf=20, maxrate="12M", bufsize="24M"),
+        length=dict(sweet=[10, 60], max=60, min=5),
+        limits=dict(max_bytes=1_000_000_000, watermark=False),
+        orientations=dict(
+            vertical=dict(w=1080, h=1920, aspect="9:16",
+                          safe=dict(top=200, bottom=400, left=60, right=140),
+                          caption=dict(_VERT_CAPTION, band=[1220, 1440]),
+                          cover=dict(w=1080, h=1920, aspect="9:16", title_safe=[60, 240, 1020, 1680], feed_crop=None),
+                          cover_aspect="9:16"),
+        )),
+    "kuaishou": dict(
+        label="快手 Kuaishou", default="vertical", group="zh",
+        title_max=0, title_count="chars", desc_max=500,
+        hashtags=dict(style="inline", max=4, recommend=[1, 3], note="#话题 (one #) picked in the 话题 menu; 1-3 niche topics"),
+        links=dict(clickable=False, avoid=True, note="no clickable links; 站外导流 is penalised"),
+        chapters=dict(supported=False),
+        loudness=dict(_LOUD), fps=dict(default=30, max=60),
+        encode=dict(crf=20, maxrate="12M", bufsize="24M"),
+        length=dict(sweet=[15, 90], max=900, min=3, note="web 15 min / 4 GB (help centre); longer needs a permission"),
+        limits=dict(max_bytes=4_000_000_000),
+        orientations=dict(
+            vertical=dict(w=1080, h=1920, aspect="9:16",
+                          safe=dict(top=160, bottom=400, left=60, right=150, right_lower=dict(w=180, from_y=900)),
+                          caption=dict(_VERT_CAPTION, band=[1240, 1460]),
+                          cover=dict(w=1080, h=1920, aspect="9:16", title_safe=[60, 240, 1020, 1680], feed_crop="3:4"),
+                          cover_aspect="9:16"),
+            horizontal=dict(w=1920, h=1080, aspect="16:9",
+                            safe=dict(top=60, bottom=90, left=96, right=96),
+                            caption=dict(_HORZ_CAPTION, band=[870, 1010]),
+                            cover=dict(w=1920, h=1080, aspect="16:9", title_safe=[240, 60, 1680, 1020], feed_crop="4:3"),
+                            cover_aspect="16:9"),
+        )),
+    "weibo": dict(
+        label="微博 Weibo", default="horizontal", group="zh", auto_orientation=True,
+        title_max=30, title_min=6, title_count="chars", desc_max=2000,
+        hashtags=dict(style="inline", max=3, format="#{tag}#", note="#话题# with two hashes, 4-32 chars, no spaces"),
+        links=dict(clickable=True, note="URLs become 网页链接 short links; non-whitelisted personal domains often get "
+                   "a risk prompt or are blocked"),
+        category=dict(required=False, field="投稿: 频道分类 + 标签 + 原创/转载", note="only when 投稿 to a channel"),
+        chapters=dict(supported=False),
+        loudness=dict(_LOUD), fps=dict(default=30, max=60),
+        encode=dict(crf=20, maxrate="12M", bufsize="24M"),
+        length=dict(sweet=[30, 300], max=900, min=3, note="15 min ordinary accounts (members / V longer) [3P]; PC 15 GB"),
+        limits=dict(max_bytes=15_000_000_000),
+        orientations=dict(
+            horizontal=dict(w=1920, h=1080, aspect="16:9",
+                            safe=dict(top=54, bottom=80, left=96, right=96),
+                            caption=dict(_HORZ_CAPTION, band=[870, 1010]),
+                            cover=dict(w=1920, h=1080, aspect="16:9", title_safe=[160, 60, 1760, 1000], feed_crop=None),
+                            cover_aspect="16:9"),
+            vertical=dict(w=1080, h=1920, aspect="9:16",
+                          safe=dict(top=180, bottom=400, left=60, right=120),
+                          caption=dict(_VERT_CAPTION, band=[1240, 1460]),
+                          cover=dict(w=1080, h=1920, aspect="9:16", title_safe=[60, 240, 1020, 1680], feed_crop=None),
+                          cover_aspect="9:16"),
+        )),
+    "zhihu": dict(
+        label="知乎 Zhihu", default="horizontal", group="zh",
+        title_max=30, title_count="chars", title_required=True, desc_max=300,
+        hashtags=dict(style="topics", max=5, note="no inline hashtags: topics go in the separate 话题 field"),
+        links=dict(clickable=False, avoid=True, note="video 简介 links not clickable (unverified); 站外导流 loses 优质 status"),
+        category=dict(required=True, field="领域 + 话题 + 原创/转载", note="picked on the upload page by the creator"),
+        chapters=dict(supported=False),
+        loudness=dict(_LOUD), fps=dict(default=30, max=60),
+        encode=dict(crf=18, maxrate="16M", bufsize="32M"),
+        length=dict(sweet=[60, 600], max=3600, min=1, note="PC 1 h / 2 GB; < 1 min earns no 创作分 and cannot be "
+                                                          "投稿到问题"),
+        limits=dict(max_bytes=2_000_000_000),
+        orientations=dict(
+            horizontal=dict(w=1920, h=1080, aspect="16:9",
+                            safe=dict(top=54, bottom=80, left=96, right=96),
+                            caption=dict(_HORZ_CAPTION, band=[870, 1010]),
+                            cover=dict(w=1920, h=1080, aspect="16:9", title_safe=[160, 60, 1760, 1000], feed_crop=None),
+                            cover_aspect="16:9"),
+            vertical=dict(w=1080, h=1920, aspect="9:16",
+                          safe=dict(top=160, bottom=360, left=60, right=120),
+                          caption=dict(_VERT_CAPTION, band=[1240, 1460]),
+                          cover=dict(w=1080, h=1920, aspect="9:16", title_safe=[60, 240, 1020, 1680], feed_crop=None),
+                          cover_aspect="9:16"),
+        )),
+    "dailymotion": dict(
+        label="Dailymotion", default="horizontal", group="intl",
+        title_max=255, title_count="chars", title_required=True, desc_max=3000,
+        copy_lang="intl",
+        hashtags=dict(style="inline", max=15, note="#hashtags in the description: <= 15, 2-25 chars, letters / digits / _"),
+        links=dict(clickable=True, note="URLs in the description are links"),
+        category=dict(required=True, field="category + language + made for kids", note="picked in Studio by the creator"),
+        chapters=dict(supported=False),
+        loudness=dict(_LOUD), fps=dict(default=30, max=60),
+        encode=dict(crf=18, maxrate="16M", bufsize="32M"),
+        length=dict(sweet=[60, 900], max=7200, min=1, note="standard accounts 2 h / 4 GB, 15 uploads per 24 h"),
+        limits=dict(max_bytes=4_000_000_000),
+        orientations=dict(
+            horizontal=dict(w=1920, h=1080, aspect="16:9",
+                            safe=dict(top=54, bottom=80, left=96, right=96),
+                            caption=dict(_HORZ_CAPTION, band=[870, 1010]),
+                            cover=dict(w=1280, h=720, aspect="16:9", title_safe=[40, 40, 1100, 640], feed_crop=None,
+                                       max_bytes=5_000_000),
+                            cover_aspect="16:9"),
+            vertical=dict(w=1080, h=1920, aspect="9:16",
+                          safe=dict(top=160, bottom=300, left=60, right=60),
+                          caption=dict(_VERT_CAPTION, band=[1300, 1520]),
+                          cover=dict(w=1080, h=1920, aspect="9:16", title_safe=[60, 240, 1020, 1620], feed_crop=None),
+                          cover_aspect="9:16"),
+        )),
+    "kwai": dict(
+        label="Kwai", default="vertical", group="intl",
+        title_max=0, title_count="chars", desc_max=500,
+        copy_lang="intl",
+        hashtags=dict(style="inline", max=5, note="convention: no published cap"),
+        links=dict(clickable=False, note="links in captions are not clickable"),
+        chapters=dict(supported=False),
+        loudness=dict(_LOUD), fps=dict(default=30, max=60),
+        encode=dict(crf=20, maxrate="12M", bufsize="24M"),
+        length=dict(sweet=[15, 60], max=300, min=3, note="no public spec page; sources disagree (57 s camera, ~5 min "
+                                                         "editor, 10-12 min gallery claims)"),
+        orientations=dict(
+            vertical=dict(w=1080, h=1920, aspect="9:16",
+                          safe=dict(top=160, bottom=440, left=60, right=150),
+                          caption=dict(_VERT_CAPTION, band=[1240, 1460]),
+                          cover=dict(w=1080, h=1920, aspect="9:16", title_safe=[60, 240, 1020, 1680], feed_crop=None),
+                          cover_aspect="9:16"),
+        )),
 }
 
+# Display order everywhere a person picks or sees platforms: English / global, then Chinese, then other languages.
+GROUPS = {
+    "global": ["youtube", "youtube-shorts", "tiktok", "instagram", "x", "facebook", "linkedin", "threads", "reddit",
+               "pinterest", "snapchat"],
+    "zh": ["xiaohongshu", "douyin", "wechat-channels", "bilibili", "kuaishou", "weibo", "zhihu"],
+    "intl": ["dailymotion", "kwai"],
+}
+ORDER = [n for g in GROUPS.values() for n in g]
+GROUP_LABELS = {"global": dict(en="English / global", zh="英文 / 全球", fr="Anglais / international"),
+                "zh": dict(en="Chinese", zh="中文平台", fr="Chinois"),
+                "intl": dict(en="Other languages", zh="其他语言", fr="Autres langues")}
+
+# One account / channel, several formats: YouTube long-form and Shorts post through the same channel.
+FORMATS = {"youtube": {"long": "youtube", "shorts": "youtube-shorts"}}
+CHANNEL_OF = {"youtube-shorts": "youtube"}
+SHORTS_MAX_S = 180
+
 # Platforms whose post copy defaults to English when the content is English (vstudio.publish.localize_post).
-INTL_PLATFORMS = {"x", "instagram", "tiktok", "youtube", "youtube-shorts"}
+INTL_PLATFORMS = set(GROUPS["global"]) | set(GROUPS["intl"])
+
+# How a post reaches each platform. Default everywhere: ASSISTED publishing - the desk opens the platform's own
+# upload page in its built-in browser (one persistent login per account), sets the file and types the copy; the
+# creator presses publish. ``api`` = the official posting API and what it takes; an API uploader is only ever used
+# behind explicit config (``uploader:`` in the series / project) AND a confirm code, and never posts on its own.
+# Details + sources: references/PUBLISHING.md.
+PUBLISHING = {
+    "youtube": dict(upload_url="https://www.youtube.com/upload", api="YouTube Data API v3 videos.insert (OAuth; "
+                    "unaudited projects are locked to private)"),
+    "youtube-shorts": dict(upload_url="https://www.youtube.com/upload", api="same as youtube (vertical, <= 3 min)"),
+    "tiktok": dict(upload_url="https://www.tiktok.com/tiktokstudio/upload", api="Content Posting API (unaudited: "
+                   "SELF_ONLY, private account)"),
+    "instagram": dict(upload_url="https://www.instagram.com/", api="Content Publishing API (Professional account, "
+                      "reviewed Meta app, public video URL)"),
+    "x": dict(upload_url="https://x.com/compose/post", api="X API v2 media upload + POST /2/tweets (paid credits, "
+              "OAuth 2.0 user token)"),
+    "facebook": dict(upload_url="https://www.facebook.com/", api="Graph API Reels publishing - Pages only "
+                     "(pages_manage_posts), 30 API Reels / 24 h; no API for personal profiles"),
+    "linkedin": dict(upload_url="https://www.linkedin.com/feed/", api="Posts + Videos API: member posts via "
+                     "Share on LinkedIn (w_member_social); Pages need Community Management API approval"),
+    "threads": dict(upload_url="https://www.threads.com/", api="Threads API threads_content_publish (app review for "
+                    "other accounts; video at a public URL; 250 posts / 24 h)"),
+    "reddit": dict(upload_url="https://www.reddit.com/submit", api="Data API (OAuth, app pre-approval); video upload is "
+                   "the undocumented media-asset flow - not used"),
+    "pinterest": dict(upload_url="https://www.pinterest.com/pin-creation-tool/", api="API v5 media + pins (Standard "
+                      "access tier; trial pins are private)"),
+    "snapchat": dict(upload_url="https://profile.snapchat.com/", api="Public Profile API (allowlisted partners only)"),
+    "xiaohongshu": dict(upload_url="https://creator.xiaohongshu.com/publish/publish", api=None),
+    "douyin": dict(upload_url="https://creator.douyin.com/creator-micro/content/upload", api="open platform: "
+                   "server-side posting only for government / media tools; SDK share needs an enterprise app"),
+    "wechat-channels": dict(upload_url="https://channels.weixin.qq.com/platform/post/create", api=None),
+    "bilibili": dict(upload_url="https://member.bilibili.com/platform/upload/video/frame", api="开放平台 视频稿件投递 "
+                     "(developer application + review)"),
+    "kuaishou": dict(upload_url="https://cp.kuaishou.com/article/publish/video", api="快手开放平台 photo/publish "
+                     "(approved app, user_video_publish scope)"),
+    "weibo": dict(upload_url="https://weibo.com/upload/channel", api="video upload API only for government / media / "
+                  "institution accounts"),
+    "zhihu": dict(upload_url="https://www.zhihu.com/zvideo/upload-video", api=None),
+    "dailymotion": dict(upload_url="https://www.dailymotion.com/partner/", api="Data API v2 upload sessions (OAuth "
+                        "video.manage, API key from Studio)"),
+    "kwai": dict(upload_url=None, api=None, note="no desktop web upload: post from the phone app"),
+}
 
 
 @dataclass
@@ -422,6 +796,73 @@ def parse_targets(spec, master_aspect=None, overrides=None):
     return out
 
 
+# ----------------------------------------------------------------------------------- order / formats / links
+def group_of(name):
+    n = canonical(str(name).split(":")[0])
+    return next((g for g, names in GROUPS.items() if n in names), None)
+
+
+def channel_of(name):
+    """The account / channel a platform posts through: youtube-shorts -> youtube; else itself."""
+    n = canonical(str(name).split(":")[0])
+    return CHANNEL_OF.get(n, n)
+
+
+def ordered(names, connected=()):
+    """Sort platform names (or "name:orientation" keys) for display: group order (English / global, Chinese,
+    other languages); inside a group the ones with a connected account first (a Shorts target counts through its
+    YouTube channel), then ``ORDER``. Unknown names last, in input order."""
+    conn = {channel_of(c) for c in connected or ()}
+    gidx = {g: i for i, g in enumerate(GROUPS)}
+
+    def key(item):
+        i, n = item
+        base = canonical(str(n).split(":")[0])
+        g = group_of(base)
+        return (gidx.get(g, len(GROUPS)), 0 if channel_of(base) in conn else 1,
+                ORDER.index(base) if base in ORDER else len(ORDER), i)
+    return [n for _, n in sorted(enumerate(names), key=key)]
+
+
+def youtube_format(aspect, seconds=None):
+    """"shorts" for a vertical / square video of <= 3 min, else "long" (YouTube decides the same way)."""
+    a = _ratio(aspect)
+    return "shorts" if a <= 1.0 + 1e-6 and (seconds is None or seconds <= SHORTS_MAX_S) else "long"
+
+
+def check_format(p: "Profile", aspect, seconds=None):
+    """Warnings when a master does not fit the format: YouTube long-form from a vertical-only master (re-laid out on
+    16:9 with a blurred fill - render a real 16:9 cut, or post it as Shorts), Shorts from a horizontal master or over
+    3 min (YouTube would publish it as a long-form video)."""
+    a, w = _ratio(aspect), []
+    if p.name == "youtube" and a < 1.0:
+        w.append("only a vertical version: YouTube long-form is 16:9 - this export re-lays it out on 16:9 (blurred "
+                 "fill); render a 16:9 cut, or post it as Shorts")
+    if p.name == "youtube-shorts":
+        if a > 1.0 + 1e-6:
+            w.append("Shorts must be vertical or square: a horizontal master is cropped to 9:16 - check the framing, "
+                     "or post it as long-form")
+        if seconds and seconds > SHORTS_MAX_S:
+            w.append(f"{seconds:.0f}s is over the {SHORTS_MAX_S}s Shorts limit: YouTube publishes it as long-form")
+    return w
+
+
+def link_policy(p: "Profile"):
+    """{"clickable": bool, "field": "link"|None, "avoid": bool, "note": str} - how a URL in the post text behaves."""
+    lp = dict(clickable=True, field=None, avoid=False, note="")
+    lp.update(p.extra.get("links") or {})
+    return lp
+
+
+def publishing(name):
+    """{"mode": "assisted", "upload_url", "api", "auto_post": False}: assisted fill is the default; ``api`` names the
+    official API (opt-in per platform, behind a confirm code); nothing ever auto-posts."""
+    n = canonical(str(name).split(":")[0])
+    d = dict(PUBLISHING.get(n) or {})
+    return dict(mode="assisted" if d.get("upload_url") else "manual", upload_url=d.get("upload_url"),
+                api=d.get("api"), auto_post=False, note=d.get("note"))
+
+
 # ----------------------------------------------------------------------------------- geometry
 def safe_box(p: Profile):
     """(x0, y0, x1, y1): the area free of the platform's UI margins (top bar, bottom description,
@@ -563,12 +1004,28 @@ def hashtags_in(text: str):
 
 def check_text(p: Profile, title=None, body=None, tags=None):
     """Warnings for title / description / tag limits of this profile. X counts the post text weighted
-    (CJK = 2); hashtags are counted across ``tags`` and the #tags already in ``body`` (Instagram: hard max 5)."""
+    (CJK = 2); hashtags are counted across ``tags`` and the #tags already in ``body`` (Instagram: hard max 5).
+    Also: a missing title where one is required (Reddit, B站, 知乎, Dailymotion), a too-short 微博 title, a URL
+    in the text where links are not clickable or belong in a link field (Pinterest), hashtags where none are used."""
     w = []
+    if not (title or "").strip() and p.extra.get("title_required"):
+        w.append(f"{p.name} needs a title")
     if title and p.title_max:
         n = title_len(p, title)
         if n > p.title_max:
             w.append(f"title {n:g}/{p.title_max:g} ({p.name})")
+        tmin = p.extra.get("title_min")
+        if tmin and n < tmin:
+            w.append(f"title {n:g} chars: {p.name} wants at least {tmin}")
+    if body:
+        lp = link_policy(p)
+        url_re, _ = _x_res()
+        if url_re.search(body):
+            if lp.get("field"):
+                w.append(f"{p.name}: put the link in the {lp['field']} field, not in the text")
+            elif not lp.get("clickable"):
+                w.append(f"{p.name}: links in the text are not clickable" + (" and may cut reach" if lp.get("avoid") else "")
+                         + " - use the profile / bio link")
     if body and p.desc_max:
         n = text_len(p, body)
         if n > p.desc_max:
@@ -578,7 +1035,9 @@ def check_text(p: Profile, title=None, body=None, tags=None):
                               + hashtags_in(body)))
     if allt:
         mx = p.hashtags.get("max")
-        if mx and len(allt) > mx:
+        if mx == 0:
+            w.append(f"{p.name} does not use hashtags ({len(allt)} given)")
+        elif mx and len(allt) > mx:
             kind = "hard limit" if p.hashtags.get("hard") else "guidance"
             w.append(f"{len(allt)} hashtags > {mx} ({p.name}, {kind})")
         tm = p.hashtags.get("tag_max")
@@ -662,5 +1121,5 @@ def summary(p: Profile) -> str:
 
 
 if __name__ == "__main__":
-    for k in list_profiles():
+    for k in [f"{n}:{o}" for n in ORDER for o in PLATFORMS[n]["orientations"]]:
         print(summary(profile(k)))

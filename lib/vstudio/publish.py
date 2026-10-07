@@ -14,9 +14,16 @@ import re
 from .config import persona, xhs_len
 
 TITLE_MAX_DEFAULT = {"xiaohongshu": 20, "youtube": 100, "bilibili": 80, "tiktok": 55, "douyin": 55,
-                     "wechat-channels": 16, "x": 0, "instagram": 0}
-NO_TITLE = {"x", "instagram"}          # no title field: the title becomes the first line (hook) of the post text
-HASHTAG_CAP = {"x": 2, "instagram": 5}  # extra tags are dropped (with a warning): X 1-2 by convention, IG hard max 5
+                     "wechat-channels": 16, "x": 0, "instagram": 0, "facebook": 0, "linkedin": 0, "threads": 0,
+                     "reddit": 300, "pinterest": 100, "snapchat": 0, "kuaishou": 0, "weibo": 30, "zhihu": 30,
+                     "dailymotion": 255, "kwai": 0}
+# no title field: the title becomes the first line (hook) of the post text
+NO_TITLE = {"x", "instagram", "facebook", "linkedin", "threads", "snapchat", "kuaishou", "kwai"}
+# extra tags are dropped (with a warning): X 1-2 by convention, IG hard max 5, Threads one topic tag, Reddit /
+# Pinterest none (topics / keywords instead); see vstudio.platform hashtags.max
+HASHTAG_CAP = {"x": 2, "instagram": 5, "threads": 1, "reddit": 0, "pinterest": 0, "snapchat": 3, "linkedin": 3,
+               "facebook": 5, "kuaishou": 4, "weibo": 3, "dailymotion": 15}
+HASHTAG_FORMAT = {"weibo": "#{tag}#"}   # 微博 topics are #话题# (two hashes)
 XHS_CHAPTER_LABEL_MAX = 14
 
 
@@ -172,14 +179,20 @@ def hashtags(tags=None, platform=None, use_persona=True, tag_set=None, warn=prin
         return ""
     if pl == "bilibili":
         return "标签：" + "，".join(clean)
-    if pl in ("youtube", "x", "instagram", "tiktok"):
+    if pl in ("youtube", "youtube-shorts", "x", "instagram", "tiktok", "facebook", "linkedin", "threads", "snapchat",
+              "dailymotion", "kwai", "weibo"):
         clean = [re.sub(r"\s+", "", t) for t in clean]
     cap = HASHTAG_CAP.get(pl)
+    if cap == 0:
+        if warn:
+            warn(f"{pl}: hashtags are not used there, left out ({', '.join(clean)})")
+        return ""
     if cap and len(clean) > cap:
         if warn:
             warn(f"{pl}: {len(clean)} hashtags, kept the first {cap} (dropped: {', '.join(clean[cap:])})")
         clean = clean[:cap]
-    return " ".join("#" + t for t in clean)
+    fmt = HASHTAG_FORMAT.get(pl, "#{tag}")
+    return " ".join(fmt.replace("{tag}", t) for t in clean)
 
 
 def voice_warnings(text):

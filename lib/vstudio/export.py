@@ -535,6 +535,7 @@ def export_one(master, prof, out_dir, cues=None, covers=None, post=None, mode="f
         if mm["input_tp"] > prof.loudness["tp"] + 0.5:
             warnings.append(f"true peak {mm['input_tp']:.1f} dBTP over {prof.loudness['tp']}")
     warnings += P.check_length(prof, oinfo["duration"])
+    warnings += P.check_format(prof, info["display_w"] / info["display_h"], oinfo["duration"])
     lim = prof.extra.get("limits") or {}
     if lim.get("max_bytes") and os.path.getsize(out_mp4) > lim["max_bytes"]:
         warnings.append(f"file {os.path.getsize(out_mp4) / 1e6:.0f} MB over the {prof.name} upload cap "
