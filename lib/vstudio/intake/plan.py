@@ -724,7 +724,9 @@ def summary_zh(plan):
 
 
 # --------------------------------------------------------------------------- the model call
-DEFAULT_CLI_TIMEOUT = 120      # s per CLI provider attempt (claude-code / codex), then the next one in the chain
+# s per CLI provider attempt (claude-code / codex), then the next one in the chain: the same 90 s per-attempt policy as
+# Create (VSTUDIO_CREATE_AI_TIMEOUT) and the publish copy calls
+DEFAULT_CLI_TIMEOUT = 90
 
 
 def _call_model(prompt, analysis, ctx, transcripts, provider=None, model=None, current=None, instruction=None,

@@ -519,3 +519,19 @@ def test_cli_plan_revise_apply(tmp_path):
     bad.write_text(json.dumps(dict(plan, projects=[])), encoding="utf-8")
     r = _cli("apply", "--plan", str(bad), "--json")
     assert r.returncode == 5 and json.loads(r.stdout)["ok"] is False
+
+
+def test_intake_cli_attempt_is_90s(monkeypatch):
+    """Each CLI provider attempt gets 90 s (the same per-attempt policy as Create), then the chain's fallback."""
+    seen = {}
+
+    def complete(task, system, body, **kw):
+        seen.update(kw)
+        raise PL.LLM.LLMError("stop here")
+    monkeypatch.delenv("VSTUDIO_LLM_CLI_TIMEOUT", raising=False)
+    monkeypatch.setattr(PL.LLM, "complete", complete)
+    monkeypatch.setattr(PL.LLM, "route", lambda *a, **k: type("R", (), dict(provider="claude-code", model=None,
+                                                                             source="test"))())
+    monkeypatch.setattr(PL, "_prompt_doc", lambda *a, **k: "request")
+    js, info = PL._call_model("剪干净", {}, {}, {})
+    assert js is None and info["fallback"] and seen["cli_timeout"] == 90
