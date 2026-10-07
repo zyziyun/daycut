@@ -4,14 +4,16 @@
 //     engine requirements.txt at the monorepo root + per-target extras)
 //   - packaging/ffmpeg/<target>.txt        (conda explicit list with sha256 for the LGPL ffmpeg build)
 // Needs: uv on PATH (https://docs.astral.sh/uv/), network. Run after changing versions or the engine requirements.txt:
-//   node scripts/runtime/lock.mjs [--only=requirements|ffmpeg|python]
+//   node scripts/runtime/lock.mjs [--only=requirements|ffmpeg|python] [--targets=win32-x64,...]
 import fs from 'node:fs';
 import path from 'node:path';
 import { arg, CACHE, ENGINE_ROOT, engineCommit, log, micromamba, readLock, ROOT, run, writeLock } from './common.mjs';
 
 const lock = readLock();
 const only = arg('only');
-const targets = Object.keys(lock.targets);
+// --targets=win32-x64[,darwin-arm64]: re-lock only these (uv keeps the other pins of an existing lock file)
+const targets = arg('targets') ? arg('targets').split(',') : Object.keys(lock.targets);
+for (const t of targets) if (!lock.targets[t]) throw new Error(`unknown target ${t}`);
 
 async function lockPython() {
   const { release, version, flavor } = lock.python;

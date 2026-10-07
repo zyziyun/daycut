@@ -65,8 +65,21 @@ export function sha256File(file) {
   return h.digest('hex');
 }
 
-/** Download url -> dest (cached by checksum); verifies sha256 when given. Returns dest. */
+/** Download url -> dest (cached by checksum); verifies sha256 when given. Returns dest. A dropped connection is retried
+ * (3 attempts); a checksum mismatch is not. */
 export async function download(url, dest, sha256) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await downloadOnce(url, dest, sha256);
+    } catch (e) {
+      if (attempt >= 3 || /checksum mismatch/.test(String(e?.message))) throw e;
+      log(`download failed (${e?.cause?.message ?? e?.message}), retrying in ${attempt * 5} s`);
+      await new Promise((r) => setTimeout(r, attempt * 5000));
+    }
+  }
+}
+
+async function downloadOnce(url, dest, sha256) {
   if (fs.existsSync(dest) && (!sha256 || sha256File(dest) === sha256)) return dest;
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   log('download', url);
@@ -74,7 +87,13 @@ export async function download(url, dest, sha256) {
   if (!res.ok || !res.body) throw new Error(`GET ${url}: ${res.status}`);
   const tmp = `${dest}.part`;
   const out = fs.createWriteStream(tmp);
-  for await (const chunk of res.body) out.write(chunk);
+  try {
+    for await (const chunk of res.body) out.write(chunk);
+  } catch (e) {
+    out.destroy(); // release the file before a retry rewrites it
+    await new Promise((r) => (out.closed ? r() : out.once('close', r)));
+    throw e;
+  }
   await new Promise((r, j) => out.end((e) => (e ? j(e) : r())));
   if (sha256) {
     const got = sha256File(tmp);

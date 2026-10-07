@@ -107,8 +107,11 @@ async function buildFfmpeg() {
   const stamp = path.join(prefix, '.lock-copy');
   if (!fs.existsSync(stamp) || fs.readFileSync(stamp, 'utf8') !== fs.readFileSync(explicit, 'utf8')) {
     rmrf(prefix);
-    run(mm, ['create', '--yes', '--quiet', '--prefix', prefix, '--platform', T.conda, '--file', explicit],
-      { env: { ...process.env, MAMBA_ROOT_PREFIX: path.join(CACHE, 'mamba'), CONDA_OVERRIDE_OSX: T.macosMin ?? '' } });
+    // Windows: no post-link scripts (gdk-pixbuf's never returns on a CI runner; they only build caches for tools we do
+    // not ship), verbose, no stdin, and a hard limit instead of a hung job
+    run(mm, ['create', '--yes', ...(isWin ? ['--skip-run-link-scripts', '--log-level', 'info'] : ['--quiet']), '--prefix', prefix, '--platform', T.conda, '--file', explicit],
+      { env: { ...process.env, MAMBA_ROOT_PREFIX: path.join(CACHE, 'mamba'), CONDA_OVERRIDE_OSX: T.macosMin ?? '' },
+        ...(isWin ? { stdio: ['ignore', 'inherit', 'inherit'], timeout: 20 * 60 * 1000 } : {}) });
     fs.copyFileSync(explicit, stamp);
   }
   const dst = path.join(OUT, 'ffmpeg');
@@ -183,6 +186,26 @@ function verify() {
   if (!enc.includes(T.h264)) throw new Error(`bundled ffmpeg lacks ${T.h264}`);
   if (/libx264|libx265/.test(enc)) throw new Error('bundled ffmpeg contains GPL encoders');
   if (isMac) checkMachO();
+  if (isWin) {
+    if (!enc.includes('libopenh264')) throw new Error('bundled ffmpeg lacks libopenh264 (the H.264 fallback when Media Foundation has no encoder)');
+    // which H.264 encoder the engine ends up with on this machine (CI runners may lack the MF H.264 encoder)
+    run(pyExe(), ['-c', 'from vstudio import h264; e = h264.effective_encoder(); print("h264 effective:", e); assert e != "libx264", e'],
+      { env: { ...env, VSTUDIO_H264_ENCODER: T.h264, VSTUDIO_FFMPEG: path.join(OUT, 'ffmpeg', 'bin', 'ffmpeg.exe') } });
+    checkPathLengths();
+  }
+}
+
+// Windows MAX_PATH (260) without the long-paths policy: the runtime's deepest file + a typical per-user install prefix
+// (C:\Users\<20 chars>\AppData\Local\Programs\Reelfold\resources\runtime\ = ~80) must stay well below it.
+function checkPathLengths(limit = 170) {
+  let longest = '';
+  walk(OUT, (p) => {
+    const rel = path.relative(OUT, p);
+    if (rel.length > longest.length) longest = rel;
+    return true;
+  });
+  log(`longest runtime path: ${longest.length} chars (${longest})`);
+  if (longest.length > limit) throw new Error(`runtime path longer than ${limit} chars (MAX_PATH risk): ${longest}`);
 }
 
 // Everything Mach-O must be either *.so / *.dylib or one of the known executables: the electron-builder
