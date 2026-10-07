@@ -392,7 +392,6 @@ function registerProtocols() {
   protocol.handle('vsmedia', async (req) => {
     const p = pathFromMediaUrl(req.url);
     let roots = await mediaRoots();
-    // a file the engine allowed a moment ago (e.g. a freshly made timeline sprite): refresh the cached roots once
     if (!p) return new Response('forbidden', { status: 403 });
     // judged on the real path (roots carry their real form too): see allowedMedia
     let real: string;
@@ -402,7 +401,9 @@ function registerProtocols() {
       return new Response('not found', { status: 404 });
     }
     const ok = () => allowedMedia(p, real, roots);
-    if (!ok() && Date.now() - rootsCache.at > 300) {
+    if (!ok()) {
+      // allowed a moment ago (a timeline sprite made by the request just before this one): ask the engine again -
+      // also when the cached list is only milliseconds old, or the picture stays a 403 for good
       rootsCache.at = 0;
       roots = await mediaRoots();
     }
