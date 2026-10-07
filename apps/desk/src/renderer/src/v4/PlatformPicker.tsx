@@ -1,7 +1,7 @@
 // Platform chips in the shared order (English / global, Chinese, other languages; connected accounts first inside
 // each group). YouTube is ONE chip with two formats - long-form (16:9) and Shorts (9:16, <= 3 min) - picked per
 // post: the engine keeps them as two targets (youtube / youtube-shorts).
-import { GROUPS, PLATFORMS, sortPlatforms, type PlatformGroup } from '../../../shared/platforms';
+import { GROUPS, orderPlatforms, PLATFORMS, sortPlatforms, type PlatformGroup } from '../../../shared/platforms';
 import { t, tk } from '../i18n';
 import { platformName } from './Home';
 import { PlatformIcon } from './PlatformIcon';
@@ -27,7 +27,8 @@ export function PlatformPicker(props: Props) {
   const sel = props.multi ? props.value : [props.value];
   const on = (id: string) => sel.includes(id);
   const set = (next: string[]) => {
-    if (props.multi) props.onChange(next);
+    // stored in registry order, never in click order (international first)
+    if (props.multi) props.onChange(orderPlatforms(next));
     else if (next.length) props.onChange(next[next.length - 1]);
   };
   const toggle = (id: string) => (props.multi ? set(on(id) ? sel.filter((x) => x !== id) : [...sel, id]) : set([id]));

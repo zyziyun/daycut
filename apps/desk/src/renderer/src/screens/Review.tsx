@@ -8,6 +8,7 @@ import { useEngine, useLoad } from '../lib/engine';
 import { secs } from '../lib/format';
 import { useReviewTiming } from '../lib/reviewTiming';
 import { go } from '../lib/router';
+import { orderPlatforms } from '../../../shared/platforms';
 
 type Filter = 'all' | 'red' | 'sample' | 'open';
 
@@ -205,7 +206,7 @@ function ReviewCard({ it, focus, d, onClick, onOpen }: { it: ReviewItem; focus: 
       </div>
       <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.title}</div>
       <div className="muted small">
-        {it.platforms.join(', ')} · {secs(it.duration)}
+        {orderPlatforms(it.platforms).join(', ')} · {secs(it.duration)}
       </div>
       {hover && it.snippet ? (
         <video className="thumb" src={window.desk.mediaUrl(it.snippet)} autoPlay muted loop playsInline />

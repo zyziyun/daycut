@@ -16,6 +16,7 @@ import { Empty, Thumb } from './kit';
 import { errText } from './msg';
 import { Player, type PlayerApi } from './Player';
 import { isTyping, useUi } from './ui';
+import { orderPlatforms } from '../../../shared/platforms';
 
 /** "lost-words: lost: '我们' @19.01s" -> {code, at, seconds, quote} */
 export function parseReason(s: string): { code: string; at: number | null; seconds: number | null; quote: string | null } {
@@ -177,7 +178,7 @@ export function Focus({ id }: { id: string }) {
           {cur && (
             <>
               <div>
-                <span className="muted">{t('focus.meta', { i: i + 1, len: fmtClock(cur.duration ?? clip?.duration ?? 0), platform: [...new Set((cur.platforms ?? []).map(platformName))].join(' · ') || '–' })}</span>
+                <span className="muted">{t('focus.meta', { i: i + 1, len: fmtClock(cur.duration ?? clip?.duration ?? 0), platform: [...new Set(orderPlatforms(cur.platforms ?? []).map(platformName))].join(' · ') || '–' })}</span>
                 <h1 lang="zh-CN">{cur.title}</h1>
               </div>
               <div className="col">

@@ -108,25 +108,42 @@ export function platformLabel(id: string, lang: string): string {
   return p.labels.en;
 }
 
-/** (group index, position in the fixed order); unknown ids sort last. */
+/** Engine names for the same platforms (targets, intake words). */
+const ALIASES: Record<string, string> = { shipinhao: 'wechat-channels', channels: 'wechat-channels', 'x-web': 'x', 'youtube-studio': 'youtube', xhs: 'xiaohongshu' };
+
+/** The registry id of a platform / target / profile: 'xiaohongshu:full' -> 'xiaohongshu', 'shipinhao' -> 'wechat-channels'. */
+export function basePlatform(id: string): string {
+  const b = String(id ?? '').split(':')[0].trim().toLowerCase();
+  return ALIASES[b] ?? b;
+}
+
+/** (group index, position in the fixed order); unknown ids sort last. Profiles / targets ('douyin:vertical') and
+ * engine aliases rank as their platform. */
 export function platformRank(id: string): [number, number] {
-  const p = BY_ID.get(id);
+  const b = basePlatform(id);
+  const p = BY_ID.get(b);
   if (!p) return [GROUPS.length, 999];
-  return [GROUPS.indexOf(p.group), PLATFORM_IDS.indexOf(id)];
+  return [GROUPS.indexOf(p.group), PLATFORM_IDS.indexOf(b)];
+}
+
+/** Platform ids / profiles in registry order (international first, then Chinese, then other), duplicates dropped:
+ * the one helper every chip, summary, picker value and list goes through. */
+export function orderPlatforms(ids: Iterable<string>, connected: Iterable<string> = []): string[] {
+  return sortPlatforms([...new Set(ids)], (x) => x, connected);
 }
 
 /** Sort platform ids for display: group order (global, Chinese, other), within a group the connected ones first
  * (`connected`: platform ids she has an account for; a format counts through its account, e.g. youtube-shorts via
  * youtube), then the fixed order. Stable for unknown ids (last, in input order). */
 export function sortPlatforms<T>(items: T[], idOf: (x: T) => string, connected: Iterable<string> = []): T[] {
-  const conn = new Set([...connected].map(accountPlatform));
+  const conn = new Set([...connected].map((c) => accountPlatform(basePlatform(c))));
   return items
     .map((x, i) => ({ x, i, id: idOf(x) }))
     .sort((a, b) => {
       const [ga, oa] = platformRank(a.id);
       const [gb, ob] = platformRank(b.id);
-      const ca = conn.has(accountPlatform(a.id)) ? 0 : 1;
-      const cb = conn.has(accountPlatform(b.id)) ? 0 : 1;
+      const ca = conn.has(accountPlatform(basePlatform(a.id))) ? 0 : 1;
+      const cb = conn.has(accountPlatform(basePlatform(b.id))) ? 0 : 1;
       return ga - gb || ca - cb || oa - ob || a.i - b.i;
     })
     .map((e) => e.x);

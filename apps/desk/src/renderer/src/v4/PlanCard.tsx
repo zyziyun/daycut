@@ -14,12 +14,13 @@ import { emsg } from './msg';
 import { useUi } from './ui';
 import { AnsweredBy, FallbackNote } from './AiChip';
 import { openReport } from '../support/Support';
+import { orderPlatforms } from '../../../shared/platforms';
 
 export function planFacts(plan: IntakePlan) {
   const projects = plan.projects ?? [];
   const clips = projects.reduce((n, p) => n + (p.items?.count ?? p.items?.rows?.length ?? 1), 0);
   const sizes = Math.max(1, ...projects.map((p) => (p.params?.aspects as string[] | undefined)?.length ?? 1));
-  const plats = [...new Set(projects.flatMap((p) => (p.params?.platforms as string[] | undefined) ?? []).map(platformName))];
+  const plats = [...new Set(orderPlatforms(projects.flatMap((p) => (p.params?.platforms as string[] | undefined) ?? [])).map(platformName))];
   const wall = plan.estimate?.wall_min ?? projects.reduce((n, p) => n + (p.estimate?.wall_min ?? 0), 0);
   const usd = plan.estimate?.api_usd ?? projects.reduce((n, p) => n + (p.estimate?.api_usd ?? 0), 0);
   return { clips, sizes, plats, wall, usd };

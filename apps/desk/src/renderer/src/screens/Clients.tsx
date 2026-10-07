@@ -5,6 +5,7 @@ import { t, tk } from '../i18n';
 import { useEngine, useLoad } from '../lib/engine';
 import { go, href } from '../lib/router';
 import { PLATFORM_CHOICES } from './NewBatch';
+import { orderPlatforms } from '../../../shared/platforms';
 
 export function StageBadge({ stage }: { stage: string | null }) {
   if (!stage) return <span className="muted small">—</span>;
@@ -21,7 +22,7 @@ export function PlatformPicker({ value, onChange }: { value: string[]; onChange:
           type="button"
           aria-pressed={value.includes(p.id)}
           className={`tab ${value.includes(p.id) ? 'on' : ''}`}
-          onClick={() => onChange(value.includes(p.id) ? value.filter((y) => y !== p.id) : [...value, p.id])}
+          onClick={() => onChange(orderPlatforms(value.includes(p.id) ? value.filter((y) => y !== p.id) : [...value, p.id]))}
         >
           {tk(p.label)}
         </button>
@@ -148,7 +149,7 @@ export function Clients() {
                   <td>
                     <StageBadge stage={c.stage} />
                   </td>
-                  <td className="small">{c.platforms.join(', ') || '—'}</td>
+                  <td className="small">{orderPlatforms(c.platforms).join(', ') || '—'}</td>
                   <td>{c.batches}</td>
                   <td>{c.glossary}</td>
                 </tr>

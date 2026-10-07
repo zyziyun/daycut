@@ -7,6 +7,7 @@ import { useEngine, useLoad } from '../lib/engine';
 import { secs } from '../lib/format';
 import { go } from '../lib/router';
 import { EstimateView } from './NewBatch';
+import { orderPlatforms } from '../../../shared/platforms';
 
 const LANES: { key: string; states: string[] }[] = [
   { key: 'queued', states: ['planned'] },
@@ -73,7 +74,7 @@ export function Board({ batch }: { batch: string }) {
         (!onlyPilot || j.pilot),
     );
   }, [data, q, qc, platform, onlyPilot]);
-  const platforms = useMemo(() => [...new Set((data?.jobs ?? []).flatMap((j) => j.platforms))], [data]);
+  const platforms = useMemo(() => orderPlatforms((data?.jobs ?? []).flatMap((j) => j.platforms)), [data]);
 
   const meta = data?.meta;
   const toggle = (id: string) =>
@@ -264,7 +265,7 @@ function JobCard({ j, picked, onPick, onOpen }: { j: JobRow; picked: boolean; on
         </>
       )}
       <div className="row muted small" style={{ flexWrap: 'wrap' }}>
-        {j.platforms.map((p) => (
+        {orderPlatforms(j.platforms).map((p) => (
           <span className="badge" key={p}>
             {p}
           </span>

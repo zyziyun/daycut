@@ -7,7 +7,7 @@ export const channelsEn = {
   'nav.main': 'Main',
 
   'set.channels': 'Publishing accounts',
-  'set.channelsHint': 'Your Xiaohongshu, Douyin, YouTube… accounts. You sign in once inside the app; it never sees your password.',
+  'set.channelsHint': 'Your YouTube, TikTok, Xiaohongshu, Douyin… accounts. You sign in once inside the app; it never sees your password.',
   'set.channelsManage': 'Manage accounts',
   'set.channelsNone': 'No accounts yet - add the platforms you post to.',
   'set.advanced': 'Advanced',
@@ -82,7 +82,7 @@ export const channelsZh: Record<keyof typeof channelsEn, string> = {
   'nav.main': '主导航',
 
   'set.channels': '发布账号',
-  'set.channelsHint': '你的小红书号、抖音号、YouTube 频道……在应用里登录一次即可，应用不会看到你的密码。',
+  'set.channelsHint': '你的 YouTube 频道、TikTok、小红书号、抖音号……在应用里登录一次即可，应用不会看到你的密码。',
   'set.channelsManage': '管理发布账号',
   'set.channelsNone': '还没有账号，先添加你常发的平台。',
   'set.advanced': '高级',

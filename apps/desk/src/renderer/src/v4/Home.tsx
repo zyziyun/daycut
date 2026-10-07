@@ -31,6 +31,7 @@ import { WEEK_WORDS } from '../../../shared/weekPlan';
 import { useWeekPlan } from '../weekplan/useWeekPlan';
 import { WeekPlanCard } from '../weekplan/WeekPlanCard';
 import '../theme/uxcore.css';
+import { orderPlatforms } from '../../../shared/platforms';
 
 /** First run: the starting points (title, what it does, the request it fills in). */
 const STARTS: { icon: typeof Film; title: MessageKey; sub: MessageKey; prompt: MessageKey }[] = [
@@ -354,7 +355,7 @@ function PlatformChip({ value, onChange }: { value: string[] | null; onChange: (
       window.removeEventListener('keydown', esc);
     };
   }, [open]);
-  const ids = [...new Set((value ?? []).map((p) => p.split(':')[0]))];
+  const ids = orderPlatforms((value ?? []).map((p) => p.split(':')[0]));
   const names = ids.map(platformName);
   const sep = getLang() === 'zh-CN' ? '、' : ', ';
   const label = !ids.length ? t('home.choosePlatforms') : names.length <= 2 ? names.join(sep) : t('home.platformsMore', { a: names.slice(0, 2).join(sep), n: names.length - 2 });

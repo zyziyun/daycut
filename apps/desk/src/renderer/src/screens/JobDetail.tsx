@@ -10,6 +10,7 @@ import { useEngine, useLoad } from '../lib/engine';
 import { secs } from '../lib/format';
 import { useReviewTiming } from '../lib/reviewTiming';
 import { href } from '../lib/router';
+import { orderPlatforms } from '../../../shared/platforms';
 
 export function JobDetail({ batch, job }: { batch: string; job: string }) {
   const { client, subscribe } = useEngine();
@@ -109,7 +110,7 @@ export function JobDetail({ batch, job }: { batch: string; job: string }) {
           <div className="card col small">
             <b>{String(j.params.title ?? '') || t('board.untitled')}</b>
             <div className="muted">
-              {(j.params.platforms as string[] | undefined)?.join(', ')} · {t('job.cost')} ${j.cost?.toFixed(2)}
+              {orderPlatforms((j.params.platforms as string[] | undefined) ?? []).join(', ')} · {t('job.cost')} ${j.cost?.toFixed(2)}
             </div>
             {j.review_reason && <div className="err">{t('review.rejected')}: {j.review_reason}</div>}
             {red.map((r) => (

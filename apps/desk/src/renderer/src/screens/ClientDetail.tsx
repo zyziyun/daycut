@@ -279,7 +279,7 @@ function CrmCard({ slug, crm, onChange }: { slug: string; crm: import('../../../
       <b className="small">{t('crm.posts')}</b>
       <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
         <select className="input" value={post.platform} onChange={(e) => setPost({ ...post, platform: e.target.value })} aria-label={t('crm.platform')}>
-          {['xiaohongshu', 'douyin', 'tiktok', 'youtube', 'bilibili'].map((p) => (
+          {['youtube', 'tiktok', 'xiaohongshu', 'douyin', 'bilibili'].map((p) => (
             <option key={p} value={p}>
               {tk(`platform.${p === 'xiaohongshu' ? 'xiaohongshu-full' : p}`).replace(/ 9:16$/, '')}
             </option>

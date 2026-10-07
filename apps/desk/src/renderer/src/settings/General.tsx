@@ -14,6 +14,7 @@ import { PLATFORM_CHOICES } from '../screens/NewBatch';
 import { Group, Page, Row, Segmented, Sheet, Swatches, Toggle } from './kit';
 import type { SettingsCtx } from './registry';
 import { useStatus } from './status';
+import { orderPlatforms } from '../../../shared/platforms';
 
 const TIDY = [0, 7, 30, 90];
 
@@ -47,7 +48,7 @@ export function GeneralSection({ settings: s, save, onChange }: SettingsCtx) {
   const tidyValue = custom || !TIDY.includes(days) ? 'custom' : String(days);
   const watch = hist?.watch ?? [];
   const folderName = (p: string) => p.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || p;
-  const pfNames = (s.defaultPlatforms ?? []).map((id) => tk(PLATFORM_CHOICES.find((p) => p.id === id)?.label ?? `pf.${id.split(':')[0]}`));
+  const pfNames = orderPlatforms(s.defaultPlatforms ?? []).map((id) => tk(PLATFORM_CHOICES.find((p) => p.id === id)?.label ?? `pf.${id.split(':')[0]}`));
   return (
     <Page title={t('s2.nav.general')} lead={t('s2.general.lead')} testId="settings-general">
       <Summary />
