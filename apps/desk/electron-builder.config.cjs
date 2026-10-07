@@ -161,6 +161,9 @@ module.exports = {
     ...(azure ? { azureSignOptions: azure } : {}),
   },
   nsis: {
+    // Reelfold-<v>-win-x64-setup.exe (+ .blockmap; latest.yml points at it), attached to the GitHub Release next to the
+    // macOS files. "-setup" keeps it apart from the portable / Store names and reads as an installer on the release page.
+    artifactName: 'Reelfold-${version}-win-${arch}-setup.${ext}',
     oneClick: false,
     perMachine: false,
     allowToChangeInstallationDirectory: true,

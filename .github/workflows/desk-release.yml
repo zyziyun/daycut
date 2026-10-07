@@ -4,11 +4,16 @@
 # the Developer ID certificate (temporary keychain), notarize with an App Store Connect API key, staple, verify
 # (codesign / spctl / stapler), packaged-app checks. Then it creates or updates a DRAFT GitHub Release for the tag with
 # the DMG, the updater zip + blockmap, latest-mac.yml and release notes (apps/desk/scripts/release-notes.sh).
+# In parallel the windows job builds and checks the UNSIGNED Windows x64 NSIS installer; once both are done the
+# windows-release job attaches Reelfold-<v>-win-x64-setup.exe + .blockmap + latest.yml (the Windows update feed) to the
+# same draft. A Windows failure never blocks the macOS files (the mac job does not wait for it); it turns the run red
+# and the run summary says "Windows installer NOT attached" (re-run the failed jobs to attach it later).
 # It never publishes: the creator reviews the draft and clicks Publish (docs/CI_CD.md says how to change that), which
 # makes electron-updater offer it and turns the website's download button on (deploy-web.yml runs on release: published).
 #
 # Manual runs (Actions -> Desk release -> Run workflow): dry_run (default) does everything except the GitHub Release
-# and keeps the files as a workflow artifact; windows also builds the experimental, unsigned Windows installer.
+# and keeps the files as a workflow artifact; windows also builds the unsigned Windows installer, and the dry run's
+# windows-release job checks it and prints what it would upload to which release (without touching any release).
 #
 # Repository secrets (one-time setup: docs/CI_CD.md); without them the run fails in its first step, before building:
 #   MAC_CERT_P12_BASE64, MAC_CERT_PASSWORD                         Developer ID Application certificate + key (.p12)
@@ -24,7 +29,7 @@ on:
         type: boolean
         default: true
       windows:
-        description: 'Also build the experimental Windows installer (unsigned, artifact only)'
+        description: 'Also build the unsigned Windows installer (tag pushes always do; a dry run only prints the upload)'
         type: boolean
         default: false
       mac:
@@ -201,16 +206,16 @@ jobs:
           [ -n "${SIGNING_KEYCHAIN:-}" ] && security delete-keychain "$SIGNING_KEYCHAIN" || true
           rm -f "$RUNNER_TEMP"/AuthKey_*.p8 "$RUNNER_TEMP/cert.p12"
 
-  # EXPERIMENTAL: Windows x64 installer, unsigned, never attached to a release (v0.2 ships macOS only). Opt-in on a
-  # manual run (windows: true; untick mac for a Windows-only run); allowed to fail. Besides building it checks the
-  # real thing: the bundled runtime transcribes a real recording (faster-whisper), the unpacked app and the INSTALLED
-  # app (silent NSIS install into the runner's profile) pass the packaged-app checks. To ship it: Windows signing
-  # (apps/desk/docs/RELEASING.md "Windows") and an upload step like the mac job's.
+  # PREVIEW: Windows x64 installer, UNSIGNED (SmartScreen warns). Runs on every tag push and on a manual run with
+  # windows: true (untick mac for a Windows-only run). Independent of the mac job, so a failure here never holds back the
+  # macOS files; it does turn the run red. Besides building it checks the real thing: the bundled runtime transcribes a
+  # real recording (faster-whisper), the unpacked app and the INSTALLED app (silent NSIS install into the runner's
+  # profile) pass the packaged-app checks. The windows-release job below attaches the result to the draft release.
+  # Signing later: apps/desk/docs/RELEASING.md "Windows".
   windows:
-    name: Windows x64 (experimental, unsigned)
-    if: github.event_name == 'workflow_dispatch' && inputs.windows
+    name: Windows x64 (unsigned preview)
+    if: github.event_name == 'push' || inputs.windows
     runs-on: windows-latest
-    continue-on-error: true
     timeout-minutes: 120
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
@@ -242,10 +247,11 @@ jobs:
         with:
           name: reelfold-win32-x64-unsigned
           retention-days: 7
+          if-no-files-found: error
           path: |
-            apps/desk/dist/*.exe
-            apps/desk/dist/*.blockmap
-            apps/desk/dist/latest*.yml
+            apps/desk/dist/Reelfold-*-win-x64-setup.exe
+            apps/desk/dist/Reelfold-*-win-x64-setup.exe.blockmap
+            apps/desk/dist/latest.yml
       - name: Packaged checks on the unpacked app (incl. a real transcription)
         env:
           DESK_TEST_ASR: '1'
@@ -253,7 +259,7 @@ jobs:
       - name: Install silently, run the packaged checks on the installed app, uninstall
         shell: pwsh
         run: |
-          $exe = Get-ChildItem dist -Filter 'Reelfold-*-win-x64.exe' | Select-Object -First 1
+          $exe = Get-ChildItem dist -Filter 'Reelfold-*-win-x64-setup.exe' | Select-Object -First 1
           Start-Process -Wait -FilePath $exe.FullName -ArgumentList '/S'
           $app = Join-Path $env:LOCALAPPDATA 'Programs\Reelfold\Reelfold.exe'
           if (-not (Test-Path $app)) { throw "not installed at $app" }
@@ -279,3 +285,130 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: failure()
         with: { name: windows-packaged-test-results, path: apps/desk/test-results, retention-days: 7 }
+
+  # Attaches the Windows installer to the same DRAFT release as the macOS files: after both jobs (needs:), and tolerant
+  # of order anyway (creates the draft if it is missing, e.g. a Windows-only run on the tag). Dry run: verifies the files
+  # (names, latest.yml points at the .exe with the right sha512) and prints the upload it would do, without touching any
+  # release. Never publishes; never touches a published release.
+  windows-release:
+    name: Attach Windows installer to the draft release
+    needs: [mac, windows]
+    if: always() && needs.windows.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write # upload to the draft release
+    env:
+      DRY_RUN_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+      WIN_RESULT: ${{ needs.windows.result }}
+      MAC_RESULT: ${{ needs.mac.result }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: apps/desk
+    steps:
+      - name: Windows build and macOS job finished?
+        id: gate
+        working-directory: .
+        run: |
+          go=true
+          if [ "$WIN_RESULT" != "success" ]; then
+            echo "::error title=Windows installer NOT attached::the Windows job ended '$WIN_RESULT'. The macOS files are not affected. Fix it and re-run the failed jobs to attach the installer to the draft."
+            { echo "### Windows installer NOT attached"; echo "windows job: \`$WIN_RESULT\`, macOS job: \`$MAC_RESULT\`. Re-run the failed jobs to attach it to the draft."; } >> "$GITHUB_STEP_SUMMARY"
+            go=false
+          elif [ "$MAC_RESULT" = "failure" ] || [ "$MAC_RESULT" = "cancelled" ]; then
+            echo "::warning title=Windows installer held back::the macOS job ended '$MAC_RESULT'; not creating a Windows-only draft. Re-run the failed jobs: the Windows installer is attached after the macOS draft exists."
+            { echo "### Windows installer held back"; echo "macOS job: \`$MAC_RESULT\`. Re-run the failed jobs."; } >> "$GITHUB_STEP_SUMMARY"
+            go=false
+          fi
+          echo "go=$go" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v7
+        if: steps.gate.outputs.go == 'true'
+        with: { fetch-depth: 0 } # tags + history for the release notes (only used if this job creates the draft)
+
+      - name: Version and tag
+        if: steps.gate.outputs.go == 'true'
+        id: version
+        run: |
+          v=$(node -p "require('./package.json').version")
+          tag="v$v"
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            [ "$GITHUB_REF_NAME" = "$tag" ] || {
+              echo "::error title=Version mismatch::tag $GITHUB_REF_NAME but apps/desk/package.json is $v"; exit 1; }
+          elif [ "$DRY_RUN_RELEASE" != "true" ] && [ "$GITHUB_REF" != "refs/tags/$tag" ]; then
+            echo "::error::a non-dry manual run must be started on the tag $tag"; exit 1
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@v7
+        if: steps.gate.outputs.go == 'true'
+        with:
+          name: reelfold-win32-x64-unsigned
+          path: ${{ runner.temp }}/win
+
+      - name: Check the Windows files (names, latest.yml -> .exe, sha512)
+        if: steps.gate.outputs.go == 'true'
+        id: files
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          dir="$RUNNER_TEMP/win"
+          exe="Reelfold-$VERSION-win-x64-setup.exe"
+          ls -l "$dir"
+          for f in "$exe" "$exe.blockmap" latest.yml; do
+            [ -f "$dir/$f" ] || { echo "::error::missing $f in the Windows artifact"; exit 1; }
+          done
+          for f in "$dir"/*; do
+            case "${f##*/}" in "$exe" | "$exe.blockmap" | latest.yml) ;;
+              *) echo "::error::unexpected file in the Windows artifact: ${f##*/}"; exit 1 ;; esac
+          done
+          yml="$dir/latest.yml"
+          grep -qx "version: $VERSION" "$yml" || { echo "::error::latest.yml is not version $VERSION"; cat "$yml"; exit 1; }
+          grep -qx "path: $exe" "$yml" || { echo "::error::latest.yml path is not $exe"; cat "$yml"; exit 1; }
+          sha=$(openssl dgst -sha512 -binary "$dir/$exe" | base64 -w0)
+          grep -qx "sha512: $sha" "$yml" || { echo "::error::latest.yml sha512 does not match $exe"; cat "$yml"; exit 1; }
+          echo "latest.yml -> $exe, sha512 ok"
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+
+      - name: Attach to the DRAFT GitHub Release (dry run prints it)
+        if: steps.gate.outputs.go == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+          DIR: ${{ steps.files.outputs.dir }}
+        run: |
+          files=("$DIR"/*)
+          names=$(for f in "${files[@]}"; do printf '%s (%s MB)\n' "${f##*/}" "$(( $(stat -c %s "$f") / 1048576 ))"; done)
+          if draft=$(gh release view "$TAG" --json isDraft -q .isDraft 2>/dev/null); then exists=true; else exists=false; draft=; fi
+          if [ "$DRY_RUN_RELEASE" = "true" ]; then
+            bash scripts/release-notes.sh "$TAG" > /dev/null # the notes a created draft would get must build
+            if [ "$exists" = true ] && [ "$draft" != "true" ]; then
+              plan="release $TAG is already PUBLISHED: a real run would stop with an error (bump the version)"
+            elif [ "$exists" = true ]; then
+              plan="gh release upload $TAG <files> --clobber   (draft $TAG exists)"
+            else
+              plan="gh release create $TAG <files> --draft --verify-tag --title \"Reelfold $VERSION\" --notes-file <notes>   (no release $TAG visible yet; on a tag run the mac job creates it first and this becomes an upload)"
+            fi
+            echo "DRY RUN: nothing uploaded. Would run: $plan"
+            printf '%s\n' "$names"
+            { echo "### Windows installer (dry run, nothing uploaded)"; echo "Would run: \`$plan\`"; echo '```'; printf '%s\n' "$names"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ "$exists" = true ]; then
+            [ "$draft" = "true" ] || { echo "::error::release $TAG is already published; not touching it."; exit 1; }
+            gh release upload "$TAG" "${files[@]}" --clobber
+            echo "attached to draft $TAG"
+          else
+            bash scripts/release-notes.sh "$TAG" > "$RUNNER_TEMP/notes.md"
+            pre=()
+            case "$VERSION" in *-*) pre=(--prerelease) ;; esac
+            gh release create "$TAG" "${files[@]}" --draft --verify-tag --title "Reelfold $VERSION" \
+              --notes-file "$RUNNER_TEMP/notes.md" "${pre[@]}" \
+              || gh release upload "$TAG" "${files[@]}" --clobber # created meanwhile by the mac job
+            echo "created draft $TAG with the Windows installer"
+          fi
+          url=$(gh release view "$TAG" --json url -q .url)
+          { echo "### Windows installer (unsigned preview) attached: $url"; echo '```'; printf '%s\n' "$names"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
