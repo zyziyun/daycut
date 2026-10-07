@@ -369,3 +369,26 @@ def test_intake_routes_a_launch_request(tmp_path):
     p = plan["projects"][0]
     assert p["recipe"] == "launch-kit"
     assert p["inputs"]["notes"].endswith("CHANGELOG.md") and p["inputs"]["shots"][0].endswith("screen.png")
+
+
+def test_kit_jobs_names_and_outputs(cfg):
+    from vstudio.launch import kit as K
+    js = K.jobs(cfg)
+    names = [j[0] for j in js]
+    assert names[:5] == ["demo-en-16x9", "demo-en-9x16", "demo-en-1x1", "demo-zh-16x9", "demo-zh-9x16"]
+    assert "loop-en" in names and "plan-zh-9x16" in names and "review-en-1x1" in names
+    assert all(j[5].startswith(cfg["out"]) for j in js)
+    assert [j[0] for j in K.jobs(cfg, only=["review"])] == ["review-en-1x1", "review-en-9x16", "review-zh-9x16"]
+
+
+@pytest.mark.skipif(not __import__("vstudio.render", fromlist=["x"]).find_chromes(), reason="no Chrome")
+def test_stills_exact_sizes(cfg, shots, tmp_path):
+    from PIL import Image
+    from vstudio.launch import stills as ST
+    c = dict(cfg, gallery=dict(cfg["gallery"], facts=[{"value": "3", "label": "features"}], langs=["en"]))
+    made = ST.make_all(c, shots, str(tmp_path / "stills"))
+    names = [os.path.basename(m) for m in made]
+    assert names == ["ph-gallery-1-hero.png", "ph-gallery-2-plan.png", "ph-gallery-3-review.png", "og-1200x630.png"]
+    for m in made:
+        with Image.open(m) as im:
+            assert im.size == (ST.OG if "og-" in m else ST.PH)

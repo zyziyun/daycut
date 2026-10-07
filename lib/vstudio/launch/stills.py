@@ -10,6 +10,7 @@ three facts (``gallery.facts``: only numbers the creator can stand behind).
 """
 import html
 import os
+import time
 
 from PIL import Image
 
@@ -71,7 +72,14 @@ def _render(page_html, out, size, workdir):
     with open(src, "w", encoding="utf-8") as f:
         f.write(page_html)
     big = out[:-4] + ".2x.png"
-    R.html_to_png(src, big, size=size, scale=2, wait=1500, use_persona=False, fonts=False)
+    for attempt in range(3):                     # headless Chrome sometimes exits 2 on a busy machine
+        try:
+            R.html_to_png(src, big, size=size, scale=2, wait=1500, use_persona=False, fonts=False)
+            break
+        except Exception:                        # noqa: BLE001 - re-raised on the last attempt
+            if attempt == 2:
+                raise
+            time.sleep(2)
     with Image.open(big) as im:
         im.convert("RGB").resize(size, Image.LANCZOS).save(out, optimize=True)
     os.remove(big)
@@ -99,22 +107,25 @@ def hero(cfg, lang, out, workdir, size=PH):
     facts = g.get("facts") or []
     foot = C.text(g.get("foot"), lang)
     W, H = size
-    body = ""
-    body += f'<img class="wm" src="{logo}">' if logo else f'<div class="wmt">{_e(p["name"])}</div>'
-    body += f'<img class="ic" src="{mark}">' if mark else ""
+    body = f'<img class="wm" src="{logo}">' if logo else f'<div class="wmt">{_e(p["name"])}</div>'
+    body += "<div class='col'>"
     body += f"<h1 class='hh'>{emph(head)}</h1>"
     body += f"<div class='sub'>{_e(sub)}</div>" if sub else ""
     if facts:
         body += "<div class='stats'>" + "".join(
             f"<div class='s'><b>{_e(C.text(f.get('value'), lang))}</b><i>{_e(C.text(f.get('label'), lang))}</i></div>"
             for f in facts[:3]) + "</div>"
+    body += "</div>"
+    body += f'<img class="ic" src="{mark}">' if mark and not logo else ""
     body += f"<div class='foot'>{_e(foot)}</div>" if foot else ""
-    css = f""".wm{{position:absolute;left:80px;top:66px;height:60px}}
-.wmt{{position:absolute;left:80px;top:66px;font-size:48px;font-weight:700}}
+    css = f""".col{{position:absolute;left:80px;right:80px;top:130px;bottom:84px;display:flex;flex-direction:column;
+ align-items:flex-start;justify-content:center}}
+.wm{{position:absolute;left:80px;top:64px;height:58px}}
+.wmt{{position:absolute;left:80px;top:60px;font-size:48px;font-weight:700}}
 .ic{{position:absolute;right:80px;top:56px;width:92px;height:92px}}
-.hh{{left:80px;right:80px;top:{176 if H > 700 else 150}px;font-size:{56 if W > 1240 else 52}px}}
-.sub{{position:absolute;left:82px;top:{330 if H > 700 else 300}px;width:{W - 220}px;font-size:23px;line-height:1.42;color:var(--ink2)}}
-.stats{{position:absolute;left:80px;right:80px;top:{460 if H > 700 else 420}px;display:flex;gap:24px}}
+.hh{{position:static;margin:0;font-size:{56 if W > 1240 else 52}px}}
+.sub{{margin-top:22px;max-width:{W - 220}px;font-size:23px;line-height:1.42;color:var(--ink2)}}
+.stats{{margin-top:{44 if H > 700 else 30}px;display:flex;gap:24px;align-self:stretch}}
 .s{{flex:1;background:var(--card);border-radius:14px;padding:24px 26px;box-shadow:0 0 0 1px rgba(30,27,24,.08)}}
 .s b{{display:block;font-size:42px;font-weight:700;letter-spacing:-.02em;color:var(--accent)}}
 .s i{{font-style:normal;font-size:18px;color:var(--ink2);line-height:1.35;display:block;margin-top:6px}}
@@ -131,10 +142,16 @@ def feature_still(cfg, shot, feat, lang, out, workdir, size=PH):
     img = _img(shot.get("still") or shot["file"], workdir)
     note = C.text(g.get("note"), lang)
     top = 150 if W > 1240 else 140
+    box_w, vis = W - 160, H - top
+    disp_h = box_w * float(shot.get("h") or 9) / float(shot.get("w") or 16)
+    foc = (shot.get("focus") or [None])[0]
+    cy = (foc["y"] + foc.get("h", 0) / 2) if foc else 0.0
+    shift = max(0.0, min(disp_h - vis, cy * disp_h - vis / 2)) if disp_h > vis else 0.0
     body = (f"<div class='k' style='left:80px;top:44px'>{_e(kick)}</div>"
             f"<h1 style='left:80px;right:80px;top:72px;font-size:40px'>{emph(head)}</h1>"
             + (f"<div class='note' style='right:84px;top:48px'>{_e(note)}</div>" if note else "")
-            + f"<div class='shot' style='left:80px;right:80px;top:{top}px;height:{H - top + 40}px'><img src='{img}'></div>")
+            + f"<div class='shot' style='left:80px;right:80px;top:{top}px;height:{H - top + 40}px'>"
+            f"<img src='{img}' style='margin-top:{-shift:.0f}px'></div>")
     text = kick + head + note
     return _render(_page(cfg, lang, size, body, "", workdir, text), out, size, workdir)
 
@@ -156,7 +173,7 @@ def og(cfg, shots, lang, out, workdir, size=OG):
             + f"<h1 style='left:72px;top:170px;width:560px;font-size:58px'>{emph(head)}</h1>"
             + (f"<div style='position:absolute;left:74px;bottom:64px;font-size:24px;font-weight:600;color:var(--accent)'>"
                f"{_e(site)}</div>" if site else "")
-            + (f"<div class='shot' style='left:680px;top:80px;width:760px;height:520px'><img src='{img}'></div>"
+            + (f"<div class='shot' style='left:680px;top:80px;width:760px;height:475px'><img src='{img}'></div>"
                if img else ""))
     return _render(_page(cfg, lang, size, body, "", workdir, head + site + p["name"]), out, size, workdir)
 
