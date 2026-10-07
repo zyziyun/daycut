@@ -350,7 +350,7 @@ def test_talkinghead_pilot_answers_auto_checkpoints_too(tmp_path, synth, monkeyp
     batch of a new user never got past it)."""
     monkeypatch.setenv("VSTUDIO_TEST_TRUTH", synth["truth"])
     p = Project.create(str(tmp_path / "th3"), recipe="talkinghead", inputs=dict(video=[synth["video"]]),
-                       params=dict(preset="ultrafast", speed=1.0), auto=["hook", "filler", "cover"],
+                       params=dict(pipeline="fast", preset="ultrafast", speed=1.0), auto=["hook", "filler", "cover"],
                        spec=dict(plugins=["vstudio.project.registry", "_batch_helpers"],
                                  asr=dict(transcriber="_batch_helpers:fake_transcriber"),
                                  proofread=dict(enabled=False)))
