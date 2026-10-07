@@ -39,7 +39,7 @@ export function ProviderChip({ task, testId }: { task: AiTask; testId?: string }
   const row = rowOf(status, cur.provider);
   const tone = row ? pill(row).tone : 'off';
   return (
-    <button className="chip" style={{ height: 24, padding: '0 8px' }} onClick={open} data-tip={t('aiacc.chipTip')} aria-label={t('aiacc.chipTip')} data-testid={testId ?? 'provider-chip'} data-provider={cur.provider}>
+    <button className="chip pchip" style={{ height: 24, padding: '0 8px' }} onClick={open} data-tip={t('aiacc.chipTip')} aria-label={t('aiacc.chipTip')} data-testid={testId ?? 'provider-chip'} data-provider={cur.provider}>
       <Cpu className="ico" style={{ width: 12, height: 12 }} />
       <span className="clamp1" style={{ maxWidth: 120 }}>{t('aiacc.chip', { name: cur.provider === 'none' ? t('aiacc.name.rules') : providerName(cur.provider) })}</span>
       {(tone === 'bad' || tone === 'warn') && <i className="dot" style={{ background: 'var(--danger)' }} />}

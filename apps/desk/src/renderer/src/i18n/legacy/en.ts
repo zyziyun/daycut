@@ -44,8 +44,8 @@ export const legacyEn = {
   'recipe.longform-split': 'Long recording to episodes',
   'recipe.talkinghead-clips': 'Talking-head clip folder',
 
-  'platform.xiaohongshu-full': 'RedNote 9:16',
-  'platform.xiaohongshu-vertical': 'RedNote 3:4',
+  'platform.xiaohongshu-full': 'Xiaohongshu 9:16',
+  'platform.xiaohongshu-vertical': 'Xiaohongshu 3:4',
   'platform.douyin': 'Douyin',
   'platform.tiktok': 'TikTok',
   'platform.youtube-shorts': 'YouTube Shorts',
@@ -237,9 +237,9 @@ export const legacyEn = {
   'pub.slotHint': 'Open the upload or login page',
   'pub.slotNoAccount': 'Add an account first',
 
-  'adapter.verified': 'verified',
-  'adapter.unverified': 'unverified',
-  'adapter.todo': 'todo',
+  'adapter.verified': 'Fills the form',
+  'adapter.unverified': 'Fills the form (beta)',
+  'adapter.todo': 'Upload by hand',
 
   'fill.file': 'Video file',
   'fill.title': 'Title',
@@ -283,7 +283,7 @@ export const legacyEn = {
   'settings.themeHint': 'Notebook Light is a work in progress',
   'settings.privacy': 'Privacy and security',
   'settings.privacyBody':
-    'Media files stay on this machine. The engine listens on 127.0.0.1 only, with a random port and token per launch. Platform pages run in separate sessions with no privileged API; the app never stores passwords, never reads or exports cookies, and never presses publish for you.',
+    'Your videos and audio stay on this Mac. Only text — transcripts and what you ask for — goes to the AI you choose (if there is no local transcription and an OpenAI key is set, audio is sent to OpenAI to transcribe it). Platform pages open in their own sessions: Daycut never stores passwords, never reads your cookies, and never presses publish for you.',
   'theme.studio-dark': 'Studio Dark',
   'theme.notebook-light': 'Notebook Light',
   'assets.title': 'Models, fonts and tools',

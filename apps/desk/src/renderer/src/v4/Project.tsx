@@ -13,7 +13,8 @@ import { go, href, type ProjectTab } from '../lib/router';
 import { clipStatus, itemStatus } from '../lib/status';
 import { ProjectAIPanel } from './ProjectAIPanel';
 import { inboxTitle } from './Inbox';
-import { Empty, More, SkGrid, StatusPill, Thumb } from './kit';
+import { Elapsed, Empty, More, SkGrid, StatusPill, Thumb } from './kit';
+import { FailureActions, failureReason } from './Failure';
 import { PlayerOverlay } from './Player';
 import { emsg, errText } from './msg';
 import { useUi } from './ui';
@@ -36,7 +37,7 @@ export function nextSlots(n: number, taken: string[], hour = '19:00', from = new
 
 export function Project({ id, tab }: { id: string; tab: ProjectTab }) {
   const { client, subscribe } = useEngine();
-  const { data: hist } = useHistory();
+  const { data: hist, reload: reloadHist } = useHistory();
   const inbox = useInbox();
   const ui = useUi();
   const item = hist?.items.find((i) => i.id === id) ?? null;
@@ -60,19 +61,27 @@ export function Project({ id, tab }: { id: string; tab: ProjectTab }) {
     };
   }, [client, id, n, hist?.at]);
   useEffect(() => subscribe((e) => (e.type === 'output-edit' && e.item === id) || e.type === 'run-exit' ? reload() : undefined), [subscribe, id, reload]);
-  const s = item ? itemStatus(item) : null;
+  const pendingAll = inbox.items.filter((x) => x.project.id === id);
+  const reviewItem = pendingAll.find((x) => x.kind === 'review');
+  const raw = item ? itemStatus(item) : null;
+  // 「已完成」 never sits next to 「审片 3」: clips waiting for her review make the project "needs you"
+  const s = raw === 'done' && (reviewItem || pendingAll.some((x) => x.kind === 'confirm' || x.group === 'choose')) ? 'you' : raw;
+  const failure = item?.failure ?? null;
   const live = s === 'run' || doc?.clips.some((c) => c.state === 'running');
   useEffect(() => {
     if (!live) return;
-    const tm = setInterval(reload, 5000); // B4: a rendering folder updates by itself
+    const tm = setInterval(() => {
+      reload(); // B4: a rendering folder updates by itself
+      reloadHist(); // the pilot's stage / a failure shows up without waiting for the slow history timer
+    }, 5000);
     return () => clearInterval(tm);
-  }, [live, reload]);
+  }, [live, reload, reloadHist]);
 
   const clips = useMemo(() => (doc?.clips ?? []).filter((c) => !c.extra), [doc]);
   const extras = useMemo(() => (doc?.clips ?? []).filter((c) => c.extra), [doc]);
   const sel = clips.find((c) => c.id === selId) ?? clips.find((c) => c.post) ?? clips[0] ?? null;
-  const pending = inbox.items.filter((x) => x.project.id === id);
-  const review = pending.find((x) => x.kind === 'review');
+  const pending = pendingAll;
+  const review = reviewItem;
   const confirm = pending.find((x) => x.kind === 'confirm' || x.group === 'choose');
   const done = clips.filter((c) => c.state !== 'queued' && c.state !== 'running' && c.files.length);
   const isBatch = item?.kind === 'batch' || item?.kind === 'project';
@@ -119,8 +128,9 @@ export function Project({ id, tab }: { id: string; tab: ProjectTab }) {
     );
   }
   const k = Math.min(clips.length, done.length + 1);
-  const sub =
-    s === 'run'
+  const sub = failure
+    ? t('project.sub.failed')
+    : s === 'run'
       ? clips.length
         ? t('project.sub.running', { k, n: clips.length })
         : t('project.sub.runningNoN')
@@ -164,10 +174,41 @@ export function Project({ id, tab }: { id: string; tab: ProjectTab }) {
             </div>
             <span className="sp" />
             <div className="acts">
-              <StatusPill s={s} />
-              {primary}
+              <StatusPill s={s} label={failure ? t('status.failed') : undefined} />
+              {!failure && primary}
             </div>
           </div>
+          {failure && item && (
+            <div className="banner error" role="alert" data-testid="project-failed">
+              <i className="dot error" />
+              <div className="sp">
+                <b>{t('fail.title')}</b>
+                <span className="muted">{failureReason(failure)}</span>
+              </div>
+              <div className="acts">
+                <FailureActions item={item.id} failure={failure} />
+              </div>
+            </div>
+          )}
+          {!failure && s === 'run' && !clips.length && item && (
+            <div className="banner run" role="status" data-testid="project-running">
+              <i className="dot run" />
+              <div className="sp">
+                <b>
+                  {t('project.pilot.running')}
+                  {item.live?.stage ? ` · ${item.live.stage}` : ''}
+                </b>
+                <span className="muted">
+                  {t('project.pilot.elapsed')} <Elapsed since={item.live?.started ?? item.pilot?.started ?? null} />
+                </span>
+              </div>
+              {item.live?.progress != null && (
+                <div className="bar" aria-label={t('project.pilot.running')}>
+                  <i style={{ width: `${Math.round(Math.min(1, Math.max(0.03, item.live.progress)) * 100)}%` }} />
+                </div>
+              )}
+            </div>
+          )}
           {confirm && !review && (
             <div className="banner" data-testid="project-banner">
               <i className="dot you" />
@@ -194,7 +235,7 @@ export function Project({ id, tab }: { id: string; tab: ProjectTab }) {
               {!doc ? (
                 <SkGrid n={4} />
               ) : !clips.length ? (
-                <Empty title={t('project.sub.empty')} />
+                <Empty title={failure ? t('project.empty.failed') : s === 'run' ? t('project.empty.running') : t('project.sub.empty')} />
               ) : (
                 <div className="clips" data-testid="clips">
                   {clips.map((c) => (

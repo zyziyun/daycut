@@ -51,16 +51,26 @@ async function api<T>(pathname: string, body?: unknown): Promise<T> {
   ) as Promise<T>;
 }
 
-test('first-run wizard: keys card, models, default platforms, finish', async () => {
+test('first-run wizard: brand, AI (subscriptions first, keys folded), default platforms, finish', async () => {
   await expect(page.getByTestId('first-run')).toBeVisible({ timeout: 30000 });
-  await page.getByTestId('fr-next').click(); // welcome -> keys
+  await expect(page.getByTestId('fr-brand')).toBeVisible();
+  // no engine / port / token words, one primary per step
+  await expect(page.getByTestId('first-run')).not.toContainText(/\b(token|port|engine)\b|127\.0\.0\.1|引擎|persona/i);
+  await expect(page.locator('[data-testid="first-run"] .btn.primary')).toHaveCount(1);
+  await page.getByTestId('fr-next').click(); // welcome -> AI
+  await expect(page.getByTestId('fr-ai')).toBeVisible();
+  await expect(page.getByTestId('fr-sub-claude-code')).toBeVisible();
+  await expect(page.getByTestId('fr-sub-codex')).toBeVisible();
+  await expect(page.getByTestId('keys-card')).toBeHidden(); // API keys are the second choice, folded
+  await page.locator('.fr-keys summary').click();
   await expect(page.getByTestId('keys-card')).toBeVisible();
+  await expect(page.getByTestId('keys-card')).toContainText(/API keys|API 密钥/);
+  await expect(page.getByTestId('keys-card')).not.toContainText(/Keyboard shortcuts|快捷键/);
+  await expect(page.locator('[data-testid="first-run"] .btn.primary')).toHaveCount(1);
   const keyStatus = await page.evaluate(() => window.desk.secrets.status());
   expect(Object.keys(keyStatus.keys).sort()).toEqual(['anthropic', 'deepseek', 'glm', 'kimi', 'openai', 'openrouter', 'qwen']);
-  await page.getByTestId('fr-next').click(); // -> models
-  await page.getByTestId('fr-next').click(); // -> platforms
+  await page.getByTestId('fr-next').click(); // -> platforms (no downloads step on a dev checkout)
   await page.getByRole('button', { name: /TikTok/ }).click();
-  await page.getByTestId('fr-next').click(); // -> persona
   await page.getByTestId('fr-next').click(); // finish
   await expect(page.getByTestId('first-run')).toHaveCount(0);
   const s = await page.evaluate(() => window.desk.getSettings());

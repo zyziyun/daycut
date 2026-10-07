@@ -229,10 +229,10 @@ export function ProjectAIPanel({
             <i className="dot run" />
             {t('ai.working')}
           </span>
-        ) : (
+        ) : clips.length === 0 ? null : (
           <select
             className="inp sm"
-            style={{ width: 'auto', flex: 'none', maxWidth: 150, height: 26 }}
+            style={{ width: 'auto', flex: '0 0 auto', maxWidth: 112, height: 26, textOverflow: 'ellipsis' }}
             value={scope}
             onChange={(e) => setScope(e.target.value as 'all' | 'one')}
             title={t('pai.scopeTip')}

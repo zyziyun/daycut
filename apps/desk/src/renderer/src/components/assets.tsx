@@ -79,7 +79,7 @@ export function AssetsBanner() {
 /** Every asset group with size, licence, a checkbox and its own status / progress. Several groups can be queued;
  * downloads run in the main process in the background, so leaving this card (or the wizard step) never stops them.
  * Used by the first-run wizard and by Settings. */
-export function AssetsCard() {
+export function AssetsCard({ primary = true, showDir = false }: { primary?: boolean; showDir?: boolean } = {}) {
   const s = useAssets();
   const [picked, setPicked] = useState<Set<string> | null>(null);
   if (!s) return null;
@@ -95,7 +95,7 @@ export function AssetsCard() {
     <div className="card col" data-testid="assets-card">
       <b>{t('assets.title')}</b>
       <div className="muted small">{t('assets.pick')}</div>
-      <div className="muted small mono">{s.dir}</div>
+      {showDir && <div className="muted small mono">{s.dir}</div>}
       {s.groups.map((g) => (
         <div key={g.id} className="col" style={{ gap: 4 }} data-testid={`asset-${g.id}`}>
           <div className="row">
@@ -107,7 +107,7 @@ export function AssetsCard() {
               disabled={g.installed || g.queued || Boolean(g.progress)}
               onChange={() => toggle(g.id)}
             />
-            <span className="mono">{groupName(g.id)}</span>
+            <span>{groupName(g.id)}</span>
             <span className="muted small">
               {mb(g.bytes)} · {g.required ? t('assets.required') : t('assets.optional')}
             </span>
@@ -147,9 +147,10 @@ export function AssetsCard() {
       ))}
       <div className="row">
         <button
-          className="btn primary"
+          className={primary && can.length ? 'btn primary' : 'btn'}
           data-testid="assets-download-selected"
           disabled={!can.length}
+          hidden={!can.length && !primary}
           onClick={() => {
             void window.desk.assets.install(can.map((g) => g.id));
             setPicked(new Set());

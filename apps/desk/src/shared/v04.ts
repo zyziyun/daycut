@@ -328,8 +328,9 @@ export interface IntakePlan {
   materials: IntakeMaterial[];
   projects: IntakeProject[];
   series: { id: string; name: string } | null;
-  questions: { id: string; project?: string; text: string; options?: string[]; default?: string }[];
-  risks: string[];
+  /** text in the content language; with a code (references/MESSAGES.md) the UI words it itself */
+  questions: { id: string; project?: string; text: string; code?: string; params?: EngineMsg['params']; options?: string[]; default?: string }[];
+  risks: (string | EngineMsg)[];
   warnings: string[];
   estimate: { machine_min?: number; wall_min?: number; api_usd?: number };
   summary_zh: string;
@@ -338,17 +339,20 @@ export interface IntakePlan {
 
 export interface IntakeJob {
   id: string;
-  state: 'running' | 'done' | 'error';
+  state: 'running' | 'done' | 'error' | 'stopped';
+  started?: number;
   step?: string;
   prompt?: string;
   inputs?: string[];
   plan: IntakePlan | null;
   error?: string | null;
+  error_code?: import('./v02').FailureCode | null;
+  error_provider?: string | null;
   applied?: { dir: string; name: string; recipe: string }[];
 }
 
 // ---------------------------------------------------------------- inbox
-export type InboxGroup = 'choose' | 'review' | 'spend' | 'other';
+export type InboxGroup = 'failed' | 'choose' | 'review' | 'spend' | 'other';
 
 export interface InboxItem {
   key: string;
@@ -362,7 +366,8 @@ export interface InboxItem {
   reasons?: { code: string; n: number }[];
   jobs?: string[];
   minutes?: number;
-  source: 'picks' | 'batch' | 'live' | 'engine';
+  failure?: import('./v02').PilotFailure;
+  source: 'picks' | 'batch' | 'live' | 'engine' | 'pilot';
   at?: number | null;
 }
 

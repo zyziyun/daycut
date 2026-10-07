@@ -8,6 +8,7 @@ import { useEngine } from '../lib/engine';
 import { useInbox } from '../lib/inbox';
 import { go, href } from '../lib/router';
 import { Empty, Seg, Sk, Thumb } from './kit';
+import { FailureActions, failureReason } from './Failure';
 import { useUi } from './ui';
 
 /** The card's title from the engine's code + params (UI language); the engine's own text otherwise. */
@@ -64,6 +65,7 @@ export function InboxScreen() {
             testId="inbox-filter"
             options={[
               { v: 'all', label: t('inbox.f.all', { n: items.length }) },
+              ...(count('failed') ? [{ v: 'failed' as const, label: `${t('inbox.f.failed')} ${count('failed')}` }] : []),
               { v: 'choose', label: `${t('inbox.f.choose')} ${count('choose') || ''}`.trim() },
               { v: 'review', label: `${t('inbox.f.review')} ${count('review') || ''}`.trim() },
               { v: 'spend', label: `${t('inbox.f.spend')} ${count('spend') || ''}`.trim() },
@@ -81,7 +83,7 @@ export function InboxScreen() {
             const chosen = picked[x.key] ?? new Set(opts.filter((o) => o.checked !== false).map((o) => o.id));
             const primary = idx === 0 ? 'btn primary' : 'btn';
             return (
-              <div key={x.key} className="card inb" data-testid="inbox-item" data-kind={x.kind}>
+              <div key={x.key} className={`card inb${x.failure ? ' failed' : ''}`} data-testid="inbox-item" data-kind={x.kind}>
                 <button
                   className="btn ghost icon sm"
                   aria-pressed={on}
@@ -110,6 +112,7 @@ export function InboxScreen() {
                     </div>
                   ) : null}
                   {x.kind === 'checkpoint' && x.text && <div className="muted">{x.text}</div>}
+                  {x.failure && <div className="muted" data-testid="inbox-failed-reason">{failureReason(x.failure)}</div>}
                   {opts.length > 0 && (
                     <div className="col" style={{ gap: 0, marginTop: 8 }}>
                       {opts.map((o) => (
@@ -134,7 +137,9 @@ export function InboxScreen() {
                   )}
                 </div>
                 <div className="acts">
-                  {x.kind === 'confirm' || opts.length ? (
+                  {x.failure && x.project.id ? (
+                    <FailureActions item={x.project.id} failure={x.failure} primary={idx === 0} />
+                  ) : x.kind === 'confirm' || opts.length ? (
                     <button className={primary} onClick={() => void answer([x.key], { approve: [...chosen], keep: opts.filter((o) => !chosen.has(o.id)).map((o) => o.id) })} data-testid="inbox-confirm">
                       {t('inbox.confirmN', { n: chosen.size })}
                     </button>

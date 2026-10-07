@@ -7,7 +7,8 @@ export type Status4 = 'run' | 'you' | 'done' | 'error';
 
 export const STATUS_KEY = { run: 'status.running', you: 'status.you', done: 'status.done', error: 'status.error' } as const;
 
-export function itemStatus(i: Pick<HistoryItem, 'live' | 'status' | 'counts' | 'kind' | 'updated'>, now = Date.now() / 1000): Status4 | null {
+export function itemStatus(i: Pick<HistoryItem, 'live' | 'status' | 'counts' | 'kind' | 'updated'> & Partial<Pick<HistoryItem, 'failure' | 'pilot'>>, now = Date.now() / 1000): Status4 | null {
+  if (i.failure) return 'error';
   const l = i.live;
   if (l) {
     if (l.state === 'running') return 'run';
@@ -15,8 +16,11 @@ export function itemStatus(i: Pick<HistoryItem, 'live' | 'status' | 'counts' | '
     if (l.state === 'failed') return 'error';
     if (l.state === 'interrupted') return now - (l.heartbeat ?? 0) < 86400 ? 'error' : null;
   }
+  if (i.pilot) return 'run'; // the pilot the desk started is going (before its first heartbeat)
   const c = i.counts;
   switch (i.status) {
+    case 'failed':
+      return 'error';
     case 'unreadable':
       return 'error';
     case 'delivered':
@@ -47,7 +51,7 @@ export function clipStatus(c: Pick<Clip, 'state' | 'qc' | 'review'>): Status4 | 
 }
 
 /** Projects filter buckets. */
-export function bucket(i: HistoryItem): 'running' | 'you' | 'done' | 'other' {
+export function bucket(i: HistoryItem): 'running' | 'you' | 'done' | 'failed' | 'other' {
   const s = itemStatus(i);
-  return s === 'run' ? 'running' : s === 'you' ? 'you' : s === 'done' ? 'done' : 'other';
+  return s === 'run' ? 'running' : s === 'you' ? 'you' : s === 'done' ? 'done' : s === 'error' ? 'failed' : 'other';
 }

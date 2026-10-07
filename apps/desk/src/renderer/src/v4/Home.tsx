@@ -392,7 +392,10 @@ function RunCard({ i }: { i: HistoryItem }) {
 
 /** Project card used on Home and in 全部项目 (the whole card is the link). */
 export function ProjectTile({ i, onContext }: { i: HistoryItem; onContext?: (e: React.MouseEvent) => void }) {
-  const s = itemStatus(i);
+  const inbox = useInbox();
+  const raw = itemStatus(i);
+  // never 「已完成」 while the inbox holds a decision for it
+  const s = raw === 'done' && inbox.items.some((x) => x.project.id === i.id && x.kind !== 'failed') ? 'you' : raw;
   const typeKey = `type.${i.type ?? 'other'}`;
   return (
     <a className="pcard" href={href({ name: 'project', id: i.id })} onContextMenu={onContext} data-testid="project-card">

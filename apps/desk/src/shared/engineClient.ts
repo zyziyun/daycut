@@ -399,6 +399,13 @@ export class EngineClient {
   recentPrompts() {
     return this.req<{ id: string; prompt: string; at: string }[]>('GET', '/api/intake/recent');
   }
+  stopIntake(id: string) {
+    return this.req<{ ok: boolean }>('POST', `/api/intake/${pid(id)}/stop`, {});
+  }
+  /** re-run a failed pilot; provider pins every model task (「换 Codex 重试」) */
+  retryPilot(item: string, provider?: string | null) {
+    return this.req<{ ok: boolean }>('POST', '/api/pilot/retry', provider ? { item, provider } : { item });
+  }
   inbox() {
     return this.req<InboxDoc>('GET', '/api/inbox');
   }

@@ -12,6 +12,7 @@ export const aboutEn = {
   'about.licencesHint': 'Licences: Help → Third-party Licences',
   'about.repo': '{app} on GitHub',
   'about.copyright': 'Copyright © {year} zyziyun',
+  'about.platforms': 'This version is for macOS (Apple silicon). A Windows version is coming later.',
 };
 
 type AboutKey = keyof typeof aboutEn;
@@ -25,6 +26,7 @@ export const aboutZh: Record<AboutKey, string> = {
   'about.licencesHint': '开源许可：帮助 → 第三方许可',
   'about.repo': 'GitHub 上的 {app}',
   'about.copyright': '版权所有 © {year} zyziyun',
+  'about.platforms': '这个版本支持 macOS（Apple 芯片），Windows 版稍后推出。',
 };
 
 export const aboutFr: Record<AboutKey, string> = {
@@ -36,6 +38,7 @@ export const aboutFr: Record<AboutKey, string> = {
   'about.licencesHint': 'Licences : Aide → Licences tierces',
   'about.repo': '{app} sur GitHub',
   'about.copyright': 'Copyright © {year} zyziyun',
+  'about.platforms': 'Cette version est pour macOS (puces Apple). Une version Windows arrivera plus tard.',
 };
 
 export interface AboutInfo {

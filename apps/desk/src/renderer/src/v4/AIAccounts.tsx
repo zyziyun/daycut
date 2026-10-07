@@ -17,7 +17,7 @@ import {
   type RouteChoice,
 } from '../../../shared/aiRoutes';
 import type { AiTestMsg, SecretsStatusMsg } from '../../../shared/deskApi';
-import { t, tk, type MessageKey } from '../i18n';
+import { has, t, tk, type MessageKey } from '../i18n';
 import { refreshStatus, rowOf, saveRoutes, useAi } from '../lib/ai';
 import { LoginTerminal, type LoginReq } from './LoginTerminal';
 import { useUi } from './ui';
@@ -46,7 +46,7 @@ export function AIAccounts({ focus }: { focus?: string }) {
           <ProviderCard
             key={p}
             p={p}
-            row={rowOf(status, p) ?? (status && !status.error ? missingRow(p) : undefined)}
+            row={rowOf(status, p) ?? (status ? (status.error ? { ...missingRow(p), state: 'error' } : missingRow(p)) : undefined)}
             focused={focus === p}
             keys={keys}
             onKeys={(k) => {
@@ -79,7 +79,16 @@ export function AIAccounts({ focus }: { focus?: string }) {
             {checking ? t('aiacc.checking') : t('aiacc.refresh')}
           </button>
         </div>
-        {status?.error && <div className="notice">{status.error}</div>}
+        {status?.error && (
+          <div className="notice" data-testid="ai-status-error">
+            {has(`aiacc.err.${status.error}`) ? tk(`aiacc.err.${status.error}`) : t('aiacc.err.failed')}
+          </div>
+        )}
+        {status?.probeTimedOut && !status.error && (
+          <div className="notice" data-testid="ai-probe-slow">
+            {t('aiacc.probeSlow')}
+          </div>
+        )}
         {restart && (
           <div className="notice accent row">
             <span className="sp">{t('aiacc.keyRestart')}</span>
@@ -390,7 +399,7 @@ function RouteRow({
       <span style={{ width: 150, paddingTop: 5 }}>{title}</span>
       <select
         className="input"
-        style={{ width: 210 }}
+        style={{ width: 'auto', minWidth: 210, maxWidth: 360 }}
         value={choice ? choice.provider : '__default'}
         onChange={(e) => {
           const v = e.target.value;

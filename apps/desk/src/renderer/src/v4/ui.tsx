@@ -89,6 +89,20 @@ export function UiProvider({
     return p;
   }, []);
 
+  // tooltips (CSS [data-tip]) flip below / to the side near the window edges instead of being clipped
+  useEffect(() => {
+    const over = (e: MouseEvent) => {
+      const el = (e.target as HTMLElement | null)?.closest?.('[data-tip]') as HTMLElement | null;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      el.toggleAttribute('data-tip-below', r.top < 40);
+      const mid = r.left + r.width / 2;
+      el.setAttribute('data-tip-x', mid < 140 ? 'start' : window.innerWidth - mid < 140 ? 'end' : 'mid');
+    };
+    document.addEventListener('mouseover', over, true);
+    return () => document.removeEventListener('mouseover', over, true);
+  }, []);
+
   // drop files anywhere -> Home composer
   useEffect(() => {
     let depth = 0;

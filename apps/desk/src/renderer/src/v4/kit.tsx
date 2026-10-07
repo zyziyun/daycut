@@ -7,6 +7,22 @@ import { STATUS_KEY, type Status4 } from '../lib/status';
 
 export const media = (p: string | null | undefined) => (p ? window.desk.mediaUrl(p) : '');
 
+/** Seconds since ``since`` (epoch s or ms), ticking once a second: "0:42", "3:05". */
+export function Elapsed({ since, testId }: { since: number | null | undefined; testId?: string }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const tm = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(tm);
+  }, []);
+  if (!since) return null;
+  const ms = since < 1e12 ? since * 1000 : since;
+  return (
+    <span className="tnum" data-testid={testId ?? 'elapsed'}>
+      {fmtClock(Math.max(0, (now - ms) / 1000))}
+    </span>
+  );
+}
+
 export function StatusPill({ s, label, testId }: { s: Status4 | null; label?: string; testId?: string }) {
   if (!s) return null;
   return (

@@ -1,14 +1,16 @@
 // The AI plan card (mockups/02-plan): one paragraph (the engine's summary, in the content language), the clips it
 // will make, four numbers, the one thing to decide, "just say it" revisions, and ONE primary: start with a pilot.
 import { useState } from 'react';
-import { RotateCcw, Send, Sparkles } from 'lucide-react';
+import { RotateCcw, Send, Sparkles, Square } from 'lucide-react';
 import type { IntakeJob, IntakePlan } from '../../../shared/v04';
 import { fmtClock, fmtMinutes, fmtMoney, t } from '../i18n';
 import { useEngine } from '../lib/engine';
 import { useHistory } from '../lib/history';
 import { go, href } from '../lib/router';
 import { platformName } from './Home';
-import { More, Sk } from './kit';
+import { Elapsed, More, Sk } from './kit';
+import { failureReason } from './Failure';
+import { emsg } from './msg';
 import { useUi } from './ui';
 import { AnsweredBy, FallbackNote } from './AiChip';
 
@@ -31,6 +33,15 @@ export function PlanCard({ job, jobId, onRevise, onReset, onStarted }: { job: In
   const plan = job?.plan ?? null;
   const running = !job || job.state === 'running';
 
+  const stop = async () => {
+    try {
+      await client?.stopIntake(jobId);
+    } catch {
+      // already finished: going back to the composer is still right
+    }
+    onReset();
+  };
+  if (job?.state === 'stopped') return null;
   if (job?.state === 'error') {
     return (
       <div className="card plan" data-testid="plan-card">
@@ -38,7 +49,15 @@ export function PlanCard({ job, jobId, onRevise, onReset, onStarted }: { job: In
           <i className="dot error" />
           <b style={{ fontWeight: 500 }}>{t('plan.failed')}</b>
         </div>
-        <p className="muted">{job.error}</p>
+        <p className="muted" data-testid="plan-failed-reason">
+          {failureReason({ state: 'failed', code: job.error_code ?? 'unknown', provider: job.error_provider ?? null, error: job.error ?? '', at: null })}
+        </p>
+        {job.error && (
+          <details className="muted small">
+            <summary>{t('plan.details')}</summary>
+            <span className="mono">{job.error}</span>
+          </details>
+        )}
         <button className="btn" onClick={onReset}>
           <RotateCcw className="ico" />
           {t('plan.discard')}
@@ -52,7 +71,16 @@ export function PlanCard({ job, jobId, onRevise, onReset, onStarted }: { job: In
         <div className="planprog">
           <Sparkles className="ico" />
           <b style={{ fontWeight: 500 }}>{job?.step === 'revise' ? t('plan.revising') : job?.step === 'plan' ? t('plan.planning') : t('plan.reading')}</b>
+          <span className="muted">
+            · <Elapsed since={job?.started ?? null} testId="plan-elapsed" />
+          </span>
+          <span className="sp" />
+          <button className="btn ghost" onClick={() => void stop()} data-testid="plan-stop">
+            <Square className="ico" />
+            {t('plan.stop')}
+          </button>
         </div>
+        {job?.started && Date.now() / 1000 - job.started > 45 && <p className="muted small">{t('plan.slow')}</p>}
         <div className="col" style={{ marginTop: 16 }}>
           <Sk h={16} />
           <Sk w="80%" h={16} />
@@ -68,7 +96,10 @@ export function PlanCard({ job, jobId, onRevise, onReset, onStarted }: { job: In
   const f = planFacts(plan);
   const rows = plan.projects.flatMap((p) => (p.items?.rows ?? []).map((r) => ({ p, r }))).slice(0, 8);
   const video = plan.materials.find((m) => m.kind === 'video');
-  const questions = [...(plan.questions ?? []).map((q) => q.text), ...(plan.risks ?? [])];
+  const questions = [
+    ...(plan.questions ?? []).map((q) => (q.code ? emsg({ code: q.code, params: q.params, message: q.text, message_zh: q.text }) : q.text)),
+    ...(plan.risks ?? []).map((r) => emsg(r)),
+  ];
   const start = async () => {
     if (!client) return;
     setStarting(true);

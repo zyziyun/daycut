@@ -155,7 +155,8 @@
 .cmp:focus-within { border-color: color-mix(in srgb, var(--accent) 70%, var(--border-strong)); }
 .cmp textarea { border: 0; outline: 0; background: transparent; color: var(--text); resize: none; min-height: 22px; max-height: 140px; line-height: 1.55; font: inherit; user-select: text; padding: 0; }
 .cmp .bot { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.cmp .bot .chips { flex-wrap: nowrap; overflow: hidden; min-width: 0; flex: 1; }
+.cmp .bot .chips { flex-wrap: wrap; overflow: hidden; min-width: 0; flex: 1; max-height: 28px; } /* a chip that does not fit wraps out of sight: never cut in half */
+.cmp .bot > .chip { flex: 0 1 auto; min-width: 0; }
 .cmp .send { width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--border-strong); background: transparent; color: var(--text-muted); display: flex; align-items: center; justify-content: center; flex: none; transition: background var(--t) var(--ease), color var(--t) var(--ease); }
 .cmp .send.on { background: var(--text); color: var(--bg); border-color: var(--text); }
 .cctx { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 6px 0 9px; border-radius: 7px; background: var(--surface-3); color: var(--text); font-size: 12px; width: fit-content; }
@@ -202,7 +203,7 @@
 /* in the editor the player is quiet: the timeline does the scrubbing */
 .ce-stage .pl .stage { background: transparent; }
 .ce-stage .pl .ctl > .btn.icon.sm:first-child, .ce-stage .pl .ctl > .btn.icon.sm:nth-child(3), .ce-stage .pl .ctl select { display: none; }
-.cmp .bot .chips { -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent); mask-image: linear-gradient(90deg, #000 85%, transparent); }
+
 .card2 .cft { padding: 10px 12px; gap: 6px; }
 .card2 .cft .btn { padding: 0 11px; }
 .card2 .chd b { white-space: nowrap; }

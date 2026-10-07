@@ -109,9 +109,12 @@ test.afterAll(async () => {
 test('queued downloads keep the wizard on its step, the window open and the page alive', async () => {
   test.setTimeout(120000);
   await expect(page.getByTestId('first-run')).toBeVisible({ timeout: 30000 });
-  await page.getByTestId('fr-next').click(); // welcome -> keys
-  await page.getByTestId('fr-next').click(); // keys -> models
+  await page.getByTestId('fr-next').click(); // welcome -> AI
+  await page.getByTestId('fr-next').click(); // AI -> downloads
   await expect(page.getByTestId('assets-card')).toBeVisible();
+  // the download button is not a second primary next to Next, and no raw folder path is shown
+  await expect(page.locator('[data-testid="first-run"] .btn.primary')).toHaveCount(1);
+  await expect(page.getByTestId('assets-card')).not.toContainText(/\/Users\/|\/var\/|\/tmp\//);
   const tokenBefore = await page.evaluate(async () => (await window.desk.engineInfo()).token);
   // a marker that only survives if the page is never reloaded
   await page.evaluate(() => ((window as unknown as { __marker: number }).__marker = 42));
@@ -126,7 +129,7 @@ test('queued downloads keep the wizard on its step, the window open and the page
   for (const id of ['core', 'chromium', 'asr-mlx']) {
     await expect(page.getByTestId(`asset-state-${id}`)).toHaveText(/已安装|Installed/, { timeout: 60000 });
     await expect(page.getByTestId('first-run')).toBeVisible();
-    await expect(steps).toHaveText(/模型|Models/);
+    await expect(steps).toHaveText(/下载|Downloads/);
   }
 
   // the env group triggers an engine-sidecar restart: new token, same page (marker kept), same step, window open
@@ -135,13 +138,12 @@ test('queued downloads keep the wizard on its step, the window open and the page
   const st = await page.evaluate(() => window.desk.assets.status());
   expect(st.busy).toBe(false);
   expect(st.restartNeeded).toBe(false);
-  await expect(steps).toHaveText(/模型|Models/);
+  await expect(steps).toHaveText(/下载|Downloads/);
   expect(closed).toBe(false);
   expect(app.windows().length).toBe(1);
 
   // only the explicit buttons leave the wizard
   await page.getByTestId('fr-next').click(); // -> platforms
-  await page.getByTestId('fr-next').click(); // -> persona
   await page.getByTestId('fr-next').click(); // finish
   await expect(page.getByTestId('engine-status')).toBeVisible({ timeout: 15000 });
   expect(closed).toBe(false);

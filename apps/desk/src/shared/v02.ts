@@ -412,6 +412,19 @@ export interface HistoryItem {
   opened: boolean;
   openable: boolean;
   error?: string;
+  /** the last pilot the desk started failed (engine/desk_engine/pilot.py): code -> UI words, never the raw error */
+  failure?: PilotFailure | null;
+  /** the pilot the desk started is still running */
+  pilot?: { started: number | null; provider: string | null } | null;
+}
+export type FailureCode = 'ai-login' | 'ai-quota' | 'ai-timeout' | 'ai-missing' | 'engine' | 'disk' | 'media' | 'unknown';
+export interface PilotFailure {
+  state: 'failed';
+  code: FailureCode;
+  provider: string | null;
+  error: string;
+  exit?: number;
+  at: number | null;
 }
 export interface HistoryDoc {
   items: HistoryItem[];

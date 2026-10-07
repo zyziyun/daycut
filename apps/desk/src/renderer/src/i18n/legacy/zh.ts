@@ -236,9 +236,9 @@ export const legacyZh = {
   'pub.slotHint': '点「打开上传页」或「打开登录页」',
   'pub.slotNoAccount': '先添加一个账号',
 
-  'adapter.verified': '已验证',
-  'adapter.unverified': '未验证',
-  'adapter.todo': '待做',
+  'adapter.verified': '自动填表',
+  'adapter.unverified': '自动填表（试用）',
+  'adapter.todo': '手动上传',
 
   'fill.file': '视频文件',
   'fill.title': '标题',
@@ -282,7 +282,7 @@ export const legacyZh = {
   'settings.themeHint': 'Notebook Light 还在做',
   'settings.privacy': '隐私与安全',
   'settings.privacyBody':
-    '媒体文件不离开本机。引擎只监听 127.0.0.1，每次启动换一个随机端口和令牌。平台页面在独立会话里运行，没有任何特权接口；应用不保存密码、不读取或导出 cookie，也永远不会替你点「发布」。',
+    '视频和声音都留在这台电脑上。只有文字（字幕稿和你的要求）会发给你选的 AI；如果本机没法转写、又设置了 OpenAI 密钥，声音会发给 OpenAI 转写。各平台页面在独立的会话里打开：日剪不存密码、不读 cookie，也从不替你点发布。',
   'theme.studio-dark': 'Studio Dark',
   'theme.notebook-light': 'Notebook Light',
   'assets.title': '模型、字体与工具',

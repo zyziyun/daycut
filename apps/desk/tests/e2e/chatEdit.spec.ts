@@ -222,3 +222,21 @@ for (const [lang, clip] of [['en', 'A_换圈子'], ['zh-CN', 'B_底气']] as con
     await page.evaluate(() => localStorage.removeItem('i18n.strict'));
   });
 }
+
+test('an answered request whose turn never shows up stops the spinner and says so (no endless 「正在看」)', async () => {
+  test.setTimeout(60000);
+  await openEditor('en', 'A_换圈子');
+  // the engine answers /ask but its turn is not in the clip's conversation (the P0-2 failure mode)
+  await page.route('**/ask', async (route) => {
+    const resp = await route.fetch();
+    const j = await resp.json();
+    await route.fulfill({ response: resp, json: { ...j, turn: 't99-dead' } });
+  });
+  await say('1.1x speed');
+  await expect(page.getByTestId('chat-thinking')).toBeVisible();
+  await expect(page.getByTestId('chat-lost')).toBeVisible({ timeout: 20000 });
+  await expect(page.getByTestId('chat-thinking')).toHaveCount(0);
+  await expect(page.getByTestId('chat-lost-retry')).toBeVisible();
+  await page.unroute('**/ask');
+  await page.evaluate(() => localStorage.removeItem('i18n.strict'));
+});

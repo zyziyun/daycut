@@ -14,7 +14,7 @@ import { ProjectTile } from './Home';
 import { Empty, More, Seg, SkGrid } from './kit';
 import { useUi } from './ui';
 
-type F = 'all' | 'running' | 'you' | 'done';
+type F = 'all' | 'running' | 'you' | 'done' | 'failed';
 const OWN = '\u0000own';
 const TYPES = ['talkinghead', 'slices', 'explainer', 'photo-story', 'vlog', 'podcast', 'aigc', 'script', 'batch', 'promo', 'slides', 'other'];
 
@@ -35,7 +35,7 @@ export function Projects() {
   useEffect(() => sessionStorage.setItem('v4.pf', f), [f]);
   const items = useMemo(() => data?.items ?? [], [data]);
   const counts = useMemo(() => {
-    const c = { all: items.length, running: 0, you: 0, done: 0 };
+    const c = { all: items.length, running: 0, you: 0, done: 0, failed: 0 };
     for (const i of items) {
       const b = bucket(i);
       if (b !== 'other') c[b]++;
@@ -117,6 +117,8 @@ export function Projects() {
               { v: 'running', label: t('projects.f.running', { n: counts.running }) },
               { v: 'you', label: t('projects.f.you', { n: counts.you }) },
               { v: 'done', label: t('projects.f.done', { n: counts.done }) },
+              // only when something failed: a calm row otherwise
+              ...(counts.failed || f === 'failed' ? [{ v: 'failed' as const, label: t('projects.f.failed', { n: counts.failed }) }] : []),
             ]}
           />
           <span className="sp" />

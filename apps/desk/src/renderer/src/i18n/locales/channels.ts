@@ -7,7 +7,7 @@ export const channelsEn = {
   'nav.main': 'Main',
 
   'set.channels': 'Publishing accounts',
-  'set.channelsHint': 'Your RedNote, Douyin, YouTube… accounts. You sign in once inside the app; it never sees your password.',
+  'set.channelsHint': 'Your Xiaohongshu, Douyin, YouTube… accounts. You sign in once inside the app; it never sees your password.',
   'set.channelsManage': 'Manage accounts',
   'set.channelsNone': 'No accounts yet - add the platforms you post to.',
   'set.advanced': 'Advanced',

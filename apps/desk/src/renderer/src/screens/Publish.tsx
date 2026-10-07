@@ -20,6 +20,12 @@ import { SCHEDULE_PLATFORMS } from '../v4/PlatformIcon';
 import { PlatformPicker } from '../v4/PlatformPicker';
 import { sortAdapters, useConnectedPlatforms } from '../v4/Channels';
 
+/** YYYY-MM-DD of tomorrow, local time (the first publishing day by default). */
+function tomorrowIso(): string {
+  const d = new Date(Date.now() + 86400000);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 const itemKey = (i: { job: string; platform: string }) => `${i.job}|${i.platform}`;
 
 export function Publish({ batch }: { batch: string }) {
@@ -41,7 +47,7 @@ export function Publish({ batch }: { batch: string }) {
   const [info, setInfo] = useState<string | null>(null); // success notes (not errors)
   const [modal, setModal] = useState<null | 'confirm' | 'account' | 'posted'>(null);
   const [perDay, setPerDay] = useState(1);
-  const [start, setStart] = useState('');
+  const [start, setStart] = useState(tomorrowIso); // never the locale-less mm/dd/yyyy placeholder
   const [times, setTimes] = useState('12:00,19:00');
   const [copy, setCopy] = useState<PostCopy | null>(null);
   const [params, setParams] = useState<Record<string, string>>({});
@@ -201,7 +207,7 @@ export function Publish({ batch }: { batch: string }) {
               <div className="card col">
                 <b>{t('pub.packageFirst')}</b>
                 <span className="muted small">{t('pub.packageHint')}</span>
-                <div className="row">
+                <div className="row" style={{ flexWrap: 'wrap' }}>
                   <Field label={t('pub.perDay')}>
                     <input className="input" type="number" min={1} max={20} value={perDay} onChange={(e) => setPerDay(Math.max(1, Number(e.target.value) || 1))} style={{ width: 70 }} />
                   </Field>
@@ -617,7 +623,7 @@ function WorkPackageCard({ batch, busy, onDone, guard }: { batch: string; busy: 
     return ['xiaohongshu', 'douyin'];
   });
   const [perDay, setPerDay] = useState(1);
-  const [start, setStart] = useState('');
+  const [start, setStart] = useState(tomorrowIso); // never the locale-less mm/dd/yyyy placeholder
   const [times, setTimes] = useState('19:00');
   const sel = picked ?? new Set(ready.map((c) => c.id));
   const toggle = (id: string) => setPicked(() => {
@@ -653,7 +659,7 @@ function WorkPackageCard({ batch, busy, onDone, guard }: { batch: string; busy: 
       </div>
       <b className="small">{t('pkg.platforms')}</b>
       <PlatformPicker multi value={pfs} onChange={setPfsSaved} connected={connected} testId="pkg-platform" />
-      <div className="row">
+      <div className="row" style={{ flexWrap: 'wrap' }}>
         <Field label={t('pub.perDay')}>
           <input className="input" type="number" min={1} max={20} value={perDay} onChange={(e) => setPerDay(Math.max(1, Number(e.target.value) || 1))} style={{ width: 70 }} />
         </Field>
@@ -661,7 +667,7 @@ function WorkPackageCard({ batch, busy, onDone, guard }: { batch: string; busy: 
           <input className="input" type="date" value={start} onChange={(e) => setStart(e.target.value)} />
         </Field>
         <Field label={t('pub.times')}>
-          <input className="input" value={times} onChange={(e) => setTimes(e.target.value)} style={{ width: 120 }} />
+          <input className="input" value={times} onChange={(e) => setTimes(e.target.value)} style={{ width: 96 }} />
         </Field>
       </div>
       <button

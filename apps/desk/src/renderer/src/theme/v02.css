@@ -46,3 +46,13 @@ table.weekly th, table.weekly td { white-space: nowrap; }
 /* first run */
 .firstrun { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: var(--bg); z-index: 5; padding: 40px 16px 16px; -webkit-app-region: drag; overflow: auto; }
 .frcard { width: min(720px, 100%); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px; box-shadow: var(--shadow); gap: 14px; -webkit-app-region: no-drag; max-height: 100%; overflow: auto; }
+.fr-brand { display: inline-flex; align-items: center; gap: 8px; color: var(--text); }
+.fr-brand .zh { font-size: 15px; font-weight: 600; }
+.fr-sub { gap: 12px; align-items: center; padding: 12px 14px; }
+.fr-keys summary { cursor: pointer; display: inline-flex; align-items: center; gap: 4px; color: var(--text-muted); font-size: 13px; list-style: none; }
+.fr-keys summary::-webkit-details-marker { display: none; }
+.fr-keys[open] summary .ico { transform: rotate(90deg); }
+.fr-keys[open] > .card { margin-top: 8px; }
+.devset { border-top: 1px solid var(--border); padding-top: 10px; }
+.devset > summary { cursor: pointer; color: var(--text-muted); font-size: 13px; }
+.devset[open] { display: flex; flex-direction: column; gap: 12px; }

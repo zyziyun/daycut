@@ -208,9 +208,9 @@ test('platform chips: English, then Chinese, then other languages; YouTube is on
   await chips.locator('button[data-pf="xiaohongshu"]').click();
 });
 
-const SCREENS = ['#/', '#/inbox', '#/projects', 'PROJECT', 'CLIP', '#/publish', '#/settings'];
+const SCREENS = ['#/', '#/inbox', '#/projects', 'PROJECT', 'CLIP', '#/publish', '#/publish/accounts', '#/settings', '#/settings/ai'];
 
-for (const lang of ['en', 'zh-CN'] as const) {
+for (const lang of ['en', 'zh-CN', 'fr'] as const) {
   test(`every main screen renders in ${lang}: no missing keys, no clipped labels`, async () => {
     await page.evaluate(async (l) => {
       localStorage.setItem('i18n.strict', '1');
@@ -238,6 +238,10 @@ for (const lang of ['en', 'zh-CN'] as const) {
         for (const el of document.querySelectorAll<HTMLElement>('.btn, .chip, .nav .label, .st, .seg button, .tabs4 a, .tabs4 button, .vers button')) {
           if (!el.offsetParent || el.closest('.clamp1')) continue;
           if (el.scrollWidth > el.clientWidth + 1) out.push(`clipped: "${el.innerText.trim()}" (${el.scrollWidth} > ${el.clientWidth})`);
+        }
+        // no sideways scrolling: the page and its scroll areas fit the window (French runs ~25 % longer)
+        for (const el of [document.scrollingElement as HTMLElement, ...document.querySelectorAll<HTMLElement>('.scroll, .pg, .agent, .cc')]) {
+          if (el && el.offsetParent !== null && el.scrollWidth > el.clientWidth + 2) out.push(`overflow-x: ${el.className || el.tagName} (${el.scrollWidth} > ${el.clientWidth})`);
         }
         return out;
       });

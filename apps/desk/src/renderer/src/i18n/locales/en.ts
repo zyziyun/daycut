@@ -7,6 +7,7 @@ import { chatEditEn } from './chatEdit';
 import { projectAiEn } from './projectAi';
 import { legacyEnV02 } from '../legacy/v02';
 import { publishPlatformsEn } from './publishPlatforms';
+import { releaseEn } from './release';
 
 export const v04En = {
   'nav.home': 'Home',
@@ -565,5 +566,5 @@ export const v04En = {
   'editor.zoomFit': 'Fit',
 };
 
-export const en = { ...legacyEn, ...legacyEnV02, ...v04En, ...aiaccEn, ...publishPlatformsEn, ...chatEditEn, ...channelsEn, ...projectAiEn, ...aboutEn };
+export const en = { ...legacyEn, ...legacyEnV02, ...v04En, ...aiaccEn, ...publishPlatformsEn, ...chatEditEn, ...channelsEn, ...projectAiEn, ...aboutEn, ...releaseEn };
 export type MessageKey = keyof typeof en;

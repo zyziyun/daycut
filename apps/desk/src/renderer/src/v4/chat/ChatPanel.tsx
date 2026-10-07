@@ -51,6 +51,8 @@ interface Local {
 }
 
 const r1 = (x: number) => fmtClock(x, true);
+/** how long the panel waits for an answered /ask turn to appear in the conversation before showing an error */
+const LOST_TURN_MS = 12_000;
 const SUG_ICON = { pauses: Scissors, pop: Sparkles, platform: Upload, cover: ImageIcon };
 
 export const ChatPanel = forwardRef<ChatApi, Props>(function ChatPanel(p, ref) {
@@ -61,6 +63,8 @@ export const ChatPanel = forwardRef<ChatApi, Props>(function ChatPanel(p, ref) {
   const [local, setLocal] = useState<Record<string, Local>>({});
   const [adjust, setAdjust] = useState<{ turn: string; i: number } | null>(null);
   const [pending, setPending] = useState<{ text: string; ctx: AskContext | null; token: number; turn?: string } | null>(null);
+  // /ask answered but its turn never showed up in the clip's conversation: stop the spinner and say so
+  const [lost, setLost] = useState<{ text: string; ctx: AskContext | null } | null>(null);
   const [cmp, setCmp] = useState<{ turn: string; ops: EditOp[] } | null>(null);
   const [conflict, setConflict] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState<string | null>(null);
@@ -81,10 +85,25 @@ export const ChatPanel = forwardRef<ChatApi, Props>(function ChatPanel(p, ref) {
     setCmp(null);
     setConflict({});
     setErrs({});
+    setLost(null);
   }, [clip]);
   useEffect(() => {
     if (pending?.turn && turns.some((x) => x.id === pending.turn)) setPending(null);
   }, [turns, pending]);
+  const reloadRef = useRef(p.reload);
+  reloadRef.current = p.reload;
+  useEffect(() => {
+    if (!pending?.turn) return;
+    const again = window.setTimeout(() => reloadRef.current(), LOST_TURN_MS / 3);
+    const give = window.setTimeout(() => {
+      setPending((x) => (x && x.token === pending.token ? null : x));
+      setLost({ text: pending.text, ctx: pending.ctx });
+    }, LOST_TURN_MS);
+    return () => {
+      window.clearTimeout(again);
+      window.clearTimeout(give);
+    };
+  }, [pending]);
   const count = turns.length + (pending ? 1 : 0);
   useEffect(() => {
     log.current?.scrollTo({ top: 1e9 });
@@ -157,6 +176,7 @@ export const ChatPanel = forwardRef<ChatApi, Props>(function ChatPanel(p, ref) {
     if (kind) return openCard(kind);
     const ctx = contextOf(p.sel, p.fxSel, doc);
     const token = ++tok.current;
+    setLost(null);
     setPending({ text: q, ctx, token });
     setText('');
     try {
@@ -645,6 +665,27 @@ export const ChatPanel = forwardRef<ChatApi, Props>(function ChatPanel(p, ref) {
             </span>
             <div className="body">
               <div className="say">{t('ce.selHint', { a: r1(p.sel.a), b: r1(p.sel.b) })}</div>
+            </div>
+          </div>
+        )}
+        {lost && !pending && (
+          <div className="col" style={{ gap: 10 }}>
+            {meBubble(lost.text, lost.ctx)}
+            <div className="cc-ai" data-testid="chat-lost">
+              <span className="av">
+                <Sparkles className="ico" />
+              </span>
+              <div className="body">
+                <div className="say drop1">{t('ce.lost')}</div>
+                <div className="row" style={{ gap: 8 }}>
+                  <button className="btn" onClick={() => void send(lost.text)} data-testid="chat-lost-retry">
+                    {t('ce.off.retry')}
+                  </button>
+                  <button className="btn ghost" onClick={() => setLost(null)}>
+                    {t('ce.lostDismiss')}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}

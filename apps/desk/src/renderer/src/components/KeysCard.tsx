@@ -38,7 +38,7 @@ export function KeysCard({ onChange }: { onChange?: () => void }) {
   if (!st) return null;
   return (
     <div className="card col" data-testid="keys-card">
-      <b>{t('keys.title')}</b>
+      <b>{t('apikeys.title')}</b>
       <span className="muted small">{st.backend === 'keychain' ? t('keys.keychain') : t('keys.noKeychain')}</span>
       {NAMES.map((n) => (
         <div key={n} className="col" style={{ gap: 4 }}>
