@@ -171,6 +171,7 @@ const v04Zh: Record<keyof typeof v04En, string> = {
 
   'checkpoint.filler-confirm': '确认去口癖',
   'checkpoint.hook-pick': '选一个开头',
+  'checkpoint.keywords': '确认字幕里变色的关键词',
   'checkpoint.segment-approval': '确认选段',
   'checkpoint.cover-pick': '选一张封面',
   'checkpoint.budget-approval': '批准花费',

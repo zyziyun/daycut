@@ -639,10 +639,39 @@ def _plat_zh(ps):
     return "、".join(out)
 
 
+def look_parts(p, lang="zh"):
+    """What the project's engine + edit style will draw (talkinghead: chapter bar, 记笔记 panels, keyword colour /
+    plain captions on fast) from its params over the recipe defaults (the format's); [] for other recipes."""
+    from vstudio import formats as F
+    m = M.get(p["recipe"])
+    if not {"pipeline", "edit_style"} <= set(m["params"]["properties"]):
+        return []
+    d = dict(M.param_defaults(m), **(p.get("params") or {}))
+    return F.look(d.get("pipeline"), d.get("edit_style"), lang)
+
+
+def with_look(summary, plan, lang="zh"):
+    """A (model-written) summary + one sentence saying what the default look does, unless it already says so."""
+    out = summary
+    for p in plan.get("projects") or []:
+        parts = look_parts(p, lang)
+        if parts and parts[0] not in out:
+            label = M.get(p["recipe"])["labels"].get(lang) or p["recipe"]
+            out = out.rstrip()
+            out += "" if re.search(r"[。.!！?？]$", out) else ("." if lang == "en" else "。")
+            out += (f" {label} look: {', '.join(parts)}." if lang == "en"
+                                  else f"{label}样式：{'、'.join(parts)}。")
+    return out
+
+
+def _lang(plan):
+    from vstudio.publish import detect_lang
+    return "en" if detect_lang(plan.get("prompt") or "") == "en" else "zh"
+
+
 def template_summary(plan):
     """The template summary in the request's language (an English request gets an English paragraph)."""
-    from vstudio.publish import detect_lang
-    return summary_en(plan) if detect_lang(plan.get("prompt") or "") == "en" else summary_zh(plan)
+    return summary_en(plan) if _lang(plan) == "en" else summary_zh(plan)
 
 
 def summary_en(plan):
@@ -674,6 +703,7 @@ def summary_en(plan):
         if pr.get("cleanup_profile"):
             settings.append({"gentle": "light pause cleanup", "standard": "standard filler cleanup",
                              "tight": "strict filler cleanup", "off": "no cleanup"}[pr["cleanup_profile"]])
+        settings += look_parts(p, "en")
         label = M.get(p["recipe"])["labels"].get("en") or p["recipe"]
         parts.append(f"({k + 1}) {label}: {what}" + (f" from {mats}" if mats else "") +
                      (f" ({', '.join(settings)})" if settings else ""))
@@ -715,6 +745,7 @@ def summary_zh(plan):
         if pr.get("cleanup_profile"):
             settings.append({"gentle": "轻度去气口", "standard": "标准去气口", "tight": "严格去气口", "off": "不去气口"}[
                 pr["cleanup_profile"]])
+        settings += look_parts(p, "zh")
         if it.get("focus"):
             settings.append(f"内容：{it['focus']}")
         parts.append(f"{'①②③④⑤⑥⑦⑧⑨'[k] if k < 9 else k + 1} {p['recipe_label']}：{('用 ' + mats + ' ') if mats else ''}{what}"
@@ -906,7 +937,8 @@ def make_plan(prompt, inputs=None, client=None, provider=None, model=None, analy
         series=_series_for(projects, prompt), questions=_norm_questions(questions, projects), risks=risks,
         warnings=warn, run=dict(pilot=1, auto=auto_ids))
     plan["estimate"] = EST.total(projects)
-    plan["summary_zh"] = summary if (summary and not info.get("fallback")) else template_summary(plan)
+    plan["summary_zh"] = with_look(summary, plan, _lang(plan)) if (summary and not info.get("fallback")) \
+        else template_summary(plan)
     errs = validate(plan)
     if errs:
         plan["warnings"] = warn + [MSG.Coded(f"schema: {e}", MSG.msg("intake.warning.schema", error=e)) for e in errs]
@@ -1035,7 +1067,8 @@ def revise(plan, instruction, provider=None, model=None, call=None, client=None,
     plan["planner"] = info
     plan["warnings"] = warn
     plan["estimate"] = EST.total(projects)
-    plan["summary_zh"] = summary if (summary and not info.get("fallback")) else template_summary(plan)
+    plan["summary_zh"] = with_look(summary, plan, _lang(plan)) if (summary and not info.get("fallback")) \
+        else template_summary(plan)
     return _messages(plan)
 
 

@@ -59,7 +59,8 @@ FR = {
     "qc.other": "{name} : {reason}",
     "stage.plan": "Planification", "stage.probe": "Lecture du fichier", "stage.extract": "Extraction de l'audio",
     "stage.asr": "Transcription", "stage.hooks": "Recherche d'accroches", "stage.cleanup": "Recherche des pauses et "
-    "tics", "stage.apply": "Découpe", "stage.face": "Suivi du visage", "stage.compose": "Composition",
+    "tics", "stage.apply": "Découpe", "stage.face": "Suivi du visage",
+    "stage.notes": "Notes et mots-clés", "stage.compose": "Composition",
     "stage.cover_frames": "Couvertures candidates", "stage.verify": "Vérification à l'écoute",
     "stage.glossary": "Glossaire", "stage.proofread": "Relecture des sous-titres", "stage.export": "Export",
     "stage.qc": "Contrôle qualité", "stage.preview": "Aperçu", "stage.render": "Rendu",
@@ -76,6 +77,8 @@ FR = {
     "inbox.storyboard-approval": "Vérifiez le storyboard", "checkpoint.budget-approval": "Valider le budget",
     "inbox.budget-approval": "Validez la dépense avant toute génération payante",
     "checkpoint.take-selection": "Choisir les prises", "inbox.take-selection": "Choisissez les prises à utiliser",
+    "checkpoint.keywords": "Vérifier les mots-clés en couleur", "inbox.keywords": "Vérifiez les mots colorés dans "
+    "les sous-titres",
     "checkpoint.cover-pick": "Choisir la couverture", "inbox.cover-pick": "Choisissez une couverture",
     "checkpoint.privacy-masks": "Vérifier les masques", "inbox.privacy-masks": "Vérifiez qui est masqué",
     "checkpoint.consent": "Confirmer le consentement", "inbox.consent": "Confirmez l'accord des personnes filmées",
