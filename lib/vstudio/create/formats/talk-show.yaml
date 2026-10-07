@@ -1,0 +1,29 @@
+id: talk-show
+schema_version: 1
+order: 4
+icon: smile
+labels: {en: "Talk-show bit", zh: "脱口秀段子", fr: "Sketch stand-up"}
+blurb:
+  en: "Set-up → turn → tag, you on camera"
+  zh: "铺垫 → 反转 → 补刀，你出镜"
+  fr: "Situation → retournement → chute, face caméra"
+recipe: talkinghead
+aspect: "9:16"
+length_s: [30, 45]
+episodes: 8
+engine:
+  en: "A relatable complaint, a turn nobody expects, then one extra tag that lands harder."
+  zh: "一个大家都有共鸣的吐槽，一个没人想到的反转，再补一刀更狠的。"
+  fr: "Une plainte que tout le monde partage, un retournement inattendu, puis une chute encore plus forte."
+beats:
+  - {id: setup, labels: {en: "Set-up", zh: "铺垫", fr: "Situation"}}
+  - {id: turn, labels: {en: "Turn", zh: "反转", fr: "Retournement"}}
+  - {id: tag, labels: {en: "Tag", zh: "补刀", fr: "Chute"}}
+cast_slots:
+  - {id: A, role: {en: "you", zh: "你自己", fr: "vous"}, faces: true, own: true}
+sources: {faces: record, no_faces: card, drafts: "local:auto", stills: "local:auto"}
+rules:
+  always:
+    - {en: "You on camera, one take per line", zh: "你自己出镜，一句一条", fr: "Vous à l’écran, une prise par phrase"}
+  never:
+    - {en: "No punching down", zh: "不拿弱势群体开玩笑", fr: "Pas de moqueries envers les plus faibles"}

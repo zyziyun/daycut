@@ -1,0 +1,26 @@
+id: record
+schema_version: 1
+order: 6
+icon: cam
+labels: {en: "Record yourself", zh: "录口播", fr: "S’enregistrer"}
+blurb:
+  en: "Teleprompter, retakes, auto-clean"
+  zh: "提词器、重录、自动去口癖"
+  fr: "Prompteur, reprises, nettoyage auto"
+recipe: talkinghead
+aspect: "9:16"
+length_s: [30, 90]
+episodes: 1
+engine:
+  en: "You read your own script on camera; Reelfold keeps the best take of every line."
+  zh: "你对着镜头念自己的稿，千剪每句保留最好的一遍。"
+  fr: "Vous lisez votre texte face caméra ; Reelfold garde la meilleure prise de chaque phrase."
+beats:
+  - {id: line, repeat: 6, labels: {en: "Line", zh: "句", fr: "Phrase"}}
+cast_slots:
+  - {id: A, role: {en: "you", zh: "你自己", fr: "vous"}, faces: true, own: true}
+sources: {faces: record, no_faces: record, drafts: "local:auto", stills: placeholder}
+rules:
+  always:
+    - {en: "Recorded and processed on this Mac", zh: "在本机录制和处理", fr: "Enregistré et traité sur ce Mac"}
+  never: []

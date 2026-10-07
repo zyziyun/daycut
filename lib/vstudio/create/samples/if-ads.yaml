@@ -1,0 +1,47 @@
+# Sample series (synthetic text only - no personal media): opened from Create's first run. Nothing is generated
+# or charged; the storyboard frames are placeholder cards made on this Mac.
+name: {en: "If ads were shot like this", zh: "假如广告这么拍", fr: "Si les pubs étaient tournées comme ça"}
+format: series-ad
+budget_cny: 300
+languages: [zh, en]
+engine:
+  en: "Take one AI-product slogan literally, shoot it like a disaster movie, cut to a dead-serious mock ad, then hard-cut back to the start so it loops."
+  zh: "把一句 AI 产品的宣传语当真，按灾难片来拍，切到一本正经的假广告，再硬切回开头形成循环。"
+  fr: "Prendre au pied de la lettre un slogan de produit IA, le filmer comme un film catastrophe, couper sur une fausse pub très sérieuse, puis revenir au début pour boucler."
+cast:
+  - id: A
+    name: {en: "the rescuer", zh: "救人的", fr: "celle qui sauve"}
+    essence: {en: "calm until she isn't", zh: "一直很冷静，直到绷不住", fr: "calme jusqu’à ce qu’elle craque"}
+    look: "cream trench coat, long dark hair, round glasses"
+  - id: B
+    name: {en: "the one hanging", zh: "挂着的那个", fr: "celui qui pend"}
+    essence: {en: "always falling, never hurt", zh: "永远在掉，从来不受伤", fr: "tombe toujours, jamais blessé"}
+    look: "grey tank top, ponytail"
+ideas:
+  - {title: {en: "The smart umbrella", zh: "智能雨伞", fr: "Le parapluie intelligent"}, logline: {en: "It has to finish a firmware update before it opens. In a typhoon.", zh: "它要先装完固件更新才能打开。在台风里。", fr: "Il doit finir une mise à jour avant de s’ouvrir. En plein typhon."}, picked: true}
+  - {title: {en: "The AI fridge", zh: "AI 冰箱", fr: "Le frigo IA"}, logline: {en: "Won't open until you say good morning in a calm voice. She is not calm.", zh: "你不用平静的语气说早安它就不开门。她并不平静。", fr: "Il ne s’ouvre que si on dit bonjour calmement. Elle n’est pas calme."}, picked: true}
+  - {title: {en: "Noise-cancelling rescue", zh: "降噪救援", fr: "Sauvetage antibruit"}, logline: {en: "Her headphones cancel the helicopter coming to save him.", zh: "她的耳机把来救他的直升机声音降掉了。", fr: "Son casque supprime le bruit de l’hélicoptère venu le sauver."}}
+  - {title: {en: "The subscription parachute", zh: "订阅制降落伞", fr: "Le parachute par abonnement"}, logline: {en: "Opens after a 7-day free trial.", zh: "7 天免费试用期结束后才打开。", fr: "S’ouvre après 7 jours d’essai gratuit."}}
+episode:
+  "no": 4
+  title: {en: "The AI rope", zh: "AI 绳子", fr: "La corde IA"}
+  logline: {en: "The rope only holds once it is online.", zh: "绳子要联网才肯拉住人。", fr: "La corde ne tient que si elle est en ligne."}
+  shots:
+    - {"no": "01", beat: "Cold open", dur: 1.2, faces: [], camera: "close-up", action: "A phone in the rain, a progress bar stuck near the start"}
+    - {"no": "02", beat: "Crisis", dur: 2.5, faces: [A, B], camera: "aerial", action: "Sea cliff, two tiny figures, B hanging from the edge"}
+    - {"no": "03", beat: "Crisis", dur: 2.0, faces: [A, B], camera: "close", action: "A grips B's hand", lines: [{who: B, text: "Don't let go!"}]}
+    - {"no": "04", beat: "Crisis", dur: 2.0, faces: [B], camera: "low angle", action: "B dangles over the waves", lines: [{who: B, text: "Then pull!"}]}
+    - {"no": "05", beat: "Slogan", dur: 2.0, faces: [A], camera: "medium", action: "A pulls out a glowing LED rope"}
+    - {"no": "06", beat: "Slogan", dur: 2.0, faces: [A, B], camera: "medium", action: "The rope drops; B grabs it, the LED blinks"}
+    - {"no": "07", beat: "Slogan", dur: 2.0, faces: [B], camera: "close", action: "B yells at the clasp in the rain", lines: [{who: B, text: "HEY!"}]}
+    - {"no": "08", beat: "Slogan", dur: 1.8, faces: [], camera: "insert", action: "Text card", card: "*Requires Wi-Fi"}
+    - {"no": "09", beat: "Slogan", dur: 2.0, faces: [A], camera: "wide", action: "A holds the phone up to the storm for signal"}
+    - {"no": "10", beat: "Slogan", dur: 2.0, faces: [], camera: "insert", action: "The rope clasp glows, a spinning loader light"}
+    - {"no": "11", beat: "Slogan", dur: 2.0, faces: [B], camera: "drone dive", action: "B falls, huge splash"}
+    - {"no": "12", beat: "Slogan", dur: 1.5, faces: [A], camera: "close", action: "A reaches down", lines: [{who: A, text: "Nooo!"}]}
+    - {"no": "13", beat: "Mock ad", dur: 2.0, faces: [A], camera: "medium", action: "A, soaked, stares at the phone"}
+    - {"no": "14", beat: "Mock ad", dur: 2.5, faces: [A], camera: "studio", action: "Mock ad: A in a calm studio holding the rope like jewellery", lines: [{who: A, text: "The AI rope. It helps."}]}
+    - {"no": "15", beat: "Mock ad", dur: 3.0, faces: [], camera: "product", action: "The rope coiled on a wet rock, waves behind"}
+    - {"no": "16", beat: "Mock ad", dur: 2.5, faces: [B], camera: "wide", action: "B climbs out of the sea, perfectly fine", lines: [{who: B, text: "I'm fine!"}]}
+    - {"no": "17", beat: "Mock ad", dur: 2.0, faces: [], camera: "insert", action: "Text card", card: "*Rope sold separately"}
+    - {"no": "18", beat: "Loop", dur: 2.5, faces: [], camera: "close-up", action: "Hard cut back: the phone in the rain"}

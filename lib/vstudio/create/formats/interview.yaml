@@ -1,0 +1,31 @@
+id: interview
+schema_version: 1
+order: 3
+icon: qa
+labels: {en: "Interview", zh: "采访 · 街采", fr: "Interview"}
+blurb:
+  en: "Street or sit-down Q&A, real or scripted"
+  zh: "街头或坐下来问答，真实或编排"
+  fr: "Micro-trottoir ou entretien, réel ou écrit"
+recipe: ai-video
+aspect: "9:16"
+length_s: [30, 60]
+episodes: 5
+engine:
+  en: "One question, three very different answers, the last one flips the premise."
+  zh: "一个问题，三个完全不同的回答，最后一个把前提反转。"
+  fr: "Une question, trois réponses très différentes, la dernière renverse le point de départ."
+beats:
+  - {id: question, labels: {en: "Question", zh: "提问", fr: "Question"}}
+  - {id: answer, repeat: 3, labels: {en: "Answer", zh: "回答", fr: "Réponse"}}
+  - {id: twist, labels: {en: "Twist", zh: "反转", fr: "Retournement"}}
+cast_slots:
+  - {id: A, role: {en: "the host", zh: "主持人", fr: "l’animatrice"}, faces: true, own: true}
+  - {id: B, role: {en: "passers-by", zh: "路人", fr: "les passants"}, faces: true}
+sources: {faces: record, no_faces: cheapest, drafts: "local:auto", stills: "local:auto"}
+rules:
+  always:
+    - {en: "Real people only with their written consent", zh: "真人出镜必须有书面同意", fr: "Personnes réelles uniquement avec accord écrit"}
+    - {en: "Scripted answers are labelled as staged", zh: "编排的回答要标注「情景演绎」", fr: "Réponses écrites signalées comme mises en scène"}
+  never:
+    - {en: "No fake interviews with real public figures", zh: "不伪造真实公众人物的采访", fr: "Pas de fausses interviews de personnalités réelles"}

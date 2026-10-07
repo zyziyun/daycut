@@ -1,0 +1,31 @@
+id: sketch
+schema_version: 1
+order: 5
+icon: film
+labels: {en: "Comedy sketch", zh: "情景段子", fr: "Sketch comique"}
+blurb:
+  en: "One absurd rule, escalated three times"
+  zh: "一个荒诞设定，升级三次"
+  fr: "Une règle absurde, poussée trois fois plus loin"
+recipe: ai-video
+aspect: "9:16"
+length_s: [30, 60]
+episodes: 5
+engine:
+  en: "Establish one absurd rule in the first shot, escalate it three times, end on the character who still takes it seriously."
+  zh: "第一个镜头立下一个荒诞规则，升级三次，最后落在依然很认真的那个人身上。"
+  fr: "Poser une règle absurde dès le premier plan, l’amplifier trois fois, finir sur celui qui y croit encore."
+beats:
+  - {id: rule, labels: {en: "The rule", zh: "设定", fr: "La règle"}}
+  - {id: escalate, repeat: 3, labels: {en: "Escalate", zh: "升级", fr: "Escalade"}}
+  - {id: button, labels: {en: "Button", zh: "收尾", fr: "Chute"}}
+cast_slots:
+  - {id: A, role: {en: "the straight one", zh: "正经的人", fr: "le sérieux"}, faces: true}
+  - {id: B, role: {en: "the believer", zh: "当真的人", fr: "celle qui y croit"}, faces: true}
+sources: {faces: "cloud:kling-mcp/kling-video-v3_0_omni", no_faces: cheapest, drafts: "local:auto", stills: "local:auto"}
+rules:
+  always:
+    - {en: "Same set reused across shots", zh: "同一场景反复使用", fr: "Même décor réutilisé"}
+  never:
+    - {en: "No anime or micro-drama style", zh: "不做动漫或微短剧风格", fr: "Pas de style anime ni micro-drama"}
+    - {en: "No text inside generated shots", zh: "生成的镜头里不要出现文字", fr: "Pas de texte dans les plans générés"}

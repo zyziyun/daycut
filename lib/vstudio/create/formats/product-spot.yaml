@@ -1,0 +1,33 @@
+id: product-spot
+schema_version: 1
+order: 2
+icon: bag
+labels: {en: "Product spot", zh: "产品短片", fr: "Spot produit"}
+blurb:
+  en: "15–30 s, one message, many languages"
+  zh: "15–30 秒，一个卖点，多语言版本"
+  fr: "15–30 s, un message, plusieurs langues"
+recipe: ai-video
+aspect: "9:16"
+length_s: [15, 30]
+episodes: 3
+engine:
+  en: "One clear benefit, shown in a single everyday moment, ending on the product and one line."
+  zh: "一个清楚的卖点，放进一个日常瞬间里展示，最后落在产品和一句话上。"
+  fr: "Un seul bénéfice, montré dans un moment du quotidien, qui finit sur le produit et une phrase."
+beats:
+  - {id: hook, labels: {en: "Hook", zh: "钩子", fr: "Accroche"}}
+  - {id: problem, labels: {en: "Problem", zh: "痛点", fr: "Problème"}}
+  - {id: product, labels: {en: "Product", zh: "产品", fr: "Produit"}}
+  - {id: payoff, labels: {en: "Payoff", zh: "结果", fr: "Résultat"}}
+  - {id: end-card, labels: {en: "End card", zh: "结尾卡", fr: "Carton final"}}
+cast_slots:
+  - {id: A, role: {en: "the user", zh: "用户", fr: "l’utilisatrice"}, faces: true}
+sources: {faces: "cloud:kling-mcp/kling-video-v3_0_omni", no_faces: cheapest, drafts: "local:auto", stills: "local:auto"}
+rules:
+  always:
+    - {en: "Product shown in real use", zh: "产品在真实使用中出现", fr: "Produit montré en usage réel"}
+    - {en: "One message per spot", zh: "每条只讲一个卖点", fr: "Un seul message par spot"}
+  never:
+    - {en: "No claims you cannot prove", zh: "不说无法证明的功效", fr: "Aucune promesse invérifiable"}
+    - {en: "No text inside generated shots", zh: "生成的镜头里不要出现文字", fr: "Pas de texte dans les plans générés"}

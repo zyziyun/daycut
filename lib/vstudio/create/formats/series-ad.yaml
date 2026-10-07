@@ -1,0 +1,37 @@
+# Create format (data, not code). Loaded by vstudio.create.formats; schema: formats.schema.json.
+id: series-ad
+schema_version: 1
+order: 1
+icon: megaphone
+labels: {en: "Series ad", zh: "系列广告", fr: "Pub en série"}
+blurb:
+  en: "Same cast every episode, one product idea each"
+  zh: "固定角色，每集一个产品梗"
+  fr: "Les mêmes personnages, une idée produit par épisode"
+recipe: ai-video
+aspect: "9:16"
+length_s: [40, 50]
+episodes: 6
+engine:
+  en: "Take one product promise literally, shoot it like a disaster movie, cut to a dead-serious mock ad, then hard-cut back to the start so it loops."
+  zh: "把一句产品宣传语当真，按灾难片来拍，切到一本正经的假广告，再硬切回开头形成循环。"
+  fr: "Prendre une promesse produit au pied de la lettre, la filmer comme un film catastrophe, couper sur une fausse pub très sérieuse, puis revenir au début pour boucler."
+beats:
+  - {id: cold-open, labels: {en: "Cold open", zh: "冷开场", fr: "Ouverture"}}
+  - {id: crisis, labels: {en: "Crisis", zh: "危机", fr: "Crise"}}
+  - {id: slogan, repeat: 3, labels: {en: "Slogan", zh: "口号", fr: "Slogan"}}
+  - {id: mock-ad, labels: {en: "Mock ad", zh: "假广告", fr: "Fausse pub"}}
+  - {id: loop, labels: {en: "Loop", zh: "回环", fr: "Boucle"}}
+cast_slots:
+  - {id: A, role: {en: "the rescuer", zh: "救人的", fr: "celle qui sauve"}, faces: true}
+  - {id: B, role: {en: "the one in trouble", zh: "遇险的", fr: "celui en danger"}, faces: true}
+sources: {faces: "cloud:kling-mcp/kling-video-v3_0_omni", no_faces: cheapest, drafts: "local:auto", stills: "local:auto"}
+rules:
+  always:
+    - {en: "Real-photo look, natural light", zh: "真实照片质感，自然光", fr: "Rendu photo réel, lumière naturelle"}
+    - {en: "“AI-generated” label on every post", zh: "每条都标注「AI 生成」", fr: "Mention « généré par IA » sur chaque post"}
+    - {en: "All on-screen text added in the edit", zh: "画面文字都在后期加", fr: "Tout le texte à l’écran ajouté au montage"}
+  never:
+    - {en: "No anime or cartoon style", zh: "不要动漫或卡通风格", fr: "Pas de style anime ou dessin animé"}
+    - {en: "No real brand names or logos", zh: "不出现真实品牌名或 logo", fr: "Aucune vraie marque ni logo"}
+    - {en: "No text inside generated shots", zh: "生成的镜头里不要出现文字", fr: "Pas de texte dans les plans générés"}
