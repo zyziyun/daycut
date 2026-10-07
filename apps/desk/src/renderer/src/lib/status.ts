@@ -50,8 +50,13 @@ export function clipStatus(c: Pick<Clip, 'state' | 'qc' | 'review'>): Status4 | 
   return 'done';
 }
 
-/** Projects filter buckets. */
-export function bucket(i: HistoryItem): 'running' | 'you' | 'done' | 'failed' | 'other' {
-  const s = itemStatus(i);
+/** Never 「已完成」 while the Inbox holds a decision for the project (the tile, the project page and the filter agree). */
+export function withInbox(s: Status4 | null, hasDecision: boolean): Status4 | null {
+  return s === 'done' && hasDecision ? 'you' : s;
+}
+
+/** Projects filter buckets; `hasDecision`: the Inbox has an open (non-failure) item for this project. */
+export function bucket(i: HistoryItem, hasDecision = false): 'running' | 'you' | 'done' | 'failed' | 'other' {
+  const s = withInbox(itemStatus(i), hasDecision);
   return s === 'run' ? 'running' : s === 'you' ? 'you' : s === 'done' ? 'done' : s === 'error' ? 'failed' : 'other';
 }

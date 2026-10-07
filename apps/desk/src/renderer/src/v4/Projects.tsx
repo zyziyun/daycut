@@ -8,6 +8,7 @@ import type { HistoryItem } from '../../../shared/v02';
 import { t, tk } from '../i18n';
 import { useEngine, useLoad } from '../lib/engine';
 import { useHistory } from '../lib/history';
+import { useInbox } from '../lib/inbox';
 import { go, href } from '../lib/router';
 import { bucket } from '../lib/status';
 import { ProjectTile } from './Home';
@@ -34,17 +35,21 @@ export function Projects() {
   const [clientFor, setClientFor] = useState<HistoryItem | null>(null);
   useEffect(() => sessionStorage.setItem('v4.pf', f), [f]);
   const items = useMemo(() => data?.items ?? [], [data]);
+  // the tiles say 「需要你」 when the Inbox holds a decision: the filter row counts the same way
+  const inbox = useInbox();
+  const deciding = useMemo(() => new Set(inbox.items.filter((x) => x.kind !== 'failed' && x.project.id).map((x) => x.project.id!)), [inbox.items]);
+  const bucketOf = (i: HistoryItem) => bucket(i, deciding.has(i.id));
   const counts = useMemo(() => {
     const c = { all: items.length, running: 0, you: 0, done: 0, failed: 0 };
     for (const i of items) {
-      const b = bucket(i);
+      const b = bucket(i, deciding.has(i.id));
       if (b !== 'other') c[b]++;
     }
     return c;
-  }, [items]);
+  }, [items, deciding]);
   const clientNames = useMemo(() => [...new Set(items.map((i) => i.client).filter((c): c is string => !!c))].sort(), [items]);
   const clientOk = (i: HistoryItem) => !agency || !clientF || (clientF === OWN ? !i.client : i.client === clientF);
-  const shown = items.filter((i) => (f === 'all' || bucket(i) === f) && (!type || (i.type ?? 'other') === type) && clientOk(i) && (!q || `${i.name} ${i.recipe ?? ''} ${agency ? (i.client ?? '') : ''}`.toLowerCase().includes(q.toLowerCase())));
+  const shown = items.filter((i) => (f === 'all' || bucketOf(i) === f) && (!type || (i.type ?? 'other') === type) && clientOk(i) && (!q || `${i.name} ${i.recipe ?? ''} ${agency ? (i.client ?? '') : ''}`.toLowerCase().includes(q.toLowerCase())));
   const saveClient = async (i: HistoryItem, name: string) => {
     setClientFor(null);
     if (!client) return;
