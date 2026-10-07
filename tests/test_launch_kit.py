@@ -392,3 +392,19 @@ def test_stills_exact_sizes(cfg, shots, tmp_path):
     for m in made:
         with Image.open(m) as im:
             assert im.size == (ST.OG if "og-" in m else ST.PH)
+
+
+def test_english_request_gets_an_english_plan_summary(tmp_path):
+    from vstudio.intake import plan as PL
+    from vstudio.intake import rules as R
+    assert "xiaohongshu" in R.parse_prompt("clips for TikTok and Xiaohongshu")["platforms"]
+    plan = dict(prompt="Cut this talk into clips for TikTok and Xiaohongshu", estimate=dict(wall_min=12),
+                projects=[dict(recipe="talkinghead", recipe_label="口播精剪", items=dict(method="per-file", count=1), inputs={},
+                               params=dict(platforms=["xiaohongshu:full", "tiktok"]),
+                               checkpoints=[dict(id="publish", label="审片发布", needs_you=True)])])
+    s = PL.template_summary(plan)
+    assert s.startswith("I'll make 1 project") and "Review and publish" in s
+    assert s.index("TikTok") < s.index("Xiaohongshu")                 # international first
+    assert not any("一" <= c <= "鿿" for c in s)
+    plan["prompt"] = "剪成小红书切片"
+    assert PL.template_summary(plan).startswith("我会做")

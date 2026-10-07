@@ -44,7 +44,8 @@ PHRASES = [
 EXTRACT = re.compile(r"剪出来|截取|截出|挑出|摘出|单独(剪|发|拿)|有意思的(部分|片段|地方)|精彩(片段|部分)|高光片段|把.{1,30}(部分|片段|内容|那段|几段)")
 POSITIONS = [("前面", (0.0, 0.4)), ("开头", (0.0, 0.3)), ("前半", (0.0, 0.5)), ("中间", (0.25, 0.75)),
              ("后半", (0.5, 1.0)), ("后面", (0.55, 1.0)), ("最后", (0.7, 1.0)), ("结尾", (0.75, 1.0))]
-PLATFORM_WORDS = [("小红书", "xiaohongshu"), ("红书", "xiaohongshu"), ("xhs", "xiaohongshu"), ("抖音", "douyin"),
+PLATFORM_WORDS = [("小红书", "xiaohongshu"), ("红书", "xiaohongshu"), ("xhs", "xiaohongshu"), ("xiaohongshu", "xiaohongshu"),
+                  ("rednote", "xiaohongshu"), ("抖音", "douyin"),
                   ("douyin", "douyin"), ("tiktok", "tiktok"), ("youtube shorts", "youtube-shorts"),
                   ("shorts", "youtube-shorts"), ("油管", "youtube"), ("youtube", "youtube"), ("b站", "bilibili"),
                   ("bilibili", "bilibili"), ("哔哩", "bilibili"), ("视频号", "wechat-channels"),

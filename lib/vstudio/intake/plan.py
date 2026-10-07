@@ -38,6 +38,9 @@ PLATFORM_ZH = {"xiaohongshu": "小红书", "douyin": "抖音", "tiktok": "TikTok
                "reddit": "Reddit", "pinterest": "Pinterest", "snapchat": "Snapchat", "kuaishou": "快手", "weibo": "微博",
                "zhihu": "知乎", "dailymotion": "Dailymotion", "kwai": "Kwai"}
 ORIENT_ZH = {"full": "竖屏 9:16", "vertical": "竖屏 3:4", "horizontal": "横屏"}
+ORIENT_EN = {"full": "9:16", "vertical": "3:4", "horizontal": "16:9"}
+PLATFORM_EN = dict(PLATFORM_ZH, xiaohongshu="Xiaohongshu", douyin="Douyin", bilibili="Bilibili",
+                   **{"wechat-channels": "WeChat Channels"}, kuaishou="Kuaishou", weibo="Weibo", zhihu="Zhihu")
 
 
 class PlanError(ValueError):
@@ -118,8 +121,9 @@ Rules:
   about things a checkpoint already covers (segment approval, filler cuts, cover pick, publish review).
 - Platforms: use the ids in the recipe's "platforms" list ("xiaohongshu:full" = 9:16, "xiaohongshu:vertical" = 3:4).
   Give a bare platform name ("xiaohongshu") unless the creator named a shape: the creator's persona picks it.
-- summary_zh: ONE short paragraph in Chinese for the creator: what will be made from what, key settings, what she
-  will be asked to confirm. No markdown.
+- summary_zh: ONE short paragraph for the creator, in the language of her request (Chinese for a Chinese request,
+  English for an English one): what will be made from what, key settings, what she will be asked to confirm.
+  No markdown.
 
 Phrase table (what the creator typically says -> recipe):
 {phrases}
@@ -624,6 +628,56 @@ def _plat_zh(ps):
     return "、".join(out)
 
 
+def template_summary(plan):
+    """The template summary in the request's language (an English request gets an English paragraph)."""
+    from vstudio.publish import detect_lang
+    return summary_en(plan) if detect_lang(plan.get("prompt") or "") == "en" else summary_zh(plan)
+
+
+def summary_en(plan):
+    """English template summary (same content as summary_zh)."""
+    ps = plan["projects"]
+    if not ps:
+        return "Could not put together a project from these files and this request: " + "; ".join(
+            str(r) for r in (plan.get("risks") or ["add material or say what to make"]))
+    parts = []
+    for k, p in enumerate(ps):
+        it = p["items"]
+        n = it.get("count")
+        what = {"focus": f"cut out {n or 'the'} part(s) you described", "planner": f"pick {n or 'the best'} segments",
+                "per-file": f"one video per file ({n})", "single": "make 1 video", "episodes": f"make {n} episodes",
+                "list": f"make {n} videos"}[it["method"]]
+        mats = ", ".join(os.path.basename(_first_path(v)) for v in p["inputs"].values()
+                         if isinstance(_first_path(v), str) and os.path.isabs(_first_path(v)))[:60]
+        settings = []
+        pr = p["params"]
+        if pr.get("platforms"):
+            plats = []
+            from vstudio.platform import ordered
+            for x in ordered(pr["platforms"]):          # international first, Chinese after
+                base, _, o = x.partition(":")
+                plats.append(PLATFORM_EN.get(base, base) + (f" ({ORIENT_EN.get(o, o)})" if o else ""))
+            settings.append("for " + ", ".join(plats))
+        if "speed" in pr:
+            settings.append(f"{pr['speed']}x")
+        if pr.get("cleanup_profile"):
+            settings.append({"gentle": "light pause cleanup", "standard": "standard filler cleanup",
+                             "tight": "strict filler cleanup", "off": "no cleanup"}[pr["cleanup_profile"]])
+        label = M.get(p["recipe"])["labels"].get("en") or p["recipe"]
+        parts.append(f"({k + 1}) {label}: {what}" + (f" from {mats}" if mats else "") +
+                     (f" ({', '.join(settings)})" if settings else ""))
+    labels = {c["id"]: c for p in ps for c in M.get(p["recipe"])["checkpoints"]}
+    need = sorted({(labels.get(c["id"]) or {}).get("labels", {}).get("en") or c["label"] for p in ps
+                   for c in p["checkpoints"] if c["needs_you"]})
+    est = plan.get("estimate") or {}
+    s = f"I'll make {len(ps)} project{'s' if len(ps) > 1 else ''}: " + "; ".join(parts) + "."
+    if need:
+        s += f" You'll confirm: {', '.join(need)}."
+    s += f" One pilot clip first; the whole run takes about {max(1, round(est.get('wall_min', 0)))} min on this Mac"
+    s += f", about ${est.get('api_usd', 0):.2f} in API costs" if est.get("api_usd") else ", no API costs"
+    return s + "."
+
+
 def summary_zh(plan):
     """Template summary (used when the model gave none, and after every rule revision)."""
     ps = plan["projects"]
@@ -839,7 +893,7 @@ def make_plan(prompt, inputs=None, client=None, provider=None, model=None, analy
         series=_series_for(projects, prompt), questions=_norm_questions(questions, projects), risks=risks,
         warnings=warn, run=dict(pilot=1, auto=auto_ids))
     plan["estimate"] = EST.total(projects)
-    plan["summary_zh"] = summary if (summary and not info.get("fallback")) else summary_zh(plan)
+    plan["summary_zh"] = summary if (summary and not info.get("fallback")) else template_summary(plan)
     errs = validate(plan)
     if errs:
         plan["warnings"] = warn + [MSG.Coded(f"schema: {e}", MSG.msg("intake.warning.schema", error=e)) for e in errs]
@@ -968,7 +1022,7 @@ def revise(plan, instruction, provider=None, model=None, call=None, client=None,
     plan["planner"] = info
     plan["warnings"] = warn
     plan["estimate"] = EST.total(projects)
-    plan["summary_zh"] = summary if (summary and not info.get("fallback")) else summary_zh(plan)
+    plan["summary_zh"] = summary if (summary and not info.get("fallback")) else template_summary(plan)
     return _messages(plan)
 
 
