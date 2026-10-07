@@ -40,6 +40,17 @@ def make_engine(data_dir, bus):
     return RealEngine(data_dir, reg, bus, engine_path=engine_path), None
 
 
+def warm(api):
+    """Off the start-up path: import what opening a clip and the inbox poll use in this process and probe the
+    engine's output commands once, so the first editor open does not pay for them."""
+    try:
+        import vstudio.project.inbox  # noqa: F401
+        import vstudio.project.outputs  # noqa: F401
+        api.outputs.real()
+    except Exception as e:  # noqa: BLE001  (the calls themselves report a broken engine)
+        print(f"[engine] warm-up: {e}", file=sys.stderr, flush=True)
+
+
 def main():
     token = os.environ.get("DESK_TOKEN")
     if not token or len(token) < 32:
@@ -61,6 +72,8 @@ def main():
     else:
         runner, caps = None, Capabilities(fixed=set())
     api = Api(engine, bus, token, origins, studio=Studio(engine, data_dir, bus, caps, runner))
+    if engine.mode == "real":
+        threading.Thread(target=warm, args=(api,), daemon=True).start()
     try:
         port = int(os.environ.get("DESK_PORT") or 0)
     except ValueError:

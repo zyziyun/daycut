@@ -161,3 +161,24 @@ class InboxPollIsCheap(unittest.TestCase):
             ib.list()
             self.assertEqual(len(reads), 2)
         self.assertEqual(runner.calls, [], "no CLI is started to list or probe the inbox")
+
+
+class EditorOpenWithoutCli(unittest.TestCase):
+    """BB-18: opening a clip started `output list` + `output show` CLIs (6-8 s cold); now read in process."""
+
+    def test_list_and_show_are_read_in_process(self):
+        from vstudio.project import outputs as O
+        o = OU.Outputs(tempfile.mkdtemp(), history=None)
+        with mock.patch.object(o, "_cli", side_effect=AssertionError("no CLI")), \
+                mock.patch.object(O, "list_outputs", return_value=dict(outputs=[dict(id="final/a.mp4", file="/x/a.mp4")])), \
+                mock.patch.object(O, "show", return_value=dict(output=dict(id="final/a.mp4"), state={})):
+            self.assertEqual(o._read("list", "/x")["outputs"][0]["id"], "final/a.mp4")
+            self.assertEqual(o._read("show", "/x", "final/a.mp4")["output"]["id"], "final/a.mp4")
+
+    def test_a_refusal_is_the_same_engine_message(self):
+        from vstudio.project import outputs as O
+        o = OU.Outputs(tempfile.mkdtemp(), history=None)
+        with mock.patch.object(O, "show", side_effect=O.OutputError("no-output", "no output x", "没有 x", id="x")):
+            with self.assertRaises(OU.EngineMessage) as cm:
+                o._read("show", "/x", "x")
+        self.assertEqual((cm.exception.doc["code"], cm.exception.doc["params"]), ("no-output", {"id": "x"}))

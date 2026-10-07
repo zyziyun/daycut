@@ -705,6 +705,18 @@ class Outputs:
                 raise EngineMessage(doc) from e
             raise
 
+    def _read(self, act, project, output=None):
+        """The read-only engine calls behind opening a clip (``output list`` / ``output show``), run in this process:
+        the sidecar already imports vstudio, and a CLI start per call (Python start + importing the effect catalogue,
+        2-3 s each) made a cold editor open take 6-8 s. Same functions and the same JSON as the CLI; a refusal is the
+        same EngineMessage."""
+        from vstudio.project import outputs as O
+        try:
+            r = O.list_outputs(project) if act == "list" else O.show(project, output)
+        except O.OutputError as e:
+            raise EngineMessage(dict(e.info)) from e
+        return json.loads(json.dumps(r, ensure_ascii=False, default=str))
+
     def _engine_list(self, e):
         """``output list`` for a project / work folder (cached per owner for a few seconds) -> {abs file: id}."""
         if not self.real() or e["kind"] == "batch":
@@ -714,7 +726,7 @@ class Outputs:
         if hit and time.time() - hit[0] < 5:
             return hit[1]
         try:
-            doc = self._cli(["list", "--project", e["dir"]], timeout=120)
+            doc = self._read("list", e["dir"])
             m = {os.path.realpath(o["file"]): o["id"] for o in doc.get("outputs") or [] if o.get("file") and o.get("id")}
         except Exception:  # noqa: BLE001  (unknown owner / older engine: the desk implementation answers)
             m = None
@@ -866,7 +878,7 @@ class Outputs:
         base = self._base(e, c)
         oid = self._output_id(e, c)
         if oid:
-            eng = self._cli(["show", "--project", e["dir"], "--output", oid])
+            eng = self._read("show", e["dir"], oid)
             tr = read_json(os.path.join((eng.get("paths") or {}).get("dir") or "/nonexistent", "transcript.json"), None)
             words = [dict(w=w["w"], t=w["t"], te=w["te"], **({"p": w["p"]} if w.get("p") is not None else {}))
                      for w in (tr or {}).get("words") or []] if isinstance(tr, dict) else None
