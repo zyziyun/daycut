@@ -55,7 +55,7 @@ export const ipcSchemas = {
   'settings:set': z.strictObject({
     enginePath: absPath.optional(),
     python: absPath.optional(),
-    lang: z.enum(['en', 'zh-CN']).optional(),
+    lang: z.enum(['en', 'zh-CN', 'fr']).optional(),
     theme: z.enum(['studio-dark', 'notebook-light']).optional(),
     accent: z.enum(['teal', 'red']).optional(),
     defaultPlatforms: z.array(platformId).min(1).max(8).optional(),

@@ -17,19 +17,26 @@ describe('locales', () => {
       const extra = Object.keys(m).filter((k) => !(k in en));
       expect(extra, `${l} has unknown keys`).toEqual([]);
     }
-    const bad = Object.keys(en).filter((k) => {
-      const a = placeholders((en as Record<string, string>)[k]).filter((x) => !/^(one|other|few|many|zero|two)$/.test(x));
-      const b = placeholders((zhCN as Record<string, string>)[k]).filter((x) => !/^(one|other|few|many|zero|two)$/.test(x));
-      // plural branches may differ between languages; the variables must not
-      return a.filter((x) => !b.includes(x)).length > 0;
-    });
-    expect(bad).toEqual([]);
+    for (const l of LANGS.filter((x) => x !== 'en')) {
+      const m = LOCALES[l].messages as Record<string, string>;
+      const bad = Object.keys(en).filter((k) => {
+        const a = placeholders((en as Record<string, string>)[k]).filter((x) => !/^(one|other|few|many|zero|two)$/.test(x));
+        const b = placeholders(m[k]).filter((x) => !/^(one|other|few|many|zero|two)$/.test(x));
+        // plural branches may differ between languages; the variables must not
+        return a.filter((x) => !b.includes(x)).length > 0;
+      });
+      expect(bad, `${l} placeholders`).toEqual([]);
+    }
+    expect(LANGS).toEqual(['en', 'zh-CN', 'fr']);
+    expect(zhCN['status.you']).toBe('需要你');
   });
 
   it('English is the default; zh / zh-CN map to the registered locale', () => {
     expect(normalizeLang(undefined)).toBe('en');
     expect(normalizeLang('zh')).toBe('zh-CN');
-    expect(normalizeLang('fr')).toBe('en');
+    expect(normalizeLang('fr')).toBe('fr');
+    expect(normalizeLang('fr-CA')).toBe('fr');
+    expect(normalizeLang('de')).toBe('en');
   });
 
   it('formats plurals, numbers and select with the active locale', () => {

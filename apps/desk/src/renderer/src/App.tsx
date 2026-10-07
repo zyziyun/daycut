@@ -3,7 +3,7 @@ import { Calendar, Home as HomeIcon, Inbox as InboxIcon, LayoutGrid, Settings as
 import type { SettingsMsg } from '../../shared/deskApi';
 import { AssetsBanner, UpdateBadge } from './components/assets';
 import { BrandSymbol, BrandWordmark } from './components/Brand';
-import { getLang, setLang, t, type MessageKey } from './i18n';
+import { getLang, normalizeLang, setLang, t, type MessageKey } from './i18n';
 import { EngineProvider, useEngine } from './lib/engine';
 import { HistoryProvider, useHistory } from './lib/history';
 import { InboxProvider, useInbox } from './lib/inbox';
@@ -212,7 +212,7 @@ export function App() {
       .finally(() => setReady(true));
   }, [apply]);
   const onTheme = useCallback((theme: ThemeName) => void window.desk.setSettings({ theme }).then(apply), [apply]);
-  const onLang = useCallback((l: string) => void window.desk.setSettings({ lang: l === 'zh-CN' ? 'zh-CN' : 'en' }).then(apply), [apply]);
+  const onLang = useCallback((l: string) => void window.desk.setSettings({ lang: normalizeLang(l) }).then(apply), [apply]);
   if (!ready) return null;
   return (
     <EngineProvider>

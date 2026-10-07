@@ -4,14 +4,16 @@
 // plan summaries are shown as the engine wrote them).
 import { formatMessage, type Vars } from './icu';
 import { en, type MessageKey } from './locales/en';
+import { fr } from './locales/fr';
 import { zhCN } from './locales/zh-CN';
 
 export type { MessageKey };
-export type Lang = 'en' | 'zh-CN';
+export type Lang = 'en' | 'zh-CN' | 'fr';
 
 export const LOCALES: Record<Lang, { label: string; intl: string; messages: Record<MessageKey, string> }> = {
   en: { label: 'English', intl: 'en', messages: en },
   'zh-CN': { label: '简体中文', intl: 'zh-CN', messages: zhCN },
+  fr: { label: 'Français', intl: 'fr', messages: fr },
 };
 export const LANGS = Object.keys(LOCALES) as Lang[];
 export const DEFAULT_LANG: Lang = 'en';
@@ -25,9 +27,10 @@ try {
   strict = false;
 }
 
-/** Settings value -> a registered locale ('zh' is the pre-v0.4 code for zh-CN). */
+/** Settings value -> a registered locale ('zh' is the pre-v0.4 code for zh-CN; any fr-* region maps to fr). */
 export function normalizeLang(l: string | null | undefined): Lang {
   if (l === 'zh' || l === 'zh-CN' || l === 'zh-Hans') return 'zh-CN';
+  if (l === 'fr' || /^fr[-_]/i.test(l ?? '')) return 'fr';
   return (LANGS as string[]).includes(l ?? '') ? (l as Lang) : DEFAULT_LANG;
 }
 

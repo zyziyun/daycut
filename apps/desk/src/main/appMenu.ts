@@ -6,7 +6,7 @@ import { app, dialog, Menu, nativeImage, shell, type BrowserWindow, type MenuIte
 import { aboutStrings, type AboutStrings } from '../renderer/src/i18n/locales/about';
 import { APP_NAME, APP_NAME_ZH, REPO_URL } from './identity';
 
-type Lang = 'en' | 'zh-CN';
+type Lang = 'en' | 'zh-CN' | 'fr';
 
 const L = {
   en: {
@@ -65,6 +65,34 @@ const L = {
     front: '全部置于前台',
     close: '关闭窗口',
   },
+  fr: {
+    hide: `Masquer ${APP_NAME}`,
+    hideOthers: 'Masquer les autres',
+    showAll: 'Tout afficher',
+    quit: `Quitter ${APP_NAME}`,
+    file: 'Fichier',
+    edit: 'Édition',
+    view: 'Présentation',
+    window: 'Fenêtre',
+    help: 'Aide',
+    services: 'Services',
+    undo: 'Annuler',
+    redo: 'Rétablir',
+    cut: 'Couper',
+    copy: 'Copier',
+    paste: 'Coller',
+    pasteMatch: 'Coller et adapter le style',
+    del: 'Supprimer',
+    selectAll: 'Tout sélectionner',
+    actualSize: 'Taille réelle',
+    zoomIn: 'Zoom avant',
+    zoomOut: 'Zoom arrière',
+    fullScreen: 'Activer/désactiver le plein écran',
+    minimize: 'Placer dans le Dock',
+    zoom: 'Réduire/agrandir',
+    front: 'Tout ramener au premier plan',
+    close: 'Fermer la fenêtre',
+  },
 } satisfies Record<Lang, Record<string, string>>;
 
 export interface MenuDeps {
@@ -95,7 +123,7 @@ export function aboutText(lang: string, version = app.getVersion(), versions: { 
 /** The panel body under the name / version: open-source repo, runtime versions, where the licences are. */
 export function aboutCredits(lang: string, version = app.getVersion(), versions?: { electron: string; chrome: string; node: string }): string {
   const a = aboutText(lang, version, versions);
-  return [a['about.openSource'], '', a['about.runtime'], a['about.licencesHint']].join('\n');
+  return [a['about.openSource'], a['about.platforms'], '', a['about.runtime'], a['about.licencesHint']].join('\n');
 }
 
 function setAbout(d: MenuDeps) {
@@ -138,7 +166,7 @@ function openLicences(d: MenuDeps) {
 }
 
 export function installAppMenu(d: MenuDeps) {
-  const t = L[d.lang];
+  const t = L[d.lang] ?? L.en;
   const a = aboutText(d.lang);
   setAbout(d);
   const mac = process.platform === 'darwin';

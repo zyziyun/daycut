@@ -7,7 +7,7 @@ export interface Settings {
   enginePath?: string;
   python?: string;
   /** UI language (v0.4: 'en' default; 'zh' from older profiles reads as 'zh-CN') */
-  lang: 'en' | 'zh-CN';
+  lang: 'en' | 'zh-CN' | 'fr';
   /** brand accent: calm teal (default) or 小红书 red */
   accent?: 'teal' | 'red';
   theme: 'studio-dark' | 'notebook-light';
@@ -43,7 +43,8 @@ export class SettingsStore {
       const raw = JSON.parse(fs.readFileSync(this.file, 'utf8'));
       if (raw && typeof raw === 'object') this.data = { ...DEFAULTS, ...raw, accounts: { ...(raw.accounts ?? {}) }, channels: { ...(raw.channels ?? {}) } };
       if ((this.data.lang as string) === 'zh') this.data.lang = 'zh-CN'; // pre-v0.4 code
-      if (this.data.lang !== 'en' && this.data.lang !== 'zh-CN') this.data.lang = 'en';
+      if (/^fr([-_]|$)/.test(this.data.lang as string)) this.data.lang = 'fr';
+      if (!['en', 'zh-CN', 'fr'].includes(this.data.lang)) this.data.lang = 'en';
     } catch {
       /* first launch */
     }
