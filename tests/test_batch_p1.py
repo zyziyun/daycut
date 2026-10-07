@@ -182,7 +182,8 @@ def test_talkinghead_folder_end_to_end_with_fake_scripts(tmp_path, monkeypatch):
             stem = os.path.splitext(cfg["OUT"])[0]
             tiny(os.path.join(cwd, stem + ".clean.mp4"), 2.5)
             json.dump(dict(cues=[dict(start=0.2, end=1.2, text="你好"), dict(start=1.3, end=2.2, text="今天讲方法")],
-                           keepouts=[]), open(os.path.join(cwd, stem + ".cues.json"), "w"), ensure_ascii=False)
+                           keepouts=[dict(t0=0.0, t1=2.0, box=[10, 300, 340, 200], kind="panel")], size=[360, 640]),
+                      open(os.path.join(cwd, stem + ".cues.json"), "w"), ensure_ascii=False)
         return "ok"
     monkeypatch.setattr(TH, "_run", fake_run)
     spec = dict(name="th", recipe="talkinghead-folder", inputs=dict(folder=str(raw)), retry={"backoff": 0},
@@ -205,6 +206,8 @@ def test_talkinghead_folder_end_to_end_with_fake_scripts(tmp_path, monkeypatch):
         j = st.job(jid)
         assert j["state"] == "done", (jid, j["qc_reasons"])
         assert os.path.exists(st.stage(jid, "export")["out"]["exports"][0]["file"])
+        man = json.load(open(st.stage(jid, "export")["out"]["manifest"], encoding="utf-8"))
+        assert man["exports"][0]["keepouts"] == 1      # the panel keep-out survives proofread into the export
     cl = st.stage("c2", "cleanup")["out"]
     st.close()
     assert cl["confirm"] == 1 and cl["sentences"] == 2

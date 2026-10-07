@@ -522,7 +522,8 @@ def run_proofread(ctx):
     from .edits import locked_cues
     o = proofread_opts(ctx.spec)
     c = ctx.inputs["compose"]
-    cues = (read_json(c["cues"], {}) or {}).get("cues", [])
+    src = read_json(c["cues"], {}) or {}
+    cues = src.get("cues", []) if isinstance(src, dict) else src
     p = ctx.params
     context = proofread_context(ctx.spec, p)
     call = import_ref(o["call"]) if o["call"] else None
@@ -537,8 +538,9 @@ def run_proofread(ctx):
     if o["filler_edges"]:
         out_cues, res["filler_edges"] = PR.fix_filler_edges(out_cues, max_chars=int(p.get("max_chars") or 24),
                                                             locked=locked)
-    cues_path = write_json(ctx.path("cues.json"), {"cues": out_cues})
-    rep = write_json(ctx.path("proofread.json"), res)
+    keep = {k: v for k, v in src.items() if k != "cues"} if isinstance(src, dict) else {}
+    cues_path = write_json(ctx.path("cues.json"), dict(keep, cues=out_cues))   # keepouts / size ride along: the
+    rep = write_json(ctx.path("proofread.json"), res)                          # export moves captions off panels
     cs = res.get("cache") or {}
     ctx.log(f"proofread ({res['provider']}): {len(res['changes'])} change(s), {len(res['rejected'])} rejected, "
             f"{len(res['low_confidence'])} low-confidence word(s); cache {cs.get('hits', 0)} hit(s), "
@@ -740,7 +742,7 @@ def speech_stages():
         Stage("glossary", _proofread_resource, run_glossary, deps=("asr",), shared=True, params=_glossary_params,
               enabled=_glossary_on, units=lambda j, s: 1.0, cost=lambda j, s: 0.05, retries=2),
         Stage("proofread", _proofread_resource, run_proofread, deps=("compose", "verify", "glossary"),
-              params=_proofread_params, enabled=_proofread_on, units=lambda j, s: 1.0,
+              params=_proofread_params, enabled=_proofread_on, units=lambda j, s: 1.0, version=2,
               cost=lambda j, s: 0.02 if proofread_opts(s)["provider"] != "none" else 0.0),
         Stage("export", _export_resource, run_export, deps=("compose", "proofread"),
               params=_export_params,

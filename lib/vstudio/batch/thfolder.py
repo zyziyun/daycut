@@ -310,7 +310,7 @@ def th_stages():
         Stage("face", "face", run_face_th, deps=("cleanup",), units=dur, params=lambda j, s: dict(on=_th(s).get("face", True))),
         base["glossary"],                             # before compose: the drafted 记笔记 cards use its fixes
         Stage("compose", "cpu-render", run_compose_th, deps=("cleanup", "face", "glossary"),
-              units=lambda j, s: dur(j, s) * 3, params=_compose_params, purge=("*.mp4", "out/*.mp4"), version=3),
+              units=lambda j, s: dur(j, s) * 3, params=_compose_params, purge=("*.mp4", "out/*.mp4"), version=4),
         Stage("verify", "asr", _no_verify, deps=("compose",), enabled=lambda j, s: False),
         base["proofread"],
         Stage("export", ST._export_resource, ST.run_export, deps=("compose", "proofread"), params=ST._export_params,

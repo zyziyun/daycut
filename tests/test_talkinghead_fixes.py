@@ -282,6 +282,18 @@ def test_compose_wraps_an_overlong_sentence_into_caption_chunks(comp):
 
 
 @need_ff
+def test_panels_end_above_the_export_caption_band(comp):
+    """The export re-burns captions in the platform band: a 记笔记 card must end above it, or the captions get
+    pushed up onto the face (seen on real footage)."""
+    _run("compose.py", "config.py", "cues", cwd=comp)
+    from vstudio import platform as P
+    d = json.load(open(comp / "out.cues.json"))
+    band_top = P.caption_box(P.profile(d["platform"]))[1]
+    panels = [k for k in d["keepouts"] if k["kind"] == "panel"]
+    assert panels and all(k["box"][1] + k["box"][3] <= band_top for k in panels), (panels, band_top)
+
+
+@need_ff
 def test_cover_platform_names_do_not_overwrite(comp):
     _run("cover.py", "config.py", cwd=comp)
     assert (comp / "cover.jpg").exists()

@@ -397,7 +397,7 @@ if ST['callouts']:
         CALI.append((t, t + dur * BS, np.asarray(im), x - pad, y - pad))
 # 记笔记 panels (notes style): bottom card (vertical) / side card (horizontal), red header, yellow tag, bullets
 # revealed one by one as she says them. Kept local (overlays.notes_panel renders all bullets at once).
-PANI = []
+PANI = []; PANBOX = []
 def _panel(title, bullets, k=1.0):
     """记笔记 card at metric scale k: (shadowed bg, pad, [(t, row layer, dx, dy)], width, height)."""
     n = len(bullets); RW = L.panel_w; HH = int(96 * k); ROW = int(66 * k); ph = HH + int(26 * k) + n * ROW + int(22 * k)
@@ -418,7 +418,8 @@ if ST['panels']:
         for k in ((1.0,) if L.legacy else (1.0, 0.88, 0.78)):   # vertical: shrink until it clears the chin
             bgs, pad, rows, RW, ph = _panel(title, bullets, k)
             if L.portrait:
-                x = (W - RW) / 2; top = ST['sub_y'] - 60 * k - ph
+                # end above the platform caption band: an export re-burns 2-line captions there (vstudio.export)
+                x = (W - RW) / 2; top = min(ST['sub_y'] - 60 * k, L.cap[1] - 24) - ph
             else:   # landscape: on the side away from the face, ending above the captions
                 fb = np.mean(_boxes_during(p0, p1), 0); side_l = (fb[0] + fb[2]) / 2 > W / 2
                 x = L.safe[0] + 10 if side_l else L.safe[2] - 10 - RW
@@ -427,6 +428,7 @@ if ST['panels']:
             if L.legacy or not L.portrait or not any(overlap((x, top, x + RW, top + ph), face_core(b_)) > 0 for b_ in _boxes_during(p0, p1)):
                 break
         PANI.append((p0, p1, np.asarray(bgs), x - pad, top - pad, [(max(rt, p0), im, x + dx, top + dy) for rt, im, dx, dy in rows]))
+        PANBOX.append((p0, p1, x, top, RW, ph))      # the card itself (no soft shadow): the export's caption keep-out
 
 # ---------------- B-roll (broll.py): cut-away / picture-in-picture / split screen at sentence anchors ----------------
 BRI = BR.load(G('BROLL', []), L, YEL)
@@ -669,7 +671,7 @@ def final_keepouts():
     def add(kind, b0, b1, x, y, w, h, hooks=True):
         for t0, t1 in body_to_final(b0, b1, hooks):
             ko.append(dict(t0=t0, t1=t1, box=[int(x), int(y), int(w), int(h)], kind=kind))
-    for p0, p1, bg, x, y, rows in PANI: add('panel', p0, p1, x, y, bg.shape[1], bg.shape[0], hooks=False)
+    for p0, p1, x, y, w, h in PANBOX: add('panel', p0, p1, x, y, w, h, hooks=False)
     for b0, b1, im, x, y in STI: add('stamp', b0, b1, x, y, im.shape[1], im.shape[0], ST['fx_in_hooks'])
     for b0, im, x, y, hold in POPI: add('pop', b0, b0 + hold, x - im.shape[1] / 2, y - im.shape[0] / 2, im.shape[1], im.shape[0], ST['fx_in_hooks'])
     for b0, b1, im, x, y in CALI: add('callout', b0, b1, x, y, im.shape[1], im.shape[0], hooks=False)
