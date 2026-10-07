@@ -1,5 +1,14 @@
 // Single source of truth for values the creator must decide before publishing.
 // Edit here, run `npm run build`, done. Nothing else in the codebase hard-codes these.
+import { resolveDownloadReady } from './lib/releaseStatus.ts';
+
+const GITHUB_URL = 'https://github.com/zyziyun/reelfold';
+
+/**
+ * Fallback for THE "coming soon" switch, used only when the build cannot reach the GitHub API. Normally the build
+ * decides by itself (lib/releaseStatus.ts): downloads turn on once a published release with a DMG exists.
+ */
+const DOWNLOAD_READY_FALLBACK = false;
 
 export const SITE = {
   /** Public URL of the deployed site (canonical, hreflang, sitemap, OG tags). `astro.config.mjs` reads it. */
@@ -13,18 +22,18 @@ export const SITE = {
   contactEmail: 'hello@example.com',
 
   /** Open-source repository (desktop app, video-studio skill + engine, and this site). */
-  githubUrl: 'https://github.com/zyziyun/reelfold',
+  githubUrl: GITHUB_URL,
 
   /** macOS download: the latest GitHub release of the main repo. */
   downloadUrl: 'https://github.com/zyziyun/reelfold/releases/latest',
 
   /**
-   * THE "coming soon" switch. `false` (default) until the first macOS release exists: no download link anywhere;
-   * the main button becomes "Star on GitHub", the second one "Build from source", and the fine print says the
-   * macOS app is coming soon. Set to `true` once https://github.com/zyziyun/reelfold/releases/latest has a release:
-   * every button on every page and language switches to "Download for macOS".
+   * THE "coming soon" switch, decided at build time. `false` until https://github.com/zyziyun/reelfold/releases/latest
+   * is a published release with a .dmg: no download link anywhere; the main button becomes "Star on GitHub", the
+   * second one "Build from source", and the fine print says the macOS app is coming soon. `true`: every button on
+   * every page and language switches to "Download for macOS". Force it with SITE_DOWNLOAD_READY=1 / 0.
    */
-  downloadReady: false,
+  downloadReady: await resolveDownloadReady(GITHUB_URL, DOWNLOAD_READY_FALLBACK),
 } as const;
 
 export const site = SITE.url.replace(/\/$/, '');
