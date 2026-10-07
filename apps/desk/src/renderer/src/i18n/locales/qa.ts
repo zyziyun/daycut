@@ -5,6 +5,7 @@ export const qaEn = {
   'engine.restarting': 'The engine stopped unexpectedly — restarting it…',
   'pub.state.filled': 'Filled in',
   'ce.selected': 'selected',
+  'project.noPlatforms': 'No platform to post to: choose your platforms in Settings › General first.',
 };
 
 type QaKey = keyof typeof qaEn;
@@ -14,6 +15,7 @@ export const qaZh: Record<QaKey, string> = {
   'engine.restarting': '引擎意外停止了，正在重启…',
   'pub.state.filled': '已填好',
   'ce.selected': '选中',
+  'project.noPlatforms': '还没有要发的平台：先在「设置 › 通用」里选好平台。',
 };
 
 export const qaFr: Record<QaKey, string> = {
@@ -21,4 +23,5 @@ export const qaFr: Record<QaKey, string> = {
   'engine.restarting': 'Le moteur s’est arrêté de façon inattendue — redémarrage…',
   'pub.state.filled': 'Rempli',
   'ce.selected': 'sélectionné',
+  'project.noPlatforms': 'Aucune plateforme où publier : choisissez d’abord vos plateformes dans Réglages › Général.',
 };

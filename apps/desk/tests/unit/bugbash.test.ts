@@ -127,3 +127,17 @@ describe('i18n: effect parameters without a label read as words, not snake_case 
     expect(humanizeParam('')).toBe('');
   });
 });
+
+describe('BB-26 "Add to calendar" posts to her platforms, not always Xiaohongshu', async () => {
+  const { postPlatforms } = await import('../../src/renderer/src/v4/Project');
+  const clip = (platforms: (string | undefined)[]) => ({ files: platforms.map((platform) => ({ path: '/x.mp4', aspect: '9:16' as const, platform })) });
+  it("uses the platforms the clip's files were made for, international first", () => {
+    expect(postPlatforms(clip(['douyin:vertical', 'tiktok:vertical', 'douyin:vertical']), ['xiaohongshu:full'])).toEqual(['tiktok', 'douyin']);
+  });
+  it('falls back to her default platforms (Settings / Home chip) when the files name none', () => {
+    expect(postPlatforms(clip([undefined, 'None:None']), ['xiaohongshu:full', 'youtube-shorts'])).toEqual(['youtube-shorts', 'xiaohongshu']);
+  });
+  it('is empty (the page says so) when there is nothing to post to', () => {
+    expect(postPlatforms(clip([]), [])).toEqual([]);
+  });
+});

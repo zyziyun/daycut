@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, CalendarPlus, Copy, FolderOpen, Maximize2, Play, Share2, Undo2, Wand2 } from 'lucide-react';
 import type { HistoryDetail } from '../../../shared/v02';
 import type { Clip, ClipsDoc, OutputDoc } from '../../../shared/v04';
+import { basePlatform, orderPlatforms, platformInfo } from '../../../shared/platforms';
 import { fmtDate, fmtMinutes, t } from '../i18n';
 import { useEngine } from '../lib/engine';
 import { useHistory } from '../lib/history';
@@ -34,6 +35,14 @@ export function nextSlots(n: number, taken: string[], hour = '19:00', from = new
     }
   }
   return out;
+}
+
+/** The platforms a clip is posted to when she adds it to the calendar: the platforms its files were made for, else her
+ * default platforms (Settings / the Home chip). Registry ids, international first. */
+export function postPlatforms(clip: Pick<Clip, 'files'>, defaults: string[] = []): string[] {
+  const known = (ids: (string | undefined)[]) => ids.map((x) => basePlatform(x ?? '')).filter((x) => !!platformInfo(x));
+  const own = known(clip.files.map((f) => f.platform));
+  return orderPlatforms(own.length ? own : known(defaults));
 }
 
 export function Project({ id, tab: asked }: { id: string; tab: ProjectTab }) {
@@ -94,14 +103,15 @@ export function Project({ id, tab: asked }: { id: string; tab: ProjectTab }) {
     const mine = new Set(cal.posts.filter((p) => p.item === id).map((p) => p.clip));
     const todo = list.filter((c) => !mine.has(c.id));
     const slots = nextSlots(todo.length, cal.posts.map((p) => p.at));
-    const made: { id: string; at: string }[] = [];
-    for (let i = 0; i < todo.length; i++) made.push(await client.schedule({ item: id, clip: todo[i].id, at: slots[i], platform: todo[i].files[0]?.platform?.split(':')[0] || 'xiaohongshu' }));
-    ui.toast(made.length ? t('pub.scheduled', { date: fmtDate(made[0].at) }) : t('pub.confirmed', { n: 0 }), {
-      undo: made.length
-        ? async () => {
-            for (const p of made) await client.updatePost(p.id, { remove: true });
-          }
-        : undefined,
+    const defaults = (await window.desk.getSettings()).defaultPlatforms ?? [];
+    const rows = todo.flatMap((c, i) => postPlatforms(c, defaults).map((platform) => ({ item: id, clip: c.id, at: slots[i], platform })));
+    if (todo.length && !rows.length) {
+      ui.toast(t('project.noPlatforms'), { error: true });
+      return;
+    }
+    const made = rows.length ? (await client.scheduleMany(rows)).ids : [];
+    ui.toast(made.length ? t('pub.scheduled', { date: fmtDate(rows[0].at) }) : t('pub.confirmed', { n: 0 }), {
+      undo: made.length ? () => client.unscheduleMany(made).then(() => undefined) : undefined,
     });
   };
   const clipMenu = (c: Clip) => (e: React.MouseEvent) =>
