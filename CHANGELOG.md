@@ -8,6 +8,17 @@ App releases are tagged `v*`; engine-only releases are tagged `engine-v*`.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-07
+
+### Changed
+
+- Talking-head jobs default to the notes look, with keywords you review before the render.
+- The Mac App Store (Lite) build names no other download and links nowhere; its limits are explained neutrally.
+
+### Added
+
+- A draft post title and body for each clip, written from the final captions.
+
 ## [0.2.0] - 2026-10-07
 
 The first public release: the macOS app for Apple silicon, signed with a Developer ID and notarized by Apple, plus
@@ -132,5 +143,6 @@ in the commit log (formerly `video-studio` and `Daycut`).
 - API keys in the OS keychain; every IPC call validated; the local engine needs a per-session token.
 - No silent mock engine or demo mode in the product: a packaged app always runs the real engine.
 
-[Unreleased]: https://github.com/zyziyun/reelfold/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/zyziyun/reelfold/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/zyziyun/reelfold/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/zyziyun/reelfold/releases/tag/v0.2.0
