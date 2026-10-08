@@ -674,8 +674,13 @@ def render_html(g, DATA, faces, c, D, BR, MR, Mdur, Odur, END, hold, mcfg, oc, e
     TC = (T_HOLD - H) * BR
     B = D["body"] / BR + HOLD
     ff = lambda fam, key, extra: f'@font-face {{ font-family: "{fam}"; src: url("{faces[key][0]}") format("{faces[key][1]}"); {extra} }}'
-    fonts_css = "\n".join([ff("CJK", "cjk-400", "font-weight: 400;"), ff("CJK", "cjk-700", "font-weight: 700;"),
-                           ff("Serif", "serif", "font-style: normal;"), ff("Serif", "serif-italic", "font-style: italic;")])
+    want = [("CJK", "cjk-400", "font-weight: 400;"), ("CJK", "cjk-700", "font-weight: 700;"),
+            ("Serif", "serif", "font-style: normal;"), ("Serif", "serif-italic", "font-style: italic;")]
+    missing = [k for _, k, _ in want if k not in faces]
+    if missing:    # fonts not installed (./install.sh): the page falls back to system fonts instead of crashing
+        print(f"warning: fonts not found ({', '.join(missing)}); run install.sh for Noto Sans SC / STIX Two Text",
+              file=sys.stderr)
+    fonts_css = "\n".join(ff(*w) for w in want if w[1] in faces)
     ACC, INK, GROUND, GOLD = col["ACC"], col["INK"], col["GROUND"], col["GOLD"]
     CW, CHH = g["CW"], g["CHH"]
 

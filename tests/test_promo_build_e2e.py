@@ -185,9 +185,22 @@ def test_pip_overlapping_card_is_an_error(tmp_path):
 
 NODE = next(iter(sorted(pathlib.Path.home().glob(".nvm/versions/node/*/bin"), reverse=True)), pathlib.Path("/nonexistent"))
 NODE = str(NODE)
+# lint flags a font family without @font-face; the subset fonts only exist after ./install.sh (not on CI runners)
+from vstudio import config as _cfg  # noqa: E402
+
+
+def _fonts_ok():
+    try:
+        return all(os.path.isfile(_cfg.font(r)) for r in ("cjk", "cjk-bold"))
+    except Exception:  # noqa: BLE001 - MissingAsset when ./install.sh has not run
+        return False
+
+
+FONTS_OK = _fonts_ok()
 
 
 @pytest.mark.skipif(not (shutil.which("npx") or os.path.exists(os.path.join(NODE, "npx"))), reason="node not installed")
+@pytest.mark.skipif(not FONTS_OK, reason="fonts not installed (install.sh)")
 @pytest.mark.parametrize("platform", [None, "douyin"])
 def test_hyperframes_lint_zero_errors(built, platform):
     tmp, _ = built
@@ -234,7 +247,7 @@ def test_example_config_builds_and_lints(tmp_path):
     assert "hooks→" in out
     html = (tmp_path / "promo" / "index.html").read_text(encoding="utf-8")
     assert 'class="scene"' in html and 'id="hooks"' in html
-    if shutil.which("npx") or os.path.exists(os.path.join(NODE, "npx")):
+    if FONTS_OK and (shutil.which("npx") or os.path.exists(os.path.join(NODE, "npx"))):
         env = dict(os.environ, PATH=NODE + os.pathsep + os.environ.get("PATH", ""))
         r = subprocess.run(["npx", "--yes", "hyperframes", "lint"], cwd=str(tmp_path / "promo"), capture_output=True,
                            text=True, env=env, timeout=600)
