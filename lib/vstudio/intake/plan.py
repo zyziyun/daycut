@@ -118,6 +118,10 @@ Rules:
   burned captions are cropped off, the picture sits in a band, NEW captions go below it: captions=true,
   crop_bottom ~0.28), gentle cleanup, speed 1.0 unless asked. Only when the creator says to keep the old captions:
   captions=false.
+- Never drop a material the creator attached. Footage she wants cut in over the main recording (B-roll, 插片, screen
+  recordings, finished clips, "素材") goes into the recipe's "broll" input when it has one - all of it (a group id
+  for a folder, or the files she named); an input without "multiple" takes ONE file, so never squeeze several
+  videos into it (put the rest in "broll"). Say in risks which attached materials the plan does not use.
 - Ask a question ONLY when the answer can't be defaulted and changes the result (e.g. whose face to hide). Never ask
   about things a checkpoint already covers (segment approval, filler cuts, cover pick, publish review).
 - Platforms: use the ids in the recipe's "platforms" list ("xiaohongshu:full" = 9:16, "xiaohongshu:vertical" = 3:4).
@@ -278,6 +282,8 @@ def normalize_project(raw, idx, analysis, intent, ctx, warn):
              why=str(raw.get("why") or "")[:200])
     # ---- inputs
     ins = {}
+    broll = broll_input(m)
+    overflow = []
     for k, v in (raw.get("inputs") or {}).items():
         if k not in known_inputs:
             warn.append(MSG.cs("intake.warning.unknown-input", "en", project=p["id"], recipe=rid, key=repr(k)))
@@ -296,8 +302,13 @@ def normalize_project(raw, idx, analysis, intent, ctx, warn):
             continue
         ins[k] = paths if inp.get("multiple") else paths[0]
         if not inp.get("multiple") and len(paths) > 1:
-            warn.append(MSG.cs("intake.warning.input-single", "en", project=p["id"], recipe=rid, key=k,
-                                  file=os.path.basename(paths[0])))
+            if broll and k != broll["key"] and any(_accepts(broll, x) for x in paths[1:]):
+                overflow += [x for x in paths[1:] if _accepts(broll, x)]   # kept as b-roll, never dropped
+                warn.append(MSG.cs("intake.warning.input-single-broll", "en", project=p["id"], recipe=rid, key=k,
+                                   file=os.path.basename(paths[0]), to=broll["key"]))
+            else:
+                warn.append(MSG.cs("intake.warning.input-single", "en", project=p["id"], recipe=rid, key=k,
+                                   file=os.path.basename(paths[0])))
     # ---- items
     it = dict(raw.get("items") or {})
     method = it.get("method") if it.get("method") in METHODS else None
@@ -426,6 +437,8 @@ def normalize_project(raw, idx, analysis, intent, ctx, warn):
         items["count"] = len(ins.get(fi) or []) if isinstance(ins.get(fi), list) else 1
     if method == "single":
         items["count"] = 1
+    if broll:
+        _add_broll(ins, broll, overflow + _resolve_refs(raw.get("materials") or [], analysis), rows)
     p["inputs"] = ins
     mats = [x for x in (raw.get("materials") or []) if any(f["id"] == x for f in analysis["files"])]
     for v in ins.values():
@@ -435,6 +448,76 @@ def normalize_project(raw, idx, analysis, intent, ctx, warn):
     p["params"] = params
     p["param_sources"] = sources
     return p
+
+
+def broll_input(m):
+    """The recipe's b-roll input (``broll``: several videos cut in over the main recording), or None."""
+    return next((i for i in m["inputs"] if i["key"] == "broll" and i.get("multiple")), None)
+
+
+def _used_paths(ins, rows=()):
+    out = []
+    for v in list(ins.values()) + [x for r in rows for x in (r.get("inputs") or {}).values()]:
+        out += [x for x in (v if isinstance(v, list) else [v]) if isinstance(x, str)]
+    return out
+
+
+def _add_broll(ins, broll, cands, rows=()):
+    """Videos the plan names for a project (its ``materials``, the extra files of a one-file input) that no input
+    took go into the b-roll input: a recording she attached as B-roll is never silently dropped."""
+    used = set(_used_paths(ins, rows))
+    add = [x for x in cands if isinstance(x, str) and x not in used and I.kind_of(x) == "video" and _accepts(broll, x)]
+    if add:
+        cur = ins.get(broll["key"]) or []
+        ins[broll["key"]] = list(dict.fromkeys((cur if isinstance(cur, list) else [cur]) + add))
+
+
+def account_inputs(plan, analysis):
+    """Every file / folder she attached ends up in a project or is listed back to her: attached videos no project
+    uses go into the first project with a b-roll input; what is still unused -> ``plan.unused`` + a risk line."""
+    projects = plan.get("projects") or []
+    tops = [x for x in analysis.get("inputs") or [] if isinstance(x, str)]
+
+    def used_by_any():
+        return set(u for p in projects for u in _used_paths(p.get("inputs") or {}, (p.get("items") or {}).get("rows") or []))
+
+    def is_used(x, used):
+        if os.path.isdir(x):
+            pre = x.rstrip(os.sep) + os.sep
+            return any(u.startswith(pre) for u in used)
+        return x in used
+    used = used_by_any()
+    loose = [x for x in tops if os.path.isfile(x) and x not in used and I.kind_of(x) == "video"]
+    if loose:
+        for p in projects:
+            try:
+                b = broll_input(M.get(p["recipe"]))
+            except KeyError:
+                b = None
+            if b:
+                _add_broll(p["inputs"], b, loose, (p.get("items") or {}).get("rows") or [])
+                mats = p.get("materials") or []
+                p["materials"] = list(dict.fromkeys(mats + _material_ids(loose, analysis)))
+                break
+        used = used_by_any()
+    unused = []
+    for x in tops:
+        if is_used(x, used) or not os.path.exists(x):
+            continue
+        d = dict(path=x, name=os.path.basename(x.rstrip(os.sep)), kind="folder" if os.path.isdir(x) else I.kind_of(x))
+        if d["kind"] == "folder":
+            pre = x.rstrip(os.sep) + os.sep
+            d["files"] = len([f for f in analysis["files"] if f["path"].startswith(pre)])
+        unused.append(d)
+    plan["unused"] = unused
+    prefix = MSG.CATALOG["intake.risk.unused-inputs"][1].split("{")[0]
+    risks = [r for r in plan.get("risks") or [] if (getattr(r, "info", None) or {}).get("code") !=
+             "intake.risk.unused-inputs" and not str(r).startswith(prefix)]
+    if unused and projects:
+        risks.append(MSG.cs("intake.risk.unused-inputs", files="、".join(u["name"] for u in unused[:8]) +
+                            (f" …（+{len(unused) - 8}）" if len(unused) > 8 else ""), n=len(unused)))
+    plan["risks"] = risks
+    return plan
 
 
 def _first_path(v):
@@ -905,6 +988,7 @@ def make_plan(prompt, inputs=None, client=None, provider=None, model=None, analy
         materials=_materials(analysis), projects=projects,
         series=_series_for(projects, prompt), questions=_norm_questions(questions, projects), risks=risks,
         warnings=warn, run=dict(pilot=1, auto=auto_ids))
+    account_inputs(plan, analysis)
     plan["estimate"] = EST.total(projects)
     plan["summary_zh"] = summary if (summary and not info.get("fallback")) else template_summary(plan)
     errs = validate(plan)
@@ -1034,6 +1118,7 @@ def revise(plan, instruction, provider=None, model=None, call=None, client=None,
         "%Y-%m-%dT%H:%M:%S"), planner=info, changes=notes)]
     plan["planner"] = info
     plan["warnings"] = warn
+    account_inputs(plan, analysis)
     plan["estimate"] = EST.total(projects)
     plan["summary_zh"] = summary if (summary and not info.get("fallback")) else template_summary(plan)
     return _messages(plan)

@@ -29,6 +29,13 @@ inputs:
     required: false
     accept: [.mp4, .mov, .m4v]
     scope: project
+  - key: broll
+    kind: video
+    labels: {zh: "插片素材（录屏 / 成片，可多个）", en: "B-roll (screen recordings / finished clips, several)"}
+    required: false
+    multiple: true
+    accept: [.mp4, .mov, .m4v, .webm, .mkv]
+    scope: project
 items:
   sources: [single, files]
   from_input: talk
@@ -74,7 +81,7 @@ stages:
     resource: io
     fn: vstudio.project.adapters.common:prepare
     keys: []
-    produces: ["{item_dir}/inputs/ (links to the talk, screenshots, highlights)"]
+    produces: ["{item_dir}/inputs/ (links to the talk, screenshots, highlights, b-roll)"]
   - id: suggest
     resource: asr
     deps: [prepare]
@@ -82,7 +89,7 @@ stages:
     watch: ["{item_dir}/promo.config.yaml"]
     run:
       patch: {from: "{item_dir}/promo.config.yaml", file: "{item_dir}/.promo.run.yaml",
-              set: {talk: "{input.talk}", highlights: "{input.highlights}", language: "{language}",
+              set: {talk: "{input.talk}", highlights: "{input.highlights}", broll: "{input.broll}", language: "{language}",
                     orientation: "{orientation}", platform: "{platform}", cut.reply: "{cut_reply}"}}
       argv: ["{python}", "{workflow_dir}/scripts/tight_cut.py", "{item_dir}/.promo.run.yaml", "--suggest"]
       files: ["{item_dir}/work/cleanup.json", "{item_dir}/work/cleanup_review.md"]
@@ -94,7 +101,7 @@ stages:
     watch: ["{item_dir}/promo.config.yaml"]
     run:
       patch: {from: "{item_dir}/promo.config.yaml", file: "{item_dir}/.promo.run.yaml",
-              set: {talk: "{input.talk}", highlights: "{input.highlights}", language: "{language}",
+              set: {talk: "{input.talk}", highlights: "{input.highlights}", broll: "{input.broll}", language: "{language}",
                     orientation: "{orientation}", platform: "{platform}", cut.reply: "{cut_reply}"}}
       argv: ["{python}", "{workflow_dir}/scripts/tight_cut.py", "{item_dir}/.promo.run.yaml"]
       files: ["{item_dir}/work/body.mp4", "{item_dir}/work/layout.json"]
@@ -116,7 +123,7 @@ stages:
     watch: ["{item_dir}/promo.config.yaml"]
     run:
       patch: {from: "{item_dir}/promo.config.yaml", file: "{item_dir}/.promo.run.yaml",
-              set: {talk: "{input.talk}", highlights: "{input.highlights}", language: "{language}",
+              set: {talk: "{input.talk}", highlights: "{input.highlights}", broll: "{input.broll}", language: "{language}",
                     orientation: "{orientation}", platform: "{platform}", cut.reply: "{cut_reply}"}}
       argv: ["{python}", "{workflow_dir}/scripts/build_promo.py", "{item_dir}/.promo.run.yaml",
              {if: platform, args: ["--platform", "{platform}"]}, "--out", "{item_dir}/promo"]
