@@ -158,7 +158,7 @@ export function registerAiIpc(handle: Handle, d: AiDeps) {
 
   handle('ai:terminal', async (p) => {
     // the Lite (Mac App Store) build is sandboxed: it cannot run the CLIs she installed, so it has no CLI login
-    if (!CAPS.cliLogins) throw new Error('subscription sign-in is in the full version of Reelfold (reelfold.com)');
+    if (!CAPS.cliLogins) throw new Error('subscription sign-in is not available in this edition');
     term?.kill();
     term = null;
     const mock = readMock<Record<string, { command: string[]; display?: string; env_unset?: string[] }>>('login.json');

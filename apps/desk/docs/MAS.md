@@ -25,11 +25,13 @@ ZH47R7RVKB. Store texts, review notes and screenshots for the listing are kept o
 | Publishing | built-in browser (assisted fill, she presses Publish), YouTube API | same | allowed; see review notes |
 
 Everything else (projects, ASR, cleanup, captions, renders, review, calendar, Create recorder) is the same code. The
-Lite build says what it leaves out once (Settings › General, first run, Settings › AI) and links to reelfold.com.
+Lite build says what it does once, neutrally (Settings › General, first run, Settings › AI: "This edition uses API keys
+or local models"). It names no other download and links nowhere - no "get the full version", no reelfold.com
+(Guidelines 3.1.1 / 2.3); `tests/unit/editionLite.test.ts` checks that in every language. The full build is unchanged.
 
 ## How it works
 
-- `src/shared/edition.ts` - `EDITION`, `CAPS` (what the edition can do), `FULL_DOWNLOAD_URL`. Everything gates on
+- `src/shared/edition.ts` - `EDITION`, `CAPS` (what the edition can do). Everything gates on
   `CAPS`, never on scattered checks.
 - `src/main/access.ts` - every open panel (`pick()` in `main/index.ts`) asks for a security-scoped bookmark in the
   MAS build; bookmarks are kept in `<userData>/access.json` and started at launch, before the engine. Files dropped on
@@ -71,7 +73,7 @@ Run with `npm run mas:local` (ad-hoc signature, real MAS entitlements, real App 
   The packaged tests clear it between launches.
 - `tests/packaged/mas.spec.ts` (run by `npm run mas:local`): entitlements of every executable, Info.plist / privacy
   manifest / no Squirrel / no node-pty, the sandboxed engine, Lite AI rows and routes, no Chromium group, updater and
-  usage off, Lite copy in Settings and first run; `DESK_TEST_SAMPLE=1` adds the sample run.
+  usage off, Lite copy in Settings and first run (no upsell text, no link out); `DESK_TEST_SAMPLE=1` adds the sample run.
 
 Not checkable without her certificates: TestFlight / store signature, the provisioning profile, `altool` validation,
 and the open panel itself (a real click; the bookmark path is unit-tested and the grant mechanism was tested above).
