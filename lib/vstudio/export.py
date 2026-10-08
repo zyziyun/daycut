@@ -13,6 +13,8 @@ Per target (vstudio.platform profile):
      cues.json ([{t0, t1, box: [x, y, w, h]}] in master px - or 0..1 fractions - and final seconds:
      panels, stamps, titles already burned into the master) are mapped through the reframe and the
      caption moves above/below them while they are on screen;
+     the creator's watermark (vstudio.watermark) goes on top when she set one up and it is on by default
+     (``--watermark on|off`` / ``watermark=`` per call), placed in the profile's safe box above the captions;
   3. two-pass loudnorm to the profile's LUFS / true-peak target (audio.loudnorm_2pass);
   4. H.264 delivery encode (media.delivery_args with the profile's encode guidance);
   5. cover: a per-target ``--cover platform[:orientation]=path`` wins; else the --cover whose aspect is
@@ -461,11 +463,17 @@ def _publish_platform(prof):
     return "youtube" if prof.name == "youtube-shorts" else prof.name
 
 
-def _scale_only(master, dst, prof, info, start, dur, vargs, fps_out):
-    """Same-aspect fast path: one ffmpeg scale + encode (no Python frame pipe, no face tracking)."""
+def _scale_only(master, dst, prof, info, start, dur, vargs, fps_out, wm_png=None):
+    """Same-aspect fast path: one ffmpeg scale + encode (no Python frame pipe, no face tracking). ``wm_png``:
+    (path, x, y) of the scaled watermark, laid over in the same pass."""
     win = (["-ss", f"{start:.3f}"] if start else []) + (["-t", f"{dur:.3f}"] if dur else [])
     vf = f"scale={prof.w}:{prof.h}:flags=lanczos,setsar=1"
-    cmd = [media.ffmpeg_bin(), "-y", "-v", "error", *win, "-i", master, "-map", "0:v:0", "-vf", vf]
+    if wm_png:
+        from . import watermark as WM
+        cmd = [media.ffmpeg_bin(), "-y", "-v", "error", *win, "-i", master, "-i", wm_png[0], "-filter_complex",
+               f"[0:v:0]{vf}[b];" + WM.ffmpeg_overlay("[b]", 1, wm_png[1], wm_png[2]), "-map", "[v]"]
+    else:
+        cmd = [media.ffmpeg_bin(), "-y", "-v", "error", *win, "-i", master, "-map", "0:v:0", "-vf", vf]
     if info["has_audio"]:
         cmd += ["-map", "0:a:0"]
     cmd += list(vargs) + (["-r", str(fps_out)] if fps_out else [])
@@ -476,10 +484,11 @@ def _scale_only(master, dst, prof, info, start, dur, vargs, fps_out):
 
 def export_one(master, prof, out_dir, cues=None, covers=None, post=None, mode="face", fallback="pad-blur",
                start=0.0, dur=None, workdir=None, encoder=None, preset="medium", captions=True,
-               cover_targets=None, post_lang=None, **reframe_opts):
+               cover_targets=None, post_lang=None, watermark=None, **reframe_opts):
     """Export ``master`` for one Profile. Returns the manifest entry (dict).
     captions=False: never burn ``cues`` (the master already has them). cover_targets: {target: path}
-    per-target covers (see make_cover)."""
+    per-target covers (see make_cover). watermark: True / False / None (= the creator's default, vstudio.watermark;
+    never drawn when none is set up)."""
     from . import audio
     info = media.probe(master)
     stem = f"{prof.name}-{prof.orientation}"
@@ -517,6 +526,17 @@ def export_one(master, prof, out_dir, cues=None, covers=None, post=None, mode="f
         fit = P.fit_text_size(prof, c.text.replace("\n", " "))
         if not fit["fits"]:
             warnings.append(f"caption too long for {prof.caption['max_lines']} lines at min size: {c.text[:24]}…")
+    from . import watermark as WM
+    wm_cfg = WM.resolve(prof.name, override=watermark)
+    if wm_cfg and WM.already_marked(master):
+        wm_cfg = None
+        warnings.append("watermark: the master is an export that already carries it (not drawn twice)")
+    if wm_cfg:
+        wm_draw = WM.overlay(wm_cfg, prof.w, prof.h, prof)
+        cap_ov = overlay
+
+        def overlay(i, t, img, _c=cap_ov, _w=wm_draw):
+            return _w(_c(i, t, img) if _c else img)
     fps_out = None
     if info["fps"] and info["fps"] > prof.fps.get("max", 60) + 0.5:
         fps_out = prof.fps.get("default", 30)
@@ -526,18 +546,20 @@ def export_one(master, prof, out_dir, cues=None, covers=None, post=None, mode="f
     has_a = info["has_audio"]
     tmpd = workdir or tempfile.mkdtemp(prefix="vexport-")
     try:
-        fast = same_aspect and overlay is None and not info.get("hdr")
+        fast = same_aspect and (overlay is None or (wm_cfg and not cue_list)) and not info.get("hdr")
+        wm_png = WM.write_png(wm_cfg, prof.w, prof.h, prof, os.path.join(tmpd, stem + ".wm.png")) \
+            if (fast and wm_cfg) else None
         if has_a:
             mid = os.path.join(tmpd, stem + ".mov")
             if fast:
-                _scale_only(master, mid, prof, info, start, dur, vargs, fps_out)
+                _scale_only(master, mid, prof, info, start, dur, vargs, fps_out, wm_png)
             else:
                 R.render(master, mid, pl_geo, overlay=overlay,
                          encode_args=vargs + ["-c:a", "pcm_s16le", "-ar", "48000", "-ac", "2"], fps=fps_out)
             audio.loudnorm_2pass(mid, out_mp4, lufs=prof.loudness["lufs"], tp=prof.loudness["tp"])
         else:
             if fast:
-                _scale_only(master, out_mp4, prof, info, start, dur, vargs, fps_out)
+                _scale_only(master, out_mp4, prof, info, start, dur, vargs, fps_out, wm_png)
             else:
                 R.render(master, out_mp4, pl_geo, overlay=overlay, encode_args=vargs + ["-an", "-movflags", "+faststart"],
                          fps=fps_out)
@@ -580,7 +602,8 @@ def export_one(master, prof, out_dir, cues=None, covers=None, post=None, mode="f
                      **({"band": band} if band else {})),
                  captions=len(cue_list), keepouts=len(kos), captions_moved_frames=cap_report.get("moved", 0),
                  cover=os.path.basename(cover_path), cover_size=list(P.cover_size(prof)),
-                 notes=notes, safe_box=list(P.safe_box(prof)), caption_box=list(P.caption_box(prof)))
+                 notes=notes, safe_box=list(P.safe_box(prof)), caption_box=list(P.caption_box(prof)),
+                 watermark=dict(WM.summary(wm_cfg), box=list(WM.box(wm_cfg, prof.w, prof.h, prof))) if wm_cfg else None)
     if prof.feed_crop:
         entry["notes"].append(f"{prof.label} feed shows a centre {prof.feed_crop} crop of the video "
                               f"{list(P.feed_crop_box(prof))}: keep faces and captions inside it")
@@ -672,6 +695,8 @@ def main(argv=None):
     ap.add_argument("--encoder", default=None, help="H.264 encoder (default $VSTUDIO_H264_ENCODER / persona "
                     "export.h264_encoder / libx264): libx264 | videotoolbox | h264_videotoolbox | h264_mf")
     ap.add_argument("--preset", default="medium")
+    ap.add_argument("--watermark", choices=["auto", "on", "off"], default="auto",
+                    help="the creator's watermark (python -m vstudio.watermark): auto = her default, on, off")
     a = ap.parse_args(argv)
     targets = a.platforms
     if not targets:
@@ -690,7 +715,8 @@ def main(argv=None):
         post = dict(post, _lang=a.lang, _bilingual=a.bilingual or None)
     man = export(a.master, targets, a.out, cues=a.cues, covers=a.cover, post=post, account=a.account,
                  mode=a.mode, fallback=a.fallback,
-                 start=a.start, dur=a.dur, encoder=a.encoder, preset=a.preset, captions=not a.no_captions)
+                 start=a.start, dur=a.dur, encoder=a.encoder, preset=a.preset, captions=not a.no_captions,
+                 watermark=None if a.watermark == "auto" else a.watermark == "on")
     for e in man["exports"]:
         print(f"{e['file']:32s} {e['w']}x{e['h']} {e['duration']:.1f}s "
               f"{(e['loudness'] or {}).get('i', '-')} LUFS  reframe={e['reframe']['mode_used']}")

@@ -80,6 +80,8 @@ library modules: [references/CAPABILITIES.md](references/CAPABILITIES.md). Full 
   voice rules come from `persona()`; never hard-code her taste in a script.
 - **Delivery**: H.264 High, bt709, AAC 192k / 48k, `+faststart`, two-pass loudnorm to −14 LUFS (platform profile),
   resolution never below the source or the platform canvas.
+- **Watermark**: only her own (`python -m vstudio.watermark show`); exports add it when she set one up with
+  `default: on` (safe area, above captions). Never invent one; "不加水印" for one job = `--watermark off` / `watermark: false`.
 - **Public-safe**: fonts / models only via `vstudio.config.font()/model()`; no personal paths or media in the repo.
 
 Tests: `python3 -m pytest tests -q`. Repo check: `python3 scripts/check_skill.py`.

@@ -62,6 +62,22 @@ brand:
   ground: "#0B1020"        # premium dark plate
   # panel_theme: notes-red # legacy notes panel (notes-red | notes-yellow | teal | navy); default = the theme's card
 
+watermark:                 # your mark on every export (python -m vstudio.watermark; the desk: Settings › Watermark,
+                           # which writes $VSTUDIO_HOME/watermark.json over these keys). Nothing is drawn until you set
+                           # a text (or an image) AND default: true; a job / clip can still say watermark: on | off.
+  kind: text               # text (your handle as clean type) | image (your PNG logo) | generate (a badge drawn from text)
+  text: ""                 # e.g. "@yourhandle"
+  image: ""                # kind image: path to a PNG with transparency
+  style: badge             # generate: badge | monogram | plain
+  color: "#FFFFFF"
+  position: bottom-right   # top-left | top-right | bottom-left | bottom-right (inside each platform's safe area,
+                           # moved above the captions on vertical canvases)
+  size: 0.24               # fits a square of size x the frame's short side
+  opacity: 0.8
+  margin: 0.02             # extra inset inside the safe area (x short side)
+  default: false           # true = add it to every export by default
+  platforms: {}            # e.g. {douyin: false} = never on 抖音
+
 fonts: {}                  # override any role with your own file, e.g. cjk-bold: ~/Fonts/MyFont.ttf
 # Roles shipped by install.sh: cjk, cjk-bold (Noto Sans SC), cjk-serif, cjk-serif-bold (Noto Serif SC),
 # serif, serif-italic (STIX Two), mono, mono-bold. A face inside a .ttc collection: "path.ttc#N"

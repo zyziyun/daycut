@@ -88,9 +88,25 @@ def _src(rec):
     return rec["master"] if rec["mode"] == "pipeline" else rec["file"]
 
 
-def plan(rec, doc, st, tg, quality):
+def watermark_spec(rec, tg, quality, override=None):
+    """The creator's watermark for a FINAL render of this target (vstudio.watermark), or None: not set up, off by
+    default / for this platform / for this export (``override`` False), or a flattened output whose file is an
+    export that already carries it."""
+    if quality != "final":
+        return None
+    from vstudio import watermark as WM
+    prof = tg.get("profile")
+    cfg = WM.resolve(prof.name if prof is not None else None, override=override)
+    if not cfg:
+        return None
+    if rec["mode"] == "flattened" and WM.already_marked(rec["file"]):
+        return None
+    return WM.spec(cfg, tg["w"], tg["h"], prof)
+
+
+def plan(rec, doc, st, tg, quality, watermark=None):
     """-> dict of stage specs {canvas, timeline, audio, final, cover} with their keys (pure; used by render and by
-    ``show`` to say whether a render is fresh)."""
+    ``show`` to say whether a render is fresh). ``watermark``: True / False / None (the creator's default)."""
     info = rec["master_info"] if rec["mode"] == "pipeline" else rec["info"]
     src = _src(rec)
     sig = OUT.file_sig(src)
@@ -133,9 +149,12 @@ def plan(rec, doc, st, tg, quality):
     audio["op"] = "none" if not (info["has_audio"] or sfx or music) else "mix"
     audio["key"] = sha1_json(["audio", timeline["key"], audio], 16)
     vis = visual_spec(rec, st, tl, tg, band)
+    wm = watermark_spec(rec, tg, quality, watermark)
+    if wm:                                             # only when drawn: keys of unmarked renders stay as they were
+        vis["watermark"] = wm
     final = dict(visual=vis, quality=quality, canvas=[tg["w"], tg["h"]],
                  encode=(prof.encode if prof is not None and quality == "final" else None))
-    if picture_untouched(rec, st, tg, full):
+    if picture_untouched(rec, st, tg, full) and not wm:
         # audio-only edit (studio sound, music, SFX, loudness): the output's own picture, stream-copied
         final["op"], final["picture"] = "remux", OUT.file_sig(rec["file"])
     else:
@@ -622,6 +641,10 @@ def _frame_pass(src, out, audio_wav, vis, tg, fps, quality, final_encode, beat):
     from vstudio import theme as TH
     _T = TH.current()
     band_paper = None if _T.get("band") == "blur" else np.array(TH.rgb(_T, "paper")[::-1], np.uint8)
+    wm_draw = None
+    if vis.get("watermark"):
+        from vstudio import watermark as WM
+        wm_draw = WM.overlay(WM.from_spec(vis["watermark"]), W, H, tg.get("profile"))
 
     dec = [m.ffmpeg_bin(), "-v", "error", "-i", src, "-map", "0:v:0", "-f", "rawvideo", "-pix_fmt", "bgr24", "-"]
     enc = [m.ffmpeg_bin(), "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{W}x{H}",
@@ -679,6 +702,8 @@ def _frame_pass(src, out, audio_wav, vis, tg, fps, quality, final_encode, beat):
                 Dr.alpha_paste(img, title_arr, (0, title_y), bgr=True)
             if caps:
                 caps.draw(img, t)
+            if wm_draw:
+                wm_draw(img)
             for dp in vis["dips"]:
                 u = abs(t - dp["t"]) / max(0.05, dp["d"] / 2)
                 if u < 1:
@@ -718,18 +743,31 @@ def run_remux(picture, out, audio_wav):
     return out
 
 
-def run_encode(src, out, audio_wav, quality, final_encode, tg):
+def run_encode(src, out, audio_wav, quality, final_encode, tg, wm=None):
+    """Plain encode (+ scale to the target canvas); ``wm`` (a watermark spec) is laid over in the same pass."""
     m = _media()
     info = m.probe(src)
     cmd = ["ffmpeg", "-y", "-v", "error", "-i", src]
-    if audio_wav:
-        cmd += ["-i", audio_wav, "-map", "0:v:0", "-map", "1:a:0", "-shortest"]
-    else:
-        cmd += ["-map", "0:v:0"]
-    if (int(info["w"]), int(info["h"])) != (tg["w"], tg["h"]):
-        cmd += ["-vf", f"scale={tg['w']}:{tg['h']}:flags=lanczos,setsar=1"]
-    cmd += _enc(quality, audio=bool(audio_wav), final_encode=final_encode) + [out]
-    m.run(cmd)
+    vf = f"scale={tg['w']}:{tg['h']}:flags=lanczos,setsar=1" if (int(info["w"]), int(info["h"])) != (tg["w"], tg["h"]) \
+        else None
+    with tempfile.TemporaryDirectory(prefix="voutwm-") as td:
+        if wm:
+            from vstudio import watermark as WM
+            png, x, y = WM.write_png(WM.from_spec(wm), tg["w"], tg["h"], tg.get("profile"), os.path.join(td, "wm.png"))
+            k = 2 if audio_wav else 1
+            cmd += (["-i", audio_wav] if audio_wav else []) + ["-i", png, "-filter_complex",
+                                                               f"[0:v:0]{vf or 'null'}[b];" + WM.ffmpeg_overlay("[b]", k, x, y),
+                                                               "-map", "[v]"]
+            cmd += ["-map", "1:a:0", "-shortest"] if audio_wav else []
+        else:
+            if audio_wav:
+                cmd += ["-i", audio_wav, "-map", "0:v:0", "-map", "1:a:0", "-shortest"]
+            else:
+                cmd += ["-map", "0:v:0"]
+            if vf:
+                cmd += ["-vf", vf]
+        cmd += _enc(quality, audio=bool(audio_wav), final_encode=final_encode) + [out]
+        m.run(cmd)
     return out
 
 
@@ -788,14 +826,16 @@ def render_status(rec, doc, st):
     return out
 
 
-def render(d, output, quality="preview", targets=None, on_event=None, with_ops=None):
+def render(d, output, quality="preview", targets=None, on_event=None, with_ops=None, watermark=None):
     """Render the output's current edit (preview or final) for ``targets`` (default primary; "all" = primary +
     every export). -> {ok, output, quality, targets [{target, file, cover, canvas, duration, key, cached, stages
     [{stage, key, cached, seconds}], warnings}], seconds}.
 
     ``with_ops``: a before / after preview of ops that are NOT applied (cuts, speed: what the player cannot fake):
     the ops are validated like ``edit`` against the current state, rendered at preview quality into
-    ``renders/<target>.compare.mp4``; edit.json and the render manifest are not touched."""
+    ``renders/<target>.compare.mp4``; edit.json and the render manifest are not touched.
+
+    ``watermark``: the creator's watermark on a final render (True / False; None = her default, vstudio.watermark)."""
     if quality not in QUALITIES:
         raise OUT.OutputError("bad-param", f"quality: {' | '.join(QUALITIES)}", "质量只能是 preview / final",
                               name="quality", value=quality)
@@ -821,7 +861,7 @@ def render(d, output, quality="preview", targets=None, on_event=None, with_ops=N
     try:
         for n_t, tg in enumerate(tgs):
             emit(dict(event="target-start", target=tg["target"], quality=quality))
-            p = plan(rec, doc, st, tg, quality)
+            p = plan(rec, doc, st, tg, quality, watermark=watermark)
             stages, warns = [], []
             work = tempfile.mkdtemp(prefix="voutedit-")
             try:
@@ -851,7 +891,7 @@ def render(d, output, quality="preview", targets=None, on_event=None, with_ops=N
                         frame_pass(s, o, w, p["final"]["visual"], tg, fps, quality, p["final"]["encode"],
                                    lambda prog: status.beat("frames", progress=round((n_t + prog) / len(tgs), 3)))
                     else:
-                        run_encode(s, o, w, quality, p["final"]["encode"], tg)
+                        run_encode(s, o, w, quality, p["final"]["encode"], tg, wm=p["final"]["visual"].get("watermark"))
                     return o
                 fpath = _stage(doc, stages, "final", p["final"]["key"], ".mp4", fin, status)
                 emit(dict(event="stage-done", target=tg["target"], **{k: v for k, v in stages[-1].items() if k != "file"}))
@@ -881,6 +921,7 @@ def render(d, output, quality="preview", targets=None, on_event=None, with_ops=N
                     warns.append(OUT.msg("length", w, None, target=tg["target"]))
             res = dict(target=tg["target"], quality=quality, file=dst, cover=cdst, canvas=[tg["w"], tg["h"]],
                        layout=tg["layout"], duration=round(info["duration"], 3), key=p["final"]["key"],
+                       watermark=bool(p["final"]["visual"].get("watermark")),
                        cached=all(s["cached"] for s in stages), stages=[{k: v for k, v in s.items() if k != "file"}
                                                                         for s in stages], warnings=warns)
             results.append(res)

@@ -394,6 +394,7 @@ def run_export(ctx):
                    cues=cues_path, covers=covers, post=post,
                    mode=p.get("layout") or "pad-blur", preset=p.get("preset") or "medium",
                    captions=bool(p.get("captions", True)),
+                   watermark=p.get("watermark") if p.get("watermark") is not None else ctx.spec.get("watermark"),
                    **({"crop_bottom": float(p.get("crop_bottom", 0.28))} if p.get("layout") == "band" else {}))
     files = [ctx.path("exports", e["file"]) for e in man["exports"]]
     exports = [dict(platform=e["platform"], orientation=e["orientation"], file=ctx.path("exports", e["file"]),
@@ -770,6 +771,9 @@ def _keyp(*keys):
 def _export_params(job, spec):
     d = dict(_keyp("platforms", "layout", "crop_bottom", "captions", "cover", "preset", "trims")(job, spec),
              max_len=_p(job).get("max_len") or spec.get("max_len"))
+    wm = _p(job).get("watermark") if _p(job).get("watermark") is not None else spec.get("watermark")
+    if wm is not None:                                # only when set: older batches keep their keys
+        d["watermark"] = wm
     if _p(job).get("caption_overrides"):              # only when set: older batches keep their keys
         d["caption_overrides"] = _p(job)["caption_overrides"]
     return d

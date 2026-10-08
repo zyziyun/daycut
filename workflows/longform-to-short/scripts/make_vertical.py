@@ -465,7 +465,8 @@ def main():
             master = masters[(p.w, p.h)][0]
             print(f"[export] ep{ep['n']} {p.key} {a:.1f}-{b:.1f}s")
             e = X.export_one(master, cap_profs[p.key], ddir, cues=relaid[p.key], covers=covers, post=post, start=a, dur=b - a,
-                             preset=cfg.get("vertical.export_preset", "medium"))
+                             preset=cfg.get("vertical.export_preset", "medium"),
+                             watermark=cfg.get("vertical.watermark"))
             entries.append(e)
             manifest["warnings"] += [f"ep{ep['n']} {p.key}: {w}" for w in e["warnings"]]
         manifest["episodes"].append(dict(n=ep["n"], a=round(a, 3), b=round(b, 3), dir=_relpath(ddir, cfg.out),
