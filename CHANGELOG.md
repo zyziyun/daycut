@@ -8,14 +8,32 @@ App releases are tagged `v*`; engine-only releases are tagged `engine-v*`.
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-10-08
+
 ### Added
 
+- **Promo template**: `pip:` windows (screen full-screen, speaker tile bottom-right), card `scene:` kinds (tiles,
+  flow, bars, stat, toast, ranking, columns, checklist, swatch) and card `video:`, a `hooks:` montage at the start,
+  `crop: auto` that removes browser bars from screen recordings, and a footage map printed at build.
+- Live progress while a plan is made; an agent's live status on the project page.
 - **Watermark**: your handle, your own PNG logo, or a logo generated from your handle (drawn locally) on every
   export. Settings › Watermark in the Mac app has live previews on a 9:16 and a 16:9 frame, a corner picker, size,
   opacity, per-platform switches and "Add to every video by default"; the Export card can turn it off for one video.
   The mark sits inside each platform's safe area and above the captions. Off until you set it up.
   Engine: `python -m vstudio.watermark`, `--watermark on|off` on `vstudio.export` and `output render`, and
   `watermark: false` per batch job; settings in `$VSTUDIO_HOME/watermark.json` or persona `watermark:`.
+
+### Fixed
+
+- Attached recordings and folders are kept as promo-recut b-roll instead of being dropped by the planner.
+- Author checkpoints show their label, help and file instead of a bare "1 0"; Review lists waiting checkpoints.
+- Large plans give Claude Code enough time; a nested `claude -p` no longer attaches to a host Claude Code session.
+- Rendering picks a Node.js that runs; delivery creates its output folder; stage errors keep the real stderr;
+  external-tool failures say which tool and how to fix it.
+- The app reads the creator's persona; covers no longer warp faces; CJK quotes no longer render as tofu.
+- `project touch` on a recipe project only writes live status (it no longer drops the project from the list).
+- Delivered audio is exactly as long as the picture; montage length is verified; captions never overlap.
+- Talking-head speed caps allow a persona's 1.5x body / 2x hooks.
 
 ## [0.2.1] - 2026-10-07
 
