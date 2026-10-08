@@ -188,12 +188,37 @@ class MockIntake(Intake):
             self._real, self._why = (False, "vstudio.intake: exit 1: database is locked") if down else (True, None)
         return self._real
 
+    def _simulate_progress(self, pid, inputs, step):
+        """The engine's --json-events of a plan, simulated: scan, read each file, transcribe the first video (in
+        ``ticks`` moves), ask the model, write the plan."""
+        ev = lambda stage, event="stage", **kw: self._progress(pid, dict(event=event, stage=stage, **kw))  # noqa: E731
+        ev("scan", inputs=len(inputs))
+        ev("scan", inputs=len(inputs), files=len(inputs))
+        video = None
+        for i, p in enumerate(inputs):
+            m = material(p, self.probe)
+            ev("probe", file=m["name"], i=i + 1, n=len(inputs), kind=m["kind"])
+            time.sleep(step / 4)
+            if m["kind"] == "video" and video is None:
+                video = m
+        if video:
+            total = float(video.get("duration") or 600.0)
+            ticks = int(os.environ.get("DESK_MOCK_ASR_TICKS") or 6)
+            ev("transcribe", file=video["name"], total_s=total, done_s=0)
+            for k in range(1, ticks + 1):
+                time.sleep(step / 4)
+                ev("transcribe", "progress", file=video["name"], done_s=round(total * k / ticks, 1), total_s=total)
+        ev("model", provider="claude-code")
+        time.sleep(step)                                   # the model call
+
     def _engine_plan(self, pid, prompt, inputs):
-        time.sleep(float(os.environ.get("DESK_MOCK_STEP", "0.25")))
+        step = float(os.environ.get("DESK_MOCK_STEP", "0.25"))
         self._set(pid, step="plan")
+        self._simulate_progress(pid, inputs, step)
         time.sleep(float(os.environ.get("DESK_MOCK_PLAN_DELAY", "0")))
         plats = (self.jobs.get(pid) or {}).get("platforms")
         plan = rule_plan(prompt, inputs, self.probe, pid, dict(self.defaults(), **({"platforms": plats} if plats else {})))
+        self._progress(pid, dict(event="stage", stage="write"))
         write_json(self._path(pid), plan)
         return plan
 

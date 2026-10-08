@@ -1,12 +1,15 @@
 """Intake: one sentence + dropped files -> an AI plan card -> projects (``python -m vstudio.intake``, the engine's
 references/INTAKE.md). Plans are slow (inventory + ASR + a model call), so the desk runs them as background jobs:
 
-  start(prompt, inputs)  -> {id}      GET  -> {id, state running|done|error, step, plan, error, prompt, inputs}
+  start(prompt, inputs)  -> {id}      GET  -> {id, state running|done|error, step, progress, plan, error, prompt, inputs}
   revise(id, prompt)     -> same job, state running again (the plan keeps its revisions)
   apply(id, plan?, run)  -> {projects [{dir, name, recipe}], series}; ``run`` starts each pilot in the background
 
 Real engine: ``vstudio.intake plan|revise|apply --json`` (plan JSON kept in ``<DESK_DATA_DIR>/intake/<id>.json``),
-pilots via ``vstudio.project run --dir D --pilot 1``. When the engine's intake does not answer its probe, a plan /
+pilots via ``vstudio.project run --dir D --pilot 1``. While a plan / revision runs, the engine's ``--json-events``
+become the job's ``progress`` (what the card shows instead of a spinner): {stage scan | probe | listen | faces |
+transcribe | model | write, file, i, n, done_s, total_s, cached, provider, files, reused, seen [stages so far], at}. An
+engine without ``--json-events`` plans as before, with no progress. When the engine's intake does not answer its probe, a plan /
 revise / apply fails with ``intake.unavailable`` and the reason (the card offers Try again, which probes again):
 nothing is ever planned, applied or run by anything else. (The desk's tests use the in-memory planner in
 engine/tests/fixtures/desk_mock.)
@@ -84,6 +87,7 @@ class Intake:
         self._lock = threading.Lock()
         self._real = None
         self._why = None
+        self._streams = None           # the engine's plan / revise take --json-events (probed once)
 
     def real(self):
         """The engine's intake answers its probe (``vstudio.intake --help`` lists plan / apply). Probed once; a
@@ -104,8 +108,56 @@ class Intake:
 
     def _need_engine(self):
         if not self.real():
-            self._real = None                       # a hiccup: the next try probes again
+            self._real = self._streams = None       # a hiccup: the next try probes again
             raise Unavailable(f"the planning engine (vstudio.intake) did not answer: {self._why or 'unknown'}")
+
+    def streams(self):
+        """The engine's ``plan`` reports progress (``--json-events``); an older engine plans without it."""
+        if self._streams is None:
+            try:
+                self._streams = "--json-events" in self.runner.sibling("vstudio.intake").text(["plan", "--help"])
+            except Exception:  # noqa: BLE001
+                self._streams = False
+        return self._streams
+
+    def _run(self, pid, args, timeout):
+        """``vstudio.intake <args> --json`` -> its plan document; progress events go to the job as they come."""
+        r = self.runner.sibling("vstudio.intake")
+        track = self._procs.setdefault(pid, [])
+        if self.streams():
+            done = r.events([*args, "--json-events"], lambda ev: self._progress(pid, ev), timeout=timeout, track=track)
+            return done.get("plan") or {}
+        return r.json(args, timeout=timeout, track=track)
+
+    def _progress(self, pid, ev):
+        """One engine event -> the job's ``progress``: a ``stage`` event says what it is doing now (the previous
+        step's details go), a ``progress`` event moves the current step's counter."""
+        with self._lock:
+            cur = dict((self.jobs.get(pid) or {}).get("progress") or {})
+        stage = ev.get("stage")
+        if not stage:
+            return
+        if ev.get("event") == "progress":
+            if stage != cur.get("stage"):
+                return
+            cur.update({k: ev[k] for k in ("done_s", "total_s") if ev.get(k) is not None})
+        elif ev.get("event") == "stage":
+            seen = list(cur.get("seen") or [])
+            if stage not in seen:
+                seen.append(stage)
+            files = ev.get("files") if stage == "scan" and ev.get("files") is not None else cur.get("files")
+            reused = cur.get("reused") or bool(stage == "transcribe" and ev.get("cached"))
+            cur = {k: ev.get(k) for k in ("stage", "file", "i", "n", "kind", "done_s", "total_s", "cached",
+                                          "provider", "model") if ev.get(k) is not None}
+            cur["seen"] = seen
+            if files is not None:
+                cur["files"] = files
+            if reused:
+                cur["reused"] = True
+        else:
+            return
+        cur["at"] = time.time()
+        self._set(pid, progress=cur)
 
     def _path(self, pid):
         return os.path.join(self.dir, f"{pid}.json")
@@ -152,7 +204,8 @@ class Intake:
                                        for p in platforms)), "platforms: platform ids")
         pid = hashlib.sha1(f"{prompt}\0{inputs}\0{time.time()}".encode()).hexdigest()[:12]
         self._set(pid, id=pid, state="running", step="analyze", prompt=prompt, inputs=inputs, plan=None, error=None,
-                  started=time.time(), op_started=time.time(), seconds=None, platforms=platforms or None)
+                  started=time.time(), op_started=time.time(), seconds=None, platforms=platforms or None,
+                  progress=None)
         threading.Thread(target=self._plan, args=(pid, prompt, inputs), daemon=True).start()
         return dict(id=pid)
 
@@ -182,7 +235,7 @@ class Intake:
         if inputs:
             args += ["--inputs", *inputs]
         self._set(pid, step="plan")
-        plan = self.runner.sibling("vstudio.intake").json(args, timeout=1800, track=self._procs.setdefault(pid, []))
+        plan = self._run(pid, args, timeout=1800)
         plan["id"] = plan.get("id") or pid
         plan["desk_id"] = pid
         write_json(out, plan)
@@ -195,7 +248,7 @@ class Intake:
         if j.get("failed_revise"):
             return self.revise(pid, j["failed_revise"])
         self._set(pid, state="running", step="analyze", error=None, error_code=None, error_provider=None,
-                  op_started=time.time(), seconds=None)
+                  op_started=time.time(), seconds=None, progress=None)
         threading.Thread(target=self._plan, args=(pid, j.get("prompt") or "", j.get("inputs") or []),
                          daemon=True).start()
         return dict(id=pid)
@@ -204,7 +257,7 @@ class Intake:
         j = self.get(pid)
         need(j.get("plan"), "the plan is not ready yet")
         self._set(pid, state="running", step="revise", error=None, error_code=None, error_provider=None,
-                  failed_revise=None, op_started=time.time(), seconds=None)
+                  failed_revise=None, op_started=time.time(), seconds=None, progress=None)
 
         def go():
             try:
@@ -218,9 +271,8 @@ class Intake:
         return dict(id=pid)
 
     def _engine_revise(self, pid, plan, prompt):
-        return self.runner.sibling("vstudio.intake").json(["revise", "--plan", self._path(pid), "--prompt", prompt,
-                                                           "--in-place", "--json"], timeout=900,
-                                                          track=self._procs.setdefault(pid, []))
+        return self._run(pid, ["revise", "--plan", self._path(pid), "--prompt", prompt, "--in-place", "--json"],
+                         timeout=900)
 
     def _took(self, pid):
         """Seconds the plan / revision really took (reading the files and the AI call), for the card."""

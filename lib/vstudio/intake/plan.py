@@ -864,12 +864,13 @@ def cli_timeout_for(chars):
 
 
 def _call_model(prompt, analysis, ctx, transcripts, provider=None, model=None, current=None, instruction=None,
-                call=None, timeout=None):
+                call=None, timeout=None, on_event=None):
     route = LLM.route(TASK, provider, model, ctx.get("llm_config"))
     info = dict(provider=route.provider, model=route.model, route=route.source)
     if route.provider == "none" and call is None:
         info.update(fallback=True, reason="no model routed for task intake (rule planner)")
         return None, info
+    I.emit(on_event, stage="model", provider=route.provider, model=route.model)
     system = SYSTEM.format(phrases=PHRASE_TABLE)
     body = _prompt_doc(prompt, analysis, ctx, transcripts, current, instruction)
     t0 = time.time()
@@ -913,12 +914,26 @@ def _needs_transcript(intent, analysis):
     return out[:3]
 
 
-def _upgrade_transcripts(analysis, files, language=None, echo=None):
+def _transcript_events(on_event):
+    """The full-ASR pass re-reads files the first pass already reported: only its transcription is news (a file
+    whose full analysis is cached is a transcript reused from that cache)."""
+    if on_event is None:
+        return None
+
+    def ev(e):
+        if e.get("stage") == "transcribe":
+            on_event(e)
+        elif e.get("stage") == "probe" and e.get("cached"):
+            on_event(dict(e, stage="transcribe", cached="analysis"))
+    return ev
+
+
+def _upgrade_transcripts(analysis, files, language=None, echo=None, on_event=None):
     """Full ASR (cached) for the files the request selects content from; merged into the analysis."""
     paths = [f["path"] for f in files]
     if not paths:
         return analysis
-    full = I.analyze(paths, asr="full", language=language, echo=echo)
+    full = I.analyze(paths, asr="full", language=language, echo=echo, on_event=_transcript_events(on_event))
     byp = {f["path"]: f for f in full["files"]}
     for f in analysis["files"]:
         g = byp.get(f["path"])
@@ -976,21 +991,26 @@ def _plan_id(prompt):
 
 
 def make_plan(prompt, inputs=None, client=None, provider=None, model=None, analysis=None, asr="auto", auto=None,
-              call=None, echo=None, language=None, timeout=None):
-    """-> plan dict. ``call(system, prompt) -> {json, model, cost_usd}`` replaces the model (tests)."""
+              call=None, echo=None, language=None, timeout=None, on_event=None):
+    """-> plan dict. ``call(system, prompt) -> {json, model, cost_usd}`` replaces the model (tests). ``on_event``:
+    progress, one dict per step - the inventory's (scan / probe / listen / faces / transcribe, see ``inventory``),
+    then {event: stage, stage: model, provider, model} for the AI call and {event: stage, stage: write}."""
     if analysis is None:
         if not inputs:
             raise PlanError("no inputs (files / folders) given")
-        analysis = I.analyze(inputs, asr="off" if asr == "off" else "sample", language=language, echo=echo)
+        analysis = I.analyze(inputs, asr="off" if asr == "off" else "sample", language=language, echo=echo,
+                             on_event=on_event)
     ctx = context(client)
     intent = R.parse_prompt(prompt)
     if asr != "off" and asr != "sample":
         need = _needs_transcript(intent, analysis) if asr == "auto" else [
             f for f in analysis["files"] if f["kind"] in ("video", "audio")]
         if need:
-            analysis = _upgrade_transcripts(analysis, need, language, echo)
+            analysis = _upgrade_transcripts(analysis, need, language, echo, on_event)
     transcripts = _transcripts(analysis) if intent.get("extract") else {}
-    js, info = _call_model(prompt, analysis, ctx, transcripts, provider, model, call=call, timeout=timeout)
+    js, info = _call_model(prompt, analysis, ctx, transcripts, provider, model, call=call, timeout=timeout,
+                           on_event=on_event)
+    I.emit(on_event, stage="write")
     warn = []
     questions, risks, summary = [], [], None
     raw_projects = None
@@ -1102,15 +1122,17 @@ def _norm_questions(qs, projects):
     return out
 
 
-def revise(plan, instruction, provider=None, model=None, call=None, client=None, echo=None, timeout=None):
+def revise(plan, instruction, provider=None, model=None, call=None, client=None, echo=None, timeout=None,
+           on_event=None):
     """Follow-up instruction -> updated plan (model first, rules as the fallback). The analysis is re-read from
-    the cache (no media work unless the cache was cleared)."""
+    the cache (no media work unless the cache was cleared). ``on_event``: as ``make_plan``."""
     plan = copy.deepcopy(plan)
-    analysis = I.analyze(plan["analysis"]["inputs"], asr=plan["analysis"].get("asr") or "sample", echo=echo)
+    analysis = I.analyze(plan["analysis"]["inputs"], asr=plan["analysis"].get("asr") or "sample", echo=echo,
+                         on_event=on_event)
     if any(x.get("transcript") for x in plan.get("materials") or []):
         fs = [f for f in analysis["files"] if any(x["path"] == f["path"] and x.get("transcript")
                                                    for x in plan["materials"])]
-        analysis = _upgrade_transcripts(analysis, fs, echo=echo)
+        analysis = _upgrade_transcripts(analysis, fs, echo=echo, on_event=on_event)
     ctx = context(client or plan.get("client"))
     intent = R.parse_prompt(plan["prompt"] + "\n" + instruction)
     follow = R.parse_prompt(instruction)
@@ -1120,7 +1142,8 @@ def revise(plan, instruction, provider=None, model=None, call=None, client=None,
             intent_now[k] = follow[k]
     transcripts = _transcripts(analysis) if intent.get("extract") else {}
     js, info = _call_model(plan["prompt"], analysis, ctx, transcripts, provider, model, current=plan,
-                           instruction=instruction, call=call, timeout=timeout)
+                           instruction=instruction, call=call, timeout=timeout, on_event=on_event)
+    I.emit(on_event, stage="write")
     warn, notes = [], []
     projects = []
     summary = None

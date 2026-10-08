@@ -1,7 +1,13 @@
-"""python -m vstudio.intake analyze | plan | revise | apply | schema  (every command: --json -> one document)."""
+"""python -m vstudio.intake analyze | plan | revise | apply | schema  (every command: --json -> one document).
+
+plan / revise --json-events: one JSON event per line on stdout while it works (logs -> stderr), the progress the
+desk's plan card shows: {event: stage | progress, stage: scan | probe | listen | faces | transcribe | model | write,
+...} (``inventory`` / ``plan.make_plan`` list the fields), then {event: done, plan} - or {event: error, error} and
+a non-zero exit."""
 import argparse
 import json
 import sys
+import time
 
 from . import apply as AP
 from . import inventory as I
@@ -62,22 +68,39 @@ def cmd_analyze(a):
     return 0
 
 
+def _with_events(a, make, out):
+    """Run ``make(on_event)`` -> plan; with --json-events stream its progress and end with {event: done, plan}."""
+    if not a.json_events:
+        p = make(None)
+        _save(out, p)
+        _out(a, p, _plan_text(p))
+        return 0
+    from vstudio.batch.cli import json_event_sink
+    emit, stream = json_event_sink()
+    try:
+        p = make(emit)
+        _save(out, p)
+    except Exception as e:
+        emit(dict(event="error", ts=round(time.time(), 2), error=f"{type(e).__name__}: {e}"[:600]))
+        raise
+    emit(dict(event="done", ts=round(time.time(), 2), plan=p))
+    stream.flush()
+    return 0
+
+
 def cmd_plan(a):
     analysis = _load(a.analysis) if a.analysis else None
-    p = PL.make_plan(a.prompt, a.inputs, client=a.client, provider=a.provider, model=a.model, analysis=analysis,
-                     asr=a.asr, auto=[x for x in (a.auto or "").split(",") if x], echo=_echo(a), language=a.language,
-                     timeout=a.timeout)
-    _save(a.out, p)
-    _out(a, p, _plan_text(p))
-    return 0
+    return _with_events(a, lambda ev: PL.make_plan(
+        a.prompt, a.inputs, client=a.client, provider=a.provider, model=a.model, analysis=analysis, asr=a.asr,
+        auto=[x for x in (a.auto or "").split(",") if x], echo=_echo(a), language=a.language, timeout=a.timeout,
+        on_event=ev), a.out)
 
 
 def cmd_revise(a):
-    p = PL.revise(_load(a.plan), a.prompt, provider=a.provider, model=a.model, client=a.client, echo=_echo(a),
-                  timeout=a.timeout)
-    _save(a.out or (a.plan if a.in_place else None), p)
-    _out(a, p, _plan_text(p))
-    return 0
+    plan = _load(a.plan)
+    return _with_events(a, lambda ev: PL.revise(plan, a.prompt, provider=a.provider, model=a.model, client=a.client,
+                                                echo=_echo(a), timeout=a.timeout, on_event=ev),
+                        a.out or (a.plan if a.in_place else None))
 
 
 def cmd_apply(a):
@@ -129,6 +152,7 @@ def build_parser():
     p.add_argument("--language")
     p.add_argument("--auto", help="checkpoints the projects may answer with their default (e.g. hook,cover)")
     p.add_argument("--out", help="write the plan JSON here")
+    p.add_argument("--json-events", action="store_true", help="progress events on stdout, then {event: done, plan}")
 
     p = add("revise", cmd_revise, "update a plan from a follow-up instruction")
     p.add_argument("--plan", required=True)
@@ -139,6 +163,7 @@ def build_parser():
     p.add_argument("--timeout", type=float, help="seconds per CLI provider attempt (default 90)")
     p.add_argument("--out")
     p.add_argument("--in-place", action="store_true", help="overwrite --plan")
+    p.add_argument("--json-events", action="store_true", help="progress events on stdout, then {event: done, plan}")
 
     p = add("apply", cmd_apply, "create the project(s) from a plan (a series when mixed); pilot run optional")
     p.add_argument("--plan", required=True)

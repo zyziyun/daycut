@@ -539,3 +539,145 @@ class PlanTimingTest(unittest.TestCase):
             self.assertEqual(j["state"], "done")
             self.assertGreaterEqual(j["seconds"], 0.3)
             self.assertLess(j["plan"]["planner"]["seconds"], 0.3)             # the planner's own number is not it
+
+
+class IntakeProgressTest(unittest.TestCase):
+    """While a plan runs, the engine's ``--json-events`` become the job's ``progress`` (the card's stage, bar and
+    steps); an engine without the flag still plans (no progress)."""
+
+    def wait(self, it, pid):
+        for _ in range(500):
+            if it.get(pid)["state"] != "running":
+                return it.get(pid)
+            time.sleep(0.01)
+        self.fail("plan never finished")
+
+    def test_events_become_the_jobs_progress(self):
+        import threading
+        mid = threading.Event()
+        go = threading.Event()
+        seen_args = []
+
+        class Runner:
+            python, env = "python3", {}
+
+            def sibling(self, mod):
+                class S:
+                    def text(self, args, **kw):
+                        return "usage: python -m vstudio.intake plan [--json-events]" if args[:1] == ["plan"] \
+                            else "usage: python -m vstudio.intake {plan,revise,apply}"
+
+                    def events(self, args, on_event, **kw):
+                        seen_args.append(args)
+                        for ev in (dict(event="stage", stage="scan", inputs=2),
+                                   dict(event="stage", stage="scan", inputs=2, files=27),
+                                   dict(event="stage", stage="probe", file="talk.mp4", i=3, n=27, kind="video"),
+                                   dict(event="stage", stage="transcribe", file="talk.mp4", total_s=764.0, done_s=0),
+                                   dict(event="progress", stage="transcribe", file="talk.mp4", done_s=250.0,
+                                        total_s=764.0),
+                                   dict(event="progress", stage="faces", done_s=1.0)):     # not the current stage
+                            on_event(ev)
+                        mid.set()
+                        go.wait(5)
+                        on_event(dict(event="stage", stage="model", provider="claude-code"))
+                        return dict(event="done", plan=dict(kind="vstudio.intake.plan", version=1, projects=[]))
+
+                    def json(self, args, **kw):
+                        raise AssertionError("an engine with --json-events streams")
+                return S()
+
+        it = IN.Intake(tempfile.mkdtemp(), None, Runner(), "real")
+        pid = it.start("把讲方法的部分剪出来", ["/x/talk.mp4", "/x/folder"])["id"]
+        self.assertTrue(mid.wait(5))
+        p = it.get(pid)["progress"]
+        self.assertEqual((p["stage"], p["file"], p["done_s"], p["total_s"]), ("transcribe", "talk.mp4", 250.0, 764.0))
+        self.assertEqual(p["seen"], ["scan", "probe", "transcribe"])
+        self.assertEqual(p["files"], 27)                                       # the scan's count stays
+        self.assertNotIn("i", p)                                               # the probe's counter went with it
+        go.set()
+        j = self.wait(it, pid)
+        self.assertEqual(j["state"], "done")
+        self.assertEqual(j["progress"]["stage"], "model")
+        self.assertEqual(j["progress"]["provider"], "claude-code")
+        self.assertIn("--json-events", seen_args[0])
+
+    def test_reused_transcript_is_remembered(self):
+        it = IN.Intake(tempfile.mkdtemp(), None, None, "real")
+        it.jobs["a" * 12] = dict(id="a" * 12, state="running")
+        for ev in (dict(event="stage", stage="transcribe", file="t.mp4", cached="shared"),
+                   dict(event="stage", stage="model", provider="codex")):
+            it._progress("a" * 12, ev)
+        p = it.get("a" * 12)["progress"]
+        self.assertEqual((p["stage"], p.get("reused"), p["seen"]), ("model", True, ["transcribe", "model"]))
+
+    def test_older_engine_plans_without_progress(self):
+        class Runner:
+            python, env = "python3", {}
+
+            def sibling(self, mod):
+                class S:
+                    def text(self, args, **kw):
+                        return "usage: python -m vstudio.intake {plan,revise,apply}"
+
+                    def json(self, args, **kw):
+                        assert "--json-events" not in args
+                        return dict(kind="vstudio.intake.plan", version=1, projects=[], prompt="p")
+                return S()
+
+        it = IN.Intake(tempfile.mkdtemp(), None, Runner(), "real")
+        j = self.wait(it, it.start("x", [])["id"])
+        self.assertEqual(j["state"], "done")
+        self.assertIsNone(j["progress"])
+
+    def test_mock_engine_simulates_progress(self):
+        root = tempfile.mkdtemp()
+        with mock.patch.dict(os.environ, {"VSTUDIO_HOME": os.path.join(root, "home"), "DESK_MOCK_STEP": "0.01"}):
+            it = DM.MockIntake(os.path.join(root, "desk"), None, probe=lambda _p: dict(duration=764.0))
+            j = self.wait(it, it.start("剪一条口播", ["/x/talk.mp4"])["id"])
+            self.assertEqual(j["progress"]["seen"], ["scan", "probe", "transcribe", "model", "write"])
+
+
+class CliRunnerEventsTest(unittest.TestCase):
+    """``CliRunner.events``: JSON lines from a real child, as they come; the done line; a failure's reason."""
+
+    def runner(self, body):
+        from desk_engine.caps import CliRunner
+        d = tempfile.mkdtemp()
+        with open(os.path.join(d, "fake_engine.py"), "w", encoding="utf-8") as f:
+            f.write(body)
+        env = dict(os.environ, PYTHONPATH=d)
+        return CliRunner(sys.executable, env, timeout=20, module="fake_engine")
+
+    def test_streams_events_and_returns_done(self):
+        r = self.runner(
+            "import json, sys, time\n"
+            "print('a log line', file=sys.stderr)\n"
+            "for k in range(3):\n"
+            "    print(json.dumps(dict(event='progress', stage='transcribe', done_s=k)), flush=True)\n"
+            "print('not json')\n"
+            "print(json.dumps(dict(event='done', plan=dict(id='p1'))), flush=True)\n")
+        got, track = [], []
+        done = r.events(["plan"], got.append, track=track)
+        self.assertEqual(done["plan"]["id"], "p1")
+        self.assertEqual([e["done_s"] for e in got], [0, 1, 2])
+        self.assertEqual(track, [])
+
+    def test_error_event_is_the_reason(self):
+        from desk_engine.caps import CliError
+        r = self.runner(
+            "import json, sys\n"
+            "print(json.dumps(dict(event='error', error='PlanError: no inputs')), flush=True)\n"
+            "print('Traceback ...', file=sys.stderr)\n"
+            "sys.exit(1)\n")
+        with self.assertRaises(CliError) as cm:
+            r.events(["plan"], lambda ev: None)
+        self.assertIn("PlanError: no inputs", str(cm.exception))
+
+    def test_timeout_kills_the_child(self):
+        from desk_engine.caps import CliError
+        r = self.runner("import time\ntime.sleep(30)\n")
+        t0 = time.time()
+        with self.assertRaises(CliError) as cm:
+            r.events(["plan"], lambda ev: None, timeout=0.5, track=[])
+        self.assertIn("timed out", str(cm.exception))
+        self.assertLess(time.time() - t0, 10)

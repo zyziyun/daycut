@@ -116,6 +116,64 @@ class CliRunner:
             raise CliError(str(doc.get("error") or doc.get("message") or doc.get("reason") or f"{args[0]} failed"), doc)
         return doc
 
+    def events(self, args, on_event, timeout=None, track=None):
+        """``args`` with ``--json-events``: every {event: ...} line goes to ``on_event`` as it arrives; -> the final
+        {event: done} line. A child that ends without one raises ``CliError`` (its error event, else stderr's tail)."""
+        cmd = [self.python, "-m", self.module, *args]
+        try:
+            p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self.env,
+                                 stdin=subprocess.DEVNULL, start_new_session=track is not None, bufsize=1)
+        except OSError as e:
+            raise CliError(f"{self.module} {args[0]}: {e}") from e
+        if track is not None:
+            track.append(p)
+        tail = []
+
+        def drain():                                       # stderr is the log: kept short, never blocks the child
+            for line in p.stderr:
+                tail.append(line.rstrip())
+                del tail[:-20]
+        t_err = threading.Thread(target=drain, daemon=True)
+        t_err.start()
+        expired = threading.Event()
+
+        def expire():
+            expired.set()
+            kill_tracked([p])
+        timer = threading.Timer(timeout or self.timeout, expire)
+        timer.daemon = True
+        timer.start()
+        done = failed = None
+        try:
+            for line in p.stdout:
+                try:
+                    ev = json.loads(line)
+                except ValueError:
+                    continue
+                if not isinstance(ev, dict) or not ev.get("event"):
+                    continue
+                if ev["event"] == "done":
+                    done = ev
+                elif ev["event"] == "error":
+                    failed = ev
+                else:
+                    try:
+                        on_event(ev)
+                    except Exception:  # noqa: BLE001 - the consumer's problem never stops the run
+                        pass
+            p.wait()
+        finally:
+            timer.cancel()
+            t_err.join(timeout=2)
+            if track is not None and p in track:
+                track.remove(p)
+        if expired.is_set():
+            raise CliError(f"{self.module} {args[0]}: timed out after {timeout or self.timeout:.0f} s")
+        if done is None or p.returncode != 0:
+            why = (failed or {}).get("error") or " | ".join(tail[-3:]) or "no done event"
+            raise CliError(f"{self.module} {args[0]} exited {p.returncode}: {why}")
+        return done
+
 
 def kill_tracked(procs):
     """Ends each child and its process group (the engine + any model CLI it started). -> how many were running."""
