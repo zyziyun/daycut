@@ -393,14 +393,15 @@ window.__timelines["main"] = tl;
 # ------------------------------------------------------------------------------------------------ render
 def render(proj, out, quality="delivery", fps=30, lufs=-14.0):
     """HyperFrames render -> deliver: loudness (only when there is audio), BT.709 tags, +faststart."""
-    if not shutil.which("npx"):
-        raise RuntimeError("npx (Node) not found: HyperFrames needs Node 18+")
+    from vstudio import node, proctail
+    env = node.child_env(extra_dirs=[d for d in [media.ffmpeg_dir()] if d])    # raises NodeError (+ the fix)
     raw = os.path.join(proj, "renders", "_raw.mp4")
     os.makedirs(os.path.dirname(raw), exist_ok=True)
-    r = subprocess.run(hyperframes_cmd() + ["render", "--quality", quality, "--fps", str(fps),
-                                            "--video-frame-format", "png", "--output", "renders/_raw.mp4"], cwd=proj, capture_output=True, text=True)
+    cmd = node.npx(*hyperframes_cmd()[1:], env=env) + ["render", "--quality", quality, "--fps", str(fps),
+                                                       "--video-frame-format", "png", "--output", "renders/_raw.mp4"]
+    r = subprocess.run(cmd, cwd=proj, capture_output=True, text=True, env=env)
     if r.returncode != 0 or not os.path.exists(raw):
-        tail = "\n".join((r.stdout + r.stderr).strip().splitlines()[-25:])
+        tail = proctail.tail(r.stderr + "\n" + r.stdout, n=25)
         raise RuntimeError(f"hyperframes render failed in {proj}:\n{tail}")
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     info = media.probe(raw)

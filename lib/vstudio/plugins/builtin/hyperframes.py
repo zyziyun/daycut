@@ -237,9 +237,14 @@ class HyperFramesProvider(Provider):
         cmd = [exe, "render", "--quality", "draft", "--output", out]
         if src:
             cmd[2:2] = ["--composition", src]
+        from vstudio import media, node
+        try:                                  # the CLI's `#!/usr/bin/env node` must find a node that runs
+            env = node.child_env(extra_dirs=[d for d in [media.ffmpeg_dir()] if d])
+        except node.NodeError:
+            env = None                        # let the CLI try (and log) on its own
         with open(os.path.join(job["dir"], "log.txt"), "a", encoding="utf-8") as log:
             r = subprocess.run(cmd, cwd=project, stdout=log, stderr=subprocess.STDOUT, timeout=timeout,
-                               stdin=subprocess.DEVNULL)
+                               stdin=subprocess.DEVNULL, env=env)
         if r.returncode:
             raise RuntimeError(f"hyperframes render exited {r.returncode} (see log.txt)")
         return [out]
