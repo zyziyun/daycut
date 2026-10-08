@@ -91,8 +91,10 @@ my-promo/
    python3 $VSTUDIO/workflows/promo-recut/scripts/post_copy.py promo.config.yaml
    ```
    The cover is `vstudio.cover.split_cover` fed from the config. It takes a frame from the talk (or a given
-   image) and retouches it through `vstudio.retouch` (slim,
-   eye, de-shine, skin, light makeup, optional body slim). It crops around the detected face. Landscape
+   image) and retouches it through `vstudio.retouch` (de-shine, skin, light makeup, `brighten` lift). No
+   geometric warps by default: face slim / eye enlarge / body slim deformed her face on a still, so they are 0
+   unless the config opts in (`cover.retouch: {slim: 0.05, eye: 0.04}`; `false` or `--no-retouch` = none).
+   It crops around the detected face. Landscape
    sizes get a split cover: photo on one side, and on the other a dark panel with quote, title + highlighted
    term, a framed highlights thumbnail, chips, a red tag and a 记笔记 tag. Portrait sizes stack the photo on
    top. The post (`vstudio.publish.post_body`) gets the title (length checked per platform), body, links, a
