@@ -106,7 +106,7 @@ CSC_IDENTITY_AUTO_DISCOVERY=true MAS_PROVISIONING_PROFILE="$PROFILE" \
   -c.mas.provisioningProfile="$PROFILE"
 
 APP="dist/mas-arm64/Reelfold.app"
-PKG=$(ls -t dist/*.pkg 2>/dev/null | head -1 || true)
+PKG=$(ls -t dist/*.pkg dist/mas-arm64/*.pkg 2>/dev/null | head -1 || true)
 [ -d "$APP" ] || die "no $APP"
 [ -n "$PKG" ] || die "no .pkg in dist/ (installer identity?)"
 
