@@ -22,7 +22,7 @@ references/PROJECTS.md.
                                                       a recipe project folder gets only its status (row untouched)
   output list | show | edit | preview-edl | render | undo | redo | revert | ai | chat | effects  --project P --output O   2nd-pass edit of
       one finished output (references/OUTPUT_EDIT.md): edit --ops JSON | --op NAME --param k=v | --op ai
-      --instruction T [--apply]; render [--quality preview|final] [--targets primary,douyin:vertical|all]
+      --instruction T [--apply]; render [--quality preview|final] [--targets primary,douyin:vertical|all] [--watermark on|off]
   ai --project P --instruction T [--outputs all|a,b] [--context JSON] [--timeout 120] [--json | --json-events]
                                                       project-level AI edit: one model call for every output ->
                                                       grouped changes per output, or needs_rerender (burned-in text
@@ -350,7 +350,8 @@ def cmd_output(a):
             from vstudio.batch.cli import json_event_sink
             emit, stream = json_event_sink()
         r = R.render(proj, a.output, quality=a.quality, targets=_csv(a.targets) or ["primary"], on_event=emit,
-                     with_ops=json.loads(a.with_ops) if a.with_ops else None)
+                     with_ops=json.loads(a.with_ops) if a.with_ops else None,
+                     watermark=None if a.watermark in (None, "auto") else a.watermark == "on")
         if emit:
             emit(dict(event="render-done", **r))
             stream.flush()
@@ -633,6 +634,8 @@ def build_parser():
     p.add_argument("--with-ops", help="render: preview these ops without applying them (before / after compare)")
     p.add_argument("--quality", choices=["preview", "final"], default="preview")
     p.add_argument("--targets", help="render: primary (default), platform:orientation list, or all")
+    p.add_argument("--watermark", choices=["auto", "on", "off"], default="auto",
+                   help="render --quality final: the creator's watermark (auto = her default, vstudio.watermark)")
     p.add_argument("--json-events", action="store_true")
     p.add_argument("--no-thumbs", action="store_true", help="effects: skip the preview thumbnails")
     p = add("ai", cmd_ai, "project-level AI edit of every output (grouped per output; needs_rerender)")

@@ -166,7 +166,7 @@ function AiStep({ onKeys, onReady }: { onKeys: () => void; onReady: (ready: bool
   const ready = SUBS.find((p) => rowOf(status, p)?.state === 'logged-in');
   useEffect(() => onReady(Boolean(ready)), [ready, onReady]);
   if (!CAPS.cliLogins) {
-    // Lite: the keys card open, local models named, and the full version for a subscription sign-in
+    // Lite: the keys card open and local models named (no subscription sign-in, no pointer to another download)
     return (
       <div className="col" data-testid="fr-ai">
         <b style={{ fontSize: 16, fontWeight: 600 }}>{t('lite.aiTitle')}</b>

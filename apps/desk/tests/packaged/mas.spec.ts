@@ -30,6 +30,14 @@ function freePort(): Promise<number> {
   });
 }
 
+/** The Lite copy names no other download and the Lite notes link nowhere (App Review 3.1.1 / 2.3). */
+async function expectNoUpsell(page: Page) {
+  const text = await page.evaluate(() => document.body.innerText);
+  expect(text).not.toMatch(/reelfold\.com|full version|get the full|完整版|version complète/i);
+  await expect(page.getByTestId('lite-full')).toHaveCount(0);
+  await expect(page.locator('[data-testid="lite-card"] a, [data-testid="lite-card"] button, [data-testid="lite-ai"] a, [data-testid="lite-ai"] button')).toHaveCount(0);
+}
+
 /** The container exists after the app's first launch: start it once (it quits when the window is closed). */
 async function ensureContainer() {
   if (fs.existsSync(CONTAINER)) return;
@@ -155,7 +163,7 @@ test('the real engine runs sandboxed from the bundle; Lite AI, downloads and upd
     expect(state.anthropic).toBe('not-configured');
     const routes = await page.evaluate(() => window.desk.ai.routes());
     expect(routes.routes.default.provider).toBe('anthropic');
-    await expect(page.evaluate(() => window.desk.ai.terminal({ provider: 'claude-code', action: 'login', cols: 80, rows: 24 }))).rejects.toThrow(/full version/);
+    await expect(page.evaluate(() => window.desk.ai.terminal({ provider: 'claude-code', action: 'login', cols: 80, rows: 24 }))).rejects.toThrow(/not available in this edition/);
     // first-run downloads are data only: no Chromium
     const assets = await page.evaluate(() => window.desk.assets.status());
     expect(assets.groups.map((g) => g.id).some((id) => id.startsWith('chromium'))).toBe(false);
@@ -165,12 +173,14 @@ test('the real engine runs sandboxed from the bundle; Lite AI, downloads and upd
     // no usage counts
     expect((await page.evaluate(() => window.desk.usage.status())).allowed).toBe(false);
 
-    // Settings › General says what Lite leaves out and links to the full version
+    // Settings › General / AI say what Lite does, neutrally: no other download, no link out (App Review 3.1.1 / 2.3)
     await page.evaluate(() => (location.hash = '#/settings/general'));
     await expect(page.getByTestId('lite-card')).toBeVisible({ timeout: 15000 });
+    await expectNoUpsell(page);
     await page.evaluate(() => (location.hash = '#/settings/ai'));
     await expect(page.getByTestId('lite-ai')).toBeVisible({ timeout: 15000 });
     await expect(page.getByTestId('provider-claude-code')).toHaveCount(0);
+    await expectNoUpsell(page);
   } finally {
     await app.close();
   }
@@ -182,9 +192,11 @@ test('first run in Lite: API keys and local models, no subscription sign-in', as
     const page = app.page;
     await expect(page.getByTestId('first-run')).toBeVisible({ timeout: 30000 });
     await expect(page.getByTestId('lite-card')).toBeVisible();
+    await expectNoUpsell(page);
     await page.getByTestId('fr-next').click();
     await expect(page.getByTestId('fr-ai')).toBeVisible();
     await expect(page.getByTestId('lite-ai')).toBeVisible();
+    await expectNoUpsell(page);
     await expect(page.getByTestId('fr-sub-claude-code')).toHaveCount(0);
     await expect(page.getByTestId('fr-sub-codex')).toHaveCount(0);
   } finally {

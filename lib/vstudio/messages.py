@@ -89,7 +89,8 @@ CATALOG = {
 STAGES = {
     "plan": ("Planning", "规划中"), "probe": ("Reading the file", "读取文件"), "extract": ("Extracting audio", "提取音频"),
     "asr": ("Transcribing", "语音转文字"), "hooks": ("Finding hooks", "找开场"), "cleanup": ("Finding pauses and fillers", "找气口和口癖"),
-    "apply": ("Cutting", "剪辑中"), "face": ("Tracking the face", "跟踪人脸"), "compose": ("Composing", "合成中"),
+    "apply": ("Cutting", "剪辑中"), "face": ("Tracking the face", "跟踪人脸"),
+    "notes": ("Drafting notes and keywords", "起草笔记和关键词"), "compose": ("Composing", "合成中"),
     "cover_frames": ("Cover candidates", "封面候选"), "verify": ("Checking the cut by ear", "回听检查"),
     "glossary": ("Building the glossary", "整理术语表"), "proofread": ("Proofreading captions", "校对字幕"),
     "export": ("Exporting", "导出中"), "qc": ("Quality check", "质量检查"), "preview": ("Preview", "预览"),
@@ -109,6 +110,8 @@ CHECKPOINTS = {
     "budget-approval": ("Approve the budget", "批准预算", "Approve the spend before anything paid runs",
                         "付费生成前请批准预算"),
     "take-selection": ("Pick the takes", "选镜头", "Pick the takes to use", "选要用的镜头"),
+    "keywords": ("Check the highlighted keywords", "确认高亮关键词", "Check the words coloured in the captions",
+                 "看一下字幕里变色的关键词"),
     "cover-pick": ("Pick the cover", "选封面", "Pick a cover", "从候选里选封面"),
     "privacy-masks": ("Check the privacy masks", "检查打码", "Check who is masked", "确认打码的人和区域"),
     "consent": ("Confirm consent", "确认授权", "Confirm the people shown agreed", "确认出镜的人已同意"),

@@ -213,7 +213,8 @@ def run_gates(job, spec, ins, extra=()):
                          f"{e['duration']:.1f}s over the spec max_len {lim:g}s for {e['platform']} (add trims)",
                          target=label))
         checks += lc
-        checks.append(check_title(p.get("title"), e["platform"], o["title_required"], label))
+        checks.append(check_title(p.get("title") or (ins.get("export") or {}).get("title"), e["platform"],
+                                  o["title_required"], label))   # the creator's, else the drafted one
         checks += check_safe_zone(e, prof, label)
         checks += check_black_frozen(f, o, label, (ins.get("compose") or {}).get("cards") or ())
         for w in e.get("warnings") or []:

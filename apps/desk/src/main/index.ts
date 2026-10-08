@@ -701,6 +701,8 @@ function registerIpc() {
         ? [{ name: 'Video', extensions: ['mp4', 'mov', 'm4v', 'mkv', 'webm'] }]
         : p.kind === 'persona'
           ? [{ name: 'Persona', extensions: ['yaml', 'yml'] }]
+          : p.kind === 'image'
+            ? [{ name: 'Image', extensions: ['png', 'jpg', 'jpeg', 'webp'] }]
           : p.kind === 'python'
             ? []
             : [{ name: 'Segments', extensions: ['yaml', 'yml', 'csv', 'json'] }];

@@ -82,6 +82,7 @@ The desk maps `code` to its own copy (en / zh-CN / fr below; `{name}` = a param)
 | `stage.cleanup` | Finding pauses and fillers | 找气口和口癖 | Recherche des pauses et tics |
 | `stage.apply` | Cutting | 剪辑中 | Découpe |
 | `stage.face` | Tracking the face | 跟踪人脸 | Suivi du visage |
+| `stage.notes` | Drafting notes and keywords | 起草笔记和关键词 | Notes et mots-clés |
 | `stage.compose` | Composing | 合成中 | Composition |
 | `stage.cover_frames` | Cover candidates | 封面候选 | Couvertures candidates |
 | `stage.verify` | Checking the cut by ear | 回听检查 | Vérification à l'écoute |
@@ -118,6 +119,8 @@ The desk maps `code` to its own copy (en / zh-CN / fr below; `{name}` = a param)
 | `inbox.budget-approval` | Approve the spend before anything paid runs | 付费生成前请批准预算 | Validez la dépense avant toute génération payante |
 | `checkpoint.take-selection` | Pick the takes | 选镜头 | Choisir les prises |
 | `inbox.take-selection` | Pick the takes to use | 选要用的镜头 | Choisissez les prises à utiliser |
+| `checkpoint.keywords` | Check the highlighted keywords | 确认高亮关键词 | Vérifier les mots-clés en couleur |
+| `inbox.keywords` | Check the words coloured in the captions | 看一下字幕里变色的关键词 | Vérifiez les mots colorés dans les sous-titres |
 | `checkpoint.cover-pick` | Pick the cover | 选封面 | Choisir la couverture |
 | `inbox.cover-pick` | Pick a cover | 从候选里选封面 | Choisissez une couverture |
 | `checkpoint.privacy-masks` | Check the privacy masks | 检查打码 | Vérifier les masques |

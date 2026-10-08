@@ -31,6 +31,10 @@ import sys
 #   cleanup       vstudio.cleanup profile for her own speech (gentle | standard | tight | off)
 #   theme         design theme (vstudio.theme); never the red "classic" look unless she asks
 #   notes         记笔记 / note cards on the key points;  progress: progress bar style (None = none)
+#   engine        talkinghead recipe pipeline: "vtrack" = her styled V track (face track, the edit style below),
+#                 "fast" = clean + plain captions; None = the format has no engine choice
+#   style         vtrack edit style: "notes" (chapter bar with labels + 记笔记 panels + keyword-coloured captions),
+#                 "refined" (精剪: punch-ins, pops, stamps), "mixed"; None = none
 #   cover         aspect "video" = same canvas as the video; style; retouch (slim + light makeup on her face);
 #                 min_luma = mean brightness floor (0..1); text = "designed" (typographic, theme fonts) | "none"
 #   series_labels False = never add 01/04, PART n, 第n集 corner labels or series lines; "ask" = only when told
@@ -42,13 +46,13 @@ import sys
 #   audio         "required" = the render must have sound (her voice); "optional" = silent is fine (a product demo
 #                 with kinetic captions and no music bed)
 _COMMON = dict(theme="editorial", series_labels=False, captions="zh", tag_set=None, guests=None, notes=False,
-               progress=None, hook_menu=12, rules=[], audio="required")
+               progress=None, engine=None, style=None, hook_menu=12, rules=[], audio="required")
 
 FORMATS = {
     "talking-head": dict(
         labels=dict(zh="口播", en="Talking head"), workflow="talkinghead",
         speed=dict(body=1.25, hook=1.5, inserts=1.1), hooks="menu", cleanup="tight", notes=True,
-        progress="refined",
+        progress="classic", engine="vtrack", style="notes",
         cover=dict(aspect="video", style="frames-with-notes", retouch=True, min_luma=0.42, text="designed"),
         rules=["hooks 只给候选清单让她挑和排序，不自动选", "hook 不超过 1.6x（再快就假了）",
                "保留原始画幅比例，不做大头特写裁切", "标题别太鸡汤，<= 平台标题上限"]),
@@ -206,6 +210,33 @@ def _x(v):
     return f"{float(v):g}x"
 
 
+_LOOKS = {   # (engine, style) -> what the render shows: (zh, en)
+    ("vtrack", "notes"): (["章节进度条带章节名、当前章节高亮", "记笔记面板", "关键词变色字幕、关键词可改"],
+                          ["chapter bar with labels, current chapter highlighted", "note panels",
+                           "keyword-coloured captions, keywords editable"]),
+    ("vtrack", "refined"): (["精剪风推镜、弹字、印章", "进度条", "关键词变色字幕"],
+                            ["refined look with punch-ins, pop words, stamps", "progress bar", "keyword-coloured captions"]),
+    ("vtrack", "mixed"): (["推镜加记笔记面板", "进度条", "关键词变色字幕"],
+                          ["punch-ins plus note panels", "progress bar", "keyword-coloured captions"]),
+    ("fast", None): (["只有字幕，没有面板和进度条的快速精剪"], ["plain captions only, no panels or bar, the fast pass"]),
+}
+
+
+def look(engine, style=None, lang="zh"):
+    """What a talkinghead engine + edit style draw, as summary parts (the format summary, the intake plan line)."""
+    zh, en = _LOOKS.get((engine, style if engine != "fast" else None), ([], []))
+    return list(zh if lang == "zh" else en)
+
+
+def _look(f, lang):
+    """The look parts of the summary: what the engine + style draw, else the notes / progress flags."""
+    if f.get("engine"):
+        return look(f["engine"], f.get("style"), lang)
+    if lang != "zh":
+        return ["note cards"] if f["notes"] else []
+    return (["记笔记卡片"] if f["notes"] else []) + (["进度条"] if f["progress"] else [])
+
+
 def summary(f, lang="zh"):
     """One line stating what the first pass will do (and not do). Say it before the first render."""
     if isinstance(f, str):
@@ -219,8 +250,7 @@ def summary(f, lang="zh"):
             parts.append(f"inserted footage {_x(sp['inserts'])}, labelled")
         parts.append(f"cleanup {f['cleanup']}")
         parts.append(f"theme {f['theme']}")
-        if f["notes"]:
-            parts.append("note cards")
+        parts += _look(f, "en")
         parts.append("cover same size as the video" + (", retouched" if cv.get("retouch") else ""))
         if f["series_labels"] is False:
             parts.append("no series labels")
@@ -235,10 +265,7 @@ def summary(f, lang="zh"):
         parts.append({"tight": "严格去 filler / 重复 / 气口", "standard": "标准去 filler / 气口",
                       "gentle": "轻度去气口"}.get(f["cleanup"], f"cleanup {f['cleanup']}"))
     parts.append(f"{f['theme']} 主题")
-    if f["notes"]:
-        parts.append("记笔记卡片")
-    if f["progress"]:
-        parts.append("进度条")
+    parts += _look(f, "zh")
     parts.append("封面与正片同尺寸" + ("、修图" if cv.get("retouch") else "") + "、够亮")
     if f["series_labels"] is False:
         parts.append("不加系列角标")

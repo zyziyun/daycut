@@ -63,7 +63,9 @@ v0.4 (outputs.py, intake.py, inbox.py; engine command when available, desk imple
                                            /render {quality?, targets?, with_ops?};  /undo | /redo {steps?}
                                            /revert {step} (one earlier step, later ones kept); /chat {add} |
                                            {turn, set} (the clip's chat transcript; show returns it as chat);
-                                           /export {targets} -> {job} + output-render events; /export-stop {job}
+                                           /export {targets, watermark?} -> {job} + output-render events
+                                           (watermark true / false: this export, absent: her default);
+                                           /export-stop {job}
   POST /api/outputs/<item>/project-ask     {prompt, clips?, context?} project-level AI (every clip) -> {job};
                                            GET /api/project-ask/<job> {state, stages, notices, elapsed, result};
                                            POST /api/project-ask/<job>/stop (kills the engine + model CLI);
@@ -90,6 +92,8 @@ v0.4 (outputs.py, intake.py, inbox.py; engine command when available, desk imple
   GET  /api/share/<item>                   share for review (share.py): clips + versions + privacy warnings;
                                            POST {clips?, quality?, footer?, title?, expiry_note?, ack?} -> {job};
                                            GET /api/share-jobs/<job>; POST /api/feedback/import {text} -> Inbox items
+  GET  /api/watermark                      Settings › Watermark (watermark.py): settings + previews over sample
+                                           9:16 / 16:9 frames; POST {patch}; POST /api/watermark/logo {path}
   GET  /api/inbox                          every decision waiting for the creator; POST /api/inbox/answer {keys,
                                            answer?}; POST /api/inbox/undo {keys}; POST /api/inbox/open {key,
                                            which file|template|doc} (an author item's file in the default editor)
@@ -470,6 +474,8 @@ class Api:
         self.inbox.extra.append(self.create.inbox_items)
         from .share import Share                   # share for review: static page + feedback -> Inbox
         self.share = Share(engine.data_dir, self.history, self.outputs, self.inbox, bus)
+        from .watermark import Watermark           # Settings › Watermark (vstudio.watermark settings + previews)
+        self.watermark = Watermark()
         self.port = None
 
     def roots(self):
@@ -524,7 +530,9 @@ class Api:
                     return self.outputs.render(parts[1], clip, b.get("quality") or "preview", b.get("targets") or "primary",
                                                with_ops=b.get("with_ops"))
                 if verb == "export":
-                    return self.outputs.export(parts[1], clip, b.get("targets"))
+                    wm = b.get("watermark")
+                    need(wm in (None, True, False), "watermark must be true, false or absent")
+                    return self.outputs.export(parts[1], clip, b.get("targets"), watermark=wm)
                 if verb == "export-stop":
                     return self.outputs.export_stop(b.get("job"))
                 if verb == "revert":
@@ -770,6 +778,10 @@ class Api:
             return self.roots()
         if parts[:1] == ["create"]:
             return self.create.route(method, parts[1:], query, body)
+        if parts[:1] == ["watermark"]:
+            r = self.watermark.route(method, parts, body, query)
+            if r is not None:
+                return r
         if parts[:1] != ["batches"]:
             r = self.route_v04(method, parts, query, body)
             if r is not None:

@@ -321,6 +321,7 @@ CLI = [
     ("batch", "Batch production: plan, estimate, run, status, review, package."),
     ("cleanup", "Shared speech cleanup: pauses, fillers, repeats, restarts."),
     ("export", "One clean master into a file, cover and post stub per platform."),
+    ("watermark", "Your handle, logo or a generated badge on every export: settings, generate, preview, apply."),
     ("reframe", "Face-tracked reframe between aspect ratios."),
     ("platform", "Print the platform profiles."),
     ("effects", "List and inspect the effect registry."),
@@ -335,7 +336,7 @@ CLI = [
 def gen_cli() -> None:
     env = dict(os.environ, PYTHONPATH=str(REPO / "lib"), COLUMNS="100", NO_COLOR="1")
     parts = [front("CLI", "Command-line reference for the Reelfold engine (python -m vstudio.*): intake, project, "
-                   "batch, cleanup, export, reframe, platform, effects, llm, retouch, lesson, qa, bilingual."),
+                   "batch, cleanup, export, watermark, reframe, platform, effects, llm, retouch, lesson, qa, bilingual."),
              STAMP.format(src="`python -m vstudio.<module> --help`"), "",
              "The engine is a Python package (`vstudio`, in `lib/`). The Mac app and the Claude Code skill both call "
              "these commands; you can run them yourself from a terminal:\n\n```bash\n"

@@ -24,7 +24,8 @@ from . import works as WK
 from .common import need, read_json, write_json
 
 GROUP = {"confirm": "choose", "filler-confirm": "choose", "hook-pick": "choose", "segment-approval": "choose",
-         "cover-pick": "choose", "take-selection": "choose", "media-selection": "choose", "script-lock": "choose",
+         "keywords": "choose", "cover-pick": "choose", "take-selection": "choose", "media-selection": "choose",
+         "script-lock": "choose",
          "review": "review", "publish": "review", "budget-approval": "spend", "voice-pick": "spend",
          "checkpoint": "other", "consent": "other", "privacy-masks": "other"}
 

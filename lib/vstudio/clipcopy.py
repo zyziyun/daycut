@@ -4,7 +4,8 @@
     from vstudio import clipcopy
     d = clipcopy.draft(sents, platforms=["xiaohongshu:full"], glossary_terms=["亚麻", "onboarding"])
     d["title"]      # within the tightest title limit of the platforms (publish.fit_title, shortening reported)
-    d["keywords"]   # terms said in the clip, shown in the accent colour in captions and panels
+    d["keywords"]   # 3-8 terms said in the clip, shown in the accent colour in captions and panels
+    d["keyword_candidates"]   # a few more terms of the clip the creator can tick in review
     d["chapters"]   # [(t0, t1, label)]: 2-6 character labels for the progress bar
     d["panels"]     # [(t0, t1, title, [(t, bullet)])]: one 记笔记 card per section, bullets as she says them
     d["source"]     # "llm:<provider>" | "transcript"; d["notes"]: what was dropped / shortened / not drafted
@@ -19,9 +20,12 @@ Two real paths, chosen by the ``copy`` route of vstudio.llm (persona / desk llm 
   * no model (route ``none``): the title is the most title-like spoken clause (vstudio.batch.segplan rules), the
     keywords are the glossary terms said in the clip plus recurring latin terms, and no cards are drafted - spoken
     fragments make poor note cards - which ``notes`` says.
+Either way the keywords are topped up to 3 (at most 8) from the glossary terms said and the clip's recurring terms
+(``pick_keywords``: segplan tf-idf, glued fragments dropped); the review checkpoint shows them to edit.
 A model that fails raises (``llm.AllProvidersFailed`` / the provider's error): the caller reports it.
 """
 import re
+from collections import Counter
 
 PANEL_EVERY = 40.0          # seconds of speech per 记笔记 card ("notes 多一点" / "多加 panel")
 BULLET_MAX = 14             # characters per panel bullet (the compositor's card width)
@@ -199,13 +203,71 @@ def _said_terms(sents, glossary_terms):
     return res[:8]
 
 
+_DISCOURSE = {"反正", "其实", "当然", "比如", "比如说", "一会儿", "不好意思", "觉得", "知道", "然后", "所以", "但是", "就是"}
+KEYWORDS_MIN, KEYWORDS_MAX = 3, 8
+
+
+def _free(g, text):
+    """A CJK n-gram that stands on its own: not glued to the same neighbour in >= 70% of its uses (a piece of a
+    longer word: 更加注重 -> 加注重, 地方的做事 -> 方的做事)."""
+    if not re.match(r"[\u3400-\u9fff]", g):
+        return True
+    occ = [m.start() for m in re.finditer(re.escape(g), text)]
+    for side in (-1, len(g)):
+        c, n = Counter(text[i + side] if 0 <= i + side < len(text) else "" for i in occ).most_common(1)[0]
+        if len(occ) >= 2 and re.match(r"[\u3400-\u9fff]", c) and n >= 0.7 * len(occ):
+            return False
+    return True
+
+
+def weighted_terms(sents):
+    """Recurring terms of the clip, best first: tf x idf of vstudio.batch.segplan ``term_stats`` (n-grams that
+    recur; a piece of a longer term dropped), minus discourse words, stop characters and glued fragments."""
+    from vstudio.batch import segplan as SP
+    idf, per = SP.term_stats([dict(s, k=k) for k, s in enumerate(sents)])
+    tf = Counter()
+    for c in per:
+        tf.update(c)
+    text = "".join(s["text"] for s in sents)
+    out = []
+    for g in sorted(idf, key=lambda g: (-tf[g] * idf[g], g)):
+        cjk = re.match(r"[\u3400-\u9fff]", g)
+        if g in _DISCOURSE or g in SP.CONNECT_ZH or (cjk and any(ch in SP.STOP_CH for ch in g)) or not _free(g, text):
+            continue
+        if not any(g in h or h in g for h in out):
+            out.append(SP._display(g, text))
+    return out
+
+
+def pick_keywords(sents, keywords=(), glossary_terms=(), n_min=KEYWORDS_MIN, n_max=KEYWORDS_MAX):
+    """``keywords`` (the model's / already chosen) topped up to ``n_min`` from the glossary terms said in the clip,
+    then the clip's weighted terms; at most ``n_max``. -> (keywords, extras): extras = up to 4 more candidates
+    the creator can tick in review."""
+    out, seen = [], set()
+    for k in keywords or []:
+        if _norm(k) not in seen and len(out) < n_max:
+            seen.add(_norm(k))
+            out.append(k)
+    pool = [t for t in _said_terms(sents, glossary_terms) + weighted_terms(sents)
+            if not any(_norm(t) in x or x in _norm(t) for x in seen)]
+    extras = []
+    for t in pool:
+        if any(_norm(t) in _norm(x) or _norm(x) in _norm(t) for x in out + extras):
+            continue
+        if len(out) < n_min:
+            out.append(t)
+        elif len(extras) < 4:
+            extras.append(t)
+    return out, extras
+
+
 # ------------------------------------------------------------------------------------------------ draft
 def draft(sents, platforms=None, glossary_terms=(), provider="auto", complete=None, every=PANEL_EVERY, lang=None):
     """-> {title, title_note, title_platform, keywords, chapters, panels, source, notes}. See the module doc."""
     from vstudio import llm, publish
     sents = [dict(s, text=_clean(s.get("text"))) for s in sents if _clean(s.get("text"))]
-    out = dict(title="", title_note=None, title_platform=None, keywords=[], chapters=[], panels=[],
-               source=None, notes=[])
+    out = dict(title="", title_note=None, title_platform=None, keywords=[], keyword_candidates=[], chapters=[],
+               panels=[], source=None, notes=[])
     if not sents:
         out["notes"].append("no speech: nothing drafted")
         return out
@@ -234,8 +296,147 @@ def draft(sents, platforms=None, glossary_terms=(), provider="auto", complete=No
         out["source"] = "transcript"
         out["notes"].append("no text model routed (vstudio.llm task 'copy'): 记笔记 cards and chapters not drafted; "
                             "the title is a spoken clause")
+    out["keywords"], out["keyword_candidates"] = pick_keywords(sents, out["keywords"], glossary_terms)
     out["title"], out["title_note"] = publish.fit_title_all(title, plats)
     out["title_platform"] = pl
     if out["title_note"]:
         out["notes"].append(out["title_note"])
+    return out
+
+
+# ------------------------------------------------------------------------------------------------ post copy
+BODY_MAX = {"zh": 120, "en": 280}      # characters of the drafted post body (a caption, not an article)
+POST_SCHEMA = {"type": "object", "required": ["title", "body"], "properties": {
+    "title": {"type": "string"}, "body": {"type": "string"}}}
+
+
+def _post_prompt(sents, limit, pl, lang, title=None):
+    from vstudio import publish
+    count = ("CJK characters count 1, Latin letters / digits / spaces 0.5" if pl == "xiaohongshu" else "characters")
+    zh = lang != "en"
+    rules = " ".join(publish._p("voice.rules", []) or [])
+    system = (
+        "You write the post copy for one talking-head video the creator recorded (her own words, "
+        f"{'Chinese' if zh else 'English'}). You get its final captions as numbered sentences.\n"
+        + (f"- title: keep exactly {title!r}.\n" if title else
+           f"- title: the post title, <= {limit:g} ({count}); concrete and specific to what she says, no clickbait, "
+           "no 鸡汤 / motivational slogan, no emoji, no hashtags.\n")
+        + f"- body: the post text under the title, 2-4 short sentences, <= {BODY_MAX['en' if not zh else 'zh']} "
+        "characters, first person in her voice, saying what the video covers and the one thing to take away; only "
+        "what she says (no new facts, numbers or promises), no hashtags, no emoji, no call to follow / like.\n"
+        + (f"Voice rules: {rules}\n" if rules else "") + "Answer with JSON only.")
+    lines = [f"[{k}] {s['text']}" for k, s in enumerate(sents)]
+    return system, "SENTENCES:\n" + "\n".join(lines)[:24000]
+
+
+def _voice_fix(text, notes):
+    """The persona voice rules applied to drafted text (publish.voice_warnings): an em-dash becomes a comma when
+    the persona bans it; what was changed is said in ``notes``."""
+    from vstudio import publish
+    for w in publish.voice_warnings(text):
+        if "em-dash" in w:
+            text = re.sub(r"\s*—+\s*", "，" if re.search(r"[一-鿿]", text) else ", ", text)
+            notes.append("body: em-dash replaced (persona voice rule)")
+    return text
+
+
+def _clean_body(text, lang):
+    t = re.sub(r"(?<![A-Za-z0-9])#[^\s#，。！？、,.!?]+#?", "", str(text or ""))   # hashtags: the tag line's job
+    t = "\n".join(re.sub(r"(?<=[^\x00-\x7f])[ \t]+|[ \t]+(?=[^\x00-\x7f])", "", re.sub(r"[ \t]+", " ", x)).strip()
+                  for x in t.split("\n"))
+    t = re.sub(r"\n{3,}", "\n\n", t).strip()
+    n = BODY_MAX[lang]
+    if len(t) <= n:
+        return t, False
+    cut = t[:n]
+    m = list(re.finditer(r"[。！？!?.\n]", cut))
+    return (cut[:m[-1].end()] if m and m[-1].end() >= n // 2 else cut).strip(), True
+
+
+def fit_title_every(title, platforms):
+    """``title`` shortened until ``publish.check_title`` passes on every one of ``platforms`` (each platform
+    counts its own way: 小红书 half-width latin, others characters) -> (title, note or None)."""
+    from vstudio import publish
+    t0 = t = (title or "").strip()
+    pls = list(dict.fromkeys(publish.platform_name(str(x).split(":")[0]) for x in platforms or [])) or ["xiaohongshu"]
+    notes = []
+    for _ in range(3):
+        bad = [pl for pl in pls if not publish.check_title(t, pl)[0]]
+        if not bad:
+            break
+        for pl in bad:
+            t, note = publish.fit_title(t, pl)
+            if note:
+                notes.append(note)
+    return t, ("; ".join(notes) if t != t0 else None)
+
+
+def _spoken_body(sents, lang, title="", n=3):
+    """No model: the clip's ``n`` most informative whole sentences (vstudio.batch.segplan term weights), filler
+    openings stripped, in the order she says them, minus the one the title was taken from - spoken lines, which
+    ``notes`` says so the creator edits them."""
+    from vstudio.batch.segplan import _sent_weight, _strip_fillers, term_stats
+    idf, per = term_stats(sents)
+    tn = _norm(re.sub(r"^[^：:]{1,12}[：:]", "", title or ""))      # segplan's "term：" title prefix left out
+    src = next((k for k, s in enumerate(sents) if tn and tn in _norm(s["text"])), None)
+    w = {k: _sent_weight(s, per[k], idf) + 0.01 * len(s["text"]) for k, s in enumerate(sents) if k != src}
+    pick = sorted(sorted(w, key=lambda k: -w[k])[:n])
+    lines = [_strip_fillers(sents[k]["text"]) for k in pick]
+    if lang == "en":
+        return " ".join(x[:1].upper() + x[1:] + ("" if re.search(r"[.!?]$", x) else ".") for x in lines if x)
+    return "".join(x + ("" if re.search(r"[。！？!?]$", x) else "。") for x in lines if x)
+
+
+def draft_post(sents, platforms=None, title=None, body=None, provider="auto", complete=None, lang=None):
+    """Post title + short body from one clip's final captions, for the copy the creator did not write
+    (``title`` / ``body`` given = kept as they are; only the missing part is drafted).
+    -> {title, body, drafted: [keys], source, title_note, notes, warnings}.
+
+    A routed ``copy`` model (or ``complete``) writes both in the persona voice; no model (route ``none``): the
+    most title-like spoken clause (segplan.pick_title) and the clip's top takeaway sentences (segplan.extract_copy),
+    with a note that they are spoken lines to edit. The title is fitted until ``publish.check_title`` passes on
+    every platform; the persona voice rules (publish.voice_warnings) are applied to the body and reported."""
+    from vstudio import llm, publish
+    title, body = (title or "").strip(), (body or "").strip()
+    sents = [dict(s, text=_clean(s.get("text"))) for s in sents if _clean(s.get("text"))]
+    plats = list(platforms or ["xiaohongshu"])
+    out = dict(title=title, body=body, drafted=[], source=None, title_note=None, notes=[], warnings=[])
+    if title and body:
+        out["source"] = "given"
+        return out
+    if not sents:
+        out["notes"].append("no speech: post copy not drafted")
+        return out
+    lang = lang or ("en" if publish.detect_lang([s["text"] for s in sents]) == "en" else "zh")
+    limit, pl = publish.title_limit(plats)
+    prov = None if complete else llm.route("copy", None if provider in (None, "auto") else provider).provider
+    if complete or prov != "none":
+        system, prompt = _post_prompt(sents, limit, pl, lang, title or None)
+        r = (complete or llm.complete)("copy", system, prompt, schema=POST_SCHEMA,
+                                       provider=None if provider in (None, "auto") else provider)
+        j = (r or {}).get("json")
+        if not isinstance(j, dict):
+            raise ValueError("copy model returned no JSON for the post copy")
+        t, b = _clean(j.get("title")), str(j.get("body") or "")
+        out["source"] = f"llm:{(r or {}).get('provider') or prov or 'custom'}"
+    else:
+        t = _spoken_title(sents, limit, pl, lang)
+        ss = [dict(s, gap_before=s["t"] - sents[k - 1]["te"] if k else 9.0) for k, s in enumerate(sents)]
+        b = _spoken_body(ss, lang, title or t)
+        out["source"] = "transcript"
+        out["notes"].append("no text model routed (vstudio.llm task 'copy'): the title and body are lines she "
+                            "says, picked from the captions - edit them before publishing")
+    if not title and t:
+        t = _voice_fix(t, out["notes"])
+        out["title"], out["title_note"] = fit_title_every(t, plats)
+        out["drafted"].append("title")
+        if out["title_note"]:
+            out["notes"].append(out["title_note"])
+    if not body and b:
+        b, cut = _clean_body(_voice_fix(b, out["notes"]), lang)
+        if cut:
+            out["notes"].append(f"body shortened to {BODY_MAX[lang]} characters")
+        out["body"] = b
+        out["drafted"].append("body")
+    out["warnings"] = publish.voice_warnings(out["title"] + "\n" + out["body"])
     return out

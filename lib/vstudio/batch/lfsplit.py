@@ -292,6 +292,9 @@ def lfc_config(p, spec, geo, out_dir):
                 screen={k_: v for k_, v in scr.items() if k_ in SCREEN_KEYS}, split=dict(vs.get("split") or {}),
                 series=series, export_preset=p.get("preset") or "medium",
                 hook_captions=vs.get("hook_captions", "hide"))
+    wm = p.get("watermark") if p.get("watermark") is not None else spec.get("watermark")
+    if wm is not None:                                 # the creator's watermark: on / off for this job (None = default)
+        vert["watermark"] = bool(wm)
     if vs.get("speaker"):
         vert["speaker"] = dict(vs["speaker"])
     if vs.get("segments"):
@@ -723,6 +726,7 @@ def master_key(cfg, timeline, compose_out, preset):
     c["episodes"] = ep
     vert = dict(c.get("vertical") or {})
     vert.pop("export_preset", None)
+    vert.pop("watermark", None)                       # drawn at export, not in the masters
     c["vertical"] = vert
     pt = (cfg or {}).get("publish") or {}
     code = [_sig(os.path.join(LFS, n)) for n in ("make_vertical.py", "_vertical.py", "_lfc.py")]

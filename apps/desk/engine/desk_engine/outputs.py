@@ -975,7 +975,7 @@ class Outputs:
         return dict(ok=True, step={k: v for k, v in step.items() if k != "before"}, values=values, warnings=warnings)
 
     # ---------------------------------------------------------- export (final renders with progress events)
-    def export(self, item_id, clip_id, targets):
+    def export(self, item_id, clip_id, targets, watermark=None):
         """Render the final versions for ``targets`` in the background; progress goes out as ``output-render``
         events {job, event target-start | stage-done | target-done | render-done | stopped | failed, target, stage,
         progress}. Engine: ``output render --quality final --targets ... --json-events``; the desk implementation
@@ -987,7 +987,7 @@ class Outputs:
         job = hashlib.sha1(f"{item_id}{clip_id}{time.time()}".encode()).hexdigest()[:10]
         stop = threading.Event()
         self._jobs[job] = dict(stop=stop, proc=None, item=item_id, clip=clip_id)
-        threading.Thread(target=self._export_run, args=(job, e, c, item_id, clip_id, list(targets), stop),
+        threading.Thread(target=self._export_run, args=(job, e, c, item_id, clip_id, list(targets), stop, watermark),
                          daemon=True).start()
         return dict(ok=True, job=job, targets=targets)
 
@@ -1005,7 +1005,7 @@ class Outputs:
                 pass
         return dict(ok=True, job=job)
 
-    def _export_run(self, job, e, c, item_id, clip_id, targets, stop):
+    def _export_run(self, job, e, c, item_id, clip_id, targets, stop, watermark=None):
         def emit(ev):
             if self.bus:
                 self.bus.publish("output-render", item=item_id, clip=clip_id, job=job,
@@ -1017,6 +1017,8 @@ class Outputs:
                 r = self.runner.sibling("vstudio.project")
                 cmd = [r.python, "-m", "vstudio.project", "output", "render", "--project", e["dir"], "--output", oid,
                        "--quality", "final", "--targets", ",".join(targets), "--json-events", "--json"]
+                if watermark is not None:                 # her choice for this export; absent = her default
+                    cmd += ["--watermark", "on" if watermark else "off"]
                 p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, env=r.env,
                                      stdin=subprocess.DEVNULL)
                 self._jobs[job]["proc"] = p

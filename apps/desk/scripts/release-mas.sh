@@ -8,7 +8,7 @@
 #   UPLOAD=1 npm run release:mas              # ... then upload the .pkg (App Store Connect -> TestFlight / builds)
 #   DRY_RUN=1 npm run release:mas             # preflight only: identities, profile, API key, tools
 #   SKIP_TESTS=1 npm run release:mas          # skip lint / unit tests
-#   BUILD_NUMBER=20261007.1 npm run release:mas   # CFBundleVersion (default: date.time - must grow with every upload)
+#   BUILD_NUMBER=20261007.2140.0 npm run release:mas   # CFBundleVersion (default: date.time.0 - must grow with every upload)
 #
 # Needs (checked first; nothing is built when one is missing):
 #   MAS_APP_IDENTITY        default "Apple Distribution: YUN ZI (ZH47R7RVKB)"
@@ -29,7 +29,9 @@ APP_IDENTITY="${MAS_APP_IDENTITY:-Apple Distribution: YUN ZI ($TEAM)}"
 INSTALLER_IDENTITY="${MAS_INSTALLER_IDENTITY:-3rd Party Mac Developer Installer: YUN ZI ($TEAM)}"
 PROFILE="${MAS_PROVISIONING_PROFILE:-$PWD/packaging/mac/Reelfold_Mac_App_Store.provisionprofile}"
 VERSION=$(node -p "require('./package.json').version")
-BUILD_NUMBER="${BUILD_NUMBER:-$(date +%Y%m%d).$(date +%H%M)}"
+BUILD_NUMBER="${BUILD_NUMBER:-$(date +%Y%m%d).$((10#$(date +%H%M))).0}"
+# three parts: electron-builder's CLI parses "20261007.2140" as a number and drops the trailing zero (-> .214)
+[[ "$BUILD_NUMBER" == *.*.* ]] || BUILD_NUMBER="$BUILD_NUMBER.0"
 say() { printf '\n\033[1m[release:mas]\033[0m %s\n' "$*"; }
 die() { printf '\n\033[31m[release:mas] %s\033[0m\n' "$*" >&2; exit 1; }
 
@@ -106,7 +108,7 @@ CSC_IDENTITY_AUTO_DISCOVERY=true MAS_PROVISIONING_PROFILE="$PROFILE" \
   -c.mas.provisioningProfile="$PROFILE"
 
 APP="dist/mas-arm64/Reelfold.app"
-PKG=$(ls -t dist/*.pkg 2>/dev/null | head -1 || true)
+PKG=$(ls -t dist/*.pkg dist/mas-arm64/*.pkg 2>/dev/null | head -1 || true)
 [ -d "$APP" ] || die "no $APP"
 [ -n "$PKG" ] || die "no .pkg in dist/ (installer identity?)"
 

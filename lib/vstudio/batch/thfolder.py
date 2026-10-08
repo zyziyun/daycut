@@ -9,7 +9,7 @@ platform.
     segments: clips.yaml                               # optional rows: file, title, body, tags, cleanup_reply, skip
     talkinghead:                                       # all optional
       style: {progress: classic, zoom: false}          # compose.py STYLE switches (default: its notes-board look)
-      keywords: [RAG, LLM]                             # yellow keywords in captions
+      keywords: [RAG, LLM]                             # keywords in the theme colour (else drafted from the clip)
       hook_speed: 1.5                                  # else the talking-head format (vstudio.formats)
       body_speed: 1.25
       face: true                                       # face track (punch-in caps, overlays off the face)
@@ -17,7 +17,9 @@ platform.
 
 Stages: probe -> asr(prep_sources.sh -> sdr1.mp4, a1.wav, a1.json) -> cleanup(cpu-render: edit_list.py with
 every whisper sentence -> cut_pass1.py (word-safe edges, 气口) -> strict_pass.py apply (AUTO rows + the job's
-``cleanup_reply``); the review page lists the CONFIRM rows) -> face(face: face_track.py) -> compose(cpu-render:
+``cleanup_reply``); the review page lists the CONFIRM rows) -> face(face: face_track.py) -> glossary -> notes(the
+记笔记 panels, chapters and 3-8 keywords drafted from the cleaned body: notes.json; a project recipe reviews the
+keywords here; chosen keywords replace the drafted ones) -> compose(cpu-render:
 config.py -> compose.py all --clean-master: caption-free master + cues with keep-outs) -> proofread -> export ->
 qc -> preview. The verify re-hearing of the V track is ``strict_pass.py verify`` (manual); the batch's lost-word
 gate is skipped here.
@@ -132,6 +134,15 @@ def draft_notes(subs, platforms, glossary=None, term_fixes=None, complete=None):
     return clipcopy.draft(sents, platforms, glossary_terms=(glossary or {}).get("terms") or [], complete=complete)
 
 
+def chosen_keywords(p, spec):
+    """The keywords the creator chose (the project's ``talkinghead.keywords`` + the item's ``keywords``: a
+    segments row or the review checkpoint's answer); None when she chose none and the drafted ones apply.
+    [] = she unticked them all: no highlight."""
+    if not _th(spec).get("keywords") and not isinstance(p.get("keywords"), list):
+        return None
+    return list(dict.fromkeys(list(_th(spec).get("keywords") or []) + list(p.get("keywords") or [])))
+
+
 def config_file(p, spec, has_face, hooks=None, notes=None):
     th = _th(spec)
     plats = list(p.get("platforms") or [])
@@ -146,7 +157,8 @@ def config_file(p, spec, has_face, hooks=None, notes=None):
     style.update(p.get("style") or {})
     if style:
         lines.append(f"STYLE = {style!r}")
-    kw = list(th.get("keywords") or []) + list(p.get("keywords") or []) + list((notes or {}).get("keywords") or [])
+    kw = chosen_keywords(p, spec)
+    kw = list((notes or {}).get("keywords") or []) if kw is None else kw
     if kw:
         lines.append(f"KEYWORDS = {list(dict.fromkeys(kw))!r}")
     if notes and notes.get("panels"):
@@ -221,6 +233,30 @@ def run_face_th(ctx):
     return dict(face=ctx.path("face.npy"), files=[ctx.path("face.npy")])
 
 
+def run_notes_th(ctx):
+    """The cleaned body's 记笔记 panels, chapters, 3-8 keywords and title (``draft_notes``) -> notes.json, before
+    the keywords review and compose. note_cards false: nothing drafted."""
+    cl, p = ctx.inputs["cleanup"], ctx.params
+    if p.get("note_cards", True) is False:
+        return dict(notes=None, keywords=[], candidates=[], files=[])
+    subs = (read_json(cl["segs"], {}) or {}).get("subs") or []
+    g = (ctx.inputs.get("glossary") or {}).get("glossary")
+    call = ST.import_ref(_th(ctx.spec)["notes_call"]) if _th(ctx.spec).get("notes_call") else None
+    try:
+        notes = draft_notes(subs, p.get("platforms"), read_json(g, {}) if g else None,
+                            (ctx.spec.get("subtitles") or {}).get("term_fixes"), complete=call)
+    except Exception as e:                            # noqa: BLE001 - reported, the render goes on without cards
+        notes = dict(title="", keywords=[], keyword_candidates=[], chapters=[], panels=[], source=None,
+                     notes=[f"notes not drafted: {type(e).__name__}: {str(e)[:300]}"])
+    path = write_json(ctx.path("notes.json"), notes)
+    ctx.log(f"notes ({notes.get('source') or 'failed'}): {len(notes['panels'])} panel(s), "
+            f"{len(notes['chapters'])} chapter(s), keywords {', '.join(notes['keywords']) or '-'}"
+            + "".join(f"; {n}" for n in notes.get("notes") or []))
+    return dict(notes=path, keywords=notes["keywords"], candidates=notes.get("keyword_candidates") or [],
+                panels=len(notes["panels"]), chapters=len(notes["chapters"]), notes_warnings=notes.get("notes") or [],
+                files=[path])
+
+
 def run_compose_th(ctx):
     from vstudio import media
     cl, fc, p = ctx.inputs["cleanup"], ctx.inputs.get("face") or {}, ctx.params
@@ -236,20 +272,8 @@ def run_compose_th(ctx):
     hooks = hook_ranges(p.get("hook"), read_json(cl.get("sids") or "", []) if cl.get("sids") else [], subs)
     if p.get("hook") and not hooks:
         ctx.log("hook: the picked sentences were cut from the body; no hook montage")
-    notes = None
-    if p.get("note_cards", True) is not False:
-        g = (ctx.inputs.get("glossary") or {}).get("glossary")
-        call = ST.import_ref(_th(ctx.spec)["notes_call"]) if _th(ctx.spec).get("notes_call") else None
-        try:
-            notes = draft_notes(subs, p.get("platforms"), read_json(g, {}) if g else None,
-                                (ctx.spec.get("subtitles") or {}).get("term_fixes"), complete=call)
-        except Exception as e:                        # noqa: BLE001 - reported, the render goes on without cards
-            notes = dict(title="", keywords=[], chapters=[], panels=[], source=None,
-                         notes=[f"notes not drafted: {type(e).__name__}: {str(e)[:300]}"])
-        write_json(ctx.path("notes.json"), notes)
-        ctx.log(f"notes ({notes.get('source') or 'failed'}): {len(notes['panels'])} panel(s), "
-                f"{len(notes['chapters'])} chapter(s), keywords {', '.join(notes['keywords']) or '-'}"
-                + "".join(f"; {n}" for n in notes.get("notes") or []))
+    nf = (ctx.inputs.get("notes") or {}).get("notes")
+    notes = read_json(nf, None) if nf else None
     with open(ctx.path("config.py"), "w", encoding="utf-8") as f:
         f.write(config_file(p, ctx.spec, bool(fc.get("face")), hooks, notes))
     _run(_py("compose.py", ctx.path("config.py"), "all", "--clean-only"), ctx.dir, "compose.log")
@@ -265,7 +289,7 @@ def run_compose_th(ctx):
     hook_dur = read_json(ctx.path("timeline.json"), {}).get("BODY_START", 0.0) if hooks else 0.0
     return dict(master=master, final=master, cues=cues_path, post=ctx.path("post.json"),
                 duration=round(media.probe(master)["duration"], 3), n_cues=len(d.get("cues") or []),
-                hook_dur=round(float(hook_dur or 0.0), 3), notes=ctx.path("notes.json") if notes else None,
+                hook_dur=round(float(hook_dur or 0.0), 3), notes=nf if notes else None,
                 notes_warnings=list((notes or {}).get("notes") or []),
                 files=[master, cues_path])
 
@@ -286,15 +310,21 @@ def _keys(*ks):
     return lambda j, s: {k: j["params"].get(k) for k in ks}
 
 
+def _notes_params(job, spec):
+    """Not the keywords: the review answer must not re-draft (and re-ask) the notes."""
+    d = _keys("platforms", "note_cards")(job, spec)
+    th = {k: v for k, v in _th(spec).items() if k == "notes_call"}
+    if d.get("note_cards") is not False:              # the drafted cards follow the routed copy model
+        from vstudio import llm
+        th["copy_route"] = llm.route("copy").provider
+    return dict(d, th=th, term_fixes=(spec.get("subtitles") or {}).get("term_fixes"))
+
+
 def _compose_params(job, spec):
     from .edits import key_copy
     d = _keys("platforms", "speed", "hook_speed", "style", "keywords", "hook", "note_cards")(job, spec)
     d.update({k: key_copy(job["params"], k) for k in ("title", "body", "tags")})
-    th = {k: v for k, v in _th(spec).items() if k not in ("orient", "face")}
-    if d.get("note_cards") is not False:              # the drafted cards follow the routed copy model
-        from vstudio import llm
-        th["copy_route"] = llm.route("copy").provider
-    return dict(d, th=th)
+    return dict(d, th={k: v for k, v in _th(spec).items() if k not in ("orient", "face", "notes_call")})
 
 
 def th_stages():
@@ -308,12 +338,16 @@ def th_stages():
         Stage("cleanup", "cpu-render", run_cleanup_th, deps=("asr",), units=dur,
               params=_keys("cleanup_reply", "cleanup_profile", "range"), purge=("body_v.mp4", "*.wav"), version=2),
         Stage("face", "face", run_face_th, deps=("cleanup",), units=dur, params=lambda j, s: dict(on=_th(s).get("face", True))),
-        base["glossary"],                             # before compose: the drafted 记笔记 cards use its fixes
-        Stage("compose", "cpu-render", run_compose_th, deps=("cleanup", "face", "glossary"),
-              units=lambda j, s: dur(j, s) * 3, params=_compose_params, purge=("*.mp4", "out/*.mp4"), version=4),
+        base["glossary"],                             # before the notes: the drafted 记笔记 cards use its fixes
+        Stage("notes", "cpu", run_notes_th, deps=("cleanup", "glossary"), params=_notes_params,
+              units=lambda j, s: 1.0),
+        Stage("compose", "cpu-render", run_compose_th, deps=("cleanup", "face", "notes"),
+              units=lambda j, s: dur(j, s) * 3, params=_compose_params, purge=("*.mp4", "out/*.mp4"), version=5),
         Stage("verify", "asr", _no_verify, deps=("compose",), enabled=lambda j, s: False),
         base["proofread"],
-        Stage("export", ST._export_resource, ST.run_export, deps=("compose", "proofread"), params=ST._export_params,
+        ST.copy_stage(),                              # post title + body drafted from the final captions
+        Stage("export", ST._export_resource, ST.run_export, deps=("compose", "proofread", "copy"),
+              params=ST._export_params,
               units=lambda j, s: dur(j, s) * max(1, len(j["params"].get("platforms") or [])),
               purge=("exports/*.mp4",)),
         Stage("qc", "cpu", ST.run_qc, deps=("compose", "export", "verify"),

@@ -8,6 +8,26 @@ App releases are tagged `v*`; engine-only releases are tagged `engine-v*`.
 
 ## [Unreleased]
 
+### Added
+
+- **Watermark**: your handle, your own PNG logo, or a logo generated from your handle (drawn locally) on every
+  export. Settings › Watermark in the Mac app has live previews on a 9:16 and a 16:9 frame, a corner picker, size,
+  opacity, per-platform switches and "Add to every video by default"; the Export card can turn it off for one video.
+  The mark sits inside each platform's safe area and above the captions. Off until you set it up.
+  Engine: `python -m vstudio.watermark`, `--watermark on|off` on `vstudio.export` and `output render`, and
+  `watermark: false` per batch job; settings in `$VSTUDIO_HOME/watermark.json` or persona `watermark:`.
+
+## [0.2.1] - 2026-10-07
+
+### Changed
+
+- Talking-head jobs default to the notes look, with keywords you review before the render.
+- The Mac App Store (Lite) build names no other download and links nowhere; its limits are explained neutrally.
+
+### Added
+
+- A draft post title and body for each clip, written from the final captions.
+
 ## [0.2.0] - 2026-10-07
 
 The first public release: the macOS app for Apple silicon, signed with a Developer ID and notarized by Apple, plus
@@ -121,6 +141,9 @@ in the commit log (formerly `video-studio` and `Daycut`).
 - Post titles fit each platform's title limit when they are written (deterministic shortener, reported in the
   export warnings); exports draft a title when none is given, and the first-pass check no longer reads the hashtag
   line as the title.
+- Talking-head posts are no longer empty when you write no copy: a title and a short body are drafted from the final
+  captions (your AI account in your voice, else lines you say), fitted to every platform's title limit and shown in
+  the review as a draft to edit. Your own title and body are kept.
 
 ### Security
 
@@ -129,5 +152,6 @@ in the commit log (formerly `video-studio` and `Daycut`).
 - API keys in the OS keychain; every IPC call validated; the local engine needs a per-session token.
 - No silent mock engine or demo mode in the product: a packaged app always runs the real engine.
 
-[Unreleased]: https://github.com/zyziyun/reelfold/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/zyziyun/reelfold/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/zyziyun/reelfold/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/zyziyun/reelfold/releases/tag/v0.2.0

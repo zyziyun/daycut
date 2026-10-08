@@ -8,6 +8,7 @@ import { publishBoardEn } from './publishBoard';
 import { publishLoopEn } from './publishLoop';
 import { weekPlanEn } from './weekPlan';
 import { settingsV2En } from './settingsV2';
+import { watermarkEn } from './watermark';
 import { legacyEn } from '../legacy/en';
 import { aiaccEn } from './aiacc';
 import { aboutEn } from './about';
@@ -172,6 +173,7 @@ export const v04En = {
 
   'checkpoint.filler-confirm': 'Confirm the filler cuts',
   'checkpoint.hook-pick': 'Pick an opening',
+  'checkpoint.keywords': 'Check the highlighted keywords',
   'checkpoint.segment-approval': 'Approve the picks',
   'checkpoint.cover-pick': 'Pick a cover',
   'checkpoint.budget-approval': 'Approve the spend',
@@ -584,5 +586,5 @@ export const v04En = {
   'editor.zoomFit': 'Fit',
 };
 
-export const en = { ...legacyEn, ...legacyEnV02, ...v04En, ...aiaccEn, ...publishPlatformsEn, ...chatEditEn, ...channelsEn, ...projectAiEn, ...aboutEn, ...releaseEn, ...publishBoardEn, ...publishLoopEn, ...settingsV2En, ...createEn, ...pluginsEn, ...uxCoreEn, ...usageEn, ...weekPlanEn, ...shareEn, ...qaEn, ...firstRunEn, ...liteEn, ...sessionFixesEn };
+export const en = { ...legacyEn, ...legacyEnV02, ...v04En, ...aiaccEn, ...publishPlatformsEn, ...chatEditEn, ...channelsEn, ...projectAiEn, ...aboutEn, ...releaseEn, ...publishBoardEn, ...publishLoopEn, ...settingsV2En, ...createEn, ...pluginsEn, ...uxCoreEn, ...usageEn, ...weekPlanEn, ...shareEn, ...qaEn, ...firstRunEn, ...liteEn, ...sessionFixesEn, ...watermarkEn };
 export type MessageKey = keyof typeof en;

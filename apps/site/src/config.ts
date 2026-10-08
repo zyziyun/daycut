@@ -20,8 +20,8 @@ export const SITE = {
   name: 'Reelfold',
   nameZh: '千剪',
 
-  /** Contact email (legal pages). Placeholder until you set a real inbox. */
-  contactEmail: 'hello@example.com',
+  /** Contact email (legal pages): Cloudflare Email Routing forwards it to the maintainer. */
+  contactEmail: 'hello@reelfold.com',
 
   /** Open-source repository (desktop app, video-studio skill + engine, and this site). */
   githubUrl: GITHUB_URL,

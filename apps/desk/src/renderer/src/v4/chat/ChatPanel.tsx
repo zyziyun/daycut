@@ -275,7 +275,7 @@ export const ChatPanel = forwardRef<ChatApi, Props>(function ChatPanel(p, ref) {
       ui.toast(errText(e), { error: true });
     }
   };
-  const startExport = async (x: ChatTurn, targets: string[]) => {
+  const startExport = async (x: ChatTurn, targets: string[], watermark?: boolean) => {
     if (!client) return;
     const prim = primaryPlatform(doc);
     const norm = (s: string) => (s === '9:16' ? 'douyin:vertical' : s === '16:9' ? 'youtube:horizontal' : s === '3:4' ? 'xiaohongshu:vertical' : s);
@@ -286,7 +286,7 @@ export const ChatPanel = forwardRef<ChatApi, Props>(function ChatPanel(p, ref) {
     try {
       if (add.length) await client.editOutput(item, clip, add.map((tg) => ({ op: 'export_add', target: tg, layout: doc.mode === 'flattened' && tg.endsWith(':horizontal') ? 'band' : 'auto' })), x.id);
       else await client.updateChatTurn(item, clip, x.id, { status: 'applied' });
-      const j = await client.exportOutput(item, clip, rt);
+      const j = await client.exportOutput(item, clip, rt, watermark);
       trackUsage('export_done', { count: rt.length });
       setRuns((rs) => ({ ...rs, [x.id]: { ...rs[x.id], job: j.job } }));
       p.reload();
@@ -530,7 +530,7 @@ export const ChatPanel = forwardRef<ChatApi, Props>(function ChatPanel(p, ref) {
     if (kind === 'captions') return <CaptionsCard env={e} ops={ops} onSubmit={onSubmit} onCancel={onCancel} okLabel={ok} />;
     if (kind === 'trim') return <TrimCard env={e} ops={ops} onSubmit={onSubmit} onCancel={onCancel} okLabel={ok} comparing={cmp?.turn === x.id} onCompare={(o) => setCmp(o ? { turn: x.id, ops: o } : null)} />;
     if (kind === 'cover') return <CoverCard env={e} op={ops[0] ?? null} onSubmit={onSubmit} onCancel={onCancel} okLabel={ok} />;
-    return <ExportCard env={e} run={runs[x.id] ?? null} onStart={(tg) => void startExport(x, tg)} onStop={() => runs[x.id]?.job && void client?.stopExport(item, clip, runs[x.id].job!)} onCancel={onCancel} />;
+    return <ExportCard env={e} run={runs[x.id] ?? null} onStart={(tg, wmk) => void startExport(x, tg, wmk)} onStop={() => runs[x.id]?.job && void client?.stopExport(item, clip, runs[x.id].job!)} onCancel={onCancel} />;
   };
 
   const meBubble = (txt: string | null | undefined, ctx?: AskContext | null) =>

@@ -8,6 +8,7 @@ import { publishBoardZh } from './publishBoard';
 import { publishLoopZh } from './publishLoop';
 import { weekPlanZh } from './weekPlan';
 import { settingsV2Zh } from './settingsV2';
+import { watermarkZh } from './watermark';
 import { legacyZh } from '../legacy/zh';
 import { aiaccZh } from './aiacc';
 import { aboutZh } from './about';
@@ -173,6 +174,7 @@ const v04Zh: Record<keyof typeof v04En, string> = {
 
   'checkpoint.filler-confirm': '确认去口癖',
   'checkpoint.hook-pick': '选一个开头',
+  'checkpoint.keywords': '确认字幕里变色的关键词',
   'checkpoint.segment-approval': '确认选段',
   'checkpoint.cover-pick': '选一张封面',
   'checkpoint.budget-approval': '批准花费',
@@ -585,4 +587,4 @@ const v04Zh: Record<keyof typeof v04En, string> = {
   'editor.zoomFit': '全部',
 };
 
-export const zhCN: Record<MessageKey, string> = { ...legacyZh, ...legacyZhV02, ...v04Zh, ...aiaccZh, ...publishPlatformsZh, ...chatEditZh, ...channelsZh, ...projectAiZh, ...aboutZh, ...releaseZh, ...publishBoardZh, ...publishLoopZh, ...settingsV2Zh, ...createZh, ...pluginsZh, ...uxCoreZh, ...usageZh, ...weekPlanZh, ...shareZh, ...qaZh, ...firstRunZh, ...liteZh, ...sessionFixesZh };
+export const zhCN: Record<MessageKey, string> = { ...legacyZh, ...legacyZhV02, ...v04Zh, ...aiaccZh, ...publishPlatformsZh, ...chatEditZh, ...channelsZh, ...projectAiZh, ...aboutZh, ...releaseZh, ...publishBoardZh, ...publishLoopZh, ...settingsV2Zh, ...createZh, ...pluginsZh, ...uxCoreZh, ...usageZh, ...weekPlanZh, ...shareZh, ...qaZh, ...firstRunZh, ...liteZh, ...sessionFixesZh, ...watermarkZh };

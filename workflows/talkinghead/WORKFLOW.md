@@ -33,8 +33,11 @@ ASR, overlays, covers, publish copy); only the V-track per-frame animation engin
   `scripts/montage.py` (muted-pad hook dissolves).
 
 **Style.** Read `references/styles.md` (the strategy menu: what each looks like, when it fits, its knobs).
-Ask the creator which preset they want:
-- **记笔记风**: classic progress bar, callouts, 记笔记 panels, hook badge. Calm, 干货-dense, screenshot-friendly.
+The default (the `talking-head` format's `engine: vtrack`, `style: notes`, what her own 剪映 口播 exports look like) is
+记笔记风; ask only when she wants something else (`pipeline: fast` = clean + plain captions, quicker):
+- **记笔记风** (default): classic progress bar with chapter labels and the active chapter as a pill, callouts,
+  记笔记 panels, keyword-coloured captions (3-8 keywords drafted per clip, she checks them at the `keywords`
+  checkpoint), hook badge. Calm, 干货-dense, screenshot-friendly.
 - **精剪风**: zoom rhythm, pop words, red stamps, circle list scenes, card, SFX, refined progress bar. Fast and punchy.
 - **混合**: 精剪 rhythm plus 记笔记 panels for the 2-3 most note-worthy points.
 

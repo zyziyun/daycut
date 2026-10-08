@@ -128,6 +128,7 @@ stages:
   - {id: glossary, resource: cpu, from_batch: true, produces: [glossary (shared)]}
   - {id: verify, resource: asr, from_batch: true, produces: [re-ASR]}
   - {id: proofread, resource: cpu, from_batch: true, produces: [proofread captions]}
+  - {id: copy, resource: cpu, from_batch: true, produces: [drafted post title + body (talkinghead-clips / talkinghead-folder)]}
   - {id: export, resource: cpu-render, from_batch: true, produces: [per-platform exports]}
   - {id: qc, resource: cpu, from_batch: true, produces: [qc.json], preview: {kind: json, path: "out:report"}}
   - {id: preview, resource: cpu-render, from_batch: true, produces: [sheet.jpg, snippet.mp4],
@@ -168,7 +169,7 @@ checkpoints:
     kind: publish
     scope: item
     after: preview
-    needs: [export, qc]
+    needs: [export, qc, copy]
     labels: {zh: "例外审片", en: "Exception review"}
     help: {zh: "绿灯自动通过（--auto publish），红灯进收件箱", en: "Green items pass with --auto publish; red ones come to the inbox"}
     payload: vstudio.project.adapters.common:publish_payload

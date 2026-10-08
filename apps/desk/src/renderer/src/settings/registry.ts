@@ -4,7 +4,7 @@
 //                             render: (ctx) => <VideoGenerationSettings onChange={ctx.onChange} /> });
 //
 // shows "Video generation" between AI (20) and Publishing (30) at #/settings/video. Built-in orders: General 10,
-// AI 20, Publishing 30, Advanced 90. `dot` puts a status dot in the nav ('ok' green, 'warn' amber, 'error' red).
+// AI 20, Watermark 27, Publishing 30, Advanced 90. `dot` puts a status dot in the nav ('ok' green, 'warn' amber, 'error' red).
 import { useSyncExternalStore, type ComponentType, type ReactNode } from 'react';
 import type { SettingsMsg } from '../../../shared/deskApi';
 

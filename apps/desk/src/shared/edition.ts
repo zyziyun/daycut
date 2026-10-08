@@ -21,9 +21,6 @@ export const EDITION: Edition = editionFrom(typeof __REELFOLD_EDITION__ === 'str
 /** The Mac App Store build (sandboxed). */
 export const IS_LITE = EDITION === 'mas';
 
-/** Where the full edition is downloaded (the website's download button). */
-export const FULL_DOWNLOAD_URL = 'https://reelfold.com';
-
 /** What the edition can do. The full edition can do everything. */
 export interface EditionCaps {
   /** sign in with the Claude Code / Codex CLI subscription (in-app terminal) */
