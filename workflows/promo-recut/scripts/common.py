@@ -49,6 +49,38 @@ def load_config(path):
     return json.loads(txt)
 
 
+def _persona_promo():
+    from vstudio import formats
+    return formats._persona_formats().get("promo") or {}
+
+
+def body_rate(prj):
+    """Body playback rate: config rates.body > persona formats.promo.speed.body > persona speed.body > the
+    promo format default (vstudio.formats). An explicit value is used as given (no clamp)."""
+    from vstudio import formats
+    if prj.get("rates.body") is not None:
+        return float(prj.get("rates.body"))
+    pf = (_persona_promo().get("speed") or {}).get("body")
+    if pf is not None:
+        return float(pf)
+    if P("speed.body") is not None:
+        return float(P("speed.body"))
+    return float(formats.get("promo")["speed"]["body"])
+
+
+def hook_speed(prj):
+    """Hook montage speed: config hooks.speed > persona formats.promo.hooks_speed > persona
+    formats.promo.speed.hook > persona speed.hook > the promo format default. No clamp."""
+    from vstudio import formats
+    if prj.get("hooks.speed") is not None:
+        return float(prj.get("hooks.speed"))
+    pf = _persona_promo()
+    for v in (pf.get("hooks_speed"), (pf.get("speed") or {}).get("hook"), P("speed.hook")):
+        if v is not None:
+            return float(v)
+    return float(formats.get("promo")["speed"]["hook"])
+
+
 def P(dotted, default=None):
     """persona lookup with a safe default, e.g. P('audio.loudness_lufs', -14)."""
     cur = persona()
