@@ -1,10 +1,11 @@
 // The AI plan card (mockups/02-plan): one paragraph (the engine's summary, in the content language), the clips it
 // will make, four numbers, the one thing to decide, "just say it" revisions, and ONE primary: start with a pilot.
 import { useState } from 'react';
-import { RotateCcw, Send, Sparkles, Square } from 'lucide-react';
+import { Check, RotateCcw, Send, Sparkles, Square } from 'lucide-react';
 import type { IntakeJob, IntakePlan } from '../../../shared/v04';
 import { fmtClock, fmtMinutes, fmtMoney, getLang, t } from '../i18n';
 import { nameAsSample, planSentence } from '../lib/firstRun';
+import { planProgressView, type PlanProgressView } from '../lib/planProgress';
 import { useEngine } from '../lib/engine';
 import { useHistory } from '../lib/history';
 import { go, href } from '../lib/router';
@@ -35,6 +36,52 @@ export function planFacts(plan: IntakePlan) {
   const wall = plan.estimate?.wall_min ?? projects.reduce((n, p) => n + (p.estimate?.wall_min ?? 0), 0);
   const usd = plan.estimate?.api_usd ?? projects.reduce((n, p) => n + (p.estimate?.api_usd ?? 0), 0);
   return { clips, sizes, plats, wall, usd };
+}
+
+const STATE_KEY = {
+  done: 'plan.step.state.done',
+  current: 'plan.step.state.current',
+  pending: 'plan.step.state.pending',
+  skipped: 'plan.step.state.skipped',
+} as const;
+
+/** The engine's current stage (a bar when it knows how far it is) and the plan's steps: done ✓ / now / to come. */
+function PlanStage({ view, stage }: { view: PlanProgressView; stage: string }) {
+  const pct = view.fraction == null ? null : Math.round(view.fraction * 1000) / 10;
+  return (
+    <div className="planstage" data-testid="plan-progress" data-stage={stage}>
+      <div className="now">
+        <b data-testid="plan-progress-label" title={view.label}>
+          {view.label}
+        </b>
+        {view.detail && (
+          <span className="muted tnum" data-testid="plan-progress-detail">
+            · {view.detail}
+          </span>
+        )}
+      </div>
+      {pct == null ? (
+        <div className="bar indet" aria-hidden>
+          <i />
+        </div>
+      ) : (
+        <div className="bar" role="progressbar" aria-label={view.label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} data-testid="plan-progress-bar">
+          <i style={{ width: `${pct}%` }} />
+        </div>
+      )}
+      <ol className="plansteps">
+        {view.steps.map((s) => (
+          <li key={s.id} className={s.state} data-testid={`plan-step-${s.id}`} data-state={s.state}>
+            <span className="mk" role="img" aria-label={t(STATE_KEY[s.state])}>
+              {s.state === 'done' ? <Check className="ico" /> : s.state === 'current' ? <i className="dot run" /> : s.state === 'skipped' ? '–' : <i className="dot" />}
+            </span>
+            <span>{s.label}</span>
+            {s.note && <span className="muted small">· {s.note}</span>}
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
 }
 
 export function PlanCard({ job, jobId, onRevise, onRetry, onReset, onStarted, sample = false }: { job: IntakeJob | null; jobId: string; onRevise: (s: string) => void; onRetry: () => void; onReset: () => void; onStarted: () => void; sample?: boolean }) {
@@ -87,6 +134,7 @@ export function PlanCard({ job, jobId, onRevise, onRetry, onReset, onStarted, sa
     );
   }
   if (!plan || (running && !plan)) {
+    const view = planProgressView(job?.progress);
     return (
       <div className="card plan" data-testid="plan-card" aria-busy="true">
         <div className="planprog">
@@ -101,16 +149,22 @@ export function PlanCard({ job, jobId, onRevise, onRetry, onReset, onStarted, sa
             {t('plan.stop')}
           </button>
         </div>
-        {job?.started && Date.now() / 1000 - job.started > 45 && <p className="muted small">{t('plan.slow')}</p>}
-        <div className="col" style={{ marginTop: 16 }}>
-          <Sk h={16} />
-          <Sk w="80%" h={16} />
-          <div className="outs plan" style={{ padding: 0, margin: '16px 0 0', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
-            {[0, 1, 2, 3].map((i) => (
-              <div key={i} className="sk" style={{ aspectRatio: '3/4' }} />
-            ))}
-          </div>
-        </div>
+        {view ? (
+          <PlanStage view={view} stage={job?.progress?.stage ?? ''} />
+        ) : (
+          <>
+            {job?.started && Date.now() / 1000 - job.started > 45 && <p className="muted small">{t('plan.slow')}</p>}
+            <div className="col" style={{ marginTop: 16 }}>
+              <Sk h={16} />
+              <Sk w="80%" h={16} />
+              <div className="outs plan" style={{ padding: 0, margin: '16px 0 0', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+                {[0, 1, 2, 3].map((i) => (
+                  <div key={i} className="sk" style={{ aspectRatio: '3/4' }} />
+                ))}
+              </div>
+            </div>
+          </>
+        )}
       </div>
     );
   }

@@ -372,11 +372,39 @@ export interface IntakePlan {
   revisions?: { prompt: string; at: string; changes?: string[] }[];
 }
 
+/** What a running plan / revision is doing now (the engine's ``vstudio.intake plan --json-events``, folded by the desk
+ * engine): the current stage with its file / counters, and the stages seen so far. */
+export type IntakeStage = 'scan' | 'probe' | 'listen' | 'faces' | 'transcribe' | 'model' | 'write';
+export interface IntakeProgress {
+  stage: IntakeStage;
+  /** the file the stage works on (as named under the dropped folder) */
+  file?: string;
+  /** file i of n while reading the materials */
+  i?: number;
+  n?: number;
+  kind?: string;
+  /** transcription: seconds heard so far of total_s */
+  done_s?: number;
+  total_s?: number;
+  /** probe: facts from the cache; transcribe: an earlier transcript was reused (shared | sidecar | audio | analysis) */
+  cached?: boolean | string;
+  /** the model the plan was asked of (stage model) */
+  provider?: string;
+  model?: string;
+  /** files found under the inputs */
+  files?: number;
+  /** a transcript made earlier was used (kept after the transcribe stage) */
+  reused?: boolean;
+  seen?: IntakeStage[];
+  at?: number;
+}
+
 export interface IntakeJob {
   id: string;
   state: 'running' | 'done' | 'error' | 'stopped';
   started?: number;
   step?: string;
+  progress?: IntakeProgress | null;
   prompt?: string;
   inputs?: string[];
   plan: IntakePlan | null;

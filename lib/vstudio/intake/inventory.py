@@ -16,7 +16,18 @@ Folders are walked recursively (hidden files, VCS / dependency folders and symli
 ``MAX_DEPTH``); photos / clips of one folder are summarised as a group. Every file gets a content hash
 (``qhash``: sha1 of size + three 1 MiB windows - fast on multi-GB recordings) and its facts are cached under
 ``$VSTUDIO_CACHE/intake/`` by that hash + the analyzer version, so a second analyze / plan is instant.
-Nothing is written next to the inputs (inputs are treated as read-only).
+Nothing is written next to the inputs (inputs are treated as read-only). A full transcript first looks for one
+made before (``reuse_transcript``: the batch / plan-segments per-source cache, the ``<file>.asr.json`` sidecar a CLI
+run wrote) and saves a fresh one to that per-source cache, so the batch run planned from it does not transcribe again.
+
+``analyze(on_event=fn)`` reports what it is doing, one dict per step (``ts`` added):
+  {event: stage, stage: scan, inputs}           walking the inputs; then {..., files: N} when the walk is done
+  {event: stage, stage: probe, file, i, n, kind, cached?}   reading one file (``cached``: facts from the cache)
+  {event: stage, stage: listen, file, i, n}     ASR sample windows (speech? language?)
+  {event: stage, stage: faces, file, i, n}      faces / screen / captions on sampled frames
+  {event: stage, stage: transcribe, file, i, n, total_s, done_s, cached?}   full transcript (``cached``: reused -
+                                                shared | sidecar | audio, see ``reuse_transcript``)
+  {event: progress, stage: transcribe, file, done_s, total_s}               while it decodes (at most 2 per s)
 """
 import hashlib
 import json
@@ -49,9 +60,43 @@ SCREEN_NAME = re.compile(r"screen ?recording|屏幕录制|录屏|screencast|obs"
 FINAL_NAME = re.compile(r"final|成片|导出|export|发布版|定稿|_v\d+$|master", re.I)
 LECTURE_NAME = re.compile(r"课|lecture|class|course|培训|讲座|webinar|直播|livestream|workshop|分享会", re.I)
 
+PROGRESS_EVERY_S = 0.5     # transcription progress events at most this often
+
 # test hooks: replaced by the golden tests (no ASR / mediapipe / ffmpeg needed there)
 TRANSCRIBE = None           # fn(wav_path, language) -> transcript dict (vstudio.asr shape)
 FACES = None                # fn(bgr image) -> [area_frac ...]
+
+
+def emit(on_event, event="stage", **kw):
+    """One progress event to ``on_event`` (None values dropped); a consumer that fails never stops the analysis."""
+    if on_event is None:
+        return
+    try:
+        on_event(dict(event=event, ts=round(time.time(), 2), **{k: v for k, v in kw.items() if v is not None}))
+    except Exception:  # noqa: BLE001 - e.g. the desk went away and the pipe is closed
+        pass
+
+
+def bind(on_event, **base):
+    """``on_event`` with ``base`` fields (file, i, n) put into every event that does not set them."""
+    if on_event is None:
+        return None
+    return lambda ev: on_event(dict(base, **ev))
+
+
+def _asr_progress(on_event, name, total_s):
+    """``asr.transcribe(progress=)`` callback -> throttled ``progress`` events."""
+    last = [0.0]
+
+    def cb(done_s, tot=None):
+        now = time.time()
+        if now - last[0] < PROGRESS_EVERY_S:
+            return
+        last[0] = now
+        tot = tot or total_s or None
+        emit(on_event, "progress", stage="transcribe", file=name, done_s=round(min(done_s, tot or done_s), 1),
+             total_s=round(tot, 1) if tot else None)
+    return cb
 
 
 def kind_of(path):
@@ -224,12 +269,58 @@ def _wav_sample(src, dst, start, dur):
     return dst
 
 
-def _transcribe(wav, language=None, words=True):
+def _transcribe(wav, language=None, words=True, progress=None):
     """words=False: sentence timing only (the sample passes: no word alignment, which costs a JIT compile + DTW)."""
     if TRANSCRIBE is not None:
         return TRANSCRIBE(wav, language)
     from vstudio import asr
-    return asr.transcribe(wav, language=language, cache=False, word_timestamps=words)
+    return asr.transcribe(wav, language=language, cache=False, word_timestamps=words, progress=progress)
+
+
+def reuse_transcript(src, language=None):
+    """A transcript of this recording made before -> (transcript, where) or (None, None); read only.
+
+    where: ``shared`` (the per-source cache the batch ``asr`` stage and ``plan-segments`` keep, keyed by the file's
+    content hash) or ``sidecar`` (a ``vstudio.asr`` cache of these bytes: the ``<file>.asr.json`` next to it, or one
+    anywhere through the ASR content index). ``reuse_audio`` checks the extracted audio the same way."""
+    try:
+        from vstudio import asr
+        from vstudio.batch import transcripts as TS
+        sha = asr.file_hash(src)
+        for lang in dict.fromkeys([language, None]):
+            _p, tr = TS.lookup(sha, lang, None, "auto")
+            if isinstance(tr, dict) and tr.get("segments") and (
+                    not language or tr.get("language") in (language, None)):
+                return tr, "shared"
+        tr = asr.cached(src, language=language, fh=sha)
+        if tr and tr.get("segments"):
+            return tr, "sidecar"
+    except Exception:  # noqa: BLE001 - no cache / unreadable: transcribe as before
+        pass
+    return None, None
+
+
+def reuse_audio(wav, language=None):
+    """The 16 kHz mono audio the full pass extracted -> (transcript, "audio") when a ``vstudio.asr`` run transcribed
+    the same bytes before (a CLI run's ``work/audio.wav`` of this recording, found through the content index)."""
+    try:
+        from vstudio import asr
+        tr = asr.cached(wav, language=language)
+        if tr and tr.get("segments"):
+            return tr, "audio"
+    except Exception:  # noqa: BLE001
+        pass
+    return None, None
+
+
+def _share_transcript(src, tr, language=None):
+    """A fresh full transcript into the per-source cache (``vstudio.batch.transcripts``; not next to the input)."""
+    try:
+        from vstudio import asr
+        from vstudio.batch import transcripts as TS
+        TS.save(asr.file_hash(src), tr, language, None, "auto")
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _rms_speechiness(wav):
@@ -257,7 +348,7 @@ def sentences_of(tr, max_len=22.0):
     return out
 
 
-def speech_facts(src, dur, has_audio, mode, cache_root, key, language=None):
+def speech_facts(src, dur, has_audio, mode, cache_root, key, language=None, on_event=None):
     """mode: off | sample | full. -> facts; a full transcript goes to ``<cache>/<key>.transcript.json``."""
     if not has_audio:
         return dict(speech=False, speech_basis="no audio track")
@@ -267,8 +358,23 @@ def speech_facts(src, dur, has_audio, mode, cache_root, key, language=None):
     with tempfile.TemporaryDirectory(prefix="vstudio-intake-") as tmp:
         try:
             if mode == "full" and dur <= FULL_ASR_MAX_S:
-                wav = _wav_sample(src, os.path.join(tmp, "full.wav"), 0, None)
-                tr = _transcribe(wav, language)
+                name = os.path.basename(src)
+                emit(on_event, stage="transcribe", file=name, total_s=round(dur, 1) or None, done_s=0)
+                tr, reused = (None, None) if TRANSCRIBE is not None else reuse_transcript(src, language)
+                if tr is not None:
+                    emit(on_event, stage="transcribe", file=name, total_s=round(dur, 1) or None,
+                         done_s=round(dur, 1) or None, cached=reused)
+                else:
+                    wav = _wav_sample(src, os.path.join(tmp, "full.wav"), 0, None)
+                    if TRANSCRIBE is None:
+                        tr, reused = reuse_audio(wav, language)
+                    if tr is not None:
+                        emit(on_event, stage="transcribe", file=name, total_s=round(dur, 1) or None,
+                             done_s=round(dur, 1) or None, cached=reused)
+                    else:
+                        tr = _transcribe(wav, language, progress=_asr_progress(on_event, name, dur))
+                    if TRANSCRIBE is None:
+                        _share_transcript(src, tr, language)
                 sents = sentences_of(tr)
                 tp = os.path.join(cache_root, f"{key}.transcript.json")
                 with open(tp, "w", encoding="utf-8") as f:
@@ -276,12 +382,14 @@ def speech_facts(src, dur, has_audio, mode, cache_root, key, language=None):
                               ensure_ascii=False)
                 spoken = sum(s["te"] - s["t"] for s in sents)
                 text = "".join(s["text"] for s in sents)
-                out.update(speech=bool(sents and spoken > min(10.0, dur * 0.2)), speech_basis="asr full",
+                out.update(speech=bool(sents and spoken > min(10.0, dur * 0.2)),
+                           speech_basis="asr full" + (f" (reused, {reused})" if reused else ""),
                            transcript=tp, sentences=len(sents), speech_s=round(spoken, 1),
                            chars_per_min=round(len(text) / max(dur / 60, 0.1)), language=tr.get("language"),
                            excerpt=D.excerpt(text, 160))
                 return out
             fracs = [0.5] if dur <= 180 else [0.15, 0.5, 0.85]       # one sample says enough about a short clip
+            emit(on_event, stage="listen")
             texts, langs, words = [], [], 0
             for k, fr in enumerate(fracs):
                 ln = min(SAMPLE_S, dur) if dur > 0 else SAMPLE_S
@@ -317,7 +425,8 @@ def _orientation(w, h):
     return "vertical" if r < 0.9 else "horizontal" if r > 1.1 else "square"
 
 
-def analyze_video(path, mode="sample", heavy=True, cache_root=None, key=None, kind="video", language=None):
+def analyze_video(path, mode="sample", heavy=True, cache_root=None, key=None, kind="video", language=None,
+                  on_event=None):
     from vstudio import media
     try:
         p = media.probe(path)
@@ -339,8 +448,9 @@ def analyze_video(path, mode="sample", heavy=True, cache_root=None, key=None, ki
     if not heavy:
         out["note"] = (out.get("note", "") + " probe only (heavy-analysis limit)").strip()
         return out
-    out.update(speech_facts(path, dur, out["has_audio"], mode, cache_root, key, language))
+    out.update(speech_facts(path, dur, out["has_audio"], mode, cache_root, key, language, on_event))
     if kind == "video" and p.get("has_video"):
+        emit(on_event, stage="faces")
         try:
             stats = [frame_stats(img) for _, img in _frames(path, dur)]
             out.update(visual_facts(stats, w, h))
@@ -427,13 +537,15 @@ def _cache_put(root, key, facts):
 
 
 # --------------------------------------------------------------------------- public
-def analyze(inputs, asr="sample", use_cache=True, language=None, max_files=MAX_FILES, echo=None):
+def analyze(inputs, asr="sample", use_cache=True, language=None, max_files=MAX_FILES, echo=None, on_event=None):
     """-> analysis dict. asr: off | sample | full | auto (auto = sample; ``plan`` upgrades a video to full when the
-    request selects content inside it)."""
+    request selects content inside it). ``on_event``: progress events (module docstring)."""
     t0 = time.time()
     asr = "sample" if asr in (None, "auto") else asr
     root = cache_root()
+    emit(on_event, stage="scan", inputs=len(inputs))
     files, notes = walk(inputs, max_files=max_files)
+    emit(on_event, stage="scan", inputs=len(inputs), files=len(files))
     out_files, n_heavy, n_face_imgs = [], 0, 0
     for k, (fp, base) in enumerate(files):
         kind = kind_of(fp)
@@ -444,6 +556,8 @@ def analyze(inputs, asr="sample", use_cache=True, language=None, max_files=MAX_F
             entry["note"] = "not a media / text file (ignored)"
             out_files.append(entry)
             continue
+        fev = bind(on_event, file=rel, i=k + 1, n=len(files))
+        emit(fev, stage="probe", kind=kind)
         h = qhash(fp)
         entry["qhash"] = h[:16]
         mode = asr if kind in ("video", "audio") else "-"
@@ -462,11 +576,13 @@ def analyze(inputs, asr="sample", use_cache=True, language=None, max_files=MAX_F
         if facts is not None and facts.get("transcript") and not os.path.exists(facts["transcript"]):
             facts = None
         cached = facts is not None
+        if cached:
+            emit(fev, stage="probe", kind=kind, cached=True)
         if facts is None:
             if echo:
                 echo(f"intake: analyzing {rel}")
             if kind in ("video", "audio"):
-                facts = analyze_video(fp, mode, heavy, root, key, kind, language)
+                facts = analyze_video(fp, mode, heavy, root, key, kind, language, fev)
             elif kind == "image":
                 facts = analyze_image(fp, faces)
             else:
