@@ -105,11 +105,13 @@ module.exports = {
     // 千剪 for Finder / Dock / menu bar under a Chinese system language (the in-app About follows the app's language)
     // Create page recorder: macOS asks for camera / mic only when the creator presses "Allow" in Create (flag on)
     extendInfo: {
+      CFBundleIconName: 'AppIcon', // Assets.car (scripts/brand/icons.mjs); icon.icns stays for older readers
       LSHasLocalizedDisplayName: true,
       NSCameraUsageDescription: 'Reelfold uses the camera only while you record in Create.',
       NSMicrophoneUsageDescription: 'Reelfold uses the microphone only while you record in Create.',
     },
     extraResources: [
+      { from: 'packaging/resources/Assets.car', to: 'Assets.car' },
       { from: 'packaging/mac/zh_CN.lproj/InfoPlist.strings', to: 'zh_CN.lproj/InfoPlist.strings' },
       { from: 'packaging/mac/zh_CN.lproj/InfoPlist.strings', to: 'zh-Hans.lproj/InfoPlist.strings' },
     ],
@@ -130,11 +132,13 @@ module.exports = {
       ElectronTeamID: 'ZH47R7RVKB',
       // HTTPS / TLS only (standard protocols, no proprietary encryption): exempt, no export compliance documents
       ITSAppUsesNonExemptEncryption: false,
+      CFBundleIconName: 'AppIcon',
       LSHasLocalizedDisplayName: true,
       NSCameraUsageDescription: 'Reelfold uses the camera only while you record in Create.',
       NSMicrophoneUsageDescription: 'Reelfold uses the microphone only while you record in Create.',
     },
     extraResources: [
+      { from: 'packaging/resources/Assets.car', to: 'Assets.car' },
       { from: 'packaging/mac/zh_CN.lproj/InfoPlist.strings', to: 'zh_CN.lproj/InfoPlist.strings' },
       { from: 'packaging/mac/zh_CN.lproj/InfoPlist.strings', to: 'zh-Hans.lproj/InfoPlist.strings' },
       { from: 'packaging/mac/PrivacyInfo.xcprivacy', to: 'PrivacyInfo.xcprivacy' },

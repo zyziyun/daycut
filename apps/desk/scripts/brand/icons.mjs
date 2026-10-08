@@ -2,11 +2,12 @@
 //   node scripts/brand/icons.mjs
 // Writes (committed, so packaging needs no SVG tooling):
 //   packaging/resources/icon.icns        macOS (16/32 px slices from the simplified small mark, 64+ from the 1024 master)
+//   packaging/resources/Assets.car       macOS asset catalog with the same slices as AppIcon (CFBundleIconName)
 //   packaging/resources/icon.ico         Windows 16-256 (16-32 from a larger-glyph variant so the split stays visible)
 //   packaging/resources/icons/NxN.png    Linux set 16-512
 //   packaging/resources/icon.png         1024 master (dev dock icon, Linux fallback)
 //   packaging/resources/background.png   DMG window background (+ @2x)
-// Needs rsvg-convert (brew install librsvg) and, for the .icns, macOS iconutil.
+// Needs rsvg-convert (brew install librsvg) and, for the .icns / Assets.car, macOS iconutil + Xcode actool.
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -49,8 +50,28 @@ const slices = [
 for (const [name, size, svg] of slices) png(svg, size, path.join(iconset, name));
 if (process.platform === 'darwin') {
   execFileSync('iconutil', ['-c', 'icns', iconset, '-o', path.join(OUT, 'icon.icns')]);
+  // Assets.car with an AppIcon set (same slices): App Store Connect / Transporter and macOS 26 read the icon from the
+  // asset catalog (CFBundleIconName), not the .icns
+  const xcassets = path.join(tmp, 'Assets.xcassets');
+  const appicon = path.join(xcassets, 'AppIcon.appiconset');
+  fs.mkdirSync(appicon, { recursive: true });
+  const info = { author: 'xcode', version: 1 };
+  fs.writeFileSync(path.join(xcassets, 'Contents.json'), JSON.stringify({ info }));
+  const images = [16, 32, 128, 256, 512].flatMap((s) =>
+    [1, 2].map((k) => {
+      const filename = `icon_${s}x${s}${k === 2 ? '@2x' : ''}.png`;
+      fs.copyFileSync(path.join(iconset, filename), path.join(appicon, filename));
+      return { idiom: 'mac', size: `${s}x${s}`, scale: `${k}x`, filename };
+    }),
+  );
+  fs.writeFileSync(path.join(appicon, 'Contents.json'), JSON.stringify({ images, info }));
+  const car = path.join(tmp, 'car');
+  fs.mkdirSync(car);
+  execFileSync('xcrun', ['actool', xcassets, '--compile', car, '--platform', 'macosx', '--minimum-deployment-target', '14.0',
+    '--app-icon', 'AppIcon', '--output-partial-info-plist', path.join(car, 'info.plist')]);
+  fs.copyFileSync(path.join(car, 'Assets.car'), path.join(OUT, 'Assets.car'));
 } else {
-  console.warn('[icons] not macOS: icon.icns left unchanged');
+  console.warn('[icons] not macOS: icon.icns and Assets.car left unchanged');
 }
 png(MAC_MASTER, 1024, path.join(OUT, 'icon.png'));
 
@@ -95,4 +116,4 @@ execFileSync('rsvg-convert', ['-w', '540', '-h', '380', '-o', path.join(OUT, 'ba
 execFileSync('rsvg-convert', ['-w', '1080', '-h', '760', '-o', path.join(OUT, 'background@2x.png'), dmgSvg]);
 
 fs.rmSync(tmp, { recursive: true, force: true });
-console.log(`[icons] wrote ${path.relative(ROOT, OUT)}/{icon.icns,icon.ico,icon.png,icons/*,background*.png}`);
+console.log(`[icons] wrote ${path.relative(ROOT, OUT)}/{icon.icns,Assets.car,icon.ico,icon.png,icons/*,background*.png}`);
