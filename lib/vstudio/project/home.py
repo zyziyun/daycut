@@ -51,6 +51,10 @@ def _live(p):
 
 
 def register(pdir, name=None, recipe=None, series=None, client=None, kind=None):
+    """Add / update the projects.json row of ``pdir``. ``name``, ``recipe`` or ``kind`` passed as None keep the
+    row's existing value, so a partial call never rewrites a project into something else (series / client are
+    taken as given: project.yaml is their source). One exception: an old ``kind: work`` row whose folder now holds
+    project.yaml, registered without a kind (vstudio.project.core), becomes a project row again."""
     from vstudio.batch.clients import is_temp_path
     pdir = os.path.abspath(pdir)
     if is_temp_path(pdir) and not is_temp_path(registry_path()):
@@ -58,8 +62,13 @@ def register(pdir, name=None, recipe=None, series=None, client=None, kind=None):
     real = os.path.realpath(pdir)                    # /var/... and /private/var/... are one project
     rows = [p for p in projects() if os.path.realpath(p["dir"]) != real]
     old = next((p for p in projects() if os.path.realpath(p["dir"]) == real), {})
-    row = dict(dir=pdir, name=name, recipe=recipe, series=series, client=client,
+    keep = lambda k, v: old.get(k) if v is None else v  # noqa: E731
+    row = dict(dir=pdir, name=keep("name", name), recipe=keep("recipe", recipe), series=series, client=client,
                created=old.get("created") or time.strftime("%Y-%m-%dT%H:%M:%S"))
+    if kind is None and old.get("kind") == "work" and os.path.exists(os.path.join(pdir, "project.yaml")):
+        kind = None
+    else:
+        kind = keep("kind", kind)
     if kind:
         row["kind"] = kind
     rows.append(row)

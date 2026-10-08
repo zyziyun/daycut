@@ -18,7 +18,8 @@ references/PROJECTS.md.
   adopt DIR [--recipe guess|NAME] [--title T] [--client C]   a plain folder made with the skill (final/, REPORT.md,
                                                       post.md, ...) -> DIR/.vstudio/work.json + registry (works.py)
   touch DIR [--status running|waiting|done|failed] [--stage S] [--progress 0..1] [--message M] [--eta S]
-      [--needs-you] [--recipe R] [--title T] [--outputs a,b]   register a job folder + its live status (heartbeat)
+      [--needs-you] [--recipe R] [--title T] [--outputs a,b]   register a job folder + its live status (heartbeat);
+                                                      a recipe project folder gets only its status (row untouched)
   output list | show | edit | preview-edl | render | undo | redo | revert | ai | chat | effects  --project P --output O   2nd-pass edit of
       one finished output (references/OUTPUT_EDIT.md): edit --ops JSON | --op NAME --param k=v | --op ai
       --instruction T [--apply]; render [--quality preview|final] [--targets primary,douyin:vertical|all]
