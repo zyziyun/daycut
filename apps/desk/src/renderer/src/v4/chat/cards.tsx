@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AlertTriangle, Crop, FolderOpen, Image as ImageIcon, Play, Sparkles, Subtitles, Upload, X } from 'lucide-react';
 import type { CardKind, ChatDoc } from '../../../../shared/chatEdit';
 import { EXPORT_PLATFORMS } from '../../../../shared/chatEdit';
+import { watermarkOnFor, type WatermarkDoc } from '../../../../shared/watermark';
+import { useEngine } from '../../lib/engine';
 import type { EditOp, EffectDef, EffectInstance } from '../../../../shared/v04';
 import { fmtClock, getLang, has, t, tk, type MessageKey } from '../../i18n';
 import { pauses } from '../../lib/chatEdit';
@@ -606,8 +608,22 @@ export function primaryPlatform(doc: ChatDoc): string {
   return a === '9:16' ? 'douyin:vertical' : a === '16:9' ? 'youtube:horizontal' : 'xiaohongshu:vertical';
 }
 
-export function ExportCard({ env, run, onStart, onStop, onCancel }: { env: CardEnv; run: ExportRun | null; onStart: (targets: string[]) => void; onStop: () => void; onCancel: () => void }) {
+export function ExportCard({ env, run, onStart, onStop, onCancel }: { env: CardEnv; run: ExportRun | null; onStart: (targets: string[], watermark?: boolean) => void; onStop: () => void; onCancel: () => void }) {
   const { doc } = env;
+  const { client } = useEngine();
+  // her watermark (Settings › Watermark): this export follows her default unless she flips the switch here
+  const [wm, setWm] = useState<WatermarkDoc | null>(null);
+  const [wmPick, setWmPick] = useState<boolean | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void client
+      ?.watermark(false)
+      .then((d) => alive && setWm(d))
+      .catch(() => alive && setWm(null));
+    return () => {
+      alive = false;
+    };
+  }, [client]);
   const prim = primaryPlatform(doc);
   const norm = (x: string) => (x === '9:16' ? 'douyin:vertical' : x === '16:9' ? 'youtube:horizontal' : x === '3:4' ? 'xiaohongshu:vertical' : x.includes(':') ? x : `${x}:vertical`);
   const [on, setOn] = useState<Set<string>>(() => new Set([prim, ...doc.exports.map((e) => norm(e.target))]));
@@ -620,6 +636,7 @@ export function ExportCard({ env, run, onStart, onStop, onCancel }: { env: CardE
     return p ? `${tk(`ce.pf.${p.id}`)} ${p.aspect}` : tg;
   };
   const left = run && running ? Math.max(0, run.targets.length - k) : 0;
+  const wmOn = wmPick ?? watermarkOnFor(wm, [...on]);
   return (
     <Card
       kind="export"
@@ -647,7 +664,7 @@ export function ExportCard({ env, run, onStart, onStop, onCancel }: { env: CardE
           </>
         ) : (
           <>
-            <button className={`btn ${env.primary ? 'primary' : ''}`} disabled={!on.size} onClick={() => onStart(EXPORT_PLATFORMS.map((p) => p.target).filter((x) => on.has(x)))} data-testid="export-go">
+            <button className={`btn ${env.primary ? 'primary' : ''}`} disabled={!on.size} onClick={() => onStart(EXPORT_PLATFORMS.map((p) => p.target).filter((x) => on.has(x)), wmPick ?? undefined)} data-testid="export-go">
               {t('ce.exp.go', { n: on.size })}
             </button>
             <span className="faint" style={{ fontSize: 12 }}>{t('ce.exp.about', { min: Math.max(1, Math.round(on.size * 0.7)) })}</span>
@@ -680,6 +697,17 @@ export function ExportCard({ env, run, onStart, onStop, onCancel }: { env: CardE
         ))}
       </div>}
       {!run && anyH && vertical && <span className="muted" style={{ fontSize: 12 }}>{t('ce.exp.band')}</span>}
+      {!run && wm && (wm.configured ? (
+        <label className="row" style={{ gap: 8, fontSize: 12.5, cursor: 'pointer' }} data-testid="export-wm" data-on={wmOn ? '1' : '0'}>
+          <input type="checkbox" checked={wmOn} onChange={(e) => setWmPick(e.target.checked)} data-testid="export-wm-toggle" />
+          <b style={{ fontWeight: 500 }}>{t('wm.exportRow')}</b>
+          <span className="muted">{wmOn ? t('wm.exportOn') : t('wm.exportOff')}</span>
+        </label>
+      ) : (
+        <a className="muted" style={{ fontSize: 12 }} href="#/settings/watermark" data-testid="export-wm-setup">
+          {t('wm.exportSetup')}
+        </a>
+      ))}
       {run &&
         run.targets.map((tg) => {
           const r = run.rows[tg];

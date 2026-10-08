@@ -1,4 +1,5 @@
 // HTTP client for the desk engine. Used by the renderer (token from preload) and by the main process.
+import type { WatermarkDoc, WatermarkSettings } from './watermark';
 import type {
   ApplyResult,
   BatchStatus,
@@ -388,8 +389,19 @@ export class EngineClient {
     return this.req<{ ok: boolean; turn: ChatTurn }>('POST', `/api/outputs/${bid(item)}/${clipId(clip)}/chat`, { turn, set: patch });
   }
   /** final renders in the background; progress arrives as output-render events */
-  exportOutput(item: string, clip: string, targets: string[]) {
-    return this.req<ExportJob>('POST', `/api/outputs/${bid(item)}/${clipId(clip)}/export`, { targets });
+  exportOutput(item: string, clip: string, targets: string[], watermark?: boolean) {
+    return this.req<ExportJob>('POST', `/api/outputs/${bid(item)}/${clipId(clip)}/export`, watermark === undefined ? { targets } : { targets, watermark });
+  }
+  /** Settings › Watermark: the engine's watermark settings + previews over sample 9:16 / 16:9 frames */
+  watermark(previews = true) {
+    return this.req<WatermarkDoc>('GET', previews ? '/api/watermark' : '/api/watermark?previews=0');
+  }
+  setWatermark(patch: Partial<WatermarkSettings>) {
+    return this.req<WatermarkDoc>('POST', '/api/watermark', { patch });
+  }
+  /** a PNG / JPG logo she picked or dropped (copied into the engine's watermark folder) */
+  watermarkLogo(path: string) {
+    return this.req<WatermarkDoc>('POST', '/api/watermark/logo', { path });
   }
   stopExport(item: string, clip: string, job: string) {
     return this.req<{ ok: boolean }>('POST', `/api/outputs/${bid(item)}/${clipId(clip)}/export-stop`, { job });

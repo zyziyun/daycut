@@ -2,7 +2,7 @@
 // General / AI / Publishing / Advanced with status dots, the version at the bottom), each section a short page of
 // macOS-style rows. Every control applies at once; nothing has a Save button.
 import { useCallback, useEffect, useState } from 'react';
-import { Clapperboard, ChevronLeft, Send, Settings2, Sparkles, Wrench } from 'lucide-react';
+import { Clapperboard, ChevronLeft, Send, Settings2, Sparkles, Stamp, Wrench } from 'lucide-react';
 import { useCreateEnabled } from '../create';
 import { VideoGenSection } from '../create/settings/VideoGenSection';
 import type { SettingsMsg, UpdateStateMsg } from '../../../shared/deskApi';
@@ -13,6 +13,7 @@ import { AiSection } from './Ai';
 import { GeneralSection } from './General';
 import { Dot } from './kit';
 import { PublishingSection } from './Publishing';
+import { WatermarkSection } from './Watermark';
 import { registerSettingsSection, useSettingsSections, type SettingsCtx, type SettingsSection } from './registry';
 import { useAccountsDot, useAdvancedDot, useAiDot } from './status';
 import './settings.css';
@@ -22,6 +23,8 @@ registerSettingsSection({ id: 'general', order: 10, label: () => t('s2.nav.gener
 registerSettingsSection({ id: 'ai', order: 20, label: () => t('s2.nav.ai'), icon: Sparkles, render: (c) => <AiSection key={c.sub ?? ''} {...c} />, useDot: useAiDot, testId: 'snav-ai' });
 // Create page (Labs): Settings › Video generation, only while the Create page is on
 registerSettingsSection({ id: 'video', order: 25, label: () => t('create.set.title'), icon: Clapperboard, render: (c) => <VideoGenSection onSettings={c.onChange} />, useVisible: useCreateEnabled, testId: 'snav-video' });
+// your handle / logo on every export (engine: vstudio.watermark)
+registerSettingsSection({ id: 'watermark', order: 27, label: () => t('wm.nav'), icon: Stamp, render: () => <WatermarkSection />, testId: 'snav-watermark' });
 registerSettingsSection({ id: 'accounts', order: 30, label: () => t('s2.nav.accounts'), icon: Send, render: (c) => <PublishingSection {...c} />, useDot: useAccountsDot, testId: 'snav-accounts' });
 registerSettingsSection({ id: 'advanced', order: 90, label: () => t('s2.nav.advanced'), icon: Wrench, render: (c) => <AdvancedSection {...c} />, useDot: useAdvancedDot, testId: 'snav-advanced' });
 
