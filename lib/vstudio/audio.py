@@ -191,6 +191,9 @@ def _encode_audio(src, wav, dst, audio_bitrate=None, video="copy"):
     br = audio_bitrate or _persona_export_bitrate()
     if info["has_video"] and video == "copy" and ext not in (".m4a", ".aac"):
         cmd = ["ffmpeg", "-y", "-i", src, "-i", wav, "-map", "0:v:0", "-c:v", "copy", "-map", "1:a:0"]
+        vd = media.ffprobe_value(src, "stream=duration", stream="v:0", cast=float)
+        if vd:     # the wav round trip loses the last AAC frame (~0.1 s): pad / trim the audio to the picture
+            cmd += ["-af", f"apad=whole_dur={vd:.6f},atrim=0:{vd:.6f}"]
     else:
         cmd = ["ffmpeg", "-y", "-i", wav, "-vn", "-map", "0:a:0"]
     cmd += ["-ar", str(SR), "-ac", "2", "-c:a", "aac", "-b:a", br]

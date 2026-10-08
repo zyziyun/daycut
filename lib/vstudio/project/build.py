@@ -118,7 +118,9 @@ class Env:
             f.write(" ".join(map(str, argv)) + f"\n(cwd {cwd}, exit {r.returncode})\n\n" + (r.stdout or "")
                     + "\n--- stderr ---\n" + (r.stderr or ""))
         if r.returncode not in tuple(ok):
-            tail = ((r.stderr or "") + (r.stdout or ""))[-1500:]
+            # stderr carries the cause; a renderer's progress bars on stdout must not push it out of the window
+            from vstudio import proctail
+            tail = proctail.tail((r.stdout or "") + "\n" + (r.stderr or ""))[-1500:]
             raise RuntimeError(f"{os.path.basename(str(argv[1] if len(argv) > 1 else argv[0]))} exit "
                                f"{r.returncode}: {tail}")
         return r
