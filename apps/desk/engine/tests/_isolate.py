@@ -31,5 +31,7 @@ os.environ["VSTUDIO_CLIENTS"] = os.path.join(HOME, "clients")
 os.environ["DESK_DATA_DIR"] = DATA
 os.environ["DESK_HISTORY_WATCH"] = ""          # never scan the real ~/Desktop/video-studio-demos  (check-skill: allow)
 os.environ.setdefault("VSTUDIO_BATCH_BENCH", os.path.join(ROOT, "bench.json"))
+# the creator's private persona (skill checkout / $VSTUDIO_HOME) must not change test expectations (AI routes, speeds)
+os.environ["VSTUDIO_DEFAULT_PERSONA"] = "1"
 
 atexit.register(shutil.rmtree, ROOT, True)
