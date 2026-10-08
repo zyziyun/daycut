@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import type { PilotFailure } from '../../../shared/v02';
 import { providerName } from '../../../shared/aiRoutes';
-import { t, tk } from '../i18n';
+import { has, t, tk } from '../i18n';
 import { useEngine } from '../lib/engine';
 import { useHistory } from '../lib/history';
 import { useInbox } from '../lib/inbox';
@@ -14,9 +14,26 @@ import { useUi } from './ui';
 
 const AI = new Set(['ai-login', 'ai-quota', 'ai-timeout', 'ai-missing']);
 
+const TOOL_NAMES: Record<string, string> = { node: 'Node.js', ffmpeg: 'ffmpeg', ffprobe: 'ffprobe', npx: 'Node.js (npx)' };
+
+/** The reason in her words: the failure code from the engine, never the raw error. A step that failed on an external
+ * tool names the tool and the fix; "Part of Reelfold didn't start" is only for the engine itself not starting. */
 export function failureReason(f: PilotFailure): string {
   const provider = f.provider ? providerName(f.provider) : t('fail.providerAny');
-  return tk(`fail.reason.${f.code}`, { provider });
+  const p = f.params ?? {};
+  const toolId = String(p.tool ?? f.tool ?? '');
+  const tool = TOOL_NAMES[toolId] ?? toolId;
+  const path = typeof p.path === 'string' && p.path ? tk('fail.at', { path: p.path }) : '';
+  const key = `fail.reason.${f.code}`;
+  let reason: string;
+  if (f.code === 'stage') reason = f.stage ? tk(key, { stage: f.stage }) : tk('fail.reason.unknown');
+  else if ((f.code === 'tool-missing' || f.code === 'tool-broken') && !tool) reason = tk('fail.reason.unknown');
+  else if (has(key)) reason = tk(key, { provider, tool, at: path, path: String(p.path ?? '') });
+  else reason = tk('fail.reason.unknown'); // a code this desk has no words for yet
+  const fix = String(p.fix ?? f.fix ?? '');
+  if (!fix) return reason;
+  const how = has(`fail.fix.${fix}`) ? tk(`fail.fix.${fix}`) : /\s/.test(fix) || fix.includes('/') ? tk('fail.fix.cmd', { fix }) : '';
+  return how ? `${reason} ${how}` : reason;
 }
 
 /** The provider to offer for 「换 … 重试」: the other subscription CLI. */
