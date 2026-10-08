@@ -90,7 +90,8 @@ v0.4 (outputs.py, intake.py, inbox.py; engine command when available, desk imple
                                            POST {clips?, quality?, footer?, title?, expiry_note?, ack?} -> {job};
                                            GET /api/share-jobs/<job>; POST /api/feedback/import {text} -> Inbox items
   GET  /api/inbox                          every decision waiting for the creator; POST /api/inbox/answer {keys,
-                                           answer?}; POST /api/inbox/undo {keys}
+                                           answer?}; POST /api/inbox/undo {keys}; POST /api/inbox/open {key,
+                                           which file|template|doc} (an author item's file in the default editor)
 """
 import hmac
 import json
@@ -624,6 +625,8 @@ class Api:
                 return self.inbox.answer(b.get("keys"), b.get("answer"))
             if parts == ["inbox", "undo"] and method == "POST":
                 return self.inbox.undo(b.get("keys"))
+            if parts == ["inbox", "open"] and method == "POST":
+                return self.inbox.open_file(b.get("key"), b.get("which") or "file")
         return None
 
     def route_v02(self, method, parts, query, body):

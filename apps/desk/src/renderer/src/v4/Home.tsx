@@ -36,6 +36,7 @@ import '../theme/uxcore.css';
 import { orderPlatforms } from '../../../shared/platforms';
 import { errText } from './msg';
 import { IS_LITE } from '../../../shared/edition';
+import { LiveCardLine } from './LiveLine';
 
 /** First run: the starting points (title, what it does, the request it fills in). */
 const STARTS: { icon: typeof Film; title: MessageKey; sub: MessageKey; prompt: MessageKey }[] = [
@@ -770,6 +771,7 @@ export function ProjectTile({ i, onContext }: { i: HistoryItem; onContext?: (e: 
         </span>
         <StatusPill s={s} />
       </div>
+      <LiveCardLine live={i.live} />
       <ArrowRight className="sr" />
     </a>
   );

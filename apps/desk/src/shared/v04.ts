@@ -437,6 +437,26 @@ export interface InboxItem {
   at?: number | null;
   /** Create items open their own screen (#/create/...) instead of being answered here */
   href?: string;
+  /** the checkpoint's own label (author checkpoints: "Keep spans" / "保留片段") */
+  labels?: { zh?: string; en?: string } | null;
+  /** kind "author": she writes / approves a file; answered {done: true} */
+  author?: InboxAuthor | null;
+}
+
+/** An author checkpoint's file (engine/desk_engine/inbox.py author_block). */
+export interface InboxAuthor {
+  labels?: { zh?: string; en?: string };
+  help?: { zh?: string; en?: string };
+  file: string | null;
+  exists: boolean;
+  is_dir?: boolean;
+  template?: string | null;
+  doc?: string | null;
+  format?: string | null;
+  /** the first lines of the file (or of the template while the file does not exist yet) */
+  preview: string | null;
+  more?: boolean;
+  preview_of?: 'file' | 'template' | null;
 }
 
 export interface InboxDoc {

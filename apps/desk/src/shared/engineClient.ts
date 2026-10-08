@@ -446,6 +446,10 @@ export class EngineClient {
   undoInbox(keys: string[]) {
     return this.req<{ ok: boolean }>('POST', '/api/inbox/undo', { keys });
   }
+  /** an author item's file (or its template / guide) in the default editor */
+  openInboxFile(key: string, which: 'file' | 'template' | 'doc' = 'file') {
+    return this.req<{ ok: boolean; path: string }>('POST', '/api/inbox/open', { key, which });
+  }
   /** share for review: what the dialog offers (clips, versions, privacy warnings) */
   shareOptions(item: string) {
     return this.req<ShareOptions>('GET', `/api/share/${bid(item)}`);

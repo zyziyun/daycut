@@ -4,10 +4,10 @@
 // first (never file paths or raw numbers: the engine gives labels + choices), and ONE primary button. Resolving an
 // item moves on to the next one with an Undo toast; "Review all in a row" opens the triage queue in the editor.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, Check, ChevronDown, ChevronRight, FileDown, Pause, Play } from 'lucide-react';
-import type { InboxItem, InboxOption } from '../../../shared/v04';
+import { ArrowRight, Check, ChevronDown, ChevronRight, FileDown, FileText, FolderOpen, Pause, Play } from 'lucide-react';
+import type { InboxAuthor, InboxItem, InboxOption } from '../../../shared/v04';
 import { fmtClock, intlLocale, t } from '../i18n';
-import { answerOf, clipName, inboxSub, inboxTitle, issueText, money, optionLabel, secsLabel } from '../lib/inboxView';
+import { answerOf, authorHelp, clipName, inboxSub, inboxTitle, issueText, money, optionLabel, secsLabel, shortPath } from '../lib/inboxView';
 import { useEngine } from '../lib/engine';
 import { useInbox } from '../lib/inbox';
 import { clipHref, itemTarget, projectHref, startTriage, triageStep, useTriageState } from '../lib/nav';
@@ -248,10 +248,12 @@ function ItemPane({ x, onDone, onSkip }: { x: InboxItem; onDone: (answer?: Recor
   const [play, setPlay] = useState(0);
   const cur = opts.find((o) => o.id === act) ?? null;
   const confirmable = x.kind === 'confirm' || opts.length > 0 || x.code === 'inbox.spend';
+  const author = x.author ?? null;
   const primary = (): void => {
     if (x.failure) return;
     if (x.href) return void (location.hash = x.href);
     if (x.kind === 'review' && x.project.id) return go({ name: 'focus', id: x.project.id });
+    if (author) return author.exists ? onDone({ done: true }) : undefined; // the file is the answer: {done: true}
     onDone(confirmable ? answerOf(x, picked, choices) : undefined);
   };
   const primaryRef = useRef(primary);
@@ -316,6 +318,8 @@ function ItemPane({ x, onDone, onSkip }: { x: InboxItem; onDone: (answer?: Recor
             <div className="ux-opt">
               <div className="ux-optt">{failureReason(x.failure)}</div>
             </div>
+          ) : author ? (
+            <AuthorPane itemKey={x.key} a={author} />
           ) : x.kind === 'review' ? (
             <div className="col" style={{ gap: 10 }}>
               {(x.reasons ?? []).map((r) => (
@@ -366,6 +370,12 @@ function ItemPane({ x, onDone, onSkip }: { x: InboxItem; onDone: (answer?: Recor
           <a className="btn primary lg" href={x.href} data-testid="inbox-open">
             {t('inbox.openCreate')}
           </a>
+        ) : author ? (
+          <button className="btn primary lg" onClick={primary} disabled={!author.exists} title={author.exists ? undefined : t('inbox.author.missing')} data-testid="inbox-confirm">
+            <Check className="ico" />
+            {t('inbox.author.continue')}
+            <span className="kbd on">↵</span>
+          </button>
         ) : (
           <button className="btn primary lg" onClick={primary} data-testid="inbox-confirm">
             <Check className="ico" />
@@ -389,12 +399,70 @@ function ItemPane({ x, onDone, onSkip }: { x: InboxItem; onDone: (answer?: Recor
 }
 
 function leadOf(x: InboxItem): string {
+  if (x.author) return authorHelp(x);
   if (x.kind === 'confirm') return t('inbox.confirmLead');
   if (x.kind === 'review') return x.params.total ? t('inbox.passed', { passed: x.params.passed, total: x.params.total }) : '';
   if (x.code === 'inbox.spend') return t('inbox.spendLead');
   if (x.failure) return t('inbox.failedLead');
   if (x.source === 'feedback') return t('inbox.feedbackLead');
   return x.label ? emsg(x.label) : (x.text ?? '');
+}
+
+/** An author checkpoint: the file she writes / approves (path, open in editor, show in Finder, the guide) and its
+ * first lines. Never the raw option index ("☑ 1 0"). */
+export function AuthorPane({ itemKey, a }: { itemKey: string; a: InboxAuthor }) {
+  const { client } = useEngine();
+  const ui = useUi();
+  const open = async (which: 'file' | 'template' | 'doc') => {
+    try {
+      await client?.openInboxFile(itemKey, which);
+    } catch (e) {
+      ui.toast(errText(e), { error: true });
+    }
+  };
+  return (
+    <div className="col" style={{ gap: 10, minWidth: 0 }} data-testid="inbox-author">
+      <div className="ux-opt">
+        <div className="muted small">{t('inbox.author.file')}</div>
+        <div className="ux-optt clamp1" title={a.file ?? ''} style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }} data-testid="inbox-author-file">
+          {shortPath(a.file)}
+        </div>
+        <div className="row" style={{ gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+          {a.exists && (
+            <button className="btn" onClick={() => void open('file')} data-testid="inbox-author-open">
+              <FileText className="ico" />
+              {t('inbox.author.open')}
+            </button>
+          )}
+          {a.exists && a.file && (
+            <button className="btn ghost" onClick={() => void window.desk.showItem(a.file!)} data-testid="inbox-author-reveal">
+              <FolderOpen className="ico" />
+              {t('c.reveal')}
+            </button>
+          )}
+          {a.doc && (
+            <button className="btn ghost" onClick={() => void open('doc')} data-testid="inbox-author-guide">
+              {t('inbox.author.guide')}
+            </button>
+          )}
+        </div>
+      </div>
+      {!a.exists && (
+        <div className="notice small" role="status" data-testid="inbox-author-missing">
+          {t('inbox.author.missing')}
+        </div>
+      )}
+      {a.preview != null && (
+        <div className="col" style={{ gap: 4, minWidth: 0 }}>
+          <div className="muted small">{a.preview_of === 'template' ? t('inbox.author.previewTemplate') : t('inbox.author.preview')}</div>
+          <pre className="note" style={{ whiteSpace: 'pre-wrap', fontFamily: 'var(--font-mono)', fontSize: 12, maxHeight: 320, overflow: 'auto', userSelect: 'text', margin: 0 }} data-testid="inbox-author-preview">
+            {a.preview}
+            {a.more ? `\n${t('inbox.author.more')}` : ''}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function OptionCard({

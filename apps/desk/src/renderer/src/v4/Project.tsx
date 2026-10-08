@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, CalendarPlus, Copy, FolderOpen, Maximize2, Play, Share2, Undo2, Wand2 } from 'lucide-react';
 import type { HistoryDetail } from '../../../shared/v02';
-import type { Clip, ClipsDoc, OutputDoc } from '../../../shared/v04';
+import type { Clip, ClipsDoc, InboxItem, OutputDoc } from '../../../shared/v04';
 import { basePlatform, orderPlatforms, platformInfo } from '../../../shared/platforms';
 import { fmtDate, fmtMinutes, t } from '../i18n';
 import { useEngine } from '../lib/engine';
@@ -13,7 +13,11 @@ import { useInbox } from '../lib/inbox';
 import { go, href, type ProjectTab } from '../lib/router';
 import { clipStatus, itemStatus } from '../lib/status';
 import { ProjectAIPanel } from './ProjectAIPanel';
-import { inboxTitle } from './Inbox';
+import { inboxSub, inboxTitle } from './Inbox';
+import { authorHelp } from '../lib/inboxView';
+import { LiveBanner } from './LiveLine';
+import { liveLine, pendingFor } from '../lib/liveStatus';
+import { inboxHref } from '../lib/nav';
 import { Elapsed, Empty, More, SkGrid, StatusPill, Thumb } from './kit';
 import { FailureActions, failureReason } from './Failure';
 import { PlayerOverlay } from './Player';
@@ -141,6 +145,9 @@ export function Project({ id, tab: asked }: { id: string; tab: ProjectTab }) {
     );
   }
   const k = Math.min(clips.length, done.length + 1);
+  const live_ = liveLine(item?.live);
+  const others = pendingFor(pendingAll, id);
+  const authorItem = others.find((x) => x.author) ?? null;
   const sub = failure
     ? t('project.sub.failed')
     : s === 'run'
@@ -152,11 +159,11 @@ export function Project({ id, tab: asked }: { id: string; tab: ProjectTab }) {
         : done.length
           ? t('project.sub.done', { n: done.length })
           : clips.length
-            ? t('proj.working') // queued / rendering clips are not "ready to publish"
+            ? live_?.message || t('proj.working') // queued / rendering clips are not "ready to publish"
             : t('project.sub.empty');
   const tabs: [ProjectTab, string, number | null][] = [
     ['clips', t('project.tab.clips'), clips.length || null],
-    ...(isBatch && item?.openable ? ([['review', t('project.tab.review'), review ? Number(review.params.n) : null]] as [ProjectTab, string, number | null][]) : []),
+    ...(isBatch && item?.openable ? ([['review', t('project.tab.review'), (review ? Number(review.params.n) : 0) + others.length || null]] as [ProjectTab, string, number | null][]) : []),
     // the delivery package screen is batch-only ("unknown batch" for a project): projects go out from Publish
     ...(item?.kind === 'batch' && item?.openable ? ([['deliver', t('project.tab.deliver'), null]] as [ProjectTab, string, number | null][]) : []),
     ['history', t('project.tab.history'), null],
@@ -239,7 +246,8 @@ export function Project({ id, tab: asked }: { id: string; tab: ProjectTab }) {
               {t(item.edit_note.state === 'failed' ? 'project.editFailed' : 'project.editInterrupted', { what: item.edit_note.message ?? '' })}
             </p>
           )}
-          {!failure && s === 'run' && !clips.length && item && (
+          {!failure && live_ && item && <LiveBanner live={item.live} title={t('project.pilot.running')} />}
+          {!failure && !live_ && s === 'run' && !clips.length && item && (
             <div className="banner run" role="status" data-testid="project-running">
               <i className="dot run" />
               <div className="sp">
@@ -267,6 +275,18 @@ export function Project({ id, tab: asked }: { id: string; tab: ProjectTab }) {
               </div>
               <a className={`btn ${primary ? '' : 'primary'}`} href={href({ name: 'inbox' })}>
                 {t('project.confirmGo')}
+              </a>
+            </div>
+          )}
+          {!confirm && !review && !failure && authorItem && (
+            <div className="banner" data-testid="project-banner">
+              <i className="dot you" />
+              <div className="sp" style={{ minWidth: 0 }}>
+                <b>{inboxTitle(authorItem)}</b>
+                <span className="muted clamp2">{authorHelp(authorItem)}</span>
+              </div>
+              <a className={`btn ${primary ? '' : 'primary'}`} href={inboxHref({ item: authorItem.key })} data-testid="project-banner-open">
+                {t('project.review.open')}
               </a>
             </div>
           )}
@@ -322,7 +342,7 @@ export function Project({ id, tab: asked }: { id: string; tab: ProjectTab }) {
               <Details id={id} kind={item?.kind} running={s === 'run'} />
             </>
           )}
-          {tab === 'review' && <ReviewTab id={id} n={review ? Number(review.params.n) : 0} />}
+          {tab === 'review' && <ReviewTab id={id} n={review ? Number(review.params.n) : 0} pending={others} />}
           {tab === 'deliver' && (
             <div className="row">
               <a className="btn" href={href({ name: 'deliver', batch: id })}>
@@ -477,17 +497,53 @@ function DetailBody({ id, kind, d, load }: { id: string; kind?: string; d: Histo
   );
 }
 
-function ReviewTab({ id, n }: { id: string; n: number }) {
+function ReviewTab({ id, n, pending }: { id: string; n: number; pending: InboxItem[] }) {
   return (
-    <div className="col">
-      <div className="row">
-        <a className="btn primary" href={href({ name: 'focus', id })}>
-          {t('inbox.startReview', { m: fmtMinutes(Math.max(1, n * 1.2)) })}
+    <div className="col" style={{ gap: 16 }}>
+      {n > 0 && (
+        <div className="row">
+          <a className="btn primary" href={href({ name: 'focus', id })}>
+            {t('inbox.startReview', { m: fmtMinutes(Math.max(1, n * 1.2)) })}
+          </a>
+          <a className="btn ghost" href={href({ name: 'review', batch: id })}>
+            {t('project.tab.review')}
+          </a>
+        </div>
+      )}
+      <PendingList items={pending} />
+      {!n && !pending.length && (
+        <div className="col" style={{ gap: 8 }}>
+          <p className="muted">{t('project.review.nothing')}</p>
+          <div className="row">
+            <a className="btn ghost" href={href({ name: 'review', batch: id })}>
+              {t('project.tab.review')}
+            </a>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The decisions waiting in this project that are not clip reviews (an author checkpoint, filler cuts, a spend):
+ * each one opens in the Inbox. */
+export function PendingList({ items }: { items: InboxItem[] }) {
+  if (!items.length) return null;
+  return (
+    <div className="col" style={{ gap: 8 }} data-testid="project-pending">
+      <p className="muted">{t('project.review.waiting', { n: items.length })}</p>
+      {items.map((x) => (
+        <a key={x.key} className="card row" style={{ padding: 12, gap: 12 }} href={inboxHref({ item: x.key })} data-testid="project-pending-item">
+          <i className="dot you" />
+          <div className="sp" style={{ minWidth: 0 }}>
+            <b className="clamp1" style={{ fontWeight: 500 }}>
+              {inboxTitle(x)}
+            </b>
+            <div className="muted clamp1">{inboxSub(x)}</div>
+          </div>
+          <span className="btn sm">{t('project.review.open')}</span>
         </a>
-        <a className="btn ghost" href={href({ name: 'review', batch: id })}>
-          {t('project.tab.review')}
-        </a>
-      </div>
+      ))}
     </div>
   );
 }
