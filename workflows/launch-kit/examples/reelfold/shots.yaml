@@ -8,8 +8,6 @@
 #
 # Setups run unrecorded; ${NAME} comes from env.json (seed.py writes it). Shots run in order on one app session and
 # change its state (shot 2 starts the project shot 1 plans; shot 5 plans the week): re-seed a fresh ROOT to re-run.
-#
-# Desk workarounds (reported upstream, not product changes) live in seed.py: see expose_exports / prune_state_batches.
 
 shots:
   - id: home-plan
@@ -46,7 +44,8 @@ shots:
       - click: testid=plan-start
       - waitFor: testid=project-title
         timeout: 60000
-      # the pilot parks at "approve the segments": approve them and run the rest with the engine CLI
+      # the pilot parks at "approve the segments": approve them and run the rest with the engine CLI (fillers by
+      # their defaults, so the clips render during the shot)
       - sh: '"$DESK_PYTHON" "$REELFOLD_SEED" --root "$REELFOLD_SEED_ROOT" --continue-latest'
       # reopen the project so the page reads the new state (the app learns of CLI answers only on its next poll)
       - click: testid=nav-projects

@@ -207,31 +207,6 @@ def new_project(py, env, root, talk, name):
     return out["projects"][0]["dir"]
 
 
-def expose_exports(project):
-    """Desk workaround: the batch export stage writes jobs/<item>/export/exports/manifest.json, the desk's clip list
-    reads jobs/<item>/export/manifest.json (finished clips show as "Queued"). Link the real manifest where the desk
-    looks; nothing is copied or invented."""
-    import glob
-    for man in glob.glob(os.path.join(project, "state", "jobs", "*", "export", "exports", "manifest.json")):
-        dst = os.path.join(os.path.dirname(os.path.dirname(man)), "manifest.json")
-        if not os.path.exists(dst):
-            os.symlink(os.path.relpath(man, os.path.dirname(dst)), dst)
-
-
-def prune_state_batches(home):
-    """Desk workaround: every project run registers its state/ folder in $VSTUDIO_HOME/batches.json, and the desk then
-    lists the project twice (as the project and as a "Batch"). Drop those rows; the project rows stay."""
-    reg = os.path.join(home, "batches.json")
-    if not os.path.isfile(reg):
-        return
-    with open(reg) as f:
-        rows = json.load(f)
-    keep = [r for r in rows if not (os.path.basename(r.get("dir") or "") == "state" and
-                                    os.path.isfile(os.path.join(os.path.dirname(r["dir"]), "project.yaml")))]
-    with open(reg, "w") as f:
-        json.dump(keep, f, indent=1)
-
-
 def seed_engine(root, env, py, talk):
     if not os.path.isfile(talk):
         sys.exit(f"no talk at {talk}: run --steps media first")
@@ -247,11 +222,9 @@ def seed_engine(root, env, py, talk):
     eng(py, env, "vstudio.project", "checkpoint", "--dir", done, "--id", "publish", "--answer", '{"approve": true}', "--run", "--json",
         ok=(0, 1, 7))
     eng(py, env, "vstudio.project", "export", "--dir", done, "--json")
-    expose_exports(done)
     # 3. a project that parks at the filler checkpoint (taste calls like a sentence-initial "So,"): inbox items
     wait = new_project(py, env, root, talk, "Office hours")
     eng(py, env, "vstudio.project", "run", "--dir", wait, "--auto", "segments", "--json", ok=(0, 1, 7))
-    prune_state_batches(home)
     for d in (done, wait):
         st = eng(py, env, "vstudio.project", "status", "--dir", d, "--json", "--brief")
         print("engine:", os.path.basename(d), st.get("state"), st.get("pending"))
@@ -259,8 +232,9 @@ def seed_engine(root, env, py, talk):
 
 def continue_latest(root, env, py, timeout=180):
     """Shot helper: the project the Home shot just started parks at "approve the segments" after its pilot probe;
-    approve them (the default) and run the rest (pilot confirmed) in the background with the engine CLI: the app's
-    inbox records an answer but does not resume a project's run (a desk gap). Returns once the run has started."""
+    approve them (the default) and run the rest (pilot confirmed) in the background with the engine CLI, with the
+    filler questions answered by their defaults so the next shot shows clips rendering (answered in the app's inbox,
+    the run would go on too, but stop at each clip's filler question). Returns once the run has started."""
     import glob
     import time
     dirs = sorted(glob.glob(os.path.join(env["VSTUDIO_HOME"], "projects", "*", "*", "project.yaml")), key=os.path.getmtime)
@@ -280,8 +254,6 @@ def continue_latest(root, env, py, timeout=180):
     subprocess.Popen([py, "-m", "vstudio.project", "run", "--dir", d, "--confirm-pilot", "--auto", "segments,filler",
                       "--json-events"],
                      env=engine_env(env), stdout=log, stderr=log, stdin=subprocess.DEVNULL, start_new_session=True)
-    time.sleep(3)                                   # the run re-registers its batch at start
-    prune_state_batches(env["VSTUDIO_HOME"])
     print("continue:", d)
 
 
