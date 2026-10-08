@@ -28,7 +28,7 @@ const author: InboxItem = {
   author: {
     labels: { zh: '保留片段', en: 'Keep spans' },
     help: { zh: '在 promo.config.yaml 写 cut.body / cut.outro（原片秒数）', en: 'Write cut.body / cut.outro KEEP spans (raw seconds) in promo.config.yaml' },
-    file: '/Users/x/.config/vstudio/projects/dfab/01-AIGC/items/AIGC/promo.config.yaml',
+    file: '/home/me/.config/vstudio/projects/dfab/01-AIGC/items/AIGC/promo.config.yaml',
     exists: true,
     template: null,
     doc: '/Applications/Reelfold.app/Contents/Resources/runtime/vstudio/workflows/promo-recut/WORKFLOW.md',
