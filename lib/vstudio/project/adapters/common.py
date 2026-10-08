@@ -116,6 +116,24 @@ def _exports_of(env):
                  cover=e.get("cover"), post=e.get("post"), duration=e.get("duration")) for e in ex]
 
 
+def publish_copy(env):
+    """The post copy the exports carry: the creator's, else the copy stage's draft from the captions - with what
+    was drafted and from what (``llm:<provider>`` / ``transcript``) so the review shows it as a draft to edit
+    (python -m vstudio.batch job edit --op copy)."""
+    p = env.params
+    cs = env.inputs.get("copy") or {}
+    ex = env.inputs.get("export") or {}
+    out = dict(title=p.get("title") or ex.get("title") or cs.get("title") or "",
+               body=p.get("body") or ex.get("body") or cs.get("body") or "", tags=p.get("tags"))
+    drafted = [k for k in ("title", "body") if not p.get(k) and out[k]
+               and (k in (cs.get("drafted") or []) or ex.get(f"{k}_source") not in (None, "given"))]
+    if drafted:
+        out.update(drafted=drafted, source=cs.get("source") or ex.get("title_source") or ex.get("body_source"),
+                   notes=list(cs.get("notes") or []),
+                   edit="python -m vstudio.batch job edit --op copy --title ... --body ...")
+    return out
+
+
 def publish_payload(env, cp):
     files = []
     for dep, out in (env.inputs or {}).items():
@@ -133,11 +151,10 @@ def publish_payload(env, cp):
     for k in ("sheet", "snippet"):
         if pv.get(k):
             previews.append(dict(kind="image" if k == "sheet" else "video", path=pv[k]))
-    p = env.params
     return dict(options=[dict(file=x["path"], sha=file_sha(x["path"])) for x in previews],
                 exports=exports, qc=dict(status=qc.get("status"), reasons=qc.get("reasons") or [],
                                          warnings=qc.get("warnings") or []),
-                copy=dict(title=p.get("title"), body=p.get("body"), tags=p.get("tags")),
+                copy=publish_copy(env),
                 default=dict(approve=True) if qc.get("status") != "red" else None, previews=previews)
 
 

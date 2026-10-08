@@ -102,6 +102,7 @@ plans such a file directly (no batch.yaml; then the spec sections below can't be
 | cleanup | cpu | `cleanup.analyze` on the job range (+ hook range, one edit numbering) -> EDLs, review sheets, confirm list | |
 | apply | cpu-render | `cleanup.apply`: auto edits + `cleanup_reply`, frame-exact, word-safe | |
 | compose | cpu-render | hook + body (speed), final-time `cues.json` (hook lines, then words via the cleanup TimeMap), `post.json` | |
+| copy | cpu / `api:<provider>` (talkinghead-clips) | post title + short body for a clip without them, from the final captions (`clipcopy.draft_post`: the routed `copy` model in the persona voice, else the spoken lines segplan picks, said in `notes`); the title passes `publish.check_title` on every platform; the creator's own copy is kept; the publish checkpoint shows the draft and its source | |
 | export | cpu-render (`face` for layout face) | `vstudio.export`: per-platform canvas, captions in the caption box, loudness, cover, post | |
 | verify | asr | `cleanup.verify` re-ASR: lost content words (the re-ASR is kept as `heard.json`) | |
 | glossary | cpu / `api:claude` / `api:openai` | ONE caption glossary per source from the whole transcript: terms + recurring ASR confusions (2c) | per source |
@@ -176,7 +177,8 @@ render_trio.py, name_mask, auto_trim, cut_profile, renderer_args: [scale=2.4], n
 (prep_sources.sh: HDR -> SDR + whisper) -> `cleanup` (edit_list.py = every whisper sentence, within the row range
 when trimmed -> cut_pass1.py (word-safe edges, 气口) -> strict_pass.py apply with the row's `cleanup_reply`; CONFIRM
 rows go to the review page) -> `face` (face_track.py; optional) -> `compose` (config.py -> compose.py all
---clean-master with `talkinghead: {style, keywords, hook_speed, body_speed}`) -> proofread / export / qc / preview.
+--clean-master with `talkinghead: {style, keywords, hook_speed, body_speed}`) -> proofread / copy (post title + body
+drafted when not given; the 记笔记 title is the title) / export / qc / preview.
 Both recipes' lost-word gate is the workflow's own (no batch `verify` re-hearing); the workflow scripts run
 unchanged, as subprocesses.
 
