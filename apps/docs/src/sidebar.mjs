@@ -41,6 +41,7 @@ export const sidebar = [
     'guides/vlog',
     'guides/explainer',
     'guides/covers',
+    'guides/watermark',
     'guides/multi-platform',
     'guides/batch-100',
     'guides/scheduling-publishing',

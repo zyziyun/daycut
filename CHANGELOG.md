@@ -8,6 +8,15 @@ App releases are tagged `v*`; engine-only releases are tagged `engine-v*`.
 
 ## [Unreleased]
 
+### Added
+
+- **Watermark**: your handle, your own PNG logo, or a logo generated from your handle (drawn locally) on every
+  export. Settings › Watermark in the Mac app has live previews on a 9:16 and a 16:9 frame, a corner picker, size,
+  opacity, per-platform switches and "Add to every video by default"; the Export card can turn it off for one video.
+  The mark sits inside each platform's safe area and above the captions. Off until you set it up.
+  Engine: `python -m vstudio.watermark`, `--watermark on|off` on `vstudio.export` and `output render`, and
+  `watermark: false` per batch job; settings in `$VSTUDIO_HOME/watermark.json` or persona `watermark:`.
+
 ## [0.2.1] - 2026-10-07
 
 ### Changed

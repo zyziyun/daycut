@@ -1,6 +1,6 @@
 ---
 title: "CLI"
-description: "Command-line reference for the Reelfold engine (python -m vstudio.*): intake, project, batch, cleanup, export, reframe, platform, effects, llm, retouch, lesson, qa, bilingual."
+description: "Command-line reference for the Reelfold engine (python -m vstudio.*): intake, project, batch, cleanup, export, watermark, reframe, platform, effects, llm, retouch, lesson, qa, bilingual."
 editUrl: false
 ---
 
@@ -23,6 +23,7 @@ Every command that reports something accepts `--json` for one machine-readable d
 | [`vstudio.batch`](#vstudiobatch) | Batch production: plan, estimate, run, status, review, package. |
 | [`vstudio.cleanup`](#vstudiocleanup) | Shared speech cleanup: pauses, fillers, repeats, restarts. |
 | [`vstudio.export`](#vstudioexport) | One clean master into a file, cover and post stub per platform. |
+| [`vstudio.watermark`](#vstudiowatermark) | Your handle, logo or a generated badge on every export: settings, generate, preview, apply. |
 | [`vstudio.reframe`](#vstudioreframe) | Face-tracked reframe between aspect ratios. |
 | [`vstudio.platform`](#vstudioplatform) | Print the platform profiles. |
 | [`vstudio.effects`](#vstudioeffects) | List and inspect the effect registry. |
@@ -119,7 +120,7 @@ references/PROJECTS.md.
       [--needs-you] [--recipe R] [--title T] [--outputs a,b]   register a job folder + its live status (heartbeat)
   output list | show | edit | preview-edl | render | undo | redo | revert | ai | chat | effects  --project P --output O   2nd-pass edit of
       one finished output (references/OUTPUT_EDIT.md): edit --ops JSON | --op NAME --param k=v | --op ai
-      --instruction T [--apply]; render [--quality preview|final] [--targets primary,douyin:vertical|all]
+      --instruction T [--apply]; render [--quality preview|final] [--targets primary,douyin:vertical|all] [--watermark on|off]
   ai --project P --instruction T [--outputs all|a,b] [--context JSON] [--timeout 120] [--json | --json-events]
                                                       project-level AI edit: one model call for every output ->
                                                       grouped changes per output, or needs_rerender (burned-in text
@@ -240,6 +241,7 @@ usage: python -m vstudio.export [-h] [--platforms PLATFORMS] [--out OUT] [--cues
                                 [--mode {face,center,pad-blur,letterbox}]
                                 [--fallback {center,pad-blur,letterbox}] [--start START]
                                 [--dur DUR] [--encoder ENCODER] [--preset PRESET]
+                                [--watermark {auto,on,off}]
                                 master
 
 Multi-platform export: one clean master -> a file + cover + post stub per platform, plus a
@@ -286,6 +288,30 @@ options:
   --encoder ENCODER     H.264 encoder (default $VSTUDIO_H264_ENCODER / persona export.h264_encoder
                         / libx264): libx264 | videotoolbox | h264_videotoolbox | h264_mf
   --preset PRESET
+  --watermark {auto,on,off}
+                        the creator's watermark (python -m vstudio.watermark): auto = her default,
+                        on, off
+```
+
+## `vstudio.watermark`
+
+Your handle, logo or a generated badge on every export: settings, generate, preview, apply.
+
+```text
+usage: python -m vstudio.watermark [-h] {show,set,generate,preview,apply} ...
+
+Watermark: your handle, your logo or a generated badge on every export (off until you set one up).
+
+positional arguments:
+  {show,set,generate,preview,apply}
+    show                the effective settings and whether exports get the mark
+    set                 change the settings (written to $VSTUDIO_HOME/watermark.json)
+    generate            draw a logo-style watermark PNG from a handle
+    preview             the mark over a sample frame
+    apply               re-encode a finished video with the mark
+
+options:
+  -h, --help            show this help message and exit
 ```
 
 ## `vstudio.reframe`
