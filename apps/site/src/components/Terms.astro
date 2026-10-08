@@ -10,7 +10,6 @@ const mail = SITE.contactEmail;
   {lang === 'zh' ? (
     <Fragment>
       <h1>使用条款</h1>
-      <div class="draft-banner" role="note"><strong>{c.legal.draft}</strong><br />{c.legal.draftBody}</div>
       <p class="muted small">{c.legal.updated}：2026-10-07</p>
 
       <h2>1. 开源软件</h2>
@@ -37,7 +36,6 @@ const mail = SITE.contactEmail;
     <div lang={lang !== 'en' ? 'en' : undefined}>
       {lang !== 'en' && <p class="draft-banner" lang={lang} role="note">{c.legal.englishOnly}</p>}
       <h1>Terms of use</h1>
-      <div class="draft-banner" role="note"><strong>{c.legal.draft}</strong><br />{c.legal.draftBody}</div>
       <p class="muted small">{c.legal.updated}: 2026-10-07</p>
 
       <h2>1. Open-source software</h2>

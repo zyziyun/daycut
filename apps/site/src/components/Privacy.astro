@@ -10,11 +10,10 @@ const mail = SITE.contactEmail;
   {lang === 'zh' ? (
     <Fragment>
       <h1>隐私政策</h1>
-      <div class="draft-banner" role="note"><strong>{c.legal.draft}</strong><br />{c.legal.draftBody}</div>
       <p class="muted small">{c.legal.updated}：2026-10-07</p>
 
       <h2>1. 适用范围</h2>
-      <p>本政策适用于本网站和千剪 Reelfold 开源软件（桌面应用和 video-studio 技能）。千剪免费、按 MIT 许可开源，由［维护者 / 运营主体，待填］维护。联系邮箱：<a href={`mailto:${mail}`}>{mail}</a>。</p>
+      <p>本政策适用于本网站和千剪 Reelfold 开源软件（桌面应用和 video-studio 技能）。千剪免费、按 MIT 许可开源，由个人开发者 Yun Zi 维护。联系邮箱：<a href={`mailto:${mail}`}>{mail}</a>。</p>
 
       <h2>2. 浏览本网站</h2>
       <ul>
@@ -27,8 +26,10 @@ const mail = SITE.contactEmail;
       <ul>
         <li>软件在你自己的电脑上运行。视频和音频文件默认留在本机，语音转写和渲染在本机完成。我们没有服务器接收你的素材。</li>
         <li>为了选段、写标题和校对字幕，逐字稿文本、少量关键帧截图和标题会发给你自己配置的 AI 服务（你的 Claude Code / Codex 订阅、你的 API key，或本地模型）。用 AI 配音或 AI 视频生成时，文本和参考图会发给对应厂商。这些数据按你和该服务商之间的条款处理。</li>
-        <li>引擎用到的 MediaPipe 组件可能会向 Google 上报匿名使用统计，应用里会说明这一点和关闭方法。</li>
+        <li>人脸检测等图像处理（MediaPipe）完全在本机运行，不向任何服务器发送数据。</li>
         <li>检查更新时，应用会访问 GitHub 上的发布页面。</li>
+        <li>首次使用时，应用会下载语音识别模型和字体等数据文件（来自 GitHub、Google 存储和 Hugging Face），不附带任何身份信息。</li>
+        <li><strong>Mac App Store 版</strong>：不收集任何数据。没有使用次数统计、没有自动更新检查；你的素材、逐字稿和项目只保存在本机的应用容器里。</li>
         <li>匿名使用次数（仅桌面应用，<strong>默认关闭，你主动打开才发送</strong>）：随机 ID、版本号、系统、界面语言、事件名、日期和几个小整数（比如一批跑完了多少条）。不发送文件名、文字或素材，服务器不保存 IP 地址；原始记录 13 个月后删除。在应用的“设置 › 通用 › 隐私”里可以随时关闭，或点“删除我的使用数据”删除已发送的记录。完整字段见<a href="/docs/zh/concepts/usage-counts/">隐私：千剪会发送什么</a>。技能不发送任何使用数据。</li>
       </ul>
 
@@ -46,11 +47,10 @@ const mail = SITE.contactEmail;
     <div lang={lang !== 'en' ? 'en' : undefined}>
       {lang !== 'en' && <p class="draft-banner" lang={lang} role="note">{c.legal.englishOnly}</p>}
       <h1>Privacy policy</h1>
-      <div class="draft-banner" role="note"><strong>{c.legal.draft}</strong><br />{c.legal.draftBody}</div>
       <p class="muted small">{c.legal.updated}: 2026-10-07</p>
 
       <h2>1. Scope</h2>
-      <p>This policy covers this website and the Reelfold open-source software (the desktop app and the video-studio skill). Reelfold is free and open source under the MIT licence, maintained by [maintainer / operating entity, to be filled in]. Contact: <a href={`mailto:${mail}`}>{mail}</a>.</p>
+      <p>This policy covers this website and the Reelfold open-source software (the desktop app and the video-studio skill). Reelfold is free and open source under the MIT licence, maintained by Yun Zi, an individual developer. Contact: <a href={`mailto:${mail}`}>{mail}</a>.</p>
 
       <h2>2. Visiting this website</h2>
       <ul>
@@ -63,8 +63,10 @@ const mail = SITE.contactEmail;
       <ul>
         <li>The software runs on your own computer. Video and audio files stay there by default; transcription and rendering run locally. We run no server that receives your footage.</li>
         <li>To pick segments, write titles and proofread captions, transcript text, a few keyframe screenshots and titles are sent to the AI service you configure (your Claude Code or Codex subscription, your API keys, or a local model). AI voiceover or AI video generation sends text and reference images to that vendor. That is governed by your terms with the vendor.</li>
-        <li>The MediaPipe component used by the engine may send anonymous usage statistics to Google; the app explains this and how to turn it off.</li>
+        <li>Face detection and other image processing (MediaPipe) run entirely on your computer and send nothing to any server.</li>
         <li>When it checks for updates, the app contacts the release page on GitHub.</li>
+        <li>On first use the app downloads data files such as the speech-recognition model and fonts (from GitHub, Google storage and Hugging Face); no identifiers are sent.</li>
+        <li><strong>Mac App Store edition</strong>: collects no data. It has no usage counts and no update check; your footage, transcripts and projects stay in the app’s container on your Mac.</li>
         <li>Anonymous usage counts (desktop app only, <strong>off unless you turn it on</strong>): a random ID, the app version, OS, interface language, the event name, the day and a few small integers (such as how many clips a batch made). No file names, text or footage; the server does not store IP addresses; raw records are deleted after 13 months. Turn it off at any time in Settings › General › Privacy, or press “Delete my usage data” to delete what was sent. Every field is listed in <a href="/docs/concepts/usage-counts/">Privacy: what Reelfold sends</a>. The skill sends no usage data.</li>
       </ul>
 
