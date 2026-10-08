@@ -131,5 +131,21 @@ class AuthorCheckpointInInbox(unittest.TestCase):
         self.assertEqual(opened, [self.cfg])
 
 
+class RegistryStamp(unittest.TestCase):
+    """All projects only showed a re-registered project after navigating away and back: the desk polls a stamp."""
+
+    def test_the_stamp_moves_when_a_registry_changes(self):
+        from desk_engine import history as HI
+        from desk_engine.common import Registry
+        data, home = tempfile.mkdtemp(), tempfile.mkdtemp()
+        with mock.patch.object(HI, "vstudio_home", return_value=home):
+            h = HI.History(data, Registry(data))
+            a = h.stamp()["stamp"]
+            self.assertEqual(h.stamp()["stamp"], a)
+            with open(os.path.join(home, "projects.json"), "w", encoding="utf-8") as f:
+                json.dump([dict(dir="/x/p", name="p", recipe="promo-recut")], f)
+            self.assertNotEqual(h.stamp()["stamp"], a)
+
+
 if __name__ == "__main__":
     unittest.main()

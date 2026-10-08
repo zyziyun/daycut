@@ -273,6 +273,10 @@ export class EngineClient {
     const qs = q.toString();
     return this.req<HistoryDoc>('GET', `/api/history${qs ? `?${qs}` : ''}`);
   }
+  /** changes whenever a project / batch registry changes (another process registered a project) */
+  historyStamp() {
+    return this.req<{ stamp: string }>('GET', '/api/history/stamp');
+  }
   historyConfig() {
     return this.req<HistoryConfig>('GET', '/api/history/config');
   }

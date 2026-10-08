@@ -34,6 +34,9 @@ export function Projects() {
   const [clientF, setClientF] = useState(''); // '' all · OWN her own · else the client name
   const [clientFor, setClientFor] = useState<HistoryItem | null>(null);
   useEffect(() => sessionStorage.setItem('v4.pf', f), [f]);
+  // the page is shown: the list is read again (a project registered while she was elsewhere is in it at once)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => reload(), []);
   const items = useMemo(() => data?.items ?? [], [data]);
   // the tiles say 「需要你」 when the Inbox holds a decision: the filter row counts the same way
   const inbox = useInbox();

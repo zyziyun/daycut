@@ -46,6 +46,7 @@ v0.2 (studio.py; engine command when available, desk implementation otherwise)
 History (history.py; read-only discovery of past work: desk + engine registries, projects, watched folders)
   GET  /api/history?q=&status=&kind=       [{kind batch|project, id, dir, name, recipe, client, series, created,
                                            updated, counts, status, thumb, sources, opened, openable}]
+  GET  /api/history/stamp                  {stamp}: changes when a project / batch registry changes (the desk polls it)
   GET  /api/history/config | POST {watch[]}   watched folders (default ~/Desktop/video-studio-demos)  (check-skill: allow)
   POST /api/history/open {dir}             put a found batch / project in the desk list -> {id, dir}
   POST /api/history/hide {dir}             remove from the list (never deletes files); POST /api/history/unhide
@@ -692,6 +693,8 @@ class Api:
                     r = h.adopt(parts[2], recipe=rec, title=title)
                     self.bus.publish("batches")
                     return r
+            if parts == ["history", "stamp"] and method == "GET":
+                return h.stamp()
             if parts == ["history", "config"]:
                 if method == "GET":
                     return h.config()
