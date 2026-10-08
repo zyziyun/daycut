@@ -19,7 +19,8 @@ import json
 import os
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from common import Project, P, link_or_copy  # noqa: E402
+from common import Project, P, link_or_copy, body_rate  # noqa: E402
+import screen_crop  # noqa: E402
 from vstudio import hf, media, overlays, render  # noqa: E402
 from vstudio import platform as PF  # noqa: E402
 from vstudio.cut import TimeMap  # noqa: E402
@@ -36,6 +37,9 @@ GEO = {
         scr_l=0, scr_t=0, scr_w=1920, scr_h=1080, scr_in=0.84, scr_y=-44, scr_drift=0.85,
         mbadge_l=160, mbadge_t=954, mlabel_l=262, mlabel_t=958, mtag_css="right:160px; top:956px;",
         mtitle_t=400, mtitle_fs=96, stamp_l=1290, stamp_t=230, end_fs=80,
+        # PiP: face clipped to inset(top right bottom left) (unscaled px), scaled, parked bottom-right
+        pip_clip=[60, 500, 140, 500], pip_scale=0.30, pip_radius=70, pip_right=70, pip_bottom=150,
+        pip_frame=[60, 44, 1800, 1012],
     ),
     "vertical": dict(
         W=1080, H=1920, face_pos="50% 50%",
@@ -47,12 +51,89 @@ GEO = {
         scr_l=0, scr_t=656, scr_w=1080, scr_h=608, scr_in=0.94, scr_y=0, scr_drift=0.95,
         mbadge_l=60, mbadge_t=1296, mlabel_l=170, mlabel_t=1300, mtag_css="left:60px; top:1380px;",
         mtitle_t=360, mtitle_fs=72, stamp_l=560, stamp_t=380, end_fs=60,
+        pip_clip=[120, 140, 820, 140], pip_scale=0.40, pip_radius=60, pip_right=60, pip_bottom=420,
+        pip_frame=[40, 200, 1000, 562],
     ),
 }
 
 
 def r(x):
     return round(x, 3)
+
+
+# ---------------------------------------------------------------- picture-in-picture geometry
+def pip_layout(g):
+    """Face tile + screen frame for PiP windows from GEO keys pip_clip [top, right, bottom, left] (the region
+    of the full-frame face kept, unscaled px), pip_scale, pip_radius, pip_right / pip_bottom (tile margins to
+    the canvas edges), pip_frame [l, t, w, h] -> {clip, scale, x, y, tile [l, t, w, h], frame, tile_radius}
+    (#face has transform-origin 0 0: a point p lands at (x, y) + scale * p)."""
+    W, H = g["W"], g["H"]
+    ct, cr, cb, cl = g["pip_clip"]
+    s = float(g["pip_scale"])
+    rw, rh = W - cl - cr, H - ct - cb
+    tw, th = rw * s, rh * s
+    tl_, tt = W - g["pip_right"] - tw, H - g["pip_bottom"] - th
+    rad = g.get("pip_radius", 70)
+    return dict(clip=f"inset({ct}px {cr}px {cb}px {cl}px round {rad}px)", scale=s,
+                x=round(tl_ - cl * s, 1), y=round(tt - ct * s, 1),
+                tile=[round(tl_, 1), round(tt, 1), round(tw, 1), round(th, 1)],
+                frame=list(g["pip_frame"]), tile_radius=round(rad * s, 1))
+
+
+def final_time(tm, raw, rate, offset=0.0, hold_at=None, hold=0.0):
+    """Raw body second -> final composition second: offset (hook montage length) + cut-file second / rate
+    (+ the freeze hold once raw >= hold_at). Inside a cut -> start of the next kept span."""
+    t = tm.to_final(raw, snap="fwd")
+    t = tm.to_final(raw, snap="back") if t is None else t
+    return offset + t / rate + (hold if hold_at is not None and raw >= hold_at else 0.0)
+
+
+def clip_cues(cues, gap=0.02, min_dur=0.2, bridge=0.25):
+    """Final-timeline cues [{s, e}] (sorted in place by start): every cue ends `gap` s before the next one starts
+    (the +0.15 s tail at a fast body rate would otherwise put two captions on screen at once), and a gap shorter
+    than `bridge` is closed up to the same point. A cue keeps at least `min_dur` s."""
+    cues.sort(key=lambda c: c["s"])
+    for x, y in zip(cues, cues[1:]):
+        if y["s"] - x["e"] < bridge:
+            x["e"] = r(max(x["s"] + min_dur, y["s"] - gap))
+    return cues
+
+
+def overlaps(a, b):
+    return a[0] < b[1] and b[0] < a[1]
+
+
+def validate_windows(pips, cards=(), splits=(), hold_at=None, body=None, punches=()):
+    """PiP windows vs everything else that moves the talking head (all raw seconds). Raises ValueError on
+    PiP / PiP or PiP / card-split overlap, a PiP across the freeze hold, outside the body, or shorter than
+    1 s; returns warnings (PiP over a punch-in)."""
+    errs, warns = [], []
+    P = sorted([(float(w["start"]), float(w["end"]), k) for k, w in enumerate(pips)])
+    for a, b, k in P:
+        if b - a < 1.0:
+            errs.append(f"pip[{k}] [{a}, {b}] is shorter than 1 s")
+        if body and not any(s0 - 0.05 <= a and b <= s1 + 0.05 for s0, s1 in body):
+            if not (body[0][0] - 0.05 <= a and b <= body[-1][1] + 0.05):
+                errs.append(f"pip[{k}] [{a}, {b}] is outside the body (cut.body {body[0][0]}-{body[-1][1]})")
+        if hold_at is not None and a <= hold_at < b:
+            errs.append(f"pip[{k}] [{a}, {b}] covers the freeze hold at {hold_at}")
+    for (a0, b0, k0), (a1, b1, k1) in zip(P, P[1:]):
+        if a1 < b0:
+            errs.append(f"pip[{k0}] [{a0}, {b0}] overlaps pip[{k1}] [{a1}, {b1}]")
+    for a, b, k in P:
+        for j, c in enumerate(cards):
+            if overlaps((a, b), (float(c["start"]), float(c["end"]))):
+                errs.append(f"pip[{k}] [{a}, {b}] overlaps card[{j}] [{c['start']}, {c['end']}] (split screen): "
+                            "move one of them - the face cannot be a tile and a split at once")
+        for sa, sb in splits:
+            if overlaps((a, b), (float(sa), float(sb))):
+                errs.append(f"pip[{k}] [{a}, {b}] overlaps split [{sa}, {sb}]")
+        for pa, pb in punches:
+            if overlaps((a, b), (float(pa), float(pb))):
+                warns.append(f"pip[{k}] [{a}, {b}] overlaps punch [{pa}, {pb}]: the tile will zoom too")
+    if errs:
+        raise ValueError("PiP windows:\n  " + "\n  ".join(errs))
+    return warns
 
 
 # ---------------------------------------------------------------- platform profiles (vstudio.platform)
@@ -173,6 +254,21 @@ def vertical_geo(prof, src_wh, face=None, montage_aspect=16 / 9):
         scr_y = Vt - (oy + (Vt - oy) * s_in); vb = Vt + fhh * s_in
     ml = margin(vb, vb + 160)
 
+    # PiP: a face region around the speaker (band height, ~0.9 wide) scaled to a tile ~36 % of the width,
+    # sitting just above the caption band and clear of the button column; 16:9 screen frame above it
+    fxc = dw * fx - (dw - W) * px
+    rh = face_h
+    rw = min(W, int(rh * 0.9))
+    rt = int(min(max(fyc - rh * 0.45, 0), H - rh))
+    rl = int(min(max(fxc - rw / 2, 0), W - rw))
+    p_s = round(W * 0.36 / rw, 4)
+    t_b = cy0 - 24
+    t_t = t_b - rh * p_s
+    p_r = margin(t_t, t_b)
+    f_m = margin(top, t_t - 24)
+    f_w = W - 2 * f_m
+    f_h = min(f_w * 9 / 16, t_t - 24 - top)
+    f_t = top + max(0, (t_t - 24 - top - f_h) / 2)
     end_pad = f"padding: {y0}px {margin(y0, cy0)}px {H - cy0}px {margin(y0, cy0)}px;"
     extra_css = (
         f"#bar-scrim {{ top: 0; height: {lab_b + 30}px; background: linear-gradient(to bottom, rgba(5,8,16,.8) 0px, "
@@ -191,6 +287,8 @@ def vertical_geo(prof, src_wh, face=None, montage_aspect=16 / 9):
         mbadge_l=ml, mbadge_t=int(vb + 30), mlabel_l=ml + 110, mlabel_t=int(vb + 34),
         mtag_css=f"left:{ml}px; top:{int(vb + 100)}px;",
         mtitle_t=int(Vt + fhh * s_in / 2 - 80), mtitle_fs=64, stamp_l=ml + 30, stamp_t=top + 60, end_fs=60,
+        pip_clip=[rt, W - rl - rw, H - rt - rh, rl], pip_scale=p_s, pip_radius=60, pip_right=p_r, pip_bottom=H - t_b,
+        pip_frame=[f_m, round(f_t, 1), f_w, round(f_h, 1)],
         extra_css=extra_css,
         boxes=dict(safe=[x0, y0, x1, y1], caption=[cx0, cy0, cx1, cy1], keepouts=[list(k) for k in kos],
                    face_band=[mf, top, W - mf, top + face_h], card=[mc, card_t, W - mc, bottom],
@@ -294,7 +392,10 @@ def main():
     GOLD = brand.get("highlight_alt", "#F4D35E")
 
     # ---------------- timeline
-    BR = prj.get("rates.body", P("speed.body", 1.1))
+    BR = body_rate(prj)
+    cjk_max = float(P("speed.cjk_max_intelligible", 1.4) or 1.4)
+    if str(c.get("language", "zh")).startswith("zh") and BR > cjk_max:
+        print(f"note: body at {BR:g}x is above speed.cjk_max_intelligible ({cjk_max:g}x) for Chinese speech - used as set")
     MR = prj.get("rates.montage", P("speed.b_roll", 1.1))
     mcfg = c.get("montage") or {}
     XF = mcfg.get("crossfade", 0.3)
@@ -302,7 +403,11 @@ def main():
     HOLD_AT, HOLD = (hold.get("at"), hold.get("duration", 2.6)) if hold else (None, 0.0)
     has_m = "montage" in D
     has_o = "outro" in D
-    H = 0.0
+    hcfg = c.get("hooks") or {}
+    has_h = bool(hcfg.get("items"))
+    if has_h and "hooks" not in D:
+        raise SystemExit("hooks.items is set but work/layout.json has no hook montage: run tight_cut.py first")
+    H = r(D["hooks"]) if has_h else 0.0         # the hook montage opens the video; everything after shifts by H
     B = D["body"] / BR + HOLD
     TZ = mcfg.get("zoom_through", 0.5) if has_m else 0.0
     M = H + B - TZ
@@ -318,14 +423,13 @@ def main():
     omap = TimeMap.from_list(L["maps"]["outro"]) if L["maps"].get("outro") else None
 
     def cut_t(tm, raw):  # raw second -> cut-file second; inside a cut -> start of the next kept span
-        t = tm.to_final(raw, snap="fwd")
-        return tm.to_final(raw, snap="back") if t is None else t
+        return final_time(tm, raw, 1.0)
 
-    def BT(raw):  # raw recording second (body) -> final second
-        return H + cut_t(bmap, raw) / BR + (HOLD if HOLD_AT is not None and raw >= HOLD_AT else 0)
+    def BT(raw):  # raw recording second (body) -> final second (after the hook montage)
+        return final_time(bmap, raw, BR, H, HOLD_AT, HOLD)
 
     def OT(raw):  # raw recording second (outro) -> final second
-        return O + cut_t(omap, raw) / BR
+        return final_time(omap, raw, BR, O)
 
     TC = cut_t(bmap, HOLD_AT) if HOLD_AT is not None else D["body"]
     T_HOLD = H + TC / BR
@@ -333,16 +437,31 @@ def main():
     def when(x):  # chapter / named anchor -> final second
         if isinstance(x, (int, float)):
             return BT(x)
-        return {"start": H, "montage": M + TZ, "outro": O, "end": E}[x]
+        return {"start": H, "hooks": 0.0, "montage": M + TZ, "outro": O, "end": E}[x]
 
-    # ---------------- subtitles
+    # ---------------- PiP windows: validate against the card splits / hold / body (raw seconds)
+    pips = c.get("pip") or []
+    body_spans = [(float(a), float(b)) for a, b in (prj.get("cut.body") or [])]
+    try:
+        for wmsg in validate_windows(pips, c.get("cards") or [], c.get("split") or [], HOLD_AT, body_spans,
+                                     c.get("punch") or []):
+            print("warning:", wmsg)
+    except ValueError as e:
+        raise SystemExit(str(e))
+
+    # ---------------- subtitles (hook captions first: two lines each, 【】 highlight)
     subs = c.get("subtitles") or {}
-    cues = [{"s": r(BT(s)), "e": r(BT(e) + 0.15), "t": overlays.cue_html(t), "raw": t} for s, e, t in subs.get("body", [])]
+    cues = []
+    hook_items = (L.get("hooks") or []) if has_h else []
+    for k, hi in enumerate(hook_items):
+        lines = [ln for ln in hi.get("lines") or [] if ln]
+        if lines:
+            cues.append({"s": r(hi["s"] + 0.05), "e": r(hi["e"] - 0.08), "t": "<br>".join(overlays.cue_html(ln) for ln in lines),
+                         "raw": "\n".join(lines), "c": "hook"})
+    cues += [{"s": r(BT(s)), "e": r(BT(e) + 0.15), "t": overlays.cue_html(t), "raw": t} for s, e, t in subs.get("body", [])]
     if has_o:
         cues += [{"s": r(OT(s)), "e": r(OT(e) + 0.15), "t": overlays.cue_html(t), "raw": t} for s, e, t in subs.get("outro", [])]
-    for x, y in zip(cues, cues[1:]):
-        if 0 < y["s"] - x["e"] < 0.25:
-            x["e"] = r(y["s"] - 0.02)
+    clip_cues(cues)
     for cu in cues:  # captions must be gone before the zoom-through
         if has_m and cu["s"] < M + TZ < cu["e"] + 1:
             cu["e"] = r(min(cu["e"], M - 0.08))
@@ -351,9 +470,12 @@ def main():
               open(os.path.join(promo, "cues.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     if prof is not None and ori == "vertical":  # a cue that can't fit 2 lines in the caption box at min size
         for cu in cues:
+            if cu.get("c") == "hook":
+                continue
             fit = PF.fit_text_size(prof, cu["raw"].replace("【", "").replace("】", ""))
             if not fit["fits"]:
                 print(f"warning: cue at {cu['s']:.1f}s too long for the {prof.key} caption box: {cu['raw']}")
+    said = [(cu["s"], cu["e"], cu["raw"]) for cu in cues]
     for cu in cues:
         cu.pop("raw")
     if a.clean_master:
@@ -372,20 +494,51 @@ def main():
     if mlab:
         mlab[-1]["e"] = r(O - 0.2)
 
-    # ---------------- cards, chips, splits, punches, chapters
+    # ---------------- cards (screenshot | video | animated scene), chips, splits, punches, chapters
     img_dir = os.path.join(promo, "assets", "img")
+    xdir = os.path.join(promo, "assets", "extras")
     from PIL import Image
-    CARDS = []
+    pal = hf.scene_palette(gold=GOLD, ink=INK, ground=GROUND)
+
+    def asset(src):  # media used by pip windows / card videos -> assets/extras/ (unique, ascii-safe name)
+        import hashlib
+        import re
+        stem, ext = os.path.splitext(os.path.basename(src))
+        name = f"{re.sub(r'[^A-Za-z0-9._-]', '_', stem)}-{hashlib.sha1(os.path.abspath(src).encode()).hexdigest()[:6]}{ext}"
+        link_or_copy(src, os.path.join(xdir, name))
+        return f"assets/extras/{name}"
+
+    CARDS, card_inner, scene_js, has_card_video, footage = [], {}, [], False, []
     for i, cd in enumerate(c.get("cards") or []):
-        src = prj.p(cd["img"]); base = os.path.basename(src)
-        link_or_copy(src, os.path.join(img_dir, base))
-        iw, ih = Image.open(src).size
-        scroll = cd.get("scroll") or [[cd["start"], 0]]
-        CARDS.append({"id": f"c{i + 1}", "img": f"assets/img/{base}", "w": iw, "h": ih,
-                      "s": BT(cd["start"]), "e": BT(cd["end"]),
-                      "scroll": [[BT(tt), y] for tt, y in scroll],
-                      "hl": [[BT(tt), y0, y1, fr] for tt, y0, y1, fr in cd.get("highlights", [])],
-                      **({"box": [BT(cd["box"][0]), cd["box"][1], cd["box"][2]]} if cd.get("box") else {})})
+        cid = f"c{i + 1}"
+        s, e = BT(cd["start"]), BT(cd["end"])
+        if cd.get("scene") or cd.get("video"):
+            if cd.get("scene"):
+                sc = hf.scene_card(f"{cid}x", cd["scene"], s, e, g["CW"], g["CHH"], pal)
+                card_inner[cid] = sc["html"]
+                scene_js.append(sc["js"])
+                what = f"scene:{cd['scene'].get('kind')} {cd['scene'].get('title', '')}".strip()
+            else:
+                src, _ = screen_crop.clean(prj.p(cd["video"]), cd.get("crop"), prj.work)
+                cv = hf.card_video(f"{cid}v", asset(src), s, e - s, float(cd.get("media_start", 0) or 0), cd.get("label"),
+                                   g["CW"], g["CHH"], gold=GOLD)
+                card_inner[cid] = cv["html"]
+                has_card_video = True
+                what = "video:" + os.path.basename(cd["video"])
+            CARDS.append({"id": cid, "w": g["CW"], "h": g["CHH"], "s": s, "e": e, "scroll": [[s, 0]], "hl": []})
+        else:
+            src, crop = screen_crop.clean(prj.p(cd["img"]), cd.get("crop"), prj.work)
+            dy = crop[1] if crop else 0                   # config rows stay in the ORIGINAL image's pixels
+            base = os.path.basename(src)
+            link_or_copy(src, os.path.join(img_dir, base))
+            iw, ih = Image.open(src).size
+            scroll = cd.get("scroll") or [[cd["start"], 0]]
+            CARDS.append({"id": cid, "img": f"assets/img/{base}", "w": iw, "h": ih, "s": s, "e": e,
+                          "scroll": [[BT(tt), max(0, y - dy)] for tt, y in scroll],
+                          "hl": [[BT(tt), y0 - dy, y1 - dy, fr] for tt, y0, y1, fr in cd.get("highlights", [])],
+                          **({"box": [BT(cd["box"][0]), cd["box"][1] - dy, cd["box"][2] - dy]} if cd.get("box") else {})})
+            what = "img:" + os.path.basename(cd["img"])
+        footage.append(("card", cd["start"], cd["end"], s, e, what, cd.get("about")))
     chips = c.get("chips") or {}
     CHIPS = [[BT(tt), txt, int(bool(star[0])) if star else 0] for tt, txt, *star in chips.get("items", [])]
     CHIP_END = BT(chips["end"]) if chips.get("end") is not None else (CARDS[-1]["e"] if CARDS else 0)
@@ -399,21 +552,49 @@ def main():
             else:
                 SPLITS.append([cd["s"], cd["e"]])
     PUNCH = [[BT(s), BT(e)] for s, e in c.get("punch", [])]
-    chs = c.get("chapters") or []
+
+    # ---------------- PiP windows: screen layer + face tile
+    PIPS = []
+    for k, w in enumerate(sorted(pips, key=lambda w: float(w["start"]))):
+        s, e = BT(w["start"]), BT(w["end"])
+        win = {"id": f"pip{k}", "s": r(s), "e": r(e), "tag": w.get("tag"), "fit": w.get("fit"), "pos": w.get("position")}
+        if w.get("video"):
+            src, _ = screen_crop.clean(prj.p(w["video"]), w.get("crop"), prj.work)
+            win.update(video=asset(src), media_start=float(w.get("media_start", 0) or 0))
+            what = "video:" + os.path.basename(w["video"]) + (f" @{w.get('media_start', 0)}s" if w.get("media_start") else "")
+        else:
+            imgs = w.get("images") or ([w["image"]] if w.get("image") else [])
+            if isinstance(imgs, str):                      # a folder: its images, sorted by name
+                d = prj.p(imgs)
+                imgs = [os.path.join(d, f) for f in sorted(os.listdir(d)) if f.lower().endswith(screen_crop.IMAGE_EXT)]
+            if not imgs:
+                raise SystemExit(f"pip[{k}]: needs video, image or images")
+            win["images"] = [asset(screen_crop.clean(prj.p(f), w.get("crop"), prj.work)[0]) for f in imgs]
+            what = f"images:{len(imgs)}"
+        PIPS.append(win)
+        footage.append(("pip", w["start"], w["end"], s, e, what, w.get("about")))
+    PIPG = pip_layout(g) if PIPS else None
+
+    chs = [list(x) for x in c.get("chapters") or []]
+    if has_h and hcfg.get("chapter"):          # the hooks get their own chapter (else they sit before the bar)
+        chs = [["hooks", hcfg["chapter"]]] + chs
     CHAP = [[when(x[0]), when(chs[i + 1][0]) if i + 1 < len(chs) else TOTAL, x[1]] for i, x in enumerate(chs)]
+    BAR0 = 0.0 if (has_h and hcfg.get("chapter")) else H
     if ori == "vertical" and CHAP:  # chapter labels sit at the middle of their span: warn when they collide
-        fs, span = g.get("chap_fs", 24), TOTAL - H
-        X = lambda t: g["bar_l"] + (t - H) / span * g["bar_w"]
+        fs, span = g.get("chap_fs", 24), TOTAL - BAR0
+        X = lambda t: g["bar_l"] + (t - BAR0) / span * g["bar_w"]
         wid = lambda txt: sum(fs if ord(ch) > 0x2E80 else fs * 0.55 for ch in txt)
         for (s0, e0, l0), (s1, e1, l1) in zip(CHAP, CHAP[1:]):
             if (X(s1) + X(e1)) / 2 - (X(s0) + X(e0)) / 2 < (wid(l0) + wid(l1)) / 2 + 8:
                 print(f"warning: chapter labels '{l0}' / '{l1}' overlap on the {W}px bar: merge or shorten them")
     oc = c.get("outro") or {}
     OUTRO_PUNCH = OT(oc["punch_at"]) if has_o and oc.get("punch_at") is not None else None
+    if footage:
+        print_footage(footage, CHAP, said)
 
     # ---------------- media
     vdir = os.path.join(promo, "assets", "video")
-    for name in ["body"] + (["montage"] if has_m else []) + (["outro"] if has_o else []):
+    for name in ["body"] + (["montage"] if has_m else []) + (["outro"] if has_o else []) + (["hooks"] if has_h else []):
         link_or_copy(prj.w(f"{name}.mp4"), os.path.join(vdir, f"{name}.mp4"))
     if HOLD_AT is not None:
         os.makedirs(img_dir, exist_ok=True)
@@ -423,7 +604,7 @@ def main():
             link_or_copy(prj.p(hold["image"]), os.path.join(img_dir, "hold-" + os.path.basename(hold["image"])))
 
     # ---------------- fonts (Noto Sans SC + STIX Two Text, subset to what this video uses)
-    text = all_strings(c) + "".join(chr(i) for i in range(32, 127)) + "「」，。：？！—·×★→↓“”"
+    text = all_strings(c) + "".join(chr(i) for i in range(32, 127)) + "「」，。：？！—·×★→↓“”✓✗≈–"
     fdir = os.path.join(promo, "assets", "fonts")
     faces = font_faces(fdir, None if (a.no_fonts and os.path.isdir(fdir)) else text)
 
@@ -435,25 +616,58 @@ def main():
                 FLY=hold.get("fly_from", [380, -150]), HAS_M=has_m, HAS_O=has_o, HAS_END=bool(endc),
                 HAS_HOLD=HOLD_AT is not None, INK=INK)
     # progress bar + chapter labels on a scrim, and the cue style: shared HyperFrames snippets
-    prog = overlays.hf_progress(CHAP, H, TOTAL, geo=g, font_family="CJK", track_index=8)
+    prog = overlays.hf_progress(CHAP, BAR0, TOTAL, geo=g, font_family="CJK", track_index=8)
     cue_css = overlays.hf_cue_css(g, font_family="CJK", highlight=HL)
+    if has_h and ori == "horizontal":        # two-line hook captions: grow upwards from the one-line baseline
+        cue_css += f".cue.hook {{ top: auto; bottom: {int(Hc - g['cue_t'] - g['cue_fs'] * 1.2)}px; }}\n"
+    extras = dict(card_inner=card_inner, scene_js="".join(scene_js), scene_css=hf.scene_css(pal) if scene_js else "",
+                  card_video=has_card_video, pips=PIPS, pip_geo=PIPG,
+                  hooks=dict(items=hook_items, punch=float(hcfg.get("punch", 1.08) or 1.0),
+                             transition=hcfg.get("transition", "flash")) if has_h else None)
 
     html = render_html(g, DATA, faces, c, D, BR, MR, Mdur, Odur, END, hold, mcfg, oc, endc,
-                       dict(ACC=ACC, HL=HL, INK=INK, GROUND=GROUND, GOLD=GOLD), prog, cue_css)
+                       dict(ACC=ACC, HL=HL, INK=INK, GROUND=GROUND, GOLD=GOLD), prog, cue_css, extras)
     open(os.path.join(promo, "index.html"), "w", encoding="utf-8").write(html)
     tl_extra = {}
     if prof is not None:
         tl_extra = {"platform": prof.key, "canvas": [W, Hc], "boxes": g.get("boxes")}
+        if PIPG and tl_extra["boxes"] is not None:
+            tl_extra["boxes"] = dict(tl_extra["boxes"], pip_tile=PIPG["tile"], pip_frame=PIPG["frame"])
         for wmsg in PF.check_length(prof, TOTAL):
             print("warning:", wmsg)
-    json.dump({"orientation": ori, **tl_extra, "total": TOTAL, "body_end": M + TZ, "montage": [M, O] if has_m else None,
-               "outro": [O, E] if has_o else None, "chapters": [[r(s), r(e), lab] for s, e, lab in CHAP]},
+    json.dump({"orientation": ori, **tl_extra, "total": TOTAL, "hooks": [0.0, H] if has_h else None,
+               "body_start": H, "body_end": M + TZ, "montage": [M, O] if has_m else None,
+               "outro": [O, E] if has_o else None, "chapters": [[r(s), r(e), lab] for s, e, lab in CHAP],
+               "pip": [[w["s"], w["e"], w.get("tag") or ""] for w in PIPS]},
               open(os.path.join(promo, "timeline.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
-    print(f"{promo}/index.html  {W}x{Hc}  total {TOTAL:.1f}s · body→{M:.1f} · montage→{O:.1f} · outro→{E:.1f}")
+    print(f"{promo}/index.html  {W}x{Hc}  total {TOTAL:.1f}s · " + (f"hooks→{H:.1f} · " if has_h else "")
+          + f"body→{M:.1f} · montage→{O:.1f} · outro→{E:.1f}")
     print("Next: cd into it, `npx hyperframes check`, snapshot mid-transition frames, then scripts/export.sh")
 
 
-def render_html(g, DATA, faces, c, D, BR, MR, Mdur, Odur, END, hold, mcfg, oc, endc, col, prog, cue_css):
+def print_footage(rows, chap, said):
+    """What is on screen vs what is being said: raw time -> chapter -> footage (+ the creator's `about`
+    label and the caption at that moment). `!` = the about label is in neither the captions of the window
+    nor its chapter: likely the wrong footage for this stretch."""
+    def chapter_at(t):
+        lab = ""
+        for s, e, l in chap:
+            if s <= t + 1e-3:
+                lab = l
+        return lab
+    print("footage map (raw -> final | chapter | footage | about | said):")
+    for kind, ra, rb, fa, fb, what, about in sorted(rows, key=lambda x: x[3]):
+        txt = " ".join(t for s, e, t in said if s < fb and e > fa).replace("\n", " ")
+        ch = chapter_at(fa)
+        flag = " "
+        if about and about.lower() not in (txt + " " + ch).lower():
+            flag = "!"
+        print(f" {flag} {kind:4} {float(ra):7.1f}-{float(rb):<7.1f} -> {fa:7.1f}-{fb:<7.1f} | {ch[:10]:10} | {what[:34]:34} | "
+              f"{(about or '')[:12]:12} | {txt[:40]}")
+
+
+def render_html(g, DATA, faces, c, D, BR, MR, Mdur, Odur, END, hold, mcfg, oc, endc, col, prog, cue_css, X=None):
+    X = X or {}
     W, Hc = g["W"], g["H"]
     H, M, TZ, O, E, TOTAL = DATA["H"], DATA["M"], DATA["TZ"], DATA["O"], DATA["E"], DATA["TOTAL"]
     T_HOLD, HOLD = DATA["T_HOLD"], DATA["HOLD"]
@@ -470,8 +684,31 @@ def render_html(g, DATA, faces, c, D, BR, MR, Mdur, Odur, END, hold, mcfg, oc, e
     subs = hf.subtitles(J("D.cues"), height=Hc)
     split = hf.split_screen(J("D.SPLITS"), J("D.SPLIT"), J("D.SPLIT_X"), J("D.SPLIT_Y"))
     punch = hf.punch_in(J("D.PUNCH"))
-    cards = hf.screenshot_cards(DATA["CARDS"], CW, CHH, g["card_l"], g["card_t"], ACC,
-                                cards_js=J("D.CARDS"), card_w_js=J("D.CW"))
+    inner = X.get("card_inner") or {}
+    cards = hf.screenshot_cards([dict(cd, inner=inner[cd["id"]]) if cd["id"] in inner else cd for cd in DATA["CARDS"]],
+                                CW, CHH, g["card_l"], g["card_t"], ACC, cards_js=J("D.CARDS"), card_w_js=J("D.CW"))
+    cvid = hf.card_video("x", "", 0, 1, gold=GOLD) if X.get("card_video") else hf._out()
+    pip = hf._out()
+    pip["overlay"] = ""
+    if X.get("pips"):
+        pg = X["pip_geo"]
+        pip = hf.pip_windows(X["pips"], pg["clip"], pg["scale"], pg["x"], pg["y"], pg["tile"], pg["frame"],
+                             gold=GOLD, tile_radius=pg["tile_radius"])
+    hk = X.get("hooks")
+    hook_html, hook_js, flash = "", "", hf._out()
+    if hk:
+        hook_html = ('<div id="hookwrap" class="wrap"><div id="hook-zoom" class="wrap">'
+                     f'<video id="hooks" class="full" src="assets/video/hooks.mp4" playsinline data-has-audio="true" data-start="0" '
+                     f'data-duration="{r(H)}" data-track-index="2" data-volume="1"></video></div></div>')
+        hook_js = 'tl.set("#hook-zoom", { scale: 1 }, 0);\n'
+        for k, it in enumerate(hk["items"]):          # alternate framing per hook: a jump cut, not a jump
+            if k and hk["punch"] and hk["punch"] != 1.0:
+                hook_js += f'tl.set("#hook-zoom", {{ scale: {hk["punch"] if k % 2 else 1} }}, {r(it["s"])});\n'
+        if hk["transition"] == "flash":
+            flash = hf.flash(H)
+        elif hk["transition"] == "punch":
+            hook_js += (f'tl.fromTo("#face-zoom", {{ scale: 1.12 }}, {{ scale: 1, duration: 0.5, ease: "power2.out", '
+                        f'immediateRender: false }}, {r(H)});\n')
     chips = hf.chips(DATA["CHIPS"], J("D.CHIP_END"), g["chips_l"], g["chips_t"], g["chips_w"], INK, GOLD, items_js=J("D.CHIPS"))
     himg = "assets/img/hold-" + os.path.basename(hold["image"]) if hold.get("image") else ""
     freeze = hf.freeze_hold(J("D.T_HOLD"), J("D.HOLD"), J("D.FLY"), hold.get("label", ""), himg,
@@ -507,14 +744,22 @@ def render_html(g, DATA, faces, c, D, BR, MR, Mdur, Odur, END, hold, mcfg, oc, e
             o_html += "\n  " + stamp["html"]
     end_html = end["html"] if DATA["HAS_END"] else ""
 
+    # a card with a playing clip: the clip is the timed element, so #cards must be a plain container
+    # (data-start on both = HyperFrames video_nested_in_timed_element)
+    cards_attrs = ('class="full"' if X.get("card_video")
+                   else f'class="clip full" data-start="{r(H)}" data-duration="{r(B)}" data-track-index="4"')
     css = (hf.grid_backdrop_css()
            + f".wrap {{ position: absolute; inset: 0; width: {W}px; height: {Hc}px; transform-origin: 50% 40%; }}\n"
            + split["css"] + screen["css"] + ow["css"] + cards["css"] + chips["css"] + subs["css"]
            + cue_css + prog["css"] + steps["css"] + freeze["css"] + mbadge["css"] + mtitle["css"] + mtag["css"]
-           + stamp["css"] + end["css"] + g.get("extra_css", ""))
+           + stamp["css"] + end["css"] + pip["css"] + cvid["css"] + X.get("scene_css", "") + flash["css"]
+           + g.get("extra_css", ""))
     js = ("// subtitles\n" + subs["js"]
+          + ("\n// hook montage: alternating framing, transition into the body\n" + hook_js + flash["js"] if hk else "")
           + "\n// talking head: split-screen moves (clip + slide) and punch-ins\n" + split["js"] + punch["js"]
+          + ("\n// picture-in-picture: screen layer + face tile\n" + pip["js"] if X.get("pips") else "")
           + "\n// cards: 3D slide-in, scroll, highlights, box\n" + cards["js"] + chips["js"]
+          + ("// animated scene cards\n" + X["scene_js"] if X.get("scene_js") else "")
           + "\n// prompt hold: dim, fly the prompt out of the screenshot card, hold, fly back\n"
           + "if (D.HAS_HOLD) {\n" + I(freeze["js"], 2) + "}\n"
           + "if (D.HAS_M) {\n"
@@ -546,14 +791,17 @@ video.full, img.full {{ object-fit: cover; object-position: {g["face_pos"]}; }}
 <div id="root" data-composition-id="main" data-start="0" data-width="{W}" data-height="{Hc}" data-duration="{TOTAL}">
   <div id="plate" class="full clip" data-start="0" data-duration="{TOTAL}" data-track-index="0"></div>
 
-  <!-- body: talking head (split-screen + punch-ins). body + freeze + body2 share track 2 back to back -->
+  {hook_html}
+  {pip["html"]}
+  <!-- body: talking head (split-screen + punch-ins). hooks, body + freeze + body2 share track 2 back to back -->
   <div id="face" class="wrap"><div id="face-zoom" class="wrap">
     {body_html}
   </div></div>
-  <div id="cards" class="clip full" data-start="{r(H)}" data-duration="{r(B)}" data-track-index="4" style="pointer-events:none">
+  <div id="cards" {cards_attrs} style="pointer-events:none">
     {cards["html"]}
     {chips["html"]}
   </div>
+  {pip["overlay"]}
   {pz_html}
 
   <!-- montage: highlights in a framed screen; own track (3) because it overlaps body2 during the zoom-through -->
@@ -563,6 +811,7 @@ video.full, img.full {{ object-fit: cover; object-position: {g["face_pos"]}; }}
   {o_html}
   {end_html}
 
+  {flash["html"]}
   {hf.subtitles_html(0, E)}
   {prog["html"]}
 </div>
