@@ -21,6 +21,7 @@ def env(tmp_path, monkeypatch):
         d.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(config, "REPO", str(repo))
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))     # Windows: expanduser("~") reads USERPROFILE
     monkeypatch.setenv("VSTUDIO_HOME", str(vhome))
     monkeypatch.delenv("VSTUDIO_DEFAULT_PERSONA", raising=False)
     monkeypatch.delenv("VSTUDIO_PERSONA", raising=False)

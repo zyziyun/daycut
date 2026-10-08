@@ -38,7 +38,7 @@ def _analysis(d):
     add("shot1.png", "image", width=2000, height=1200, orientation="horizontal")
     add("shot2.png", "image", width=2000, height=1200, orientation="horizontal")
     cuts = [add(f"cuts/ad{k}.mp4", "video", duration=30, **v)["id"] for k in range(2)]
-    tops = [f["path"] for f in files if "/cuts/" not in f["path"]] + [str(d / "cuts")]
+    tops = [f["path"] for f in files if not f["rel"].startswith("cuts/")] + [str(d / "cuts")]   # rel: "/" on every OS
     tot = dict(videos=6, video_s=1000, audio=0, audio_s=0.0, images=2, texts=0, other=0)
     return dict(version=1, kind="vstudio.intake.analysis", inputs=tops, digest="d" * 16, asr="sample", totals=tot,
                 files=files, groups=[dict(id="g1", kind="clip-set", folder=str(d / "cuts"), files=cuts, n=2)],
