@@ -39,7 +39,12 @@ detected from whisper timing at lower confidence and pauses are never auto.
 | `standard` (default) | 0.45 s | 0.18-0.40 s (0.30 after a sentence) | 0.85 | removed |
 | `tight` | 0.25 s | 0.08-0.20 s | 0.75 | removed |
 
-Persona overrides (`persona.local.yaml`), all optional - unknown keys in `overrides=` raise:
+Persona overrides (`persona.local.yaml`), all optional - unknown keys in `overrides=` raise. The persona is looked
+up the same way by the skill, the CLI and the desktop app's bundled engine (`vstudio.config.persona_sources`; found
+files are deep-merged, higher wins per key): `$VSTUDIO_PERSONA` > `$VSTUDIO_HOME/persona.local.yaml` (default
+`~/.config/vstudio`) > `<repo>/persona.local.yaml` > `~/.claude/skills/video-studio/persona.local.yaml` >
+`<repo>/persona.yaml` > `persona.example.yaml`. If the review says `profile standard` although yours says `tight`,
+check `python3 -c "from vstudio.config import persona_sources; print(persona_sources())"`.
 
 ```yaml
 cleanup:
