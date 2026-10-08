@@ -4,7 +4,8 @@
     from vstudio import clipcopy
     d = clipcopy.draft(sents, platforms=["xiaohongshu:full"], glossary_terms=["亚麻", "onboarding"])
     d["title"]      # within the tightest title limit of the platforms (publish.fit_title, shortening reported)
-    d["keywords"]   # terms said in the clip, shown in the accent colour in captions and panels
+    d["keywords"]   # 3-8 terms said in the clip, shown in the accent colour in captions and panels
+    d["keyword_candidates"]   # a few more terms of the clip the creator can tick in review
     d["chapters"]   # [(t0, t1, label)]: 2-6 character labels for the progress bar
     d["panels"]     # [(t0, t1, title, [(t, bullet)])]: one 记笔记 card per section, bullets as she says them
     d["source"]     # "llm:<provider>" | "transcript"; d["notes"]: what was dropped / shortened / not drafted
@@ -19,9 +20,12 @@ Two real paths, chosen by the ``copy`` route of vstudio.llm (persona / desk llm 
   * no model (route ``none``): the title is the most title-like spoken clause (vstudio.batch.segplan rules), the
     keywords are the glossary terms said in the clip plus recurring latin terms, and no cards are drafted - spoken
     fragments make poor note cards - which ``notes`` says.
+Either way the keywords are topped up to 3 (at most 8) from the glossary terms said and the clip's recurring terms
+(``pick_keywords``: segplan tf-idf, glued fragments dropped); the review checkpoint shows them to edit.
 A model that fails raises (``llm.AllProvidersFailed`` / the provider's error): the caller reports it.
 """
 import re
+from collections import Counter
 
 PANEL_EVERY = 40.0          # seconds of speech per 记笔记 card ("notes 多一点" / "多加 panel")
 BULLET_MAX = 14             # characters per panel bullet (the compositor's card width)
@@ -199,13 +203,71 @@ def _said_terms(sents, glossary_terms):
     return res[:8]
 
 
+_DISCOURSE = {"反正", "其实", "当然", "比如", "比如说", "一会儿", "不好意思", "觉得", "知道", "然后", "所以", "但是", "就是"}
+KEYWORDS_MIN, KEYWORDS_MAX = 3, 8
+
+
+def _free(g, text):
+    """A CJK n-gram that stands on its own: not glued to the same neighbour in >= 70% of its uses (a piece of a
+    longer word: 更加注重 -> 加注重, 地方的做事 -> 方的做事)."""
+    if not re.match(r"[\u3400-\u9fff]", g):
+        return True
+    occ = [m.start() for m in re.finditer(re.escape(g), text)]
+    for side in (-1, len(g)):
+        c, n = Counter(text[i + side] if 0 <= i + side < len(text) else "" for i in occ).most_common(1)[0]
+        if len(occ) >= 2 and re.match(r"[\u3400-\u9fff]", c) and n >= 0.7 * len(occ):
+            return False
+    return True
+
+
+def weighted_terms(sents):
+    """Recurring terms of the clip, best first: tf x idf of vstudio.batch.segplan ``term_stats`` (n-grams that
+    recur; a piece of a longer term dropped), minus discourse words, stop characters and glued fragments."""
+    from vstudio.batch import segplan as SP
+    idf, per = SP.term_stats([dict(s, k=k) for k, s in enumerate(sents)])
+    tf = Counter()
+    for c in per:
+        tf.update(c)
+    text = "".join(s["text"] for s in sents)
+    out = []
+    for g in sorted(idf, key=lambda g: (-tf[g] * idf[g], g)):
+        cjk = re.match(r"[\u3400-\u9fff]", g)
+        if g in _DISCOURSE or g in SP.CONNECT_ZH or (cjk and any(ch in SP.STOP_CH for ch in g)) or not _free(g, text):
+            continue
+        if not any(g in h or h in g for h in out):
+            out.append(SP._display(g, text))
+    return out
+
+
+def pick_keywords(sents, keywords=(), glossary_terms=(), n_min=KEYWORDS_MIN, n_max=KEYWORDS_MAX):
+    """``keywords`` (the model's / already chosen) topped up to ``n_min`` from the glossary terms said in the clip,
+    then the clip's weighted terms; at most ``n_max``. -> (keywords, extras): extras = up to 4 more candidates
+    the creator can tick in review."""
+    out, seen = [], set()
+    for k in keywords or []:
+        if _norm(k) not in seen and len(out) < n_max:
+            seen.add(_norm(k))
+            out.append(k)
+    pool = [t for t in _said_terms(sents, glossary_terms) + weighted_terms(sents)
+            if not any(_norm(t) in x or x in _norm(t) for x in seen)]
+    extras = []
+    for t in pool:
+        if any(_norm(t) in _norm(x) or _norm(x) in _norm(t) for x in out + extras):
+            continue
+        if len(out) < n_min:
+            out.append(t)
+        elif len(extras) < 4:
+            extras.append(t)
+    return out, extras
+
+
 # ------------------------------------------------------------------------------------------------ draft
 def draft(sents, platforms=None, glossary_terms=(), provider="auto", complete=None, every=PANEL_EVERY, lang=None):
     """-> {title, title_note, title_platform, keywords, chapters, panels, source, notes}. See the module doc."""
     from vstudio import llm, publish
     sents = [dict(s, text=_clean(s.get("text"))) for s in sents if _clean(s.get("text"))]
-    out = dict(title="", title_note=None, title_platform=None, keywords=[], chapters=[], panels=[],
-               source=None, notes=[])
+    out = dict(title="", title_note=None, title_platform=None, keywords=[], keyword_candidates=[], chapters=[],
+               panels=[], source=None, notes=[])
     if not sents:
         out["notes"].append("no speech: nothing drafted")
         return out
@@ -234,6 +296,7 @@ def draft(sents, platforms=None, glossary_terms=(), provider="auto", complete=No
         out["source"] = "transcript"
         out["notes"].append("no text model routed (vstudio.llm task 'copy'): 记笔记 cards and chapters not drafted; "
                             "the title is a spoken clause")
+    out["keywords"], out["keyword_candidates"] = pick_keywords(sents, out["keywords"], glossary_terms)
     out["title"], out["title_note"] = publish.fit_title_all(title, plats)
     out["title_platform"] = pl
     if out["title_note"]:

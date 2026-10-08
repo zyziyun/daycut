@@ -36,14 +36,14 @@ params:
   properties:
     pipeline:
       enum: [fast, vtrack]
-      default: vtrack
-      title: Engine (vtrack = her talking-head look - 记笔记 panels, keyword highlight, progress bar, face track; fast = clean + plain captions, quicker)
-      x-zh: 引擎（vtrack 默认：记笔记面板 / 关键词高亮 / 进度条 / 跟脸；fast 快速精剪：只有字幕）
+      x-format: engine
+      title: Engine (default = the talking-head format's vtrack - her look in the edit style below, face track; fast = clean + plain captions, quicker)
+      x-zh: 引擎（默认 vtrack：按下面的剪辑风格出她的口播样式 + 跟脸；fast 快速精剪：只有字幕）
     edit_style:
       enum: [notes, refined, mixed]
-      default: mixed
-      title: Editing style (vtrack)
-      x-zh: 剪辑风格（记笔记 / 精剪 / 混合）
+      x-format: style
+      title: Editing style (vtrack; default = the talking-head format's notes - chapter bar with labels, 记笔记 panels, keyword-coloured captions)
+      x-zh: 剪辑风格（默认记笔记：章节进度条 + 记笔记面板 + 关键词变色字幕；精剪 / 混合）
       x-spec: talkinghead.style
       x-map:
         notes: {zoom: false, pops: false, stamps: false, circles: false, cards: false, sfx: false, progress: classic, callouts: true, panels: true, hook_badge: true}
@@ -121,8 +121,8 @@ params:
       type: array
       items: {type: string}
       default: []
-      title: Highlighted keywords (vtrack)
-      x-zh: 高亮关键词
+      title: Highlighted keywords (vtrack; empty = 3-8 drafted from each clip, checked at the keywords checkpoint)
+      x-zh: 高亮关键词（空 = 每条从口播里挑 3-8 个，在「确认高亮关键词」里改）
       x-spec: talkinghead.keywords
     preset:
       enum: [ultrafast, veryfast, fast, medium, slow]
@@ -185,6 +185,8 @@ stages:
      preview: {kind: markdown, path: "{stage_dir}/body_review.md"}}
   - {id: apply, resource: cpu-render, from_batch: true, produces: [cut body / hook]}
   - {id: face, resource: face, from_batch: true, produces: [face.npy (vtrack)]}
+  - {id: notes, resource: cpu, from_batch: true, produces: [notes.json (vtrack - keywords, chapters, 记笔记 panels)],
+     preview: {kind: json, path: "out:notes"}}
   - {id: compose, resource: cpu-render, from_batch: true, produces: [master.mp4, cues.json, post.json],
      preview: {kind: video, path: "out:master"}}
   - id: cover_frames
@@ -238,6 +240,23 @@ checkpoints:
         all: {type: boolean}
     auto: default
     batch_by: kind
+  - id: keywords
+    kind: keywords
+    scope: item
+    after: notes
+    blocks: [compose]
+    labels: {zh: "确认高亮关键词", en: "Check the highlighted keywords"}
+    help: {zh: "字幕和记笔记面板里变色的词（从这条口播里挑的 3-8 个）；取消勾选就不变色，可以加自己的词",
+           en: "Words coloured in the captions and note panels (3-8 picked from this clip); untick to drop, add your own"}
+    payload: vstudio.project.adapters.common:keywords_payload
+    apply: vstudio.project.adapters.common:keywords_apply
+    answer:
+      type: object
+      properties:
+        keywords: {type: array, items: {type: string}}
+        approve: {type: array, items: {type: string}}
+        keep: {type: array, items: {type: string}}
+    auto: default
   - id: cover
     kind: cover-pick
     scope: item

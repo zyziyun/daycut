@@ -253,7 +253,9 @@ def test_golden_mocked_model(tmp_path, case, prompt, exp):
     assert plan["planner"]["fallback"] is False
     assert "never invent a recipe" in seen["system"] and "talkinghead" in seen["body"]
     _check(plan, exp)
-    assert plan["summary_zh"] == f"模型摘要：{case}"
+    assert plan["summary_zh"].startswith(f"模型摘要：{case}")      # + the look line for a talkinghead project
+    if any(p["recipe"] == "talkinghead" for p in plan["projects"]):
+        assert "样式：" in plan["summary_zh"]
     if case == "finished":
         assert "TRANSCRIPT of f1" in seen["body"]
         rows = plan["projects"][0]["items"]["rows"]
@@ -362,7 +364,8 @@ def test_revise_with_model(tmp_path):
         I.analyze = orig
     # the model's shape guess (":full") is not binding: the persona's 小红书 shape (3:4) stays
     assert p2["projects"][0]["params"]["platforms"] == ["xiaohongshu:vertical", "douyin"]
-    assert p2["summary_zh"] == "加上抖音" and p2["planner"]["fallback"] is False
+    assert p2["summary_zh"] == "加上抖音。口播精剪样式：章节进度条带章节名、当前章节高亮、记笔记面板、关键词变色字幕、关键词可改。"
+    assert p2["planner"]["fallback"] is False
 
 
 # --------------------------------------------------------------------------- apply

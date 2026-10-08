@@ -12,6 +12,9 @@ Checkpoints
               {start, end, text} -> the item's ``hook``.
   cover       candidate frames of the composed master: answer {pick: k, text: "a|b"} or {t: s, text} -> a
               frame + text card -> the item's ``cover`` (export uses the file).
+  keywords    the 3-8 highlight keywords drafted for a talkinghead vtrack clip (+ a few unticked candidates):
+              answer {keywords: [...]} (free text) or the desk's ticks {approve: [...], keep: [...]} -> the item's
+              ``keywords`` (they replace the drafted ones; [] = no highlight).
   choice      generic single-pick over options -> ``set`` param.
 """
 import json
@@ -236,6 +239,36 @@ def cut_reply_apply(a):
     """Same answer, stored as ``cut_reply`` (the workflows whose config has its own reply key: promo cut.reply,
     vlog / photo-story cleanup.reply)."""
     return dict(params=dict(cut_reply=reply_from(a.value, a.payload.get("options")) or ""))
+
+
+# --------------------------------------------------------------------------- keywords (talkinghead vtrack)
+def keywords_payload(env, cp):
+    out = env.inputs.get(cp["after"]) or {}
+    if (env.spec.get("talkinghead") or {}).get("keywords"):
+        return dict(options=[], skip=True, skip_reason="keywords set for the project")
+    notes = read_json(out.get("notes"), {}) if out.get("notes") else {}
+    kws, more = list(notes.get("keywords") or []), list(notes.get("keyword_candidates") or [])
+    opts = [dict(id=k, label=k, text=k, checked=True) for k in kws] + \
+           [dict(id=k, label=k, text=k, checked=False) for k in more if k not in kws]
+    return dict(options=opts, default=dict(keywords=kws), chapters=notes.get("chapters") or [],
+                panels=notes.get("panels") or [], warnings=notes.get("notes") or [],
+                previews=[dict(kind="json", path=out["notes"])] if out.get("notes") else [],
+                skip=not opts, skip_reason="; ".join(notes.get("notes") or []) or "no keywords drafted")
+
+
+def keywords_apply(a):
+    v = a.value or {}
+    if "keywords" in v:
+        picked = v.get("keywords") or []
+    else:                                              # the desk's option ticks: ids are the keywords
+        ids = {str(x) for x in v.get("approve") or []}
+        picked = [o["id"] for o in a.payload.get("options") or [] if str(o["id"]) in ids]
+    out = []
+    for k in picked:
+        k = re.sub(r"\s+", " ", str(k or "")).strip()
+        if k and k not in out:
+            out.append(k)
+    return dict(params=dict(keywords=out))
 
 
 # --------------------------------------------------------------------------- hooks (cold open candidates)

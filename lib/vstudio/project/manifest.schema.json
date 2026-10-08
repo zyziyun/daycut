@@ -342,6 +342,7 @@
      "enum": [
       "filler-confirm",
       "hook-pick",
+      "keywords",
       "segment-approval",
       "script-lock",
       "storyboard-approval",

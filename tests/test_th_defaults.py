@@ -168,10 +168,15 @@ def test_export_drafts_the_title_from_compose_notes(tmp_path):
 
 # ------------------------------------------------------------------------------------------------ 4. her look
 def test_desk_default_engine_is_her_talking_head_look():
-    d = M.param_defaults(M.get("talkinghead"))
-    assert d["pipeline"] == "vtrack" and d["edit_style"] == "mixed"
-    style = M.get("talkinghead")["params"]["properties"]["edit_style"]["x-map"]["mixed"]
-    assert style["panels"] is True and style["progress"] == "refined"
+    m = M.get("talkinghead")
+    d = M.param_defaults(m)
+    f = F.get("talking-head")
+    assert d["pipeline"] == f["engine"] == "vtrack" and d["edit_style"] == f["style"] == "notes"
+    props = m["params"]["properties"]
+    assert "default" not in props["pipeline"] and "default" not in props["edit_style"]    # the format decides
+    style = props["edit_style"]["x-map"]["notes"]           # chapter bar with labels + panels + keyword captions
+    assert style["panels"] is True and style["progress"] == f["progress"] == "classic" and style["zoom"] is False
+    assert "fast" in props["pipeline"]["enum"]               # the plain-captions engine stays a choice
     hooks = next(s for s in M.get("talkinghead")["stages"] if s["id"] == "hooks")
     assert "when" not in hooks                                 # the hook menu is offered on the default engine too
 
@@ -194,7 +199,17 @@ def test_vtrack_config_carries_hooks_panels_chapters_keywords():
     exec(TH.config_file(dict(_clip_id="c1", platforms=["xiaohongshu:full"], speed=1.25, hook_speed=1.5,
                              keywords=["RAG"]), {}, False, hooks, notes), ns)
     assert ns["HOOKS"] == hooks and ns["PANELS"] == notes["panels"] and ns["CHAPTERS"] == notes["chapters"]
-    assert ns["KEYWORDS"] == ["RAG", "亚麻"] and ns["BODY_SPEED"] == 1.25 and ns["HOOK_SPEED"] == 1.5
+    assert ns["KEYWORDS"] == ["RAG"] and ns["BODY_SPEED"] == 1.25 and ns["HOOK_SPEED"] == 1.5   # hers replace drafted
+    ns = {}
+    exec(TH.config_file(dict(_clip_id="c1"), {}, False, None, notes), ns)
+    assert ns["KEYWORDS"] == ["亚麻"]                          # none chosen: the drafted ones
+    ns = {}
+    exec(TH.config_file(dict(_clip_id="c1", keywords=[]), {}, False, None, notes), ns)
+    assert "KEYWORDS" not in ns                                # all unticked in review: no highlight
+    ns = {}
+    exec(TH.config_file(dict(_clip_id="c1", keywords=["RAG"]), dict(talkinghead=dict(keywords=["LLM"])), False,
+                        None, notes), ns)
+    assert ns["KEYWORDS"] == ["LLM", "RAG"]
     ns = {}
     exec(TH.config_file(dict(_clip_id="c1", speed=1.0), {}, False), ns)
     assert ns["BODY_SPEED"] == 1.0                             # "no speed-up" is kept, not replaced by a default
@@ -219,3 +234,83 @@ def test_cover_retouch_without_a_face_keeps_the_frame_and_says_so(tmp_path):
     Image.new("RGB", (1080, 1920), (180, 170, 160)).save(fr)
     out, ok = retouch_cover_frame(str(fr), str(tmp_path / "f.retouched.jpg"))
     assert (out, ok) == (str(fr), False)
+
+
+# ------------------------------------------------------------------------------------------------ 5. notes default
+def test_format_summary_says_what_the_default_look_draws(monkeypatch):
+    monkeypatch.setattr(F, "_persona_formats", lambda: {})
+    zh, en = F.summary("talking-head"), F.summary("talking-head", "en")
+    assert "章节进度条带章节名" in zh and "记笔记面板" in zh and "关键词变色字幕" in zh
+    assert "chapter bar with labels" in en and "keyword-coloured captions" in en
+    fast = F.summary(dict(F.get("talking-head"), engine="fast"))
+    assert "只有字幕" in fast and "记笔记面板" not in fast
+    assert "记笔记卡片" in F.summary("promo")                 # formats without an engine keep the flags
+
+
+def test_persona_can_make_fast_the_default_engine(monkeypatch):
+    monkeypatch.setattr(F, "_persona_formats", lambda: {"talking-head": {"engine": "fast"}})
+    d = M.param_defaults(M.get("talkinghead"))
+    assert d["pipeline"] == "fast" and d["edit_style"] == "notes"
+
+
+def test_intake_plan_summary_names_the_look():
+    from vstudio.intake import plan as PL
+    plan = dict(prompt="这条口播帮我剪一下", projects=[dict(recipe="talkinghead", params={})])
+    assert PL.look_parts(plan["projects"][0])[0] == "章节进度条带章节名、当前章节高亮"
+    s = PL.with_look("我会把这条口播剪好。", plan)
+    assert s.endswith("口播精剪样式：章节进度条带章节名、当前章节高亮、记笔记面板、关键词变色字幕、关键词可改。")
+    assert PL.with_look(s, plan) == s                          # said once
+    fast = dict(plan, projects=[dict(recipe="talkinghead", params=dict(pipeline="fast"))])
+    assert "只有字幕" in PL.with_look("好的。", fast)
+    assert PL.look_parts(dict(recipe="vlog", params={})) == []
+
+
+def test_pick_keywords_tops_up_to_three_and_caps_at_eight():
+    sents = [dict(t=i, te=i + 1, text=x) for i, x in enumerate([
+        "我在亚麻做onboarding", "大厂的风格更加注重效率", "亚麻的风格更加注重流程", "大厂的风格也不一样",
+        "onboarding在亚麻很难", "所以大厂真的不一样"])]
+    kw, more = CC.pick_keywords(sents, [], ["亚麻"])
+    assert kw[0] == "亚麻" and len(kw) == 3 and "onboarding" in kw
+    assert not any("加注重" in k for k in kw + more)           # a piece of 更加注重 is not a term
+    kw, _ = CC.pick_keywords(sents, ["a", "b", "c", "d", "e", "f", "g", "h", "i"])
+    assert kw == list("abcdefgh")
+    kw, more = CC.pick_keywords(sents, ["亚麻", "大厂", "风格", "onboarding"])
+    assert kw == ["亚麻", "大厂", "风格", "onboarding"] and not set(more) & set(kw)
+
+
+def _env(tmp_path, notes, spec=None):
+    from types import SimpleNamespace
+    p = tmp_path / "notes.json"
+    p.write_text(json.dumps(notes, ensure_ascii=False), encoding="utf-8")
+    return SimpleNamespace(inputs=dict(notes=dict(notes=str(p))), spec=spec or {}, params={})
+
+
+def test_keywords_checkpoint_lists_drafted_and_candidates(tmp_path):
+    from types import SimpleNamespace
+    from vstudio.project.adapters import common as A
+    cp = dict(after="notes")
+    pay = A.keywords_payload(_env(tmp_path, dict(keywords=["亚麻", "L6", "风格"], keyword_candidates=["大厂"],
+                                                 chapters=[[0, 9, "开场"]], panels=[], notes=[])), cp)
+    assert [(o["id"], o["checked"]) for o in pay["options"]] == [("亚麻", True), ("L6", True), ("风格", True),
+                                                               ("大厂", False)]
+    assert pay["default"] == dict(keywords=["亚麻", "L6", "风格"]) and not pay["skip"] and pay["chapters"]
+    ans = lambda v: SimpleNamespace(value=v, payload=pay)    # noqa: E731
+    assert A.keywords_apply(ans(dict(approve=["亚麻", "大厂"], keep=["L6", "风格"])))["params"] == \
+        dict(keywords=["亚麻", "大厂"])                         # the desk's ticks
+    assert A.keywords_apply(ans(dict(keywords=[" RAG ", "亚麻", "RAG"])))["params"] == dict(keywords=["RAG", "亚麻"])
+    assert A.keywords_apply(ans(dict(keywords=[])))["params"] == dict(keywords=[])
+    pay = A.keywords_payload(_env(tmp_path, dict(keywords=["x"]), dict(talkinghead=dict(keywords=["RAG"]))), cp)
+    assert pay["skip"] and "project" in pay["skip_reason"]
+
+
+def test_keywords_review_sits_between_notes_and_compose_on_vtrack_only():
+    from vstudio.batch import recipes as RC
+    from vstudio.project import build as BU
+    m = M.get("talkinghead")
+    v = {s.name: s for s in BU.build(m, "talkinghead-folder").stages}
+    gate = BU.M.GATE_PREFIX + "keywords"
+    assert v[gate].deps[0] == "notes" and gate in v["compose"].deps and "notes" in v["compose"].deps
+    assert "keywords" not in v["notes"].params(dict(params=dict(keywords=["x"], platforms=[])), {})
+    fast = {s.name: s for s in BU.build(m, "talkinghead-clips").stages}
+    assert gate not in fast and "notes" not in fast
+    assert RC.get("talkinghead-folder")

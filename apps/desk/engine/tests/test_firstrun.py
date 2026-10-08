@@ -95,6 +95,8 @@ class EngineAnswerTest(unittest.TestCase):
         self.assertEqual(IB.engine_answer("publish", ticks([], [0])), dict(approve=False))
         self.assertEqual(IB.engine_answer("filler-confirm", ticks([0, 2], [1])), dict(approve=[0, 2], keep=[1]))
         self.assertEqual(IB.engine_answer("segment-approval", dict(x=1)), dict(x=1))
+        self.assertEqual(IB.engine_answer("keywords", ticks(["亚麻", "L6"], ["风格"])),       # ids = the keywords
+                         dict(approve=["亚麻", "L6"], keep=["风格"]))
         self.assertIsNone(IB.engine_answer("publish", None))
 
     def test_export_labels(self):

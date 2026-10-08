@@ -45,8 +45,11 @@ ASR, overlays, covers, publish copy); only the V-track per-frame animation engin
   `scripts/montage.py` (muted-pad hook dissolves).
 
 **Style.** Read `references/styles.md` (the strategy menu: what each looks like, when it fits, its knobs).
-Ask the creator which preset they want:
-- **记笔记风**: classic progress bar, callouts, 记笔记 panels, hook badge. Calm, 干货-dense, screenshot-friendly.
+The default (the `talking-head` format's `engine: vtrack`, `style: notes`, what her own 剪映 口播 exports look like) is
+记笔记风; ask only when she wants something else (`pipeline: fast` = clean + plain captions, quicker):
+- **记笔记风** (default): classic progress bar with chapter labels and the active chapter as a pill, callouts,
+  记笔记 panels, keyword-coloured captions (3-8 keywords drafted per clip, she checks them at the `keywords`
+  checkpoint), hook badge. Calm, 干货-dense, screenshot-friendly.
 - **精剪风**: zoom rhythm, pop words, red stamps, circle list scenes, card, SFX, refined progress bar. Fast and punchy.
 - **混合**: 精剪 rhythm plus 记笔记 panels for the 2-3 most note-worthy points.
 
@@ -70,7 +73,8 @@ On the V track the style is just the `STYLE` dict in the config, so switching la
   sentences repeating the previous one, hedges (「也可能这是我的感觉」), a second example of the same point.
   Then drop the agreed sentences by sid.
 - **Speed.** Defaults come from the `talking-head` format (`python -m vstudio.formats show talking-head`: body 1.25x,
-  hooks 1.5x; persona `formats.talking-head` overrides), else persona `speed.*`. On 加速: hooks up to 1.6x, body
+  hooks 1.5x; persona `formats.talking-head` overrides). The recipe (`recipe.yaml` `x-format`), intake, the desk and
+  the compose scripts all read that one place; 1.1x is only for inserted 精选 footage. On 加速: hooks up to 1.6x, body
   1.3-1.4x (`fast_hook` / `fast_body`). Chinese speech stays natural up to about 1.4x (`cjk_max_intelligible`); faster
   sounded fake (加速都假了). Always apply it and say the rates in the handover; `vstudio.firstpass` fails a render that
   is not sped up.

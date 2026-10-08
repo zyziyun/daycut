@@ -171,6 +171,7 @@ export const v04En = {
 
   'checkpoint.filler-confirm': 'Confirm the filler cuts',
   'checkpoint.hook-pick': 'Pick an opening',
+  'checkpoint.keywords': 'Check the highlighted keywords',
   'checkpoint.segment-approval': 'Approve the picks',
   'checkpoint.cover-pick': 'Pick a cover',
   'checkpoint.budget-approval': 'Approve the spend',
