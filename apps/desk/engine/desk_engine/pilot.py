@@ -5,8 +5,14 @@ The child runs in its own session (it outlives the desk); stdout + stderr go to 
 ``<project>/desk-pilot.json`` records {pid, started, offset (log size at the start), exit, finished, provider}.
 :func:`failure` reads both and answers None (running / fine / needs you) or a plain failure:
 
-    {state: "failed", code: ai-login | ai-quota | ai-timeout | ai-missing | engine | disk | media | unknown,
-     provider: claude-code | codex | anthropic | openai | None, error: short text without paths, at}
+    {state: "failed", code: tool-node | tool-ffmpeg | ai-login | ai-quota | ai-timeout | ai-missing | engine | disk
+     | media | unknown, provider: claude-code | codex | anthropic | openai | None, error: short text without paths,
+     at, + for tool-*: tool: "node" | "ffmpeg", fix: "brew-reinstall-node" | "install-node" | "reinstall-app" |
+     "install-ffmpeg"}
+
+tool-node: the Node.js that renders HyperFrames is missing, too old or broken (a Homebrew node whose dylibs were
+upgraded away: ``dyld: Library not loaded ... Referenced from: .../node``). tool-ffmpeg: ffmpeg / ffprobe is missing,
+broken or lacks a filter / bitstream filter the step needs.
 
 The UI never shows ``error`` as the reason: it maps ``code`` to its own words (P0-3).
 """
@@ -29,6 +35,11 @@ TASKS = ("SEGMENT_PLAN", "PROOFREAD", "GLOSSARY", "COPY", "SCRIPT", "PLANNER", "
 PROVIDERS = ("claude-code", "codex", "anthropic", "openai")
 
 _CODES = (
+    ("tool-node", r"node unavailable|referenced from:\s*\S*/node\b|library not loaded\S*.*\bnode\b|"
+                  r"npx \(node\) not found|env: node: no such file|node(\.js)? \S* ?is too old"),
+    ("tool-ffmpeg", r"ffmpeg not found|ffprobe not found|vstudio_ff(mpeg|probe)=\S* does not exist|"
+                    r"ffmpeg lacks filter|lacks filter\(s\)|unknown bitstream filter|no such filter|"
+                    r"referenced from:\s*\S*/ff(mpeg|probe)\b|ff(mpeg|probe): (command )?not found"),
     ("ai-login", r"\b401\b|auth-expired|not-logged-in|authenticat|not logged in|"
                  r"log ?in (again|required|expired)|session expired|token expired|"
                  r"unauthori[sz]ed|invalid (api )?key|invalid x-api-key|credential"),
@@ -36,8 +47,9 @@ _CODES = (
     ("ai-timeout", r"timed? ?out|timeout"),
     ("ai-missing", r"(claude|codex)\b.*(not found|no such file|not installed)|command not found"),
     ("disk", r"no space left|disk full"),
-    ("engine", r"no module named|importerror|modulenotfounderror|traceback \(most recent"),
+    ("engine", r"no module named|importerror|modulenotfounderror"),
     ("media", r"ffmpeg|invalid data found|moov atom|could not open|no such file"),
+    ("engine", r"traceback \(most recent"),                  # any other Python crash
 )
 _PATH_RE = re.compile(r"(?:/(?:Users|home|private|var|tmp|Volumes|opt|Applications)/|[A-Za-z]:\\)[^\s'\"]*")
 
@@ -48,6 +60,18 @@ def classify(text):
         if re.search(rx, t):
             return code
     return "unknown"
+
+
+def tool_fix(code, text):
+    """For a tool-* code: {tool, fix} (fix: a stable key the UI words; see the module doc), else {}."""
+    t = (text or "").lower()
+    if code == "tool-node":
+        brew = "homebrew" in t or "/cellar/" in t or "brew" in t
+        return dict(tool="node", fix="brew-reinstall-node" if brew and "too old" not in t else "install-node")
+    if code == "tool-ffmpeg":
+        bundled = "reelfold.app" in t or "/runtime/ffmpeg" in t or "vstudio_ff" in t
+        return dict(tool="ffmpeg", fix="reinstall-app" if bundled else "install-ffmpeg")
+    return {}
 
 
 def provider_of(text):
@@ -117,8 +141,10 @@ def failure(d, now=None):
                 break
     if not err:                                               # a traceback / CLI line on stderr
         err = next((ln.strip() for ln in reversed(lines) if ln.strip() and not ln.strip().startswith("{")), "")
-    return dict(state="failed", code=classify(err), provider=rec.get("provider") or provider_of(err),
-                error=scrub(err), exit=code, at=rec.get("finished") or rec.get("started") or now or time.time())
+    c = classify(err)
+    return dict(state="failed", code=c, provider=rec.get("provider") or provider_of(err),
+                error=scrub(err), exit=code, at=rec.get("finished") or rec.get("started") or now or time.time(),
+                **tool_fix(c, err))
 
 
 def running(d):
