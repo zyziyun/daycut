@@ -106,8 +106,45 @@ my-promo/
 (`data-media-start`). These share track 2 back to back. The montage starts `zoom_through` s (0.5) before
 the body ends and runs on its own track 3 at `rates.montage`. The outro starts where the montage's nominal
 length ends, while the montage clip keeps running another `zoom_through` s underneath. The end card follows.
-Raw second → final second is `BT(raw) = TimeMap.to_final(raw, snap="fwd")/rate (+ hold if raw ≥ hold.at)`, so you never type a
-final-timeline time. Chapter anchors are raw body seconds or `start` / `montage` / `outro`.
+Raw second → final second is `BT(raw) = H + TimeMap.to_final(raw, snap="fwd")/rate (+ hold if raw ≥ hold.at)`, so you
+never type a final-timeline time. `H` is the hook montage length (0 without `hooks:`): the hooks open the video and every
+later time (cards, captions, chapters, `timeline.json` and so the post copy's chapter lines) is shifted by it. Chapter
+anchors are raw body seconds or `start` / `montage` / `outro` (`start` = where the body begins, after the hooks).
+
+## Hooks, picture-in-picture, scene cards, privacy crop
+
+All config-driven (`examples/promo.config.example.yaml` documents every key); the build prints a **footage map**
+(raw time → chapter → footage → `about` → what is said there). A `!` marks a window whose `about:` label is neither in
+its captions nor its chapter: likely the wrong recording for that stretch (e.g. MiniMax footage while she talks about
+可灵). Read it before rendering.
+
+- **`hooks:`** — the creator's picks only (never auto-picked): `items: [{spans: [[a, b], ...], lines: [l1, l2]}]` in
+  her order, `speed` (default persona `formats.promo.hooks_speed` > `formats.promo.speed.hook` > `speed.hook` > the
+  format default; used as set, no clamp). `tight_cut.py` cuts them from the graded raw with word-safe edges
+  (`cleanup.snap_range`), hard cuts, 20/30 ms edge fades → `work/hooks.mp4` (+ `hooks.json`; `--rehook` forces).
+  build_promo puts it at 0 on the body's track, two-line captions per hook (【】 highlight), alternating framing
+  (`punch`, 1.08), and a white `flash` (or `punch` / `cut`) into the body. `chapter: 开场` gives the hooks their own
+  chapter; without it the progress bar starts after them.
+- **`pip:`** — `[{start, end, video | image | images (list or folder: cross-fade), media_start, tag, about, crop,
+  fit, position}]` in raw seconds. During a window a framed full-screen screen layer (rounded, 3D settle + slow zoom,
+  gold tag) plays under the talking head, which shrinks to a rounded tile bottom-right (clip-path + scale +
+  translate on `#face`, gold ring). Windows ≤ 0.8 s apart are one run: the face stays a tile and the screens
+  cross-fade. Geometry: GEO `pip_*` keys horizontally; vertical canvases compute them (tile above the caption band,
+  clear of the platform's button column, 16:9 screen above it). A PiP window must not overlap a card / `split`
+  window, the freeze hold or leave the body: the build stops with the clashing pair.
+- **Cards** besides `img`: `video:` (+ `media_start`, `label`; plays muted in the card slot) and `scene: {kind,
+  title, items, foot}` — animated scenes `tiles`, `flow`, `bars`, `stat`, `toast`, `ranking`, `columns`, `checklist`,
+  `swatch` (`vstudio.hf.scene_card`, theme colours, the page's CJK font).
+- **Privacy crop** (`crop:` on pip windows, cards and `montage`): `[x, y, w, h]`, `auto` or `false`. Unset = `auto` for
+  files named like a screen recording (`Screen Recording*`, `屏幕录制*`, `录屏*`, `rec*.mov`). `auto`
+  (`scripts/screen_crop.py`) drops a Chrome / Safari header (tabs, URL bar, bookmarks: they show her accounts and
+  tabs) or a native app's black band; the cropped copy is cached in `work/clean/` and shown cover-fit. Card
+  `scroll` / `highlights` rows stay in the original image's pixels.
+- **Montage robustness**: the montage (and hooks) render is checked against the plan (clips − crossfades, ±0.5 s).
+  A short render means the source's timestamps jump (e.g. joined with `concat -c copy`): it is re-encoded once to a
+  clean CFR copy in `work/` and retried, else the cut stops with an error.
+- Every new encode uses `vstudio.media` encoder selection (`media.delivery_args`): the bundled ffmpeg is LGPL
+  without libx264 (h264_videotoolbox there).
 
 ## Hard-won lessons
 
@@ -136,6 +173,11 @@ final-timeline time. Chapter anchors are raw body seconds or `start` / `montage`
 - Adjacent card windows closer than 0.8 s are merged into one split, so the face doesn't bounce back to
   full frame between cards.
 - Montage clips with label `null` are transitional fragments. The previous step label continues over them.
+- **Never time both a wrapper and the `<video>` inside it** (`video_nested_in_timed_element`): PiP screens and card
+  clips time only the video; the wrapper is a plain container whose opacity is tweened (a card clip makes `#cards`
+  untimed). The same source used by two windows is fine.
+- **Content inside a card needs an explicit width / height**: the card's scroller is transformed and has no
+  height, so `inset: 0` collapses to nothing (scenes and card clips get the card's size).
 - Fonts: only Noto Sans SC / STIX Two Text (OFL), subset per video. A system CJK font that exists only on
   your machine silently falls back in the headless renderer.
 

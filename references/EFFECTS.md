@@ -283,3 +283,29 @@ exact = same look; near = same idea, small visual difference; approx = closest s
 9. **"Hide a guest's face"**
    - Run `track_face.py` → `apply_sticker.py` → `verify_coverage.py --min-coverage 1.0`.
    - For a camera-off tile, use `cat_avatar.html` + `verify_avatar.py`.
+
+10. **"Picture-in-picture: screen recording full-screen, me as a tile"**
+   - HF: `hf.pip_windows(windows, clip, scale, x, y, tile, frame)`; windows `[{id, s, e, video, media_start, tag}]` or
+     `images: [...]` (cross-fade). Put `html` (the framed screen layers) BEFORE the face wrapper and `overlay` (tag
+     pills + the tile ring) AFTER it. The face wrapper (`#face`, transform-origin 0 0) is clipped to `clip` and scaled +
+     moved onto the tile; windows <= 0.8 s apart form one run (the face stays a tile, screens cross-fade).
+   - Only the `<video>` is timed; its wrapper is a plain container whose opacity is tweened (data-start on both =
+     HyperFrames `video_nested_in_timed_element`). The same source may be used by several windows.
+   - Geometry: promo-recut `pip_layout(GEO)` (horizontal table; vertical computed: tile above the caption band, clear
+     of the platform's button column). Hide browser chrome first: promo-recut `screen_crop.py` (`crop: auto`).
+
+11. **"Animated scene in a card slot (chart, ranking, flow...)"**
+   - HF: `hf.scene_card(id, {kind, title, items, foot}, s, e, card_w, card_h)` + `hf.scene_css(hf.scene_palette())`
+     once; kinds `hf.SCENE_KINDS`: tiles, flow, bars, stat, toast, ranking, columns, checklist, swatch. Colours come from
+     the theme / persona brand. Pass the html as a card's `inner` in `hf.screenshot_cards`.
+   - A playing clip in the slot: `hf.card_video(id, src, s, dur, media_start, label, card_w, card_h)`; then the card
+     container must NOT be timed (lint `video_nested_in_timed_element`).
+   - Content inside a card needs an explicit width/height: the card's scroller is transformed and has no height,
+     so `inset: 0` collapses to nothing.
+
+12. **"Hook montage in front, flash into the talk"**
+   - Cut: `cut.xfade_assemble(pieces, xfade=0, seek=True)` with every piece at the hook speed and 20/30 ms edge fades
+     (promo-recut `tight_cut.build_hooks`, word-safe edges via `cleanup.snap_range`).
+   - HF: the hooks clip on the body's track from 0, everything else shifted by its length; two-line captions are
+     subtitles cues with `c: "hook"`; alternate framing with `tl.set("#hook-zoom", {scale})` per hook;
+     `hf.flash(H)` over the cut into the body.
