@@ -556,3 +556,21 @@ def test_intake_cli_attempt_is_90s(monkeypatch):
     monkeypatch.setattr(PL, "_prompt_doc", lambda *a, **k: "request")
     js, info = PL._call_model("剪干净", {}, {}, {})
     assert js is None and info["fallback"] and seen["cli_timeout"] == 90
+
+
+def test_intake_cli_attempt_grows_with_the_prompt(monkeypatch):
+    """A 1,000-file intake with a 12-minute transcript (~95k chars) took Claude Code ~140 s: 90 s cut it off and Codex
+    answered. The per-attempt limit grows with the prompt (capped)."""
+    seen = {}
+
+    def complete(task, system, body, **kw):
+        seen.update(kw)
+        raise PL.LLM.LLMError("stop here")
+    monkeypatch.delenv("VSTUDIO_LLM_CLI_TIMEOUT", raising=False)
+    monkeypatch.setattr(PL.LLM, "complete", complete)
+    monkeypatch.setattr(PL.LLM, "route", lambda *a, **k: type("R", (), dict(provider="claude-code", model=None,
+                                                                             source="test"))())
+    monkeypatch.setattr(PL, "_prompt_doc", lambda *a, **k: "x" * 90000)
+    js, info = PL._call_model("剪干净", {}, {}, {})
+    assert seen["cli_timeout"] >= 240 and info["cli_timeout"] == seen["cli_timeout"]
+    assert PL.cli_timeout_for(10 ** 7) == PL.MAX_CLI_TIMEOUT and PL.cli_timeout_for(5000) == 90

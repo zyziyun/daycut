@@ -816,8 +816,20 @@ def summary_zh(plan):
 
 # --------------------------------------------------------------------------- the model call
 # s per CLI provider attempt (claude-code / codex), then the next one in the chain: the same 90 s per-attempt policy as
-# Create (VSTUDIO_CREATE_AI_TIMEOUT) and the publish copy calls
+# Create (VSTUDIO_CREATE_AI_TIMEOUT) and the publish copy calls - for a small request. A big intake (a long transcript,
+# a folder of 1,000+ files: ~95k chars / ~47k tokens) takes Claude Code ~140 s to answer with a plan (measured with
+# claude 2.1.153 / Opus), so the limit grows with the prompt: +CLI_TIMEOUT_PER_1K s per 1,000 chars past
+# CLI_TIMEOUT_BASE_CHARS, at most MAX_CLI_TIMEOUT.
 DEFAULT_CLI_TIMEOUT = 90
+CLI_TIMEOUT_BASE_CHARS = 20000
+CLI_TIMEOUT_PER_1K = 2.5
+MAX_CLI_TIMEOUT = 420
+
+
+def cli_timeout_for(chars):
+    """Seconds one CLI provider gets for an intake prompt of ``chars`` characters (system + body)."""
+    extra = max(0, int(chars) - CLI_TIMEOUT_BASE_CHARS) / 1000 * CLI_TIMEOUT_PER_1K
+    return float(min(MAX_CLI_TIMEOUT, round(DEFAULT_CLI_TIMEOUT + extra)))
 
 
 def _call_model(prompt, analysis, ctx, transcripts, provider=None, model=None, current=None, instruction=None,
@@ -835,7 +847,8 @@ def _call_model(prompt, analysis, ctx, transcripts, provider=None, model=None, c
             res = call(system, body)
         else:
             ct = timeout if timeout is not None else (None if os.environ.get("VSTUDIO_LLM_CLI_TIMEOUT")
-                                                      else DEFAULT_CLI_TIMEOUT)
+                                                      else cli_timeout_for(len(system) + len(body)))
+            info["cli_timeout"] = ct
             res = LLM.complete(TASK, system, body, schema=True, provider=provider, model=model,
                                config=ctx.get("llm_config"), max_tokens=12000, timeout=600, cli_timeout=ct)
     except Exception as e:  # noqa: BLE001 - auth / network / CLI errors: fall back, say why

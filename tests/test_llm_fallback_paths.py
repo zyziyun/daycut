@@ -272,3 +272,26 @@ def test_a_cli_that_timed_out_is_skipped_for_a_while(monkeypatch, tmp_path):
     llm.complete("intake", "s", "p", retries=0)
     monkeypatch.delenv("VSTUDIO_LLM_UNRESPONSIVE_TTL")
     assert not A.known_unresponsive("claude-code")
+
+
+def test_a_big_request_that_ran_out_of_time_does_not_mark_the_cli_dead(monkeypatch, tmp_path):
+    """A 50k-token intake plan takes Claude Code ~140 s: running out of a per-attempt limit on such a prompt falls back
+    for THIS call only (the fallback says how long it waited); the next small call still asks Claude Code first."""
+    monkeypatch.setenv("VSTUDIO_AUTH_CACHE", str(tmp_path / "auth.json"))
+    _routes(monkeypatch)
+    calls = []
+
+    def fake(task, system, prompt, provider=None, model=None, cli_timeout=None, **kw):
+        p = llm.canonical(provider) or "claude-code"
+        calls.append(p)
+        if p == "claude-code" and len(prompt) > 1000:
+            raise llm.LLMError("claude CLI timed out after 90.0 s")
+        return dict(text="{}", json={}, provider=p, model="m", usage=dict(input=1, output=1), cost_usd=0.0)
+    monkeypatch.setattr(llm, "_complete", fake)
+    monkeypatch.setattr(A, "fingerprint", lambda provider, status_out=None: "fp")
+    r1 = llm.complete("intake", "s", "x" * (llm.UNRESPONSIVE_MAX_CHARS + 1), retries=0)
+    fb = r1["fallback"]
+    assert r1["provider"] == "codex" and fb["code"] == "timeout" and fb["limit"] == 90.0 and fb["cached"] is False
+    assert not A.known_unresponsive("claude-code")
+    calls.clear()
+    assert llm.complete("intake", "s", "small", retries=0)["provider"] == "claude-code" and calls == ["claude-code"]
