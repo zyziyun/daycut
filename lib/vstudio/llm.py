@@ -503,6 +503,24 @@ def _cli_env(strip, opts):
     return dict(os.environ) if opts.get("inherit_env") else strip_env(os.environ, strip)
 
 
+# A desk / script started from inside a Claude Code session inherits that session's variables (session ids,
+# messaging socket + token, child-session flags); a nested `claude -p` then attaches to the host session and
+# hangs ~3 min before a 401. Drop the session-scoped ones, keep the user's provider settings
+# (CLAUDE_CODE_USE_BEDROCK / _USE_VERTEX / _SKIP_*_AUTH, model and token limits, API key helpers).
+CLAUDE_SESSION_ENV_KEEP = ("CLAUDE_CODE_USE_", "CLAUDE_CODE_SKIP_", "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
+                           "CLAUDE_CODE_API_KEY_HELPER", "CLAUDE_CODE_SUBAGENT_MODEL")
+
+
+def strip_claude_session_env(env):
+    out = {}
+    for k, v in env.items():
+        session = k in ("CLAUDECODE", "CLAUDE_PID", "CLAUDE_EFFORT", "CLAUDE_AGENT_SDK_VERSION") or (
+            k.startswith("CLAUDE_CODE_") and not k.startswith(CLAUDE_SESSION_ENV_KEEP))
+        if not session:
+            out[k] = v
+    return out
+
+
 def _exe_names(name, windows):
     """``name`` plus the executable extensions Windows would try (PATHEXT order: .exe before .cmd)."""
     if not windows or os.path.splitext(name)[1]:
@@ -577,7 +595,8 @@ def _claude_code(system, prompt, model, schema, max_tokens, timeout, opts):
     with tempfile.TemporaryDirectory(prefix="vstudio-llm-") as tmp:
         try:
             r = subprocess.run(cmd, input=prompt, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                               cwd=tmp, timeout=timeout, env=_cli_env(CLI_STRIP_ENV, opts))
+                               cwd=tmp, timeout=timeout,
+                               env=strip_claude_session_env(_cli_env(CLI_STRIP_ENV, opts)))
         except subprocess.TimeoutExpired as e:
             raise LLMError(f"claude CLI timed out after {timeout} s") from e
     try:

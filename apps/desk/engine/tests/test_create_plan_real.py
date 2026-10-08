@@ -42,7 +42,8 @@ class PlanRealEngineTest(unittest.TestCase):
         _exe(os.path.join(bindir, "codex"), "echo 'stream error: 503 upstream' >&2; exit 1")
         env = dict(os.environ, PYTHONPATH=os.path.join(ENGINE, "lib"), VSTUDIO_HOME=os.path.join(tmp, "vhome"),
                    PATH=bindir + os.pathsep + "/usr/bin:/bin", VSTUDIO_CLI_EXTRA_DIRS="",
-                   VSTUDIO_CREATE_AI_TIMEOUT=timeout, VSTUDIO_CREATE_AI_DEADLINE=deadline)
+                   VSTUDIO_CREATE_AI_TIMEOUT=timeout, VSTUDIO_CREATE_AI_DEADLINE=deadline,
+                   VSTUDIO_DEFAULT_PERSONA="1")     # the creator's own persona (AI routes) must not leak in
         for k in ("VSTUDIO_CREATE_NO_LLM", "VSTUDIO_CREATE_FAKE", "ANTHROPIC_API_KEY", "OPENAI_API_KEY",
                   "VSTUDIO_LLM_PROVIDER", "VSTUDIO_LLM_SCRIPT_PROVIDER"):
             env.pop(k, None)
