@@ -10,6 +10,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { closeApp } from './closeApp';
 
+const VERSION: string = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '../../package.json'), 'utf8')).version;
+
 let app: ElectronApplication;
 let page: Page;
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vsdesk-set-'));
@@ -43,7 +45,7 @@ test('its own sub-nav with status dots and the version; Back returns where she w
   await expect(page.getByTestId('settings-nav')).toBeVisible();
   await expect(page.getByTestId('nav-home')).toHaveCount(0); // the app sidebar is replaced
   for (const s of ['general', 'ai', 'accounts', 'advanced']) await expect(page.getByTestId(`snav-${s}`)).toBeVisible();
-  await expect(page.getByTestId('settings-version')).toContainText('Reelfold 0.2.0');
+  await expect(page.getByTestId('settings-version')).toContainText(`Reelfold ${VERSION}`);
   await expect(page.getByTestId('snav-advanced')).toHaveAttribute('data-dot', 'warn'); // demo mode
   await expect(page.getByTestId('settings-status')).toContainText('Demo mode');
   await expect(page.getByTestId('settings-privacy')).toContainText('Your video files stay on this Mac; only text is sent to the AI you choose.');
@@ -117,7 +119,7 @@ test('Advanced: downloads per row, diagnostics report has no secrets', async () 
   await page.getByTestId('adv-diag').locator('button').first().click();
   await page.getByTestId('diag-copy').click();
   const report = await app.evaluate(({ clipboard }) => clipboard.readText());
-  expect(report).toContain('Reelfold 0.2.0');
+  expect(report).toContain(`Reelfold ${VERSION}`);
   expect(report).toMatch(/Engine: mock/);
   expect(report).not.toMatch(/\btoken\b|Bearer|\bsk-[A-Za-z0-9]{8}/i);
 });

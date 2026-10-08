@@ -14,6 +14,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { closeApp } from './closeApp';
 
+const VERSION: string = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '../../package.json'), 'utf8')).version;
+
 const ROOT = path.resolve(import.meta.dirname, '../..');
 type Hit = { method: string; url: string; body: { events?: Record<string, unknown>[] } | null };
 const hits: Hit[] = [];
@@ -85,7 +87,7 @@ test('first run: the choice is off by default, persists, and only then is anythi
   expect(first).toMatchObject({ method: 'POST', url: '/api/v1/ping' });
   const ev = first.body!.events![0];
   expect(Object.keys(ev).sort()).toEqual(['arch', 'day', 'ev', 'id', 'locale', 'os', 'v']);
-  expect(ev).toMatchObject({ ev: 'app_open', v: '0.2.0', locale: 'en' });
+  expect(ev).toMatchObject({ ev: 'app_open', v: VERSION, locale: 'en' });
   expect(ev.day).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   const id = ev.id as string;
 
