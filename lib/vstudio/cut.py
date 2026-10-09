@@ -855,6 +855,7 @@ class Assembly:
     fps: float = 30
     input_specs: list = None
     chains: list = field(default_factory=list)      # per piece: graph statements with "{IN}" input placeholder
+    statements: list = field(default_factory=list)  # ``graph`` as its statements (rendered as independent graphs)
 
 
 def _piece(p):
@@ -1057,7 +1058,7 @@ def xfade_assemble(pieces, xfade=0.3, speeds=1.0, mute_pad=True, fps=30, size=No
     return Assembly(graph=";".join(graph), vout="[vout]", aout="[aout]" if audio else None, offsets=offs,
                     durations=durs, xfades=xf, total=total, timemap=tm, pieces=P,
                     inputs=sorted({p["input"] for p in P}), transitions=trans, audio=bool(audio), fps=fps,
-                    input_specs=specs if margin is not None else None, chains=chains)
+                    input_specs=specs if margin is not None else None, chains=chains, statements=graph)
 
 
 def _join_graph(idx, offs, xf, trans, audio, vlab="v", alab="a", vout="[vout]", aout="[aout]"):
@@ -1119,15 +1120,15 @@ def render_assembly(asm, inputs, out, args=None, post_audio=None, post_video=Non
     if chunk and n > chunk:
         return _render_chunked(asm, inputs, out, args, post_audio, post_video, int(chunk), workdir,
                                chunk_args or CHUNK_ARGS)
-    graph, vout, aout = asm.graph, asm.vout, asm.aout
+    graph, vout, aout = list(asm.statements or [asm.graph]), asm.vout, asm.aout
     if post_audio and aout:
-        graph += f";{aout}{post_audio}[apost]"
+        graph.append(f"{aout}{post_audio}[apost]")
         aout = "[apost]"
     if post_video:
-        graph += f";{vout}{post_video}[vpost]"
+        graph.append(f"{vout}{post_video}[vpost]")
         vout = "[vpost]"
     cmd = ["ffmpeg", "-y"] + _input_args(asm, inputs)
-    cmd += media.filter_complex_args(graph, workdir) + ["-map", vout] + (["-map", aout] if aout else [])
+    cmd += media.filter_graphs_args(graph, workdir) + ["-map", vout] + (["-map", aout] if aout else [])
     cmd += list(args) if args is not None else media.delivery_args(audio=bool(aout))
     media.run(cmd + [out])
     return out
@@ -1157,7 +1158,7 @@ def _render_chunked(asm, inputs, out, args, post_audio, post_video, chunk, workd
                     src = inputs[u]
                     ia += (list(src.get("args", [])) + ["-i", src["path"]]) if isinstance(src, dict) else ["-i", src]
             f = os.path.join(tmp, f"chunk{c0 // chunk:03d}.mkv")
-            media.run(["ffmpeg", "-y"] + ia + media.filter_complex_args(";".join(g), tmp) + ["-map", "[vout]"]
+            media.run(["ffmpeg", "-y"] + ia + media.filter_graphs_args(g, tmp) + ["-map", "[vout]"]
                       + (["-map", "[aout]"] if asm.audio else []) + list(chunk_args) + [f])
             files.append(f); firsts.append(idx[0])
         # join the chunks with the boundary dissolves (chunk durations are whole frames)
@@ -1177,7 +1178,7 @@ def _render_chunked(asm, inputs, out, args, post_audio, post_video, chunk, workd
         if post_video:
             g.append(f"{vout}{post_video}[vpost]"); vout = "[vpost]"
         cmd = ["ffmpeg", "-y"] + sum((["-i", f] for f in files), [])
-        cmd += media.filter_complex_args(";".join(g), tmp) + ["-map", vout] + (["-map", aout] if aout else [])
+        cmd += media.filter_graphs_args(g, tmp) + ["-map", vout] + (["-map", aout] if aout else [])
         cmd += list(args) if args is not None else media.delivery_args(audio=bool(aout))
         media.run(cmd + [out])
     finally:

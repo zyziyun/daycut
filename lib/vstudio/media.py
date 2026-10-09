@@ -312,6 +312,36 @@ def filter_complex_args(graph, workdir=None):
     return (["-/filter_complex", path] if ver >= (7, 1) else ["-filter_complex_script", path])
 
 
+def graph_parts(statements):
+    """Group filter statements into independent graphs (no ``[label]`` in common), in order.
+
+    A video chain and an audio chain sharing one -filter_complex can deadlock ffmpeg 9's scheduler
+    (~1 in 10 runs, 0 CPU, never exits); as separate graphs they run on their own threads."""
+    parent = {}
+
+    def root(x):
+        while parent.setdefault(x, x) != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    tags = []
+    for k, st in enumerate(statements):
+        tag = ("stmt", k)
+        for lab in re.findall(r"\[([^\[\]]+)\]", st):
+            parent[root(("lab", lab))] = root(tag)
+        tags.append(tag)
+    parts = {}
+    for st, tag in zip(statements, tags):
+        parts.setdefault(root(tag), []).append(st)
+    return [";".join(p) for p in parts.values()]
+
+
+def filter_graphs_args(statements, workdir=None):
+    """``-filter_complex`` args for a list of filter statements, one option per independent graph."""
+    return [a for g in graph_parts(statements) for a in filter_complex_args(g, workdir)]
+
+
 @lru_cache(maxsize=None)
 def _version():
     out = subprocess.run([ffmpeg_bin(), "-version"], capture_output=True, text=True).stdout

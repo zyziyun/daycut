@@ -34,3 +34,12 @@ def test_healthy_ffmpeg_unaffected(tmp_path, monkeypatch):
     r = media.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=d=1", str(out)], capture=True)
     assert r.returncode == 0 and out.stat().st_size > 0
     assert "-progress" not in r.args
+
+
+def test_graph_parts_splits_independent_chains():
+    st = ["[0:v]trim=0:1[v0]", "[0:a]atrim=0:1[a0]", "[1:v]trim=0:1[v1]", "[1:a]atrim=0:1[a1]",
+          "[v0][v1]concat=n=2:v=1:a=0[vout]", "[a0][a1]concat=n=2:v=0:a=1[aout]", "[aout]loudnorm[apost]"]
+    assert media.graph_parts(st) == [";".join(st[i] for i in (0, 2, 4)), ";".join(st[i] for i in (1, 3, 5, 6))]
+    linked = ["[0:v][1:v]overlay[b]", "[b]null[v]", "[0:a]anull[a]"]
+    assert media.graph_parts(linked) == ["[0:v][1:v]overlay[b];[b]null[v]", "[0:a]anull[a]"]
+    assert media.graph_parts(["[0:v][0:a]concat=n=1:v=1:a=1[v][a]"]) == ["[0:v][0:a]concat=n=1:v=1:a=1[v][a]"]
