@@ -145,7 +145,7 @@ def build_parser():
     p.add_argument("--client", help="client folder or slug (defaults, llm routes)")
     p.add_argument("--provider", help="LLM provider for task intake (default: the route; none = rules only)")
     p.add_argument("--model")
-    p.add_argument("--timeout", type=float, help="seconds per CLI provider attempt (default 90, env "
+    p.add_argument("--timeout", type=float, help="seconds per CLI provider attempt (default: grows with the prompt from 150, env "
                                                  "VSTUDIO_LLM_CLI_TIMEOUT); then the route's fallback")
     p.add_argument("--asr", default="auto", choices=["off", "sample", "auto", "full"],
                    help="auto: full transcript only for videos the request selects content from (<= 45 min)")
@@ -160,7 +160,7 @@ def build_parser():
     p.add_argument("--client")
     p.add_argument("--provider")
     p.add_argument("--model")
-    p.add_argument("--timeout", type=float, help="seconds per CLI provider attempt (default 90)")
+    p.add_argument("--timeout", type=float, help="seconds per CLI provider attempt (default: grows with the prompt from 150)")
     p.add_argument("--out")
     p.add_argument("--in-place", action="store_true", help="overwrite --plan")
     p.add_argument("--json-events", action="store_true", help="progress events on stdout, then {event: done, plan}")
