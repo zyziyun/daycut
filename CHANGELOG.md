@@ -8,6 +8,8 @@ App releases are tagged `v*`; engine-only releases are tagged `engine-v*`.
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-10-08
+
 ### Added
 
 - **Archive projects** (Mac app): 「Remove from list」 is now **Archive** (归档 / Archiver) in a project's menu and in
@@ -27,6 +29,8 @@ App releases are tagged `v*`; engine-only releases are tagged `engine-v*`.
   bitrate target (8 Mbps at 1080p30 for YouTube / 小红书, 6 Mbps for B站) and the delivered size is reported.
 - The planner waits long enough for Claude Code on a typical intake (150 s floor, measured) before using Codex.
 - The promo footage map no longer flags an `about:` label that is on the card itself (scene title / items, pip tag).
+- The promo build no longer crashes when the subset fonts are not installed (system fallback + a warning).
+- An engine-port reload during the first page load is no longer reported as "a problem in the app".
 
 ## [0.2.2] - 2026-10-08
 
