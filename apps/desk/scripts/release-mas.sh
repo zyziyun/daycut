@@ -9,6 +9,8 @@
 #   DRY_RUN=1 npm run release:mas             # preflight only: identities, profile, API key, tools
 #   SKIP_TESTS=1 npm run release:mas          # skip lint / unit tests
 #   BUILD_NUMBER=20261007.2140.0 npm run release:mas   # CFBundleVersion (default: date.time.0 - must grow with every upload)
+#   MAS_VERSION=0.2.1 npm run release:mas     # CFBundleShortVersionString + app version (default: package.json): a new
+#                                             # build for an App Store version that is still open (e.g. after a rejection)
 #
 # Needs (checked first; nothing is built when one is missing):
 #   MAS_APP_IDENTITY        default "Apple Distribution: YUN ZI (ZH47R7RVKB)"
@@ -28,7 +30,8 @@ ASC_APP_ID=6820016757
 APP_IDENTITY="${MAS_APP_IDENTITY:-Apple Distribution: YUN ZI ($TEAM)}"
 INSTALLER_IDENTITY="${MAS_INSTALLER_IDENTITY:-3rd Party Mac Developer Installer: YUN ZI ($TEAM)}"
 PROFILE="${MAS_PROVISIONING_PROFILE:-$PWD/packaging/mac/Reelfold_Mac_App_Store.provisionprofile}"
-VERSION=$(node -p "require('./package.json').version")
+VERSION="${MAS_VERSION:-$(node -p "require('./package.json').version")}"
+[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "[release:mas] bad version $VERSION"; exit 1; }
 BUILD_NUMBER="${BUILD_NUMBER:-$(date +%Y%m%d).$((10#$(date +%H%M))).0}"
 # three parts: electron-builder's CLI parses "20261007.2140" as a number and drops the trailing zero (-> .214)
 [[ "$BUILD_NUMBER" == *.*.* ]] || BUILD_NUMBER="$BUILD_NUMBER.0"
@@ -104,6 +107,7 @@ rm -rf dist/mas-arm64 dist/*.pkg
 CSC_IDENTITY_AUTO_DISCOVERY=true MAS_PROVISIONING_PROFILE="$PROFILE" \
   npx electron-builder --config electron-builder.config.cjs --mac mas --arm64 --publish never \
   -c.buildVersion="$BUILD_NUMBER" \
+  -c.extraMetadata.version="$VERSION" \
   -c.mas.identity="${APP_IDENTITY#*: }" \
   -c.mas.provisioningProfile="$PROFILE"
 
@@ -122,6 +126,8 @@ ENT=$(codesign -d --entitlements - --xml "$APP" 2>/dev/null)
 for k in com.apple.security.app-sandbox com.apple.application-identifier com.apple.developer.team-identifier com.apple.security.application-groups; do
   grep -q "$k" <<<"$ENT" || die "the app's entitlements lack $k"
 done
+# nothing listens on a network port (engine + HTML renderer: Unix sockets); App Review 2.4.5 rejected network.server
+! grep -q com.apple.security.network.server <<<"$ENT" || die "the app has com.apple.security.network.server"
 # every Mach-O inside: sandboxed child (app-sandbox + inherit), else App Store Connect rejects it (ITMS-90296)
 bad=0
 while IFS= read -r -d '' f; do
@@ -133,6 +139,10 @@ while IFS= read -r -d '' f; do
   fi
 done < <(find "$APP/Contents" -type f -perm -u+x -print0)
 [ "$bad" = 0 ] || die "nested executables without app-sandbox + inherit (see above)"
+# what App Review rejected or is known to reject: Tcl/Tk and non-public Accelerate BLAS symbols in any Mach-O (2.5.1),
+# "itms-services" in Python files, entitlements of every executable and architecture slice, quarantine flags
+say "App Store lint"
+python3 scripts/appstore/appstore_lint.py "$APP" || die "App Store lint failed (see above): App Review would reject this build"
 pkgutil --check-signature "$PKG" | grep -E "3rd Party Mac Developer Installer|Mac Installer Distribution" ||
   die "the pkg is not signed with the installer identity"
 plutil -p "$APP/Contents/Info.plist" | grep -E 'CFBundleVersion|CFBundleShortVersionString|ITSAppUsesNonExemptEncryption|LSMinimumSystemVersion'

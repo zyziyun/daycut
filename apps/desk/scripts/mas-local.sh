@@ -30,6 +30,8 @@ fi
 
 say "ad-hoc sign with the MAS entitlements"
 bash scripts/mas-sign.sh "$APP" -
+say "App Store lint (symbols, strings, entitlements, quarantine)"
+python3 scripts/appstore/appstore_lint.py "$APP"
 
 if [ "${SKIP_TESTS:-0}" != "1" ]; then
   say "packaged checks against the sandboxed build"

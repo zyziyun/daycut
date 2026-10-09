@@ -6,7 +6,9 @@ sandboxed **Reelfold Lite** on the Mac App Store. Same code; the edition is chos
 ```bash
 BUILD_EDITION=mas npm run build          # the app itself (src/shared/edition.ts: __REELFOLD_EDITION__)
 npm run mas:local                        # local check: build, package, ad-hoc sign with the MAS entitlements, test
-npm run release:mas                      # store build: sign, .pkg, verify, validate (UPLOAD=1 to upload)
+npm run release:mas                      # store build: sign, .pkg, verify, App Store lint, validate (UPLOAD=1 to upload)
+MAS_VERSION=0.2.1 npm run release:mas    # a new build for an App Store version that is still open (after a rejection)
+npm run appstore:lint -- <Reelfold.app>  # the App Store lint alone (below)
 ```
 
 App Store Connect: app "Reelfold", bundle id `app.reelfold.desk`, SKU `reelfold-mac`, Apple ID 6820016757, team
@@ -22,7 +24,8 @@ ZH47R7RVKB. Store texts, review notes and screenshots for the listing are kept o
 | First-run downloads | speech models, fonts, face models, optional Chromium | the same minus Chromium (data only) | Guideline 2.4.5(iv) / 2.5.2: no downloaded executables |
 | HTML covers / slides | headless Chrome (installed or downloaded) | rendered by the app's own Chromium (offscreen window) | no second browser binary in the sandbox |
 | Usage counts (opt-in) | yes | none ("Data Not Collected") | simpler privacy label |
-| Publishing | built-in browser (assisted fill, she presses Publish), YouTube API | same | allowed; see review notes |
+| Publishing | built-in browser (assisted fill, she presses Publish), YouTube API | built-in browser for every platform, YouTube included | Google's desktop OAuth redirects to a loopback port: a listening socket, which Lite does not have (no `network.server`) |
+| Local services | engine sidecar + (Lite) HTML renderer on Unix domain sockets | same | nothing listens on a network port in either edition (Windows: 127.0.0.1, CPython has no AF_UNIX there) |
 
 Everything else (projects, ASR, cleanup, captions, renders, review, calendar, Create recorder) is the same code. The
 Lite build says what it does once, neutrally (Settings › General, first run, Settings › AI: "This edition uses API keys
@@ -39,8 +42,17 @@ or local models"). It names no other download and links nowhere - no "get the fu
   Watched folders are limited to granted folders.
 - Engine (the Python sidecar, a child process in the app's sandbox) gets `VSTUDIO_LLM_NO_CLI=1` (claude-code / codex
   report `unavailable` and are skipped in fallback chains), `VSTUDIO_NO_CHROME=1`, `DESK_HISTORY_WATCH=` (no default
-  watched folder) and `VSTUDIO_HTML_RENDER_URL` + token (`src/main/htmlRender.ts`: HTML -> PNG in an offscreen
-  window, local files only, no network, 127.0.0.1 + per-launch token).
+  watched folder) and `VSTUDIO_HTML_RENDER_SOCKET` + token (`src/main/htmlRender.ts`: HTML -> PNG in an offscreen
+  window, local files only, no network, a Unix socket in the container + per-launch token).
+- Engine transport (both editions): the sidecar listens on a Unix domain socket in the app's temp folder (in Lite the
+  sandbox container: `~/Library/Containers/app.reelfold.desk/Data/tmp/rf-engine-<random>.sock`, mode 0600,
+  `DESK_SOCKET`); no TCP port, so no `network.server` entitlement. Main talks to it directly
+  (`src/main/engineTransport.ts`); the UI calls `app://desk/api/*` (same origin as the page: no CORS, no engine port in
+  the CSP), which main's `app://` protocol handler forwards to the socket, streaming the event stream. The per-launch
+  bearer token still guards every request. Windows keeps 127.0.0.1 + a random port (no AF_UNIX in CPython there).
+- Runtime (both editions, one runtime): no tkinter / Tcl / Tk, no scipy (the engine is scipy-free; mlx-whisper's one
+  scipy call, `signal.medfilt` for word timestamps, is patched at bundle time by `scripts/runtime/patch_mlx_whisper.py`,
+  tested to give identical word timestamps), and urllib.parse without the "itms-services" scheme.
 - The workflow scripts' `python3` / `ffmpeg` resolve to the bundled ones (`runtime.ts` puts both bin folders first
   on PATH): `/usr/bin/python3` is an xcrun shim that refuses to run in a sandbox.
 - `electron-builder.config.cjs` `mas`: `hardenedRuntime: false`, entitlements in `packaging/mac/`:
@@ -71,9 +83,37 @@ Run with `npm run mas:local` (ad-hoc signature, real MAS entitlements, real App 
 - Known: the MAS Chromium keeps its single-instance socket in `<container>/tmp/S`. After a force-quit / crash the
   next launch can quit at once (`Failed to create .../S/SingletonCookie: File exists`); the launch after that works.
   The packaged tests clear it between launches.
-- `tests/packaged/mas.spec.ts` (run by `npm run mas:local`): entitlements of every executable, Info.plist / privacy
-  manifest / no Squirrel / no node-pty, the sandboxed engine, Lite AI rows and routes, no Chromium group, updater and
-  usage off, Lite copy in Settings and first run (no upsell text, no link out); `DESK_TEST_SAMPLE=1` adds the sample run.
+- `tests/packaged/mas.spec.ts` (run by `npm run mas:local`): entitlements of every executable (no `network.server`),
+  Info.plist / privacy manifest / no Squirrel / no node-pty, the sandboxed engine on its Unix socket (no listening TCP
+  socket in the app or any child: `lsof`), Lite AI rows and routes, no Chromium group, updater and usage off, Lite
+  copy in Settings and first run (no upsell text, no link out); `DESK_TEST_SAMPLE=1` adds the sample run. The app is
+  driven over `--remote-debugging-pipe` (`tests/packaged/cdpPipe.ts`): without `network.server` the sandbox refuses
+  a debugging port.
+
+## App Store lint
+
+`scripts/appstore/appstore_lint.py` checks a build for what App Review rejected (Reelfold 0.2.1: Guideline 2.4.5
+`network.server` without matching functionality; Guideline 2.5.1 Tcl_* symbols from CPython's `_tkinter` and
+unprefixed BLAS symbols scipy's SuperLU imported from Accelerate) or is known to reject:
+
+| Check | Fails on |
+|---|---|
+| symbols | any Mach-O whose undefined symbols (`nm -m -u`) hit `scripts/appstore/denylist.txt` (Tcl/Tk, Apple's BLAS list, Electron's private QuartzCore classes; every entry with its source), or a BLAS/LAPACK-shaped Accelerate import that is neither `$NEWLAPACK` nor a documented legacy entry point (`cblas_*`, `name_`); `_tkinter*.so` / libtcl / libtk files |
+| strings | "itms-services" in a bundled `.py` / `.pyc` |
+| entitlements | signed app: every executable and architecture slice sandboxed; the app only allow-listed keys, never `network.server`; nested executables exactly app-sandbox + inherit. `--unsigned`: the same rules on `packaging/mac/entitlements.mas*.plist` |
+| quarantine | any `com.apple.quarantine` attribute (ITMS-91109) |
+
+Where it runs: `bundle.mjs` (runtime symbols + strings, every mac runtime build), `npm run mas:local` (ad-hoc build),
+`scripts/release-mas.sh` (signed store build, before the pkg is validated; it also greps the app's entitlements for
+`network.server`), and CI: `.github/workflows/appstore-lint.yml` builds the runtime + an unsigned `--mac mas` app on
+every PR touching the app, engine or requirements and runs it with `--unsigned`; its manual "validate" run signs the
+pkg and runs `altool --validate-app` when the MAS certificate / profile / API key secrets exist (optional). Unit tests:
+`npm run test:scripts` (a real Mach-O built in the test imports denylisted symbols; signed ad hoc with and without
+`network.server`).
+
+Kept on purpose (reported as notes, not failures): OpenCV's `cv2` imports the documented legacy LAPACK / cblas
+interface (`_dgesv_`, `_cblas_sgemm`, ...), public since macOS 10 and not named in the 0.2.1 rejection; the MAS Electron
+imports `fileport_makeport` / `fileport_makefd` (`sys/fileport.h` is in the public SDK; not named either).
 
 Not checkable without her certificates: TestFlight / store signature, the provisioning profile, `altool` validation,
 and the open panel itself (a real click; the bookmark path is unit-tested and the grant mechanism was tested above).
@@ -84,8 +124,19 @@ and the open panel itself (a real click; the bookmark path is unit-tested and th
   sessions and fills the upload form; she presses Publish. Say so in the review notes; no credentials pass through
   the app. Navigation is limited to each adapter's `allowedHosts`, but the platforms show user content - answer the
   age-rating "Unrestricted Web Access" question **Yes** unless the browser is locked further (see age rating notes).
-- **Local server**: engine and HTML renderer listen on 127.0.0.1 with per-launch tokens (`network.server`). Explain
-  in the notes ("internal processing service, not reachable from other devices").
+- **Local services** (resolved after the 0.2.1 rejection, 2.4.5): the engine and HTML renderer listen on Unix domain
+  sockets inside the container, not on a network port; the app has no `network.server` entitlement. Review notes,
+  TECHNICAL NOTES:
+
+  ```
+  - Reelfold runs its video engine as a helper process inside the app's sandbox. The app talks to it over a
+    Unix domain socket in the app's own container (per-launch token); it does not listen on any network port and
+    has no network.server entitlement.
+  - Outgoing connections only (network.client): AI providers the user configures with their own API key, a local
+    model server on the same Mac if the user sets one up (e.g. Ollama), first-run downloads of speech-recognition
+    models and fonts (data only, no code), and the built-in publishing browser (platform websites the user signs
+    in to).
+  ```
 - **AI**: needs her own API key or a local model; give the reviewer a path that works without one (the sample uses
   rules when no AI is connected).
 - **Size**: ~3.4 GB installed (Python + MLX + ffmpeg). Allowed; mention first-run downloads (~0.5 GB, data only).
@@ -97,7 +148,8 @@ and the open panel itself (a real click; the bookmark path is unit-tested and th
 - Helper tools: sign with exactly app-sandbox + inherit -
   https://developer.apple.com/documentation/xcode/embedding-a-helper-tool-in-a-sandboxed-app ;
   `inherit` and dynamic (PowerBox) rights - https://developer.apple.com/forums/thread/111125
-- `network.server` for listening sockets -
+- `network.server` for listening sockets (Lite has none: Unix sockets in the container need no entitlement; a TCP
+  listen without it fails with EPERM, checked 2026-10-08) -
   https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.security.network.server
 - Microphone key in the sandbox: `device.microphone` (hardened runtime: `device.audio-input`) -
   https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.security.device.microphone

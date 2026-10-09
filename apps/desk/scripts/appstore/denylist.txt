@@ -1,0 +1,73 @@
+# Symbols App Review rejects as non-public or deprecated API (Guideline 2.5.1), checked by appstore_lint.py against
+# the undefined symbols (`nm -m -u`) of every Mach-O file in the app. One entry per line:
+#   <symbol or glob>  [from=<library>]   # source
+# A glob ends in * (prefix match). from=<library> limits the entry to symbols bound to that library (two-level
+# namespace, as nm prints "(from Accelerate)"); without it the symbol is refused whatever it binds to.
+# Besides this list, appstore_lint.py refuses every BLAS / LAPACK-shaped symbol imported from Accelerate that is not a
+# documented entry point (rule in appstore_lint.py: accelerate_kind) - the explicit list below is what App Review
+# named, so the rule and the list check each other.
+#
+# A longer, community-maintained list of Accelerate symbols App Review flagged:
+#   https://github.com/ipsupport-llc/llmtray (scripts/appstore/deprecated_accelerate_symbols.txt, PR #260)
+# (referenced, not copied).
+
+# ---- Tcl / Tk: CPython's _tkinter extension (lib-dynload/_tkinter*.so). Reelfold 0.2.1 rejection, 2026-10.
+_Tcl_*                                  # App Review 2.5.1 rejection of Reelfold 0.2.1 (all Tcl_* symbols)
+_TclBN_*                                # Tcl's bignum stubs, same extension
+_Tk_*                                   # Tk C API, same extension
+_NSWindowDidOrderOnScreenNotification   # private AppKit notification Tk references
+
+# ---- Accelerate: unprefixed BLAS entry points imported by scipy's SuperLU / cython_lapack extensions.
+# Source: App Review 2.5.1 rejection of Reelfold 0.2.1 (2026-10), the list Apple sent.
+_caxpy             from=Accelerate   # Apple rejection list
+_ccopy             from=Accelerate   # Apple rejection list
+_cgemm             from=Accelerate   # Apple rejection list
+_cgemv             from=Accelerate   # Apple rejection list
+_cswap             from=Accelerate   # Apple rejection list
+_ctrsm             from=Accelerate   # Apple rejection list
+_ctrsv             from=Accelerate   # Apple rejection list
+_dasum             from=Accelerate   # Apple rejection list
+_daxpy             from=Accelerate   # Apple rejection list
+_dcabs1_           from=Accelerate   # Apple rejection list
+_dcopy             from=Accelerate   # Apple rejection list
+_dgemm             from=Accelerate   # Apple rejection list
+_dgemv             from=Accelerate   # Apple rejection list
+_dnrm2             from=Accelerate   # Apple rejection list
+_dswap             from=Accelerate   # Apple rejection list
+_dtrsm             from=Accelerate   # Apple rejection list
+_dtrsv             from=Accelerate   # Apple rejection list
+_dzasum            from=Accelerate   # Apple rejection list
+_dznrm2            from=Accelerate   # Apple rejection list
+_icamax            from=Accelerate   # Apple rejection list
+_idamax            from=Accelerate   # Apple rejection list
+_isamax            from=Accelerate   # Apple rejection list
+_izamax            from=Accelerate   # Apple rejection list
+_lsame_            from=Accelerate   # Apple rejection list
+_sasum             from=Accelerate   # Apple rejection list
+_saxpy             from=Accelerate   # Apple rejection list
+_scasum            from=Accelerate   # Apple rejection list
+_scnrm2            from=Accelerate   # Apple rejection list
+_scopy             from=Accelerate   # Apple rejection list
+_sgemm             from=Accelerate   # Apple rejection list
+_sgemv             from=Accelerate   # Apple rejection list
+_snrm2             from=Accelerate   # Apple rejection list
+_sswap             from=Accelerate   # Apple rejection list
+_strsm             from=Accelerate   # Apple rejection list
+_strsv             from=Accelerate   # Apple rejection list
+_xerbla_array__    from=Accelerate   # Apple rejection list
+_zaxpy             from=Accelerate   # Apple rejection list
+_zcopy             from=Accelerate   # Apple rejection list
+_zgemm             from=Accelerate   # Apple rejection list
+_zgemv             from=Accelerate   # Apple rejection list
+_zswap             from=Accelerate   # Apple rejection list
+_ztrsm             from=Accelerate   # Apple rejection list
+_ztrsv             from=Accelerate   # Apple rejection list
+
+# ---- Electron: private QuartzCore classes the non-MAS Electron uses for remote layers and the MAS build leaves out
+# (guard: a non-MAS Electron packaged by mistake). Source: Electron's MAS patches (patches/chromium/mas_*.patch in
+# electron/electron) and the Electron MAS submission guide.
+# Not listed: _fileport_makefd / _fileport_makeport. Older Electron MAS patches avoided them, but sys/fileport.h is in
+# the public macOS SDK now; the MAS Electron 44 imports both, and App Review's 2.5.1 scan of Reelfold 0.2.1 (which
+# listed every Tcl and BLAS symbol) did not name them.
+_OBJC_CLASS_$_CAContext                 # QuartzCore private class (Electron mas patch: no remote layers)
+_OBJC_CLASS_$_CALayerHost               # QuartzCore private class (same patch)

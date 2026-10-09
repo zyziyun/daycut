@@ -56,6 +56,7 @@ jobs:
       - run: npm run lint
       - run: npm run test:unit
       - run: npm run test:engine
+      - run: npm run test:scripts # App Store lint + runtime patch (scripts/appstore, scripts/runtime)
       - name: Electron e2e (hidden windows, mock + real engine)
         run: npm run test:e2e
       - uses: actions/upload-artifact@v7

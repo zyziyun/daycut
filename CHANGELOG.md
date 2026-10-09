@@ -8,6 +8,26 @@ App releases are tagged `v*`; engine-only releases are tagged `engine-v*`.
 
 ## [Unreleased]
 
+### Added
+
+- **App Store lint** (`apps/desk/scripts/appstore/appstore_lint.py`, CI `appstore-lint.yml`): fails a build whose
+  code references Tcl/Tk or non-public Accelerate BLAS symbols, whose Python carries "itms-services", whose
+  entitlements are not sandboxed / include `network.server`, or that has quarantine flags.
+
+### Changed
+
+- The Mac app's engine (and the App Store build's HTML renderer) listen on a Unix domain socket in the app's own
+  folder instead of a `127.0.0.1` port; the UI reaches the engine through `app://desk/api`. Windows keeps
+  `127.0.0.1`. The App Store build has no `network.server` entitlement and leaves out the YouTube API sign-in (its
+  OAuth redirect needs a local port); YouTube posts go through the built-in browser there.
+- The engine no longer needs scipy (loudness filters, body-slim smoothing and WAV writing use numpy / numba /
+  soundfile); the app's runtime ships without scipy and tkinter (App Review 2.5.1).
+
+### Fixed
+
+- With no usable AI (no key yet, or a local model server without the routed model) a talking-head clip no longer
+  fails at its post copy: the title and body are drafted from the spoken lines, as without an AI route.
+
 ## [0.2.3] - 2026-10-08
 
 ### Added
