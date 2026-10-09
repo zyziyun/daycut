@@ -336,6 +336,16 @@ def test_stale_stages_and_caption_overrides_helpers():
     assert ED.patch_post("T\n\nB1\n\n#x #persona\n", old, new) == "T2\n\nB2\n\n#y #persona\n"
 
 
+def test_patch_post_replaces_copy_the_export_drafted():
+    old, new = dict(title="", body="", tags=["x"]), dict(title="New", body="Body.", tags=["x"])
+    hook = "so, uh, a hook"
+    assert ED.patch_post("Old title\n\nso, uh, a hook\n\n#x\n", old, new, hook=hook) == "New\n\nBody.\n\n#x\n"
+    # X / Instagram: no title line, the hook leads the text
+    assert ED.patch_post("so, uh, a hook\n\n#x\n", old, new, hook=hook) == "New\n\nBody.\n\n#x\n"
+    # without a hook the old behaviour holds (body inserted under the title)
+    assert ED.patch_post("Old title\n\n#x\n", old, new) == "New\n\nBody.\n\n#x\n"
+
+
 def test_lfsplit_master_stash_roundtrip(tmp_path):
     from vstudio.batch import lfsplit as L
     vdir = tmp_path / "work" / "vertical" / "1080x1920"

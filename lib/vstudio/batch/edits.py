@@ -317,9 +317,18 @@ def check_copy(title, body, tags, platforms):
     return ok, list(dict.fromkeys(warns))
 
 
-def patch_post(text, old, new, platform=None):
-    """Rewrite a published post.md for a copy edit: title line, body block and the hashtag line."""
+def patch_post(text, old, new, platform=None, hook=None):
+    """Rewrite a published post.md for a copy edit: title line, body block and the hashtag line.
+
+    ``hook``: the spoken line the export put where the body goes. Copy the export drafted on its own (no title /
+    body in the params yet) is replaced, not stacked under the edit: the post's first line is then its title, and
+    the hook stands in for the body."""
     lines = (text or "").split("\n")
+    if not (old.get("body") or "").strip() and (new.get("body") or "").strip() and hook and hook.strip() in (text or ""):
+        old = dict(old, body=hook.strip())
+    if not old.get("title") and new.get("title") and lines and lines[0].strip() and \
+            not lines[0].lstrip().startswith("#"):
+        old = dict(old, title=lines[0].strip())
     if old.get("title") != new.get("title"):
         if lines and old.get("title") and lines[0].strip() == old["title"].strip():
             lines[0] = new["title"]
@@ -344,7 +353,7 @@ def patch_post(text, old, new, platform=None):
         elif newtags:
             ls += ["", " ".join(newtags)]
         out = "\n".join(ls) + "\n"
-    return out
+    return re.sub(r"\n{3,}", "\n\n", out)                 # a replaced block leaves no gap (as publish.post_body)
 
 
 def _post_body_of(recipe_name, p):
@@ -360,6 +369,8 @@ def _rewrite_posts(rows, recipe_name, old_p, new_p):
     new = effective_copy(new_p, rows)
     if recipe_name == "longform-split":
         old["body"], new["body"] = _post_body_of(recipe_name, old_p), _post_body_of(recipe_name, new_p)
+    pj = _rows_out(rows, "compose").get("post")
+    hook = (read_json(pj, {}) or {}).get("hook") if pj and os.path.exists(pj) else None
     done = []
     for e in ex:
         pp = e.get("post")
@@ -367,7 +378,7 @@ def _rewrite_posts(rows, recipe_name, old_p, new_p):
             continue
         with open(pp, encoding="utf-8") as f:
             txt = f.read()
-        nt = patch_post(txt, old, new, e.get("platform"))
+        nt = patch_post(txt, old, new, e.get("platform"), hook=hook if isinstance(hook, str) else None)
         if nt != txt:
             with open(pp, "w", encoding="utf-8") as f:       # in place: package hard links see it too
                 f.write(nt)
