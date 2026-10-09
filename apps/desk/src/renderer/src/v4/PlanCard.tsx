@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Check, RotateCcw, Send, Sparkles, Square } from 'lucide-react';
 import type { IntakeJob, IntakePlan } from '../../../shared/v04';
-import { fmtClock, fmtMinutes, fmtMoney, getLang, t } from '../i18n';
+import { fmtClock, fmtMinutes, fmtMoney, getLang, t, type Lang } from '../i18n';
 import { nameAsSample, planSentence } from '../lib/firstRun';
 import { planProgressView, type PlanProgressView } from '../lib/planProgress';
 import { useEngine } from '../lib/engine';
@@ -39,6 +39,17 @@ export function planFacts(plan: IntakePlan) {
 }
 
 const HTML_LANG = { en: 'en', zh: 'zh-CN', fr: 'fr' } as const;
+const htmlLang = (code: string) => (code === 'zh' ? 'zh-CN' : code);
+
+/** The plan's paragraph: the engine's, tagged with the language it is written in (``summary_lang``), or - for a
+ * plan made without AI whose template is not in her UI language - the UI's own sentence (``own``, no tag). */
+export function summaryView(plan: IntakePlan, ui: Lang): { own: boolean; lang?: string } {
+  const noAi = Boolean(plan.planner?.fallback);
+  const uiCode = ui === 'zh-CN' ? 'zh' : ui;
+  const own = noAi && (plan.summary_lang ? plan.summary_lang !== uiCode : ui !== 'zh-CN');
+  if (own) return { own };
+  return { own, lang: plan.summary_lang ? htmlLang(plan.summary_lang) : 'zh-CN' }; // older plans: the zh template
+}
 
 /** The "things for you to decide" lines: the planner's questions, then its risks. A coded line is worded by the UI
  * (no lang of its own); the planner's free text carries the language it was written in (``plan.ui_lang``). */
@@ -187,6 +198,7 @@ export function PlanCard({ job, jobId, onRevise, onRetry, onReset, onStarted, sa
   const rows = plan.projects.flatMap((p) => (p.items?.rows ?? []).map((r) => ({ p, r }))).slice(0, 8);
   const video = plan.materials.find((m) => m.kind === 'video');
   const questions = decideLines(plan);
+  const sum = summaryView(plan, getLang());
   const start = async () => {
     if (!client) return;
     setStarting(true);
@@ -224,9 +236,8 @@ export function PlanCard({ job, jobId, onRevise, onRetry, onReset, onStarted, sa
         <span className="sp" />
         {running && <span className="muted">{t('plan.revising')}</span>}
       </div>
-      {/* without AI the engine's summary is a Chinese template: say the plan in her UI language instead */}
-      <p className="lead" lang={noAi && getLang() !== 'zh-CN' ? undefined : 'zh-CN'} data-testid="plan-summary">
-        {noAi && getLang() !== 'zh-CN' ? planSentence(plan, platformName) : plan.summary_zh}
+      <p className="lead" lang={sum.lang} data-testid="plan-summary">
+        {sum.own ? planSentence(plan, platformName) : plan.summary_zh}
       </p>
       {noAi && !plan.planner?.failure && (
         <p className="muted small" style={{ marginTop: -4 }} data-testid="plan-no-ai">

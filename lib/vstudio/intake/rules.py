@@ -457,6 +457,9 @@ def _pick_source(analysis, prefs):
 def rule_projects(intent, analysis, ctx):
     """-> (projects, questions, risks): draft projects in the plan's project shape (before validation)."""
     projects, questions, risks = [], [], []
+    L = ctx.get("ui_lang") or "zh"                      # the language the plan card is read in (en | zh | fr)
+    mask_opts = [MSG.cs(f"intake.option.mask.{k}", L) for k in ("all-but-me", "none", "pick")]
+    narr_opts = [MSG.cs(f"intake.option.narration.{k}", L) for k in ("voice", "music")]
     rmap = roles(analysis)
     used = set()
     chosen = choose_recipes(intent, analysis)
@@ -469,7 +472,7 @@ def rule_projects(intent, analysis, ctx):
             if rid == "lesson-clips":                  # a screen share + a camera of the same lesson: one project
                 src, cam = _screen_and_camera(analysis, used) or (src, None)
             if not src:
-                risks.append(MSG.cs("intake.risk.no-source", recipe=rid))
+                risks.append(MSG.cs("intake.risk.no-source", L, recipe=rid))
                 continue
             p["materials"] = [src["id"]]
             p["inputs"] = {"source": [src["path"]]}
@@ -483,8 +486,8 @@ def rule_projects(intent, analysis, ctx):
                 if intent.get("mask") is True:
                     p["params"]["mask"] = "sticker"
                 elif intent.get("mask") is None:
-                    questions.append(dict(project=len(projects), text=MSG.cs("intake.question.mask-faces"),
-                                          options=["除我以外全部遮", "都不遮（已获同意）", "我来指定"], default="除我以外全部遮"))
+                    questions.append(dict(project=len(projects), text=MSG.cs("intake.question.mask-faces", L),
+                                          options=mask_opts, default=mask_opts[0]))
             if cnt:
                 p["params"]["count"] = cnt
             p["items"] = dict(method="per-file", count=1)
@@ -496,7 +499,7 @@ def rule_projects(intent, analysis, ctx):
             src = _pick_source(analysis, prefs) or _pick_source(analysis, ("talking-head", "finished-edit", "lecture",
                                                                              "screen-recording", "call"))
             if not src:
-                risks.append(MSG.cs("intake.risk.no-source", recipe=rid))
+                risks.append(MSG.cs("intake.risk.no-source", L, recipe=rid))
                 continue
             p["materials"] = [src["id"]]
             p["inputs"] = {"source": src["path"]}
@@ -504,15 +507,15 @@ def rule_projects(intent, analysis, ctx):
             if rid == "longform-to-short":
                 p["params"]["layout_mode"] = "split" if src.get("screen_share") else "reframe"
                 if src.get("burned_captions"):
-                    risks.append(MSG.cs("intake.risk.burned-longform", file=src["rel"]))
+                    risks.append(MSG.cs("intake.risk.burned-longform", L, file=src["rel"]))
             if rid == "call-clips":
                 if intent.get("mask") is False:
                     p["params"]["no_mask"] = True
                 if intent.get("trio"):
                     p["params"]["renderer"] = "render_trio.py"
                 if intent.get("mask") is not False:
-                    questions.append(dict(project=len(projects), text=MSG.cs("intake.question.mask-faces"),
-                                          options=["除我以外全部遮", "都不遮（已获同意）", "我来指定"], default="除我以外全部遮"))
+                    questions.append(dict(project=len(projects), text=MSG.cs("intake.question.mask-faces", L),
+                                          options=mask_opts, default=mask_opts[0]))
             p["why"] = f"{src['rel']}（{_fmt_dur(src.get('duration'))}，{_role_zh(rmap[src['id']])}）→ {'选段' if not intent['extract'] else '按你说的内容截取'}"
             p["items"] = dict(method="focus" if intent["extract"] and intent.get("focus") else "planner", count=cnt,
                               focus=_focus_text(intent))
@@ -527,7 +530,7 @@ def rule_projects(intent, analysis, ctx):
             if not fs:
                 fs = [f for f in _by_kind(analysis, "video") if f["id"] not in used]
             if not fs:
-                risks.append(MSG.cs("intake.risk.no-video", recipe=rid))
+                risks.append(MSG.cs("intake.risk.no-video", L, recipe=rid))
                 continue
             if rid == "longform-course":
                 fs = fs[:8]
@@ -588,7 +591,7 @@ def rule_projects(intent, analysis, ctx):
                 dict(id=f"ep{k + 1:02d}", inputs={"premise": f"第 {k + 1} 集" + (f"（剧本：{base}）" if base else "")},
                      params=dict(title=f"第{k + 1}集")) for k in range(n)])
             p["why"] = f"{'按剧本 ' + base if base else '按你的设定'}做 {n} 集 AI 短剧，生成前先锁剧本和预算"
-            risks.append(MSG.cs("intake.risk.aigc-credits"))
+            risks.append(MSG.cs("intake.risk.aigc-credits", L))
         elif rid == "launch-kit":
             notes = [f for f in analysis["files"] if rmap[f["id"]] in ("doc", "notes") and f["id"] not in used][:1]
             shots = [f for f in analysis["files"] if f["id"] not in used and f not in notes and
@@ -607,10 +610,10 @@ def rule_projects(intent, analysis, ctx):
             clips = [f for f in _by_kind(analysis, "video") if f["id"] not in used and rmap[f["id"]] in ("footage", "talking-head")]
             music = [f for f in _by_kind(analysis, "audio") if rmap[f["id"]] == "music"]
             if rid == "vlog" and not clips:
-                risks.append(MSG.cs("intake.risk.no-video", recipe="vlog"))
+                risks.append(MSG.cs("intake.risk.no-video", L, recipe="vlog"))
                 continue
             if rid == "photo-story" and not (imgs or clips):
-                risks.append(MSG.cs("intake.risk.no-photos", recipe="photo-story"))
+                risks.append(MSG.cs("intake.risk.no-photos", L, recipe="photo-story"))
                 continue
             used |= {f["id"] for f in imgs + clips + music[:1]}
             p["materials"] = [f["id"] for f in imgs + clips + music[:1]]
@@ -633,8 +636,8 @@ def rule_projects(intent, analysis, ctx):
             p["why"] = f"{len(imgs)} 张照片 + {len(clips)} 段视频" + ("（带配乐）" if music else "") + \
                 ("做成一条文艺片" if rid == "photo-story" else "剪成一条 vlog")
             if rid == "photo-story" and p["params"].get("mode") != "music" and not music:
-                questions.append(dict(project=len(projects), text=MSG.cs("intake.question.narration"),
-                                      options=["旁白", "纯音乐"], default="旁白"))
+                questions.append(dict(project=len(projects), text=MSG.cs("intake.question.narration", L),
+                                      options=narr_opts, default=narr_opts[0]))
         else:
             continue
         projects.append(p)

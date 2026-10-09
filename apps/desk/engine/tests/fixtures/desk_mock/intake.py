@@ -132,7 +132,7 @@ def rule_plan(prompt, inputs, probe=None, plan_id=None, defaults=None, ui_lang=N
                 planner=dict(provider="rules", model=None, route="desk", fallback=True, cost_usd=0, seconds=0.1),
                 analysis=dict(inputs=list(inputs), totals=dict(files=len(mats))), materials=mats, projects=[proj],
                 series=None, questions=questions, risks=[], warnings=[], estimate=est, run=dict(pilot=1, auto=[]),
-                summary_zh=summary, **({"ui_lang": ui_lang} if ui_lang else {}))
+                summary_zh=summary, summary_lang="zh", **({"ui_lang": ui_lang} if ui_lang else {}))
 
 
 def rule_revise(plan, prompt):

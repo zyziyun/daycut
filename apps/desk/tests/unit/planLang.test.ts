@@ -55,3 +55,28 @@ describe('decideLines', () => {
     expect(decideLines(plan()).every((l) => l.lang === undefined)).toBe(true);
   });
 });
+
+describe('summaryView: the summary is tagged with its own language', () => {
+  const plan = (summary_lang: string | undefined, fallback: boolean) => ({ summary_lang, planner: { fallback } }) as unknown as IntakePlan;
+
+  it('an AI summary: tagged with summary_lang, whatever the UI', async () => {
+    const { summaryView } = await import('../../src/renderer/src/v4/PlanCard');
+    expect(summaryView(plan('en', false), 'zh-CN')).toEqual({ own: false, lang: 'en' });
+    expect(summaryView(plan('zh', false), 'en')).toEqual({ own: false, lang: 'zh-CN' });
+    expect(summaryView(plan('fr', false), 'fr')).toEqual({ own: false, lang: 'fr' });
+  });
+
+  it('no AI: the template when it is in the UI language, else the UI words the plan itself', async () => {
+    const { summaryView } = await import('../../src/renderer/src/v4/PlanCard');
+    expect(summaryView(plan('en', true), 'en')).toEqual({ own: false, lang: 'en' });
+    expect(summaryView(plan('en', true), 'zh-CN')).toEqual({ own: true });
+    expect(summaryView(plan('zh', true), 'fr')).toEqual({ own: true });
+  });
+
+  it('an older plan (no summary_lang) keeps the old behaviour', async () => {
+    const { summaryView } = await import('../../src/renderer/src/v4/PlanCard');
+    expect(summaryView(plan(undefined, false), 'en')).toEqual({ own: false, lang: 'zh-CN' });
+    expect(summaryView(plan(undefined, true), 'en')).toEqual({ own: true });
+    expect(summaryView(plan(undefined, true), 'zh-CN')).toEqual({ own: false, lang: 'zh-CN' });
+  });
+});

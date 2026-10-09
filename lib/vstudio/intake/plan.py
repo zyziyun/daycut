@@ -146,7 +146,8 @@ Return ONE JSON object:
  "questions": [{{"project": <index>, "text": "<reply_language>", "options": ["<reply_language>"],
                 "default": "<one of options>"}}],
  "risks": ["<reply_language>"],
- "summary_zh": "<paragraph in the request's language>"}}"""
+ "summary_zh": "<paragraph in the request's language>",
+ "summary_lang": "<two-letter code of the language summary_zh is written in: en, zh, fr ...>"}}"""
 
 
 # the languages a plan card's texts can be written in (the desk's UI languages): code -> the name the model reads
@@ -528,11 +529,13 @@ def account_inputs(plan, analysis):
             d["files"] = len([f for f in analysis["files"] if f["path"].startswith(pre)])
         unused.append(d)
     plan["unused"] = unused
-    prefix = MSG.CATALOG["intake.risk.unused-inputs"][1].split("{")[0]
-    risks = [r for r in plan.get("risks") or [] if (getattr(r, "info", None) or {}).get("code") !=
-             "intake.risk.unused-inputs" and not str(r).startswith(prefix)]
+    code = "intake.risk.unused-inputs"
+    prefixes = tuple(t.split("{")[0] for t in (*MSG.CATALOG[code], MSG.FR[code]))     # a reloaded plan: no codes
+    risks = [r for r in plan.get("risks") or [] if (getattr(r, "info", None) or {}).get("code") != code
+             and not str(r).startswith(prefixes)]
     if unused and projects:
-        risks.append(MSG.cs("intake.risk.unused-inputs", files="、".join(u["name"] for u in unused[:8]) +
+        lang = plan.get("ui_lang") or "zh"
+        risks.append(MSG.cs(code, lang, files=MSG.join([u["name"] for u in unused[:8]], lang) +
                             (f" …（+{len(unused) - 8}）" if len(unused) > 8 else ""), n=len(unused)))
     plan["risks"] = risks
     return plan
@@ -763,6 +766,17 @@ def with_look(summary, plan, lang="zh"):
             out += (f" {label} look: {', '.join(parts)}." if lang == "en"
                                   else f"{label}样式：{'、'.join(parts)}。")
     return out
+
+
+def _set_summary(plan, summary, js, info):
+    """``summary_zh`` + ``summary_lang`` (the language it is written in, for the card's lang tag): the model's
+    paragraph (+ the look line in en / zh) in the language the model says it wrote, else the template's."""
+    if summary and not info.get("fallback"):
+        sl = str((js or {}).get("summary_lang") or "").lower().split("-")[0]
+        sl = sl if re.fullmatch(r"[a-z]{2}", sl) else _lang(plan)
+        plan["summary_zh"], plan["summary_lang"] = (with_look(summary, plan, sl) if sl in ("en", "zh") else summary), sl
+    else:
+        plan["summary_zh"], plan["summary_lang"] = template_summary(plan), _lang(plan)
 
 
 def _lang(plan):
@@ -1029,7 +1043,7 @@ def make_plan(prompt, inputs=None, client=None, provider=None, model=None, analy
         if need:
             analysis = _upgrade_transcripts(analysis, need, language, echo, on_event)
     transcripts = _transcripts(analysis) if intent.get("extract") else {}
-    ui_lang = reply_lang(prompt, ui_lang)
+    ui_lang = ctx["ui_lang"] = reply_lang(prompt, ui_lang)
     js, info = _call_model(prompt, analysis, ctx, transcripts, provider, model, call=call, timeout=timeout,
                            on_event=on_event, ui_lang=ui_lang)
     I.emit(on_event, stage="write")
@@ -1063,7 +1077,8 @@ def make_plan(prompt, inputs=None, client=None, provider=None, model=None, analy
     for p in projects:
         resolve_focus(p, analysis, intent, warn)
     if intent.get("unsupported_platforms"):
-        risks.append(MSG.cs("intake.risk.unsupported-platform", platforms="、".join(intent["unsupported_platforms"])))
+        risks.append(MSG.cs("intake.risk.unsupported-platform", ui_lang,
+                            platforms=MSG.join(intent["unsupported_platforms"], ui_lang)))
     auto_ids = list(auto or [])
     for p in projects:
         enrich(p, analysis, ctx, auto_ids)
@@ -1076,8 +1091,7 @@ def make_plan(prompt, inputs=None, client=None, provider=None, model=None, analy
         warnings=warn, run=dict(pilot=1, auto=auto_ids), ui_lang=ui_lang)
     account_inputs(plan, analysis)
     plan["estimate"] = EST.total(projects)
-    plan["summary_zh"] = with_look(summary, plan, _lang(plan)) if (summary and not info.get("fallback")) \
-        else template_summary(plan)
+    _set_summary(plan, summary, js, info)
     errs = validate(plan)
     if errs:
         plan["warnings"] = warn + [MSG.Coded(f"schema: {e}", MSG.msg("intake.warning.schema", error=e)) for e in errs]
@@ -1158,6 +1172,7 @@ def revise(plan, instruction, provider=None, model=None, call=None, client=None,
                                                    for x in plan["materials"])]
         analysis = _upgrade_transcripts(analysis, fs, echo=echo, on_event=on_event)
     ctx = context(client or plan.get("client"))
+    ctx["ui_lang"] = plan["ui_lang"]
     intent = R.parse_prompt(plan["prompt"] + "\n" + instruction)
     follow = R.parse_prompt(instruction)
     intent_now = dict(intent, platforms=follow["platforms"] or intent["platforms"])
@@ -1194,7 +1209,7 @@ def revise(plan, instruction, provider=None, model=None, call=None, client=None,
                 projects.append(p)
         info["fallback"] = True
         if not notes:
-            warn.append(MSG.cs("intake.warning.revise-not-understood", instruction=instruction))
+            warn.append(MSG.cs("intake.warning.revise-not-understood", plan["ui_lang"], instruction=instruction))
     else:
         summary = js.get("summary_zh") if isinstance(js.get("summary_zh"), str) else None
         plan["questions"] = _norm_questions([q for q in js.get("questions") or [] if isinstance(q, dict) and
@@ -1213,8 +1228,7 @@ def revise(plan, instruction, provider=None, model=None, call=None, client=None,
     plan["warnings"] = warn
     account_inputs(plan, analysis)
     plan["estimate"] = EST.total(projects)
-    plan["summary_zh"] = with_look(summary, plan, _lang(plan)) if (summary and not info.get("fallback")) \
-        else template_summary(plan)
+    _set_summary(plan, summary, js, info)
     return _messages(plan)
 
 

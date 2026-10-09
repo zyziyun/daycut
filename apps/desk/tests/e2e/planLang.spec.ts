@@ -1,6 +1,7 @@
 // The plan card's "things for you to decide" follow the UI language (window hidden, mock engine, isolated profile):
 // an English request on an English desk used to get its questions in Chinese. For en / 简体中文 / fr the composer
-// sends the UI language with the plan request and the box reads in it, each line tagged with that language.
+// sends the UI language with the plan request and the box reads in it, each line tagged with that language; the
+// summary is tagged with the language it is written in.
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -30,10 +31,12 @@ test.afterAll(async () => {
   await closeApp(app);
 });
 
+// the test planner plans without AI and writes a Chinese template summary (summary_lang zh): only a Chinese UI shows
+// it (tagged zh-CN); English and French say the plan in their own words, with no foreign tag
 const CASES = [
-  { lang: 'en', html: 'en', heading: 'One thing for you to decide', question: /^Clip 4 is only \d+ s/ },
-  { lang: 'zh-CN', html: 'zh-CN', heading: '需要你定的 1 件事', question: /^第 4 条只有 \d+ 秒/ },
-  { lang: 'fr', html: 'fr', heading: 'Une chose à décider', question: /^Le clip 4 ne dure que \d+ s/ },
+  { lang: 'en', html: 'en', heading: 'One thing for you to decide', question: /^Clip 4 is only \d+ s/, summaryLang: null, summary: /4 clips/ },
+  { lang: 'zh-CN', html: 'zh-CN', heading: '需要你定的 1 件事', question: /^第 4 条只有 \d+ 秒/, summaryLang: 'zh-CN', summary: /4 条/ },
+  { lang: 'fr', html: 'fr', heading: 'Une chose à décider', question: /^Le clip 4 ne dure que \d+ s/, summaryLang: null, summary: /4 extraits/ },
 ] as const;
 
 for (const c of CASES) {
@@ -52,5 +55,9 @@ for (const c of CASES) {
     const line = decide.locator('div.muted').first();
     await expect(line).toHaveText(c.question);
     await expect(line).toHaveAttribute('lang', c.html);
+    const summary = page.getByTestId('plan-summary');
+    await expect(summary).toContainText(c.summary);
+    if (c.summaryLang) await expect(summary).toHaveAttribute('lang', c.summaryLang);
+    else expect(await summary.getAttribute('lang')).toBeNull();
   });
 }

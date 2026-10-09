@@ -368,7 +368,10 @@ export interface IntakePlan {
   risks: (string | EngineMsg)[];
   warnings: string[];
   estimate: { machine_min?: number; wall_min?: number; api_usd?: number };
+  /** the plan's paragraph (despite the name: in ``summary_lang``) */
   summary_zh: string;
+  /** the language summary_zh is written in (two-letter code; older plans: none) */
+  summary_lang?: string;
   /** the language the planner wrote the questions, risks and reasons in (the UI's when the desk asked; older plans: none) */
   ui_lang?: 'en' | 'zh' | 'fr';
   revisions?: { prompt: string; at: string; changes?: string[] }[];

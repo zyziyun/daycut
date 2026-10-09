@@ -35,7 +35,7 @@ with open({log!r}, "a", encoding="utf-8") as f:
 q = {questions!r}[doc["reply_language"]]
 plan = dict(projects=[dict(recipe="talkinghead", name="talk", materials=["f1"], inputs=dict(video=["f1"]),
                            items=dict(method="per-file"))],
-            questions=[dict(project=0, text=q, options=["A", "B"], default="A")], risks=[], summary_zh="ok")
+            questions=[dict(project=0, text=q, options=["A", "B"], default="A")], risks=[], summary_zh="Four clips.", summary_lang="en")
 print(json.dumps(dict(type="result", is_error=False, result="", structured_output=plan)))
 '''
 
@@ -87,6 +87,7 @@ class PlanLanguageRealEngineTest(unittest.TestCase):
                 self.assertEqual(self.asked()[-1], name)
                 self.assertEqual([q["text"] for q in plan["questions"]], [QUESTION[name]])
                 self.assertEqual(plan["ui_lang"], IN.UI_LANGS[lang])
+                self.assertEqual(plan["summary_lang"], "en")          # the summary: in the request's language
 
     def test_revise_keeps_the_language_and_follows_a_switch(self):
         pid = self.it.start(REQUEST, [self.video], lang="fr")["id"]

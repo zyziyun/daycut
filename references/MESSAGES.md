@@ -48,6 +48,11 @@ The desk maps `code` to its own copy (en / zh-CN / fr below; `{name}` = a param)
 | `intake.risk.unused-inputs` | Not used in any project: {files}. Say which project they belong to if you want them in | 这些素材没有用在任何项目里：{files}。要用的话告诉我放进哪个项目 | Utilisé dans aucun projet : {files}. Dites dans quel projet les mettre si vous les voulez |
 | `intake.question.mask-faces` | Whose faces should be hidden? (default: every guest but you) | 要遮哪几位的脸？（默认：除你以外的所有嘉宾） | Quels visages masquer ? (par défaut : tous les invités sauf vous) |
 | `intake.question.narration` | Narration (AI voice reads your copy) or music only? | 文艺片要旁白（AI 配音读你的文案）还是纯音乐卡点？ | Narration (voix IA qui lit votre texte) ou musique seule ? |
+| `intake.option.mask.all-but-me` | Hide everyone but me | 除我以外全部遮 | Masquer tout le monde sauf moi |
+| `intake.option.mask.none` | Hide no one (they agreed) | 都不遮（已获同意） | Ne masquer personne (accord donné) |
+| `intake.option.mask.pick` | I'll pick | 我来指定 | Je choisis |
+| `intake.option.narration.voice` | Narration | 旁白 | Narration |
+| `intake.option.narration.music` | Music only | 纯音乐 | Musique seule |
 | `intake.question` | {text} | {text} | {text} |
 | `intake.risk` | {text} | {text} | {text} |
 | `intake.warning` | {text} | {text} | {text} |

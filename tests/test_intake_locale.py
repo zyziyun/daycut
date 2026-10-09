@@ -66,3 +66,71 @@ def test_cli_ui_lang_flag():
     assert ap.parse_args(["plan", "--prompt", "x"]).ui_lang is None
     with pytest.raises(SystemExit):
         ap.parse_args(["plan", "--prompt", "x", "--ui-lang", "de"])
+
+
+# --------------------------------------------------------------------------- no AI: the rule planner's texts
+FALLBACK = {
+    "en": ("Whose faces should be hidden?", ["Hide everyone but me", "Hide no one (they agreed)", "I'll pick"],
+           ["Narration", "Music only"]),
+    "zh": ("要遮哪几位的脸？", ["除我以外全部遮", "都不遮（已获同意）", "我来指定"], ["旁白", "纯音乐"]),
+    "fr": ("Quels visages masquer ?", ["Masquer tout le monde sauf moi", "Ne masquer personne (accord donné)",
+                                       "Je choisis"], ["Narration", "Musique seule"]),
+}
+
+
+@pytest.mark.parametrize("ui", ["en", "zh", "fr"])
+def test_rule_planner_questions_and_options_follow_the_ui(tmp_path, ui):
+    q_start, mask, narration = FALLBACK[ui]
+    p = PL.make_plan("Cut this podcast into clips", analysis=build("podcast", tmp_path / "a"), asr="off",
+                     provider="none", ui_lang=ui)
+    assert p["planner"]["fallback"] is True
+    q = p["questions"][0]
+    assert q["text"].startswith(q_start) and q["options"] == mask and q["default"] == mask[0]
+    assert q["message"]["code"] == "intake.question.mask-faces"          # still coded for the desk
+    p = PL.make_plan("Make a photo story from my trip", analysis=build("photos", tmp_path / "b"), asr="off",
+                     provider="none", ui_lang=ui)
+    assert p["questions"][0]["options"] == narration and p["questions"][0]["default"] == narration[0]
+
+
+@pytest.mark.parametrize("ui,want", [("en", "no export preset yet"), ("zh", "还没有导出预设"),
+                                     ("fr", "pas encore de préréglage")])
+def test_rule_risks_follow_the_ui(tmp_path, ui, want):
+    p = PL.make_plan("这段口播剪干净，发快手", analysis=build("talk", tmp_path), asr="off", provider="none", ui_lang=ui)
+    risk = next(r for r in p["risks_info"] if r["code"] == "intake.risk.unsupported-platform")
+    text = p["risks"][p["risks_info"].index(risk)]
+    assert want in text
+
+
+def test_revise_not_understood_in_the_plan_language(tmp_path, monkeypatch):
+    a = build("talk", tmp_path)
+    plan = PL.make_plan(PROMPT, analysis=a, asr="off", provider="none", ui_lang="fr")
+    monkeypatch.setattr(I, "analyze", lambda *a_, **k: a)
+    p2 = PL.revise(plan, "qwerty zzz", provider="none")
+    assert any(w.startswith("Modification non comprise : qwerty zzz") for w in p2["warnings"]), p2["warnings"]
+
+
+# --------------------------------------------------------------------------- the summary's language tag
+def test_summary_lang_from_the_model_or_the_template(tmp_path):
+    def call(lang):
+        def c(system, body):
+            js = _model({})(system, body)
+            js["json"].update(summary_zh="Quatre clips.", **({"summary_lang": lang} if lang else {}))
+            return js
+        return c
+    p = PL.make_plan("Coupe cette vidéo en clips", analysis=build("talk", tmp_path), asr="off", call=call("fr"))
+    assert p["summary_lang"] == "fr" and p["summary_zh"] == "Quatre clips."     # no English look line on French
+    p = PL.make_plan(PROMPT, analysis=build("talk", tmp_path), asr="off", call=call("EN-us"))
+    assert p["summary_lang"] == "en" and "look:" in p["summary_zh"]
+    p = PL.make_plan(PROMPT, analysis=build("talk", tmp_path), asr="off", call=call("??"))
+    assert p["summary_lang"] == "en"                                           # unreadable: the request's
+    p = PL.make_plan("这段口播剪干净", analysis=build("talk", tmp_path), asr="off", provider="none", ui_lang="en")
+    assert p["planner"]["fallback"] and p["summary_lang"] == "zh"             # the template follows the request
+    assert '"summary_lang"' in PL.SYSTEM and not PL.validate(p)
+
+
+def test_messages_in_french_and_lists():
+    from vstudio import messages as M
+    s = M.cs("intake.risk.no-video", "fr", recipe="vlog")
+    assert s == "vlog : aucune vidéo trouvée" and s.info["code"] == "intake.risk.no-video"
+    assert M.cs("intake.question", "fr", text="libre") == "libre"
+    assert M.join(["a", "b"], "zh") == "a、b" and M.join(["a", "b"], "fr") == "a, b"
