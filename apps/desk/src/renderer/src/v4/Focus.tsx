@@ -37,7 +37,7 @@ export function Focus({ id }: { id: string }) {
   const { data: hist, reload } = useHistory();
   const inbox = useInbox();
   // the badge says "Needs you" for a checkpoint, not a clip review: list those here instead of "Nothing to review"
-  const pending = pendingFor(inbox.items, id);
+  const pending = pendingFor(inbox.all, id);
   const ui = useUi();
   const item = hist?.items.find((i) => i.id === id);
   const [items, setItems] = useState<ReviewItem[] | null>(null);
@@ -61,7 +61,7 @@ export function Focus({ id }: { id: string }) {
           await client.openHistory(item.dir); // a found batch: put it on the desk list first
           r = await client.review(id);
         }
-        const flagged = new Set(inbox.items.find((x) => x.project.id === id && x.kind === 'review')?.jobs ?? []);
+        const flagged = new Set(inbox.all.find((x) => x.project.id === id && x.kind === 'review')?.jobs ?? []);
         // 'waiting': a project's clip parked at its publish check (exported, waiting for her yes)
         const todo = flagged.size ? r.filter((x) => flagged.has(x.id)) : r.filter((x) => x.qc === 'red' || (['done', 'pilot-review', 'waiting'].includes(x.state) && !x.review));
         todo.sort((a, b) => Number(b.qc === 'red') - Number(a.qc === 'red'));
