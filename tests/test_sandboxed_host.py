@@ -184,3 +184,28 @@ def test_glossary_without_usable_ai_falls_back_to_rules(monkeypatch, tmp_path):
     assert seen[-1] == "none" and out["terms"] == 0
     assert any("AI unavailable (key-missing)" in m for m in logs)
     assert json.load(open(out["glossary"]))["degraded"]["codes"] == ["key-missing"]
+
+
+def test_post_copy_without_usable_ai_falls_back_to_the_spoken_lines(monkeypatch, tmp_path):
+    """The sample in the App Store build with no API key (the reviewer's case), or a local Ollama without the routed
+    model: the clip still finishes, with the transcript draft she edits at the publish checkpoint."""
+    from types import SimpleNamespace
+    from vstudio.batch import stages
+
+    def no_ai(task, system, prompt, provider=None, **kw):
+        raise llm.AllProvidersFailed([dict(provider="anthropic", code="key-missing", error="needs ANTHROPIC_API_KEY"),
+                                      dict(provider="ollama", code="failed", error="model 'qwen3:8b' not found")])
+    monkeypatch.setattr(llm, "complete", no_ai)
+    monkeypatch.setattr(llm, "route", lambda task, provider=None, *a, **k: llm.Route(provider or "anthropic", None, {}, "t"))
+    cues = tmp_path / "cues.json"
+    cues.write_text(json.dumps({"cues": [
+        {"t": 0.0, "te": 3.0, "text": "You record once and cut it into many short clips."},
+        {"t": 3.5, "te": 6.0, "text": "Then you post them on every platform."}]}), encoding="utf-8")
+    logs = []
+    ctx = SimpleNamespace(spec={}, params={"platforms": ["tiktok:vertical"]}, job={"platforms": ["tiktok:vertical"]},
+                          inputs={"compose": {"cues": str(cues)}}, path=lambda n: str(tmp_path / n), log=logs.append)
+    out = stages.run_copy(ctx)
+    assert out["source"] == "transcript" and out["title"] and out["body"]
+    assert out["degraded"]["codes"] == ["failed", "key-missing"]
+    assert any("copy: AI unavailable (failed, key-missing)" in m for m in logs)
+    assert json.load(open(out["copy"]))["source"] == "transcript"

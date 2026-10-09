@@ -348,8 +348,21 @@ def run_copy(ctx):
     pr = ctx.inputs.get("proofread") or {}
     cues_path = pr.get("cues") or c.get("cues")
     call = import_ref((ctx.spec.get("copy") or {})["call"]) if (ctx.spec.get("copy") or {}).get("call") else None
-    d = clipcopy.draft_post(cue_sentences(cues_path), p.get("platforms") or _plats(ctx.job), title=title, body=body,
-                            complete=call)
+    sents, plats = cue_sentences(cues_path), p.get("platforms") or _plats(ctx.job)
+    from vstudio import llm as LLM
+    degraded = None
+    try:
+        d = clipcopy.draft_post(sents, plats, title=title, body=body, complete=call)
+    except LLM.LLMError as e:
+        # the copy is a draft she edits at the publish checkpoint: no usable AI (no key yet - the App Store
+        # reviewer's case -, a local model server without the routed model) must not fail the clip. The spoken-line
+        # draft instead (source "transcript", its note says so), and the reason in the log.
+        codes = sorted({a.get("code") or "failed" for a in LLM.attempts_of(e)})
+        ctx.log(f"copy: AI unavailable ({', '.join(codes)}) - drafted from the spoken lines: {str(e)[:200]}")
+        d = clipcopy.draft_post(sents, plats, title=title, body=body, provider="none")
+        degraded = dict(codes=codes, error=str(e)[:300])
+    if degraded:
+        d["degraded"] = degraded
     if from_notes:
         d["title"], d["title_note"] = clipcopy.fit_title_every(d["title"], p.get("platforms") or _plats(ctx.job))
         d["drafted"] = ["title"] + [k for k in d["drafted"] if k != "title"]
