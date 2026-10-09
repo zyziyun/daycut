@@ -17,14 +17,19 @@ Checks (each failure names the file and the reason; exit 1 if any):
                 exactly app-sandbox + inherit, the login helper app-sandbox (+ the identifiers signing adds).
                 --unsigned: the same rules on packaging/mac/entitlements.mas*.plist.                    [2.4.5]
   quarantine    no com.apple.quarantine extended attribute anywhere (upload error ITMS-91109).
+  asar          Contents/Resources/app.asar holds only the built app (out/, package.json, node_modules/): not the
+                build tree (Reelfold 0.2.1 shipped build/ - a second runtime and the download cache, with Mach-O
+                files no check above can see inside the archive - plus src/, tests/, scripts/, packaging/).
 Needs the Xcode command line tools (nm, codesign, lipo) for the Mach-O checks; the pure parts are unit-tested on
 any OS (test_appstore_lint.py).
 """
 import argparse
 import fnmatch
+import json
 import os
 import plistlib
 import re
+import struct
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -254,6 +259,28 @@ def check_quarantine(root, log):
     return [(h, ["com.apple.quarantine extended attribute (xattr -cr before signing; ITMS-91109)"]) for h in hits]
 
 
+# ------------------------------------------------------------------------------------------------------------- asar
+ASAR_TOP = {"out", "package.json", "node_modules"}
+
+
+def asar_top_level(path):
+    """Top-level entries of an Electron app.asar (header: 4 uint32 sizes, then the JSON file tree)."""
+    with open(path, "rb") as f:
+        _, _, _, n = struct.unpack("<4I", f.read(16))
+        return sorted(json.loads(f.read(n))["files"])
+
+
+def check_asar(root, log):
+    p = os.path.join(root, "Contents", "Resources", "app.asar")
+    if not os.path.isfile(p):
+        log("[asar] skipped (no Contents/Resources/app.asar)")
+        return []
+    extra = [e for e in asar_top_level(p) if e not in ASAR_TOP]
+    log(f"[asar] {os.path.getsize(p) / 1e6:.0f} MB")
+    return [(p, [f"carries {', '.join(extra)} (only {', '.join(sorted(ASAR_TOP))} belong in it: electron-builder "
+                 f"`files`)"])] if extra else []
+
+
 # ---------------------------------------------------------------------------------------------------------------- main
 def rel(p, root):
     try:
@@ -263,7 +290,7 @@ def rel(p, root):
 
 
 def lint(root, unsigned=False, mac_dir=os.path.join(DESK, "packaging", "mac"), checks=None, log=print):
-    checks = checks or {"symbols", "strings", "entitlements", "quarantine"}
+    checks = checks or {"symbols", "strings", "entitlements", "quarantine", "asar"}
     deny = load_denylist()
     problems = []
     if "symbols" in checks:
@@ -277,6 +304,8 @@ def lint(root, unsigned=False, mac_dir=os.path.join(DESK, "packaging", "mac"), c
             problems += check_entitlement_files(mac_dir, log)
     if "quarantine" in checks:
         problems += check_quarantine(root, log)
+    if "asar" in checks:
+        problems += check_asar(root, log)
     return problems
 
 
@@ -284,7 +313,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="App Store lint for the Mac App Store (Lite) build")
     ap.add_argument("path", help="Reelfold.app or a runtime folder")
     ap.add_argument("--unsigned", action="store_true", help="check packaging/mac/entitlements.mas*.plist, not signatures")
-    ap.add_argument("--only", default="", help="comma list of checks: symbols,strings,entitlements,quarantine")
+    ap.add_argument("--only", default="", help="comma list of checks: symbols,strings,entitlements,quarantine,asar")
     ap.add_argument("--entitlements-dir", default=os.path.join(DESK, "packaging", "mac"))
     a = ap.parse_args(argv)
     if not os.path.exists(a.path):
@@ -298,7 +327,7 @@ def main(argv=None):
     for p, msgs in problems:
         shown = "; ".join(msgs[:6]) + (f"; ... ({len(msgs)} in all)" if len(msgs) > 6 else "")
         print(f"  {rel(p, a.path)}: {shown}")
-    print(f"[appstore-lint] {len(problems)} problem(s) in {a.path} - App Review would reject this build")
+    print(f"[appstore-lint] {len(problems)} problem(s) in {a.path}: fix them before uploading to App Store Connect")
     return 1
 
 

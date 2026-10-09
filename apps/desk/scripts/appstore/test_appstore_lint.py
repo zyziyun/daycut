@@ -1,7 +1,9 @@
 """Tests for the App Store lint (run: npm run test:appstore, or python3 -m unittest discover -s scripts/appstore)."""
+import json
 import os
 import plistlib
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -110,6 +112,30 @@ class StringsTest(unittest.TestCase):
                 f.write("x = 1\n")
             out = L.check_strings(d, log=lambda m: None)
             self.assertEqual([os.path.basename(p) for p, _ in out], ["parse.py"])
+        finally:
+            shutil.rmtree(d)
+
+
+class AsarTest(unittest.TestCase):
+    @staticmethod
+    def write_asar(path, top):
+        tree = json.dumps({"files": {k: {"files": {}} if "." not in k else {"size": 1, "offset": "0"} for k in top}}).encode()
+        pad = (4 - len(tree) % 4) % 4
+        with open(path, "wb") as f:
+            f.write(struct.pack("<4I", 4, len(tree) + pad + 8, len(tree) + pad + 4, len(tree)) + tree + b"\0" * pad + b"x")
+
+    def test_only_the_built_app_in_app_asar(self):
+        d = tempfile.mkdtemp()
+        try:
+            res = os.path.join(d, "R.app", "Contents", "Resources")
+            os.makedirs(res)
+            self.write_asar(os.path.join(res, "app.asar"), ["out", "package.json", "node_modules"])
+            self.assertEqual(L.check_asar(os.path.join(d, "R.app"), log=lambda m: None), [])
+            self.write_asar(os.path.join(res, "app.asar"), ["out", "package.json", "build", "src", "tests"])
+            out = L.check_asar(os.path.join(d, "R.app"), log=lambda m: None)
+            self.assertEqual(len(out), 1)
+            self.assertIn("build, src, tests", out[0][1][0])
+            self.assertEqual(L.asar_top_level(os.path.join(res, "app.asar")), ["build", "out", "package.json", "src", "tests"])
         finally:
             shutil.rmtree(d)
 

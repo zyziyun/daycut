@@ -102,6 +102,7 @@ unprefixed BLAS symbols scipy's SuperLU imported from Accelerate) or is known to
 | strings | "itms-services" in a bundled `.py` / `.pyc` |
 | entitlements | signed app: every executable and architecture slice sandboxed; the app only allow-listed keys, never `network.server`; nested executables exactly app-sandbox + inherit. `--unsigned`: the same rules on `packaging/mac/entitlements.mas*.plist` |
 | quarantine | any `com.apple.quarantine` attribute (ITMS-91109) |
+| asar | `app.asar` holding more than `out/`, `package.json`, `node_modules/` (0.2.1's carried `build/` - a second runtime and the download cache, Mach-O files the other checks cannot see inside the archive - plus `src/`, `tests/`, `scripts/`, `packaging/`: the `mas.files` list had only an exclusion, which electron-builder reads as "everything") |
 
 Where it runs: `bundle.mjs` (runtime symbols + strings, every mac runtime build), `npm run mas:local` (ad-hoc build),
 `scripts/release-mas.sh` (signed store build, before the pkg is validated; it also greps the app's entitlements for

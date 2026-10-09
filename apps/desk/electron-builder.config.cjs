@@ -127,7 +127,9 @@ module.exports = {
     entitlementsInherit: 'packaging/mac/entitlements.mas.inherit.plist',
     entitlementsLoginHelper: 'packaging/mac/entitlements.mas.loginhelper.plist',
     ...(fs.existsSync(MAS_PROFILE) ? { provisioningProfile: MAS_PROFILE } : {}),
-    files: ['!**/node_modules/node-pty/**'],
+    // the root `files` again: a platform-level list replaces it, and a list of only exclusions means "everything"
+    // (0.2.1's app.asar carried build/, src/ and tests/)
+    files: ['out/**', 'package.json', '!**/*.map', '!**/node_modules/node-pty/**'],
     extendInfo: {
       ElectronTeamID: 'ZH47R7RVKB',
       // HTTPS / TLS only (standard protocols, no proprietary encryption): exempt, no export compliance documents
