@@ -14,6 +14,7 @@ interface Toast {
   text: string;
   undo?: () => unknown;
   error?: boolean;
+  action?: { label: string; href: string };
 }
 
 export interface MenuItem {
@@ -24,8 +25,9 @@ export interface MenuItem {
   testId?: string;
 }
 
-interface Ui {
-  toast(text: string, opts?: { undo?: () => unknown; error?: boolean; ms?: number }): void;
+export interface Ui {
+  /** ``action``: one link on the toast ("Open" the project just sent) */
+  toast(text: string, opts?: { undo?: () => unknown; error?: boolean; ms?: number; action?: { label: string; href: string } }): void;
   menu(e: { clientX: number; clientY: number; preventDefault?: () => void }, items: MenuItem[]): void;
   openPalette(): void;
   openSheet(): void;
@@ -72,7 +74,7 @@ export function UiProvider({
 
   const toast = useCallback<Ui['toast']>((text, opts = {}) => {
     const id = ++toastSeq;
-    setToasts((x) => [...x.slice(-2), { id, text, undo: opts.undo, error: opts.error }]);
+    setToasts((x) => [...x.slice(-2), { id, text, undo: opts.undo, error: opts.error, action: opts.action }]);
     setTimeout(() => setToasts((x) => x.filter((y) => y.id !== id)), opts.ms ?? (opts.undo ? 8000 : 4000));
   }, []);
   const openMenu = useCallback<Ui['menu']>((e, items) => {
@@ -262,6 +264,11 @@ export function UiProvider({
         {toasts.map((x) => (
           <div key={x.id} className={`toast ${x.error ? 'err' : ''}`} data-testid="toast">
             <span>{x.text}</span>
+            {x.action && (
+              <a className="btn sm" href={x.action.href} data-testid="toast-action" onClick={() => setToasts((y) => y.filter((z) => z.id !== x.id))}>
+                {x.action.label}
+              </a>
+            )}
             {x.undo && (
               <button
                 className="btn sm"

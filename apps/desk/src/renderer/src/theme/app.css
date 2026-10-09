@@ -424,3 +424,9 @@ textarea.inp { height: auto; padding: 8px 12px; resize: vertical; line-height: 1
 .tnum { font-variant-numeric: tabular-nums; }
 .card.inb.failed { border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
 .card.inb.failed .what { color: var(--danger); }
+
+/* a clip cover that opens the clip page (publish cards, drawer, published list) */
+.clip-open { display: block; color: inherit; text-decoration: none; border-radius: var(--radius); }
+.clip-open:hover .th, .clip-open:focus-visible .th { outline: 2px solid var(--accent); outline-offset: 1px; }
+a.pb-cliplink { color: inherit; text-decoration: none; }
+a.pb-cliplink:hover { text-decoration: underline; }

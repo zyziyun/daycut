@@ -11,9 +11,10 @@ import { useEngine, useLoad } from '../lib/engine';
 import { archivedLine, archiveFlow, noMatchText, restoreFlow, shownProjects, type ProjectsFilter } from '../lib/archive';
 import { useHistory } from '../lib/history';
 import { useInbox } from '../lib/inbox';
-import { go, href } from '../lib/router';
+import { go, href, routeQuery } from '../lib/router';
 import { bucket } from '../lib/status';
 import { ProjectTile } from './Home';
+import { ControlRoom } from './Hub';
 import { Empty, More, Seg, SkGrid } from './kit';
 import { useUi } from './ui';
 
@@ -21,7 +22,41 @@ type F = ProjectsFilter;
 const OWN = '\u0000own';
 const TYPES = ['talkinghead', 'slices', 'explainer', 'photo-story', 'vlog', 'podcast', 'aigc', 'script', 'batch', 'promo', 'slides', 'other'];
 
+type View = 'live' | 'grid';
+
+/** All projects: the control room (live list + the selected project; default) or the grid (filters, archive, bulk). */
 export function Projects() {
+  const [view, setView] = useState<View>(() => (routeQuery().sel ? 'live' : (sessionStorage.getItem('v4.pview') as View) || 'live'));
+  useEffect(() => sessionStorage.setItem('v4.pview', view), [view]);
+  useEffect(() => {
+    const on = () => routeQuery().sel && setView('live');
+    window.addEventListener('hashchange', on);
+    return () => window.removeEventListener('hashchange', on);
+  }, []);
+  const viewSeg = <Seg value={view} onChange={setView} testId="projects-view" options={[{ v: 'live', label: t('hub.view.live') }, { v: 'grid', label: t('hub.view.grid') }]} />;
+  if (view === 'live') {
+    return (
+      <div className="hub-page" data-testid="projects">
+        <div className="ph hub-ph">
+          <div>
+            <h1>{t('projects.title')}</h1>
+            <p>{t('hub.subtitle')}</p>
+          </div>
+          <span className="sp" />
+          {viewSeg}
+          <button className="btn primary" onClick={() => go({ name: 'home' })} data-tip="⌘N">
+            <Plus className="ico" />
+            {t('projects.new')}
+          </button>
+        </div>
+        <ControlRoom />
+      </div>
+    );
+  }
+  return <ProjectsGrid viewSeg={viewSeg} />;
+}
+
+function ProjectsGrid({ viewSeg }: { viewSeg: React.ReactNode }) {
   const { data, reload, archived: archDoc, wantArchived } = useHistory();
   const { client } = useEngine();
   const ui = useUi();
@@ -119,6 +154,7 @@ export function Projects() {
             <p>{t('projects.subtitle')}</p>
           </div>
           <span className="sp" />
+          {viewSeg}
           <button className="btn primary" onClick={() => go({ name: 'home' })} data-tip="⌘N">
             <Plus className="ico" />
             {t('projects.new')}

@@ -109,7 +109,9 @@ function PlanStage({ view, stage }: { view: PlanProgressView; stage: string }) {
   );
 }
 
-export function PlanCard({ job, jobId, onRevise, onRetry, onReset, onStarted, sample = false }: { job: IntakeJob | null; jobId: string; onRevise: (s: string) => void; onRetry: () => void; onReset: () => void; onStarted: () => void; sample?: boolean }) {
+/** ``onApplied``: where she goes once the plan is made into projects (the control room keeps her there and selects
+ * the new project); without it the first project's page opens. */
+export function PlanCard({ job, jobId, onRevise, onRetry, onReset, onStarted, onApplied, sample = false }: { job: IntakeJob | null; jobId: string; onRevise: (s: string) => void; onRetry: () => void; onReset: () => void; onStarted: () => void; onApplied?: (dirs: string[]) => void; sample?: boolean }) {
   const { client } = useEngine();
   const { reload } = useHistory();
   const ui = useUi();
@@ -210,7 +212,8 @@ export function PlanCard({ job, jobId, onRevise, onRetry, onReset, onStarted, sa
       onStarted();
       reload();
       const first = r.projects[0]?.dir;
-      if (first) {
+      if (onApplied) onApplied(r.projects.map((x) => x.dir));
+      else if (first) {
         // the new project shows up in the history list a moment later
         for (let i = 0; i < 10; i++) {
           const h = await client.history();

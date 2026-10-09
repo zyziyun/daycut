@@ -7,7 +7,8 @@ import { useAgencyMode } from '../lib/prefs';
 import { go } from '../lib/router';
 import { platformName } from '../v4/Home';
 import { PlatformIcon } from '../v4/PlatformIcon';
-import { Thumb } from '../v4/kit';
+import { ClipThumbLink, PostLink } from '../v4/kit';
+import { clipHref } from '../lib/nav';
 import { Pfs } from './Board';
 import { base, groupPosts, iso, type PostGroup } from './model';
 import type { usePublishData } from './usePublish';
@@ -149,12 +150,20 @@ export function DataView({ posts, actions }: { posts: CalendarPost[]; actions: A
                 <tr key={g.key} data-testid="pb-data-row">
                   <td>
                     <div className="row" style={{ gap: 14 }}>
-                      <Thumb src={g.cover} ratio="3/4" />
+                      <ClipThumbLink href={clipHref(g.item, g.clip)} src={g.cover} label={t('pub.openClip')} testId="pb-data-open-clip" />
                       <div className="col" style={{ gap: 2, minWidth: 0 }}>
-                        <b className="clamp1" lang="zh-CN">
-                          {g.title}
-                        </b>
+                        <a className="clamp1 pb-cliplink" href={clipHref(g.item, g.clip)} lang="zh-CN" data-testid="pb-data-title">
+                          <b>{g.title}</b>
+                        </a>
                         <span className="muted">{g.project}</span>
+                        <span className="row" style={{ gap: 4 }}>
+                          {g.on
+                            .filter((p) => p.url)
+                            .slice(0, 3)
+                            .map((p) => (
+                              <PostLink key={p.id} url={p.url} />
+                            ))}
+                        </span>
                       </div>
                     </div>
                   </td>

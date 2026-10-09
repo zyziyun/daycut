@@ -8,6 +8,7 @@ import type { Clip, ClipsDoc, InboxItem, OutputDoc } from '../../../shared/v04';
 import { basePlatform, orderPlatforms, platformInfo } from '../../../shared/platforms';
 import { fmtDate, fmtMinutes, t } from '../i18n';
 import { useEngine } from '../lib/engine';
+import type { EngineClient } from '../../../shared/engineClient';
 import { archivedLine, restoreFlow } from '../lib/archive';
 import { useHistory } from '../lib/history';
 import { useInbox } from '../lib/inbox';
@@ -24,7 +25,7 @@ import { FailureActions, failureReason } from './Failure';
 import { PlayerOverlay } from './Player';
 import { ShareButton, ShareDialog } from './ShareDialog';
 import { emsg, errText } from './msg';
-import { useUi } from './ui';
+import { useUi, type Ui } from './ui';
 
 export function nextSlots(n: number, taken: string[], hour = '19:00', from = new Date()): string[] {
   const out: string[] = [];
@@ -48,6 +49,27 @@ export function postPlatforms(clip: Pick<Clip, 'files'>, defaults: string[] = []
   const known = (ids: (string | undefined)[]) => ids.map((x) => basePlatform(x ?? '')).filter((x) => !!platformInfo(x));
   const own = known(clip.files.map((f) => f.platform));
   return orderPlatforms(own.length ? own : known(defaults));
+}
+
+/** Put clips of project ``id`` on the next free evenings, one per day, on the platforms they were made for (the
+ * project page's and the control room's "Schedule" button); an undo toast takes them off again. */
+export async function scheduleClips(client: EngineClient, ui: Pick<Ui, 'toast'>, id: string, list: Clip[]): Promise<number> {
+  if (!list.length) return 0;
+  const cal = await client.calendar();
+  const mine = new Set(cal.posts.filter((p) => p.item === id).map((p) => p.clip));
+  const todo = list.filter((c) => !mine.has(c.id));
+  const slots = nextSlots(todo.length, cal.posts.map((p) => p.at));
+  const defaults = (await window.desk.getSettings()).defaultPlatforms ?? [];
+  const rows = todo.flatMap((c, i) => postPlatforms(c, defaults).map((platform) => ({ item: id, clip: c.id, at: slots[i], platform })));
+  if (todo.length && !rows.length) {
+    ui.toast(t('project.noPlatforms'), { error: true });
+    return 0;
+  }
+  const made = rows.length ? (await client.scheduleMany(rows)).ids : [];
+  ui.toast(made.length ? t('pub.scheduled', { date: fmtDate(rows[0].at) }) : t('pub.confirmed', { n: 0 }), {
+    undo: made.length ? () => client.unscheduleMany(made).then(() => undefined) : undefined,
+  });
+  return made.length;
 }
 
 export function Project({ id, tab: asked }: { id: string; tab: ProjectTab }) {
@@ -109,21 +131,7 @@ export function Project({ id, tab: asked }: { id: string; tab: ProjectTab }) {
   const isBatch = item?.kind === 'batch' || item?.kind === 'project';
 
   const schedule = async (list: Clip[]) => {
-    if (!client || !list.length) return;
-    const cal = await client.calendar();
-    const mine = new Set(cal.posts.filter((p) => p.item === id).map((p) => p.clip));
-    const todo = list.filter((c) => !mine.has(c.id));
-    const slots = nextSlots(todo.length, cal.posts.map((p) => p.at));
-    const defaults = (await window.desk.getSettings()).defaultPlatforms ?? [];
-    const rows = todo.flatMap((c, i) => postPlatforms(c, defaults).map((platform) => ({ item: id, clip: c.id, at: slots[i], platform })));
-    if (todo.length && !rows.length) {
-      ui.toast(t('project.noPlatforms'), { error: true });
-      return;
-    }
-    const made = rows.length ? (await client.scheduleMany(rows)).ids : [];
-    ui.toast(made.length ? t('pub.scheduled', { date: fmtDate(rows[0].at) }) : t('pub.confirmed', { n: 0 }), {
-      undo: made.length ? () => client.unscheduleMany(made).then(() => undefined) : undefined,
-    });
+    if (client) await scheduleClips(client, ui, id, list);
   };
   const clipMenu = (c: Clip) => (e: React.MouseEvent) =>
     ui.menu(e, [

@@ -5,5 +5,8 @@ export default defineConfig({
   test: {
     include: ['tests/unit/**/*.test.ts'],
     environment: 'node',
+    // a test's first dynamic import transforms a large part of the renderer; on a busy machine that alone can take
+    // longer than vitest's 5 s default
+    testTimeout: 30000,
   },
 });

@@ -1,6 +1,7 @@
-// Home (ux/home-redesign A1-A6): say what to make, then what needs doing next, in that order.
-//   composer  - the whole card is a drop target; files become chips; the platform chip is editable; ⌘↵ makes a plan
-//               (where AI runs lives in Settings, not here)
+// Home (ux/home-redesign A1-A6, ux/autopilot A1): say what to make, then what needs doing next, in that order.
+//   composer  - the whole card is a drop target; files become chips; the platform chip is editable; ⌘↵ sends it:
+//               the request becomes a project in All projects at once (planned and run there, on autopilot unless
+//               Settings says "Ask me first") and the box is free for the next one (where AI runs lives in Settings)
 //   ideas     - from her own work: the next episode of a series, a project with clips left, a recent request
 //   Inbox     - the top 3 with their own button each, "n more" in one line (same count as the sidebar badge)
 //   Running   - only while something runs
@@ -10,7 +11,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight, CalendarDays, Check, ChevronDown, ChevronRight, File as FileIcon, FileText, Film, Folder, FolderOpen, GraduationCap, Image as ImageIcon, Lightbulb, MessageSquare, MessagesSquare, Mic, MoreHorizontal, Music, Paperclip, Play, Plus, Repeat, Sparkles, Video, X } from 'lucide-react';
 import type { HistoryItem } from '../../../shared/v02';
-import type { CalendarPost, InboxItem, IntakeJob } from '../../../shared/v04';
+import type { CalendarPost, InboxItem, OpenRequest } from '../../../shared/v04';
 import { fmtAgo, fmtTime, getLang, t, tk, type MessageKey } from '../i18n';
 import { useEngine, useLoad } from '../lib/engine';
 import { DueBanner } from '../publish/DueBanner';
@@ -21,7 +22,6 @@ import { href } from '../lib/router';
 import { itemStatus } from '../lib/status';
 import { Empty, Mosaic, Sk, StatusPill, Thumb } from './kit';
 import { homeIdeas, IDEAS } from '../lib/homeIdeas';
-import { PlanCard } from './PlanCard';
 import { inboxSub, inboxTitle, InboxThumb } from './Inbox';
 import { FailureActions } from './Failure';
 import { PlatformIcon } from './PlatformIcon';
@@ -81,36 +81,34 @@ export function Home() {
     latest.current = client;
   }, [client]);
   const ui = useUi();
-  const { data: hist } = useHistory();
+  const { data: hist, reload: reloadHist } = useHistory();
   const draft = useMemo(() => {
     try {
-      return JSON.parse(sessionStorage.getItem(DRAFT) ?? '{}') as { prompt?: string; files?: string[]; job?: string; sample?: boolean };
+      return JSON.parse(sessionStorage.getItem(DRAFT) ?? '{}') as { prompt?: string; files?: string[] };
     } catch {
       return {};
     }
   }, []);
   const [prompt, setPrompt] = useState(draft.prompt ?? '');
   const [files, setFiles] = useState<string[]>(draft.files ?? []);
-  const [jobId, setJobId] = useState<string | null>(draft.job ?? null);
-  const [sample, setSample] = useState(Boolean(draft.sample));
+  const [sent, setSent] = useState(0);
   // a request made before the one-time downloads finished: planned by itself once they are in (and the engine
   // restarted onto them), never against a half-installed speech model
   const [waitDl, setWaitDl] = useState<{ prompt: string; files: string[]; sample: boolean } | null>(null);
   const assets = useAssets();
   const dl = downloadSummary(assets);
   const modelsReady = !assets?.bundled || (dl.state === 'done' && !assets.restartNeeded);
-  const [job, setJob] = useState<IntakeJob | null>(null);
   const [busy, setBusy] = useState(false);
   const [over, setOver] = useState(false);
   const [platforms, setPlatforms] = useState<string[] | null>(null);
   const ta = useRef<HTMLTextAreaElement | null>(null);
-  const { data: recent } = useLoad((c) => c.recentPrompts(), [jobId]);
+  const { data: recent } = useLoad((c) => c.recentPrompts(), [sent]);
   const firstRun = !!hist && hist.items.length === 0;
   const wp = useWeekPlan();
 
   useEffect(() => {
-    sessionStorage.setItem(DRAFT, JSON.stringify({ prompt, files, job: jobId, sample }));
-  }, [prompt, files, jobId, sample]);
+    sessionStorage.setItem(DRAFT, JSON.stringify({ prompt, files }));
+  }, [prompt, files]);
   useEffect(() => {
     void window.desk.getSettings().then((s) => setPlatforms(s.defaultPlatforms ?? []));
   }, []);
@@ -122,34 +120,9 @@ export function Home() {
     if (ui.prefill) {
       setPrompt(ui.prefill);
       ui.setPrefill(null);
-      setJobId(null);
       setTimeout(() => ta.current?.focus(), 30);
     }
   }, [ui.prefill, ui]);
-
-  // poll the plan job (engine events also nudge it)
-  useEffect(() => {
-    if (!client || !jobId) {
-      setJob(null);
-      return;
-    }
-    let alive = true;
-    let tm: ReturnType<typeof setTimeout>;
-    const tick = () =>
-      client
-        .intake(jobId)
-        .then((j) => {
-          if (!alive) return;
-          setJob(j);
-          if (j.state === 'running') tm = setTimeout(tick, 600);
-        })
-        .catch(() => alive && (setJobId(null), setJob(null)));
-    void tick();
-    return () => {
-      alive = false;
-      clearTimeout(tm);
-    };
-  }, [client, jobId]);
 
   const ready = !!(prompt.trim() || files.length);
   /** 「这周的素材 → 一周的帖子」: the files (+ her words) go the week-plan way (plan, make, lay out the week) */
@@ -162,7 +135,7 @@ export function Home() {
     }
   };
   const submit = async (req?: { prompt: string; files: string[]; sample: boolean }) => {
-    const p = req ?? { prompt: prompt.trim(), files, sample };
+    const p = req ?? { prompt: prompt.trim(), files, sample: false };
     if (!client || busy || !(p.prompt || p.files.length)) return;
     if (!req && files.length && WEEK_WORDS.test(prompt)) return void startWeek();
     if (!modelsReady && p.files.length) {
@@ -174,11 +147,21 @@ export function Home() {
     // for a few seconds instead of failing
     const tries = req ? 12 : 1;
     try {
+      const auto = (await window.desk.getSettings()).autopilot !== false;
       for (let i = 0; ; i++) {
         try {
-          const r = await (latest.current ?? client).startIntake(p.prompt, p.files, platforms ?? undefined, getLang());
-          setSample(p.sample);
-          setJobId(r.id);
+          const r = await (latest.current ?? client).startIntake(p.prompt, p.files, platforms ?? undefined, getLang(), {
+            mode: auto ? 'autopilot' : 'ask',
+            sampleName: p.sample ? t('sample.projectName') : undefined,
+          });
+          // the request is a project now (All projects lists it): Home is free for the next one
+          const name = p.prompt.trim() ? p.prompt.trim().slice(0, 40) + (p.prompt.trim().length > 40 ? '…' : '') : base(p.files[0] ?? '');
+          sessionStorage.removeItem(DRAFT);
+          setPrompt('');
+          setFiles([]);
+          setSent((n) => n + 1);
+          reloadHist();
+          ui.toast(t(auto ? 'home.sent' : 'home.sentAsk', { name }), { action: { label: t('home.sentOpen'), href: `${href({ name: 'projects' })}?sel=${r.id}` }, ms: 8000 });
           return;
         } catch (e) {
           if (i + 1 >= tries) throw e;
@@ -215,54 +198,6 @@ export function Home() {
       ui.toast((e as Error).message, { error: true });
     }
   };
-  const revise = async (text: string) => {
-    if (!client || !jobId) return;
-    try {
-      await client.reviseIntake(jobId, text, getLang());
-      setJob((j) => (j ? { ...j, state: 'running', step: 'revise' } : j));
-      const r = await client.intake(jobId);
-      setJob(r);
-      setJobId(jobId); // re-arm polling
-      const poll = async () => {
-        for (let i = 0; i < 600; i++) {
-          const j = await client.intake(jobId);
-          setJob(j);
-          if (j.state !== 'running') return;
-          await new Promise((res) => setTimeout(res, 600));
-        }
-      };
-      void poll();
-    } catch (e) {
-      ui.toast(errText(e), { error: true });
-    }
-  };
-  /** a failed plan card's Try again: the same request (or the failed revision) again, followed until it ends */
-  const retry = async () => {
-    if (!client || !jobId) return;
-    try {
-      await client.retryIntake(jobId);
-      setJob((j) => (j ? { ...j, state: 'running', error: null, error_code: null } : j));
-      for (let i = 0; i < 3000; i++) {
-        const j = await client.intake(jobId);
-        setJob(j);
-        if (j.state !== 'running') return;
-        await new Promise((res) => setTimeout(res, 600));
-      }
-    } catch (e) {
-      ui.toast(errText(e), { error: true });
-    }
-  };
-  const reset = () => {
-    setJobId(null);
-    setJob(null);
-    setSample(false);
-  };
-  const started = () => {
-    setPrompt('');
-    setFiles([]);
-    reset();
-  };
-
   const addFiles = async (kind: 'files' | 'folder') => {
     const got = kind === 'files' ? await window.desk.openFiles('any') : [await window.desk.openFolder()].filter((x): x is string => !!x);
     if (got.length) setFiles((f) => [...new Set([...f, ...got])]);
@@ -287,7 +222,7 @@ export function Home() {
     }, 20);
   };
 
-  const planning = !!jobId;
+  const planning = false;
   const ideas = homeIdeas(hist?.items ?? [], recent ?? []);
   return (
     <div className="scroll ux-home" data-testid="home">
@@ -320,8 +255,7 @@ export function Home() {
                 void submit();
               }
             }}
-            readOnly={planning && job?.state === 'running'}
-            rows={planning ? 2 : 2}
+            rows={2}
             data-testid="composer-input"
           />
           {files.length > 0 && (
@@ -420,7 +354,6 @@ export function Home() {
             </div>
           </div>
         )}
-        {planning && <PlanCard job={job} jobId={jobId!} onRevise={revise} onRetry={() => void retry()} onReset={reset} onStarted={started} sample={sample} />}
         {!planning && !waitDl && (firstRun ? <FirstRunStarts onPick={(p) => fill(p)} onSample={() => void trySample()} /> : <Below />)}
       </div>
     </div>
@@ -509,7 +442,7 @@ function FirstRunStarts({ onPick, onSample }: { onPick: (prompt: string) => void
 
 // ---------------------------------------------------------------- below the composer
 function Below() {
-  const { data, live } = useHistory();
+  const { data, live, requests } = useHistory();
   const inbox = useInbox();
   const { subscribe } = useEngine();
   const { data: cal, reload: reloadCal } = useLoad((c) => c.calendar(today()), []);
@@ -529,12 +462,13 @@ function Below() {
       </div>
     );
   }
-  const quiet = !inbox.items.length && !runs.length;
+  const planningReqs = requests.filter((r) => r.state === 'running');
+  const quiet = !inbox.items.length && !runs.length && !planningReqs.length;
   return (
     <>
       <DueBanner />
       {inbox.items.length > 0 && <HomeInbox items={inbox.items} />}
-      {runs.length > 0 && <Running runs={runs} />}
+      {(runs.length > 0 || planningReqs.length > 0) && <Running runs={runs} requests={planningReqs} />}
       {quiet && <AllClear next={next ?? null} />}
       {todays.length > 0 && <GoingOut posts={todays} />}
       {items.length > 0 && (
@@ -623,24 +557,52 @@ function HomeInboxRow({ x, first }: { x: InboxItem; first: boolean }) {
   );
 }
 
-function Running({ runs }: { runs: HistoryItem[] }) {
+function Running({ runs, requests = [] }: { runs: HistoryItem[]; requests?: OpenRequest[] }) {
+  const n = runs.length + requests.length;
   return (
     <section className="ux-sec" data-testid="live-lane">
       <div className="ux-sech">
         <h2>{t('home.running')}</h2>
-        <span className="muted">{t('home.jobs', { n: runs.length })}</span>
+        <span className="muted">{t('home.jobs', { n })}</span>
+        <span className="sp" />
+        <a className="ux-link" href={href({ name: 'projects' })}>
+          {t('home.allProjects')} <ArrowRight className="ico" />
+        </a>
       </div>
       <div className="ux-runs">
-        {runs.slice(0, 3).map((i) => (
+        {requests.slice(0, 3).map((r) => (
+          <RequestCard key={r.id} r={r} />
+        ))}
+        {runs.slice(0, Math.max(0, 3 - requests.length)).map((i) => (
           <RunCard key={i.id} i={i} />
         ))}
       </div>
-      {runs.length > 3 && (
+      {n > 3 && (
         <a className="ux-link" href={href({ name: 'projects' })} style={{ marginTop: 8, display: 'inline-flex' }}>
-          {t('home.nMoreRunning', { n: runs.length - 3 })}
+          {t('home.nMoreRunning', { n: n - 3 })}
         </a>
       )}
     </section>
+  );
+}
+
+/** A request still being planned (not a project yet): same card, opens it in the control room. */
+function RequestCard({ r }: { r: OpenRequest }) {
+  return (
+    <a className="card ux-run" href={`${href({ name: 'projects' })}?sel=${r.id}`} data-testid="live-row" data-request={r.id}>
+      <Thumb src={null} className="ux-runth" />
+      <div className="tx">
+        <div className="row1">
+          <b className="clamp1">{r.name || r.prompt || t('home.planningRow')}</b>
+        </div>
+        <div className="row1 muted">
+          <span className="clamp1">{t('home.planningRow')}</span>
+        </div>
+        <div className="bar indet">
+          <i style={{ width: '30%' }} />
+        </div>
+      </div>
+    </a>
   );
 }
 

@@ -70,6 +70,8 @@ export interface SettingsMsg {
   aiRoutes?: AiRoutes;
   channels?: Record<string, ChannelPrefs>;
   agencyMode?: boolean;
+  /** new projects from Home run on autopilot (default true); false = "Ask me first" (plan to confirm + a pilot) */
+  autopilot?: boolean;
   /** Create page flag (DESK_CREATE=1/0 overrides it) */
   createPage?: boolean;
   createLocalGen?: boolean;
@@ -153,7 +155,7 @@ export interface DeskApi {
   openLogs(): Promise<void>;
   copyText(text: string): Promise<void>;
   getSettings(): Promise<SettingsMsg>;
-  setSettings(patch: Partial<Pick<SettingsMsg, 'enginePath' | 'python' | 'lang' | 'theme' | 'accent' | 'defaultPlatforms' | 'cleanupDays' | 'agencyMode' | 'createPage' | 'createLocalGen' | 'usagePings' | 'openAtLogin'>>): Promise<SettingsMsg>;
+  setSettings(patch: Partial<Pick<SettingsMsg, 'enginePath' | 'python' | 'lang' | 'theme' | 'accent' | 'defaultPlatforms' | 'cleanupDays' | 'agencyMode' | 'autopilot' | 'createPage' | 'createLocalGen' | 'usagePings' | 'openAtLogin'>>): Promise<SettingsMsg>;
   openFiles(kind: 'video' | 'any'): Promise<string[]>;
   /** absolute path of a file dropped on the window (Electron webUtils; '' when unavailable) */
   pathForFile(file: File): string;

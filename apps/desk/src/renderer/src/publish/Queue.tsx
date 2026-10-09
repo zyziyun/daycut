@@ -5,6 +5,7 @@ import { ChevronDown, ChevronRight, Search, Wand2, X } from 'lucide-react';
 import type { QueueClip } from '../../../shared/v04';
 import { fmtClock, t } from '../i18n';
 import { media, Thumb } from '../v4/kit';
+import { go } from '../lib/router';
 import { DRAG, readDrag, type DragData } from './Board';
 import { queueByProject } from './model';
 
@@ -153,7 +154,7 @@ export function QueuePanel({
                           e.dataTransfer.setData(DRAG, JSON.stringify({ item: c.item, clip: c.clip }));
                           e.dataTransfer.effectAllowed = 'move';
                         }}
-                        onClick={() => selMode && pick(k)}
+                        onClick={() => (selMode ? pick(k) : go({ name: 'clip', id: c.item, clip: c.clip }))}
                         title={t('pub.dragHint')}
                         data-testid="pub-queue-item"
                         data-clip={c.clip}

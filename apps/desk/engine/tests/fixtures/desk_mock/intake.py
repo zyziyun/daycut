@@ -313,8 +313,7 @@ class MockIntake(Intake):
             reg.append(dict(dir=d, name=proj["name"], recipe=proj["recipe"], series=None, client=None,
                             created=time.strftime("%Y-%m-%dT%H:%M:%S"), kind="work"))
             projects.append(dict(dir=d, name=proj["name"], recipe=proj["recipe"]))
-            if autopilot:
-                write_json(os.path.join(d, ".vstudio", MOCK_AP), dict(on=True, decisions=[], ask=[]))
+            write_json(os.path.join(d, ".vstudio", MOCK_AP), dict(on=bool(autopilot), decisions=[], ask=[]))
         write_json(reg_path, reg)
         return projects
 

@@ -425,6 +425,12 @@ export interface HistoryItem {
   archived?: boolean;
   /** when it was archived (epoch s); null for an entry hidden by an older desk */
   archived_at?: number | null;
+  /** the engine decides its checkpoints itself (project.yaml autopilot.on; desk_engine/autopilot.py) */
+  autopilot?: boolean;
+  /** waits for a free run slot (desk_engine/pilot.py RunQueue): its place in line, 1 = next */
+  queued?: number | null;
+  /** the request it was made from (Home's sentence) */
+  prompt?: string | null;
 }
 /** GET /api/sample (engine/desk_engine/sample.py) */
 export interface SampleInfo {

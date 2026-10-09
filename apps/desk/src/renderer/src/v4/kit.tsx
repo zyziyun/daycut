@@ -1,7 +1,7 @@
 // Small building blocks for the v0.4 screens: status pill, thumbnails (hover to scrub), mosaic, skeletons, empty
 // states, segmented control. Icons: Lucide only, one size / stroke (CSS .ico).
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { ChevronRight, Film, Play } from 'lucide-react';
+import { ChevronRight, ExternalLink, Film, Play } from 'lucide-react';
 import { fmtClock, t } from '../i18n';
 import { STATUS_KEY, type Status4 } from '../lib/status';
 
@@ -108,6 +108,27 @@ export function Thumb({
       )}
       {children}
     </div>
+  );
+}
+
+/** A clip's cover that opens the clip's own page (player + editor); a click on it never reaches the card around it
+ * (a publish card opens its drawer, a queue row is dragged or picked). */
+export function ClipThumbLink({ href, src, ratio = '3/4', label, testId = 'open-clip' }: { href: string; src?: string | null; ratio?: string; label: string; testId?: string }) {
+  return (
+    <a className="clip-open" href={href} onClick={(e) => e.stopPropagation()} draggable={false} aria-label={label} title={label} data-testid={testId}>
+      <Thumb src={src} ratio={ratio} play />
+    </a>
+  );
+}
+
+/** A posted clip's live page, when Reelfold knows it (opened in her browser). */
+export function PostLink({ url }: { url?: string | null }) {
+  if (!url || !/^https?:\/\//.test(url)) return null;
+  return (
+    <button className="btn ghost sm" onClick={(e) => (e.stopPropagation(), void window.desk.openExternal(url))} data-testid="post-link" title={url}>
+      <ExternalLink className="ico" />
+      {t('pub.viewPost')}
+    </button>
   );
 }
 

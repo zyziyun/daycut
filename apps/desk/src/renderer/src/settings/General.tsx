@@ -81,6 +81,17 @@ export function GeneralSection({ settings: s, save, onChange }: SettingsCtx) {
         </Row>
       </Group>
       <Group title={t('s2.work')} testId="settings-work">
+        <Row label={t('ap.setting')} hint={s.autopilot === false ? t('ap.settingAskHint') : t('ap.settingAutoHint')}>
+          <Segmented
+            value={s.autopilot === false ? 'ask' : 'auto'}
+            onChange={(v) => void save({ autopilot: v === 'auto' })}
+            options={[
+              { v: 'auto' as const, label: t('ap.auto'), testId: 'mode-auto' },
+              { v: 'ask' as const, label: t('ap.ask'), testId: 'mode-ask' },
+            ]}
+            testId="settings-autopilot"
+          />
+        </Row>
         <Row label={t('s2.platformsNew')}>
           <span className="s2-val">{fmtList(pfNames)}</span>
           <button className="s2-link" onClick={() => setSheet('platforms')} data-testid="change-platforms">

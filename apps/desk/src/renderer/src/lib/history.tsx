@@ -3,6 +3,7 @@
 // while something is live, so a dead external run flips to 中断 / interrupted. No polling otherwise.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { HistoryDoc, HistoryItem } from '../../../shared/v02';
+import type { OpenRequest } from '../../../shared/v04';
 import { useEngine, useLoad } from './engine';
 
 interface Ctx {
@@ -13,6 +14,8 @@ interface Ctx {
   /** the archived projects (GET /api/history?archived=1), loaded once something asks for them (wantArchived) */
   archived: HistoryDoc | null;
   wantArchived(): void;
+  /** requests from Home that are not projects yet (planning, a plan waiting for her Start, a failure) */
+  requests: OpenRequest[];
 }
 
 const HistoryCtx = createContext<Ctx | null>(null);
@@ -47,8 +50,11 @@ export function HistoryProvider({ children }: { children: ReactNode }) {
   const wantRef = useRef(false);
   const arch = useLoad((c) => (want ? c.history({ archived: true }) : Promise.resolve(null)), [want]);
   const reloadArch = arch.reload;
+  const reqs = useLoad((c) => c.openRequests().catch(() => ({ items: [] as OpenRequest[] })), []);
+  const reloadReqs = reqs.reload;
   const reload = useCallback(() => {
     reloadMain();
+    reloadReqs();
     if (wantRef.current) reloadArch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -94,6 +100,7 @@ export function HistoryProvider({ children }: { children: ReactNode }) {
     () =>
       subscribe((e) => {
         if (e.type === 'batches' || e.type === 'run-exit' || e.type === 'run-start') reload();
+        else if (e.type === 'intake') reloadReqs(); // a request planning: its progress / state
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [subscribe],
@@ -127,7 +134,8 @@ export function HistoryProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [anyLive]);
 
-  return <HistoryCtx.Provider value={{ data, error, reload, live, archived: arch.data, wantArchived }}>{children}</HistoryCtx.Provider>;
+  const requests = useMemo(() => reqs.data?.items ?? [], [reqs.data]);
+  return <HistoryCtx.Provider value={{ data, error, reload, live, archived: arch.data, wantArchived, requests }}>{children}</HistoryCtx.Provider>;
 }
 
 export function useHistory(): Ctx {

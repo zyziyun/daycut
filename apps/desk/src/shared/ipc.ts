@@ -66,6 +66,7 @@ export const ipcSchemas = {
     defaultPlatforms: z.array(platformId).min(1).max(8).optional(),
     cleanupDays: z.number().int().min(0).max(365).optional(),
     agencyMode: z.boolean().optional(),
+    autopilot: z.boolean().optional(),
     createPage: z.boolean().optional(),
     createLocalGen: z.boolean().optional(),
     usagePings: z.enum(['on', 'off']).optional(),

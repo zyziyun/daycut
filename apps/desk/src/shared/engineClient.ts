@@ -43,7 +43,7 @@ import type { AskContext, ChatTurn, ExportJob } from './chatEdit';
 import type { StripInfo, TranscribeState } from './timeline';
 import type { WeekPlan, WeekPlanStart } from './weekPlan';
 import type { ShareJob, ShareOptions, ShareRequest } from './share';
-import type { AskResult, CalendarDoc, CalendarPost, ClipsDoc, NewPost, SchedulePlan, EditOp, EffectDef, EngineMsg, InboxDoc, IntakeJob, IntakePlan, OutputDoc, PreviewEdl, ProjectAskJob, Retimed } from './v04';
+import type { AskResult, AutopilotDoc, CalendarDoc, CalendarPost, ClipsDoc, NewPost, SchedulePlan, EditOp, EffectDef, EngineMsg, InboxDoc, IntakeJob, IntakePlan, OpenRequest, OutputDoc, PreviewEdl, ProjectAskJob, Retimed } from './v04';
 
 import { CreateClient } from './create';
 
@@ -442,8 +442,35 @@ export class EngineClient {
   }
   /** platforms: the composer's platform chip (used when the request itself names none); lang: the UI language the
    * plan card's questions and risks are written in */
-  startIntake(prompt: string, inputs: string[], platforms?: string[], lang?: string) {
-    return this.req<{ id: string }>('POST', '/api/intake', { prompt: prompt.slice(0, 2000), inputs, ...(platforms?.length ? { platforms } : {}), ...(lang ? { lang } : {}) });
+  startIntake(prompt: string, inputs: string[], platforms?: string[], lang?: string, opts: { mode?: 'autopilot' | 'ask'; sampleName?: string } = {}) {
+    return this.req<{ id: string }>('POST', '/api/intake', {
+      prompt: prompt.slice(0, 2000),
+      inputs,
+      ...(platforms?.length ? { platforms } : {}),
+      ...(lang ? { lang } : {}),
+      ...(opts.mode ? { mode: opts.mode } : {}),
+      ...(opts.sampleName ? { sample_name: opts.sampleName.slice(0, 80) } : {}),
+    });
+  }
+  /** requests from Home that are not projects yet (All projects lists them first) */
+  openRequests() {
+    return this.req<{ items: OpenRequest[] }>('GET', '/api/intake/open');
+  }
+  /** drop a request that is not a project yet (nothing was made) */
+  discardIntake(id: string) {
+    return this.req<{ ok: boolean }>('POST', `/api/intake/${pid(id)}/discard`, {});
+  }
+  /** what the autopilot decided for a project, and whether it is on */
+  autopilot(item: string) {
+    return this.req<AutopilotDoc>('GET', `/api/autopilot/${bid(item)}`);
+  }
+  /** take one decision back: the project runs on to it and the Inbox asks her */
+  autopilotReopen(item: string, checkpoint: string, sub: string) {
+    return this.req<{ ok: boolean; resumed?: boolean }>('POST', `/api/autopilot/${bid(item)}/reopen`, { checkpoint, item: sub });
+  }
+  /** autopilot (true) or ask me first (false) for one project */
+  autopilotMode(item: string, on: boolean) {
+    return this.req<{ ok: boolean; resumed?: boolean }>('POST', `/api/autopilot/${bid(item)}/mode`, { on });
   }
   intake(id: string) {
     return this.req<IntakeJob>('GET', `/api/intake/${pid(id)}`);

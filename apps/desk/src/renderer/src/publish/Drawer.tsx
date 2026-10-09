@@ -11,7 +11,8 @@ import { fmtClock, fmtDate, t } from '../i18n';
 import { go } from '../lib/router';
 import { platformName } from '../v4/Home';
 import { PlatformIcon } from '../v4/PlatformIcon';
-import { Thumb } from '../v4/kit';
+import { ClipThumbLink, PostLink } from '../v4/kit';
+import { clipHref } from '../lib/nav';
 import { useUi } from '../v4/ui';
 import { StatusMark } from './Board';
 import { addDays, base, dayOf, iso, overflowAt, parseWhen, sortIds, type PostGroup } from './model';
@@ -104,13 +105,26 @@ export function PostDrawer({
       </header>
       <div className="pb-dscroll">
         <div className="pb-dclip">
-          <Thumb src={g.cover} ratio="3/4" />
+          <ClipThumbLink href={clipHref(g.item, g.clip)} src={g.cover} label={t('pub.openClip')} testId="pb-drawer-open-clip" />
           <div className="col" style={{ gap: 6, minWidth: 0 }}>
             <TitleEdit g={g} actions={actions} limits={titleLimits} />
             <span className="muted num">{[g.project, g.duration ? fmtClock(g.duration) : null].filter(Boolean).join(' · ')}</span>
             <span className="row" style={{ gap: 6 }}>
               <StatusMark s={g.status} views={g.views} />
               {fixes > 0 && <span className="pb-amber">— {t('pb.d.fixes', { n: fixes })}</span>}
+            </span>
+            <span className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+              <a className="btn sm" href={clipHref(g.item, g.clip)} data-testid="pb-drawer-clip">
+                {t('pub.openClip')}
+              </a>
+              {g.on
+                .filter((p) => p.state === 'posted' && p.url)
+                .map((p) => (
+                  <span key={p.id} className="row" style={{ gap: 4 }}>
+                    <PlatformIcon id={p.platform.split(':')[0]} size={14} />
+                    <PostLink url={p.url} />
+                  </span>
+                ))}
             </span>
           </div>
         </div>

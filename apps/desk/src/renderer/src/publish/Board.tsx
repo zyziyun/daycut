@@ -7,7 +7,8 @@ import type { PostWarning, QueueClip } from '../../../shared/v04';
 import { fmtDate, fmtNumber, fmtWeekday, t, tk } from '../i18n';
 import { platformName } from '../v4/Home';
 import { PlatformIcon } from '../v4/PlatformIcon';
-import { media, Thumb } from '../v4/kit';
+import { ClipThumbLink, media, Thumb } from '../v4/kit';
+import { clipHref } from '../lib/nav';
 import { addDays, iso, type GroupStatus, type PostGroup } from './model';
 
 export const DRAG = 'application/x-pb';
@@ -80,7 +81,7 @@ export function PostCard({ g, selected, onOpen }: { g: PostGroup; selected: bool
         <b className="pc-time num">{g.time}</b>
         <Pfs ids={g.platforms} />
       </div>
-      <Thumb src={g.cover} ratio="3/4" />
+      <ClipThumbLink href={clipHref(g.item, g.clip)} src={g.cover} label={t('pub.openClip')} testId="pc-open-clip" />
       <div className="pc-title clamp2" lang="zh-CN">
         {g.title}
       </div>

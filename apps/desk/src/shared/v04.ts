@@ -421,6 +421,53 @@ export interface IntakeJob {
   applied?: { dir: string; name: string; recipe: string }[];
   /** how long the last plan / revision really took, reading the files and the AI call included (seconds) */
   seconds?: number | null;
+  /** a request from Home: autopilot (applied and run at once) or ask (the plan waits for her Start) */
+  mode?: 'autopilot' | 'ask' | null;
+  name?: string | null;
+}
+
+/** GET /api/intake/open: requests from Home that are not projects yet (planning, a plan waiting for her, a failure). */
+export interface OpenRequest {
+  id: string;
+  state: 'running' | 'done' | 'error';
+  step?: string | null;
+  mode: 'autopilot' | 'ask';
+  prompt?: string | null;
+  inputs: string[];
+  started?: number | null;
+  progress?: IntakeProgress | null;
+  error_code?: import('./v02').FailureCode | null;
+  error?: string | null;
+  /** the plan's first project name once planned */
+  name?: string | null;
+  projects?: number | null;
+  failed_apply?: boolean;
+}
+
+/** One decision the autopilot took (``vstudio.project decisions``), or one she took back (``asked``). */
+export interface AutopilotDecision {
+  checkpoint: string;
+  item: string;
+  kind?: string;
+  labels?: { en?: string; zh?: string };
+  value?: unknown;
+  by?: 'ai' | 'rules';
+  reason?: string | null;
+  reason_code?: string | null;
+  params?: Record<string, unknown>;
+  provider?: string | null;
+  at?: string | null;
+  asked?: boolean;
+}
+
+/** GET /api/autopilot/<item> */
+export interface AutopilotDoc {
+  item: string;
+  supported: boolean;
+  running: boolean;
+  queued: number | null;
+  autopilot: { on: boolean; spend_cap?: number; judge?: boolean; lang?: string; ask?: string[] } | null;
+  decisions: AutopilotDecision[];
 }
 
 // ---------------------------------------------------------------- inbox

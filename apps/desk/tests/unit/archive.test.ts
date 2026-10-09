@@ -176,6 +176,7 @@ describe('the Projects page', () => {
   beforeEach(() => {
     setLang('en');
     store.clear();
+    store.set('v4.pview', 'grid'); // the grid view (the control room is the other one)
     vi.stubGlobal('sessionStorage', { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => store.set(k, v) });
   });
   afterEach(() => vi.unstubAllGlobals());
