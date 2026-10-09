@@ -1,7 +1,7 @@
 // Live history for the whole app (全部项目 view, the 进行中 lane, the sidebar badge). Refreshes on engine events and
 // on file changes in the watched folders (main-process fs.watch -> 'history:changed'); a slow timer runs only
 // while something is live, so a dead external run flips to 中断 / interrupted. No polling otherwise.
-import { createContext, useContext, useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { HistoryDoc, HistoryItem } from '../../../shared/v02';
 import { useEngine, useLoad } from './engine';
 
@@ -10,6 +10,9 @@ interface Ctx {
   error: string | null;
   reload(): void;
   live: HistoryItem[];
+  /** the archived projects (GET /api/history?archived=1), loaded once something asks for them (wantArchived) */
+  archived: HistoryDoc | null;
+  wantArchived(): void;
 }
 
 const HistoryCtx = createContext<Ctx | null>(null);
@@ -37,7 +40,22 @@ export function stampChanged(prev: string | null, next: string | null | undefine
 
 export function HistoryProvider({ children }: { children: ReactNode }) {
   const { subscribe, client } = useEngine();
-  const { data, error, reload } = useLoad((c) => c.history(), []);
+  const { data, error, reload: reloadMain } = useLoad((c) => c.history(), []);
+  // the archived list is read only once the Archived tab / an archived project page asks for it, then kept fresh with
+  // the main list
+  const [want, setWant] = useState(false);
+  const wantRef = useRef(false);
+  const arch = useLoad((c) => (want ? c.history({ archived: true }) : Promise.resolve(null)), [want]);
+  const reloadArch = arch.reload;
+  const reload = useCallback(() => {
+    reloadMain();
+    if (wantRef.current) reloadArch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const wantArchived = useCallback(() => {
+    wantRef.current = true;
+    setWant(true);
+  }, []);
   // a project registered / re-registered by another process (an agent's `vstudio.project register` / `touch`) shows
   // up without navigating away and back: a cheap registry stamp is polled while the window is visible, and the list
   // reloads when the window comes back to the front
@@ -109,7 +127,7 @@ export function HistoryProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [anyLive]);
 
-  return <HistoryCtx.Provider value={{ data, error, reload, live }}>{children}</HistoryCtx.Provider>;
+  return <HistoryCtx.Provider value={{ data, error, reload, live, archived: arch.data, wantArchived }}>{children}</HistoryCtx.Provider>;
 }
 
 export function useHistory(): Ctx {

@@ -421,6 +421,10 @@ export interface HistoryItem {
   pilot?: { started: number | null; provider: string | null } | null;
   /** made from the built-in sample recording (labelled, deletable) */
   sample?: boolean;
+  /** archived (only in GET /api/history?archived=1): hidden from All projects, nothing deleted */
+  archived?: boolean;
+  /** when it was archived (epoch s); null for an entry hidden by an older desk */
+  archived_at?: number | null;
 }
 /** GET /api/sample (engine/desk_engine/sample.py) */
 export interface SampleInfo {
@@ -468,6 +472,8 @@ export interface HistoryDoc {
   watch: string[];
   at: number;
   running?: number;
+  /** the plain list: how many archived projects it leaves out; the archived list: true */
+  archived?: number | boolean;
 }
 export interface HistoryDetail extends HistoryItem {
   log?: { path: string; text: string } | null;
