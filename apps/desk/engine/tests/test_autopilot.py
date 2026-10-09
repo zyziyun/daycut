@@ -247,6 +247,7 @@ class MockAutopilotRunTest(unittest.TestCase):
     def test_two_requests_run_to_done_and_the_third_waits(self):
         from desk_mock.intake import MockIntake, mock_autopilot
         tmp = tempfile.mkdtemp(prefix="mockap-")
+        env0 = dict(os.environ)
         os.environ.update(DESK_MOCK_STEP="0.01", DESK_MAX_RUNS="2", VSTUDIO_HOME=os.path.join(tmp, "vh"))
         saved = P.QUEUE
         P.QUEUE = P.RunQueue()
@@ -266,8 +267,8 @@ class MockAutopilotRunTest(unittest.TestCase):
             self.assertEqual({x["by"] for x in mock_autopilot(dirs[0])["decisions"]}, {"ai", "rules"})
         finally:
             P.QUEUE = saved
-            for k in ("DESK_MOCK_STEP", "DESK_MAX_RUNS"):
-                os.environ.pop(k, None)
+            os.environ.clear()
+            os.environ.update(env0)
 
 
 class StopRequestTest(unittest.TestCase):
@@ -276,6 +277,7 @@ class StopRequestTest(unittest.TestCase):
         run), and the request leaves the list."""
         from desk_mock.intake import MockIntake
         tmp = tempfile.mkdtemp(prefix="mockstop-")
+        env0 = dict(os.environ)
         os.environ.update(DESK_MOCK_STEP="0.2", VSTUDIO_HOME=os.path.join(tmp, "vh"))
         try:
             video = os.path.join(tmp, "live.mp4")
@@ -292,7 +294,8 @@ class StopRequestTest(unittest.TestCase):
             self.assertEqual(it.open()["items"], [])
             self.assertFalse(os.path.exists(os.path.join(tmp, "vh", "projects")))
         finally:
-            os.environ.pop("DESK_MOCK_STEP", None)
+            os.environ.clear()
+            os.environ.update(env0)
 
 
 if __name__ == "__main__":
