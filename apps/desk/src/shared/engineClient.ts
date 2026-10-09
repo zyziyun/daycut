@@ -264,8 +264,9 @@ export class EngineClient {
   setWeekly(week: string, values: Record<string, number | string | null>) {
     return this.req<WeeklyDoc>('POST', '/api/metrics/weekly', { week, values });
   }
-  history(f: { q?: string; status?: string; kind?: 'batch' | 'project' | 'work'; type?: string; client?: string } = {}) {
+  history(f: { q?: string; status?: string; kind?: 'batch' | 'project' | 'work'; type?: string; client?: string; archived?: boolean } = {}) {
     const q = new URLSearchParams();
+    if (f.archived) q.set('archived', '1');
     if (f.q) q.set('q', f.q.slice(0, 200));
     if (f.status) q.set('status', f.status);
     if (f.kind) q.set('kind', f.kind);
@@ -287,6 +288,15 @@ export class EngineClient {
   openHistory(dir: string) {
     return this.req<{ id: string; dir: string; name: string }>('POST', '/api/history/open', { dir });
   }
+  /** archive projects (never deletes files; refused while one of them is running) */
+  archiveHistory(dirs: string[]) {
+    return this.req<{ ok: boolean; archived: string[]; at: number; deleted: false }>('POST', '/api/history/archive', { dirs });
+  }
+  /** archived projects back into All projects, as they were */
+  restoreHistory(dirs: string[]) {
+    return this.req<{ ok: boolean; restored: string[] }>('POST', '/api/history/restore', { dirs });
+  }
+  /** @deprecated the old 「remove from list」: archiveHistory */
   hideHistory(dir: string) {
     return this.req<{ ok: boolean; deleted: false }>('POST', '/api/history/hide', { dir });
   }
@@ -296,6 +306,7 @@ export class EngineClient {
   adoptHistory(id: string, body: { recipe?: string; title?: string } = {}) {
     return this.req<{ ok: boolean; dir: string; type: string; recipe: string | null }>('POST', `/api/history/item/${bid(id)}/adopt`, body);
   }
+  /** @deprecated restoreHistory */
   unhideOne(dir: string) {
     return this.req<{ ok: boolean }>('POST', '/api/history/unhide-one', { dir });
   }

@@ -65,7 +65,7 @@ test.afterAll(async () => {
   await closeApp(app);
 });
 
-test('全部项目: past work from a watched folder, search, remove from list (undo) keeps files', async () => {
+test('全部项目: past work from a watched folder, search, archive (undo) keeps files, restore from Archived', async () => {
   await page.getByTestId('nav-projects').click();
   const cards = page.getByTestId('project-card');
   await expect(cards).toHaveCount(5, { timeout: 30000 }); // 4 found folders + the mock engine's demo batch
@@ -73,15 +73,22 @@ test('全部项目: past work from a watched folder, search, remove from list (u
   await page.getByTestId('projects-search').fill('promo');
   await expect(cards).toHaveCount(1);
   await cards.first().click({ button: 'right' });
-  await page.getByTestId('menu-remove').click();
+  await page.getByTestId('menu-archive').click();
   await expect(cards).toHaveCount(0);
   await page.getByTestId('toast-undo').click(); // undo toast for every destructive action
   await expect(cards).toHaveCount(1);
   await cards.first().click({ button: 'right' });
-  await page.getByTestId('menu-remove').click();
+  await page.getByTestId('menu-archive').click();
   await page.getByTestId('projects-search').fill('');
   await expect(cards).toHaveCount(4);
   expect(fs.existsSync(path.join(watch, 'client-a', 'batch-promo', 'batch.db'))).toBe(true);
+  // 已归档: the archived project is there, dimmed, and comes back with Restore
+  await page.locator('[data-testid="projects-filter"] [data-v="archived"]').click();
+  await expect(page.getByTestId('archived-card')).toHaveCount(1);
+  await page.getByTestId('project-restore').click();
+  await expect(page.getByTestId('archived-card')).toHaveCount(0);
+  await page.locator('[data-testid="projects-filter"] [data-v="all"]').click();
+  await expect(cards).toHaveCount(5);
 });
 
 test('a work folder: the whole card opens it, one card per clip with its caption, nothing written', async () => {

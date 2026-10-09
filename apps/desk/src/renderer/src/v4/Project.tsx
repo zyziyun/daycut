@@ -2,12 +2,13 @@
 // versions, caption) -> tabs 成片 / (审片 / 交付) / 修改记录 / 素材和文件 -> details folded. Right: 「让 AI 改」.
 // Plain work folders show their in-progress clips and refresh live (fs watch + a 5 s timer while running).
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, CalendarPlus, Copy, FolderOpen, Maximize2, Play, Share2, Undo2, Wand2 } from 'lucide-react';
+import { ArchiveRestore, ArrowLeft, CalendarPlus, Copy, FolderOpen, Maximize2, Play, Share2, Undo2, Wand2 } from 'lucide-react';
 import type { HistoryDetail } from '../../../shared/v02';
 import type { Clip, ClipsDoc, InboxItem, OutputDoc } from '../../../shared/v04';
 import { basePlatform, orderPlatforms, platformInfo } from '../../../shared/platforms';
 import { fmtDate, fmtMinutes, t } from '../i18n';
 import { useEngine } from '../lib/engine';
+import { archivedLine, restoreFlow } from '../lib/archive';
 import { useHistory } from '../lib/history';
 import { useInbox } from '../lib/inbox';
 import { go, href, type ProjectTab } from '../lib/router';
@@ -51,10 +52,16 @@ export function postPlatforms(clip: Pick<Clip, 'files'>, defaults: string[] = []
 
 export function Project({ id, tab: asked }: { id: string; tab: ProjectTab }) {
   const { client, subscribe } = useEngine();
-  const { data: hist, reload: reloadHist } = useHistory();
+  const { data: hist, reload: reloadHist, archived, wantArchived } = useHistory();
   const inbox = useInbox();
   const ui = useUi();
-  const item = hist?.items.find((i) => i.id === id) ?? null;
+  // an archived project still opens: not in the plain list -> the archived list is read and looked in
+  const live0 = hist?.items.find((i) => i.id === id) ?? null;
+  const item = live0 ?? archived?.items.find((i) => i.id === id) ?? null;
+  const lookArchived = !!hist && !live0;
+  useEffect(() => {
+    if (lookArchived) wantArchived();
+  }, [lookArchived, wantArchived]);
   const [doc, setDoc] = useState<ClipsDoc | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [selId, setSelId] = useState<string | null>(null);
@@ -133,7 +140,7 @@ export function Project({ id, tab: asked }: { id: string; tab: ProjectTab }) {
     ui.toast(t('c.copied'));
   };
 
-  if (hist && !item) {
+  if (hist && !item && (archived || !lookArchived)) {
     return (
       <div className="pg">
         <a className="back" href={href({ name: 'projects' })}>
@@ -229,6 +236,19 @@ export function Project({ id, tab: asked }: { id: string; tab: ProjectTab }) {
               {!failure && primary}
             </div>
           </div>
+          {item?.archived && (
+            <div className="banner" role="status" data-testid="project-archived">
+              <i className="dot" />
+              <div className="sp">
+                <b>{archivedLine(item)}</b>
+                <span className="muted">{t('project.archivedBanner')}</span>
+              </div>
+              <button className="btn" onClick={() => client && void restoreFlow(client, ui, [item], reloadHist)} data-testid="project-restore">
+                <ArchiveRestore className="ico" />
+                {t('projects.restore')}
+              </button>
+            </div>
+          )}
           {failure && item && (
             <div className="banner error" role="alert" data-testid="project-failed">
               <i className="dot error" />

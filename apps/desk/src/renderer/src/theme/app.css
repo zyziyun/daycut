@@ -243,6 +243,12 @@ textarea.inp { height: auto; padding: 8px 12px; resize: vertical; line-height: 1
 .pcard .meta { display: flex; align-items: center; justify-content: space-between; gap: var(--s1); color: var(--text-muted); }
 .pcard .pick { position: absolute; top: 16px; left: 16px; width: 20px; height: 20px; accent-color: var(--accent); z-index: 2; }
 .pcard .rename { font: inherit; font-size: var(--fs-2); font-weight: 500; }
+/* 已归档: dimmed cards (full strength on hover / focus), a Restore button over the thumbnail */
+.pcard-wrap { position: relative; }
+.pcard-wrap.archived > .pcard { opacity: 0.55; transition: opacity var(--t) var(--ease), background var(--t) var(--ease); }
+.pcard-wrap.archived:hover > .pcard, .pcard-wrap.archived:focus-within > .pcard { opacity: 1; }
+.pcard-wrap .restore { position: absolute; top: 16px; right: 16px; z-index: 2; }
+.pgrid.archived > .pcard:not(.sel) { opacity: 0.55; }
 
 /* ---------------------------------------------------------------- project page */
 .proj { display: grid; grid-template-columns: minmax(0, 1fr) 340px; height: 100%; min-height: 0; }

@@ -10,6 +10,11 @@ App releases are tagged `v*`; engine-only releases are tagged `engine-v*`.
 
 ### Added
 
+- **Archive projects** (Mac app): 「Remove from list」 is now **Archive** (归档 / Archiver) in a project's menu and in
+  bulk select, with an undo toast. An **Archived** tab at the end of All projects shows archived projects dimmed with
+  their archive date and a **Restore** button (single or bulk); search and type filters work there, and an archived
+  project still opens. Nothing on disk is deleted, and a project with a run going is never archived. Engine:
+  `POST /api/history/archive` / `restore` (`{dir}` or `{dirs}`), `GET /api/history?archived=1`.
 - **Promo montage from b-roll**: `montage.clips` entries can name a source, `[source, start, end, label]` (a `broll`
   index or file name; the old `[start, end, label]` still reads `highlights`). Each clip is re-encoded onto the
   canvas (vertical clips get a blurred-fill pillarbox, 16:9 is cover-fit) with the privacy crop resolved per source.
