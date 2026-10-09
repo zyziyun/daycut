@@ -54,11 +54,14 @@ test('planning: elapsed time and a stop button; stop returns to the composer', a
   await expect(page.getByTestId('home')).toBeVisible({ timeout: 30000 });
   await page.getByTestId('composer-input').fill('把这条成片切成小红书切片');
   await page.getByTestId('make-plan').click();
+  await page.getByTestId('toast-action').first().click(); // sent: it plans in All projects
   await expect(page.getByTestId('plan-stop')).toBeVisible({ timeout: 10000 });
   await expect(page.getByTestId('plan-elapsed')).toHaveText(/0:0[1-9]/, { timeout: 5000 });
   await shot('02-planning-elapsed-stop');
   await page.getByTestId('plan-stop').click();
   await expect(page.getByTestId('plan-card')).toHaveCount(0);
+  await expect(page.getByTestId('hub-request')).toHaveCount(0); // stopped: nothing made, gone from the list
+  await page.getByTestId('nav-home').click();
   await expect(page.getByTestId('composer-input')).toBeVisible();
 });
 
@@ -66,7 +69,10 @@ test('a failed pilot is visible: project, inbox, all projects; retry with Codex 
   test.setTimeout(90000);
   await page.getByTestId('composer-input').fill('把这条成片切成 3 条小红书切片');
   await page.getByTestId('make-plan').click();
-  await page.getByTestId('plan-start').click({ timeout: 30000 });
+  await page.getByTestId('toast-action').first().click();
+  // on autopilot the plan is applied by itself: the control room follows it to its project, which fails
+  await expect(page.locator('[data-testid=hub-project][data-state=failed]')).toBeVisible({ timeout: 30000 });
+  await page.getByTestId('hub-open').click();
   await expect(page.getByTestId('project-title')).toBeVisible({ timeout: 30000 });
 
   // project page: red status word + the reason in her words (never the raw 401 / path) + what to do
@@ -92,8 +98,9 @@ test('a failed pilot is visible: project, inbox, all projects; retry with Codex 
   await expect(pv.getByTestId('fail-retry-other')).toBeVisible();
   await shot('03-inbox-failed');
 
-  // all projects: a Failed count
+  // all projects: a Failed count (the grid's filter row)
   await page.getByTestId('nav-projects').click();
+  await page.locator('[data-testid=projects-view] [data-v=grid]').click();
   await expect(page.getByTestId('projects-filter')).toContainText(/Failed 1|失败 1/);
   await shot('05-projects-failed-count');
 

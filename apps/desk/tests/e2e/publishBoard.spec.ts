@@ -113,7 +113,7 @@ test('create by drag from the queue; update by dragging a card to another day', 
 });
 
 test('the drawer: time, platform off / on, caption with the counter, Shorten for X', async () => {
-  await card('B_自媒体').click();
+  await card('B_自媒体').locator('.pc-top').click(); // the time row opens the drawer (the cover opens the clip)
   const d = page.getByTestId('pb-drawer');
   await expect(d).toBeVisible();
   await d.getByTestId('pb-time').fill('21:30');
@@ -141,7 +141,7 @@ test('the drawer: time, platform off / on, caption with the counter, Shorten for
 
 test('delete: back to queue from the drawer (files untouched) + undo; drag a card back to the queue', async () => {
   const files = fs.readdirSync(path.join(work, 'final')).sort();
-  await card('B_自媒体').click();
+  await card('B_自媒体').locator('.pc-top').click(); // the time row opens the drawer (the cover opens the clip)
   await page.getByTestId('pb-back').click();
   await expect(card('B_自媒体')).toHaveCount(0);
   await expect(page.locator('[data-testid="pub-queue-item"][data-clip="B_自媒体"]')).toBeVisible();
@@ -194,7 +194,7 @@ test('Confirm n posts -> ready; month view; mark posted + views in Data', async 
   await expect(confirm).toBeVisible();
   await confirm.click();
   await expect(card('A_换圈子').getByTestId('pb-status')).toHaveAttribute('data-status', 'ready');
-  await card('A_换圈子').click();
+  await card('A_换圈子').locator('.pc-top').click();
   await page.getByTestId('pb-mark-posted').click();
   await expect(card('A_换圈子').getByTestId('pb-status')).toHaveAttribute('data-status', 'posted');
   await page.getByTestId('pb-drawer-close').click();

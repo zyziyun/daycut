@@ -271,7 +271,7 @@ class MockIntake(Intake):
             def go():
                 try:
                     if autopilot:
-                        self._mock_autopilot(d, proj, start_at)
+                        self._mock_autopilot(d, proj, start_at, provider)
                     else:
                         self._mock_pilot(d, proj, provider)
                 finally:
@@ -317,14 +317,26 @@ class MockIntake(Intake):
         write_json(reg_path, reg)
         return projects
 
-    def _mock_autopilot(self, d, proj, start_at=0):
+    def _mock_autopilot(self, d, proj, start_at=0, provider=None):
         """The whole project, no question: each clip goes through the stages, lands in final/ and the decisions the
-        engine would have taken are recorded (one AI call for the unsure cuts, the rules for the rest)."""
+        engine would have taken are recorded (one AI call for the unsure cuts, the rules for the rest).
+        ``DESK_MOCK_PILOT_FAIL=auth``: fails at the first model call like an expired Claude Code login (a retry with
+        another provider runs)."""
         import socket
         from .engine import MockEngine
         step = float(os.environ.get("DESK_MOCK_STEP", "0.25"))
         n = int(proj["items"]["count"])
         started = time.time()
+        if os.environ.get("DESK_MOCK_PILOT_FAIL") and provider in (None, "claude-code"):
+            write_json(os.path.join(d, ".vstudio", "status.json"),
+                       dict(status="failed", stage="segment_plan", progress=0.05, message="", started=started,
+                            heartbeat=time.time(), pid=os.getpid(), host=socket.gethostname(), updated_by="desk-mock"))
+            record_pilot(d, False, "plan-segments failed (exit 5): claude CLI: Failed to authenticate. "
+                              "API Error: 401 {\"type\":\"error\"} see /Users/someone/.claude/logs/x.log",  # check-skill: allow
+                              provider="claude-code")
+            if self.bus:
+                self.bus.publish("inbox")
+            return
         stages = ("asr", "cleanup", "subs", "compose", "export", "qc", "copy")
         os.makedirs(os.path.join(d, "final"), exist_ok=True)
         for k in range(start_at, n):

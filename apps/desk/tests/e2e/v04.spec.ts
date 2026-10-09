@@ -44,6 +44,7 @@ test.beforeAll(async () => {
   page = await app.firstWindow();
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.waitForURL(/^app:\/\/desk\//);
+  await page.evaluate(() => sessionStorage.setItem('v4.pview', 'grid')); // All projects as the grid (the control room: autopilot.spec)
 });
 
 test.afterAll(async () => {
@@ -52,14 +53,18 @@ test.afterAll(async () => {
 
 const hash = (h: string) => page.evaluate((x) => (location.hash = x), h);
 
-test('Home: say it + a file -> AI plan card -> revise -> start a pilot -> the new project', async () => {
+test('Home (Ask me first): say it + a file -> sent -> the plan card in All projects -> revise -> start a pilot', async () => {
   await expect(page.getByTestId('home')).toBeVisible({ timeout: 30000 });
+  await page.evaluate(() => window.desk.setSettings({ autopilot: false }));
   await page.evaluate((f) => sessionStorage.setItem('v4.composer', JSON.stringify({ prompt: '', files: [f] })), recording);
   await hash('#/inbox');
   await hash('#/');
   await expect(page.getByTestId('composer-files')).toContainText('副业复盘_final.mp4');
   await page.getByTestId('composer-input').fill('把这条副业复盘剪成 4 条小红书切片，每条一分钟左右');
   await page.getByTestId('make-plan').click();
+  await expect(page.getByTestId('composer-input')).toHaveValue(''); // Home is free for the next one at once
+  await page.getByTestId('toast-action').first().click();
+  await expect(page.getByTestId('hub-request')).toBeVisible({ timeout: 15000 });
   const facts = page.getByTestId('plan-facts');
   await expect(facts).toContainText(/4 clips|4 条/, { timeout: 30000 });
   await expect(page.getByTestId('plan-summary')).toContainText(/4 clips|4 条/); // no AI planned it: said in the UI language
@@ -68,7 +73,9 @@ test('Home: say it + a file -> AI plan card -> revise -> start a pilot -> the ne
   await page.getByTestId('plan-revise-send').click();
   await expect(facts).toContainText(/3 clips|3 条/, { timeout: 30000 });
   await page.getByTestId('plan-start').click();
-  await expect(page.getByTestId('project-title')).toContainText('副业复盘', { timeout: 30000 });
+  await expect(page.getByTestId('hub-project').getByTestId('hub-title')).toContainText('副业复盘', { timeout: 30000 });
+  await page.evaluate(() => window.desk.setSettings({ autopilot: true }));
+  await page.evaluate(() => sessionStorage.setItem('v4.pview', 'grid'));
   await page.getByTestId('nav-home').click();
   // the mock pilot takes ~0.4 s (DESK_MOCK_STEP 0.02): by the time Home renders it is either still Running or already
   // waiting for her in the Inbox lane ("第 1 条做好了") - both say the new project is going

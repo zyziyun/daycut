@@ -93,6 +93,7 @@ test('a fresh profile has no publishing accounts until she adds one (BB-20)', as
 
 test('Try with a sample: planned without AI in the UI language, started, labelled, deletable', async () => {
   test.setTimeout(90000);
+  await page.evaluate(() => window.desk.setSettings({ autopilot: false })); // its plan card, then Start
   // first run: the sample card above the starting points; with projects already there (the mock engine lists demo
   // ones): the same action under "More ideas"
   if (await page.getByTestId('home-sample').isVisible()) await page.getByTestId('home-sample').click();
@@ -100,7 +101,7 @@ test('Try with a sample: planned without AI in the UI language, started, labelle
     await page.getByTestId('home-more-ideas').click();
     await page.getByTestId('idea-sample').click();
   }
-  await expect(page.getByTestId('composer-files')).toContainText('reelfold-sample.mp4');
+  await page.getByTestId('toast-action').first().click({ timeout: 30000 }); // sent: it plans in All projects
   await expect(page.getByTestId('plan-start')).toBeVisible({ timeout: 30000 });
   // the plan says what it does in English (no Chinese template) and that no AI planned it
   const summary = (await page.getByTestId('plan-summary').textContent()) ?? '';
@@ -117,6 +118,7 @@ test('Try with a sample: planned without AI in the UI language, started, labelle
   expect(info.path).toContain(path.join('profile', 'engine-data', 'sample'));
 
   await page.getByTestId('plan-start').click();
+  await page.getByTestId('hub-open').click({ timeout: 30000 });
   await expect(page.getByTestId('project')).toBeVisible({ timeout: 30000 });
   await expect(page.getByTestId('project-title')).toContainText(/Sample/);
   await expect(page.getByTestId('project-sample')).toBeVisible({ timeout: 15000 });

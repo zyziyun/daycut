@@ -41,14 +41,16 @@ const CASES = [
 
 for (const c of CASES) {
   test(`${c.lang}: an English request -> the decide box in the UI language`, async () => {
-    await page.evaluate((lang) => window.desk.setSettings({ lang }), c.lang);
+    await page.evaluate((lang) => window.desk.setSettings({ lang, autopilot: false }), c.lang);
     await page.evaluate((f) => sessionStorage.setItem('v4.composer', JSON.stringify({ prompt: '', files: [f] })), recording);
     await page.reload();
     await page.waitForURL(/^app:\/\/desk\//);
+    await page.evaluate(() => (location.hash = '#/')); // the previous case ended in All projects
     await expect(page.locator('html')).toHaveAttribute('lang', c.html);
     await expect(page.getByTestId('composer-files')).toContainText('creator-workshop-screencast.mp4', { timeout: 30000 });
     await page.getByTestId('composer-input').fill(REQUEST);
     await page.getByTestId('make-plan').click();
+    await page.getByTestId('toast-action').first().click(); // the plan waits for her in All projects
     const decide = page.getByTestId('plan-decide');
     await expect(decide).toBeVisible({ timeout: 30000 });
     await expect(decide.locator('b')).toHaveText(c.heading);

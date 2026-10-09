@@ -33,6 +33,7 @@ test.beforeAll(async () => {
   page = await app.firstWindow();
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.waitForURL(/^app:\/\/desk\//);
+  await page.evaluate(() => sessionStorage.setItem('v4.pview', 'grid')); // All projects as the grid (the control room: autopilot.spec)
   await page.evaluate(() => localStorage.setItem('i18n.strict', '1'));
 });
 

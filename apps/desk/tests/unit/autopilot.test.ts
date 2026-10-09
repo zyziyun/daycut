@@ -114,3 +114,19 @@ describe('decisions in words', () => {
     }
   });
 });
+
+describe('publish cards open their clip', () => {
+  it('the cover is a link to the clip page; a posted link shows only for a real http(s) address', async () => {
+    const { createElement } = await import('react');
+    const { renderToStaticMarkup } = await import('react-dom/server');
+    const { ClipThumbLink, PostLink } = await import('../../src/renderer/src/v4/kit');
+    const { clipHref } = await import('../../src/renderer/src/lib/nav');
+    const html = renderToStaticMarkup(createElement(ClipThumbLink, { href: clipHref('abcdefabcdef', 'clip 1'), src: null, label: 'Open the clip', testId: 'pc-open-clip' }));
+    expect(html).toContain('href="#/p/abcdefabcdef/clip/clip%201"');
+    expect(html).toContain('data-testid="pc-open-clip"');
+    setLang('en');
+    expect(renderToStaticMarkup(createElement(PostLink, { url: 'https://www.tiktok.com/@me/video/1' }))).toContain('View the post');
+    expect(renderToStaticMarkup(createElement(PostLink, { url: 'javascript:alert(1)' }))).toBe('');
+    expect(renderToStaticMarkup(createElement(PostLink, { url: null }))).toBe('');
+  });
+});

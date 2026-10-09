@@ -270,5 +270,30 @@ class MockAutopilotRunTest(unittest.TestCase):
                 os.environ.pop(k, None)
 
 
+class StopRequestTest(unittest.TestCase):
+    def test_a_request_stopped_while_it_plans_makes_nothing(self):
+        """Stop in the control room while an autopilot request plans: the late plan never applies (no project, no
+        run), and the request leaves the list."""
+        from desk_mock.intake import MockIntake
+        tmp = tempfile.mkdtemp(prefix="mockstop-")
+        os.environ.update(DESK_MOCK_STEP="0.2", VSTUDIO_HOME=os.path.join(tmp, "vh"))
+        try:
+            video = os.path.join(tmp, "live.mp4")
+            with open(video, "w", encoding="utf-8") as f:
+                f.write("x")
+            it = MockIntake(os.path.join(tmp, "desk"), None, None, "mock")
+            pid = it.start("剪 2 条切片", [video], mode="autopilot")["id"]
+            time.sleep(0.1)
+            it.stop(pid)
+            time.sleep(2.5)                                       # the simulated plan would have been ready by now
+            j = it.get(pid)
+            self.assertEqual(j["state"], "stopped")
+            self.assertFalse(j.get("applied"))
+            self.assertEqual(it.open()["items"], [])
+            self.assertFalse(os.path.exists(os.path.join(tmp, "vh", "projects")))
+        finally:
+            os.environ.pop("DESK_MOCK_STEP", None)
+
+
 if __name__ == "__main__":
     unittest.main()

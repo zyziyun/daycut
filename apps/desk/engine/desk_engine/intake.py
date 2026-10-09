@@ -209,7 +209,7 @@ class Intake:
 
     def _set(self, pid, **kw):
         with self._lock:
-            if (self.jobs.get(pid) or {}).get("state") == "stopped" and kw.get("state") in ("done", "error"):
+            if (self.jobs.get(pid) or {}).get("state") == "stopped" and kw.get("state") in ("done", "error", "running"):
                 return dict(self.jobs[pid])          # stopped by her: a late answer / the kill's error is dropped
             self.jobs[pid] = dict(self.jobs.get(pid) or {}, **kw)
             job = dict(self.jobs[pid])
@@ -343,8 +343,9 @@ class Intake:
 
     def _auto_apply(self, pid):
         """Autopilot: the plan is made into its projects and each runs whole, no Start to press."""
-        if (self.jobs.get(pid) or {}).get("state") == "stopped":
-            return
+        j = self.jobs.get(pid) or {}
+        if j.get("state") == "stopped" or j.get("discarded"):
+            return                                   # she stopped / dropped it while it planned: nothing is made
         try:
             self.apply(pid, run=True)
             self._set(pid, state="done", step="done", failed_apply=None)

@@ -84,6 +84,7 @@ test.beforeAll(async () => {
     if (u.pathname.startsWith('/api/') && r.status() >= 400 && !/\/(strip|thumb|frame|media)\b/.test(u.pathname)) problems.push(`[http ${r.status()} @ ${where}] ${r.request().method()} ${u.pathname}`);
   });
   await page.waitForURL(/^app:\/\/desk\//);
+  await page.evaluate(() => sessionStorage.setItem('v4.pview', 'grid')); // All projects as the grid (the control room: autopilot.spec)
   await page.setViewportSize({ width: 1440, height: 900 });
   await expect(page.getByTestId('engine-status')).toHaveAttribute('data-mode', 'mock', { timeout: 30000 });
 });

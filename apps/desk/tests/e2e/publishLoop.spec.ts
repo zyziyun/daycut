@@ -126,7 +126,7 @@ test('the drawer: only her platforms in Where, the title edited inline with 小�
   await hash('#/publish');
   const card = page.locator('[data-testid="pub-post"][data-clip="B_自媒体"]');
   if (tomorrow.getDay() === 1) await page.getByTestId('pb-next').click(); // tomorrow is next week's Monday
-  await card.click();
+  await card.locator('.pc-top').click(); // the time row opens the drawer (the cover opens the clip)
   const d = page.getByTestId('pb-drawer');
   await expect(d.getByTestId('pb-where')).toHaveCount(1);
   await expect(d.locator('[data-testid="pb-where"][data-pf="douyin"]')).toHaveCount(0);
