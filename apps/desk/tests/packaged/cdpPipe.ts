@@ -43,7 +43,11 @@ export async function spawnWithCdpPipe(exe: string, args: string[], env: NodeJS.
       else early.push(msg);
     }
   });
+  let used = false;
   wss.on('connection', (ws) => {
+    // one client per app: the pipe is a single CDP session (a second client would get the first one's answers)
+    if (used) return ws.close();
+    used = true;
     client = ws;
     for (const m of early.splice(0)) ws.send(m);
     ws.on('message', (m) => toApp.write(String(m) + '\0'));

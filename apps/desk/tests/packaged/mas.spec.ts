@@ -53,14 +53,9 @@ async function launch(extra: Record<string, string> = {}): Promise<App> {
   const env = { HOME: os.homedir(), PATH: '/usr/bin:/bin', TMPDIR: CTMP + '/', DESK_USER_DATA: userData, DESK_HIDE_WINDOW: '1', DESK_SKIP_FIRST_RUN: '1', DESK_DISABLE_UPDATES: '1', ...extra };
   const piped = await spawnWithCdpPipe(EXE, ['--use-mock-keychain'], env);
   const proc = piped.proc;
-  let browser: Browser | null = null;
-  for (let i = 0; i < 120 && !browser && proc.exitCode === null; i++) {
-    try {
-      browser = await chromium.connectOverCDP(piped.endpoint, { timeout: 5000 });
-    } catch {
-      await new Promise((r) => setTimeout(r, 500));
-    }
-  }
+  // ONE connection: the pipe is one CDP session for the app's lifetime, so a retried connect would receive the answers
+  // and targets of the abandoned one. Chromium reads the pipe from early in its start-up; the timeout covers a cold start.
+  const browser: Browser | null = await chromium.connectOverCDP(piped.endpoint, { timeout: 90000 }).catch(() => null);
   if (!browser) {
     proc.kill();
     throw new Error('the sandboxed app did not open a CDP endpoint (Console: look for "Sandbox" / secinit crashes)');
@@ -216,16 +211,28 @@ test('the sample, end to end in the sandbox (speech model download, ASR, cleanup
     await expect
       .poll(async () => (await page.evaluate(() => window.desk.assets.status())).groups.filter((g) => ['core', 'asr-mlx-fast'].includes(g.id) && g.installed).length, { timeout: 10 * 60_000, intervals: [5000] })
       .toBe(2);
-    await page.evaluate(() => (location.hash = '#/'));
-    await page.getByText('Try with a sample').first().click({ timeout: 60000 });
-    await page.getByText(/^Start/).first().click({ timeout: 120000 });
-    // the pilot clip is rendered and waits for her review (the publish checkpoint)
+    // the pilot clip is rendered and waits for her review (the publish checkpoint): judged on what THIS run writes to the
+    // projects' desk-pilot.log files (the container keeps projects from earlier runs)
     const projects = path.join(CONTAINER, '.config', 'vstudio', 'projects');
+    const pilotLogs = () => (fs.existsSync(projects) ? fs.readdirSync(projects).flatMap((d) => fs.readdirSync(path.join(projects, d)).map((p) => path.join(projects, d, p, 'desk-pilot.log'))).filter((f) => fs.existsSync(f)) : []);
+    const before = new Map(pilotLogs().map((f) => [f, fs.statSync(f).size]));
+    await page.evaluate(() => (location.hash = '#/'));
+    // the sample card is on a first Home; with projects already in the container (earlier runs) it is under More ideas
+    const card = page.getByText('Try with a sample').first();
+    const more = page.getByTestId('home-more-ideas');
+    await expect(card.or(more)).toBeVisible({ timeout: 60000 });
+    if (await card.isVisible()) await card.click();
+    else {
+      await more.click();
+      await page.getByTestId('idea-sample').click();
+    }
+    await page.getByText(/^Start/).first().click({ timeout: 120000 });
     await expect
       .poll(
         () => {
-          const logs = fs.existsSync(projects) ? fs.readdirSync(projects).flatMap((d) => fs.readdirSync(path.join(projects, d)).map((p) => path.join(projects, d, p, 'desk-pilot.log'))).filter((f) => fs.existsSync(f)) : [];
-          const text = logs.map((f) => fs.readFileSync(f, 'utf8')).join('\n');
+          const text = pilotLogs()
+            .map((f) => fs.readFileSync(f).subarray(before.get(f) ?? 0).toString('utf8'))
+            .join('\n');
           if (/"stage-fail"/.test(text)) return `failed: ${text.match(/"stage-fail".*$/m)?.[0].slice(0, 400)}`;
           return /"stage": "export"[^\n]*\n[^\n]*/.test(text) && /"event": "stage-done"[^\n]*"stage": "qc"/.test(text) ? 'rendered' : 'running';
         },
