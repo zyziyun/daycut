@@ -700,13 +700,22 @@ def skin_and_makeup(img, f, p, state=None, seg=None):
     return out
 
 
+def gaussian_filter1d(x, sigma, truncate=4.0):
+    """scipy.ndimage.gaussian_filter1d(x, sigma) of a 1-D array without scipy: normalised Gaussian
+    of radius int(truncate * sigma + 0.5), mode='reflect' (half-sample symmetric, = np.pad
+    'symmetric', which also repeats the reflection when the signal is shorter than the radius)."""
+    x = np.asarray(x, np.float64)
+    r = int(truncate * float(sigma) + 0.5)
+    w = np.exp(-0.5 * (np.arange(-r, r + 1) / float(sigma)) ** 2)
+    return np.convolve(np.pad(x, r, mode="symmetric"), w / w.sum(), mode="valid")
+
+
 def body_slim(img, f, k):
     """Squeeze the main person horizontally toward each row's centre (selfie segmenter)."""
     if k <= 0:
         return img
     import mediapipe as mp
     from mediapipe.tasks.python import BaseOptions, vision
-    from scipy.ndimage import gaussian_filter1d
     from .config import model
     seg = vision.ImageSegmenter.create_from_options(vision.ImageSegmenterOptions(
         base_options=BaseOptions(model_asset_path=model("selfie_segmenter")), output_confidence_masks=True))

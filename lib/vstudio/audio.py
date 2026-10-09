@@ -14,6 +14,7 @@ re-initialises the audio stream. Unified from polish ``polish.measure/step_loudn
 ``make_drill`` loudnorm, vlog ``add_music``, photo-story ``render.mix_audio``, promo ``tight_cut.rms_envelope``,
 talkinghead ``cut_pass1``/``strict_pass`` RMS and ``compose.sfx_bank``.
 """
+import functools
 import json
 import math
 import os
@@ -203,17 +204,98 @@ def _encode_audio(src, wav, dst, audio_bitrate=None, video="copy"):
     return dst
 
 
-def _filt(b, a, x):
+# ------------------------------------------------------------------ IIR filter (scipy.signal.lfilter, axis=0)
+# The engine ships without scipy (its compiled extensions are rejected by the Mac App Store). numba
+# (bundled on Apple silicon with mlx-whisper) runs the plain sample loop; Intel Macs, Windows and CI
+# have no numba, so they use an exact block form built on numpy matrix products instead.
+def _ba(b, a):
+    """(b, a) padded to one length and normalised by a[0], float64."""
+    m = max(len(a), len(b))
+    a0 = float(a[0])
+    return (np.pad(np.asarray(b, np.float64), (0, m - len(b))) / a0,
+            np.pad(np.asarray(a, np.float64), (0, m - len(a))) / a0)
+
+
+@functools.lru_cache(maxsize=1)
+def _df2t_jit():
+    """numba-compiled direct form II transposed loop over x (n, ch) -> y, or None without numba."""
     try:
-        from scipy.signal import lfilter
-        return lfilter(b, a, x, axis=0)
-    except ImportError:                                  # plain biquad loop (slow, but dependency-free)
-        y = np.zeros_like(x)
-        x1 = x2 = y1 = y2 = np.zeros(x.shape[1:])
-        for i in range(len(x)):
-            y[i] = b[0] * x[i] + b[1] * x1 + b[2] * x2 - a[1] * y1 - a[2] * y2
-            x2, x1, y2, y1 = x1, x[i], y1, y[i]
+        import numba
+    except ImportError:
+        return None
+
+    @numba.njit(cache=False)
+    def df2t(b, a, x, y):
+        m = len(a) - 1
+        z = np.zeros(m + 1)
+        for c in range(x.shape[1]):
+            z[:] = 0.0
+            for i in range(x.shape[0]):
+                xi = x[i, c]
+                yi = b[0] * xi + z[0]
+                for k in range(m):
+                    z[k] = b[k + 1] * xi - a[k + 1] * yi + z[k + 1]
+                y[i, c] = yi
         return y
+    return df2t
+
+
+@functools.lru_cache(maxsize=16)
+def _iir_blocks(b, a, L):
+    """Block matrices of the filter in state space (scipy's direct form II transposed, state m = order):
+    M (L + m, L) maps [block input, start state] -> block output, G (m, L) block input -> end state,
+    AL (m, m) state transition over L samples."""
+    b, a = _ba(b, a)
+    m = len(a) - 1
+    A = np.zeros((m, m))
+    A[:, 0] = -a[1:]
+    A[np.arange(m - 1), np.arange(1, m)] = 1.0
+    B = b[1:] - a[1:] * b[0]
+    F, G, h = np.empty((L, m)), np.empty((m, L)), np.empty(L)
+    P, v = np.eye(m), B.copy()
+    for k in range(L):                   # F[k] = C A^k, G[:, L-1-k] = A^k B, h = impulse response
+        F[k], G[:, L - 1 - k] = P[0], v
+        h[k] = b[0] if k == 0 else F[k - 1] @ B
+        P, v = P @ A, A @ v
+    i = np.arange(L)
+    T = np.where(i[:, None] <= i[None, :], h[(i[None, :] - i[:, None]) % L], 0.0)
+    return np.vstack([T, F.T]), G, P
+
+
+def _filt_blocks(b, a, x2, L=256, chunk=8192):
+    """Block form for x2 (n, ch): each L-sample block's output is one matrix product of
+    [input, start state]; only the m-dim state is carried block to block in Python."""
+    M, G, AL = _iir_blocks(tuple(map(float, b)), tuple(map(float, a)), L)
+    n, c = x2.shape
+    m = len(AL)
+    y = np.empty((n, c))
+    s = np.zeros((c, m))
+    for r0 in range(0, n, L * chunk):    # chunks bound the temporaries for long audio
+        xc = x2[r0:r0 + L * chunk]
+        full, rest = divmod(len(xc), L)
+        xs = np.zeros((c, full + (rest > 0), L + m))      # per channel and block: [L inputs, m start state]
+        xs[:, :full, :L] = xc[:full * L].reshape(full, L, c).transpose(2, 0, 1)
+        xs[:, full:, :rest] = xc[full * L:].T[:, None]     # last partial block, zero padded
+        E = xs[:, :, :L] @ G.T                             # (c, k, m) each block's input -> its end state
+        for j in range(xs.shape[1]):                       # state at the start of every block
+            xs[:, j, L:] = s
+            s = s @ AL.T + E[:, j]
+        yc = (xs.reshape(-1, L + m) @ M).reshape(c, -1)
+        y[r0:r0 + len(xc)] = yc[:, :len(xc)].T
+    return y
+
+
+def _filt(b, a, x):
+    """scipy.signal.lfilter(b, a, x, axis=0) (order >= 1, zero initial state) for x (n,) / (n, ch),
+    float64 out. Matches scipy to ~1e-15 relative (tests/test_no_scipy.py)."""
+    x = np.asarray(x, np.float64)
+    x2 = x.reshape(len(x), int(np.prod(x.shape[1:])))
+    jit = _df2t_jit() if len(x) >= 4096 else None          # short signals: skip the one-off compile
+    if jit is not None:
+        y = jit(*_ba(b, a), np.ascontiguousarray(x2), np.empty(x2.shape))
+    else:
+        y = _filt_blocks(b, a, x2)
+    return y.reshape(x.shape)
 
 
 def integrated_lufs(x, sr=SR):

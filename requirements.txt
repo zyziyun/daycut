@@ -5,7 +5,6 @@ Pillow
 # tasks API that 0.10.14-0.10.21 already have)
 mediapipe==0.10.21; sys_platform == "darwin" and platform_machine == "x86_64"
 mediapipe>=0.10.14; sys_platform != "darwin" or platform_machine != "x86_64"
-scipy
 soundfile
 PyYAML
 jsonschema

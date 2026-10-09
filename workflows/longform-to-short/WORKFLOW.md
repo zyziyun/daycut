@@ -34,7 +34,7 @@ Edit `work/config.py` as you go (set `src` first). Every script is
 scratch lives there). Taste (speeds, loudness, accent colour, tags, term fixes, title limits) comes
 from `persona.local.yaml`; per-video decisions from the config. Needs `ffmpeg` (with libass for
 the burn step — else `pip install static-ffmpeg` and it is used automatically), Pillow, numpy,
-scipy, and `mlx-whisper` (Apple Silicon) or `faster-whisper`.
+soundfile, and `mlx-whisper` (Apple Silicon) or `faster-whisper`.
 
 ## Pipeline
 

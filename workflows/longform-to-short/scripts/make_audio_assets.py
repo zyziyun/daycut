@@ -9,8 +9,8 @@ Usage: python3 make_audio_assets.py work/config.py [--hook-bed]
 """
 import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
 import numpy as np
+import soundfile as sf
 from numpy.fft import irfft, rfft
-from scipy.io import wavfile
 
 import _lfc
 
@@ -30,7 +30,7 @@ def norm_to(x, peak_db):
 
 def write(name, mono, haas):
     st = np.stack([mono, np.roll(mono, haas)], axis=1)
-    wavfile.write(name, SR, (st * 32767).astype(np.int16))
+    sf.write(name, (st * 32767).astype(np.int16), SR, subtype="PCM_16")   # 16-bit PCM stereo WAV
 
 
 D2 = float(cfg.get("cards.dur", 1.6))
