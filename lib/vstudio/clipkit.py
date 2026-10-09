@@ -319,9 +319,10 @@ def compose_part(src, a, b, out, geo, camera=None, offset=0.0, speed=1.0, header
     a_src = camera if (audio == "camera" and idx_cam is not None) else main_src
     has_a = media.probe(a_src)["has_audio"]
     if has_a:
-        g.append(f"[{a_idx}:a]asetpts=PTS-STARTPTS,{media.atempo_chain(speed) + ',' if speed != 1 else ''}"
-                 f"aresample=48000,aformat=channel_layouts=stereo[a]")
-        amap = ["-map", "[a]"]
+        # Audio stays out of the overlay graph (its own -af): with [N:a] inside the same -filter_complex,
+        # ffmpeg 9's scheduler deadlocked ~1 in 10 renders at 0 CPU once the shortest=1 overlays finished.
+        amap = ["-map", f"{a_idx}:a", "-af", f"asetpts=PTS-STARTPTS,"
+                f"{media.atempo_chain(speed) + ',' if speed != 1 else ''}aresample=48000,aformat=channel_layouts=stereo"]
     else:
         ins += ["-f", "lavfi", "-t", f"{out_dur:.3f}", "-i", "anullsrc=r=48000:cl=stereo"]
         amap = ["-map", f"{n}:a"]

@@ -20,6 +20,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from fractions import Fraction
 from functools import lru_cache
 
@@ -30,6 +31,11 @@ SR = 48000                                       # every audio stem we produce i
 
 class FFmpegError(RuntimeError):
     pass
+
+
+# An ffmpeg whose -progress report stops moving for this long is killed (0 = never). ffmpeg >= 7's threaded
+# scheduler can deadlock at ~0 CPU instead of exiting; without this a render (or the test suite) waits forever.
+STALL_S = float(os.environ.get("VSTUDIO_FFMPEG_STALL_S") or 300)
 
 
 # ------------------------------------------------------------------ discovery
@@ -225,14 +231,13 @@ def run(cmd, capture=False, check=True, quiet=True, input=None):
         cmd[1:1] = ["-nostdin"]
     from . import h264
     alt = h264.rewrite(cmd, h264.effective_encoder(cmd[0])) if "libx264" in cmd else cmd
-    r = subprocess.run(alt, capture_output=True, input=input, **({"_vstudio_raw": True} if h264._ORIG_INIT else {}))
+    r = _exec(alt, input)
     if r.returncode != 0 and alt is not cmd:          # the configured encoder failed: libx264 / OpenH264 fallback
         failed = alt[alt.index('-c:v') + 1] if '-c:v' in alt else None
         fb = h264.fallback(failed, cmd[0])
         print(f"!! video-studio: {failed or 'encoder'} failed, retrying with {fb}", file=sys.stderr)
         retry = cmd if fb == "libx264" else h264.rewrite(cmd, fb)
-        r = subprocess.run(retry, capture_output=True, input=input,
-                           **({"_vstudio_raw": True} if h264._ORIG_INIT else {}))
+        r = _exec(retry, input)
     if check and r.returncode != 0:
         err = r.stderr.decode("utf-8", "replace") if isinstance(r.stderr, bytes) else (r.stderr or "")
         raise FFmpegError(f"command failed ({r.returncode}): {' '.join(cmd[:8])} ...\n{err[-2500:]}")
@@ -240,6 +245,59 @@ def run(cmd, capture=False, check=True, quiet=True, input=None):
         r.stdout_text = r.stdout.decode("utf-8", "replace") if isinstance(r.stdout, bytes) else r.stdout
         r.stderr_text = r.stderr.decode("utf-8", "replace") if isinstance(r.stderr, bytes) else r.stderr
     return r
+
+
+def _progress_mark(path):
+    """The last ``-progress`` block's (frame, total_size, out_time_us); None before the first one."""
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, 2)
+            f.seek(max(0, f.tell() - 2048))
+            tail = f.read().decode("utf-8", "replace")
+    except OSError:
+        return None
+    blocks = tail.split("progress=")
+    if len(blocks) < 2:
+        return None
+    kv = dict(ln.split("=", 1) for ln in blocks[-2].splitlines() if "=" in ln)
+    return kv.get("frame"), kv.get("total_size"), kv.get("out_time_us")
+
+
+def _exec(cmd, input=None):
+    """subprocess.run(capture_output=True) with a stall watchdog for ffmpeg: kill it and raise FFmpegError
+    when its progress has not moved for STALL_S seconds."""
+    from . import h264
+    raw = {"_vstudio_raw": True} if h264._ORIG_INIT else {}
+    if not STALL_S or not os.path.basename(cmd[0]).startswith("ffmpeg") or "-progress" in cmd:
+        return subprocess.run(cmd, capture_output=True, input=input, **raw)
+    fd, prog = tempfile.mkstemp(prefix="vstudio-", suffix=".progress")
+    os.close(fd)
+    full = [cmd[0], "-progress", prog, *cmd[1:]]
+    p = None
+    try:
+        p = subprocess.Popen(full, stdin=subprocess.DEVNULL if input is None else subprocess.PIPE,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, **raw)
+        seen, since = None, time.monotonic()
+        while True:
+            try:
+                out, err = p.communicate(input, timeout=5)
+                return subprocess.CompletedProcess(cmd, p.returncode, out, err)
+            except subprocess.TimeoutExpired:
+                pass
+            mark = _progress_mark(prog)
+            if mark != seen:
+                seen, since = mark, time.monotonic()
+            elif time.monotonic() - since > STALL_S:
+                p.kill()
+                out, err = p.communicate()
+                err = err.decode("utf-8", "replace") if isinstance(err, bytes) else (err or "")
+                raise FFmpegError(f"ffmpeg stalled (no progress for {STALL_S:g} s), killed: "
+                                  f"{' '.join(cmd[:8])} ...\n{err[-2500:]}")
+    finally:
+        if p is not None and p.poll() is None:      # interrupted: never leave an orphan ffmpeg behind
+            p.kill()
+            p.wait()
+        os.unlink(prog)
 
 
 def filter_complex_args(graph, workdir=None):

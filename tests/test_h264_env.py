@@ -58,6 +58,7 @@ def test_media_run_falls_back_to_libx264(monkeypatch, tmp_path):
         return R(1 if "h264_mf" in cmd else 0)
     monkeypatch.setattr(h264, "effective_encoder", lambda *a: "h264_mf")
     monkeypatch.setattr(media.subprocess, "run", fake_run)
+    monkeypatch.setattr(media, "STALL_S", 0)           # no stall watchdog: ffmpeg goes through subprocess.run
     media.run(["ffmpeg", "-i", "a.mp4", "-c:v", "libx264", "-crf", "18", "o.mp4"])
     assert "h264_mf" in calls[0] and "libx264" in calls[1] and len(calls) == 2
 
