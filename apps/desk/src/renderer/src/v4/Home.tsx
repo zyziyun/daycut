@@ -101,6 +101,7 @@ export function Home() {
   const [busy, setBusy] = useState(false);
   const [over, setOver] = useState(false);
   const [platforms, setPlatforms] = useState<string[] | null>(null);
+  const [auto, setAuto] = useState(true); // Settings › New projects: autopilot (default) or ask me first
   const ta = useRef<HTMLTextAreaElement | null>(null);
   const { data: recent } = useLoad((c) => c.recentPrompts(), [sent]);
   const firstRun = !!hist && hist.items.length === 0;
@@ -110,7 +111,10 @@ export function Home() {
     sessionStorage.setItem(DRAFT, JSON.stringify({ prompt, files }));
   }, [prompt, files]);
   useEffect(() => {
-    void window.desk.getSettings().then((s) => setPlatforms(s.defaultPlatforms ?? []));
+    void window.desk.getSettings().then((s) => {
+      setPlatforms(s.defaultPlatforms ?? []);
+      setAuto(s.autopilot !== false);
+    });
   }, []);
   // files dropped anywhere on the window, and 「再来一批」 prefill
   useEffect(() => {
@@ -297,7 +301,7 @@ export function Home() {
               </span>
               <button className={`btn lg ux-make ${ready ? 'primary' : ''}`} disabled={busy || !ready || !!waitDl} onClick={() => void submit()} data-testid="make-plan">
                 <Sparkles className="ico" />
-                {t('home.submit')}
+                {auto ? t('home.submitAuto') : t('home.submit')}
               </button>
             </div>
           )}
