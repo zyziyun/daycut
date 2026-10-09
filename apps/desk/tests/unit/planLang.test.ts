@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { EngineClient } from '../../src/shared/engineClient';
 import type { IntakePlan } from '../../src/shared/v04';
 
-const BASE = 'http://127.0.0.1:43123';
+const BASE = 'app://desk';
 const TOKEN = 'tok'.repeat(20);
 
 function client() {
