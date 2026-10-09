@@ -52,7 +52,7 @@
     "$comment": "Copied at build time from this monorepo's root (apps/desk -> ../..; VSTUDIO_ENGINE_SRC overrides), never fetched: include = top-level entries copied, exclude = directory names dropped anywhere. runtime.json / COMMIT record the checkout's git HEAD."
   },
   "pip": {
-    "$comment": "Added to the pinned repo's requirements.txt per target. torch is overridden away (mlx-whisper only needs it to convert checkpoints).",
+    "$comment": "Added to the pinned repo's requirements.txt per target. torch is overridden away (mlx-whisper only needs it to convert checkpoints); so is scipy (App Review 2.5.1: its extensions import non-public Accelerate BLAS symbols; the engine is scipy-free and mlx-whisper's one call is patched by scripts/runtime/patch_mlx_whisper.py).",
     "extra": {
       "darwin-arm64": [
         "mediapipe==0.10.35",
@@ -69,7 +69,8 @@
       ]
     },
     "overrides": [
-      "torch; python_version < \"0\""
+      "torch; python_version < \"0\"",
+      "scipy; python_version < \"0\""
     ]
   },
   "micromamba": {

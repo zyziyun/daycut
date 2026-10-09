@@ -4,6 +4,9 @@
 //   vstudio/  the engine from this monorepo's root (lib/, workflows/, SKILL.md ...; packaging/runtime.lock.json -> vstudio.include)
 //   licenses/ licence texts + component lists for everything above (feeds THIRD_PARTY_LICENSES.md)
 //   runtime.json  what was built (read by the app at startup and shown in Settings)
+// App Store compliance (all editions, one runtime): no tkinter / Tcl / Tk, no scipy (its extensions import
+// non-public Accelerate BLAS symbols - App Review 2.5.1; mlx-whisper's one scipy call is patched, see
+// patch_mlx_whisper.py), no "itms-services" in urllib.parse. scripts/appstore/appstore_lint.py checks the result.
 // Usage: node scripts/runtime/bundle.mjs [--target=darwin-arm64] [--skip=python,ffmpeg,vstudio]
 // The pip step runs the target's own interpreter, so build on a host of the target's OS/arch (CI matrix does).
 import fs from 'node:fs';
@@ -42,6 +45,7 @@ async function buildPython() {
   const inv = run(py, ['-c', INVENTORY_PY, path.join(OUT, 'licenses', 'python-packages')], { capture: true, quiet: true });
   fs.writeFileSync(path.join(OUT, 'licenses', 'python-packages.json'), inv);
   pruneSitePackages();
+  appStoreCompliance(py);
   run(py, ['-m', 'compileall', '-q', '-j', '0', '--invalidation-mode', 'unchecked-hash', path.join(OUT, 'python')], { stdio: ['ignore', 'ignore', 'ignore'], allowFail: true }); // a few template files are not valid py3
 }
 
@@ -69,6 +73,9 @@ function pruneSitePackages() {
   for (const e of fs.readdirSync(site)) if (/^(pip|setuptools)-.*\.dist-info$/.test(e)) rmrf(path.join(site, e));
   // stdlib parts the engine never uses
   for (const p of ['test', 'idlelib', 'turtledemo', 'tkinter', 'ensurepip', 'lib2to3', 'pydoc_data']) rmrf(path.join(lib, p));
+  // tkinter's C extension links Tcl / Tk (App Review 2.5.1 refuses every Tcl_* symbol); nothing imports it
+  const dynload = isWin ? path.join(pyRoot, 'DLLs') : path.join(lib, 'lib-dynload');
+  for (const e of fs.readdirSync(dynload)) if (/^_tkinter\b.*\.(so|pyd)$|^(tcl|tk)\d+t?\.dll$/i.test(e)) rmrf(path.join(dynload, e));
   if (!isWin) {
     rmrf(path.join(pyRoot, 'include'));
     rmrf(path.join(pyRoot, 'share'));
@@ -90,6 +97,23 @@ function pruneSitePackages() {
     }
     return true;
   });
+}
+
+/** Source patches for App Store compliance, before compileall (so the .pyc files match). Each one fails the build when
+ * the file no longer looks as expected (a new CPython / package release): re-check, then update the patch. */
+function appStoreCompliance(py) {
+  const lib = isWin ? path.join(OUT, 'python', 'Lib') : path.join(OUT, 'python', 'lib', `python${lock.python.version.split('.').slice(0, 2).join('.')}`);
+  // CPython <= 3.12 lists the "itms-services" URL scheme in urllib.parse; App Review rejects binaries containing that
+  // string (CPython 3.13's --with-app-store-compliance removes it the same way). Only urlsplit() of such URLs changes.
+  const parse = path.join(lib, 'urllib', 'parse.py');
+  const src = fs.readFileSync(parse, 'utf8');
+  const out = src.replace(/,\s*'itms-services'/, '');
+  if (out === src || out.includes('itms-services')) throw new Error(`${parse}: the itms-services entry is not where expected - update appStoreCompliance()`);
+  fs.writeFileSync(parse, out);
+  // mlx-whisper (Apple silicon ASR) without scipy: its one scipy call, patched with an equivalent numpy medfilt
+  const site = path.join(lib, 'site-packages');
+  if (fs.existsSync(path.join(site, 'mlx_whisper'))) run(py, [path.join(ROOT, 'scripts', 'runtime', 'patch_mlx_whisper.py'), site]);
+  if (fs.existsSync(path.join(site, 'scipy'))) throw new Error('scipy is in the runtime: the pins must not install it (runtime.lock.json pip.overrides)');
 }
 
 function walk(dir, fn) {
@@ -180,8 +204,13 @@ function verify() {
   Object.assign(env, { PYTHONPATH: path.join(OUT, 'vstudio', 'lib'), PYTHONNOUSERSITE: '1', PYTHONDONTWRITEBYTECODE: '1',
     PATH: [path.join(OUT, 'ffmpeg', 'bin'), sysPath].join(path.delimiter), VSTUDIO_CACHE: path.join(CACHE, 'vstudio-cache-check') });
   const asr = isMac && target.endsWith('arm64') ? 'mlx_whisper' : 'faster_whisper';
-  run(pyExe(), ['-c', `import numpy, scipy, cv2, mediapipe, soundfile, yaml, PIL, fontTools, openai, ${asr}, vstudio.batch, vstudio.media as m; ` +
+  run(pyExe(), ['-c', `import numpy, cv2, mediapipe, soundfile, yaml, PIL, fontTools, openai, ${asr}, vstudio.batch, vstudio.media as m; ` +
     `import shutil; ff = m.ffmpeg_bin(); assert ff.startswith(${JSON.stringify(path.join(OUT, 'ffmpeg'))}), ff; print('ok', ff, '${asr}')`], { env });
+  // App Store compliance: no scipy, no tkinter; the engine's audio / retouch code and mlx-whisper's word timing run
+  run(pyExe(), ['-c', 'import importlib.util as u, numpy as np; assert not u.find_spec("scipy") and not u.find_spec("_tkinter"); ' +
+    'import vstudio.audio, vstudio.retouch' + (asr === 'mlx_whisper' ? '; from mlx_whisper import timing as t; ' +
+    'x = np.random.default_rng(0).random((2, 3, 50), dtype=np.float32); assert t.median_filter(x, 7).shape == x.shape' : '') +
+    '; print("scipy-free ok")'], { env });
   // every package of the engine's requirements.txt is installed and imports (a package added there but not re-locked
   // is otherwise missing from the app); the CLDR entity check runs (babel + pypinyin)
   run(pyExe(), [path.join(ROOT, 'scripts', 'runtime', 'check_requirements.py'), path.join(ENGINE_ROOT, 'requirements.txt')], { env, quiet: true, capture: true });
@@ -190,7 +219,11 @@ function verify() {
   const enc = run(path.join(OUT, 'ffmpeg', 'bin', isWin ? 'ffmpeg.exe' : 'ffmpeg'), ['-hide_banner', '-encoders'], { capture: true });
   if (!enc.includes(T.h264)) throw new Error(`bundled ffmpeg lacks ${T.h264}`);
   if (/libx264|libx265/.test(enc)) throw new Error('bundled ffmpeg contains GPL encoders');
-  if (isMac) checkMachO();
+  if (isMac) {
+    checkMachO();
+    // what App Review checks (Tcl / non-public Accelerate symbols, itms-services): the same lint release-mas.sh runs
+    run(pyExe(), [path.join(ROOT, 'scripts', 'appstore', 'appstore_lint.py'), OUT, '--only', 'symbols,strings']);
+  }
   if (isWin) {
     if (!enc.includes('libopenh264')) throw new Error('bundled ffmpeg lacks libopenh264 (the H.264 fallback when Media Foundation has no encoder)');
     // which H.264 encoder the engine ends up with on this machine (CI runners may lack the MF H.264 encoder)

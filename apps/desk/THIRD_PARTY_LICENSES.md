@@ -170,8 +170,9 @@ Hash-locked in `packaging/requirements/<target>.txt`.
 | absl-py | 2.5.0 | Apache-2.0 | all | https://github.com/abseil/abseil-py |
 | annotated-types | 0.8.0 | MIT | all | https://github.com/annotated-types/annotated-types |
 | anyio | 4.15.1 | MIT | all | https://pypi.org/project/anyio/ |
-| attrs | 26.1.0 | MIT | darwin-x64 | https://pypi.org/project/attrs/ |
+| attrs | 26.1.0 | MIT | all | https://pypi.org/project/attrs/ |
 | av | 19.0.1 | BSD-3-Clause | darwin-x64, win32-x64 | https://pypi.org/project/av/ |
+| babel | 2.18.0 | BSD License | all | https://github.com/python-babel/babel |
 | brotli | 1.2.0 | MIT | all | https://github.com/google/brotli |
 | certifi | 2026.7.22 | Mozilla Public License 2.0 (MPL 2.0) | all | https://github.com/certifi/python-certifi |
 | cffi | 2.1.1 | MIT-0 | all | https://pypi.org/project/cffi/ |
@@ -201,6 +202,8 @@ Hash-locked in `packaging/requirements/<target>.txt`.
 | jax | 0.4.38 | Apache-2.0 | darwin-x64 | https://github.com/jax-ml/jax |
 | jaxlib | 0.4.38 | Apache-2.0 | darwin-x64 | https://github.com/jax-ml/jax |
 | jiter | 0.17.0 | MIT | all | https://github.com/pydantic/jiter/ |
+| jsonschema | 4.26.0 | MIT | all | https://github.com/python-jsonschema/jsonschema |
+| jsonschema-specifications | 2025.9.1 | MIT | all | https://github.com/python-jsonschema/jsonschema-specifications |
 | kiwisolver | 1.5.1 | BSD License | all | https://pypi.org/project/kiwisolver/ |
 | llvmlite | 0.50.0 | BSD-2-Clause AND Apache-2.0 WITH LLVM-exception | darwin-arm64 | https://github.com/numba/llvmlite |
 | matplotlib | 3.11.2 | Python Software Foundation License | all | https://matplotlib.org |
@@ -231,12 +234,13 @@ Hash-locked in `packaging/requirements/<target>.txt`.
 | pydantic | 2.13.5 | MIT | all | https://github.com/pydantic/pydantic |
 | pydantic-core | 2.46.5 | MIT | all | https://github.com/pydantic/pydantic/tree/main/pydantic-core |
 | pyparsing | 3.3.3 | MIT | all | https://github.com/pyparsing/pyparsing.git |
+| pypinyin | 0.55.0 | MIT License | all | https://github.com/mozillazg/python-pinyin |
 | python-dateutil | 2.9.0.post0 | Apache Software License / BSD License | all | https://github.com/dateutil/dateutil |
 | pyyaml | 6.0.3 | MIT License | all | https://pyyaml.org/ |
+| referencing | 0.37.0 | MIT | all | https://github.com/python-jsonschema/referencing |
 | regex | 2026.9.29 | Apache-2.0 AND CNRI-Python | darwin-arm64 | https://github.com/mrabarnett/mrab-regex |
 | requests | 2.34.2 | Apache Software License | darwin-arm64 | https://github.com/psf/requests |
-| scipy | 1.18.1 | BSD License | darwin-arm64, win32-x64 | https://pypi.org/project/scipy/ |
-| scipy | 1.17.1 | BSD License | darwin-x64 | https://pypi.org/project/scipy/ |
+| rpds-py | 2026.9.1 | MIT | all | https://github.com/crate-py/rpds |
 | sentencepiece | 0.2.2 | Apache-2.0 | darwin-x64 | https://github.com/google/sentencepiece |
 | six | 1.17.0 | MIT License | all | https://github.com/benjaminp/six |
 | sniffio | 1.3.1 | Apache Software License / MIT License | all | https://github.com/python-trio/sniffio |
@@ -249,6 +253,7 @@ Hash-locked in `packaging/requirements/<target>.txt`.
 | truststore | 0.10.4 | MIT | all | https://github.com/sethmlarson/truststore |
 | typing-extensions | 4.16.0 | PSF-2.0 | all | https://pypi.org/project/typing-extensions/ |
 | typing-inspection | 0.4.4 | MIT | all | https://github.com/pydantic/typing-inspection |
+| tzdata | 2026.5 | Apache-2.0 | win32-x64 | https://github.com/python/tzdata |
 | urllib3 | 2.8.0 | MIT | darwin-arm64 | https://pypi.org/project/urllib3/ |
 | zopfli | 0.4.3 | Apache Software License | all | https://github.com/fonttools/py-zopfli |
 

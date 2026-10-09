@@ -1,1 +1,2 @@
 torch; python_version < "0"
+scipy; python_version < "0"
