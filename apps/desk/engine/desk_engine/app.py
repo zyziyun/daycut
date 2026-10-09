@@ -49,7 +49,12 @@ History (history.py; read-only discovery of past work: desk + engine registries,
   GET  /api/history/stamp                  {stamp}: changes when a project / batch registry changes (the desk polls it)
   GET  /api/history/config | POST {watch[]}   watched folders (default ~/Desktop/video-studio-demos)  (check-skill: allow)
   POST /api/history/open {dir}             put a found batch / project in the desk list -> {id, dir}
-  POST /api/history/hide {dir}             remove from the list (never deletes files); POST /api/history/unhide
+  GET  /api/history?archived=1             only the archived rows (+ archived: true, archived_at); the plain list
+                                           leaves them out and counts them in ``archived``
+  POST /api/history/archive {dir}|{dirs[]} archive (never deletes files; refused while a run is going)
+  POST /api/history/restore {dir}|{dirs[]} back into All projects as before (desk list row too)
+  POST /api/history/hide {dir}             old alias of archive; /unhide-one {dir} of restore; POST /api/history/unhide
+                                           restores everything
   POST /api/history/client {dir, client}   agency mode: the client a project is for ('' = her own)
   GET  /api/history/item/<id>              one entry; work folders + detail {outputs, covers, sheets, posts, notes}
   POST /api/history/item/<id>/adopt        {recipe?: guess|name, title?} plain work folder -> .vstudio/work.json
@@ -687,7 +692,9 @@ class Api:
                 need(kind in (None, "batch", "project", "work"), "kind: batch|project|work")
                 need(ty is None or re.match(r"^[a-z-]{1,20}$", ty), "bad type")
                 need(cl is None or len(cl) <= 200, "bad client")
-                return h.list(q=qq, status=st, kind=kind, type_=ty, client=cl)
+                ar = q("archived")
+                need(ar in (None, "", "0", "1", "true", "false"), "archived: 0|1")
+                return h.list(q=qq, status=st, kind=kind, type_=ty, client=cl, archived=ar in ("1", "true"))
             if len(parts) >= 3 and parts[1] == "item":
                 need(ID_RE.match(parts[2]), "bad item id")
                 if len(parts) == 3 and method == "GET":
@@ -710,7 +717,17 @@ class Api:
                     need(isinstance(body, dict), "body must be an object")
                     return h.set_watch(body.get("watch"))
             if parts == ["history", "unhide"] and method == "POST":
-                return h.unhide_all()
+                r = h.unhide_all()
+                self.bus.publish("batches")
+                return r
+            if parts[1:] in (["archive"], ["restore"]) and method == "POST":
+                need(isinstance(body, dict), "body must be an object")
+                raw = body.get("dirs") if "dirs" in body else [body.get("dir")]
+                need(isinstance(raw, list) and 0 < len(raw) <= 500, "dir or dirs[] (1-500) required")
+                dirs = [_abs_path(d, "dir", must_exist=False) for d in raw]
+                r = h.archive(dirs) if parts[1] == "archive" else h.restore(dirs)
+                self.bus.publish("batches")
+                return r
             if parts[1:] == ["client"] and method == "POST":
                 need(isinstance(body, dict), "body must be an object")
                 r = h.set_client(_abs_path(body.get("dir"), "dir", must_exist=False), body.get("client"))

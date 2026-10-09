@@ -8,8 +8,9 @@ Sources (deduplicated by real path):
     overrides the default, empty = none): the folder and up to 2 levels below it are scanned for ``batch.db``
     (a batch) or ``project.yaml`` (a project, whose batch store is ``<project>/state``).
 
-Every batch store is read with sqlite in read-only mode - nothing in a found folder is ever written. "Remove from
-list" only hides the folder (``<DESK_DATA_DIR>/history.json``) and drops it from the desk registry; files stay.
+Every batch store is read with sqlite in read-only mode - nothing in a found folder is ever written. "Archive" only
+hides the folder (``<DESK_DATA_DIR>/history.json`` ``hidden`` + ``archived_at``) and parks its desk registry row
+(``archived_reg``) until "Restore" puts it back; files stay. A project with a run going is never archived.
 Registry hygiene: entries pointing to missing folders or into temp dirs (``/tmp``, ``/var/folders/*/T``: test
 junk) are pruned from the desk registry and from the engine's registries (unless that registry is itself in a
 temp dir, as in tests).
@@ -232,6 +233,7 @@ class History:
         self.engine = engine
         self._lock = threading.Lock()
         self._thumbs = set()
+        self._thumbs_archived = set()
         self._media = set()
 
     # ---------------------------------------------------------- config (watched folders, hidden)
@@ -270,25 +272,96 @@ class History:
             write_json(self.path, c)
         return self.config()
 
-    def hide(self, path):
+    # ---------------------------------------------------------- archive (stored as ``hidden`` for older desks)
+    def _busy(self, path):
+        """Why ``path`` cannot be archived now (a run is going) -> a short reason, else None. Never stops a run."""
+        d = os.path.abspath(path)
+        store = os.path.join(d, "state") if os.path.exists(os.path.join(d, "project.yaml")) else d
+        for x in dict.fromkeys((d, store)):
+            live = live_status(x)
+            if live and live.get("state") == "running":
+                return live.get("message") or live.get("stage") or "running"
+        if pilot_running(d):
+            return "pilot running"
+        run = getattr(self.engine, "running", None)
+        if callable(run):
+            try:
+                if run(batch_id(store)):
+                    return "batch running"
+            except Exception:  # noqa: BLE001  (an engine that does not know this batch)
+                pass
+        return None
+
+    def _label(self, path, cfg):
         rp = os.path.realpath(path)
+        names = cfg.get("names") if isinstance(cfg.get("names"), dict) else {}
+        return names.get(rp) or os.path.basename(rp.rstrip(os.sep)) or rp
+
+    def archive(self, paths):
+        """Archive projects: out of All projects into the Archived tab; nothing on disk is touched. A project with a
+        run going is refused (the whole request: nothing is archived), never stopped. -> {ok, archived[], at}"""
+        need(isinstance(paths, list) and 0 < len(paths) <= 500, "dirs: 1-500 folders")
+        cfg = self._cfg()
+        busy = [self._label(p, cfg) for p in paths if self._busy(p)]
+        need(not busy, f"still running: {', '.join(busy[:5])}{' …' if len(busy) > 5 else ''} - wait until it "
+                       f"finishes (or stop it) before archiving. Nothing was archived.")
+        now = time.time()
+        rps = list(dict.fromkeys(os.path.realpath(p) for p in paths))
+        drop = []
         with self._lock:
             c = self._cfg()
-            hidden = [h for h in c.get("hidden") or [] if h != rp] + [rp]
+            hidden = [h for h in c.get("hidden") or [] if h not in rps] + rps
             c["hidden"] = hidden[-2000:]
+            at = c.get("archived_at") if isinstance(c.get("archived_at"), dict) else {}
+            regs = c.get("archived_reg") if isinstance(c.get("archived_reg"), dict) else {}
+            reg_rows = self.reg.all()
+            for p in paths:
+                rp = os.path.realpath(p)
+                at[rp] = now
+                ids = {batch_id(p), batch_id(os.path.join(p, "state")), batch_id(rp), batch_id(os.path.join(rp, "state"))}
+                mine = [dict(dir=b["dir"], name=b.get("name")) for b in reg_rows if b["id"] in ids]
+                if mine:                            # the desk list row comes back on restore (the board opens again)
+                    regs[rp] = mine
+                drop += [b["id"] for b in reg_rows if b["id"] in ids]
+            keep = set(c["hidden"])
+            c["archived_at"] = {k: v for k, v in at.items() if k in keep}
+            c["archived_reg"] = {k: v for k, v in regs.items() if k in keep}
             write_json(self.path, c)
-        for d in (path, os.path.join(path, "state")):
-            self.reg.remove(batch_id(d))
-        return dict(ok=True, hidden=rp, deleted=False)
+        for bid in dict.fromkeys(drop):
+            self.reg.remove(bid)
+        self._last = self._last_archived = None   # find() must not answer from the list before this
+        return dict(ok=True, archived=rps, at=now, deleted=False)
+
+    def restore(self, paths=None):
+        """Archived projects back into All projects, as they were (the desk list row too). ``None`` = all."""
+        need(paths is None or (isinstance(paths, list) and len(paths) <= 2000), "dirs: up to 2000 folders")
+        with self._lock:
+            c = self._cfg()
+            hidden = c.get("hidden") or []
+            rps = set(hidden) if paths is None else {os.path.realpath(p) for p in paths}
+            c["hidden"] = [h for h in hidden if h not in rps]
+            at = c.get("archived_at") if isinstance(c.get("archived_at"), dict) else {}
+            regs = c.get("archived_reg") if isinstance(c.get("archived_reg"), dict) else {}
+            back = [r for rp in rps for r in regs.get(rp) or [] if isinstance(r, dict) and r.get("dir")]
+            c["archived_at"] = {k: v for k, v in at.items() if k not in rps}
+            c["archived_reg"] = {k: v for k, v in regs.items() if k not in rps}
+            write_json(self.path, c)
+        self._last = self._last_archived = None
+        have = {b["id"] for b in self.reg.all()}
+        for r in back:
+            if batch_id(r["dir"]) not in have and os.path.exists(os.path.join(r["dir"], "batch.db")):
+                self.reg.add(r["dir"], r.get("name"))
+        return dict(ok=True, restored=sorted(rps))
+
+    def hide(self, path):
+        """The old 「remove from list」: archive one folder."""
+        r = self.archive([path])
+        return dict(ok=True, hidden=r["archived"][0], deleted=False)
 
     def unhide(self, path):
-        """Undo one "remove from list" (the undo toast)."""
-        rp = os.path.realpath(path)
-        with self._lock:
-            c = self._cfg()
-            c["hidden"] = [h for h in c.get("hidden") or [] if h != rp]
-            write_json(self.path, c)
-        return dict(ok=True, dir=rp)
+        """Undo one archive (the undo toast; the old /unhide-one route)."""
+        r = self.restore([path])
+        return dict(ok=True, dir=r["restored"][0])
 
     def rename(self, path, name):
         """Inline rename (any language): a display name kept by the desk; nothing in the folder changes."""
@@ -316,10 +389,7 @@ class History:
         return dict(ok=True, dir=rp, client=(client or "").strip() or None)
 
     def unhide_all(self):
-        with self._lock:
-            c = self._cfg()
-            c["hidden"] = []
-            write_json(self.path, c)
+        self.restore(None)
         return self.config()
 
     # ---------------------------------------------------------- hygiene
@@ -351,6 +421,11 @@ class History:
         out = []
         for b in self.reg.all():
             out.append(("batch", b["dir"], "desk", dict(name=b.get("name"))))
+        regs = self._cfg().get("archived_reg")
+        for rows in (regs.values() if isinstance(regs, dict) else []):   # archived: the desk row is parked here
+            for b in rows if isinstance(rows, list) else []:
+                if isinstance(b, dict) and b.get("dir"):
+                    out.append(("batch", b["dir"], "desk", dict(name=b.get("name"))))
         home = vstudio_home()
         for r in read_json(os.path.join(home, "batches.json"), []) or []:
             if isinstance(r, dict) and r.get("dir"):
@@ -387,10 +462,14 @@ class History:
                 h.update(f"{f}\0-\n".encode())
         return dict(stamp=h.hexdigest()[:16])
 
-    def list(self, q=None, status=None, kind=None, type_=None, client=None):
+    def list(self, q=None, status=None, kind=None, type_=None, client=None, archived=False):
+        """All projects (``archived=False``: the archived ones left out, counted in ``archived``) or only the archived
+        ones (``archived=True``: same rows + ``archived: true, archived_at``)."""
         self.prune()
         cfg = self._cfg()
         hidden = set(cfg.get("hidden") or [])
+        at = cfg.get("archived_at") if isinstance(cfg.get("archived_at"), dict) else {}
+        n_archived = 0
         names = cfg.get("names") if isinstance(cfg.get("names"), dict) else {}
         clients = cfg.get("clients") if isinstance(cfg.get("clients"), dict) else {}
         cands, series = self._candidates()
@@ -405,7 +484,10 @@ class History:
                         r["sources"].append(src)
                 continue
             seen.add(rp)
-            if rp in hidden or is_temp_path(d) and not is_temp_path(self.path):
+            if is_temp_path(d) and not is_temp_path(self.path):
+                continue
+            if (rp in hidden) != archived:
+                n_archived += rp in hidden
                 continue
             if kind_ == "batch" and os.path.basename(rp) == "state" and \
                     os.path.exists(os.path.join(os.path.dirname(rp), "project.yaml")):
@@ -454,6 +536,8 @@ class History:
                 info["sample"] = True               # made from the built-in sample (sample.py): labelled, deletable
             if names.get(rp):
                 info["name"] = names[rp]
+            if archived:
+                info.update(archived=True, archived_at=at.get(rp))
             if rp in clients:
                 info["client"] = clients[rp] or None
             row = dict(info, kind=kind_, dir=d, real=rp, sources=[src], id=bid, live=live,
@@ -461,7 +545,14 @@ class History:
                        openable=kind_ != "work" and os.path.exists(os.path.join(store_dir, "batch.db")),
                        series=info.get("series") or series.get(rp))
             rows.append(row)
-        rows += self._more_rows({r["id"] for r in rows})
+        for r in self._more_rows({r["id"] for r in rows}):
+            rr = os.path.realpath(r.get("real") or r.get("dir") or "")
+            if (rr in hidden) != archived:
+                n_archived += rr in hidden
+                continue
+            if archived:
+                r = dict(r, archived=True, archived_at=at.get(rr))
+            rows.append(r)
         if q:
             ql = q.lower()
             rows = [r for r in rows if any(ql in str(r.get(k) or "").lower()
@@ -482,9 +573,15 @@ class History:
         running = sum(1 for r in rows if (r.get("live") or {}).get("state") in ("running", "waiting"))
         for r in rows:
             r.pop("real", None)
-        self._thumbs = {r["thumb"] for r in rows if r.get("thumb")}
-        self._last = (time.time(), [dict(r) for r in rows[:MAX_ENTRIES]])
-        return dict(items=rows[:MAX_ENTRIES], watch=self.watch(), at=time.time(), running=running)
+        thumbs = {r["thumb"] for r in rows if r.get("thumb")}
+        snap = (time.time(), [dict(r) for r in rows[:MAX_ENTRIES]])
+        if archived:
+            self._thumbs_archived, self._last_archived = thumbs, snap
+            return dict(items=rows[:MAX_ENTRIES], watch=self.watch(), at=time.time(), running=running, archived=True)
+        self._thumbs = thumbs
+        self._last = snap
+        return dict(items=rows[:MAX_ENTRIES], watch=self.watch(), at=time.time(), running=running,
+                    archived=n_archived)
 
     def _more_rows(self, have):
         """Rows that have no folder to find (none here; the in-memory test engine lists its batches)."""
@@ -495,24 +592,20 @@ class History:
         d = os.path.abspath(path)
         store_dir = os.path.join(d, "state") if os.path.exists(os.path.join(d, "project.yaml")) else d
         need(os.path.exists(os.path.join(store_dir, "batch.db")), f"no batch.db in {store_dir} (not run yet)")
-        if os.path.realpath(d) in set(self._cfg().get("hidden") or []):
-            with self._lock:
-                c = self._cfg()
-                c["hidden"] = [h for h in c.get("hidden") or [] if h != os.path.realpath(d)]
-                write_json(self.path, c)
         name = (summarize_project(d) if store_dir != d else summarize_batch(d)).get("name")
         ent = self.reg.add(store_dir, name)
         return dict(id=ent["id"], dir=store_dir, name=name)
 
     def find(self, item_id, max_age=3.0):
         """One entry; the listing is reused for a few seconds (the output editor looks entries up per request)."""
-        cached = getattr(self, "_last", None)
-        rows = cached[1] if cached and time.time() - cached[0] < max_age else None
-        if rows is None or not any(r["id"] == item_id for r in rows):
-            rows = self.list()["items"]
-        for r in rows:
-            if r["id"] == item_id:
-                return dict(r)
+        for archived in (False, True):              # an archived project still opens
+            cached = getattr(self, "_last_archived" if archived else "_last", None)
+            rows = cached[1] if cached and time.time() - cached[0] < max_age else None
+            if rows is None or not any(r["id"] == item_id for r in rows):
+                rows = self.list(archived=archived)["items"]
+            for r in rows:
+                if r["id"] == item_id:
+                    return dict(r)
         raise KeyError(f"no history item {item_id}")
 
     def allow_media(self, paths):
@@ -538,4 +631,4 @@ class History:
     def roots(self):
         """``jobs/`` folders of the last listed entries with a thumbnail (the media protocol allow-list)."""
         return sorted({os.path.dirname(os.path.dirname(os.path.dirname(t))) if os.sep + "jobs" + os.sep in t
-                       else os.path.dirname(t) for t in self._thumbs} | self._media)
+                       else os.path.dirname(t) for t in self._thumbs | self._thumbs_archived} | self._media)
