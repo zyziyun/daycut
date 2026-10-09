@@ -74,7 +74,9 @@ def _create_kwargs(p, plan):
     return kw
 
 
-def apply_plan(plan, out_dir=None, run=False, dry_run=False, echo=None, on_event=None):
+def apply_plan(plan, out_dir=None, run=False, dry_run=False, echo=None, on_event=None, autopilot=False):
+    """``autopilot``: each project is created on autopilot (project.yaml ``autopilot.on``): its run has no pilot stop
+    and answers every checkpoint itself (vstudio.project.autopilot); the ``run`` commands say ``--autopilot``."""
     errs = PL.validate(plan)
     if errs:
         raise ApplyError("plan invalid: " + "; ".join(errs[:8]))
@@ -111,12 +113,18 @@ def apply_plan(plan, out_dir=None, run=False, dry_run=False, echo=None, on_event
                 warn.append(f"{p['id']}: {d} already holds a project (kept as is)")
             else:
                 raise ApplyError(f"{p['id']} ({p['recipe']}): {e}") from e
+        if autopilot:
+            from vstudio.project import autopilot as APL
+            APL.configure(pr, on=True, lang=plan.get("ui_lang"))
+            if plan.get("prompt") and not pr.data.get("prompt"):
+                pr.data["prompt"] = plan["prompt"][:2000]          # what the AI judge decides for
+                pr.save()
+        how = ["--autopilot"] if autopilot else ["--pilot", str((plan.get("run") or {}).get("pilot") or 1)]
         entry = dict(id=p["id"], recipe=p["recipe"], name=pr.data.get("name"), dir=pr.dir,
                      items=[i["id"] for i in pr.data["items"]], planner_pending=not pr.data["items"],
-                     run=[sys.executable, "-m", "vstudio.project", "run", "--dir", pr.dir, "--pilot",
-                          str((plan.get("run") or {}).get("pilot") or 1), "--json-events"])
+                     run=[sys.executable, "-m", "vstudio.project", "run", "--dir", pr.dir, *how, "--json-events"])
         if run:
-            res = pr.run(pilot=(plan.get("run") or {}).get("pilot") or 1, on_event=on_event)
+            res = pr.run(pilot=None if autopilot else (plan.get("run") or {}).get("pilot") or 1, on_event=on_event)
             entry["result"] = {k: res.get(k) for k in ("status", "exit_code", "pending", "items")}
         created.append(entry)
     applied = dict(plan, applied=dict(at=time.strftime("%Y-%m-%dT%H:%M:%S"), dir=out_dir, series=series,

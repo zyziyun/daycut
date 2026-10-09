@@ -8,7 +8,12 @@ references/PROJECTS.md.
   plan-items --dir P [--replace] [--provider X] [--count N] [--min S --max S]   planner recipes: draft the items
   show | status | preview [--item I] [--stage S] | context [--write] | refresh   --dir P [--json]
   run | resume --dir P [--pilot N] [--confirm-pilot] [--items a,b] [--auto ids|all] [--concurrency k=n]
-      [--json | --json-events]                        run until done or a checkpoint needs you (exit 7)
+      [--autopilot [--spend-cap N] [--no-judge] [--lang en|zh|fr] | --ask-first]
+      [--json | --json-events]                        run until done or a checkpoint needs you (exit 7);
+                                                      --autopilot: no pilot, every checkpoint decided by the AI
+                                                      judge + rules and recorded; only blockers wait (autopilot.py)
+  decisions --dir P [--history] [--json]              autopilot: what it decided, by whom, why
+  reopen --dir P --id X [--item I]                    autopilot: take a decision back (the next run asks you)
   checkpoint --dir P [--id X] [--item I | --items a,b] [--answer JSON | --answer-file F | --default] [--run]
                                                       list pending payloads / record an answer
   set --dir P [--item I] (--param k=v ... | --set JSON)   edit params in project.yaml, then refresh
@@ -185,6 +190,10 @@ def cmd_run(a, resume=False):
     emit, stream = json_event_sink() if a.json_events else (None, None)
     p = Project(_dir(a))
     auto = _csv(a.auto) or []
+    if a.autopilot or a.ask_first or a.spend_cap is not None or a.lang or a.no_judge:
+        from . import autopilot as AP
+        AP.configure(p, on=True if a.autopilot else False if a.ask_first else None, spend_cap=a.spend_cap,
+                     judge=False if a.no_judge else None, lang=a.lang)
     r = p.run(pilot=a.pilot, confirm_pilot=a.confirm_pilot, resume=resume or a.resume, only=_csv(a.items),
               limits=parse_limits(a.concurrency), on_event=emit, auto=auto, echo=not (a.json or emit))
     if emit:
@@ -194,6 +203,27 @@ def cmd_run(a, resume=False):
             f"\n  needs you: {x['item']} {x['id']} ({x['kind']})" for x in r["pending"])
         _out(a, r, txt)
     return r["exit_code"]
+
+
+def cmd_decisions(a):
+    from . import autopilot as AP
+    from .core import Project
+    p = Project(_dir(a))
+    out = dict(autopilot=AP.settings(p), decisions=AP.decisions(p))
+    if a.history:
+        out["history"] = AP.history(p)
+    _out(a, out, "\n".join(f"{d['item']}: {d['checkpoint']} -> {json.dumps(d.get('value'), ensure_ascii=False)}"
+                           f" ({d.get('by')}: {d.get('reason')})" if not d.get("asked") else
+                           f"{d['item']}: {d['checkpoint']} -> waits for you" for d in out["decisions"])
+         or "no autopilot decisions")
+    return 0
+
+
+def cmd_reopen(a):
+    from . import autopilot as AP
+    from .core import Project
+    _out(a, AP.reopen(Project(_dir(a)), a.id, a.item))
+    return 0
 
 
 def cmd_checkpoint(a):
@@ -574,6 +604,17 @@ def build_parser():
         p.add_argument("--auto")
         p.add_argument("--concurrency")
         p.add_argument("--json-events", action="store_true")
+        p.add_argument("--autopilot", action="store_true",
+                       help="no pilot stop; every checkpoint decided by the AI judge + rules (kept in project.yaml)")
+        p.add_argument("--ask-first", action="store_true", help="turn the project's autopilot off again")
+        p.add_argument("--spend-cap", type=float, help="autopilot: budget approvals up to N credits (default 0)")
+        p.add_argument("--no-judge", action="store_true", help="autopilot: rules only, no model call")
+        p.add_argument("--lang", choices=["en", "zh", "fr"], help="autopilot: the language of the judge's reasons")
+    p = add("decisions", cmd_decisions, "autopilot: the decisions in force (+ --history: every one, with blockers)")
+    p.add_argument("--history", action="store_true")
+    p = add("reopen", cmd_reopen, "autopilot: take one decision back - the checkpoint waits for you on the next run")
+    p.add_argument("--id", required=True)
+    p.add_argument("--item", default="*")
     p = add("checkpoint", cmd_checkpoint, "pending checkpoints / answer one")
     p.add_argument("--id")
     p.add_argument("--item")

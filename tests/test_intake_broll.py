@@ -91,3 +91,15 @@ def test_apply_writes_broll_into_project_yaml(tmp_path):
     assert len(br) == 5 and all(os.path.isabs(x) for x in br)
     rows = pr.jobs_rows()
     assert rows and rows[0]["_inputs"]["broll"] == br                 # every item sees (and prepare links) them
+
+
+def test_apply_on_autopilot_marks_the_projects_and_their_run(tmp_path):
+    """`intake apply --autopilot` (the desk's default, the skill's ``--autopilot``): every project is created on
+    autopilot with the request the judge decides for, and the run it hands back has no pilot."""
+    plan, a = _plan(tmp_path, dict(recipe="promo-recut", name="评测", inputs=dict(talk=["f1"], broll=["f2"])))
+    plan["ui_lang"] = "fr"
+    res = AP.apply_plan(plan, str(tmp_path / "out"), autopilot=True)
+    pr = Project(res["projects"][0]["dir"])
+    assert pr.data["autopilot"]["on"] is True and pr.data["autopilot"]["lang"] == "fr"
+    assert pr.data["prompt"] == plan["prompt"]
+    assert "--autopilot" in res["projects"][0]["run"] and "--pilot" not in res["projects"][0]["run"]

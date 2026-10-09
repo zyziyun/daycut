@@ -20,7 +20,7 @@ Code: `lib/vstudio/intake/` (inventory, docs, rules, plan, estimate, apply, cli)
 | `analyze --inputs PATH... [--asr off\|sample\|full] [--out analysis.json] [--full]` | the material summary (compact: no paths, short excerpts) + content hashes; `--out` keeps the full analysis |
 | `plan --prompt "..." --inputs PATH... [--client C] [--provider P] [--asr auto] [--auto hook,cover] [--out plan.json]` | the plan (section 3); `--analysis analysis.json` instead of `--inputs` |
 | `revise --plan plan.json --prompt "只要小红书" [--in-place \| --out new.json]` | the plan updated from a follow-up instruction; the history is kept in `revisions` |
-| `apply --plan plan.json [--out DIR] [--dry-run] [--run]` | creates the project folders (a series when the plan has several), returns ids, dirs and the pilot run commands; `--run` starts each pilot; exit 5 on an invalid plan |
+| `apply --plan plan.json [--out DIR] [--dry-run] [--run] [--autopilot]` | creates the project folders (a series when the plan has several), returns ids, dirs and the pilot run commands; `--run` starts each pilot; `--autopilot` creates them on autopilot (no pilot, the engine decides every checkpoint and records why: references/PROJECTS.md §3) and the run commands say `--autopilot`; exit 5 on an invalid plan |
 | `schema` | the plan JSON Schema |
 
 ## 2. Inventory (`analyze`)

@@ -495,13 +495,24 @@ class Project:
         return pay.get("default") is not None
 
     def run(self, pilot=None, confirm_pilot=False, resume=False, only=None, limits=None, on_event=None, auto=None,
-            max_rounds=8, echo=False):
+            max_rounds=8, echo=False, autopilot=None, judge=None):
+        """``autopilot``: True / False switches the project's autopilot (project.yaml ``autopilot.on``, kept for
+        later resumes), None keeps it. On autopilot there is no pilot stop and every checkpoint is decided by
+        ``autopilot.decide`` (AI judge + rules, each answer recorded with its reason); only blockers wait for her.
+        ``judge``: an ``llm.complete`` stand-in for the AI judge (tests)."""
+        from . import autopilot as AP
         emit = on_event or (lambda ev: None)
+        if autopilot is not None and bool(autopilot) != AP.settings(self)["on"]:
+            AP.configure(self, on=bool(autopilot))
+        ap = AP.settings(self)["on"]
+        if ap:
+            pilot, confirm_pilot = None, True
         if not self.data["items"] and self.manifest["items"].get("planner"):
             self.plan_items()
         self.plan()
         pol = self.auto_policy(auto)
         rounds, res = 0, None
+        blocked = set()
         while True:
             try:
                 res = run_state(self.state_dir, pilot=pilot, confirm_pilot=confirm_pilot, resume=resume,
@@ -511,16 +522,38 @@ class Project:
                 emit(dict(event="project-end", ts=now(), status="busy", exit_code=EXIT["busy"], error=str(e)))
                 return dict(status="busy", exit_code=EXIT["busy"], error=str(e))
             pend = self.pending()
-            todo = [p for p in pend if self._auto_answerable(p, pol)]
+            if ap:
+                todo = []
+                for p in pend:
+                    target = "*" if p["scope"] == "project" else p["item"]
+                    if (p["id"], target) in blocked:
+                        continue
+                    d = AP.decide(self, p, complete=judge)
+                    if d.get("blocker"):
+                        blocked.add((p["id"], target))
+                        AP.log(self, dict(event="blocked", checkpoint=p["id"], kind=p.get("kind"), item=target,
+                                          blocker=d["blocker"], reason=d.get("reason"), params=d.get("params")))
+                        emit(dict(event="autopilot-blocked", ts=now(), checkpoint=p["id"], item=target,
+                                  blocker=d["blocker"], reason=d.get("reason")))
+                        continue
+                    todo.append((p, d))
+            else:
+                todo = [(p, None) for p in pend if self._auto_answerable(p, pol)]
             # a pilot that stopped at an auto-answerable checkpoint ends its batch run as "pilot-review" too: answer
             # and go on (the next round re-runs the same pilot jobs), else a desk pilot never gets past its first one
             if not todo or rounds >= max_rounds or res["status"] in ("paused", "over-budget"):
                 break
-            for p in todo:
+            for p, d in todo:
                 target = "*" if p["scope"] == "project" else p["item"]
-                self.answer(p["id"], p["default"], items=None if target == "*" else [target], replan=False,
-                            auto=True)
-                emit(dict(event="auto-answer", ts=now(), checkpoint=p["id"], item=target, value=p["default"]))
+                value = d["value"] if d else p["default"]
+                meta = AP.answer_meta(d) if d else None
+                self.answer(p["id"], value, items=None if target == "*" else [target], replan=False,
+                            auto=True, meta=meta)
+                if d:
+                    AP.log(self, dict(event="decided", checkpoint=p["id"], kind=p.get("kind"), item=target,
+                                      value=value, **AP.answer_meta(d), ai_error=d.get("ai_error")))
+                emit(dict(event="auto-answer", ts=now(), checkpoint=p["id"], item=target, value=value,
+                          **({"by": d["by"], "reason": d.get("reason")} if d else {})))
             self.plan()
             rounds += 1
         s = self.status()
@@ -541,6 +574,7 @@ class Project:
             code = EXIT["done"]
         out = dict(status=s["state"], exit_code=code, batch_status=res["status"], pause_reason=res.get("pause_reason"),
                    ran=[f"{j}:{st}" for j, st in res.get("ran") or []], rounds=rounds,
+                   autopilot=ap, blocked=[dict(checkpoint=c, item=i) for c, i in sorted(blocked)],
                    pending=[_brief_pending(p) for p in pend], items=[dict(id=i["id"], state=i["state"],
                                                                          waiting=i["waiting"]) for i in s["items"]])
         emit(dict(event="project-end", ts=now(), status=out["status"], exit_code=code, pending=out["pending"]))
@@ -585,7 +619,7 @@ class Project:
         finally:
             st.close()
 
-    def answer(self, cid, value, items=None, replan=True, auto=False, run=False):
+    def answer(self, cid, value, items=None, replan=True, auto=False, run=False, meta=None):
         """Record an answer (validated against the checkpoint's answer schema), derive the param changes
         (``apply``), re-plan -> {ok, answered, rerun {job: stages}}. ``items`` None = every item waiting at it
         (item scope) / the project (project scope)."""
@@ -619,6 +653,11 @@ class Project:
                 rec = dict(value=value, digest=res.get("digest") or pay.get("digest"), at=_stamp())
                 if auto:
                     rec["auto"] = True
+                    rec.update(meta or {})
+                else:                                    # she answered one she took back from the autopilot
+                    ap = self.data.get("autopilot")
+                    if isinstance(ap, dict) and f"{cid}:{t}" in (ap.get("ask") or []):
+                        ap["ask"].remove(f"{cid}:{t}")
                 self.data["answers"].setdefault(cid, {})[t] = rec
                 if res.get("params"):
                     if t == "*":

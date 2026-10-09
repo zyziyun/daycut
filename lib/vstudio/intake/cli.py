@@ -106,7 +106,7 @@ def cmd_revise(a):
 
 def cmd_apply(a):
     try:
-        res = AP.apply_plan(_load(a.plan), a.out, run=a.run, dry_run=a.dry_run, echo=_echo(a))
+        res = AP.apply_plan(_load(a.plan), a.out, run=a.run, dry_run=a.dry_run, echo=_echo(a), autopilot=a.autopilot)
     except (AP.ApplyError, ValueError) as e:
         _out(a, dict(ok=False, error=str(e)), f"error: {e}")
         return 5
@@ -173,6 +173,8 @@ def build_parser():
     p.add_argument("--plan", required=True)
     p.add_argument("--out", help="parent folder of the project folders (default $VSTUDIO_HOME/projects/<plan id>)")
     p.add_argument("--run", action="store_true", help="start each project's pilot run right away")
+    p.add_argument("--autopilot", action="store_true",
+                   help="create the projects on autopilot: no pilot, the engine decides every checkpoint itself")
     p.add_argument("--dry-run", action="store_true")
 
     add("schema", cmd_schema, "the plan JSON Schema")

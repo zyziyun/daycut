@@ -112,6 +112,18 @@ params for project scope, `items_patch` for segment edits) and a digest; then th
 Auto policy: `run --auto hook,filler` (or project.yaml `auto:` / the series) answers checkpoints whose manifest says
 `auto: default` with the payload default, then continues (rounds until nothing auto-answerable is left).
 
+**Autopilot** (`run --autopilot [--spend-cap N] [--no-judge] [--lang en|zh|fr]`, kept in project.yaml
+`autopilot: {on, spend_cap, judge, lang, ask}`; `--ask-first` turns it off; `intake apply --autopilot` creates the
+projects on it; the desk app's default): no pilot stop, and every checkpoint a run reaches is decided by
+`vstudio.project.autopilot.decide` - an AI judge (task route `planner`) for the unsure filler cuts, the checkpoint's
+rules for everything else (default answer, QC verdict, drafted file; hooks stay "no cold open" unless her format asks).
+Each answer is recorded with `auto, by: ai | rules, reason, reason_code, params, provider` and a line in
+`state/autopilot.jsonl`; the payload stays in `state/checkpoints/`. Only real blockers wait for her: `consent`,
+`spend-cap` (a budget above `spend_cap` credits, default 0), `qc-red` (review of a red clip), `needs-input` (a file
+only she can write, no default), `asked` (one she took back). `decisions --dir P [--history]` lists them;
+`reopen --dir P --id X [--item I]` takes one back (the next run stops there and the Inbox asks her; her answer
+replaces the AI's).
+
 ## 4. CLI / JSON contract (desk app)
 
 All commands take `--json` (one document on stdout, paths absolute); `run --json-events` streams one JSON object per
@@ -127,6 +139,9 @@ checkpoint), `pause`, `run-end` + `checkpoint {job, checkpoint, checkpoint_kind,
 | `show --dir P --json` | `{project (project.yaml), manifest, params, status, batch, recipe_name, paths}` |
 | `status --dir P --json [--brief]` | `{state new\|planned\|running\|needs-you\|error\|paused\|interrupted\|done, items [{id, state, waiting, qc, review, progress, stages [{id, state, seconds, cached, error, gate}]}], pending, progress}` |
 | `run \| resume --dir P [--pilot N] [--confirm-pilot] [--items a,b] [--auto ids] [--concurrency k=n]` | `{status, exit_code, batch_status, ran, pending [{item, id, kind, default, payload}], items}` |
+| `run \| resume ... --autopilot` | the same + `autopilot: true, blocked [{checkpoint, item}]`; events `auto-answer {checkpoint, item, value, by, reason}`, `autopilot-blocked {checkpoint, item, blocker, reason}` |
+| `decisions --dir P [--history] --json` | `{autopilot {on, spend_cap, judge, lang, ask}, decisions [{checkpoint, kind, item, labels, value, by, reason, reason_code, params, provider, at, payload} \| {checkpoint, item, asked: true}], history?}` |
+| `reopen --dir P --id X [--item I] --json` | `{ok, checkpoint, item, rerun {item: stages}}` |
 | `checkpoint --dir P [--id X] [--item I] --json` | `{pending: [payload...], n}` |
 | `checkpoint --dir P --id X [--item I \| --items a,b] (--answer JSON \| --answer-file F \| --default) [--run]` | `{ok, checkpoint, answered, rerun {item: stages}, run?}` (exit 5 + `{ok: false, error}` on an invalid answer) |
 | `set --dir P [--item I] --param k=v \| --set JSON` | the `refresh` result |
