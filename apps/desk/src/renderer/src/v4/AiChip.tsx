@@ -69,7 +69,7 @@ export function FallbackNote({ fallback, rulesFrom }: { fallback?: FallbackInfo 
   const login = n ? n.login : PROVIDERS[target as ProviderId]?.kind === 'subscription-cli';
   return (
     <div className="notice small row" style={{ gap: 6, flexWrap: 'wrap' }} data-testid="fallback-note">
-      <span>{n ? t(n.key, { from: n.from, to: n.to }) : t('aiacc.fb.rules', { from: providerName(rulesFrom) })}</span>
+      <span>{n ? t(n.key, { from: n.from, to: n.to, seconds: n.seconds ?? '' }) : t('aiacc.fb.rules', { from: providerName(rulesFrom) })}</span>
       <span className="faint">·</span>
       <a href={`#/settings/ai/${encodeURIComponent(target)}`} data-testid="fallback-login">
         {login ? t('aiacc.fb.login') : t('aiacc.fb.settings')}

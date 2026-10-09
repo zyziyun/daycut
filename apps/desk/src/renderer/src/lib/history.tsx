@@ -1,7 +1,7 @@
 // Live history for the whole app (全部项目 view, the 进行中 lane, the sidebar badge). Refreshes on engine events and
 // on file changes in the watched folders (main-process fs.watch -> 'history:changed'); a slow timer runs only
 // while something is live, so a dead external run flips to 中断 / interrupted. No polling otherwise.
-import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import type { HistoryDoc, HistoryItem } from '../../../shared/v02';
 import { useEngine, useLoad } from './engine';
 
@@ -26,9 +26,51 @@ export function liveItems(items: HistoryItem[], now = Date.now() / 1000): Histor
     .sort((a, b) => rank(a) - rank(b) || (b.live?.heartbeat ?? 0) - (a.live?.heartbeat ?? 0));
 }
 
+/** How often the registry stamp is checked while the app is visible (another process registered a project). */
+export const STAMP_POLL_MS = 10_000;
+
+/** Reload when the registry stamp moved; the first stamp seen only arms it. -> the stamp to remember. */
+export function stampChanged(prev: string | null, next: string | null | undefined): { reload: boolean; stamp: string | null } {
+  if (!next) return { reload: false, stamp: prev };
+  return { reload: prev !== null && prev !== next, stamp: next };
+}
+
 export function HistoryProvider({ children }: { children: ReactNode }) {
-  const { subscribe } = useEngine();
+  const { subscribe, client } = useEngine();
   const { data, error, reload } = useLoad((c) => c.history(), []);
+  // a project registered / re-registered by another process (an agent's `vstudio.project register` / `touch`) shows
+  // up without navigating away and back: a cheap registry stamp is polled while the window is visible, and the list
+  // reloads when the window comes back to the front
+  const stampRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!client) return;
+    let alive = true;
+    const check = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      client
+        .historyStamp?.()
+        .then((r) => {
+          const d = stampChanged(stampRef.current, r?.stamp);
+          stampRef.current = d.stamp;
+          if (alive && d.reload) reload();
+        })
+        .catch(() => undefined); // an older engine without /api/history/stamp: events still refresh
+    };
+    check();
+    const tm = window.setInterval(check, STAMP_POLL_MS);
+    const onShow = () => {
+      if (document.visibilityState !== 'hidden') reload();
+    };
+    window.addEventListener('focus', onShow);
+    document.addEventListener('visibilitychange', onShow);
+    return () => {
+      alive = false;
+      window.clearInterval(tm);
+      window.removeEventListener('focus', onShow);
+      document.removeEventListener('visibilitychange', onShow);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client]);
 
   useEffect(
     () =>

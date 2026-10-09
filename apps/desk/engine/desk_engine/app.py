@@ -46,6 +46,7 @@ v0.2 (studio.py; engine command when available, desk implementation otherwise)
 History (history.py; read-only discovery of past work: desk + engine registries, projects, watched folders)
   GET  /api/history?q=&status=&kind=       [{kind batch|project, id, dir, name, recipe, client, series, created,
                                            updated, counts, status, thumb, sources, opened, openable}]
+  GET  /api/history/stamp                  {stamp}: changes when a project / batch registry changes (the desk polls it)
   GET  /api/history/config | POST {watch[]}   watched folders (default ~/Desktop/video-studio-demos)  (check-skill: allow)
   POST /api/history/open {dir}             put a found batch / project in the desk list -> {id, dir}
   POST /api/history/hide {dir}             remove from the list (never deletes files); POST /api/history/unhide
@@ -94,7 +95,8 @@ v0.4 (outputs.py, intake.py, inbox.py; engine command when available, desk imple
   GET  /api/watermark                      Settings › Watermark (watermark.py): settings + previews over sample
                                            9:16 / 16:9 frames; POST {patch}; POST /api/watermark/logo {path}
   GET  /api/inbox                          every decision waiting for the creator; POST /api/inbox/answer {keys,
-                                           answer?}; POST /api/inbox/undo {keys}
+                                           answer?}; POST /api/inbox/undo {keys}; POST /api/inbox/open {key,
+                                           which file|template|doc} (an author item's file in the default editor)
 """
 import hmac
 import json
@@ -632,6 +634,8 @@ class Api:
                 return self.inbox.answer(b.get("keys"), b.get("answer"))
             if parts == ["inbox", "undo"] and method == "POST":
                 return self.inbox.undo(b.get("keys"))
+            if parts == ["inbox", "open"] and method == "POST":
+                return self.inbox.open_file(b.get("key"), b.get("which") or "file")
         return None
 
     def route_v02(self, method, parts, query, body):
@@ -697,6 +701,8 @@ class Api:
                     r = h.adopt(parts[2], recipe=rec, title=title)
                     self.bus.publish("batches")
                     return r
+            if parts == ["history", "stamp"] and method == "GET":
+                return h.stamp()
             if parts == ["history", "config"]:
                 if method == "GET":
                     return h.config()

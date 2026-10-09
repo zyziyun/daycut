@@ -274,6 +274,10 @@ export class EngineClient {
     const qs = q.toString();
     return this.req<HistoryDoc>('GET', `/api/history${qs ? `?${qs}` : ''}`);
   }
+  /** changes whenever a project / batch registry changes (another process registered a project) */
+  historyStamp() {
+    return this.req<{ stamp: string }>('GET', '/api/history/stamp');
+  }
   historyConfig() {
     return this.req<HistoryConfig>('GET', '/api/history/config');
   }
@@ -457,6 +461,10 @@ export class EngineClient {
   }
   undoInbox(keys: string[]) {
     return this.req<{ ok: boolean }>('POST', '/api/inbox/undo', { keys });
+  }
+  /** an author item's file (or its template / guide) in the default editor */
+  openInboxFile(key: string, which: 'file' | 'template' | 'doc' = 'file') {
+    return this.req<{ ok: boolean; path: string }>('POST', '/api/inbox/open', { key, which });
   }
   /** share for review: what the dialog offers (clips, versions, privacy warnings) */
   shareOptions(item: string) {

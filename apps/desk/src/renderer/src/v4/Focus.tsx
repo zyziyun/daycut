@@ -13,6 +13,8 @@ import { go, href } from '../lib/router';
 import { platformName } from './Home';
 import { issueText } from './Inbox';
 import { Empty, Thumb } from './kit';
+import { PendingList } from './Project';
+import { pendingFor } from '../lib/liveStatus';
 import { errText } from './msg';
 import { Player, type PlayerApi } from './Player';
 import { isTyping, useUi } from './ui';
@@ -34,6 +36,8 @@ export function Focus({ id }: { id: string }) {
   const { client } = useEngine();
   const { data: hist, reload } = useHistory();
   const inbox = useInbox();
+  // the badge says "Needs you" for a checkpoint, not a clip review: list those here instead of "Nothing to review"
+  const pending = pendingFor(inbox.items, id);
   const ui = useUi();
   const item = hist?.items.find((i) => i.id === id);
   const [items, setItems] = useState<ReviewItem[] | null>(null);
@@ -152,7 +156,13 @@ export function Focus({ id }: { id: string }) {
           ) : !items ? (
             <div className="sk" style={{ width: '60%', aspectRatio: '3/4', maxHeight: '100%' }} />
           ) : !n ? (
-            <Empty title={t('focus.empty')} action={<a className="btn" href={href({ name: 'project', id })}>{t('focus.back')}</a>} />
+            pending.length ? (
+              <div style={{ maxWidth: 560, width: '100%' }}>
+                <PendingList items={pending} />
+              </div>
+            ) : (
+              <Empty title={t('focus.empty')} action={<a className="btn" href={href({ name: 'project', id })}>{t('focus.back')}</a>} />
+            )
           ) : !cur ? (
             <Empty
               title={t('focus.allDone')}

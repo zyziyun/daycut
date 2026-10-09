@@ -54,9 +54,61 @@ def _with_clip(opt, raw, item):
     return opt
 
 
+PREVIEW_LINES = 40
+
+
+def _head(path, n=PREVIEW_LINES, max_bytes=64000):
+    """The first ``n`` lines of a text file + whether there is more (None when it cannot be read as text)."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            text = f.read(max_bytes)
+    except (OSError, UnicodeDecodeError, ValueError):
+        return None, False
+    lines = text.splitlines()
+    return "\n".join(lines[:n]), len(lines) > n or len(text) >= max_bytes
+
+
+def author_block(p, pd):
+    """An ``author`` checkpoint (she writes / approves a file: promo-recut "Keep spans", "Cards, highlights, montage")
+    -> what the Inbox shows instead of options: {labels, help {zh, en}, file, exists, template, doc, format, preview,
+    more, preview_of file|template}. The payload file (state/checkpoints/<item>/<id>.json) fills what the engine's
+    inbox entry leaves out (template, doc)."""
+    pay = {}
+    if p.get("item") and p.get("id") and pd:
+        pay = read_json(os.path.join(pd, "state", "checkpoints", str(p["item"]), f"{p['id']}.json"), None) or {}
+    get = lambda k: p.get(k) if p.get(k) is not None else pay.get(k)  # noqa: E731
+    f = get("file")
+    exists = bool(get("exists")) and bool(f) and os.path.exists(f)
+    tpl = get("template")
+    src = f if exists else (tpl if tpl and os.path.isfile(tpl) else None)
+    preview, more = (None, False)
+    if src and os.path.isfile(src):
+        preview, more = _head(src)
+    help_ = get("help") if isinstance(get("help"), dict) else {}
+    return dict(labels=get("labels") if isinstance(get("labels"), dict) else {}, help=help_, file=f, exists=exists,
+                is_dir=bool(get("is_dir")), template=tpl, doc=get("doc"), format=get("format"), preview=preview,
+                more=more, preview_of=("file" if src == f else "template") if src else None)
+
+
+def open_path(path):
+    """Open a file in the default app for its type (a text file: the text editor on macOS)."""
+    import subprocess
+    if sys.platform == "darwin":
+        subprocess.Popen(["open", "-t", path] if os.path.isfile(path) else ["open", path])
+    elif os.name == "nt":
+        os.startfile(path)  # noqa: S606  (a path the inbox listed, not user input)
+    else:
+        subprocess.Popen(["xdg-open", path])
+
+
 def engine_answer(kind, answer):
     """The desk's generic answer (``{approve: [option ids], keep: [...]}`` from her ticks) in the shape the engine
     checkpoint's schema wants; None = use the checkpoint's default."""
+    if kind == "author":
+        # she wrote / approved the file: {done: true} (+ content when the desk sends the text itself); the generic
+        # ticks of an older desk ({approve: ["0"]}) mean the same
+        v = answer if isinstance(answer, dict) else {}
+        return dict(done=True, **({"content": v["content"]} if isinstance(v.get("content"), str) else {}))
     if not isinstance(answer, dict) or "approve" not in answer or not isinstance(answer.get("approve"), list):
         return answer or None
     ids = [int(x) for x in answer["approve"] if str(x).lstrip("-").isdigit()]
@@ -273,6 +325,10 @@ class Inbox:
                                for o in raw if str(o.get("file") or "").endswith((".mp4", ".mov"))
                                and os.sep + "exports" + os.sep in str(o.get("file"))]
                         allow += [o["file"] for o in raw]
+                    author = author_block(p, pd) if kind == "author" else None
+                    if author:
+                        raw = []                          # the file is the decision, never a "☑ 1 0" option row
+                        allow += [x for x in (author["file"], author["template"], author["doc"]) if x]
                     items.append(dict(key=_key(pd, p.get("id"), p.get("item"), p.get("digest")), kind=kind,
                                       group=GROUP.get(kind, "other"),
                                       project=dict(id=e.get("id"), name=e.get("name") or os.path.basename(pd),
@@ -284,8 +340,9 @@ class Inbox:
                                       options=[_with_clip(L.engine_option(o, p.get("default"), i), o, p.get("item"))
                                                for i, o in enumerate(raw)],
                                       previews=p.get("previews") or [],
-                                      default=p.get("default"), minutes=1, source="engine",
-                                      engine=dict(dir=pd, id=p.get("id"), item=p.get("item"))))
+                                      default=p.get("default"), minutes=1 if not author else 5, source="engine",
+                                      engine=dict(dir=pd, id=p.get("id"), item=p.get("item")),
+                                      **({"author": author, "labels": author["labels"]} if author else {})))
             except Exception:  # noqa: BLE001
                 pass
         # a run parked at a checkpoint shows up twice (its live status + the engine's own entry): keep the engine's,
@@ -362,6 +419,20 @@ class Inbox:
                     self.bus.publish("batches")
             except Exception as e:  # noqa: BLE001  (the answer itself is saved; say why nothing ran)
                 print(f"[inbox] resume after answer failed for {d}: {e}", file=sys.stderr, flush=True)
+
+    opener = staticmethod(open_path)
+
+    def open_file(self, key, which="file"):
+        """「在编辑器中打开」 on an author item: its file (or the template / the guide) in the default app. Only paths
+        the inbox itself lists can be opened."""
+        need(isinstance(key, str) and re.match(r"^[0-9a-f]{16}$", key), "key: an inbox key")
+        need(which in ("file", "template", "doc"), "which: file | template | doc")
+        it = next((i for i in self.list()["items"] if i["key"] == key), None)
+        need(it is not None and it.get("author"), f"no author item {key}")
+        path = it["author"].get(which)
+        need(bool(path) and os.path.exists(path), f"the {which} does not exist yet")
+        self.opener(path)
+        return dict(ok=True, path=path)
 
     def undo(self, keys):
         need(isinstance(keys, list) and 0 < len(keys) <= 200, "keys: list")

@@ -1,5 +1,14 @@
 # Creator persona: every taste/brand/platform default the workflows read.
 # Copy to persona.local.yaml (gitignored) and edit; it overrides these keys.
+#
+# Where persona.local.yaml is read from (vstudio.config.persona_sources; all found files are deep-merged,
+# the higher one wins per key), highest precedence first:
+#   1. $VSTUDIO_PERSONA                        an explicit file (client personas, tests, one-off overrides)
+#   2. $VSTUDIO_HOME/persona.local.yaml        default ~/.config/vstudio - shared by the skill, CLI and desktop app
+#   3. <repo>/persona.local.yaml               next to this file
+#   4. ~/.claude/skills/video-studio/persona.local.yaml   the Claude Code skill checkout
+#   5. <repo>/persona.yaml, then this file (the defaults)
+# The desktop app runs a bundled engine with no persona next to it: it finds yours via 2 or 4.
 
 creator:
   name: ""                 # used on covers/end cards when set

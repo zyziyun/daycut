@@ -37,7 +37,20 @@ cut:
   # pause_threshold: 0.35            # -> cleanup pause_min;  pad_in + pad_out -> kept gap
 
 # ---------------------------------------------------------------- 2. packaging (build_promo.py)
-rates: {body: 1.3, montage: 1.1}     # playback rates (defaults: persona speed.body / speed.b_roll)
+rates: {body: 1.3, montage: 1.1}     # playback rates. body default: persona formats.promo.speed.body > persona
+                                     # speed.body > vstudio.formats promo; montage: persona speed.b_roll. Used as set
+                                     # (above speed.cjk_max_intelligible only prints a note)
+
+hooks:                               # OPTIONAL hook montage opening the video - the creator's picks, in her order
+  speed: 2.0                         # default: persona formats.promo.hooks_speed > formats.promo.speed.hook > speed.hook
+  chapter: 开场                       # own chapter on the progress bar; omit = the bar starts after the hooks
+  transition: flash                  # into the body: flash (white flash) | punch | cut
+  punch: 1.08                        # every 2nd hook is framed this much tighter (1 = off)
+  items:                             # spans = raw seconds (edges snapped word-safe); lines = 2 caption lines, 【】 = highlight
+    - spans: [[27.9, 31.0]]
+      lines: ["我让 coding agent 试了一下", "效果【真的很不错】"]
+    - spans: [[39.2, 41.0], [41.6, 43.0]]
+      lines: ["它生成了一个", "【几分钟的视频】"]
 
 subtitles:                           # [raw_start, raw_end, text]; 【term】 renders in brand.highlight
   body:
@@ -74,7 +87,39 @@ cards:                               # screenshot cards next to the talking head
     end: 38.5
     scroll: [[31.4, 0], [38.2, 600]]
     highlights: [[33.0, 117, 164, 0.9]]
+    about: 帖子                      # optional: what this stretch talks about (build prints a footage map, flags mismatches)
+  - start: 39.2                      # animated scene in the card slot (no img): kinds tiles | flow | bars | stat | toast
+    end: 43.0                        #   | ranking | columns | checklist | swatch (colours from the theme)
+    scene:
+      kind: stat
+      title: 一条视频的成本
+      items: [[1, 分钟成片], ["2.5–3", 分钟生成量, true]]    # [value, label, highlight]; ≈ between (sep: ...)
+      bars: [[成片, 36], [生成, 100, true]]
+      foot: 废片大概 1.5–2 倍
+  # - start: 43.4                    # a clip playing in the card slot (muted)
+  #   end: 47.9
+  #   video: input/clip.mp4
+  #   media_start: 6.0
+  #   label: 成片节选
+  # other scenes: {kind: tiles, items: [[title, sub], ...], cols: 2} / {kind: flow, items: [[title, sub, hi], ...]}
+  #   {kind: bars, items: [[label, value, note, hi]]} / {kind: toast, items: [REF 1, ...], alert: 生成失败, detail: ...}
+  #   {kind: ranking, items: [[name, note]]} / {kind: columns, items: [[label, value, display, note, hi]]}
+  #   {kind: checklist, items: [text, ...]} / {kind: swatch, colors: ["#d9d3c7", ...], pros: [...], cons: [...]}
+  # crop: [x, y, w, h] | auto | false  on any card image / video: privacy crop (scroll / highlight rows stay in
+  #   the original image's pixels)
 # split: [[3.4, 21.4], [22.0, 27.6]]  # optional; default = card windows with short gaps bridged
+
+pip: []                              # picture-in-picture: screen layer full-screen, face shrinks to a tile bottom-right
+# pip:                               # raw seconds; must not overlap cards / split / the hold (build errors out)
+#   - start: 48.0
+#     end: 51.5
+#     video: input/Screen Recording 2026-01-02.mov    # or image: x.png / images: [a.png, b.png] or a folder
+#     media_start: 12.0                               # where in the recording to start
+#     tag: "Claude Code · 录屏"                        # gold pill on the screen
+#     about: Claude Code                              # optional, for the footage map
+#     crop: auto                     # default auto for Screen Recording* / 屏幕录制* / rec*.mov: drops the browser
+#                                    # tabs / URL / bookmarks bar (or a black title band); [x, y, w, h]; false = off
+#     fit: cover                     # cover (default) | contain;  position: "50% 0"  (object-position)
 
 chips:                               # pills under the card: [raw t, text, star?]
   items:
@@ -103,6 +148,7 @@ montage:                             # highlights video -> framed "screen" after
   crossfade: 0.3                     # baked internal crossfades
   zoom_through: 0.5                  # body / montage overlap (body keeps playing underneath)
   scale: "1920:1080"
+  # crop: auto                       # privacy crop of the highlights source (default auto for screen recordings)
   title: 成片精选
   title_sub: agent 生成的完整讲解 · 节选
   badge: 精选
@@ -112,7 +158,7 @@ outro:
   punch_at: 55.2                     # raw s: punch-in, stamp lands 0.9 s later
   stamp: 好用
 
-chapters:                            # [anchor, label]; anchor = raw body second | start | montage | outro
+chapters:                            # [anchor, label]; anchor = raw body second | start | montage | outro (| hooks)
   - [start, 起因]
   - [14.0, 讲解视频]
   - [22.0, 实验]
@@ -127,6 +173,8 @@ end_card:
 
 # layout:                            # optional per-orientation geometry overrides (see GEO in build_promo.py)
 #   horizontal: {split_inset: "inset(40px 520px 120px 500px round 28px)", split_x: -440}
+#   # PiP tile: pip_clip [top, right, bottom, left] of the face kept, pip_scale, pip_right / pip_bottom margins,
+#   #   pip_frame [l, t, w, h] of the screen; vertical canvases compute these from the platform profile
 #   vertical: {face: [0.46, 0.38]}   # speaker's face centre (fraction of the talk frame); default = detected
 #                                     # with vstudio.face on 6 frames, else centred. Any GEO key overrides too.
 

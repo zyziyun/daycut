@@ -34,6 +34,7 @@ import time
 from collections import defaultdict
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
+from .. import proctail
 from . import estimate as EST
 from . import recipes as RC
 from .store import Store
@@ -530,7 +531,8 @@ class Runner:
     def _failed(self, jid, st, key, e):
         r = self.rows[jid].get(st.name) or {}
         att = r.get("attempts") or 1
-        err = f"{type(e).__name__}: {e}"[:2000]
+        # a subprocess failure carries its captured output: keep its last meaningful lines, not progress bars
+        err = f"{type(e).__name__}: {proctail.clean_error(e)}"[:2000]
         if st.shared:
             self.store.drop_art(st.name, key)
         if is_transient(e) and not st.paid and att <= st.retries:
@@ -542,7 +544,8 @@ class Runner:
             return
         self._set(jid, st.name, state="failed", error=err, finished=now())
         self.store.log("fail", f"{st.name}: {err}", jid, st.name)
-        self.emit("stage-fail", job=jid, stage=st.name, error=err)
+        tool = proctail.tool_failure(err)        # Node / ffmpeg missing or broken: {code: tool-node, params}
+        self.emit("stage-fail", job=jid, stage=st.name, error=err, **(tool or {}))
         self.say(f"{jid}: {st.name} FAILED - {err}")
         self._finish_job(jid, "failed", [f"{st.name}: {err}"])
 

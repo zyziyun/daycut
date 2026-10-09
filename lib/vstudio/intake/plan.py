@@ -118,6 +118,10 @@ Rules:
   burned captions are cropped off, the picture sits in a band, NEW captions go below it: captions=true,
   crop_bottom ~0.28), gentle cleanup, speed 1.0 unless asked. Only when the creator says to keep the old captions:
   captions=false.
+- Never drop a material the creator attached. Footage she wants cut in over the main recording (B-roll, 插片, screen
+  recordings, finished clips, "素材") goes into the recipe's "broll" input when it has one - all of it (a group id
+  for a folder, or the files she named); an input without "multiple" takes ONE file, so never squeeze several
+  videos into it (put the rest in "broll"). Say in risks which attached materials the plan does not use.
 - Ask a question ONLY when the answer can't be defaulted and changes the result (e.g. whose face to hide). Never ask
   about things a checkpoint already covers (segment approval, filler cuts, cover pick, publish review).
 - Platforms: use the ids in the recipe's "platforms" list ("xiaohongshu:full" = 9:16, "xiaohongshu:vertical" = 3:4).
@@ -278,6 +282,8 @@ def normalize_project(raw, idx, analysis, intent, ctx, warn):
              why=str(raw.get("why") or "")[:200])
     # ---- inputs
     ins = {}
+    broll = broll_input(m)
+    overflow = []
     for k, v in (raw.get("inputs") or {}).items():
         if k not in known_inputs:
             warn.append(MSG.cs("intake.warning.unknown-input", "en", project=p["id"], recipe=rid, key=repr(k)))
@@ -296,8 +302,13 @@ def normalize_project(raw, idx, analysis, intent, ctx, warn):
             continue
         ins[k] = paths if inp.get("multiple") else paths[0]
         if not inp.get("multiple") and len(paths) > 1:
-            warn.append(MSG.cs("intake.warning.input-single", "en", project=p["id"], recipe=rid, key=k,
-                                  file=os.path.basename(paths[0])))
+            if broll and k != broll["key"] and any(_accepts(broll, x) for x in paths[1:]):
+                overflow += [x for x in paths[1:] if _accepts(broll, x)]   # kept as b-roll, never dropped
+                warn.append(MSG.cs("intake.warning.input-single-broll", "en", project=p["id"], recipe=rid, key=k,
+                                   file=os.path.basename(paths[0]), to=broll["key"]))
+            else:
+                warn.append(MSG.cs("intake.warning.input-single", "en", project=p["id"], recipe=rid, key=k,
+                                   file=os.path.basename(paths[0])))
     # ---- items
     it = dict(raw.get("items") or {})
     method = it.get("method") if it.get("method") in METHODS else None
@@ -426,6 +437,8 @@ def normalize_project(raw, idx, analysis, intent, ctx, warn):
         items["count"] = len(ins.get(fi) or []) if isinstance(ins.get(fi), list) else 1
     if method == "single":
         items["count"] = 1
+    if broll:
+        _add_broll(ins, broll, overflow + _resolve_refs(raw.get("materials") or [], analysis), rows)
     p["inputs"] = ins
     mats = [x for x in (raw.get("materials") or []) if any(f["id"] == x for f in analysis["files"])]
     for v in ins.values():
@@ -435,6 +448,76 @@ def normalize_project(raw, idx, analysis, intent, ctx, warn):
     p["params"] = params
     p["param_sources"] = sources
     return p
+
+
+def broll_input(m):
+    """The recipe's b-roll input (``broll``: several videos cut in over the main recording), or None."""
+    return next((i for i in m["inputs"] if i["key"] == "broll" and i.get("multiple")), None)
+
+
+def _used_paths(ins, rows=()):
+    out = []
+    for v in list(ins.values()) + [x for r in rows for x in (r.get("inputs") or {}).values()]:
+        out += [x for x in (v if isinstance(v, list) else [v]) if isinstance(x, str)]
+    return out
+
+
+def _add_broll(ins, broll, cands, rows=()):
+    """Videos the plan names for a project (its ``materials``, the extra files of a one-file input) that no input
+    took go into the b-roll input: a recording she attached as B-roll is never silently dropped."""
+    used = set(_used_paths(ins, rows))
+    add = [x for x in cands if isinstance(x, str) and x not in used and I.kind_of(x) == "video" and _accepts(broll, x)]
+    if add:
+        cur = ins.get(broll["key"]) or []
+        ins[broll["key"]] = list(dict.fromkeys((cur if isinstance(cur, list) else [cur]) + add))
+
+
+def account_inputs(plan, analysis):
+    """Every file / folder she attached ends up in a project or is listed back to her: attached videos no project
+    uses go into the first project with a b-roll input; what is still unused -> ``plan.unused`` + a risk line."""
+    projects = plan.get("projects") or []
+    tops = [x for x in analysis.get("inputs") or [] if isinstance(x, str)]
+
+    def used_by_any():
+        return set(u for p in projects for u in _used_paths(p.get("inputs") or {}, (p.get("items") or {}).get("rows") or []))
+
+    def is_used(x, used):
+        if os.path.isdir(x):
+            pre = x.rstrip(os.sep) + os.sep
+            return any(u.startswith(pre) for u in used)
+        return x in used
+    used = used_by_any()
+    loose = [x for x in tops if os.path.isfile(x) and x not in used and I.kind_of(x) == "video"]
+    if loose:
+        for p in projects:
+            try:
+                b = broll_input(M.get(p["recipe"]))
+            except KeyError:
+                b = None
+            if b:
+                _add_broll(p["inputs"], b, loose, (p.get("items") or {}).get("rows") or [])
+                mats = p.get("materials") or []
+                p["materials"] = list(dict.fromkeys(mats + _material_ids(loose, analysis)))
+                break
+        used = used_by_any()
+    unused = []
+    for x in tops:
+        if is_used(x, used) or not os.path.exists(x):
+            continue
+        d = dict(path=x, name=os.path.basename(x.rstrip(os.sep)), kind="folder" if os.path.isdir(x) else I.kind_of(x))
+        if d["kind"] == "folder":
+            pre = x.rstrip(os.sep) + os.sep
+            d["files"] = len([f for f in analysis["files"] if f["path"].startswith(pre)])
+        unused.append(d)
+    plan["unused"] = unused
+    prefix = MSG.CATALOG["intake.risk.unused-inputs"][1].split("{")[0]
+    risks = [r for r in plan.get("risks") or [] if (getattr(r, "info", None) or {}).get("code") !=
+             "intake.risk.unused-inputs" and not str(r).startswith(prefix)]
+    if unused and projects:
+        risks.append(MSG.cs("intake.risk.unused-inputs", files="、".join(u["name"] for u in unused[:8]) +
+                            (f" …（+{len(unused) - 8}）" if len(unused) > 8 else ""), n=len(unused)))
+    plan["risks"] = risks
+    return plan
 
 
 def _first_path(v):
@@ -764,17 +847,30 @@ def summary_zh(plan):
 
 # --------------------------------------------------------------------------- the model call
 # s per CLI provider attempt (claude-code / codex), then the next one in the chain: the same 90 s per-attempt policy as
-# Create (VSTUDIO_CREATE_AI_TIMEOUT) and the publish copy calls
+# Create (VSTUDIO_CREATE_AI_TIMEOUT) and the publish copy calls - for a small request. A big intake (a long transcript,
+# a folder of 1,000+ files: ~95k chars / ~47k tokens) takes Claude Code ~140 s to answer with a plan (measured with
+# claude 2.1.153 / Opus), so the limit grows with the prompt: +CLI_TIMEOUT_PER_1K s per 1,000 chars past
+# CLI_TIMEOUT_BASE_CHARS, at most MAX_CLI_TIMEOUT.
 DEFAULT_CLI_TIMEOUT = 90
+CLI_TIMEOUT_BASE_CHARS = 20000
+CLI_TIMEOUT_PER_1K = 2.5
+MAX_CLI_TIMEOUT = 420
+
+
+def cli_timeout_for(chars):
+    """Seconds one CLI provider gets for an intake prompt of ``chars`` characters (system + body)."""
+    extra = max(0, int(chars) - CLI_TIMEOUT_BASE_CHARS) / 1000 * CLI_TIMEOUT_PER_1K
+    return float(min(MAX_CLI_TIMEOUT, round(DEFAULT_CLI_TIMEOUT + extra)))
 
 
 def _call_model(prompt, analysis, ctx, transcripts, provider=None, model=None, current=None, instruction=None,
-                call=None, timeout=None):
+                call=None, timeout=None, on_event=None):
     route = LLM.route(TASK, provider, model, ctx.get("llm_config"))
     info = dict(provider=route.provider, model=route.model, route=route.source)
     if route.provider == "none" and call is None:
         info.update(fallback=True, reason="no model routed for task intake (rule planner)")
         return None, info
+    I.emit(on_event, stage="model", provider=route.provider, model=route.model)
     system = SYSTEM.format(phrases=PHRASE_TABLE)
     body = _prompt_doc(prompt, analysis, ctx, transcripts, current, instruction)
     t0 = time.time()
@@ -783,7 +879,8 @@ def _call_model(prompt, analysis, ctx, transcripts, provider=None, model=None, c
             res = call(system, body)
         else:
             ct = timeout if timeout is not None else (None if os.environ.get("VSTUDIO_LLM_CLI_TIMEOUT")
-                                                      else DEFAULT_CLI_TIMEOUT)
+                                                      else cli_timeout_for(len(system) + len(body)))
+            info["cli_timeout"] = ct
             res = LLM.complete(TASK, system, body, schema=True, provider=provider, model=model,
                                config=ctx.get("llm_config"), max_tokens=12000, timeout=600, cli_timeout=ct)
     except Exception as e:  # noqa: BLE001 - auth / network / CLI errors: fall back, say why
@@ -817,12 +914,26 @@ def _needs_transcript(intent, analysis):
     return out[:3]
 
 
-def _upgrade_transcripts(analysis, files, language=None, echo=None):
+def _transcript_events(on_event):
+    """The full-ASR pass re-reads files the first pass already reported: only its transcription is news (a file
+    whose full analysis is cached is a transcript reused from that cache)."""
+    if on_event is None:
+        return None
+
+    def ev(e):
+        if e.get("stage") == "transcribe":
+            on_event(e)
+        elif e.get("stage") == "probe" and e.get("cached"):
+            on_event(dict(e, stage="transcribe", cached="analysis"))
+    return ev
+
+
+def _upgrade_transcripts(analysis, files, language=None, echo=None, on_event=None):
     """Full ASR (cached) for the files the request selects content from; merged into the analysis."""
     paths = [f["path"] for f in files]
     if not paths:
         return analysis
-    full = I.analyze(paths, asr="full", language=language, echo=echo)
+    full = I.analyze(paths, asr="full", language=language, echo=echo, on_event=_transcript_events(on_event))
     byp = {f["path"]: f for f in full["files"]}
     for f in analysis["files"]:
         g = byp.get(f["path"])
@@ -880,21 +991,26 @@ def _plan_id(prompt):
 
 
 def make_plan(prompt, inputs=None, client=None, provider=None, model=None, analysis=None, asr="auto", auto=None,
-              call=None, echo=None, language=None, timeout=None):
-    """-> plan dict. ``call(system, prompt) -> {json, model, cost_usd}`` replaces the model (tests)."""
+              call=None, echo=None, language=None, timeout=None, on_event=None):
+    """-> plan dict. ``call(system, prompt) -> {json, model, cost_usd}`` replaces the model (tests). ``on_event``:
+    progress, one dict per step - the inventory's (scan / probe / listen / faces / transcribe, see ``inventory``),
+    then {event: stage, stage: model, provider, model} for the AI call and {event: stage, stage: write}."""
     if analysis is None:
         if not inputs:
             raise PlanError("no inputs (files / folders) given")
-        analysis = I.analyze(inputs, asr="off" if asr == "off" else "sample", language=language, echo=echo)
+        analysis = I.analyze(inputs, asr="off" if asr == "off" else "sample", language=language, echo=echo,
+                             on_event=on_event)
     ctx = context(client)
     intent = R.parse_prompt(prompt)
     if asr != "off" and asr != "sample":
         need = _needs_transcript(intent, analysis) if asr == "auto" else [
             f for f in analysis["files"] if f["kind"] in ("video", "audio")]
         if need:
-            analysis = _upgrade_transcripts(analysis, need, language, echo)
+            analysis = _upgrade_transcripts(analysis, need, language, echo, on_event)
     transcripts = _transcripts(analysis) if intent.get("extract") else {}
-    js, info = _call_model(prompt, analysis, ctx, transcripts, provider, model, call=call, timeout=timeout)
+    js, info = _call_model(prompt, analysis, ctx, transcripts, provider, model, call=call, timeout=timeout,
+                           on_event=on_event)
+    I.emit(on_event, stage="write")
     warn = []
     questions, risks, summary = [], [], None
     raw_projects = None
@@ -936,6 +1052,7 @@ def make_plan(prompt, inputs=None, client=None, provider=None, model=None, analy
         materials=_materials(analysis), projects=projects,
         series=_series_for(projects, prompt), questions=_norm_questions(questions, projects), risks=risks,
         warnings=warn, run=dict(pilot=1, auto=auto_ids))
+    account_inputs(plan, analysis)
     plan["estimate"] = EST.total(projects)
     plan["summary_zh"] = with_look(summary, plan, _lang(plan)) if (summary and not info.get("fallback")) \
         else template_summary(plan)
@@ -1005,15 +1122,17 @@ def _norm_questions(qs, projects):
     return out
 
 
-def revise(plan, instruction, provider=None, model=None, call=None, client=None, echo=None, timeout=None):
+def revise(plan, instruction, provider=None, model=None, call=None, client=None, echo=None, timeout=None,
+           on_event=None):
     """Follow-up instruction -> updated plan (model first, rules as the fallback). The analysis is re-read from
-    the cache (no media work unless the cache was cleared)."""
+    the cache (no media work unless the cache was cleared). ``on_event``: as ``make_plan``."""
     plan = copy.deepcopy(plan)
-    analysis = I.analyze(plan["analysis"]["inputs"], asr=plan["analysis"].get("asr") or "sample", echo=echo)
+    analysis = I.analyze(plan["analysis"]["inputs"], asr=plan["analysis"].get("asr") or "sample", echo=echo,
+                         on_event=on_event)
     if any(x.get("transcript") for x in plan.get("materials") or []):
         fs = [f for f in analysis["files"] if any(x["path"] == f["path"] and x.get("transcript")
                                                    for x in plan["materials"])]
-        analysis = _upgrade_transcripts(analysis, fs, echo=echo)
+        analysis = _upgrade_transcripts(analysis, fs, echo=echo, on_event=on_event)
     ctx = context(client or plan.get("client"))
     intent = R.parse_prompt(plan["prompt"] + "\n" + instruction)
     follow = R.parse_prompt(instruction)
@@ -1023,7 +1142,8 @@ def revise(plan, instruction, provider=None, model=None, call=None, client=None,
             intent_now[k] = follow[k]
     transcripts = _transcripts(analysis) if intent.get("extract") else {}
     js, info = _call_model(plan["prompt"], analysis, ctx, transcripts, provider, model, current=plan,
-                           instruction=instruction, call=call, timeout=timeout)
+                           instruction=instruction, call=call, timeout=timeout, on_event=on_event)
+    I.emit(on_event, stage="write")
     warn, notes = [], []
     projects = []
     summary = None
@@ -1066,6 +1186,7 @@ def revise(plan, instruction, provider=None, model=None, call=None, client=None,
         "%Y-%m-%dT%H:%M:%S"), planner=info, changes=notes)]
     plan["planner"] = info
     plan["warnings"] = warn
+    account_inputs(plan, analysis)
     plan["estimate"] = EST.total(projects)
     plan["summary_zh"] = with_look(summary, plan, _lang(plan)) if (summary and not info.get("fallback")) \
         else template_summary(plan)

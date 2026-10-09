@@ -203,6 +203,22 @@ textarea.inp { height: auto; padding: 8px 12px; resize: vertical; line-height: 1
 .decide { display: flex; gap: 12px; align-items: flex-start; padding: 12px var(--s2); border-radius: var(--radius); background: color-mix(in srgb, var(--you) 7%, transparent); border: 1px solid color-mix(in srgb, var(--you) 30%, transparent); }
 .decide .dot { margin-top: 7px; }
 .planprog { display: flex; align-items: center; gap: 12px; }
+/* what a running plan is doing (PlanCard + lib/planProgress): the stage, a bar, the five steps */
+.planstage { margin-top: var(--s2); display: flex; flex-direction: column; gap: var(--s1); }
+.planstage .now { display: flex; align-items: baseline; gap: var(--s1); min-width: 0; }
+.planstage .now b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.bar.indet i { width: 30%; animation: bar-indet 1.6s var(--ease) infinite; }
+@keyframes bar-indet { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+@media (prefers-reduced-motion: reduce) { .bar.indet i { animation: none; width: 100%; opacity: 0.5; } }
+.plansteps { list-style: none; margin: var(--s1) 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.plansteps li { display: flex; align-items: center; gap: var(--s1); color: var(--text-muted); }
+.plansteps li .mk { width: 16px; display: inline-flex; justify-content: center; flex: none; }
+.plansteps li .mk .ico { width: 14px; height: 14px; color: var(--ok); }
+.plansteps li.current { color: var(--text); }
+.plansteps li.current .dot.run { animation: dot-pulse 1.4s ease-in-out infinite; }
+.plansteps li.pending, .plansteps li.skipped { color: var(--text-faint); }
+@keyframes dot-pulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .plansteps li.current .dot.run { animation: none; } }
 
 /* ---------------------------------------------------------------- inbox */
 .inb { padding: var(--s2); display: grid; grid-template-columns: auto 88px minmax(0, 1fr) auto; gap: var(--s2); align-items: start; margin-bottom: 12px; }

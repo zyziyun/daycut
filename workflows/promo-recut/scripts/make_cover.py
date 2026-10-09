@@ -6,8 +6,9 @@ a rotated red tag and a "记笔记" note tag. Landscape sizes use the side-by-si
 
   python3 $VSTUDIO/workflows/promo-recut/scripts/make_cover.py promo.config.json [--no-retouch]
 
-Layout + retouch are vstudio.cover.split_cover (face-centred crop, vstudio.retouch: face slim, eye,
-de-shine, skin, light makeup, optional body slim). This script only maps the project config onto it.
+Layout + retouch are vstudio.cover.split_cover (face-centred crop, vstudio.retouch: de-shine, skin, light
+makeup). No geometric warps by default (face slim / eye enlarge / body slim deformed the face); opt in per
+project with cover.retouch: {slim: 0.05, eye: 0.04, body: 0.07}. This script only maps the project config onto it.
 """
 import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
 import argparse
@@ -18,7 +19,7 @@ from common import Project  # noqa: E402
 from vstudio import cover, media  # noqa: E402
 from PIL import Image  # noqa: E402
 
-RETOUCH_DEFAULT = {"slim": 0.05, "eye": 0.04, "makeup": 0.5, "body": 0.07}
+RETOUCH_DEFAULT = dict(cover.COVER_RETOUCH)   # slim / eye / body 0: warps only when cover.retouch sets them
 
 
 def get_photo(prj, cv):

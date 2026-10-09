@@ -372,11 +372,39 @@ export interface IntakePlan {
   revisions?: { prompt: string; at: string; changes?: string[] }[];
 }
 
+/** What a running plan / revision is doing now (the engine's ``vstudio.intake plan --json-events``, folded by the desk
+ * engine): the current stage with its file / counters, and the stages seen so far. */
+export type IntakeStage = 'scan' | 'probe' | 'listen' | 'faces' | 'transcribe' | 'model' | 'write';
+export interface IntakeProgress {
+  stage: IntakeStage;
+  /** the file the stage works on (as named under the dropped folder) */
+  file?: string;
+  /** file i of n while reading the materials */
+  i?: number;
+  n?: number;
+  kind?: string;
+  /** transcription: seconds heard so far of total_s */
+  done_s?: number;
+  total_s?: number;
+  /** probe: facts from the cache; transcribe: an earlier transcript was reused (shared | sidecar | audio | analysis) */
+  cached?: boolean | string;
+  /** the model the plan was asked of (stage model) */
+  provider?: string;
+  model?: string;
+  /** files found under the inputs */
+  files?: number;
+  /** a transcript made earlier was used (kept after the transcribe stage) */
+  reused?: boolean;
+  seen?: IntakeStage[];
+  at?: number;
+}
+
 export interface IntakeJob {
   id: string;
   state: 'running' | 'done' | 'error' | 'stopped';
   started?: number;
   step?: string;
+  progress?: IntakeProgress | null;
   prompt?: string;
   inputs?: string[];
   plan: IntakePlan | null;
@@ -437,6 +465,26 @@ export interface InboxItem {
   at?: number | null;
   /** Create items open their own screen (#/create/...) instead of being answered here */
   href?: string;
+  /** the checkpoint's own label (author checkpoints: "Keep spans" / "保留片段") */
+  labels?: { zh?: string; en?: string } | null;
+  /** kind "author": she writes / approves a file; answered {done: true} */
+  author?: InboxAuthor | null;
+}
+
+/** An author checkpoint's file (engine/desk_engine/inbox.py author_block). */
+export interface InboxAuthor {
+  labels?: { zh?: string; en?: string };
+  help?: { zh?: string; en?: string };
+  file: string | null;
+  exists: boolean;
+  is_dir?: boolean;
+  template?: string | null;
+  doc?: string | null;
+  format?: string | null;
+  /** the first lines of the file (or of the template while the file does not exist yet) */
+  preview: string | null;
+  more?: boolean;
+  preview_of?: 'file' | 'template' | null;
 }
 
 export interface InboxDoc {

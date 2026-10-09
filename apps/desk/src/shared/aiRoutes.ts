@@ -181,21 +181,36 @@ export interface FallbackInfo {
   to: string;
   code: string;
   error?: string;
+  /** how long the first provider was given (s) when it timed out */
+  limit?: number | null;
+  /** skipped at once: it timed out on an earlier request a few minutes ago */
+  cached?: boolean;
+  seconds?: number | null;
 }
 
+export type FallbackKey = 'aiacc.fb.expired' | 'aiacc.fb.notLoggedIn' | 'aiacc.fb.notInstalled' | 'aiacc.fb.failed' | 'aiacc.fb.timeout' | 'aiacc.fb.skipped' | 'aiacc.fb.limited';
+
 /** The notice for a run that did not use the chosen provider, or null. key + vars for t(). */
-export function fallbackNotice(fb: FallbackInfo | null | undefined): { key: 'aiacc.fb.expired' | 'aiacc.fb.notLoggedIn' | 'aiacc.fb.notInstalled' | 'aiacc.fb.failed'; from: string; to: string; provider: string; login: boolean } | null {
+export function fallbackNotice(fb: FallbackInfo | null | undefined): { key: FallbackKey; from: string; to: string; provider: string; login: boolean; seconds?: number } | null {
   if (!fb || !fb.from || !fb.to || fb.from === fb.to) return null;
-  const key =
+  // say WHY it fell back: "did not answer" alone hid a 90 s limit on a big request and a skip after an earlier timeout
+  const limit = fb.limit ?? (fb.code === 'timeout' ? Number(/timed out after\s*([0-9.]+)\s*s/.exec(fb.error ?? '')?.[1]) || null : null);
+  const key: FallbackKey =
     fb.code === 'auth-expired'
       ? 'aiacc.fb.expired'
       : fb.code === 'not-logged-in'
         ? 'aiacc.fb.notLoggedIn'
         : fb.code === 'not-installed'
           ? 'aiacc.fb.notInstalled'
-          : 'aiacc.fb.failed';
+          : fb.code === 'rate-limited'
+            ? 'aiacc.fb.limited'
+            : fb.code === 'timeout' && fb.cached
+              ? 'aiacc.fb.skipped'
+              : fb.code === 'timeout' && limit
+                ? 'aiacc.fb.timeout'
+                : 'aiacc.fb.failed';
   const login = PROVIDERS[fb.from as ProviderId]?.kind === 'subscription-cli' && (fb.code === 'auth-expired' || fb.code === 'not-logged-in');
-  return { key, from: providerName(fb.from), to: providerName(fb.to), provider: fb.from, login };
+  return { key, from: providerName(fb.from), to: providerName(fb.to), provider: fb.from, login, ...(key === 'aiacc.fb.timeout' && limit ? { seconds: Math.round(limit) } : {}) };
 }
 
 export function providerName(p: string | null | undefined): string {

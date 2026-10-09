@@ -45,6 +45,7 @@ The desk maps `code` to its own copy (en / zh-CN / fr below; `{name}` = a param)
 | `intake.risk.aigc-credits` | AI video is paid in credits: it stops at the budget checkpoint for your approval before generating | AI 视频按积分计费：生成前会在“预算”检查点停下等你批准 | La vidéo IA se paie en crédits : elle s'arrête au point de contrôle du budget pour votre accord avant de générer |
 | `intake.risk.unsupported-platform` | {platforms}: no export preset yet; exported for the closest platform | {platforms} 还没有导出预设：先按最接近的平台导出 | {platforms} : pas encore de préréglage d'export ; exporté pour la plateforme la plus proche |
 | `intake.risk.no-projects` | No runnable project could be made from these materials and the request | 没能从这些素材和描述里拼出可执行的项目 | Impossible de composer un projet à partir de ces fichiers et de cette demande |
+| `intake.risk.unused-inputs` | Not used in any project: {files}. Say which project they belong to if you want them in | 这些素材没有用在任何项目里：{files}。要用的话告诉我放进哪个项目 | Utilisé dans aucun projet : {files}. Dites dans quel projet les mettre si vous les voulez |
 | `intake.question.mask-faces` | Whose faces should be hidden? (default: every guest but you) | 要遮哪几位的脸？（默认：除你以外的所有嘉宾） | Quels visages masquer ? (par défaut : tous les invités sauf vous) |
 | `intake.question.narration` | Narration (AI voice reads your copy) or music only? | 文艺片要旁白（AI 配音读你的文案）还是纯音乐卡点？ | Narration (voix IA qui lit votre texte) ou musique seule ? |
 | `intake.question` | {text} | {text} | {text} |
@@ -55,6 +56,7 @@ The desk maps `code` to its own copy (en / zh-CN / fr below; `{name}` = a param)
 | `intake.warning.unknown-input` | {project} {recipe}: unknown input {key} dropped | {project} {recipe}：未知输入 {key} 已去掉 | {project} {recipe} : entrée inconnue {key} retirée |
 | `intake.warning.input-not-accepted` | {project} {recipe}: input {key} does not accept {files} | {project} {recipe}：输入 {key} 不接受 {files} | {project} {recipe} : l'entrée {key} n'accepte pas {files} |
 | `intake.warning.input-single` | {project} {recipe}: input {key} takes one file; kept {file} | {project} {recipe}：输入 {key} 只要一个文件，保留了 {file} | {project} {recipe} : l'entrée {key} prend un seul fichier ; {file} gardé |
+| `intake.warning.input-single-broll` | {project} {recipe}: input {key} takes one file; kept {file}, the other videos go to {to} | {project} {recipe}：输入 {key} 只要一个文件，保留了 {file}，其余视频放进 {to} | {project} {recipe} : l'entrée {key} prend un seul fichier ; {file} gardé, les autres vidéos vont dans {to} |
 | `intake.warning.range-dropped` | {project} row {row}: range {range} too short or outside the media, dropped | {project} 第 {row} 行：区间 {range} 太短或超出素材，已去掉 | {project} ligne {row} : plage {range} trop courte ou hors du média, retirée |
 | `intake.warning.unknown-param` | {project} {recipe}: unknown param {key} dropped | {project} {recipe}：未知参数 {key} 已去掉 | {project} {recipe} : paramètre inconnu {key} retiré |
 | `intake.warning.platform-unsupported` | {project} {recipe}: platform {platform} not supported by this recipe (dropped) | {project} {recipe}：这个配方不支持平台 {platform}（已去掉） | {project} {recipe} : plateforme {platform} non prise en charge par cette recette (retirée) |

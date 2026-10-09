@@ -27,7 +27,8 @@ import json
 __all__ = ["JS", "prelude", "subtitles", "split_screen", "punch_in", "punch_at", "screenshot_cards", "chips",
            "freeze_clips", "freeze_hold", "zoom_through", "framed_screen", "grid_backdrop_css", "step_labels",
            "badge", "tag", "title_card", "enter_zoom", "stamp", "end_card", "transition", "scene_transitions",
-           "TRANSITIONS", "indent", "subtitles_html"]
+           "TRANSITIONS", "indent", "subtitles_html", "pip_windows", "pip_runs", "scene_palette", "scene_css",
+           "scene_card", "SCENE_KINDS", "card_video", "flash"]
 
 
 class JS(str):
@@ -75,11 +76,12 @@ def prelude(tl="tl"):
 def subtitles(cues, container="#subs", height=1080, tl="tl"):
     """Keyword subtitles: cues [{s, e, t}] where t is already-escaped HTML (vstudio.overlays.cue_html turns
     【term】 into <em>). Pair with overlays.hf_cue_css for the .cue style. Each cue pops up (y 14 -> 0) and
-    fades out. css = the container; place subtitles_html(start, duration) in the root."""
+    fades out. A cue may carry c: an extra class (e.g. "hook" for two-line hook captions).
+    css = the container; place subtitles_html(start, duration) in the root."""
     css = f"{container} {{ position: absolute; left: 0; right: 0; top: 0; height: {height}px; pointer-events: none; }}\n"
     js = (f'const subs = $("{container}");\n'
           f"{_v(cues)}.forEach((c, i) => {{\n"
-          '  const el = document.createElement("div"); el.className = "cue"; el.id = "cue" + i;\n'
+          '  const el = document.createElement("div"); el.className = "cue" + (c.c ? " " + c.c : ""); el.id = "cue" + i;\n'
           "  el.innerHTML = c.t; subs.appendChild(el);   // escaped, 【term】 -> <em> (vstudio.overlays.cue_html)\n"
           f'  {tl}.fromTo(el, {{ opacity: 0, y: 14 }}, {{ opacity: 1, y: 0, duration: 0.18, ease: "power2.out" }}, c.s);\n'
           f'  {tl}.to(el, {{ opacity: 0, duration: 0.12, ease: "none" }}, Math.max(c.s + 0.25, c.e - 0.12));\n'
@@ -149,6 +151,9 @@ def screenshot_cards(cards, card_w=760, card_h=740, left=1100, top=60, accent=No
     """3D screenshot cards: slide in with rotationY, drift, scroll the image to [t, y] keyframes, highlighter
     rows sweep in ([t, y0, y1, width fraction], image px) and an optional red box [t, y0, y1] pops.
     cards: [{id, img, w, h, s, e, scroll: [[t, y], ...], hl: [...], box?}] (w/h = image px).
+    A card may carry `inner` (html) instead of `img`: an animated scene (scene_card) or a playing clip
+    (card_video) drawn in the card slot; give it w = card_w and scroll [[s, 0]] (no scrolling). Such a card
+    gets class "card media" (dark ground instead of white).
     cards_js / card_w_js: JS expressions to reference instead of inlining (html still uses the Python values)."""
     accent = _acc(accent)
     CW = _v(card_w_js if card_w_js is not None else card_w)
@@ -158,8 +163,16 @@ def screenshot_cards(cards, card_w=760, card_h=740, left=1100, top=60, accent=No
            f".card img {{ position: absolute; left: 0; top: 0; width: {cw}px; display: block; }}\n"
            ".hl { position: absolute; left: 14px; height: 0; background: rgba(255, 214, 10, .45); mix-blend-mode: multiply; border-radius: 6px; transform-origin: 0 50%; }\n"
            f".box {{ position: absolute; left: 10px; width: {cw - 20}px; border: 5px solid {accent}; border-radius: 16px; transform-origin: 50% 50%; opacity: 0; }}\n")
-    html = "".join(f'<div class="card" id="{cd["id"]}"><div class="scroller" id="{cd["id"]}-s"><img src="{cd["img"]}" alt="" /><div id="{cd["id"]}-hls"></div></div></div>'
-                   for cd in cards)
+    if any(cd.get("inner") for cd in cards):
+        css += ".card.media { background: #05070d; }\n"
+
+    def one(cd):
+        if cd.get("inner"):
+            return (f'<div class="card media" id="{cd["id"]}"><div class="scroller" id="{cd["id"]}-s"><div id="{cd["id"]}-hls"></div></div>'
+                    f'{cd["inner"]}</div>')
+        return (f'<div class="card" id="{cd["id"]}"><div class="scroller" id="{cd["id"]}-s"><img src="{cd["img"]}" alt="" />'
+                f'<div id="{cd["id"]}-hls"></div></div></div>')
+    html = "".join(one(cd) for cd in cards)
     js = (f"{_v(cards_js if cards_js is not None else cards)}.forEach((c) => {{\n"
           f"  const k = {CW} / c.w;\n"
           '  const card = $("#" + c.id), scr = $("#" + c.id + "-s"), hls = $("#" + c.id + "-hls");\n'
@@ -433,3 +446,348 @@ TR.forEach((t) => {{
 }});
 """
     return _out(css, html, js)
+
+
+# ---------------------------------------------------------------- picture-in-picture (screen + face tile)
+def pip_runs(windows, bridge=0.8):
+    """Group time-sorted windows [{s, e}] whose gaps are <= bridge into runs -> [[i0, i1, s, e], ...]
+    (inclusive indexes). The face stays a tile across a run instead of bouncing to full frame."""
+    runs = []
+    for i, w in enumerate(windows):
+        if runs and w["s"] - runs[-1][3] <= bridge:
+            runs[-1][1], runs[-1][3] = i, max(runs[-1][3], w["e"])
+        else:
+            runs.append([i, i, w["s"], w["e"]])
+    return runs
+
+
+def pip_windows(windows, clip, scale, x, y, tile, frame, tag_at=None, gold=None, target="#face", bridge=0.8,
+                tracks=(1, 12), tag_track=9, ring_track=10, radius=24, tile_radius=21, tl="tl"):
+    """Picture-in-picture: during each window a full-screen framed "screen" layer (screen recording, a video
+    or a cross-fading image series; rounded frame, subtle 3D settle + slow zoom, gold tag pill) plays BELOW
+    the talking head, and the talking head (`target`, a full-frame wrapper with transform-origin 0 0, as
+    split_screen uses) shrinks to a rounded tile: clip-path `clip` (inset() in the unscaled element's px)
+    + scale + translate (x, y), with a gold ring around the tile.
+
+    windows: time-sorted, non-overlapping [{id, s, e, video: src, media_start, images: [src, ...], tag,
+      fit ("cover" | "contain"), pos (object-position)}] (one of video / images).
+    tile: [l, t, w, h] of the tile on the canvas (the ring); frame: [l, t, w, h] of the screen frame;
+    tag_at: [l, t] of the tag pill (default: frame top-left + 24 px).
+    Windows closer than `bridge` s form one run: the face stays a tile and the next screen cross-fades over
+    the previous one (screens alternate between the two `tracks`, the previous one lives 0.5 s into the next).
+    Returns {css, html (screens: put BEFORE the face wrapper), overlay (tags + rings: put AFTER it), js}.
+    HyperFrames lint: only the <video> is timed; its wrapper is a plain container whose opacity is tweened
+    (data-start on both = video_nested_in_timed_element). An image window's wrapper is timed instead."""
+    gold = gold or "#F4D35E"
+    fl, ft, fw, fh = frame
+    tl_, tt, tw, th = tile
+    ta = tag_at or [fl + 24, ft + 22]
+    css = (".pipscr { opacity: 0; }\n"
+           f".pipframe {{ position: absolute; left: {fl}px; top: {ft}px; width: {fw}px; height: {fh}px; border-radius: {radius}px; overflow: hidden;\n"
+           "  box-shadow: 0 40px 120px rgba(0,0,0,.6), 0 0 0 2px rgba(255,255,255,.12); background: #000; }\n"
+           f".pipframe video, .pipframe img {{ position: absolute; left: 0; top: 0; width: {fw}px; height: {fh}px; object-fit: cover; object-position: 50% 0; }}\n"
+           ".pipframe img + img { opacity: 0; }\n"
+           f'.piptag {{ position: absolute; left: {ta[0]}px; top: {ta[1]}px; font: 700 26px "CJK"; color: #111; background: {gold}; padding: 8px 18px; border-radius: 999px; opacity: 0; white-space: nowrap; }}\n'
+           f".pipring {{ position: absolute; left: {r(tl_)}px; top: {r(tt)}px; width: {r(tw)}px; height: {r(th)}px; border-radius: {tile_radius}px;\n"
+           f"  box-shadow: 0 0 0 4px {gold}, 0 20px 50px rgba(0,0,0,.55); opacity: 0; }}\n")
+    W = list(windows)
+    runs = pip_runs(W, bridge)
+    run_of = {i: k for k, (i0, i1, _, _) in enumerate(runs) for i in range(i0, i1 + 1)}
+    screens, over = [], []
+    js = [f'{tl}.set("{target}", {{ scale: 1 }}, 0);\n']
+    full = "inset(0px 0px 0px 0px round 0px)"
+    for i, w in enumerate(W):
+        pid, s, e = w["id"], float(w["s"]), float(w["e"])
+        nxt = W[i + 1] if i + 1 < len(W) else None
+        chained = nxt is not None and run_of[i + 1] == run_of[i]
+        vis = r(nxt["s"] + 0.5) if chained else r(e)          # alive 0.5 s into the next screen (cross-fade)
+        d = r(vis - s)
+        trk = tracks[i % len(tracks)]
+        st = []
+        if w.get("fit") and w["fit"] != "cover":
+            st.append(f"object-fit: {w['fit']}")
+        if w.get("pos"):
+            st.append(f"object-position: {w['pos']}")
+        sty = f' style="{"; ".join(st)}"' if st else ""
+        if w.get("video"):
+            inner = (f'<video id="{pid}v" src="{w["video"]}" muted playsinline data-start="{r(s)}" data-duration="{d}" '
+                     f'data-media-start="{r(float(w.get("media_start", 0) or 0))}" data-track-index="{trk}" data-volume="0"{sty}></video>')
+            screens.append(f'<div id="{pid}" class="full pipscr"><div class="pipframe" id="{pid}f">{inner}</div></div>')
+        else:
+            imgs = w.get("images") or []
+            if not imgs:
+                raise ValueError(f"pip window {pid}: needs video or images")
+            inner = "".join(f'<img id="{pid}i{k}" src="{src}" alt=""{sty} />' for k, src in enumerate(imgs))
+            screens.append(f'<div id="{pid}" class="full clip pipscr" data-start="{r(s)}" data-duration="{d}" '
+                           f'data-track-index="{trk}"><div class="pipframe" id="{pid}f">{inner}</div></div>')
+            step = (e - s) / len(imgs)
+            for k in range(1, len(imgs)):
+                js.append(f'{tl}.fromTo("#{pid}i{k}", {{ opacity: 0 }}, {{ opacity: 1, duration: 0.5 }}, {r(s + k * step)});\n')
+        js.append(f'{tl}.fromTo("#{pid}", {{ opacity: 0 }}, {{ opacity: 1, duration: 0.5 }}, {r(s)});\n'
+                  f'{tl}.fromTo("#{pid}f", {{ scale: 1.06, rotationX: 6, transformPerspective: 1600 }}, '
+                  f'{{ scale: 1, rotationX: 0, duration: 0.9, ease: "power3.out" }}, {r(s)});\n'
+                  f'{tl}.to("#{pid}f", {{ scale: 1.03, duration: {r(max(0.5, d - 1.45))}, ease: "sine.inOut" }}, {r(s + 0.92)});\n')
+        if chained:
+            js.append(f'{tl}.set("#{pid}", {{ opacity: 0 }}, {vis});\n')
+        else:
+            js.append(f'{tl}.to("#{pid}", {{ opacity: 0, duration: 0.35 }}, {r(e - 0.35)});\n')
+        if w.get("tag"):
+            over.append(f'<div id="{pid}t" class="piptag clip" data-start="{r(s)}" data-duration="{r(e - s)}" '
+                        f'data-track-index="{tag_track}">{w["tag"]}</div>')
+            js.append(f'{tl}.fromTo("#{pid}t", {{ opacity: 0, y: -12 }}, {{ opacity: 1, y: 0, duration: 0.4 }}, {r(s + 0.6)});\n'
+                      f'{tl}.to("#{pid}t", {{ opacity: 0, duration: 0.3 }}, {r(e - 0.5)});\n')
+    for k, (_, _, rs, re_) in enumerate(runs):
+        rid = f"pipring{k}"
+        over.append(f'<div id="{rid}" class="pipring clip" data-start="{r(rs)}" data-duration="{r(re_ - rs)}" '
+                    f'data-track-index="{ring_track}"></div>')
+        js.append(f'{tl}.to("{target}", {{ clipPath: {_v(clip)}, scale: {scale}, x: {r(x)}, y: {r(y)}, duration: 0.7, ease: "power3.inOut" }}, {r(max(0.0, rs - 0.1))});\n'
+                  f'{tl}.to("{target}", {{ clipPath: "{full}", scale: 1, x: 0, y: 0, duration: 0.6, ease: "power3.inOut" }}, {r(re_ - 0.35)});\n'
+                  f'{tl}.fromTo("#{rid}", {{ opacity: 0 }}, {{ opacity: 1, duration: 0.3 }}, {r(rs + 0.55)});\n'
+                  f'{tl}.to("#{rid}", {{ opacity: 0, duration: 0.2 }}, {r(re_ - 0.4)});\n')
+    out = _out(css, "\n  ".join(screens), "".join(js))
+    out["overlay"] = "\n  ".join(over)
+    return out
+
+
+# ---------------------------------------------------------------- media inside a card
+def card_video(el_id, src, start, duration, media_start=0.0, label=None, width=760, height=740, track=11,
+               gold=None):
+    """A muted clip playing inside a card slot (pass as the card's `inner`). Explicit width / height: the
+    card's scroller is transformed and has no height, so inset: 0 would collapse to nothing.
+    Returns {css, html, js} (js empty)."""
+    gold = gold or "#F4D35E"
+    css = (".cardvid { position: absolute; left: 0; top: 0; object-fit: cover; background: #000; }\n"
+           f'.cardlbl {{ position: absolute; left: 22px; top: 22px; font: 700 24px "CJK"; color: #111; background: {gold}; padding: 6px 14px; border-radius: 999px; white-space: nowrap; }}\n')
+    html = (f'<video class="cardvid" id="{el_id}" src="{src}" muted playsinline data-start="{r(start)}" data-duration="{r(duration)}" '
+            f'data-media-start="{r(media_start)}" data-track-index="{track}" data-volume="0" '
+            f'style="width:{width}px;height:{height}px"></video>'
+            + (f'<div class="cardlbl">{_esc(label)}</div>' if label else ""))
+    return _out(css, html, "")
+
+
+def flash(at, duration=0.4, color="#FFFFFF", el="flash", track=13, peak=0.12, tl="tl"):
+    """Full-frame colour flash over a hard cut at `at` (hook montage -> body): ramps up `peak` s before the
+    cut, decays after it."""
+    css = f"#{el} {{ background: {color}; opacity: 0; pointer-events: none; }}\n"
+    s = max(0.0, float(at) - peak)
+    html = f'<div id="{el}" class="full clip" data-start="{r(s)}" data-duration="{r(duration + peak)}" data-track-index="{track}"></div>'
+    js = (f'{tl}.fromTo("#{el}", {{ opacity: 0 }}, {{ opacity: 0.95, duration: {peak}, ease: "power2.in" }}, {r(s)});\n'
+          f'{tl}.to("#{el}", {{ opacity: 0, duration: {r(duration)}, ease: "power2.out" }}, {r(float(at))});\n')
+    return _out(css, html, js)
+
+
+# ---------------------------------------------------------------- animated scene cards
+SCENE_KINDS = ("tiles", "flow", "bars", "stat", "toast", "ranking", "columns", "checklist", "swatch")
+SCENE_BASE = (760, 740)          # scenes are laid out on this box and scaled to the card slot
+
+
+def _esc(t):
+    """Escape text; 【term】 -> <em>term</em> (highlighted)."""
+    import html as _h
+    return _h.escape(str(t)).replace("【", "<em>").replace("】", "</em>")
+
+
+def scene_palette(**override):
+    """Scene colours from the theme / persona brand (vstudio.draw.brand): gold = highlight_alt, teal, ink,
+    dim, ground, accent (alerts)."""
+    from .draw import brand
+    b = brand()
+    hx = lambda k, d: "#%02X%02X%02X" % tuple(b.get(k, d))
+    p = dict(gold=hx("highlight_alt", (244, 211, 94)), teal=hx("teal", (45, 212, 191)), ink=hx("ink", (236, 238, 242)),
+             dim=hx("dim", (150, 158, 178)), ground=hx("ground", (11, 16, 32)), accent=hx("accent", (255, 36, 66)))
+    p.update({k: v for k, v in override.items() if v})
+    return p
+
+
+def scene_css(palette=None):
+    """Shared CSS of every scene kind (include once)."""
+    P = palette or scene_palette()
+    g, t, ink, dim, bg, acc = P["gold"], P["teal"], P["ink"], P["dim"], P["ground"], P["accent"]
+    bw, bh = SCENE_BASE
+    panel, line = "rgba(255,255,255,.07)", "rgba(255,255,255,.14)"
+    return f"""
+.scene {{ position: absolute; left: 0; top: 0; overflow: hidden; color: {ink}; font-family: "CJK", sans-serif;
+  background: radial-gradient(120% 90% at 20% 0%, rgba(255,255,255,.10) 0%, rgba(255,255,255,0) 55%), {bg}; }}
+.scene em {{ font-style: normal; color: {g}; }}
+.sc-in {{ position: absolute; width: {bw}px; height: {bh}px; padding: 54px 50px; transform-origin: 0 0; }}
+.sc-h {{ font: 700 44px "CJK"; margin-bottom: 34px; letter-spacing: 1px; }}
+.sc-foot {{ position: absolute; left: 50px; right: 50px; bottom: 46px; font: 400 26px "CJK"; color: {dim}; }}
+.sc-grid {{ display: grid; gap: 22px; }}
+.sc-tile {{ min-height: 200px; border-radius: 22px; background: {panel}; border: 2px solid {line};
+  display: flex; flex-direction: column; justify-content: center; padding: 0 30px; }}
+.sc-tile b {{ font: 700 50px "CJK"; color: {g}; }} .sc-tile span {{ font: 400 25px "CJK"; color: {dim}; margin-top: 10px; }}
+.sc-flow {{ display: flex; flex-direction: column; align-items: center; }}
+.sc-node {{ width: 420px; padding: 12px; border-radius: 18px; background: {panel}; border: 2px solid {line}; text-align: center; font: 700 34px "CJK"; }}
+.sc-node small {{ display: block; font: 400 22px "CJK"; color: {dim}; margin-top: 6px; }}
+.sc-node.hi {{ background: {g}; color: #111; width: 240px; }} .sc-node.hi small {{ color: #333; }}
+.sc-pipe {{ width: 6px; height: 40px; background: {line}; position: relative; }}
+.sc-pipe i {{ position: absolute; left: -4px; top: 0; width: 14px; height: 14px; border-radius: 50%; background: {t}; }}
+.sc-row {{ display: flex; align-items: center; gap: 18px; margin: 22px 0; }}
+.sc-row b {{ width: 130px; font: 700 32px "CJK"; }} .sc-row span {{ font: 400 23px "CJK"; color: {dim}; width: 250px; }}
+.sc-bar {{ flex: 1; height: 34px; border-radius: 17px; background: {panel}; overflow: hidden; }}
+.sc-bar i {{ display: block; height: 100%; border-radius: 17px; background: {t}; }} .sc-bar i.hi {{ background: {g}; }}
+.sc-stat {{ display: flex; align-items: center; gap: 24px; margin-bottom: 24px; }}
+.sc-big {{ flex: 1; border-radius: 22px; background: {panel}; padding: 26px; text-align: center; }}
+.sc-big b {{ font: 700 84px "CJK"; display: block; line-height: 1; white-space: nowrap; }} .sc-big small {{ font: 400 26px "CJK"; color: {dim}; }}
+.sc-big.hi b {{ color: {g}; }} .sc-eq {{ font: 700 64px "CJK"; color: {dim}; }}
+.sc-refs {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }}
+.sc-refs i {{ font-style: normal; height: 110px; border-radius: 16px; background: {panel}; display: flex; align-items: center; justify-content: center; font: 700 26px "CJK"; color: {dim}; }}
+.sc-toast {{ margin-top: 40px; border-radius: 18px; background: rgba(0,0,0,.35); border: 3px solid {acc}; padding: 24px 28px; }}
+.sc-toast b {{ font: 700 40px "CJK"; color: {acc}; }} .sc-toast span {{ font: 400 26px "CJK"; color: {ink}; margin-left: 12px; }}
+.sc-swatch {{ display: flex; gap: 16px; height: 180px; align-items: flex-end; margin-bottom: 34px; }} .sc-swatch i {{ flex: 1; height: 100%; border-radius: 16px; }}
+.sc-pros p {{ font: 700 32px "CJK"; margin: 18px 0; }} .sc-pros p.con {{ color: {dim}; }}
+.sc-rank {{ display: flex; align-items: center; gap: 24px; border-radius: 22px; background: {panel}; padding: 20px 26px; margin: 16px 0; }}
+.sc-rank > b {{ flex: none; width: 74px; height: 74px; border-radius: 50%; background: {line}; display: flex; align-items: center; justify-content: center; font: 700 42px "CJK"; }}
+.sc-rank.hi > b {{ background: {g}; color: #111; }} .sc-rank strong {{ display: block; font: 700 38px "CJK"; }} .sc-rank span {{ font: 400 24px "CJK"; color: {dim}; }}
+.sc-chart {{ display: flex; justify-content: space-around; align-items: flex-end; height: 440px; margin-top: 20px; }}
+.sc-col {{ width: 200px; display: flex; flex-direction: column; align-items: center; text-align: center; }}
+.sc-colbar {{ width: 120px; border-radius: 16px 16px 6px 6px; background: {t}; position: relative; }} .sc-colbar.hi {{ background: {g}; }}
+.sc-colbar em {{ position: absolute; top: -46px; left: 50%; transform: translateX(-50%); font: 700 34px "CJK"; color: {ink}; white-space: nowrap; }}
+.sc-col b {{ font: 700 32px "CJK"; margin-top: 14px; }} .sc-col span {{ font: 400 20px "CJK"; color: {dim}; margin-top: 6px; min-height: 56px; }}
+.sc-chk {{ display: flex; align-items: center; gap: 22px; font: 700 40px "CJK"; margin: 28px 0; }}
+.sc-chk i {{ flex: none; font-style: normal; width: 60px; height: 60px; border-radius: 16px; background: {g}; color: #111; display: flex; align-items: center; justify-content: center; }}
+"""
+
+
+def _item(x, keys):
+    """An item given as a dict, a list / tuple (positional `keys`) or a plain value (first key)."""
+    if isinstance(x, dict):
+        return dict(x)
+    if isinstance(x, (list, tuple)):
+        return {k: v for k, v in zip(keys, x)}
+    return {keys[0]: x}
+
+
+def _num(v):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def scene_card(el_id, spec, start, end, width=760, height=740, palette=None, tl="tl"):
+    """An animated scene drawn in a card slot (pass html as the card's `inner`; include scene_css() once).
+    spec: {kind, title, items, foot, ...}; kinds (SCENE_KINDS):
+      tiles      items [[title, sub]]                          grid of tiles (cols: 2 by default) that flip in
+      flow       items [[title, sub, hi]]                      vertical node -> pipe -> node diagram, dots run down
+      bars       items [[label, value, note, hi]]              horizontal bars scaled to the max value
+      stat       items [[value, label, hi]] (2) + bars [[label, value, hi]]   big numbers with ≈ (sep) + bars
+      toast      items [ref, ...] + alert, detail              refs pop in, then an error toast pops and shakes
+      ranking    items [[name, note]]                          numbered rows, #1 highlighted (pulses)
+      columns    items [[label, value, display, note, hi]]     bar chart with value labels
+      checklist  items [text, ...]                             ticked lines one by one
+      swatch     colors [#hex, ...] + pros [..] + cons [..]    colour chips + ✓ / ✗ lines
+    Text may use 【term】 (highlight). Laid out on a 760x740 box scaled to fit width x height (explicit size:
+    a card's scroller is transformed and has no height, so inset: 0 would collapse). Returns {css "", html, js}."""
+    kind = spec.get("kind")
+    if kind not in SCENE_KINDS:
+        raise ValueError(f"scene kind {kind!r}: one of {', '.join(SCENE_KINDS)}")
+    s, e = float(start), float(end)
+    p = f"#{el_id}"
+    items = list(spec.get("items") or [])
+    h = f'<div class="sc-h">{_esc(spec["title"])}</div>' if spec.get("title") else ""
+    foot = f'<div class="sc-foot">{_esc(spec["foot"])}</div>' if spec.get("foot") else ""
+    js = []
+    T = lambda off: r(s + off)
+    if h:
+        js.append(f'{tl}.from("{p} .sc-h", {{ opacity: 0, y: -20, duration: 0.4 }}, {T(0.3)});\n')
+    if kind == "tiles":
+        it = [_item(x, ("title", "sub")) for x in items]
+        cols = int(spec.get("cols") or (2 if len(it) != 3 else 3))
+        body = (f'<div class="sc-grid" style="grid-template-columns: repeat({cols}, 1fr)">'
+                + "".join(f'<div class="sc-tile"><b>{_esc(x.get("title", ""))}</b><span>{_esc(x.get("sub", ""))}</span></div>' for x in it)
+                + "</div>")
+        js.append(f'{tl}.from("{p} .sc-tile", {{ opacity: 0, scale: 0.6, rotationX: -60, transformPerspective: 900, stagger: 0.35, duration: 0.55, ease: "back.out(1.6)" }}, {T(0.6)});\n')
+    elif kind == "flow":
+        it = [_item(x, ("title", "sub", "hi")) for x in items]
+        parts = []
+        for k, x in enumerate(it):
+            if k:
+                parts.append('<div class="sc-pipe"><i></i><i></i><i></i></div>')
+            sub = f'<small>{_esc(x["sub"])}</small>' if x.get("sub") else ""
+            parts.append(f'<div class="sc-node{" hi" if x.get("hi") else ""}">{_esc(x.get("title", ""))}{sub}</div>')
+        body = '<div class="sc-flow">' + "".join(parts) + "</div>"
+        rep = max(1, int((e - s - 2.0) / 1.2))
+        js.append(f'{tl}.from("{p} .sc-node", {{ opacity: 0, y: 30, stagger: 0.5, duration: 0.5, ease: "power3.out" }}, {T(0.4)});\n')
+        if len(it) > 1:
+            js.append(f'{tl}.from("{p} .sc-pipe", {{ scaleY: 0, transformOrigin: "50% 0", stagger: 0.5, duration: 0.4 }}, {T(0.7)});\n'
+                      f'{tl}.fromTo("{p} .sc-pipe i", {{ y: -10, opacity: 0 }}, {{ y: 30, opacity: 1, duration: 0.9, '
+                      f'stagger: {{ each: 0.3, repeat: {rep} }}, ease: "none" }}, {T(1.5)});\n')
+    elif kind == "bars":
+        it = [_item(x, ("label", "value", "note", "hi")) for x in items]
+        mx = max([_num(x.get("value")) or 0 for x in it] + [1e-9])
+        body = "".join(f'<div class="sc-row"><b>{_esc(x.get("label", ""))}</b><div class="sc-bar"><i class="{"hi" if x.get("hi") else ""}" '
+                       f'style="width:{max(2, int((_num(x.get("value")) or 0) / mx * 100))}%"></i></div>'
+                       f'<span>{_esc(x.get("note", ""))}</span></div>' for x in it)
+        js.append(f'{tl}.from("{p} .sc-bar i", {{ scaleX: 0, transformOrigin: "0 50%", stagger: 0.6, duration: 0.8, ease: "power3.out" }}, {T(0.5)});\n'
+                  f'{tl}.from("{p} .sc-row span", {{ opacity: 0, x: -10, stagger: 0.6, duration: 0.4 }}, {T(1.0)});\n')
+    elif kind == "stat":
+        it = [_item(x, ("value", "label", "hi")) for x in items][:2]
+        sep = spec.get("sep", "≈")
+        bigs = []
+        for k, x in enumerate(it):
+            v = x.get("value", "")
+            n = _num(v)
+            cnt = f' class="sc-num" data-to="{v}"' if n is not None and float(n).is_integer() else ""
+            bigs.append(f'<div class="sc-big{" hi" if x.get("hi") else ""}"><b{cnt}>{_esc(v)}</b><small>{_esc(x.get("label", ""))}</small></div>')
+        body = '<div class="sc-stat">' + f'<div class="sc-eq">{_esc(sep)}</div>'.join(bigs) + "</div>"
+        bars = [_item(x, ("label", "value", "hi")) for x in spec.get("bars") or []]
+        mx = max([_num(x.get("value")) or 0 for x in bars] + [1e-9])
+        body += "".join(f'<div class="sc-row"><b>{_esc(x.get("label", ""))}</b><div class="sc-bar"><i class="{"hi" if x.get("hi") else ""}" '
+                        f'style="width:{max(2, int((_num(x.get("value")) or 0) / mx * 100))}%"></i></div></div>' for x in bars)
+        js.append(f'{tl}.from("{p} .sc-big", {{ opacity: 0, scale: 0.7, stagger: 0.6, duration: 0.5, ease: "back.out(1.7)" }}, {T(0.4)});\n'
+                  f'{tl}.from("{p} .sc-eq", {{ opacity: 0, duration: 0.3 }}, {T(0.8)});\n')
+        for k, x in enumerate(it):
+            n = _num(x.get("value"))
+            if n is not None and float(n).is_integer() and n > 0:
+                js.append(f'{tl}.fromTo("{p} .sc-big:nth-of-type({2 * k + 1}) .sc-num", {{ innerText: 0 }}, '
+                          f'{{ innerText: {int(n)}, snap: {{ innerText: 1 }}, duration: 0.6 }}, {T(0.4 + 0.6 * k)});\n')
+        if bars:
+            js.append(f'{tl}.from("{p} .sc-bar i", {{ scaleX: 0, transformOrigin: "0 50%", stagger: 0.5, duration: 0.9, ease: "power3.out" }}, {T(1.6)});\n')
+    elif kind == "toast":
+        refs = "".join(f"<i>{_esc(x)}</i>" for x in items)
+        body = (f'<div class="sc-refs">{refs}</div>' if refs else "") + (
+            f'<div class="sc-toast"><b>{_esc(spec.get("alert", "Error"))}</b><span>{_esc(spec.get("detail", ""))}</span></div>')
+        at = 0.6 + 0.25 * len(items)
+        if items:
+            js.append(f'{tl}.from("{p} .sc-refs i", {{ opacity: 0, y: 20, stagger: 0.25, duration: 0.3 }}, {T(0.4)});\n')
+        js.append(f'{tl}.fromTo("{p} .sc-toast", {{ opacity: 0, scale: 1.3 }}, {{ opacity: 1, scale: 1, duration: 0.35, ease: "back.out(2)" }}, {T(at)});\n'
+                  f'{tl}.to("{p} .sc-toast", {{ x: 8, duration: 0.06, yoyo: true, repeat: 5 }}, {T(at + 0.4)});\n')
+    elif kind == "ranking":
+        it = [_item(x, ("name", "note")) for x in items]
+        body = "".join(f'<div class="sc-rank{" hi" if k == 0 else ""}"><b>{k + 1}</b><div><strong>{_esc(x.get("name", ""))}</strong>'
+                       f'<span>{_esc(x.get("note", ""))}</span></div></div>' for k, x in enumerate(it))
+        js.append(f'{tl}.from("{p} .sc-rank", {{ opacity: 0, x: 120, rotationY: -35, transformPerspective: 900, stagger: -0.7, duration: 0.6, ease: "power3.out" }}, {T(0.4)});\n')
+        if it:
+            js.append(f'{tl}.fromTo("{p} .sc-rank.hi", {{ boxShadow: "0 0 0 0px rgba(0,0,0,0)" }}, '
+                      f'{{ boxShadow: "0 0 0 4px rgba(255,255,255,.85)", duration: 0.4, yoyo: true, repeat: 3 }}, {T(0.4 + 0.7 * len(it))});\n')
+    elif kind == "columns":
+        it = [_item(x, ("label", "value", "display", "note", "hi")) for x in items]
+        mx = max([_num(x.get("value")) or 0 for x in it] + [1e-9])
+        body = '<div class="sc-chart">' + "".join(
+            f'<div class="sc-col"><div class="sc-colbar{" hi" if x.get("hi") else ""}" style="height:{int((_num(x.get("value")) or 0) / mx * 250) + 20}px">'
+            f'<em>{_esc(x.get("display", x.get("value", "")))}</em></div><b>{_esc(x.get("label", ""))}</b><span>{_esc(x.get("note", ""))}</span></div>'
+            for x in it) + "</div>"
+        js.append(f'{tl}.from("{p} .sc-colbar", {{ scaleY: 0, transformOrigin: "50% 100%", stagger: 0.7, duration: 0.9, ease: "power3.out" }}, {T(0.5)});\n'
+                  f'{tl}.from("{p} .sc-col em", {{ opacity: 0, y: 10, stagger: 0.7, duration: 0.3 }}, {T(1.2)});\n'
+                  f'{tl}.from("{p} .sc-col span", {{ opacity: 0, stagger: 0.7, duration: 0.3 }}, {T(1.3)});\n')
+    elif kind == "checklist":
+        body = "".join(f'<div class="sc-chk"><i>✓</i>{_esc(x)}</div>' for x in items)
+        js.append(f'{tl}.from("{p} .sc-chk", {{ opacity: 0, x: -30, stagger: 1.2, duration: 0.45, ease: "power2.out" }}, {T(0.4)});\n'
+                  f'{tl}.from("{p} .sc-chk i", {{ scale: 0, stagger: 1.2, duration: 0.35, ease: "back.out(2.5)" }}, {T(0.7)});\n')
+    else:  # swatch
+        cols = "".join(f'<i style="background:{_esc(c)}"></i>' for c in spec.get("colors") or items)
+        pros = "".join(f"<p>✓ {_esc(x)}</p>" for x in spec.get("pros") or [])
+        cons = "".join(f'<p class="con">✗ {_esc(x)}</p>' for x in spec.get("cons") or [])
+        body = f'<div class="sc-swatch">{cols}</div><div class="sc-pros">{pros}{cons}</div>'
+        js.append(f'{tl}.from("{p} .sc-swatch i", {{ scaleY: 0, transformOrigin: "50% 100%", stagger: 0.2, duration: 0.5 }}, {T(0.4)});\n')
+        if pros or cons:
+            js.append(f'{tl}.from("{p} .sc-pros p", {{ opacity: 0, x: -20, stagger: 0.8, duration: 0.45 }}, {T(1.4)});\n')
+    if foot:
+        js.append(f'{tl}.from("{p} .sc-foot", {{ opacity: 0, duration: 0.5 }}, {r(min(s + 3.0, max(s + 1.0, e - 1.5)))});\n')
+    bw, bh = SCENE_BASE
+    k = min(width / bw, height / bh)
+    ox, oy = r((width - bw * k) / 2), r((height - bh * k) / 2)
+    html = (f'<div class="scene" id="{el_id}" style="width:{width}px;height:{height}px">'
+            f'<div class="sc-in" style="left:{ox}px;top:{oy}px;transform:scale({round(k, 4)})">{h}{body}{foot}</div></div>')
+    return _out("", html, "".join(js))

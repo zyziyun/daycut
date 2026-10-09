@@ -11,7 +11,10 @@
 All colours default to persona.brand, fonts to vstudio roles. Face detection / retouch are optional:
 without a model, mediapipe or a detectable face, layouts fall back to a centred crop.
 """
+import os
 import random
+import re
+from functools import lru_cache
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
@@ -20,11 +23,61 @@ from . import overlays as O
 from .draw import (alpha_paste, brand, draw_runs, fit_font, hgradient_mask, load_font, rgb, rounded_rect,
                    shadow, text_width, to_pil, vgradient_mask)
 
+# Cover retouch: skin / de-shine / light / light makeup only - NO geometric warps. Face slim + eye enlarge on a
+# still deformed her face (人都变形了); a config opts in explicitly, e.g. retouch: {slim: 0.05, eye: 0.04}.
+COVER_RETOUCH = {"slim": 0.0, "eye": 0.0, "eye_extra": 0.0, "body": 0.0, "makeup": 0.5}
+
 ASPECTS = {  # name -> (W, H, photo extent: width for side-by-side, band height for stacked)
     "4:3": (1440, 1080, 760),
     "16:9": (1920, 1080, 900),
     "3:4": (1080, 1440, 640),
 }
+
+
+# ---------------------------------------------------------------- fonts for user text
+# Latin-only faces (STIX serif / italic, JetBrains Mono) have no CJK glyphs: Chinese drawn with them is tofu (□□□).
+_CJK = re.compile(r"[\u2e80-\u2fff\u3000-\u303f\u3040-\u30ff\u3100-\u31ff\u3400-\u4dbf\u4e00-\u9fff"
+                  r"\uac00-\ud7af\uf900-\ufaff\ufe30-\ufe4f\uff00-\uffef]")
+
+
+def _cjk_fallback(role):
+    r = str(role).lower()
+    if "bold" in r:
+        return "cjk-serif-bold" if "serif" in r else "cjk-bold"
+    return "cjk-serif" if "serif" in r else "cjk"    # load_font falls back to cjk when cjk-serif is missing
+
+
+@lru_cache(maxsize=32)
+def _codepoints(role):
+    """Code points a role's font maps (None when the font or fontTools is unavailable)."""
+    try:
+        from fontTools.ttLib import TTFont
+
+        from .config import font
+        path = role if os.path.exists(str(role)) else font(role)
+        with TTFont(path, fontNumber=0, lazy=True) as tt:
+            return frozenset(tt.getBestCmap() or ())
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def font_role_for(text, role):
+    """The font role to draw ``text`` with: ``role``, unless it is a non-CJK face and the text has CJK or any
+    character the face lacks -> the matching CJK family (serif -> cjk-serif, bold -> cjk-bold, else cjk)."""
+    if not text or str(role).startswith("cjk"):
+        return role
+    text = str(text)
+    if _CJK.search(text):
+        return _cjk_fallback(role)
+    cps = _codepoints(role)
+    if cps is not None and any(ord(c) not in cps for c in text if not c.isspace()):
+        return _cjk_fallback(role)
+    return role
+
+
+def text_font(text, role, size):
+    """``load_font`` with ``font_role_for``: a face that can draw ``text``."""
+    return load_font(font_role_for(text, role), size)
 
 
 # ---------------------------------------------------------------- frame picking
@@ -85,13 +138,14 @@ def contact_sheet(frames, labels=None, cols=6, tile_w=240, bg=(0, 0, 0), bgr=Fal
     cols = max(1, min(cols, len(ims)))
     rows = (len(ims) + cols - 1) // cols
     sheet = Image.new("RGB", (cols * tile_w, rows * (th + lab_h)), bg)
-    d = ImageDraw.Draw(sheet); f = load_font("mono-bold", 20)
+    d = ImageDraw.Draw(sheet)
     for k, im in enumerate(ims):
         x, y = (k % cols) * tile_w, (k // cols) * (th + lab_h)
         t = im.copy(); t.thumbnail((tile_w, th), Image.LANCZOS)
         sheet.paste(t, (x + (tile_w - t.width) // 2, y + (th - t.height) // 2))
         if labels and k < len(labels):
-            d.text((x + 6, y + th + 4), str(labels[k]), font=f, fill=(255, 255, 255))
+            d.text((x + 6, y + th + 4), str(labels[k]), font=text_font(str(labels[k]), "mono-bold", 20),
+                   fill=(255, 255, 255))
     return sheet
 
 
@@ -115,7 +169,7 @@ def _face_and_retouch(photo, retouch_opts, face_x):
             fx = float(f["pts"][:, 0].mean() / bgr.shape[1])
         if retouch_opts:
             from .retouch import retouch
-            opts = {"slim": 0.05, "eye": 0.04, "makeup": 0.5}
+            opts = dict(COVER_RETOUCH)
             if isinstance(retouch_opts, dict):
                 opts.update(retouch_opts)
             bgr = retouch(bgr, f=f, lm=lm, **opts)
@@ -130,8 +184,8 @@ def _face_and_retouch(photo, retouch_opts, face_x):
 
 def prepare_photo(photo, retouch=True, face_x="auto", base=None):
     """Load + (optionally) retouch a cover photo ONCE -> (PIL RGB, face centre x fraction), to pass to
-    several ``split_cover`` sizes as {"photo": img, "retouched": True, "face_x": fx}. retouch: True |
-    {slim, eye, makeup, ...} | None/False."""
+    several ``split_cover`` sizes as {"photo": img, "retouched": True, "face_x": fx}. retouch: True (COVER_RETOUCH:
+    skin + light makeup, no face slim / eye / body warps) | {slim, eye, makeup, ...} over COVER_RETOUCH | None/False."""
     return _face_and_retouch(_load(photo, base), retouch, face_x)
 
 
@@ -173,7 +227,7 @@ def _title_lines(t):
 # ---------------------------------------------------------------- split cover
 def split_cover(cfg: dict, out=None, base=None):
     """Premium split cover. cfg keys (all optional except photo):
-      photo        path / PIL / numpy RGB          retouch      True | {slim, eye, makeup, body...}
+      photo        path / PIL / numpy RGB          retouch      True (= COVER_RETOUCH: no warps) | {slim, eye, ...}
       face_x       "auto" | 0..1                   photo_lift   brightness multiplier (1.03)
       aspect       "4:3" | "16:9" | "3:4"  or size [W, H] (+ photo_w: photo width / band height)
       quote        "text" or {"text", "by"}        title        {"lines": [...], "highlight": [...]} (【】 works too)
@@ -248,11 +302,12 @@ def split_cover(cfg: dict, out=None, base=None):
     q = cfg.get("quote")
     if q:
         q = {"text": q} if isinstance(q, str) else q
-        qf = fit_font(q["text"], "serif-italic", int(q.get("size", 34 if W < 1600 else 38) * k), pwid, int(18 * k))
+        qf = fit_font(q["text"], font_role_for(q["text"], "serif-italic"), int(q.get("size", 34 if W < 1600 else 38) * k),
+                      pwid, int(18 * k))
         d.text((px, y), q["text"], font=qf, fill=HL)
         y += int(qf.size * 1.35)
         if q.get("by"):
-            d.text((px, y), q["by"], font=load_font("serif-italic", int(qf.size * .82)), fill=DIM)
+            d.text((px, y), q["by"], font=text_font(q["by"], "serif-italic", int(qf.size * .82)), fill=DIM)
             y += int(qf.size * 1.1)
         y += int(46 * k)
     lines, hls = _title_lines(cfg.get("title", {}))
@@ -471,7 +526,7 @@ def polaroid(im, size, rot=0, cap=None, scale=1.0, seed=0, cap_role="cjk"):
     card = Image.new("RGBA", (im.width + 2 * b, im.height + b + bb), (250, 247, 240, 255))
     card.paste(im, (b, b))
     if cap:
-        ImageDraw.Draw(card).text((card.width / 2, im.height + b + bb / 2 - 2), cap, font=load_font(cap_role, q(30)),
+        ImageDraw.Draw(card).text((card.width / 2, im.height + b + bb / 2 - 2), cap, font=text_font(cap, cap_role, q(30)),
                                   fill=(70, 56, 40), anchor="mm")
     r = random.Random(seed)
     tape = Image.new("RGBA", (q(170), q(48)), (236, 222, 180, 170)).rotate(r.uniform(-14, 14), expand=True)

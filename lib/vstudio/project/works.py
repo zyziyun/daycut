@@ -153,16 +153,37 @@ def _title(d):
     return os.path.basename(d.rstrip(os.sep))
 
 
+def is_project(d):
+    """``d`` is a recipe project: it holds ``project.yaml`` or is registered as one (a projects.json row whose
+    ``kind`` is not ``work``). Such a folder never gets a work record."""
+    from . import home as H
+    d = os.path.abspath(d)
+    if os.path.exists(os.path.join(d, "project.yaml")):
+        return True
+    real = os.path.realpath(d)
+    return any(os.path.realpath(p["dir"]) == real and p.get("kind") != "work" for p in H.projects())
+
+
 def touch(d, recipe=None, title=None, outputs=None, client=None, sources=None, register=True, status=None,
           stage=None, progress=None, message=None, eta=None, needs_you=None):
     """Create / update the work record of folder ``d`` (+ register it) and, with ``status`` (running | waiting |
     done | failed), its live status (``.vstudio/status.json``, heartbeat = now; see vstudio.batch.livestatus).
     ``outputs``: paths (abs or relative to ``d``); default = the videos found in final/ exports/ out/. Call it at
-    the start (status="running"), from long steps (stage / progress / message / eta) and at the end (status="done")."""
+    the start (status="running"), from long steps (stage / progress / message / eta) and at the end (status="done").
+
+    A recipe project folder (``is_project``: project.yaml, or registered as a project) only gets its live status:
+    its registry row is left as it is and no ``.vstudio/work.json`` is written (turning it into a ``work`` row
+    made the desk drop the project)."""
     from vstudio.batch import livestatus as LS
 
     from . import home as H
     d = os.path.abspath(d)
+    if os.path.isdir(d) and is_project(d):
+        live = None
+        if status:
+            live = LS.write(d, status, stage=stage, progress=progress, message=message, eta=eta,
+                            needs_you=needs_you, by="workflow")
+        return dict(ok=True, dir=d, kind="project", record=None, status=live)
     os.makedirs(d, exist_ok=True)
     old = read_json(record_path(d), {}) or {}
     live = None
@@ -197,8 +218,8 @@ def adopt(d, recipe="guess", title=None, client=None):
     d = os.path.abspath(d)
     if not os.path.isdir(d):
         raise FileNotFoundError(f"no folder {d}")
-    if os.path.exists(os.path.join(d, "project.yaml")):
-        raise ValueError(f"{d} is already a project (project.yaml)")
+    if is_project(d):
+        raise ValueError(f"{d} is already a project (project.yaml / registered as a project)")
     return touch(d, recipe=recipe, title=title, client=client)
 
 

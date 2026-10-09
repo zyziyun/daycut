@@ -72,14 +72,14 @@ params:
     speed:
       type: number
       minimum: 0.8
-      maximum: 1.6
+      maximum: 2.0
       x-format: speed.body
-      title: Body speed (pitch kept; zh intelligible up to 1.4; default = the talking-head format)
+      title: Body speed (pitch kept; zh sounds natural up to ~1.4, her persona may ask for more; default = the talking-head format)
       x-zh: 正文语速
     hook_speed:
       type: number
       minimum: 0.8
-      maximum: 1.8
+      maximum: 2.5
       x-format: speed.hook
       title: Hook speed
       x-zh: hook 语速

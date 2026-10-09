@@ -503,6 +503,24 @@ def _cli_env(strip, opts):
     return dict(os.environ) if opts.get("inherit_env") else strip_env(os.environ, strip)
 
 
+# A desk / script started from inside a Claude Code session inherits that session's variables (session ids,
+# messaging socket + token, child-session flags); a nested `claude -p` then attaches to the host session and
+# hangs ~3 min before a 401. Drop the session-scoped ones, keep the user's provider settings
+# (CLAUDE_CODE_USE_BEDROCK / _USE_VERTEX / _SKIP_*_AUTH, model and token limits, API key helpers).
+CLAUDE_SESSION_ENV_KEEP = ("CLAUDE_CODE_USE_", "CLAUDE_CODE_SKIP_", "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
+                           "CLAUDE_CODE_API_KEY_HELPER", "CLAUDE_CODE_SUBAGENT_MODEL")
+
+
+def strip_claude_session_env(env):
+    out = {}
+    for k, v in env.items():
+        session = k in ("CLAUDECODE", "CLAUDE_PID", "CLAUDE_EFFORT", "CLAUDE_AGENT_SDK_VERSION") or (
+            k.startswith("CLAUDE_CODE_") and not k.startswith(CLAUDE_SESSION_ENV_KEEP))
+        if not session:
+            out[k] = v
+    return out
+
+
 def _exe_names(name, windows):
     """``name`` plus the executable extensions Windows would try (PATHEXT order: .exe before .cmd)."""
     if not windows or os.path.splitext(name)[1]:
@@ -577,7 +595,8 @@ def _claude_code(system, prompt, model, schema, max_tokens, timeout, opts):
     with tempfile.TemporaryDirectory(prefix="vstudio-llm-") as tmp:
         try:
             r = subprocess.run(cmd, input=prompt, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                               cwd=tmp, timeout=timeout, env=_cli_env(CLI_STRIP_ENV, opts))
+                               cwd=tmp, timeout=timeout,
+                               env=strip_claude_session_env(_cli_env(CLI_STRIP_ENV, opts)))
         except subprocess.TimeoutExpired as e:
             raise LLMError(f"claude CLI timed out after {timeout} s") from e
     try:
@@ -821,6 +840,9 @@ def error_info(err):
 
 
 CLI_PROVIDERS = ("claude-code", "codex")
+# a CLI timeout on a prompt up to this size (system + prompt chars) marks the CLI unresponsive for a while
+# (vstudio.llm_auth); a longer prompt that ran out of time is just a slow request
+UNRESPONSIVE_MAX_CHARS = 20000
 
 
 def cli_allowed():
@@ -916,8 +938,12 @@ def complete(task, system, prompt, schema=None, provider=None, model=None, max_t
             attempts.append(dict(provider=cname, code=code, error=str(e)[:300], seconds=round(time.time() - t0, 1)))
             if cname in CLI_PROVIDERS and code in ("auth-expired", "not-logged-in"):
                 _remember(cname, "expired" if code == "auth-expired" else "not-logged-in", str(e))
-            elif cname in CLI_PROVIDERS and code == "timeout":
-                _remember(cname, "unresponsive", str(e), fp="")   # next calls skip it for a while (no CLI run here)
+            elif cname in CLI_PROVIDERS and code == "timeout" and \
+                    len(system or "") + len(prompt or "") <= UNRESPONSIVE_MAX_CHARS:
+                # next calls skip it for a while (no CLI run here). A big request that ran out of time says nothing
+                # about the CLI being dead: a 50k-token intake plan takes Claude Code ~2-3 min, and marking it
+                # unresponsive then sent every other task (and the next plan) to the fallback for 10 minutes
+                _remember(cname, "unresponsive", str(e), fp="")
             continue
         if cname in CLI_PROVIDERS:
             _remember(cname, "logged-in")
@@ -925,7 +951,9 @@ def complete(task, system, prompt, schema=None, provider=None, model=None, max_t
             first = attempts[0]
             out["fallback_from"] = [a["error"] for a in attempts]
             out["fallback"] = dict(**{"from": first["provider"]}, to=out.get("provider") or cname,
-                                   code=first["code"], error=first["error"], tried=[a["provider"] for a in attempts])
+                                   code=first["code"], error=first["error"], tried=[a["provider"] for a in attempts],
+                                   seconds=first.get("seconds"), cached=bool(first.get("cached")),
+                                   limit=_timeout_of(first["error"]) if first["code"] == "timeout" else None)
             out["failed_attempts"] = attempts
         return out
     if last is None:
@@ -934,6 +962,12 @@ def complete(task, system, prompt, schema=None, provider=None, model=None, max_t
         last.attempts = attempts
         raise last
     raise AllProvidersFailed(attempts) from last
+
+
+def _timeout_of(err):
+    """'claude CLI timed out after 90.0 s' -> 90.0 (the per-attempt limit that ran out), else None."""
+    m = re.search(r"timed out after\s*([0-9.]+)\s*s", str(err or ""))
+    return float(m.group(1)) if m else None
 
 
 def _known_expired(provider):

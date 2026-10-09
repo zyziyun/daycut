@@ -25,7 +25,8 @@ import json
 import os
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from common import Project, P  # noqa: E402
+from common import Project, P, hook_speed  # noqa: E402
+import screen_crop  # noqa: E402
 from vstudio import asr, audio, cleanup, cut, media  # noqa: E402
 
 
@@ -230,16 +231,137 @@ def draft_subs(prj):
 
 
 # ---------------------------------------------------------------- cut
-def montage(src, clips, out, xf, scale, fps, lufs):
+def enc_args(crf=16):
+    """H.264 + AAC args from vstudio.media's encoder selection (the bundled LGPL ffmpeg has no libx264:
+    h264_videotoolbox there)."""
+    return media.delivery_args(crf=crf, preset="fast", faststart=False)
+
+
+def clean_cfr(src, workdir, fps=30):
+    """A clean, zero-based, constant-frame-rate re-encode of `src` in workdir (cached): every frame re-timed
+    N / rate, audio re-timed by sample count. Cures sources whose timestamps jump (e.g. joined with
+    `concat -c copy`), on which trim-based assembly silently comes out short."""
+    stem = os.path.splitext(os.path.basename(src))[0]
+    out = os.path.join(workdir, f"{stem}.cfr.mp4")
+    if os.path.exists(out) and os.path.getmtime(out) >= os.path.getmtime(src):
+        return out
+    info = media.probe(src)
+    fq = info.get("fps_q") or 0
+    rate = f"{fq.numerator}/{fq.denominator}" if fq else str(fps)
+    cmd = ["ffmpeg", "-y", "-fflags", "+genpts", "-i", src, "-map", "0:v:0", "-vf",
+           f"setpts=N/({rate})/TB,fps={fps},format=yuv420p"]
+    if info.get("has_audio"):
+        cmd += ["-map", "0:a:0", "-af", "aresample=48000:async=1,asetpts=N/SR/TB"]
+    tmp = out[:-4] + ".part.mp4"
+    media.run(cmd + media.delivery_args(crf=14, preset="fast", audio=bool(info.get("has_audio")), faststart=False) + [tmp])
+    os.replace(tmp, out)
+    return out
+
+
+def render_checked(asm, src, out, workdir, fps=30, what="montage", tol=0.5, args=None):
+    """cut.render_assembly + a duration check against the plan (sum of clips - crossfades, +-tol s). A short
+    (or long) render means the source's timestamps are not continuous: re-encode it to a clean CFR copy in
+    workdir and retry once; still off -> a clear error. Returns the source actually used."""
+    args = enc_args() if args is None else args
+    cut.render_assembly(asm, [src], out, args=args)
+    got = media.duration(out)
+    if abs(got - asm.total) <= tol:
+        return src
+    print(f"  {what}: rendered {got:.2f}s but planned {asm.total:.2f}s (clips - crossfades): the source's timestamps "
+          "look discontinuous; re-encoding it to a clean CFR copy and retrying")
+    fixed = clean_cfr(src, workdir, fps)
+    cut.render_assembly(asm, [fixed], out, args=args)
+    got = media.duration(out)
+    if abs(got - asm.total) > tol:
+        raise SystemExit(f"{what}: rendered {got:.2f}s but planned {asm.total:.2f}s even from the clean re-encode "
+                         f"{fixed}: check the clip times against the source length ({media.duration(src):.2f}s)")
+    return fixed
+
+
+def montage(src, clips, out, xf, scale, fps, lufs, workdir=None):
     """Highlights montage with internal dissolves (vstudio.cut.xfade_assemble, plain acrossfade:
-    mute_pad=False keeps the old clip timing the step labels rely on) -> two-pass loudnorm."""
+    mute_pad=False keeps the old clip timing the step labels rely on) -> duration check -> two-pass loudnorm."""
     asm = cut.xfade_assemble(clips, xfade=xf, mute_pad=False, fps=fps, size=scale,
                              src_durations=[media.duration(src)])
     tmp = out[:-4] + ".raw.mp4"
-    cut.render_assembly(asm, [src], tmp, args=["-c:v", "libx264", "-crf", "16", "-preset", "fast",
-                                               "-c:a", "aac", "-b:a", "192k", "-ar", "48000"])
+    render_checked(asm, src, tmp, workdir or os.path.dirname(os.path.abspath(out)), fps,
+                   args=media.delivery_args(crf=16, preset="fast", faststart=False, audio_bitrate="192k"))
     audio.loudnorm_2pass(tmp, out, lufs=lufs)
     os.remove(tmp)
+
+
+# ---------------------------------------------------------------- hooks (the creator's picks, never auto)
+def hook_items(prj):
+    """Config hooks.items -> [{"spans": [(a, b)], "lines": [...]}] (raw seconds). Empty when not set."""
+    out = []
+    for k, it in enumerate((prj.get("hooks") or {}).get("items") or []):
+        spans = it.get("spans") if isinstance(it, dict) else None
+        if not spans:
+            raise SystemExit(f"hooks.items[{k}]: needs spans: [[raw_start, raw_end], ...]")
+        sp = [(float(a), float(b)) for a, b in spans]
+        for a, b in sp:
+            if b - a < 0.3:
+                raise SystemExit(f"hooks.items[{k}]: span [{a}, {b}] is shorter than 0.3 s")
+        lines = it.get("lines") or []
+        out.append({"spans": sp, "lines": [lines] if isinstance(lines, str) else list(lines)})
+    return out
+
+
+def hook_plan(items, speed, fps=30):
+    """Pieces for cut.xfade_assemble (hard cuts, every span at `speed`, 20/30 ms edge fades so nothing
+    clicks) + which item each piece belongs to."""
+    pieces, owner = [], []
+    for k, it in enumerate(items):
+        for a, b in it["spans"]:
+            d = (b - a) / speed
+            pieces.append(dict(start=a, end=b, speed=speed, tag="hook",
+                               af=f"afade=t=in:d=0.02,afade=t=out:st={max(0.0, d - 0.03):.3f}:d=0.03"))
+            owner.append(k)
+    return pieces, owner
+
+
+def hook_times(asm, owner, items):
+    """[{s, e, lines}] per item in hooks.mp4 seconds (from the assembly's frame-exact offsets)."""
+    out = []
+    for k, it in enumerate(items):
+        idx = [i for i, o in enumerate(owner) if o == k]
+        s = asm.offsets[idx[0]]
+        e = asm.offsets[idx[-1]] + asm.durations[idx[-1]]
+        out.append({"s": round(s, 3), "e": round(e, 3), "lines": it["lines"]})
+    return out
+
+
+def build_hooks(prj, graded, fps, lufs, force=False):
+    """work/hooks.mp4: the creator's hook picks (config hooks.items, in her order) cut from the graded raw with
+    word-safe edges (cleanup.snap_range), sped up (hooks.speed, default format / persona hook speed), hard
+    cuts. Returns (duration, [{s, e, lines}]) or (None, None) when no hooks are configured."""
+    items = hook_items(prj)
+    if not items:
+        return None, None
+    speed = hook_speed(prj)
+    cw = cleanup.load_words(prj.w("audio.json"))
+    spans = [s for it in items for s in it["spans"]]
+    en = cleanup.energy_of(audio_wav(prj), cw, spans, prj.get("cut.profile"), overrides_of(prj))
+    for it in items:
+        it["spans"] = [cleanup.snap_range(cw, a, b, en) for a, b in it["spans"]]
+    pieces, owner = hook_plan(items, speed, fps)
+    out, meta = prj.w("hooks.mp4"), prj.w("hooks.json")
+    sig = dict(items=items, speed=speed, fps=fps, lufs=lufs, src=os.path.getmtime(graded))
+    if not force and os.path.exists(out) and os.path.exists(meta):
+        old = json.load(open(meta, encoding="utf-8"))
+        if old.get("sig") == json.loads(json.dumps(sig)):
+            return old["duration"], old["items"]
+    asm = cut.xfade_assemble(pieces, xfade=0.0, mute_pad=False, fps=fps, src_durations=[media.duration(graded)],
+                             seek=True)
+    tmp = out[:-4] + ".raw.mp4"
+    render_checked(asm, graded, tmp, prj.work, fps, what="hooks")
+    audio.loudnorm_2pass(tmp, out, lufs=lufs)
+    os.remove(tmp)
+    times = hook_times(asm, owner, items)
+    dur = media.duration(out)
+    json.dump(dict(sig=sig, duration=dur, items=times), open(meta, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    print(f"  hooks: {len(items)} picks at {speed:g}x -> {dur:.2f}s  {out}")
+    return dur, times
 
 
 def cut_part(edl, spans, graded, out, decisions, lufs, fps, force=False):
@@ -273,8 +395,8 @@ def do_cut(prj, args):
         if prj.get("grade"):
             vf.append(prj.get("grade"))
         vf.append("format=yuv420p")
-        media.run(["ffmpeg", "-y", "-i", talk, "-vf", ",".join(vf), "-c:v", "libx264",
-                   "-crf", "14", "-preset", "fast", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", graded])
+        media.run(["ffmpeg", "-y", "-i", talk, "-vf", ",".join(vf),
+                   *media.delivery_args(crf=14, preset="fast", faststart=False, audio_bitrate="192k"), graded])
 
     edl = get_edl(prj)
     en = cleanup.energy_of(audio_wav(prj), edl["words"], edl["ranges"], edl["profile"], overrides_of(prj))
@@ -296,11 +418,19 @@ def do_cut(prj, args):
     if m.get("clips"):
         clips = [(c[0], c[1]) for c in m["clips"]]
         out = prj.w("montage.mp4")
-        if args.remontage or not os.path.exists(out):
-            montage(prj.p(prj.cfg["highlights"]), clips, out, m.get("crossfade", 0.3),
-                    m.get("scale", "1920:1080"), fps, voice - 1)
+        hsrc, crop = screen_crop.clean(prj.p(prj.cfg["highlights"]), m.get("crop"), prj.work)   # privacy crop
+        stamp = prj.w("montage.src")
+        want = f"{hsrc}|{crop}"
+        stale = open(stamp).read() != want if os.path.exists(stamp) else crop is not None
+        if args.remontage or not os.path.exists(out) or stale:
+            montage(hsrc, clips, out, m.get("crossfade", 0.3), m.get("scale", "1920:1080"), fps, voice - 1, prj.work)
+            open(stamp, "w").write(want)
         layout["D"]["montage"] = media.duration(out)
         layout["clips"] = [[c[0], c[1]] for c in clips]
+    hd, ht = build_hooks(prj, graded, fps, voice, force=args.regrade or args.rehook)
+    if hd:
+        layout["D"]["hooks"] = hd
+        layout["hooks"] = ht
     json.dump(layout, open(prj.w("layout.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     print("layout ->", prj.w("layout.json"), {k: round(v, 2) for k, v in layout["D"].items()})
     print("Next: python3 tight_cut.py <config> --verify   (ASR the cut, listen to every join)")
@@ -338,6 +468,7 @@ def main():
     ap.add_argument("--retranscribe", action="store_true", help="re-run whisper on the raw recording")
     ap.add_argument("--regrade", action="store_true", help="re-render work/raw_graded.mp4 (and the cut parts)")
     ap.add_argument("--remontage", action="store_true", help="re-render work/montage.mp4")
+    ap.add_argument("--rehook", action="store_true", help="re-render work/hooks.mp4 (hooks.items)")
     a = ap.parse_args()
     prj = Project(a.config)
     if a.verify:

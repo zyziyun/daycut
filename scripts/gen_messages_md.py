@@ -30,6 +30,8 @@ FR = {
     "intake.risk.unsupported-platform": "{platforms} : pas encore de préréglage d'export ; exporté pour la "
                                         "plateforme la plus proche",
     "intake.risk.no-projects": "Impossible de composer un projet à partir de ces fichiers et de cette demande",
+    "intake.risk.unused-inputs": "Utilisé dans aucun projet : {files}. Dites dans quel projet les mettre si vous "
+                                 "les voulez",
     "intake.question.mask-faces": "Quels visages masquer ? (par défaut : tous les invités sauf vous)",
     "intake.question.narration": "Narration (voix IA qui lit votre texte) ou musique seule ?",
     "intake.warning.unknown-recipe": "Sous-projet à la recette inconnue {recipe} retiré (seules les recettes du "
@@ -39,6 +41,8 @@ FR = {
     "intake.warning.unknown-input": "{project} {recipe} : entrée inconnue {key} retirée",
     "intake.warning.input-not-accepted": "{project} {recipe} : l'entrée {key} n'accepte pas {files}",
     "intake.warning.input-single": "{project} {recipe} : l'entrée {key} prend un seul fichier ; {file} gardé",
+    "intake.warning.input-single-broll": "{project} {recipe} : l'entrée {key} prend un seul fichier ; {file} gardé, "
+                                         "les autres vidéos vont dans {to}",
     "intake.warning.range-dropped": "{project} ligne {row} : plage {range} trop courte ou hors du média, retirée",
     "intake.warning.unknown-param": "{project} {recipe} : paramètre inconnu {key} retiré",
     "intake.warning.platform-unsupported": "{project} {recipe} : plateforme {platform} non prise en charge par "

@@ -430,14 +430,38 @@ export interface SampleInfo {
   duration?: number | null;
   licence?: string;
 }
-export type FailureCode = 'ai-login' | 'ai-quota' | 'ai-timeout' | 'ai-missing' | 'engine' | 'intake' | 'disk' | 'media' | 'unknown';
+export type FailureCode =
+  | 'ai-login'
+  | 'ai-quota'
+  | 'ai-timeout'
+  | 'ai-missing'
+  | 'engine'
+  | 'intake'
+  | 'disk'
+  | 'media'
+  | 'unknown'
+  // a step's own failure: an external tool (tool-node / tool-ffmpeg + tool, fix; tool-missing / tool-broken + params
+  // {tool, path, fix}) or a crash inside a step (stage); "engine" is only the engine not starting
+  | 'tool-node'
+  | 'tool-ffmpeg'
+  | 'tool-missing'
+  | 'tool-broken'
+  | 'stage';
 export interface PilotFailure {
   state: 'failed';
-  code: FailureCode;
+  /** FailureCode, or another code a stage-fail event carried (shown with the generic text when the UI has none) */
+  code: FailureCode | (string & {});
   provider: string | null;
   error: string;
   exit?: number;
   at: number | null;
+  /** the step that failed (e.g. render) */
+  stage?: string | null;
+  /** tool-node / tool-ffmpeg: which tool and the fix key (brew-reinstall-node | install-node | reinstall-app | install-ffmpeg) */
+  tool?: string | null;
+  fix?: string | null;
+  /** the engine's params for its code (tool-missing / tool-broken: {tool, path, fix}) */
+  params?: Record<string, string | number> | null;
 }
 export interface HistoryDoc {
   items: HistoryItem[];

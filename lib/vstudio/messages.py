@@ -34,6 +34,8 @@ CATALOG = {
                                          "{platforms} 还没有导出预设：先按最接近的平台导出"),
     "intake.risk.no-projects": ("No runnable project could be made from these materials and the request",
                                 "没能从这些素材和描述里拼出可执行的项目"),
+    "intake.risk.unused-inputs": ("Not used in any project: {files}. Say which project they belong to if you want them in",
+                                  "这些素材没有用在任何项目里：{files}。要用的话告诉我放进哪个项目"),
     "intake.question.mask-faces": ("Whose faces should be hidden? (default: every guest but you)",
                                    "要遮哪几位的脸？（默认：除你以外的所有嘉宾）"),
     "intake.question.narration": ("Narration (AI voice reads your copy) or music only?",
@@ -50,6 +52,9 @@ CATALOG = {
                                           "{project} {recipe}：输入 {key} 不接受 {files}"),
     "intake.warning.input-single": ("{project} {recipe}: input {key} takes one file; kept {file}",
                                     "{project} {recipe}：输入 {key} 只要一个文件，保留了 {file}"),
+    "intake.warning.input-single-broll": ("{project} {recipe}: input {key} takes one file; kept {file}, the other "
+                                          "videos go to {to}", "{project} {recipe}：输入 {key} 只要一个文件，保留了 {file}，"
+                                          "其余视频放进 {to}"),
     "intake.warning.range-dropped": ("{project} row {row}: range {range} too short or outside the media, dropped",
                                      "{project} 第 {row} 行：区间 {range} 太短或超出素材，已去掉"),
     "intake.warning.unknown-param": ("{project} {recipe}: unknown param {key} dropped", "{project} {recipe}：未知参数 {key} 已去掉"),

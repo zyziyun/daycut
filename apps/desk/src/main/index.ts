@@ -516,7 +516,14 @@ function createWindow(route?: string, show = true) {
   // startEngine() reloads the page if the port changes later.
   const url = (IS_DEV ? DEV_URL! : 'app://desk/index.html') + (route && /^#\/[A-Za-z0-9/_.%?=&-]{0,200}$/.test(route) ? route : '');
   const engineSettled = currentEngine().then(() => {}, () => {});
-  void Promise.race([engineSettled, new Promise((r) => setTimeout(r, 15000))]).then(() => win?.loadURL(url));
+  void Promise.race([engineSettled, new Promise((r) => setTimeout(r, 15000))])
+    .then(() => win?.loadURL(url))
+    .catch((e: unknown) => {
+      // the engine came up while this first load was still running and startEngine() reloaded the page for its
+      // CSP: that reload aborts this load (ERR_ABORTED), which is expected and must not raise "a problem in the app"
+      if (/ERR_ABORTED/.test(String((e as Error)?.message ?? e))) return;
+      mainLog(`[main] first page load failed: ${String((e as Error)?.message ?? e)}`);
+    });
   win.on('closed', () => {
     browser?.destroy();
     browser = null;

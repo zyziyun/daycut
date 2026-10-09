@@ -83,6 +83,9 @@ def _ffmpeg_bin(need):
         if need and not all(n in _filters(env) for n in need):
             raise FFmpegError(f"VSTUDIO_FFMPEG={env} lacks filter(s) {need}")
         return env
+    sib = _sibling(os.environ.get("VSTUDIO_FFPROBE"), "ffmpeg")    # only the bundled ffprobe was named: its ffmpeg
+    if sib and all(n in _filters(sib) for n in need):
+        return sib
     sysbin = shutil.which("ffmpeg")
     if sysbin and all(n in _filters(sysbin) for n in need):
         return sysbin
@@ -106,6 +109,10 @@ def ffprobe_bin():
         if not os.path.exists(env):
             raise FFmpegError(f"VSTUDIO_FFPROBE={env} does not exist")
         return env
+    # the ffprobe next to $VSTUDIO_FFMPEG (the bundled runtime), so both come from one build
+    sib = _sibling(os.environ.get("VSTUDIO_FFMPEG"), "ffprobe")
+    if sib:
+        return sib
     p = shutil.which("ffprobe")
     if p:
         return p
@@ -113,6 +120,24 @@ def ffprobe_bin():
     if st:
         return st[1]
     raise FFmpegError("ffprobe not found")
+
+
+def _sibling(binary, name):
+    """``name`` (ffmpeg / ffprobe) in the folder of ``binary``, when it exists."""
+    if not binary:
+        return None
+    ext = os.path.splitext(binary)[1] if os.name == "nt" else ""
+    p = os.path.join(os.path.dirname(binary), name + ext)
+    return p if os.path.isfile(p) else None
+
+
+def ffmpeg_dir():
+    """Folder of the chosen ffmpeg: put it in front of PATH for children that call ``ffmpeg`` by name (the
+    HyperFrames CLI), so they use the same build as this module. None when ffmpeg is missing."""
+    try:
+        return os.path.dirname(os.path.abspath(ffmpeg_bin()))
+    except FFmpegError:
+        return None
 
 
 def _resolve(cmd):

@@ -372,6 +372,21 @@ class History:
                 out.append((kind, d, "watch", {}))
         return out, series
 
+    def stamp(self):
+        """A short token that changes whenever a registry the list reads changes (the desk's batches / history, the
+        engine's batches.json / projects.json): another process (an agent's ``vstudio.project register`` / ``touch``)
+        added or re-registered a project and All projects reloads without waiting for her to navigate away."""
+        import hashlib
+        home = vstudio_home()
+        h = hashlib.sha1()
+        for f in (self.reg.path, self.path, os.path.join(home, "batches.json"), os.path.join(home, "projects.json")):
+            try:
+                st = os.stat(f)
+                h.update(f"{f}\0{st.st_mtime_ns}\0{st.st_size}\n".encode())
+            except OSError:
+                h.update(f"{f}\0-\n".encode())
+        return dict(stamp=h.hexdigest()[:16])
+
     def list(self, q=None, status=None, kind=None, type_=None, client=None):
         self.prune()
         cfg = self._cfg()

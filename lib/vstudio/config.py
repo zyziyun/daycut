@@ -188,20 +188,58 @@ def _merge(a, b):
     return out
 
 
+SKILL_DIR = os.path.join("~", ".claude", "skills", "video-studio")   # the Claude Code skill checkout
+
+
+def persona_sources():
+    """The persona files ``persona()`` merges, lowest precedence first (only files that exist).
+
+    1. ``<repo>/persona.example.yaml`` - the shipped defaults, always
+    2. ``<repo>/persona.yaml``          - optional shared overrides next to the code
+    3. the creator's private ``persona.local.yaml``, from every place it may live (deduplicated by real path),
+       merged so the higher one wins per key:
+         ``~/.claude/skills/video-studio/persona.local.yaml``  (the Claude Code skill checkout)
+         ``<repo>/persona.local.yaml``                          (this checkout / the app's bundled runtime)
+         ``$VSTUDIO_HOME/persona.local.yaml``                   (default ``~/.config/vstudio``; shared by the
+                                                                  skill, the CLI and the desktop app)
+    4. ``$VSTUDIO_PERSONA`` - an explicit file, merged last (client personas, tests, one-off overrides)
+
+    The desktop app runs a bundled copy of the engine whose ``<repo>`` holds no private persona, so it finds the
+    creator's settings through (3): the skill checkout or ``$VSTUDIO_HOME``. ``VSTUDIO_DEFAULT_PERSONA=1`` (tests)
+    skips 2-3: only the shipped defaults + ``$VSTUDIO_PERSONA``."""
+    out, seen = [], set()
+
+    def add(path):
+        path = os.path.abspath(os.path.expanduser(path))
+        real = os.path.realpath(path)
+        if real not in seen and os.path.isfile(path):
+            seen.add(real)
+            out.append(path)
+
+    add(os.path.join(REPO, "persona.example.yaml"))
+    if not os.environ.get("VSTUDIO_DEFAULT_PERSONA"):     # tests: ignore the creator's own persona files
+        add(os.path.join(REPO, "persona.yaml"))
+        home = os.environ.get("VSTUDIO_HOME") or os.path.join("~", ".config", "vstudio")
+        for d in (SKILL_DIR, REPO, home):
+            add(os.path.join(d, "persona.local.yaml"))
+    env = os.environ.get("VSTUDIO_PERSONA")
+    if env:                                               # always last, even when it is one of the files above
+        env = os.path.abspath(os.path.expanduser(env))
+        out = [p for p in out if os.path.realpath(p) != os.path.realpath(env)]
+        if os.path.isfile(env):
+            out.append(env)
+    return out
+
+
 @lru_cache(maxsize=1)
 def persona() -> dict:
-    """persona.example.yaml (defaults) <- persona.yaml <- persona.local.yaml (private, gitignored)."""
+    """The creator persona: the files of ``persona_sources()`` deep-merged in order (later wins per key).
+    Precedence, highest first: ``$VSTUDIO_PERSONA`` > ``$VSTUDIO_HOME/persona.local.yaml`` >
+    ``<repo>/persona.local.yaml`` > ``~/.claude/skills/video-studio/persona.local.yaml`` > ``<repo>/persona.yaml`` >
+    ``<repo>/persona.example.yaml``. lru_cached: call ``persona.cache_clear()`` after changing the env."""
     data = {}
-    names = ("persona.example.yaml", "persona.yaml", "persona.local.yaml")
-    if os.environ.get("VSTUDIO_DEFAULT_PERSONA"):     # tests: ignore the creator's own persona files
-        names = names[:1]
-    for name in names:
-        d = _load(os.path.join(REPO, name))
-        if d:
-            data = _merge(data, d)
-    env = os.environ.get("VSTUDIO_PERSONA")
-    if env:
-        data = _merge(data, _load(os.path.expanduser(env)) or {})
+    for path in persona_sources():
+        data = _merge(data, _load(path) or {})
     return data
 
 

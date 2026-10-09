@@ -116,6 +116,64 @@ class CliRunner:
             raise CliError(str(doc.get("error") or doc.get("message") or doc.get("reason") or f"{args[0]} failed"), doc)
         return doc
 
+    def events(self, args, on_event, timeout=None, track=None):
+        """``args`` with ``--json-events``: every {event: ...} line goes to ``on_event`` as it arrives; -> the final
+        {event: done} line. A child that ends without one raises ``CliError`` (its error event, else stderr's tail)."""
+        cmd = [self.python, "-m", self.module, *args]
+        try:
+            p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self.env,
+                                 stdin=subprocess.DEVNULL, start_new_session=track is not None, bufsize=1)
+        except OSError as e:
+            raise CliError(f"{self.module} {args[0]}: {e}") from e
+        if track is not None:
+            track.append(p)
+        tail = []
+
+        def drain():                                       # stderr is the log: kept short, never blocks the child
+            for line in p.stderr:
+                tail.append(line.rstrip())
+                del tail[:-20]
+        t_err = threading.Thread(target=drain, daemon=True)
+        t_err.start()
+        expired = threading.Event()
+
+        def expire():
+            expired.set()
+            kill_tracked([p])
+        timer = threading.Timer(timeout or self.timeout, expire)
+        timer.daemon = True
+        timer.start()
+        done = failed = None
+        try:
+            for line in p.stdout:
+                try:
+                    ev = json.loads(line)
+                except ValueError:
+                    continue
+                if not isinstance(ev, dict) or not ev.get("event"):
+                    continue
+                if ev["event"] == "done":
+                    done = ev
+                elif ev["event"] == "error":
+                    failed = ev
+                else:
+                    try:
+                        on_event(ev)
+                    except Exception:  # noqa: BLE001 - the consumer's problem never stops the run
+                        pass
+            p.wait()
+        finally:
+            timer.cancel()
+            t_err.join(timeout=2)
+            if track is not None and p in track:
+                track.remove(p)
+        if expired.is_set():
+            raise CliError(f"{self.module} {args[0]}: timed out after {timeout or self.timeout:.0f} s")
+        if done is None or p.returncode != 0:
+            why = (failed or {}).get("error") or " | ".join(tail[-3:]) or "no done event"
+            raise CliError(f"{self.module} {args[0]} exited {p.returncode}: {why}")
+        return done
+
 
 def kill_tracked(procs):
     """Ends each child and its process group (the engine + any model CLI it started). -> how many were running."""
@@ -136,6 +194,45 @@ def kill_tracked(procs):
     return n
 
 
+def node_health(refresh=False):
+    """The Node.js HyperFrames renders on (vstudio.node): {ok, version, path, error, fix, checked}. ``fix`` is plain
+    text; ok None when the engine is too old to tell."""
+    try:
+        from vstudio import node
+    except ImportError:
+        return dict(ok=None, version=None, path=None, error="engine too old to check Node.js", fix=None, checked=[])
+    try:
+        d = node.health(refresh=refresh)
+    except Exception as e:  # noqa: BLE001  (a probe never breaks the capabilities document)
+        return dict(ok=False, version=None, path=None, error=f"node check failed: {e}", fix=None, checked=[])
+    return {k: d.get(k) for k in ("ok", "version", "path", "error", "fix", "checked")}
+
+
+def ffmpeg_health():
+    """The ffmpeg / ffprobe the engine uses (vstudio.media): {ok, path, ffprobe, version, error}."""
+    try:
+        from vstudio import media
+    except ImportError:
+        return dict(ok=None, path=None, ffprobe=None, version=None, error="engine too old to check ffmpeg")
+    try:
+        ff, fp = media.ffmpeg_bin(), media.ffprobe_bin()
+        r = subprocess.run([ff, "-hide_banner", "-version"], capture_output=True, text=True, timeout=20,
+                           stdin=subprocess.DEVNULL)
+        if r.returncode != 0:
+            first = next((ln for ln in (r.stderr or r.stdout or "").splitlines() if ln.strip()), f"exit {r.returncode}")
+            return dict(ok=False, path=ff, ffprobe=fp, version=None, error=f"ffmpeg does not run: {first.strip()}")
+        ver = (r.stdout or "").split("\n", 1)[0].replace("ffmpeg version ", "").split(" ")[0] or None
+        return dict(ok=True, path=ff, ffprobe=fp, version=ver, error=None)
+    except Exception as e:  # noqa: BLE001
+        return dict(ok=False, path=None, ffprobe=None, version=None, error=str(e).splitlines()[0][:300])
+
+
+def tools_health(refresh=False):
+    """{node: node_health(), ffmpeg: ffmpeg_health()} - what a render needs outside Python, so the app can warn
+    before a render (tool-node / tool-ffmpeg failures, see desk_engine.pilot)."""
+    return dict(node=node_health(refresh), ffmpeg=ffmpeg_health())
+
+
 class Capabilities:
     """Lazily probed, cached capability set. ``fixed`` skips probing (the test engine / tests)."""
 
@@ -144,6 +241,7 @@ class Capabilities:
         self._caps = set(fixed) if fixed is not None else None
         self._lock = threading.Lock()
         self.source = "fixed" if fixed is not None else None
+        self._tools = None
 
     def probe(self):
         with self._lock:
@@ -175,10 +273,23 @@ class Capabilities:
     def reset(self):
         with self._lock:
             self._caps = None
+            self._tools = None
+
+    def tools(self, refresh=False):
+        """tools_health(), cached (real mode only: the fixed / test engine renders nothing)."""
+        if self.runner is None:
+            return None
+        if self._tools is None or refresh:
+            self._tools = tools_health(refresh)
+        return self._tools
 
     def info(self):
         caps = self.probe()
-        return dict(source=self.source, commands={c: c in caps for c in V02})
+        out = dict(source=self.source, commands={c: c in caps for c in V02})
+        tools = self.tools()
+        if tools is not None:
+            out["tools"] = tools
+        return out
 
 
 def runner_env(engine_path=None):
