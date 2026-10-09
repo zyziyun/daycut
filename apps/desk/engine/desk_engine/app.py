@@ -1,10 +1,13 @@
 """Local HTTP API for the desk (stdlib only).
 
 Security model
-  * binds 127.0.0.1 on a random port (port 0), printed once on stdout as a JSON ``ready`` line;
+  * listens on a Unix domain socket the desk names (DESK_SOCKET: a file in the app's own temp folder, mode 0600) -
+    no TCP port, nothing another device or a web page can reach; Windows (no AF_UNIX in CPython) binds 127.0.0.1 on
+    a random port instead. Printed once on stdout as a JSON ``ready`` line. The desk's main process is the only
+    client: it forwards the UI's app://desk/api/* requests (src/main/engineTransport.ts);
   * every /api request needs ``Authorization: Bearer <DESK_TOKEN>`` (per-launch token from the Electron main
     process, compared in constant time);
-  * the Host header must be 127.0.0.1:<port> (DNS-rebinding guard); a present Origin must be in
+  * over TCP the Host header must be 127.0.0.1:<port> (DNS-rebinding guard); a present Origin must be in
     DESK_ALLOWED_ORIGINS (the desk UI's own origin) - CORS headers are only sent to those origins;
   * JSON bodies are capped at 1 MB and validated per route.
 
@@ -110,6 +113,8 @@ import queue
 import re
 import threading
 import traceback
+import socketserver
+import stat
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -482,6 +487,7 @@ class Api:
         from .watermark import Watermark           # Settings › Watermark (vstudio.watermark settings + previews)
         self.watermark = Watermark()
         self.port = None
+        self.socket_path = None
 
     def roots(self):
         out = list(self.engine.roots())
@@ -867,6 +873,8 @@ def make_handler(api):
             return o is None or o in api.origins
 
         def _host_ok(self):
+            if api.socket_path:                  # a Unix socket: no TCP, so no DNS rebinding to guard against
+                return True
             return self.headers.get("Host") in (f"127.0.0.1:{api.port}", f"localhost:{api.port}")
 
         def _auth_ok(self):
@@ -983,10 +991,45 @@ def make_handler(api):
     return H
 
 
-def serve(api, host="127.0.0.1", port=0):
-    httpd = ThreadingHTTPServer((host, port), make_handler(api))
-    httpd.daemon_threads = True
-    api.port = httpd.server_address[1]
+class UnixHTTPServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
+    """The HTTP API on a Unix domain socket (one thread per connection, like ThreadingHTTPServer). Not HTTPServer:
+    its server_bind() looks up a host name, which a socket path is not."""
+    daemon_threads = True
+    # a full backlog refuses a Unix-socket connect at once (TCP would retry): the UI opens many requests at start-up
+    request_queue_size = 128
+
+    bound_ino = None
+
+    def server_bind(self):
+        try:
+            os.unlink(self.server_address)            # a socket left behind by an engine that was killed
+        except FileNotFoundError:
+            pass
+        super().server_bind()
+        # 0600: only this user (the folder - the per-user temp dir / the app's container - is private already)
+        os.chmod(self.server_address, 0o600)
+        self.bound_ino = os.lstat(self.server_address).st_ino
+
+    def server_close(self):
+        super().server_close()
+        try:                                          # ours only: a successor may have bound the same path
+            st = os.lstat(self.server_address)
+            if stat.S_ISSOCK(st.st_mode) and st.st_ino == self.bound_ino:
+                os.unlink(self.server_address)
+        except OSError:
+            pass
+
+
+def serve(api, host="127.0.0.1", port=0, socket_path=None):
+    """Serve the API in a background thread: on a Unix socket when `socket_path` is given (macOS / Linux), else on
+    host:port (Windows)."""
+    if socket_path:
+        httpd = UnixHTTPServer(socket_path, make_handler(api))
+        api.socket_path = socket_path
+    else:
+        httpd = ThreadingHTTPServer((host, port), make_handler(api))
+        httpd.daemon_threads = True
+        api.port = httpd.server_address[1]
     t = threading.Thread(target=httpd.serve_forever, daemon=True)
     t.start()
     return httpd

@@ -17,7 +17,7 @@ Your recordings hold faces, voices, names, client material and things said off t
 - **Keys.** In the Mac app, API keys go into the macOS keychain; the interface only shows whether a key is set. In the skill, configs name an environment variable instead of holding the key, and a client config refuses key or token fields.
 - **Your persona.** `persona.local.yaml` (your speeds, colours, tags, term fixes, AI routes) is git-ignored, so it doesn't end up in a commit.
 
-The Mac app's engine listens only on `127.0.0.1`, on a random port with a per-launch token.
+The Mac app's engine listens on no network port: the app reaches it over a Unix domain socket in the app's own folder, with a per-launch token (on Windows: `127.0.0.1`, a random port and the same token).
 
 ## What is sent, and to whom
 

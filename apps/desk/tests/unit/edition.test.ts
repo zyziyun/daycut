@@ -19,8 +19,8 @@ describe('edition', () => {
     expect(editionFrom('MAS')).toBe('full');
     expect(editionFrom(undefined)).toBe('full');
   });
-  it('Lite has no CLI logins, updater, usage counts, Chromium download or arbitrary folders', () => {
-    expect(lite).toEqual({ cliLogins: false, anyFolder: false, autoUpdate: false, usageCounts: false, chromiumDownload: false });
+  it('Lite has no CLI logins, updater, usage counts, Chromium download, arbitrary folders or YouTube API sign-in', () => {
+    expect(lite).toEqual({ cliLogins: false, anyFolder: false, autoUpdate: false, usageCounts: false, chromiumDownload: false, youtubeApi: false });
   });
 });
 

@@ -4,6 +4,7 @@
 // (Open at login + menu bar) and the official posting APIs she may connect (YouTube today; the others documented).
 import { useEffect, useState } from 'react';
 import { ChevronRight, MoreHorizontal, Plus, Send } from 'lucide-react';
+import { CAPS } from '../../../shared/edition';
 import type { ApiStatusMsg } from '../../../shared/publish/apiPlatforms';
 import { fmtAgo, t } from '../i18n';
 import { href } from '../lib/router';
@@ -83,7 +84,7 @@ export function PublishingSection(ctx: Partial<SettingsCtx>) {
         </Row>
         <div className="s2-row s2-rhint">{t('pl.set.how')}</div>
       </Group>
-      <ApiGroup />
+      {CAPS.youtubeApi && <ApiGroup />}
       <p className="s2-foot">
         <Send className="ico" />
         {t('s2.pub.foot')}

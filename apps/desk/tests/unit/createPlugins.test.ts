@@ -19,7 +19,7 @@ function fakeFetch(reply: unknown = { ok: true }, status = 200) {
 describe('CreateClient plugins', () => {
   it('maps plugin, import and make calls', async () => {
     const { f, calls } = fakeFetch({ job: 'abcdefabcdef' });
-    const c = new EngineClient('http://127.0.0.1:9', 'tok', f).create;
+    const c = new EngineClient('app://desk', 'tok', f).create;
     await c.plugins('zh');
     await c.setPlugin('agent-runner:claude-code', { enabled: false });
     await c.importBoard('/Users/me/boards/teaser', { lang: 'en' });
@@ -27,7 +27,7 @@ describe('CreateClient plugins', () => {
     await c.importBoardInto('fp-e04', '/Users/me/shots.csv');
     await c.make('fp-e04', { lanes: 3, only: ['01'] });
     await c.plan({ format: 'series-ad', budget_cny: 60, mode: 'template' });
-    expect(calls.map((x) => `${x.init?.method} ${x.url.replace('http://127.0.0.1:9', '')}`)).toEqual([
+    expect(calls.map((x) => `${x.init?.method} ${x.url.replace('app://desk', '')}`)).toEqual([
       'GET /api/create/plugins?lang=zh',
       'POST /api/create/plugins/agent-runner:claude-code',
       'POST /api/create/import',

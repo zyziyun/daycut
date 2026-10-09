@@ -1,19 +1,20 @@
 // HTML -> PNG for the engine, rendered by this app's own Chromium (offscreen window). The Lite (Mac App Store) build
 // cannot download or run a separate Chrome (App Review 2.4.5: no downloaded executables; a sandboxed child cannot
-// start another browser), so the engine's vstudio.render.html_to_png posts here instead when VSTUDIO_HTML_RENDER_URL
-// is set (designed covers, slides, title cards).
+// start another browser), so the engine's vstudio.render.html_to_png posts here instead when
+// VSTUDIO_HTML_RENDER_SOCKET is set (designed covers, slides, title cards).
 //   POST /render  Authorization: Bearer <token>
 //   {file, query?, width, height, scale?, wait?, transparent?, out}  ->  {ok: true, out, width, height}
 // Only local .html files the app may read are loaded (file://, no network: every other request is cancelled), into
 // an in-memory session with no preload and JavaScript sandboxed; the PNG is written where the engine asked, which must
-// be next to the page or inside the app's own data. Bound to 127.0.0.1, one random port and token per launch.
+// be next to the page or inside the app's own data. Listens on a Unix domain socket in the app's temp folder (no TCP
+// port: the sandboxed build has no network.server entitlement), one socket and token per launch.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
-import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { BrowserWindow, session } from 'electron';
+import { engineSocketPath } from './engineTransport';
 
 export interface RenderJob {
   file: string;
@@ -55,7 +56,7 @@ export function parseJob(body: unknown, readable: (f: string) => boolean): Rende
 
 export class HtmlRenderService {
   readonly token = crypto.randomBytes(24).toString('hex');
-  url: string | null = null;
+  socketPath: string | null = null;
   private server: http.Server | null = null;
   private queue: Promise<unknown> = Promise.resolve();
 
@@ -66,18 +67,22 @@ export class HtmlRenderService {
     ses.webRequest.onBeforeRequest((d, cb) => cb({ cancel: !d.url.startsWith('file://') && !d.url.startsWith('data:') && !d.url.startsWith('blob:') }));
     ses.setPermissionRequestHandler((_wc, _p, cb) => cb(false));
     this.server = http.createServer((req, res) => void this.handle(req, res));
+    const sock = engineSocketPath('rf-html');
+    if (!sock) return Promise.reject(new Error('the HTML render service needs Unix domain sockets (macOS)'));
     return new Promise((resolve, reject) => {
       this.server!.once('error', reject);
-      this.server!.listen(0, '127.0.0.1', () => {
-        this.url = `http://127.0.0.1:${(this.server!.address() as AddressInfo).port}/render`;
+      this.server!.listen(sock, () => {
+        fs.chmodSync(sock, 0o600);
+        this.socketPath = sock;
         resolve();
       });
     });
   }
 
   stop() {
-    this.server?.close();
+    this.server?.close(); // removes the socket file
     this.server = null;
+    this.socketPath = null;
   }
 
   private async handle(req: http.IncomingMessage, res: http.ServerResponse) {

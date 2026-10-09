@@ -22,7 +22,7 @@ Distribution (signed/notarized DMG, Windows installer, auto-update, store plans)
 Installed builds run the engine from the bundled runtime (`resources/runtime`: Python, LGPL ffmpeg, and the engine
 copied from this checkout's root at build time — no separate engine checkout or pinned commit) and download fonts/models on first run; Settings → Python / video-studio repo still override it.
 
-Engine: `engine/server.py` (stdlib HTTP, 127.0.0.1, random port, per-launch token). It finds the engine repo via
+Engine: `engine/server.py` (stdlib HTTP on a Unix domain socket in the app's temp folder - Windows: 127.0.0.1, random port - per-launch token; the UI reaches it through `app://desk/api`, forwarded by main: `src/main/engineTransport.ts`). It finds the engine repo via
 Settings → `VSTUDIO_ENGINE_PATH` → the monorepo root (`../..`) → a sibling `../video-studio` (old layout), and Python via Settings → `DESK_PYTHON` → miniconda/Homebrew.
 Tests only: `DESK_ENGINE_MOCK=1` starts the in-memory test engine from `engine/tests/fixtures/desk_mock` (fake
 batches, rule plans, simulated pilots, fake Create services and AI). A dev build only: a packaged app ignores it and does

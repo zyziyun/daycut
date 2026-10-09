@@ -210,7 +210,7 @@ test('assets already on disk at start: in the first engine env, zero engine rest
   expect(log).not.toContain('start failed');
 });
 
-test('an engine restart while it is still starting: same port, the UI keeps working without a reload', async () => {
+test('an engine restart while it is still starting: same engine URL, the UI keeps working without a reload', async () => {
   await page.evaluate(() => ((window as unknown as { __marker: number }).__marker = 7));
   const before = await page.evaluate(async () => (await window.desk.engineInfo()).baseUrl);
   const r = await page.evaluate(async () => {
@@ -220,7 +220,7 @@ test('an engine restart while it is still starting: same port, the UI keeps work
     return { status: res.status, baseUrl: i.baseUrl };
   });
   expect(r.status).toBe(200);
-  expect(r.baseUrl).toBe(before); // session port kept: CSP + renderer URL stay valid
+  expect(r.baseUrl).toBe(before); // app://desk/api: the page's engine URL never changes on a restart
   expect(await page.evaluate(() => (window as unknown as { __marker?: number }).__marker)).toBe(7);
   await expect(page.getByTestId('engine-status')).toHaveAttribute('data-mode', 'mock', { timeout: 15000 });
 });

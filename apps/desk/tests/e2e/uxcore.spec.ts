@@ -144,7 +144,7 @@ test.beforeAll(async () => {
   await page.reload();
   await page.waitForURL(/^app:\/\/desk\//);
   await expect(page.getByTestId('engine-status')).toBeVisible({ timeout: 30000 });
-  fuyeId = await api<string>(async (base, auth) => {
+  fuyeId = await api<string>(async ({ base, auth }) => {
     for (let i = 0; i < 60; i++) {
       const h = await (await fetch(base + '/api/history', { headers: auth })).json();
       const it = (h.items as { id: string; name: string }[]).find((x) => x.name === 'fuye');
@@ -181,10 +181,12 @@ test.afterAll(async () => {
   await closeApp(app);
 });
 
-/** The engine's HTTP API from the test process (the page's CSP forbids building functions from strings). */
-async function api<T>(fn: (base: string, auth: Record<string, string>) => Promise<T>): Promise<T> {
+/** The engine's HTTP API, called in the page (app://desk/api is the app's own route; main forwards it to the engine).
+ * `fn` runs in the page: it gets everything through its one argument (no closures). */
+async function api<T, A = undefined>(fn: (o: { base: string; auth: Record<string, string>; arg: A }) => Promise<T>, arg?: A): Promise<T> {
   const info = await page.evaluate(() => window.desk.engineInfo());
-  return fn(info.baseUrl, { Authorization: `Bearer ${info.token}` });
+  const o = { base: info.baseUrl, auth: { Authorization: `Bearer ${info.token}` } as Record<string, string>, arg: arg as A };
+  return page.evaluate(fn as (o: unknown) => Promise<T>, o);
 }
 
 const hash = (h: string) => page.evaluate((x) => (location.hash = x), h);
@@ -395,7 +397,7 @@ test('transcript: select -> Delete -> pending + skipped in preview -> ⌘↵ = o
   await shot('T4-timeline-pending');
   await page.getByTestId('tab-transcript').click();
   // ⌘↵ applies: ONE step, the card in the chat, a cut marker in the transcript
-  const before = await api<number>(async (base, auth) => {
+  const before = await api<number>(async ({ base, auth }) => {
     const h = await (await fetch(`${base}/api/history`, { headers: auth })).json();
     const id = (h.items as { id: string; name: string }[]).find((x) => x.name === 'fuye')!.id;
     return (await (await fetch(`${base}/api/outputs/${id}/${encodeURIComponent('A_换圈子')}`, { headers: auth })).json()).steps.length;
@@ -407,7 +409,7 @@ test('transcript: select -> Delete -> pending + skipped in preview -> ⌘↵ = o
   await expect(page.getByTestId('cut-card')).toContainText('Lakeside City College');
   await expect(page.getByTestId('cut-marker')).toHaveCount(1);
   await expect(page.getByTestId('pending-bar')).toHaveCount(0);
-  const after = await api<number>(async (base, auth) => {
+  const after = await api<number>(async ({ base, auth }) => {
     const h = await (await fetch(`${base}/api/history`, { headers: auth })).json();
     const id = (h.items as { id: string; name: string }[]).find((x) => x.name === 'fuye')!.id;
     return (await (await fetch(`${base}/api/outputs/${id}/${encodeURIComponent('A_换圈子')}`, { headers: auth })).json()).steps.length;
@@ -430,7 +432,7 @@ test('transcript: select -> Delete -> pending + skipped in preview -> ⌘↵ = o
 });
 
 test('fix a word in the captions (E): caption only, a teal underline, not a cut', async () => {
-  const rag = await api<string>(async (base, auth) => {
+  const rag = await api<string>(async ({ base, auth }) => {
     const h = await (await fetch(base + '/api/history', { headers: auth })).json();
     return (h.items as { id: string; name: string }[]).find((x) => x.name === 'rag')!.id;
   });
@@ -449,7 +451,7 @@ test('fix a word in the captions (E): caption only, a teal underline, not a cut'
   await expect(body.locator('.w[data-i="2"]')).toHaveText('殊途同归');
   await expect(body.locator('.w[data-i="2"]')).toHaveClass(/\bfx\b/);
   await expect(body.locator('.w.p')).toHaveCount(0); // not a cut
-  const doc = await api<{ captions: { text: string }[]; cuts: unknown[] }>(async (base, auth) => (await fetch(`${base}/api/outputs/${rag}/ep01`, { headers: auth })).json());
+  const doc = await api<{ captions: { text: string }[]; cuts: unknown[] }, string>(async ({ base, auth, arg }) => (await fetch(`${base}/api/outputs/${arg}/ep01`, { headers: auth })).json(), rag);
   expect(doc.captions[0].text).toBe('可能都是殊途同归的。');
   expect(doc.cuts).toEqual([]);
 });
@@ -526,7 +528,7 @@ test('zh-CN + dark: Home, Inbox, the transcript', async () => {
 test('Home quiet: All clear + Continue once nothing runs and nothing needs her', async () => {
   // answer everything, stop the run
   heartbeat(path.join(watch, 'AI short'), { status: 'done', heartbeat: Date.now() / 1000, pid: 999999 });
-  await api(async (base, auth) => {
+  await api(async ({ base, auth }) => {
     const d = await (await fetch(`${base}/api/inbox`, { headers: auth })).json();
     const keys = (d.items as { key: string }[]).map((x) => x.key);
     if (keys.length) await fetch(`${base}/api/inbox/answer`, { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ keys }) });

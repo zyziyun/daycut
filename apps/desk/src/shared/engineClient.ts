@@ -1,4 +1,7 @@
-// HTTP client for the desk engine. Used by the renderer (token from preload) and by the main process.
+// HTTP client for the desk engine. Used by the renderer (token from preload) and by the main process. Both address it
+// as app://desk/api/...: the renderer's fetch goes to main's app:// protocol handler, main's own client gets a fetch
+// that talks to the engine's socket directly (src/main/engineTransport.ts). The engine never listens on a port the
+// page could reach.
 import type { WatermarkDoc, WatermarkSettings } from './watermark';
 import type {
   ApplyResult,
@@ -60,6 +63,9 @@ export class EngineError extends Error {
 
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
+/** Where the UI reaches the engine: same origin as the app page (main forwards it to the engine). */
+export const ENGINE_BASE = 'app://desk';
+
 const ID_RE = /^[0-9a-f]{12}$/;
 const JOB_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const CLIENT_RE = /^[a-z0-9][a-z0-9_-]{0,39}$/;
@@ -96,10 +102,7 @@ export class EngineClient {
     private token: string,
     private fetchImpl: FetchLike = (...a) => fetch(...a),
   ) {
-    const u = new URL(baseUrl);
-    if (u.protocol !== 'http:' || u.hostname !== '127.0.0.1') {
-      throw new EngineError(0, 'engine must be on http://127.0.0.1');
-    }
+    if (baseUrl !== ENGINE_BASE) throw new EngineError(0, `engine must be on ${ENGINE_BASE}`);
   }
 
   private async req<T>(method: 'GET' | 'POST', path: string, body?: unknown, signal?: AbortSignal): Promise<T> {

@@ -6,7 +6,10 @@
 //   - only folders the user picked (security-scoped bookmarks) are read, watched or kept across launches;
 //   - no in-app updater (the App Store updates the app), no anonymous usage counts;
 //   - first-run downloads are data only (speech models, fonts): no Chromium download; HTML covers render in the
-//     app's own Chromium instead (main/htmlRender.ts).
+//     app's own Chromium instead (main/htmlRender.ts);
+//   - nothing listens on a network port (no network.server entitlement): the engine and the HTML renderer use Unix
+//     sockets, and the YouTube API sign-in (its OAuth redirect needs a loopback port) is left out - YouTube posts go
+//     through the built-in publishing browser like every other platform.
 // Pure: shared by main, preload, renderer and tests.
 declare const __REELFOLD_EDITION__: string | undefined;
 
@@ -33,11 +36,13 @@ export interface EditionCaps {
   usageCounts: boolean;
   /** download a headless Chromium on first run (Lite: the app's own Chromium renders HTML) */
   chromiumDownload: boolean;
+  /** connect the YouTube Data API (Google's desktop OAuth redirects to a loopback port: a listening socket) */
+  youtubeApi: boolean;
 }
 
 export function capsFor(e: Edition): EditionCaps {
   const full = e === 'full';
-  return { cliLogins: full, anyFolder: full, autoUpdate: full, usageCounts: full, chromiumDownload: full };
+  return { cliLogins: full, anyFolder: full, autoUpdate: full, usageCounts: full, chromiumDownload: full, youtubeApi: full };
 }
 
 export const CAPS: EditionCaps = capsFor(EDITION);

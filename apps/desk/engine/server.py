@@ -5,14 +5,14 @@ Environment
   DESK_ALLOWED_ORIGINS  comma list of UI origins allowed to call the API (CORS), e.g. app://desk
   DESK_DATA_DIR         desk data folder (registry, generated specs); default ~/.vstudio-desk
   VSTUDIO_ENGINE_PATH   the video-studio repo; its lib/ is put on sys.path (PYTHONPATH also works)
-  DESK_PORT             preferred port (an engine restart keeps the old one so the UI's CSP stays valid);
-                        a random free port when unset or taken
+  DESK_SOCKET           the Unix domain socket to listen on (macOS / Linux; the desk puts it in the app's own temp
+                        folder). Unset (Windows: CPython has no AF_UNIX there): 127.0.0.1 on a random free port
   DESK_ENGINE_MOCK=1    tests only: the in-memory test engine from engine/tests/fixtures/desk_mock (the desk's test
                         harness sets it in a dev build; a packaged app neither passes it nor ships engine/tests, so
                         there it fails the start instead)
   ANTHROPIC_API_KEY / OPENAI_API_KEY   segment-planning providers (from the OS keychain via the desk)
-Prints one line ``{"ready": true, "port": N, "mode": "real"|"mock"}`` on stdout, then serves until stdin closes
-(the parent died) or SIGTERM.
+Prints one line ``{"ready": true, "socket": "<path>" | "port": N, "mode": "real"|"mock"}`` on stdout, then serves until
+stdin closes (the parent died) or SIGTERM.
 """
 import json
 import os
@@ -98,15 +98,14 @@ def main():
         threading.Thread(target=warm, args=(api,), daemon=True).start()
     else:
         api = test_engine().make_api(engine, bus, token, origins)
+    sock = os.environ.get("DESK_SOCKET") or None
     try:
-        port = int(os.environ.get("DESK_PORT") or 0)
-    except ValueError:
-        port = 0
-    try:
-        httpd = serve(api, port=port)
-    except OSError:                         # the old engine still holds it (or something else does)
-        httpd = serve(api)
-    print(json.dumps(dict(ready=True, port=api.port, mode=engine.mode, note=note)), flush=True)
+        httpd = serve(api, socket_path=sock)
+    except OSError as e:
+        print(json.dumps(dict(ready=False, error=f"cannot listen on {sock or '127.0.0.1'}: {e}")), flush=True)
+        return 4
+    where = dict(socket=sock) if sock else dict(port=api.port)
+    print(json.dumps(dict(ready=True, mode=engine.mode, note=note, **where)), flush=True)
     stop = threading.Event()
     signal.signal(signal.SIGTERM, lambda *a: stop.set())
     signal.signal(signal.SIGINT, lambda *a: stop.set())
@@ -121,6 +120,7 @@ def main():
     stop.wait()
     engine.shutdown()
     httpd.shutdown()
+    httpd.server_close()                    # a Unix socket file is removed here
     return 0
 
 

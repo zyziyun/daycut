@@ -1,8 +1,14 @@
 """The desk's Mac App Store (sandboxed) build: no user-installed CLIs (VSTUDIO_LLM_NO_CLI=1), no Chrome binary
-(VSTUDIO_NO_CHROME=1), HTML rendered by the host app (VSTUDIO_HTML_RENDER_URL)."""
+(VSTUDIO_NO_CHROME=1), HTML rendered by the host app over a Unix socket (VSTUDIO_HTML_RENDER_SOCKET)."""
 import json
+import os
+import shutil
+import socket
+import socketserver
+import sys
+import tempfile
 import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler
 
 import pytest
 from vstudio import llm, llm_auth, render
@@ -50,10 +56,12 @@ def test_no_chrome_switch(monkeypatch):
 
 class _Host(BaseHTTPRequestHandler):
     seen = []
+    paths = []
 
     def do_POST(self):  # noqa: N802
         body = json.loads(self.rfile.read(int(self.headers["content-length"])))
         _Host.seen.append((self.headers.get("authorization"), body))
+        _Host.paths.append(self.path)
         with open(body["out"], "wb") as f:
             f.write(b"\x89PNG\r\n\x1a\n")
         data = json.dumps(dict(ok=True, out=body["out"], width=body["width"], height=body["height"])).encode()
@@ -67,11 +75,19 @@ class _Host(BaseHTTPRequestHandler):
         pass
 
 
+class _UnixHost(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
+    daemon_threads = True
+
+
+@pytest.mark.skipif(not hasattr(socket, "AF_UNIX") or sys.platform == "win32", reason="Unix domain sockets")
 def test_html_rendered_by_the_host_app(monkeypatch, tmp_path):
-    srv = HTTPServer(("127.0.0.1", 0), _Host)
+    # the desk's render service listens on a Unix socket (no TCP port in the sandboxed app); sun_path is short
+    sock_dir = tempfile.mkdtemp(prefix="rfh-", dir="/tmp")
+    sock = os.path.join(sock_dir, "r.sock")
+    srv = _UnixHost(sock, _Host)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     try:
-        monkeypatch.setenv("VSTUDIO_HTML_RENDER_URL", f"http://127.0.0.1:{srv.server_port}/render")
+        monkeypatch.setenv("VSTUDIO_HTML_RENDER_SOCKET", sock)
         monkeypatch.setenv("VSTUDIO_HTML_RENDER_TOKEN", "t0k")
         monkeypatch.setattr(render, "find_chromes", lambda: pytest.fail("no Chrome lookup"))
         page = tmp_path / "cover.html"
@@ -82,8 +98,11 @@ def test_html_rendered_by_the_host_app(monkeypatch, tmp_path):
         auth, body = _Host.seen[-1]
         assert auth == "Bearer t0k"
         assert body["file"] == str(page.resolve()) and (body["width"], body["height"], body["scale"]) == (1080, 1440, 2)
+        assert _Host.paths[-1] == "/render"
     finally:
         srv.shutdown()
+        srv.server_close()
+        shutil.rmtree(sock_dir, ignore_errors=True)
 
 
 def test_anthropic_without_the_sdk_uses_plain_https(monkeypatch):

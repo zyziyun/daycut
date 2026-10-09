@@ -156,7 +156,7 @@ describe('reply details', () => {
 });
 
 describe('client calls of the chat editor', () => {
-  const BASE = 'http://127.0.0.1:43123';
+  const BASE = 'app://desk';
   const mk = () => vi.fn(async (_u: string, _i?: RequestInit) => new Response(JSON.stringify({ ok: true, turn: { id: 't1-ab' }, job: 'abcdef0123' }), { status: 200 }));
   it('revert one step, context, chat turns, export, applied-from-card', async () => {
     const f = mk();

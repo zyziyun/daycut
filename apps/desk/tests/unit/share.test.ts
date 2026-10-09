@@ -7,7 +7,7 @@ import { LANGS, LOCALES, setLang } from '../../src/renderer/src/i18n';
 import { inboxTitle } from '../../src/renderer/src/lib/inboxView';
 import { shareEn } from '../../src/renderer/src/i18n/locales/share';
 
-const BASE = 'http://127.0.0.1:43123';
+const BASE = 'app://desk';
 const TOKEN = 'tok'.repeat(20);
 const ok = (body: unknown, status = 200) => vi.fn(async (_u: string, _i?: RequestInit) => new Response(JSON.stringify(body), { status }));
 

@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
+import { engineRequest, type EngineTarget } from '../../src/main/engineTransport';
 
 const ROOT = path.resolve(import.meta.dirname, '../..');
 
@@ -90,7 +91,7 @@ async function launch(extra: Record<string, string>, args: string[] = [], opts: 
   // engine requests the renderer started and that never finished (a hang shows which ones pile up)
   const pending = new Map<object, string>();
   page.on('request', (r) => {
-    if (r.url().startsWith('http://127.0.0.1')) pending.set(r, `${new Date().toISOString().slice(11, 19)} ${r.method()} ${new URL(r.url()).pathname}`);
+    if (r.url().startsWith('app://desk/api/')) pending.set(r, `${new Date().toISOString().slice(11, 19)} ${r.method()} ${new URL(r.url()).pathname}`);
   });
   page.on('requestfinished', (r) => pending.delete(r));
   page.on('requestfailed', (r) => pending.delete(r));
@@ -103,12 +104,23 @@ async function launch(extra: Record<string, string>, args: string[] = [], opts: 
   return { proc, browser, page, env, close, pending: () => [...pending.values()] };
 }
 
+/** Where the app's engine listens: main logs "[engine] ready (...) on <socket | 127.0.0.1:port>". */
+function engineTargetFromLog(userData: string): EngineTarget | null {
+  const log = path.join(userData, 'logs', 'main.log');
+  const m = fs.existsSync(log) ? [...fs.readFileSync(log, 'utf8').matchAll(/\[engine\] ready \(\w+\) on (\S+)/g)].at(-1) : undefined;
+  if (!m) return null;
+  const tcp = m[1].match(/^127\.0\.0\.1:(\d+)$/);
+  return tcp ? { port: Number(tcp[1]) } : { socketPath: m[1] };
+}
+
 /** The engine asked from this (Node) process, not the renderer: tells a renderer-side queue from an engine hang. */
 async function nodeGet(app: App, p: string) {
   const info = await app.page.evaluate(() => window.desk.engineInfo());
+  const target = engineTargetFromLog(app.env.DESK_USER_DATA);
   const t0 = Date.now();
+  if (!target) return `${p}: no "[engine] ready" line in main.log`;
   try {
-    const r = await fetch(info.baseUrl + p, { headers: { Authorization: `Bearer ${info.token}`, Origin: 'app://desk' }, signal: AbortSignal.timeout(20000) });
+    const r = await engineRequest(target, p, { headers: { Authorization: `Bearer ${info.token}`, Origin: 'app://desk' }, signal: AbortSignal.timeout(20000) });
     return `${p} ${r.status} in ${Date.now() - t0} ms`;
   } catch (e) {
     return `${p} ${(e as Error).message} (${String((e as { cause?: { code?: string } }).cause?.code ?? '')}) after ${Date.now() - t0} ms`;
@@ -216,6 +228,8 @@ test('the bundled engine sidecar, started as the app starts it, keeps answering 
     VSTUDIO_FFMPEG: path.join(rt, 'ffmpeg', 'bin', `ffmpeg${exe}`), VSTUDIO_FFPROBE: path.join(rt, 'ffmpeg', 'bin', `ffprobe${exe}`),
     VSTUDIO_H264_ENCODER: win ? 'h264_mf' : 'h264_videotoolbox', VSTUDIO_CACHE: path.join(tmp, 'cache'),
     DESK_TOKEN: token, DESK_ALLOWED_ORIGINS: 'app://desk', DESK_DATA_DIR: path.join(tmp, 'data'),
+    // as the app starts it: a Unix socket on macOS (no TCP port), 127.0.0.1 on Windows
+    ...(win ? {} : { DESK_SOCKET: path.join(tmp, 'e.sock') }),
   };
   // faulthandler's watchdog prints every thread's stack even when the process is wedged (GIL held)
   const boot = 'import faulthandler, runpy, sys; faulthandler.dump_traceback_later(45, exit=False); sys.argv = [sys.argv[1]]; runpy.run_path(sys.argv[0], run_name="__main__")';
@@ -225,19 +239,20 @@ test('the bundled engine sidecar, started as the app starts it, keeps answering 
   child.stdout!.on('data', (d) => (out += d));
   child.stderr!.on('data', (d) => (err += d));
   try {
-    let port = 0;
-    for (let i = 0; i < 600 && !port; i++) {
-      const m = out.match(/"port": (\d+)/);
-      if (m) port = Number(m[1]);
+    let target: EngineTarget | null = null;
+    for (let i = 0; i < 600 && !target; i++) {
+      const m = out.match(/"socket": "([^"]+)"|"port": (\d+)/);
+      if (m) target = m[1] ? { socketPath: m[1] } : { port: Number(m[2]) };
       else await new Promise((r) => setTimeout(r, 100));
     }
-    expect(port, `no ready line\nstdout: ${out}\nstderr: ${err}`).toBeGreaterThan(0);
+    expect(target, `no ready line\nstdout: ${out}\nstderr: ${err}`).toBeTruthy();
+    expect('socketPath' in target!, 'macOS: a Unix socket, no TCP port').toBe(!win);
     const fails: string[] = [];
     const t0 = Date.now();
     while (Date.now() - t0 < 20000) {
       for (const p of ['/api/health', '/api/inbox', '/api/history', '/api/calendar', '/api/intake/recent', '/api/weekplan']) {
         try {
-          const r = await fetch(`http://127.0.0.1:${port}${p}`, { headers: { Authorization: `Bearer ${token}`, Origin: 'app://desk' }, signal: AbortSignal.timeout(10000) });
+          const r = await engineRequest(target!, p, { headers: { Authorization: `Bearer ${token}`, Origin: 'app://desk' }, signal: AbortSignal.timeout(10000) });
           if (!r.ok) fails.push(`${((Date.now() - t0) / 1000).toFixed(0)} s ${p} ${r.status}`);
           await r.arrayBuffer();
         } catch (e) {

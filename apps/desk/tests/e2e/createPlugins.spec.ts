@@ -130,16 +130,21 @@ test.describe('Create plugins', () => {
 
   test('plan: no AI answered -> a clear reason, Retry, Set up AI, Start from the template', async () => {
     // the engine's answer when Claude Code's login expired and Codex did not answer either (sidecar tests run it for
-    // real); here the two calls are stubbed so the screen can be checked
-    const job = 'abcdefabcdef';
-    await page.route(/\/api\/create\/plan$/, (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ job, kind: 'plan' }) }));
-    await page.route(new RegExp(`/api/create/jobs/${job}$`), (r) =>
-      r.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ id: job, kind: 'plan', state: 'error', result: null, events: [{ event: 'create.step', step: 'bible', provider: 'claude-code' }], error: { code: 'create.ai-failed', params: { reason: 'auth-expired', provider: 'claude-code', seconds: 91 } } }),
-      }),
-    );
+    // real); here the two calls are stubbed in the page's fetch (the engine is the app's own app://desk/api route,
+    // which Playwright's network routing does not see) so the screen can be checked
+    await page.evaluate(() => {
+      const job = 'abcdefabcdef';
+      const w = window as unknown as { fetch: typeof fetch; __realFetch?: typeof fetch };
+      const real = (w.__realFetch = w.fetch);
+      const json = (o: unknown) => new Response(JSON.stringify(o), { status: 200, headers: { 'content-type': 'application/json' } });
+      w.fetch = async (input, init) => {
+        const p = new URL(String(input)).pathname;
+        if (p.endsWith('/api/create/plan')) return json({ job, kind: 'plan' });
+        if (p.endsWith(`/api/create/jobs/${job}`))
+          return json({ id: job, kind: 'plan', state: 'error', result: null, events: [{ event: 'create.step', step: 'bible', provider: 'claude-code' }], error: { code: 'create.ai-failed', params: { reason: 'auth-expired', provider: 'claude-code', seconds: 91 } } });
+        return real(input, init);
+      };
+    });
     await hash('#/create');
     await page.getByTestId('create-fmt-series-ad').click();
     await page.getByTestId('create-plan').click();
@@ -150,7 +155,10 @@ test.describe('Create plugins', () => {
     await expect(page.getByTestId('create-plan-retry')).toBeVisible();
     await expect(page.getByTestId('create-plan-setup-ai')).toBeVisible();
     await shot(page, 'P04-plan-error');
-    await page.unroute(/\/api\/create\/plan$/);
+    await page.evaluate(() => {
+      const w = window as unknown as { fetch: typeof fetch; __realFetch?: typeof fetch };
+      if (w.__realFetch) w.fetch = w.__realFetch;
+    });
     await page.getByTestId('create-plan-template').click();
     await expect(page.getByTestId('create-series')).toBeVisible({ timeout: 60000 });
   });

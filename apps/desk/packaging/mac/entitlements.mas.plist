@@ -7,8 +7,10 @@
                               com.apple.developer.team-identifier from the provisioning profile).
   files.user-selected.*       recordings / folders she picks in an open panel (and the engine child reads them)
   files.bookmarks.app-scope   keep those picks across launches (security-scoped bookmarks, src/main/access.ts)
-  network.client              API model providers, model downloads, the built-in publishing browser, YouTube API
-  network.server              the engine sidecar and the HTML renderer listen on 127.0.0.1 (random port + token)
+  network.client              API model providers, model downloads, the built-in publishing browser
+  (no network.server: nothing listens on a network port - the engine sidecar and the HTML renderer use Unix domain
+  sockets in the container, src/main/engineTransport.ts; scripts/appstore/appstore_lint.py fails the build if it
+  comes back)
   device.camera / microphone  the Create page recorder, only after she presses Allow (NS*UsageDescription)
   cs.allow-jit                V8 (inert without the hardened runtime; harmless with it)
 -->
@@ -25,8 +27,6 @@
   <key>com.apple.security.files.bookmarks.app-scope</key>
   <true/>
   <key>com.apple.security.network.client</key>
-  <true/>
-  <key>com.apple.security.network.server</key>
   <true/>
   <key>com.apple.security.device.camera</key>
   <true/>

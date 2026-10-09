@@ -1,6 +1,7 @@
-// Spawns the Python desk engine (engine/server.py) as a sidecar bound to 127.0.0.1 on a random port, with a
-// per-launch bearer token. The token lives only in this process, the engine's environment and the renderer's
-// memory (handed over through the preload bridge); it is never logged or written to disk.
+// Spawns the Python desk engine (engine/server.py) as a sidecar listening on a Unix domain socket in the app's temp
+// folder (Windows: 127.0.0.1 on a random port), with a per-launch bearer token. Only this process connects to it
+// (engineTransport.ts); the UI goes through app://desk/api. The token lives only in this process, the engine's
+// environment and the renderer's memory (handed over through the preload bridge); it is never logged or written to disk.
 import { spawn, type ChildProcess } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -8,7 +9,9 @@ import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
 import { CAPS } from '../shared/edition';
+import { ENGINE_BASE } from '../shared/engineClient';
 import type { EngineInfo, EngineMode } from '../shared/types';
+import type { EngineTarget } from './engineTransport';
 import { prependPath } from './runtime';
 import { devOnly } from './testHooks';
 
@@ -28,9 +31,8 @@ export interface EngineConfig {
   pythonPath?: string[];
   /** bundled runtime: ignore PYTHONPATH / PYTHONHOME inherited from the user's shell */
   isolatePython?: boolean;
-  /** ask for this port (a restart keeps the old one so the page's CSP stays valid); the engine falls back to a
-   * random port when it is taken */
-  port?: number;
+  /** the Unix socket the engine listens on (engineSocketPath()); null / unset: 127.0.0.1 on a random port (Windows) */
+  socketPath?: string | null;
   /** the engine died on its own after it was up (crash, OOM, killed): not called for stop() / a failed start */
   onDied?: (detail: string) => void;
 }
@@ -125,6 +127,8 @@ export function killTree(pid: number | undefined) {
 export class EngineProcess {
   private child: ChildProcess | null = null;
   info: EngineInfo | null = null;
+  /** where the running engine listens (main connects there; the UI goes through app://desk/api) */
+  target: EngineTarget | null = null;
   lastError: string | null = null;
   private log: string[] = [];
   private stopping = false;
@@ -141,8 +145,8 @@ export class EngineProcess {
     // the fake engine only when main decided so (testSwitch): never inherited from the user's environment
     if (this.cfg.mock) env.DESK_ENGINE_MOCK = '1';
     else delete env.DESK_ENGINE_MOCK;
-    if (this.cfg.port) env.DESK_PORT = String(this.cfg.port);
-    else delete env.DESK_PORT;
+    if (this.cfg.socketPath) env.DESK_SOCKET = this.cfg.socketPath;
+    else delete env.DESK_SOCKET;
     const child = spawn(this.cfg.python, [path.join(this.cfg.engineDir, 'server.py')], {
       env,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -165,9 +169,12 @@ export class EngineProcess {
       rl.on('line', (line) => {
         if (!settled && line.startsWith('{')) {
           try {
-            const msg = JSON.parse(line) as { ready: boolean; port?: number; mode?: EngineMode; note?: string; error?: string };
-            if (!msg.ready || !msg.port) return done(new Error(msg.error ?? 'engine failed to start'));
-            this.info = { baseUrl: `http://127.0.0.1:${msg.port}`, token, mode: msg.mode ?? 'real', note: msg.note ?? null };
+            const msg = JSON.parse(line) as { ready: boolean; socket?: string; port?: number; mode?: EngineMode; note?: string; error?: string };
+            const target: EngineTarget | null = msg.socket ? { socketPath: msg.socket } : msg.port ? { port: msg.port } : null;
+            if (!msg.ready || !target) return done(new Error(msg.error ?? 'engine failed to start'));
+            if (this.cfg.socketPath && msg.socket !== this.cfg.socketPath) return done(new Error(`engine listens on ${msg.socket ?? msg.port}, not ${this.cfg.socketPath}`));
+            this.target = target;
+            this.info = { baseUrl: ENGINE_BASE, token, mode: msg.mode ?? 'real', note: msg.note ?? null };
             return done(null, this.info);
           } catch {
             /* not the ready line */
@@ -179,6 +186,7 @@ export class EngineProcess {
       child.on('error', (e) => done(new Error(`cannot start ${this.cfg.python}: ${e.message}`)));
       child.on('exit', (code) => {
         this.info = null;
+        this.target = null;
         this.child = null;
         // stopped on purpose (restart / quit): not an engine failure
         if (this.stopping) return done(Object.assign(new Error('engine stopped'), { stopped: true }));
@@ -201,7 +209,7 @@ export class EngineProcess {
     if (this.log.length > 1000) this.log.splice(0, 500);
   }
 
-  /** Stop the engine; resolves once the process has exited (SIGKILL after 3 s), so its port is free again. Closing
+  /** Stop the engine; resolves once the process has exited (SIGKILL after 3 s), so its socket / port is free again. Closing
    * stdin asks it to stop its runs and exit. Windows has no SIGTERM (kill() is TerminateProcess, which would orphan the
    * runs' ffmpeg / python children): the engine gets 2 s to exit on its own, then its whole tree is ended. */
   stop(): Promise<void> {
@@ -209,6 +217,7 @@ export class EngineProcess {
     const c = this.child;
     this.child = null;
     this.info = null;
+    this.target = null;
     if (!c || c.exitCode !== null || c.signalCode !== null) return Promise.resolve();
     if (process.platform === 'win32') {
       return new Promise<void>((resolve) => {

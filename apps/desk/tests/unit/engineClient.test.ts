@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { EngineClient, EngineError, parseSSE } from '../../src/shared/engineClient';
 
-const BASE = 'http://127.0.0.1:43123';
+const BASE = 'app://desk';
 const TOKEN = 'tok'.repeat(20);
 
 function mockFetch(status: number, body: unknown) {
@@ -47,9 +47,10 @@ describe('EngineClient (mocked fetch)', () => {
     expect(f).not.toHaveBeenCalled();
   });
 
-  it('only talks to 127.0.0.1 over http', () => {
+  it('only talks to the engine route app://desk/api (forwarded by main)', () => {
     expect(() => new EngineClient('http://example.com:1', TOKEN)).toThrow();
-    expect(() => new EngineClient('https://127.0.0.1:1', TOKEN)).toThrow();
+    expect(() => new EngineClient('http://127.0.0.1:4321', TOKEN)).toThrow();
+    expect(() => new EngineClient('app://other', TOKEN)).toThrow();
   });
 
   it('encodes query parameters', async () => {

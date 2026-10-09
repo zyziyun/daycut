@@ -2,15 +2,15 @@
 
 export interface CspOptions {
   dev: boolean;
-  enginePort: number | null;
   devServerUrl?: string;
   /** Create page on: recorded takes play back from blob: URLs */
   create?: boolean;
 }
 
-/** Strict CSP for the desk UI. Dev only adds what Vite's HMR + React refresh need (inline preamble, ws). */
+/** Strict CSP for the desk UI. The engine API is app://desk/api ('self' for the packaged page). Dev only adds what
+ * Vite's HMR + React refresh need (inline preamble, ws) and app://desk (the page is served from Vite there). */
 export function buildCsp(o: CspOptions): string {
-  const engine = o.enginePort ? `http://127.0.0.1:${o.enginePort}` : '';
+  const engine = o.dev ? 'app://desk' : '';
   const devOrigin = o.dev && o.devServerUrl ? new URL(o.devServerUrl).origin : '';
   const devWs = devOrigin ? devOrigin.replace(/^http/, 'ws') : '';
   const d: Record<string, string[]> = {

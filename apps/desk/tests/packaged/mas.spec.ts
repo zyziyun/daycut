@@ -2,13 +2,14 @@
 //   npm run mas:local      (builds with BUILD_EDITION=mas, signs ad hoc with the MAS entitlements, runs this file)
 // A sandboxed app can only use its container, so every test profile lives in
 // ~/Library/Containers/app.reelfold.desk/Data/tmp (and TMPDIR points there, which also makes it a "test profile" for
-// the app's test switches). Driven over CDP like tests/packaged/packaged.spec.ts (fuses: no Node inspector).
+// the app's test switches). Driven over CDP like tests/packaged/packaged.spec.ts (fuses: no Node inspector), but through
+// --remote-debugging-pipe: the store build has no network.server entitlement, so the sandbox refuses a debugging port.
 import { chromium, expect, test, type Browser, type Page } from '@playwright/test';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
-import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnWithCdpPipe } from './cdpPipe';
 
 const ROOT = path.resolve(import.meta.dirname, '../..');
 const EXE = process.env.DESK_APP_PATH || path.join(ROOT, 'dist', 'mas-arm64', 'Reelfold.app', 'Contents', 'MacOS', 'Reelfold');
@@ -18,17 +19,6 @@ const CONTAINER = path.join(os.homedir(), 'Library', 'Containers', 'app.reelfold
 const CTMP = path.join(CONTAINER, 'tmp');
 
 test.skip(process.platform !== 'darwin' || !fs.existsSync(EXE), `no Mac App Store build at ${EXE} (npm run mas:local)`);
-
-function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const srv = net.createServer();
-    srv.once('error', reject);
-    srv.listen(0, '127.0.0.1', () => {
-      const port = (srv.address() as net.AddressInfo).port;
-      srv.close(() => resolve(port));
-    });
-  });
-}
 
 /** The Lite copy names no other download and the Lite notes link nowhere (App Review 3.1.1 / 2.3). */
 async function expectNoUpsell(page: Page) {
@@ -61,12 +51,12 @@ async function launch(extra: Record<string, string> = {}): Promise<App> {
   const userData = fs.mkdtempSync(path.join(CTMP, 'mas-test-'));
   // a scrubbed environment: nothing from this shell may point the app elsewhere
   const env = { HOME: os.homedir(), PATH: '/usr/bin:/bin', TMPDIR: CTMP + '/', DESK_USER_DATA: userData, DESK_HIDE_WINDOW: '1', DESK_SKIP_FIRST_RUN: '1', DESK_DISABLE_UPDATES: '1', ...extra };
-  const port = await freePort();
-  const proc = spawn(EXE, ['--use-mock-keychain', `--remote-debugging-port=${port}`], { env, stdio: 'ignore' });
+  const piped = await spawnWithCdpPipe(EXE, ['--use-mock-keychain'], env);
+  const proc = piped.proc;
   let browser: Browser | null = null;
-  for (let i = 0; i < 120 && !browser; i++) {
+  for (let i = 0; i < 120 && !browser && proc.exitCode === null; i++) {
     try {
-      browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`, { timeout: 2000 });
+      browser = await chromium.connectOverCDP(piped.endpoint, { timeout: 5000 });
     } catch {
       await new Promise((r) => setTimeout(r, 500));
     }
@@ -103,9 +93,11 @@ function entitlements(file: string): string {
 
 test('every executable in the bundle runs in the sandbox: the app with the MAS entitlements, children inherit only', () => {
   const app = entitlements(APP);
-  for (const k of ['app-sandbox', 'files.user-selected.read-write', 'files.bookmarks.app-scope', 'network.client', 'network.server', 'device.camera', 'device.microphone']) {
+  for (const k of ['app-sandbox', 'files.user-selected.read-write', 'files.bookmarks.app-scope', 'network.client', 'device.camera', 'device.microphone']) {
     expect(app, k).toContain(`com.apple.security.${k}`);
   }
+  // nothing listens on a network port (App Review 2.4.5): the engine and the HTML renderer use Unix sockets
+  expect(app).not.toContain('com.apple.security.network.server');
   expect(app).toContain('com.apple.security.application-groups');
   const nested = [
     path.join(RES, 'runtime', 'python', 'bin', 'python3.12'),
@@ -149,6 +141,16 @@ test('the real engine runs sandboxed from the bundle; Lite AI, downloads and upd
     expect(h.mode, h.note ?? '').toBe('real');
     expect(fs.realpathSync(h.health.python).startsWith(fs.realpathSync(path.join(RES, 'runtime')))).toBe(true);
     expect(h.health.h264_effective).toBe('h264_videotoolbox'); // VideoToolbox works inside the sandbox
+    // no listening TCP socket in the app or any child (engine, ffmpeg): the engine and the HTML renderer listen on
+    // Unix sockets in the container (the sandbox would refuse a TCP listen without network.server anyway)
+    const pids = [String(app.proc.pid)];
+    for (let i = 0; i < pids.length; i++) pids.push(...spawnSync('pgrep', ['-P', pids[i]], { encoding: 'utf8' }).stdout.split('\n').filter(Boolean));
+    expect(pids.length, 'the engine runs as a child').toBeGreaterThan(1);
+    const listening = spawnSync('lsof', ['-nP', '-a', '-iTCP', '-sTCP:LISTEN', '-p', pids.join(',')], { encoding: 'utf8' }).stdout.trim();
+    expect(listening, 'listening TCP sockets').toBe('');
+    const socks = fs.readdirSync(CTMP).filter((f) => /^rf-(engine|html)-[0-9a-f]{8}\.sock$/.test(f));
+    expect(socks.some((f) => f.startsWith('rf-engine-')), socks.join(', ')).toBe(true);
+    expect(socks.some((f) => f.startsWith('rf-html-')), socks.join(', ')).toBe(true);
     // the profile is in the container
     expect(app.userData.startsWith(CONTAINER)).toBe(true);
     expect(fs.existsSync(path.join(app.userData, 'logs', 'main.log'))).toBe(true);

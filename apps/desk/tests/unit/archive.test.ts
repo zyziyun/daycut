@@ -232,11 +232,11 @@ describe('the Projects page', () => {
 describe('client + words', () => {
   it('archive / restore post dirs[]; the archived list asks archived=1', async () => {
     const f = vi.fn(async (_u: string, _i?: RequestInit) => new Response('{"items":[],"watch":[],"at":1,"archived":true}', { status: 200 }));
-    const c = new EngineClient('http://127.0.0.1:43123', 'tok'.repeat(20), f);
+    const c = new EngineClient('app://desk', 'tok'.repeat(20), f);
     await c.archiveHistory(['/a', '/b']);
     await c.restoreHistory(['/a']);
     await c.history({ archived: true, q: 'x' });
-    expect(f.mock.calls.map(([u, i]) => [u.replace('http://127.0.0.1:43123', ''), i?.method, i?.body ?? null])).toEqual([
+    expect(f.mock.calls.map(([u, i]) => [u.replace('app://desk', ''), i?.method, i?.body ?? null])).toEqual([
       ['/api/history/archive', 'POST', JSON.stringify({ dirs: ['/a', '/b'] })],
       ['/api/history/restore', 'POST', JSON.stringify({ dirs: ['/a'] })],
       ['/api/history?archived=1&q=x', 'GET', null],

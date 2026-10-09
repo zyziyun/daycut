@@ -195,7 +195,7 @@ describe('cleanup policy', () => {
 });
 
 describe('EngineClient v0.2 routes', () => {
-  const BASE = 'http://127.0.0.1:43123';
+  const BASE = 'app://desk';
   const f = () => vi.fn(async (_u: string, _i?: RequestInit) => new Response('{"ok":true}', { status: 200 }));
 
   it('builds the expected URLs and bodies', async () => {

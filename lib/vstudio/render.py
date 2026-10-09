@@ -10,15 +10,15 @@ and persona CSS variables for HTML / HyperFrames projects.
 CLI:  python -m vstudio.render page.html -o out.png [--size 1080x1920] [--scale 1] [--wait 2000]
 """
 import argparse
+import http.client
 import json
 import os
 import pathlib
 import platform
 import shutil
+import socket
 import subprocess
 import tempfile
-import urllib.error
-import urllib.request
 
 from .config import FONT_DIR, FONTS, MissingAsset, font, persona
 
@@ -52,7 +52,7 @@ def _works(path, timeout=15):
 def chrome_candidates():
     """Every plausible binary, $CHROME first, then PATH names, then per-OS install paths (unverified).
     None when VSTUDIO_NO_CHROME=1 (the desk's sandboxed Mac App Store build: it cannot run another browser and renders
-    HTML itself, see VSTUDIO_HTML_RENDER_URL)."""
+    HTML itself, see VSTUDIO_HTML_RENDER_SOCKET)."""
     if os.environ.get("VSTUDIO_NO_CHROME") == "1":
         return []
     out = []
@@ -214,7 +214,7 @@ def html_to_png(html, out, size=(1080, 1920), scale=1, wait=2000, query="", use_
     url = page.as_uri() + (f"?{query}" if query else "")
     png = pathlib.Path(out).resolve(); png.parent.mkdir(parents=True, exist_ok=True); png.unlink(missing_ok=True)
     try:
-        if os.environ.get("VSTUDIO_HTML_RENDER_URL"):
+        if os.environ.get("VSTUDIO_HTML_RENDER_SOCKET"):
             return _host_render(page, png, w, h, scale, wait, query, transparent)
         for chrome in find_chromes():
             args = [chrome, "--headless=new", "--disable-gpu", "--hide-scrollbars", f"--force-device-scale-factor={scale}",
@@ -246,24 +246,40 @@ def html_to_png(html, out, size=(1080, 1920), scale=1, wait=2000, query="", use_
             shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+class _UnixHTTPConnection(http.client.HTTPConnection):
+    """HTTP over a Unix domain socket (the host app's render service listens on one, not on a TCP port)."""
+
+    def __init__(self, path, timeout):
+        super().__init__("localhost", timeout=timeout)
+        self.socket_path = path
+
+    def connect(self):
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.settimeout(self.timeout)
+        self.sock.connect(self.socket_path)
+
+
 def _host_render(page, png, w, h, scale, wait, query, transparent):
-    """Render through the host app (the Reelfold desk's own Chromium: VSTUDIO_HTML_RENDER_URL + _TOKEN)."""
+    """Render through the host app (the Reelfold desk's own Chromium: VSTUDIO_HTML_RENDER_SOCKET + _TOKEN)."""
     body = json.dumps(dict(file=str(page), out=str(png), width=w, height=h, scale=scale, wait=wait,
                            transparent=bool(transparent), **({"query": query} if query else {}))).encode()
-    req = urllib.request.Request(os.environ["VSTUDIO_HTML_RENDER_URL"], data=body, method="POST", headers={
-        "content-type": "application/json",
-        "authorization": f"Bearer {os.environ.get('VSTUDIO_HTML_RENDER_TOKEN', '')}"})
+    c = _UnixHTTPConnection(os.environ["VSTUDIO_HTML_RENDER_SOCKET"], timeout=180)
     try:
-        with urllib.request.urlopen(req, timeout=180) as r:
-            doc = json.loads(r.read().decode() or "{}")
-    except urllib.error.HTTPError as e:
-        try:
-            msg = json.loads(e.read().decode() or "{}").get("error")
-        except ValueError:
-            msg = None
-        raise RuntimeError(f"HTML render failed in the app: {msg or e.code}") from e
-    except (urllib.error.URLError, OSError) as e:
+        c.request("POST", "/render", body=body, headers={
+            "content-type": "application/json",
+            "authorization": f"Bearer {os.environ.get('VSTUDIO_HTML_RENDER_TOKEN', '')}"})
+        r = c.getresponse()
+        raw = r.read().decode()
+    except OSError as e:
         raise RuntimeError(f"HTML render failed in the app: {e}") from e
+    finally:
+        c.close()
+    try:
+        doc = json.loads(raw or "{}")
+    except ValueError:
+        doc = {}
+    if r.status != 200:
+        raise RuntimeError(f"HTML render failed in the app: {doc.get('error') or r.status}")
     if not doc.get("ok") or not png.exists():
         raise RuntimeError(f"HTML render failed in the app: {doc.get('error') or 'no image'}")
     return str(png)

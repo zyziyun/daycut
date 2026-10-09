@@ -22,18 +22,21 @@ describe('cleanup reply from transcript toggles', () => {
 
 describe('security helpers', () => {
   it('builds a strict production CSP', () => {
-    const csp = buildCsp({ dev: false, enginePort: 4321 });
+    const csp = buildCsp({ dev: false });
     expect(csp).toContain("default-src 'none'");
     expect(csp).toContain("script-src 'self';");
     expect(csp).not.toContain('unsafe-eval');
-    expect(csp).toContain('connect-src \'self\' http://127.0.0.1:4321');
+    // the engine is app://desk/api: same origin, no port, nothing on 127.0.0.1
+    expect(csp).toContain("connect-src 'self';");
+    expect(csp).not.toContain('127.0.0.1');
     expect(csp).toContain("object-src 'none'");
     expect(csp).toContain("frame-src 'none'");
   });
 
   it('dev CSP only adds what Vite needs', () => {
-    const csp = buildCsp({ dev: true, enginePort: 1, devServerUrl: 'http://localhost:5173' });
+    const csp = buildCsp({ dev: true, devServerUrl: 'http://localhost:5173' });
     expect(csp).toContain('ws://localhost:5173');
+    expect(csp).toContain("connect-src 'self' app://desk ws://localhost:5173");
     expect(csp).not.toContain('unsafe-eval');
   });
 

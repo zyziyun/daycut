@@ -230,17 +230,27 @@ for (const [lang, clip] of [['en', 'A_换圈子'], ['zh-CN', 'B_底气']] as con
 test('an answered request whose turn never shows up stops the spinner and says so (no endless 「正在看」)', async () => {
   test.setTimeout(60000);
   await openEditor('en', 'A_换圈子');
-  // the engine answers /ask but its turn is not in the clip's conversation (the P0-2 failure mode)
-  await page.route('**/ask', async (route) => {
-    const resp = await route.fetch();
-    const j = await resp.json();
-    await route.fulfill({ response: resp, json: { ...j, turn: 't99-dead' } });
+  // the engine answers /ask but its turn is not in the clip's conversation (the P0-2 failure mode). The engine is the
+  // app's own app://desk/api route (main forwards it), which Playwright's network routing does not see: the page's
+  // fetch is wrapped instead (EngineClient calls the global fetch on every request)
+  await page.evaluate(() => {
+    const w = window as unknown as { fetch: typeof fetch; __realFetch?: typeof fetch };
+    const real = (w.__realFetch = w.fetch);
+    w.fetch = async (input, init) => {
+      const r = await real(input, init);
+      if (!new URL(String(input)).pathname.endsWith('/ask')) return r;
+      const j = await r.json();
+      return new Response(JSON.stringify({ ...j, turn: 't99-dead' }), { status: r.status, headers: { 'content-type': 'application/json' } });
+    };
   });
   await say('1.1x speed');
   await expect(page.getByTestId('chat-thinking')).toBeVisible();
   await expect(page.getByTestId('chat-lost')).toBeVisible({ timeout: 20000 });
   await expect(page.getByTestId('chat-thinking')).toHaveCount(0);
   await expect(page.getByTestId('chat-lost-retry')).toBeVisible();
-  await page.unroute('**/ask');
+  await page.evaluate(() => {
+    const w = window as unknown as { fetch: typeof fetch; __realFetch?: typeof fetch };
+    if (w.__realFetch) w.fetch = w.__realFetch;
+  });
   await page.evaluate(() => localStorage.removeItem('i18n.strict'));
 });

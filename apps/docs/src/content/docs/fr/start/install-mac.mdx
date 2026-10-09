@@ -60,7 +60,7 @@ Si l’app choisit le mauvais Python, indiquez le bon chemin dans les Réglages.
 
 ## Premier lancement
 
-Au démarrage, Reelfold lance un moteur local sur votre Mac (un petit serveur sur `127.0.0.1` auquel seule l’app s’adresse). Une fois prêt, l’état affiche **Prêt sur cet ordinateur**.
+Au démarrage, Reelfold lance un moteur local sur votre Mac (un processus auxiliaire avec lequel l’app communique par un socket local privé ; il n’écoute sur aucun port réseau). Une fois prêt, l’état affiche **Prêt sur cet ordinateur**.
 
 L’app installée propose de télécharger une seule fois ce dont le moteur a besoin, via un bandeau et dans **Réglages → Modèles, polices et outils** :
 

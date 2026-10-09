@@ -26,7 +26,7 @@ function fakeFetch(reply: unknown = { ok: true }, status = 200) {
 describe('CreateClient', () => {
   it('maps calls to /api/create/* with the right bodies', async () => {
     const { f, calls } = fakeFetch();
-    const c = new EngineClient('http://127.0.0.1:9', 'tok', f).create;
+    const c = new EngineClient('app://desk', 'tok', f).create;
     await c.formats();
     await c.plan({ prompt: 'series ad', budget_cny: 60, lang: 'zh' });
     await c.setSource('fp-e04', '07', 'cloud:veo/veo-3.1-fast');
@@ -35,7 +35,7 @@ describe('CreateClient', () => {
     await c.handoff('fp-e04', ['zh', 'en'], false);
     await c.ingest('/Users/me/.config/vstudio/recordings/x', 'project:talkinghead');
     await c.setCap(300);
-    expect(calls.map((x) => `${x.init?.method} ${x.url.replace('http://127.0.0.1:9', '')}`)).toEqual([
+    expect(calls.map((x) => `${x.init?.method} ${x.url.replace('app://desk', '')}`)).toEqual([
       'GET /api/create/formats',
       'POST /api/create/plan',
       'POST /api/create/episodes/fp-e04/shots/07',
@@ -138,8 +138,8 @@ describe('recorder IPC + permissions', () => {
   });
 
   it('adds blob: to media-src only with the Create page on', () => {
-    expect(buildCsp({ dev: false, enginePort: 1 })).toContain("media-src 'self' vsmedia:;");
-    expect(buildCsp({ dev: false, enginePort: 1, create: true })).toContain("media-src 'self' vsmedia: blob:;");
+    expect(buildCsp({ dev: false })).toContain("media-src 'self' vsmedia:;");
+    expect(buildCsp({ dev: false, create: true })).toContain("media-src 'self' vsmedia: blob:;");
   });
 
   it('picks a recording format and paces the prompter', () => {

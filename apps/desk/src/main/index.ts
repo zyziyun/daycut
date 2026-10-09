@@ -1,11 +1,10 @@
 // Electron main process: window + security, engine sidecar, media protocol, IPC, publish browser.
 import fs from 'node:fs';
 import os from 'node:os';
-import { createServer as createNetServer, type AddressInfo } from 'node:net';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Notification, protocol, safeStorage, session, shell, type IpcMainInvokeEvent, type OpenDialogOptions } from 'electron';
-import { EngineClient } from '../shared/engineClient';
+import { ENGINE_BASE, EngineClient } from '../shared/engineClient';
 import { channelKey, listChannels } from '../shared/channels';
 import { partitionFor, validateIpc, type IpcChannel, type IpcPayload } from '../shared/ipc';
 import { hostAllowed, type Adapter } from '../shared/publish/adapterSchema';
@@ -18,6 +17,7 @@ import { registerAiIpc, syncRoutesFile } from './aiAccounts';
 import { APP_MIME, resolveAppFile } from './appProtocol';
 import { installAppMenu } from './appMenu';
 import { defaultEnginePath, EngineProcess, engineProcessEnv, findPython } from './engine';
+import { engineFetch, engineSocketPath, forwardToEngine } from './engineTransport';
 import { allowedMedia, mediaMime, parseRange, pathFromMediaUrl } from './media';
 import { loadAdapters } from './publish/adapters';
 import { PublishBrowser } from './publish/browser';
@@ -52,7 +52,8 @@ import { HtmlRenderService } from './htmlRender';
 import { CAPS, EDITION, IS_LITE } from '../shared/edition';
 
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
+  // stream: the engine's event stream (app://desk/api/stream) is forwarded as it arrives
+  { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
   { scheme: 'vsmedia', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
 ]);
 
@@ -177,7 +178,7 @@ function editionEnv(): Record<string, string> {
     VSTUDIO_LLM_NO_CLI: '1',
     DESK_HISTORY_WATCH: '',
     VSTUDIO_NO_CHROME: '1',
-    ...(htmlRender?.url ? { VSTUDIO_HTML_RENDER_URL: htmlRender.url, VSTUDIO_HTML_RENDER_TOKEN: htmlRender.token } : {}),
+    ...(htmlRender?.socketPath ? { VSTUDIO_HTML_RENDER_SOCKET: htmlRender.socketPath, VSTUDIO_HTML_RENDER_TOKEN: htmlRender.token } : {}),
   };
 }
 
@@ -220,20 +221,12 @@ function settingsMsg() {
   return { ...s, createPage: createOn(), firstRunDone: s.firstRunDone || testSwitch('DESK_SKIP_FIRST_RUN'), resolved: resolvedConfig(), packaged: app.isPackaged, platform: process.platform, edition: EDITION };
 }
 
-/** One engine port per app session, chosen before the first start and reused by every restart (also when the
- * previous engine never became ready), so the page's CSP and the renderer's base URL stay valid. */
-let sessionPort: number | null = null;
-async function pickSessionPort(): Promise<number | null> {
-  if (sessionPort) return sessionPort;
-  sessionPort = await new Promise<number | null>((resolve) => {
-    const srv = createNetServer();
-    srv.once('error', () => resolve(null));
-    srv.listen(0, '127.0.0.1', () => {
-      const port = (srv.address() as AddressInfo).port;
-      srv.close(() => resolve(port));
-    });
-  });
-  return sessionPort;
+/** One engine socket per app session (Windows: null, a TCP port the engine picks), reused by every restart: the old
+ * engine is stopped first, and a socket file a killed engine left behind is replaced. */
+let sessionSocket: string | null | undefined;
+function engineSocket(): string | null {
+  if (sessionSocket === undefined) sessionSocket = engineSocketPath();
+  return sessionSocket;
 }
 
 let engineGen = 0;
@@ -248,7 +241,7 @@ function startEngine(): Promise<EngineInfo> {
   restartWhenIdle = false;
   // assets already on disk (CLI cache, Hugging Face cache) are found BEFORE the engine's env is computed, so the
   // first engine already has them - no restart at start-up
-  const p = Promise.all([old ? old.stop() : Promise.resolve(), assets.scan(), pickSessionPort()]).then(([, , port]) => {
+  const p = Promise.all([old ? old.stop() : Promise.resolve(), assets.scan()]).then(() => {
     if (gen !== engineGen) throw new SupersededError();
     const cfg = resolvedConfig();
     const next = new EngineProcess({
@@ -259,7 +252,7 @@ function startEngine(): Promise<EngineInfo> {
       allowedOrigins: [APP_ORIGIN],
       mock: testSwitch('DESK_ENGINE_MOCK'),
       onCrash: (code, tail) => recordProblem('sidecar', `exit ${code}`, `engine exited (${code})`, tail.join('\n')),
-      port: enginePort() ?? port ?? undefined,
+      socketPath: engineSocket(),
       onDied: (detail) => onEngineCrash(gen, detail),
       ...withV02Env(engineEnv(cfg.runtime !== 'system')),
     });
@@ -270,15 +263,12 @@ function startEngine(): Promise<EngineInfo> {
   enginePromise = p.then((info) => {
     if (gen !== engineGen) throw new SupersededError();
     engineMode = info.mode;
-    client = new EngineClient(info.baseUrl, info.token);
+    const owner = engine;
+    const t = owner?.target;
+    mainLog(`[engine] ready (${info.mode}) on ${t ? ('socketPath' in t ? t.socketPath : `127.0.0.1:${t.port}`) : '?'}`);
+    client = new EngineClient(ENGINE_BASE, info.token, engineFetch(() => owner?.target ?? null));
     rootsCache = { at: 0, roots: [] };
     win?.webContents.send('engine:status', { ok: true, mode: info.mode, note: info.note });
-    // the page's CSP pins the engine port: reload only when it was served before any engine was up (first launch,
-    // slow cold start) or the session port could not be used. The URL (hash route) survives a reload.
-    if (!IS_DEV && win && servedPort !== undefined && servedPort !== enginePort()) {
-      mainLog(`[engine] port ${servedPort} -> ${enginePort()}: reloading the window for its CSP`);
-      win.reload();
-    }
     return info;
   });
   enginePromise.catch((e) => {
@@ -388,16 +378,9 @@ async function mediaRoots(): Promise<string[]> {
   return rootsCache.roots;
 }
 
-function enginePort(): number | null {
-  return engine?.info ? Number(new URL(engine.info.baseUrl).port) : null;
-}
-
 function currentCsp(): string {
-  return buildCsp({ dev: IS_DEV, enginePort: enginePort(), devServerUrl: DEV_URL, create: createOn() });
+  return buildCsp({ dev: IS_DEV, devServerUrl: DEV_URL, create: createOn() });
 }
-
-/** Engine port baked into the CSP of the page the window last loaded (undefined: nothing loaded yet). */
-let servedPort: number | null | undefined;
 
 const MIME = APP_MIME;
 
@@ -405,12 +388,13 @@ function registerProtocols() {
   protocol.handle('app', async (req) => {
     const u = new URL(req.url);
     if (u.host !== 'desk') return new Response('not found', { status: 404 });
+    // the engine API, same origin as the page: forwarded to the engine's socket (engineTransport.ts)
+    if (u.pathname.startsWith('/api/')) return forwardToEngine(engine?.target ?? null, req);
     const hit = resolveAppFile(RENDERER_DIR, u.pathname);
     if (hit === null) return new Response('forbidden', { status: 403 });
     let file = hit === 'index' ? path.join(RENDERER_DIR, 'index.html') : hit;
     if (!fs.existsSync(file)) file = path.join(RENDERER_DIR, 'index.html');
     const body = await fs.promises.readFile(file);
-    if (file.endsWith('.html')) servedPort = enginePort();
     return new Response(body, {
       headers: {
         'content-type': MIME[path.extname(file)] ?? 'application/octet-stream',
@@ -512,16 +496,14 @@ function createWindow(route?: string, show = true) {
     }
   });
   browser = new PublishBrowser(win, (s) => win?.webContents.send('publish:state', s), noteLogin);
-  // Load once the engine is up (or failed / is slow) so the page's CSP already carries the engine port;
-  // startEngine() reloads the page if the port changes later.
+  // Load once the engine is up (or failed / is slow): the page's actions need its client, so it does not show a UI
+  // whose buttons cannot work yet. The engine URL itself (app://desk/api) never changes.
   const url = (IS_DEV ? DEV_URL! : 'app://desk/index.html') + (route && /^#\/[A-Za-z0-9/_.%?=&-]{0,200}$/.test(route) ? route : '');
   const engineSettled = currentEngine().then(() => {}, () => {});
   void Promise.race([engineSettled, new Promise((r) => setTimeout(r, 15000))])
     .then(() => win?.loadURL(url))
     .catch((e: unknown) => {
-      // the engine came up while this first load was still running and startEngine() reloaded the page for its
-      // CSP: that reload aborts this load (ERR_ABORTED), which is expected and must not raise "a problem in the app"
-      if (/ERR_ABORTED/.test(String((e as Error)?.message ?? e))) return;
+      if (/ERR_ABORTED/.test(String((e as Error)?.message ?? e))) return; // replaced by another navigation
       mainLog(`[main] first page load failed: ${String((e as Error)?.message ?? e)}`);
     });
   win.on('closed', () => {
@@ -596,6 +578,11 @@ function notifyDue(due: CalendarPost[]) {
   mainLog(`[scheduler] due: ${fresh.map((p) => `${p.id} ${p.platform} ${p.at}`).join(', ')}`);
 }
 
+/** Lite: the YouTube API sign-in needs a loopback port (a listening socket the sandboxed build does not have). */
+function noYouTubeApiInLite() {
+  if (!CAPS.youtubeApi) throw new Error('the YouTube API is not available in this edition: post to YouTube from the built-in browser');
+}
+
 function apiStatus(): ApiStatusMsg[] {
   const st = settings.get();
   return API_PLATFORMS.map((a) => {
@@ -636,7 +623,7 @@ function startScheduler() {
       win?.webContents.send('publish:posted', { postId: p.id, url });
     },
     api: {
-      wants: (p) => ['youtube', 'youtube-shorts'].includes(p.platform.split(':')[0]) && !!settings.get().publishApi?.youtube?.auto && youtube.status().connected,
+      wants: (p) => CAPS.youtubeApi && ['youtube', 'youtube-shorts'].includes(p.platform.split(':')[0]) && !!settings.get().publishApi?.youtube?.auto && youtube.status().connected,
       publish: apiPublish,
     },
     stateFile: path.join(app.getPath('userData'), 'publish', 'scheduler.json'),
@@ -700,7 +687,7 @@ function registerIpc() {
     }
   });
   handle('engine:restart', async () => {
-    return startEngine(); // reloads the window for the new port's CSP
+    return startEngine(); // the page keeps calling app://desk/api; main follows the new engine
   });
   handle('dialog:openFile', async (p) => {
     const filters =
@@ -931,10 +918,12 @@ function registerIpc() {
   });
   handle('publish:apiStatus', async () => apiStatus());
   handle('publish:apiClient', async (p) => {
+    noYouTubeApiInLite();
     youtube.setClient(p.clientId.trim(), p.clientSecret.trim());
     return apiStatus();
   });
   handle('publish:apiConnect', async () => {
+    noYouTubeApiInLite();
     await youtube.connect();
     return apiStatus();
   });
