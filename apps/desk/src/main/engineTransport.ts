@@ -23,7 +23,8 @@ export const MAX_SOCKET_PATH = 103;
  * container, <home>/Library/Containers/<bundle id>/Data/tmp), short enough for sun_path. Windows: null (TCP). */
 export function engineSocketPath(name = 'rf-engine', dir = os.tmpdir(), platform: NodeJS.Platform = process.platform): string | null {
   if (platform === 'win32') return null;
-  const p = path.join(dir, `${name}-${crypto.randomBytes(4).toString('hex')}.sock`);
+  // a POSIX path whatever the host (macOS / Linux only; also keeps the unit test platform-neutral)
+  const p = path.posix.join(dir, `${name}-${crypto.randomBytes(4).toString('hex')}.sock`);
   if (Buffer.byteLength(p) > MAX_SOCKET_PATH) throw new Error(`socket path too long for this system (${Buffer.byteLength(p)} > ${MAX_SOCKET_PATH} bytes): ${p}`);
   return p;
 }

@@ -991,33 +991,35 @@ def make_handler(api):
     return H
 
 
-class UnixHTTPServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
-    """The HTTP API on a Unix domain socket (one thread per connection, like ThreadingHTTPServer). Not HTTPServer:
-    its server_bind() looks up a host name, which a socket path is not."""
-    daemon_threads = True
-    # a full backlog refuses a Unix-socket connect at once (TCP would retry): the UI opens many requests at start-up
-    request_queue_size = 128
+# Windows CPython has no AF_UNIX server class: there the engine binds 127.0.0.1 (serve() below)
+if hasattr(socketserver, "UnixStreamServer"):
+    class UnixHTTPServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
+        """The HTTP API on a Unix domain socket (one thread per connection, like ThreadingHTTPServer). Not HTTPServer:
+        its server_bind() looks up a host name, which a socket path is not."""
+        daemon_threads = True
+        # a full backlog refuses a Unix-socket connect at once (TCP would retry): the UI opens many requests at start-up
+        request_queue_size = 128
 
-    bound_ino = None
+        bound_ino = None
 
-    def server_bind(self):
-        try:
-            os.unlink(self.server_address)            # a socket left behind by an engine that was killed
-        except FileNotFoundError:
-            pass
-        super().server_bind()
-        # 0600: only this user (the folder - the per-user temp dir / the app's container - is private already)
-        os.chmod(self.server_address, 0o600)
-        self.bound_ino = os.lstat(self.server_address).st_ino
+        def server_bind(self):
+            try:
+                os.unlink(self.server_address)            # a socket left behind by an engine that was killed
+            except FileNotFoundError:
+                pass
+            super().server_bind()
+            # 0600: only this user (the folder - the per-user temp dir / the app's container - is private already)
+            os.chmod(self.server_address, 0o600)
+            self.bound_ino = os.lstat(self.server_address).st_ino
 
-    def server_close(self):
-        super().server_close()
-        try:                                          # ours only: a successor may have bound the same path
-            st = os.lstat(self.server_address)
-            if stat.S_ISSOCK(st.st_mode) and st.st_ino == self.bound_ino:
-                os.unlink(self.server_address)
-        except OSError:
-            pass
+        def server_close(self):
+            super().server_close()
+            try:                                          # ours only: a successor may have bound the same path
+                st = os.lstat(self.server_address)
+                if stat.S_ISSOCK(st.st_mode) and st.st_ino == self.bound_ino:
+                    os.unlink(self.server_address)
+            except OSError:
+                pass
 
 
 def serve(api, host="127.0.0.1", port=0, socket_path=None):

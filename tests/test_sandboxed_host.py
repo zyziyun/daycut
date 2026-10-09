@@ -75,8 +75,9 @@ class _Host(BaseHTTPRequestHandler):
         pass
 
 
-class _UnixHost(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
-    daemon_threads = True
+if hasattr(socketserver, "UnixStreamServer"):           # not on Windows (the test below is skipped there)
+    class _UnixHost(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
+        daemon_threads = True
 
 
 @pytest.mark.skipif(not hasattr(socket, "AF_UNIX") or sys.platform == "win32", reason="Unix domain sockets")
