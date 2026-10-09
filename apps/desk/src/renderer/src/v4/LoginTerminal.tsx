@@ -33,16 +33,23 @@ export function LoginTerminal({ req, onClose }: { req: LoginReq; onClose: () => 
     term.open(box.current);
     let sid: string | null = null;
     let alive = true;
+    // output can arrive before terminal() resolves with the id (a CLI that prints at once): keep it until the id is known
+    const early: { id: string; data: string }[] = [];
     const offData = window.desk.on('term:data', (m) => {
       const x = m as { id: string; data: string };
-      if (x.id === sid) term.write(x.data);
+      if (sid === null) early.push(x);
+      else if (x.id === sid) term.write(x.data);
     });
-    const offExit = window.desk.on('term:exit', (m) => {
-      const x = m as { id: string; code: number | null };
-      if (x.id !== sid) return;
+    let earlyExit: { id: string; code: number | null } | null = null;
+    const onExit = (x: { id: string; code: number | null }) => {
       setExit(x.code);
       // the login changed (or not): check this provider again, with the real round-trip
       void refreshStatus({ refresh: true, providers: [req.provider] }).finally(() => alive && setChecked(true));
+    };
+    const offExit = window.desk.on('term:exit', (m) => {
+      const x = m as { id: string; code: number | null };
+      if (sid === null) earlyExit = x;
+      else if (x.id === sid) onExit(x);
     });
     const input = term.onData((d) => sid && void window.desk.ai.input(sid, d));
     window.desk.ai
@@ -53,6 +60,8 @@ export function LoginTerminal({ req, onClose }: { req: LoginReq; onClose: () => 
           return;
         }
         sid = r.id;
+        for (const x of early.splice(0)) if (x.id === sid) term.write(x.data);
+        if (earlyExit?.id === sid) onExit(earlyExit);
         setId(r.id);
         setCmd(r.display);
         setBackend(r.backend);
