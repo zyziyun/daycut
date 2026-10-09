@@ -7,8 +7,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HistoryDoc, HistoryItem } from '../../src/shared/v02';
 import { EngineClient } from '../../src/shared/engineClient';
 import { LOCALES, setLang, t } from '../../src/renderer/src/i18n';
+import { activeItems } from '../../src/renderer/src/lib/inboxView';
 import { archiveEn } from '../../src/renderer/src/i18n/locales/archive';
-import { archivedLine, archiveFlow, isRunning, restoreFlow, shownProjects } from '../../src/renderer/src/lib/archive';
+import { archivedLine, archiveFlow, isRunning, noMatchText, restoreFlow, shownProjects } from '../../src/renderer/src/lib/archive';
 
 const hist = vi.hoisted(() => ({ value: null as unknown }));
 vi.mock('../../src/renderer/src/lib/history', () => ({ useHistory: () => hist.value }));
@@ -17,7 +18,7 @@ vi.mock('../../src/renderer/src/lib/engine', () => ({
   useLoad: () => ({ data: { watch: [] }, error: null, loading: false, reload: () => undefined, setData: () => undefined }),
 }));
 vi.mock('../../src/renderer/src/lib/prefs', async (orig) => ({ ...(await orig<object>()), useAgencyMode: () => false }));
-vi.mock('../../src/renderer/src/lib/inbox', () => ({ useInbox: () => ({ items: [] }) }));
+vi.mock('../../src/renderer/src/lib/inbox', () => ({ useInbox: () => ({ items: [], all: [] }) }));
 vi.mock('../../src/renderer/src/v4/ui', () => ({ useUi: () => ({ toast: () => undefined, menu: () => undefined, setPrefill: () => undefined }) }));
 
 function item(id: string, over: Partial<HistoryItem> = {}): HistoryItem {
@@ -130,6 +131,46 @@ describe('archive / restore flows', () => {
   });
 });
 
+describe('the empty state of a filter', () => {
+  afterEach(() => setLang('en'));
+
+  it('without search text: what is missing, per filter', () => {
+    setLang('en');
+    expect(noMatchText({ f: 'running', q: '', type: '' })).toBe('No running projects');
+    expect(noMatchText({ f: 'you', q: '  ', type: '' })).toBe('Nothing needs you right now');
+    expect(noMatchText({ f: 'done', q: '', type: '' })).toBe('No finished projects yet');
+    expect(noMatchText({ f: 'failed', q: '', type: '' })).toBe('No failed projects');
+    expect(noMatchText({ f: 'archived', q: '', type: 'promo' })).toBe('No archived projects match these filters');
+    expect(noMatchText({ f: 'all', q: '', type: 'batch' })).toBe('No “Batch” projects');
+    for (const f of ['all', 'running', 'you', 'done', 'failed', 'archived'] as const) expect(noMatchText({ f, q: '', type: '' })).not.toMatch(/type\.|projects\./);
+  });
+
+  it('with search text: the query, whatever the filter', () => {
+    setLang('en');
+    expect(noMatchText({ f: 'running', q: 'promo ', type: '' })).toBe('Nothing matches “promo”.');
+    setLang('zh-CN');
+    expect(noMatchText({ f: 'running', q: '', type: '' })).toBe('没有运行中的项目');
+    expect(noMatchText({ f: 'all', q: '口播', type: '' })).toBe('没有找到「口播」。');
+    setLang('fr');
+    expect(noMatchText({ f: 'running', q: '', type: '' })).toBe('Aucun projet en cours');
+    expect(noMatchText({ f: 'done', q: 'x', type: '' })).toMatch(/^Aucun résultat pour «\s?x\s?»\.$/u);
+  });
+
+  it('every locale has every empty-state string', () => {
+    for (const l of Object.values(LOCALES))
+      for (const f of ['all', 'running', 'you', 'done', 'failed', 'archived', 'type']) expect(l.messages[`projects.none.${f}` as keyof typeof l.messages]).toBeTruthy();
+  });
+});
+
+describe('the inbox and archived projects', () => {
+  const x = (key: string, archived?: boolean) => ({ key, archived }) as unknown as import('../../src/shared/v04').InboxItem;
+
+  it('an archived project\'s items leave the Inbox / Home / badge / triage list; restored ones come back', () => {
+    expect(activeItems([x('a'), x('b', true), x('c')]).map((i) => i.key)).toEqual(['a', 'c']);
+    expect(activeItems([x('a'), x('b'), x('c')]).map((i) => i.key)).toEqual(['a', 'b', 'c']);
+  });
+});
+
 describe('the Projects page', () => {
   const store = new Map<string, string>();
   beforeEach(() => {
@@ -170,6 +211,15 @@ describe('the Projects page', () => {
     expect(html).toContain('href="#/p/old-cut"');
     expect(html).toContain('Archived 2');
     expect(html).not.toContain('/v/a"'); // the live project is not in this tab
+  });
+
+  it('Running with no running project and no search: says so (never 「Nothing matches “type.”」)', async () => {
+    store.set('v4.pf', 'running');
+    hist.value = { data: doc([item('a'), item('b')], 0), archived: null, reload: () => undefined, wantArchived: () => undefined, live: [] };
+    const html = await render();
+    expect(html).toContain('No running projects');
+    expect(html).not.toContain('type.');
+    expect(html).not.toContain('Nothing matches');
   });
 
   it('in Archived with nothing archived: a calm empty state', async () => {

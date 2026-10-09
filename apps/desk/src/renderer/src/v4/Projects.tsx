@@ -8,7 +8,7 @@ import { useAgencyMode } from '../lib/prefs';
 import type { HistoryItem } from '../../../shared/v02';
 import { t, tk } from '../i18n';
 import { useEngine, useLoad } from '../lib/engine';
-import { archivedLine, archiveFlow, restoreFlow, shownProjects, type ProjectsFilter } from '../lib/archive';
+import { archivedLine, archiveFlow, noMatchText, restoreFlow, shownProjects, type ProjectsFilter } from '../lib/archive';
 import { useHistory } from '../lib/history';
 import { useInbox } from '../lib/inbox';
 import { go, href } from '../lib/router';
@@ -181,7 +181,7 @@ export function Projects() {
             }
           />
         ) : !shown.length ? (
-          <Empty title={t('projects.noMatch', { q: q || tk(`type.${type}`) })} />
+          <Empty title={noMatchText({ f, q, type })} />
         ) : (
           <div className={`pgrid ${inArchive ? 'archived' : ''}`} data-testid="projects-grid">
             {shown.map((i) =>
