@@ -437,9 +437,10 @@ export class EngineClient {
   effects() {
     return this.req<{ effects: EffectDef[]; engine: string }>('GET', '/api/effects');
   }
-  /** platforms: the composer's platform chip (used when the request itself names none) */
-  startIntake(prompt: string, inputs: string[], platforms?: string[]) {
-    return this.req<{ id: string }>('POST', '/api/intake', { prompt: prompt.slice(0, 2000), inputs, ...(platforms?.length ? { platforms } : {}) });
+  /** platforms: the composer's platform chip (used when the request itself names none); lang: the UI language the
+   * plan card's questions and risks are written in */
+  startIntake(prompt: string, inputs: string[], platforms?: string[], lang?: string) {
+    return this.req<{ id: string }>('POST', '/api/intake', { prompt: prompt.slice(0, 2000), inputs, ...(platforms?.length ? { platforms } : {}), ...(lang ? { lang } : {}) });
   }
   intake(id: string) {
     return this.req<IntakeJob>('GET', `/api/intake/${pid(id)}`);
@@ -448,8 +449,8 @@ export class EngineClient {
   retryIntake(id: string) {
     return this.req<{ id: string }>('POST', `/api/intake/${pid(id)}/retry`, {});
   }
-  reviseIntake(id: string, prompt: string) {
-    return this.req<{ id: string }>('POST', `/api/intake/${pid(id)}/revise`, { prompt: prompt.slice(0, 500) });
+  reviseIntake(id: string, prompt: string, lang?: string) {
+    return this.req<{ id: string }>('POST', `/api/intake/${pid(id)}/revise`, { prompt: prompt.slice(0, 500), ...(lang ? { lang } : {}) });
   }
   applyIntake(id: string, body: { plan?: IntakePlan; run?: boolean } = {}) {
     return this.req<{ ok: boolean; projects: { dir: string; name: string; recipe: string }[] }>('POST', `/api/intake/${pid(id)}/apply`, body);

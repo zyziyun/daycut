@@ -112,6 +112,7 @@
     "warnings": {"type": "array", "items": {"type": "string"}},
     "estimate": {"type": "object"},
     "run": {"type": "object", "properties": {"pilot": {"type": ["integer", "null"]}, "auto": {"type": "array"}}},
-    "summary_zh": {"type": "string"}
+    "summary_zh": {"type": "string"},
+    "ui_lang": {"enum": ["en", "zh", "fr"], "description": "language of the model-written card texts (questions, risks, why)"}
   }
 }

@@ -176,7 +176,7 @@ export function Home() {
     try {
       for (let i = 0; ; i++) {
         try {
-          const r = await (latest.current ?? client).startIntake(p.prompt, p.files, platforms ?? undefined);
+          const r = await (latest.current ?? client).startIntake(p.prompt, p.files, platforms ?? undefined, getLang());
           setSample(p.sample);
           setJobId(r.id);
           return;
@@ -218,7 +218,7 @@ export function Home() {
   const revise = async (text: string) => {
     if (!client || !jobId) return;
     try {
-      await client.reviseIntake(jobId, text);
+      await client.reviseIntake(jobId, text, getLang());
       setJob((j) => (j ? { ...j, state: 'running', step: 'revise' } : j));
       const r = await client.intake(jobId);
       setJob(r);

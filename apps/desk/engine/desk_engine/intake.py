@@ -1,8 +1,11 @@
 """Intake: one sentence + dropped files -> an AI plan card -> projects (``python -m vstudio.intake``, the engine's
 references/INTAKE.md). Plans are slow (inventory + ASR + a model call), so the desk runs them as background jobs:
 
-  start(prompt, inputs)  -> {id}      GET  -> {id, state running|done|error, step, progress, plan, error, prompt, inputs}
-  revise(id, prompt)     -> same job, state running again (the plan keeps its revisions)
+  start(prompt, inputs, platforms, lang)  -> {id}   GET -> {id, state running|done|error, step, progress, plan, error,
+                                                          prompt, inputs, lang}
+  revise(id, prompt, lang) -> same job, state running again (the plan keeps its revisions)
+``lang``: the desk's UI language (en | zh-CN | fr): the planner writes the card's questions, risks and reasons in it
+(``--ui-lang``), whatever language the request, the materials or the platforms are in.
   apply(id, plan?, run)  -> {projects [{dir, name, recipe}], series}; ``run`` starts each pilot in the background
 
 Real engine: ``vstudio.intake plan|revise|apply --json`` (plan JSON kept in ``<DESK_DATA_DIR>/intake/<id>.json``),
@@ -31,6 +34,16 @@ TEXT = {".pdf", ".docx", ".pptx", ".md", ".txt", ".srt", ".vtt", ".ass", ".json"
 PLATFORMS = [("tiktok", "tiktok", "TikTok"), ("youtube|油管", "youtube-shorts", "YouTube"),
              ("小红书|xiaohongshu|rednote", "xiaohongshu", "小红书"), ("抖音|douyin", "douyin", "抖音"),
              ("视频号|channels", "shipinhao", "视频号"), ("b站|B站|bilibili", "bilibili", "B 站")]
+# the desk's UI languages -> the planner's ``--ui-lang``
+UI_LANGS = {"en": "en", "zh-CN": "zh", "zh": "zh", "fr": "fr"}
+
+
+def ui_lang(lang):
+    """A UI language from the request body -> the planner's code (None: the planner follows the request's)."""
+    need(lang is None or lang in UI_LANGS, f"lang: {' | '.join(UI_LANGS)}")
+    return UI_LANGS.get(lang) if lang else None
+
+
 def material(path, probe=None):
     ext = os.path.splitext(path)[1].lower()
     kind = "video" if ext in VIDEO else "audio" if ext in AUDIO else "image" if ext in IMAGE else \
@@ -197,15 +210,17 @@ class Intake:
         return out
 
     # ---------------------------------------------------------- plan / revise
-    def start(self, prompt, inputs, platforms=None):
-        """``platforms``: the composer's platform chip (used when the request names none)."""
+    def start(self, prompt, inputs, platforms=None, lang=None):
+        """``platforms``: the composer's platform chip (used when the request names none); ``lang``: the UI's
+        language, the one the card's questions are written in."""
+        lang = ui_lang(lang)
         need(platforms is None or (isinstance(platforms, list) and len(platforms) <= 20 and
                                    all(isinstance(p, str) and re.match(r"^[a-z][a-z-]{0,30}(:[a-z]{3,12})?$", p)
                                        for p in platforms)), "platforms: platform ids")
         pid = hashlib.sha1(f"{prompt}\0{inputs}\0{time.time()}".encode()).hexdigest()[:12]
         self._set(pid, id=pid, state="running", step="analyze", prompt=prompt, inputs=inputs, plan=None, error=None,
                   started=time.time(), op_started=time.time(), seconds=None, platforms=platforms or None,
-                  progress=None)
+                  progress=None, lang=lang)
         threading.Thread(target=self._plan, args=(pid, prompt, inputs), daemon=True).start()
         return dict(id=pid)
 
@@ -234,12 +249,17 @@ class Intake:
             args += ["--auto", ",".join(auto)]
         if inputs:
             args += ["--inputs", *inputs]
+        args += self._lang_args(pid)
         self._set(pid, step="plan")
         plan = self._run(pid, args, timeout=1800)
         plan["id"] = plan.get("id") or pid
         plan["desk_id"] = pid
         write_json(out, plan)
         return plan
+
+    def _lang_args(self, pid):
+        lang = (self.jobs.get(pid) or {}).get("lang")
+        return ["--ui-lang", lang] if lang else []
 
     def retry(self, pid):
         """「再试一次」 on a failed plan card: the same request (plan, or the revision that failed) again."""
@@ -253,9 +273,13 @@ class Intake:
                          daemon=True).start()
         return dict(id=pid)
 
-    def revise(self, pid, prompt):
+    def revise(self, pid, prompt, lang=None):
+        """``lang``: as ``start`` (default: the language the plan was made in)."""
+        lang = ui_lang(lang)
         j = self.get(pid)
         need(j.get("plan"), "the plan is not ready yet")
+        if lang:
+            self._set(pid, lang=lang)
         self._set(pid, state="running", step="revise", error=None, error_code=None, error_provider=None,
                   failed_revise=None, op_started=time.time(), seconds=None, progress=None)
 
@@ -271,8 +295,8 @@ class Intake:
         return dict(id=pid)
 
     def _engine_revise(self, pid, plan, prompt):
-        return self._run(pid, ["revise", "--plan", self._path(pid), "--prompt", prompt, "--in-place", "--json"],
-                         timeout=900)
+        return self._run(pid, ["revise", "--plan", self._path(pid), "--prompt", prompt, "--in-place", "--json",
+                               *self._lang_args(pid)], timeout=900)
 
     def _took(self, pid):
         """Seconds the plan / revision really took (reading the files and the AI call), for the card."""

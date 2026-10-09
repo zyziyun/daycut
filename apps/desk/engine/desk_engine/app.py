@@ -556,7 +556,7 @@ class Api:
                 need(isinstance(inputs, list) and len(inputs) <= 200, "inputs: up to 200 files / folders")
                 inputs = [_abs_path(p, "inputs[]") for p in inputs]
                 need(prompt.strip() or inputs, "say what to make or add files")
-                return self.intake.start(prompt.strip(), inputs, b.get("platforms"))
+                return self.intake.start(prompt.strip(), inputs, b.get("platforms"), b.get("lang"))
             if parts == ["intake", "recent"] and method == "GET":
                 return self.intake.recent()
             need(len(parts) >= 2 and PID_RE.match(parts[1]), "bad plan id")
@@ -564,7 +564,7 @@ class Api:
                 return self.intake.get(parts[1])
             if parts[2:] == ["revise"] and method == "POST":
                 need(isinstance(b.get("prompt"), str) and 0 < len(b["prompt"].strip()) <= 500, "prompt: 1-500 chars")
-                return self.intake.revise(parts[1], b["prompt"].strip())
+                return self.intake.revise(parts[1], b["prompt"].strip(), b.get("lang"))
             if parts[2:] == ["apply"] and method == "POST":
                 need(b.get("run") in (None, True, False), "run must be a boolean")
                 return self.intake.apply(parts[1], b.get("plan"), run=b.get("run", True) is not False)

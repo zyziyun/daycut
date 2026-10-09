@@ -48,7 +48,17 @@ def _fmt_t(s):
     return f"{s // 60}:{s % 60:02d}"
 
 
-def rule_plan(prompt, inputs, probe=None, plan_id=None, defaults=None):
+# the short-clip question in each --ui-lang, as the real planner writes it in the language it is asked for
+SHORT_Q = {
+    "zh": ("第 {k} 条只有 {n} 秒，比建议的最短 {m} 秒短一点。先做第 1 条给你看，满意再做剩下的。", ["保持", "加长到 45 秒"]),
+    "en": ("Clip {k} is only {n} s, a bit under the suggested {m} s minimum. Clip 1 comes first for you to check.",
+           ["Keep it", "Lengthen to 45 s"]),
+    "fr": ("Le clip {k} ne dure que {n} s, un peu moins que le minimum conseillé de {m} s. Le clip 1 passe d'abord.",
+           ["Garder", "Allonger à 45 s"]),
+}
+
+
+def rule_plan(prompt, inputs, probe=None, plan_id=None, defaults=None, ui_lang=None):
     """The desk's rule planner (mock mode): same shape as ``vstudio.intake plan --json``."""
     defaults = defaults or {}
     mats = [dict(material(p, probe), id=f"f{i + 1}") for i, p in enumerate(inputs)]
@@ -109,9 +119,10 @@ def rule_plan(prompt, inputs, probe=None, plan_id=None, defaults=None):
     if short:
         r = short[0]
         k = rows.index(r) + 1
-        questions.append(dict(id="q1", project="p1", text=f"第 {k} 条只有 {int(r['params']['range'][1] - r['params']['range'][0])} 秒，"
-                                                         f"比建议的最短 {int(min_s)} 秒短一点。先做第 1 条给你看，满意再做剩下的。",
-                              options=["保持", "加长到 45 秒"], default="保持"))
+        text, options = SHORT_Q[ui_lang or "zh"]
+        questions.append(dict(id="q1", project="p1", options=options, default=options[0],
+                              text=text.format(k=k, n=int(r["params"]["range"][1] - r["params"]["range"][0]),
+                                               m=int(min_s))))
     src = f"一条 {_fmt_t(dur)} 的视频" if video else (f"{len(mats)} 个文件" if mats else "你的描述")
     summary = (f"这是{src}。我会做出 {count} 条{label}，每条 {int(min_s)}–{int(max_s)} 秒，"
                f"出{'、'.join(zh for _, zh in plats)} {' 和 '.join(aspects)} {'两个版本' if len(aspects) > 1 else '版本'}，配封面和文案。")
@@ -121,7 +132,7 @@ def rule_plan(prompt, inputs, probe=None, plan_id=None, defaults=None):
                 planner=dict(provider="rules", model=None, route="desk", fallback=True, cost_usd=0, seconds=0.1),
                 analysis=dict(inputs=list(inputs), totals=dict(files=len(mats))), materials=mats, projects=[proj],
                 series=None, questions=questions, risks=[], warnings=[], estimate=est, run=dict(pilot=1, auto=[]),
-                summary_zh=summary)
+                summary_zh=summary, **({"ui_lang": ui_lang} if ui_lang else {}))
 
 
 def rule_revise(plan, prompt):
@@ -217,7 +228,8 @@ class MockIntake(Intake):
         self._simulate_progress(pid, inputs, step)
         time.sleep(float(os.environ.get("DESK_MOCK_PLAN_DELAY", "0")))
         plats = (self.jobs.get(pid) or {}).get("platforms")
-        plan = rule_plan(prompt, inputs, self.probe, pid, dict(self.defaults(), **({"platforms": plats} if plats else {})))
+        plan = rule_plan(prompt, inputs, self.probe, pid, dict(self.defaults(), **({"platforms": plats} if plats else {})),
+                         (self.jobs.get(pid) or {}).get("lang"))
         self._progress(pid, dict(event="stage", stage="write"))
         write_json(self._path(pid), plan)
         return plan

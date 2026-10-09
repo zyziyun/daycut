@@ -101,7 +101,8 @@ class WeekPlans:
         words = text.strip() or DEFAULT_WORDS[lang]
         # the planner reads one extra line: a week's worth of standalone clips (it still decides what is in them)
         prompt = f"{words}\n（一周的发布量：切成 {want} 条能单独发的短视频切片）"
-        iid = self.intake.start(prompt, inputs, [f"{p}:vertical" if p == "xiaohongshu" else p for p in plats])["id"]
+        iid = self.intake.start(prompt, inputs, [f"{p}:vertical" if p == "xiaohongshu" else p for p in plats],
+                                lang)["id"]
         wid = hashlib.sha1(f"{iid}{time.time()}{os.urandom(4).hex()}".encode()).hexdigest()[:12]
         rec = dict(id=wid, intake=iid, text=text.strip(), words=words, rule=rule, platforms=plats, times=times,
                    start=b.get("start"), today=b.get("today"), inputs=len(inputs), want=want, state="planning",

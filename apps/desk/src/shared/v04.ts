@@ -363,12 +363,14 @@ export interface IntakePlan {
   materials: IntakeMaterial[];
   projects: IntakeProject[];
   series: { id: string; name: string } | null;
-  /** text in the content language; with a code (references/MESSAGES.md) the UI words it itself */
+  /** text in ``ui_lang``; with a code (references/MESSAGES.md) the UI words it itself */
   questions: { id: string; project?: string; text: string; code?: string; params?: EngineMsg['params']; options?: string[]; default?: string }[];
   risks: (string | EngineMsg)[];
   warnings: string[];
   estimate: { machine_min?: number; wall_min?: number; api_usd?: number };
   summary_zh: string;
+  /** the language the planner wrote the questions, risks and reasons in (the UI's when the desk asked; older plans: none) */
+  ui_lang?: 'en' | 'zh' | 'fr';
   revisions?: { prompt: string; at: string; changes?: string[] }[];
 }
 
@@ -407,6 +409,8 @@ export interface IntakeJob {
   progress?: IntakeProgress | null;
   prompt?: string;
   inputs?: string[];
+  /** the planner's language for this job (``--ui-lang``): en | zh | fr */
+  lang?: string | null;
   plan: IntakePlan | null;
   error?: string | null;
   error_code?: import('./v02').FailureCode | null;

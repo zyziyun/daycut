@@ -100,8 +100,8 @@ def catalog():
 
 PHRASE_TABLE = "\n".join(f"- {rid}: {', '.join(ph)}" for rid, ph, _ in R.PHRASES)
 
-SYSTEM = """You are the intake planner of video-studio, a video-editing toolkit for a Chinese creator (小红书 / 抖音 /
-YouTube / B站). The creator described what she wants in natural language and dropped some materials. Turn that into
+SYSTEM = """You are the intake planner of video-studio, a video-editing toolkit for creators (TikTok / YouTube / 小红书 /
+抖音 / B站). The creator described what she wants in natural language and dropped some materials. Turn that into
 a PLAN of one or more sub-projects, each run by exactly one RECIPE from the catalog (never invent a recipe, an
 input key or a param; mixing recipes across sub-projects is fine, e.g. a course recording -> longform slices + an
 explainer series from the PDF + 口播 scripts from the notes).
@@ -129,25 +129,43 @@ Rules:
 - summary_zh: ONE short paragraph for the creator, in the language of her request (Chinese for a Chinese request,
   English for an English one): what will be made from what, key settings, what she will be asked to confirm.
   No markdown.
+- Every other text she reads on the plan card (why, focus, questions with their options and default, risks) is
+  written in "reply_language" from the request document - whatever language the materials, the platforms or the
+  defaults are in. Clip titles follow the material's spoken language.
 
 Phrase table (what the creator typically says -> recipe):
 {phrases}
 
 Return ONE JSON object:
-{{"projects": [{{"recipe": "<catalog id>", "name": "<short name>", "why": "<zh, one line>",
+{{"projects": [{{"recipe": "<catalog id>", "name": "<short name>", "why": "<reply_language, one line>",
    "materials": ["f1"], "inputs": {{"<input key>": ["f1"] or "<text>"}},
-   "items": {{"method": "per-file|single|planner|focus|episodes|list", "count": <int or null>, "focus": "<zh or null>",
-             "rows": [{{"id": "<slug>", "title": "<zh>", "range": [<start_s>, <end_s>], "inputs": {{}}, "params": {{}},
-                       "why": "<zh>"}}]}},
+   "items": {{"method": "per-file|single|planner|focus|episodes|list", "count": <int or null>, "focus": "<reply_language or null>",
+             "rows": [{{"id": "<slug>", "title": "<material language>", "range": [<start_s>, <end_s>], "inputs": {{}}, "params": {{}},
+                       "why": "<reply_language>"}}]}},
    "params": {{"<param>": <value>}}}}],
- "questions": [{{"project": <index>, "text": "<zh>", "options": ["..."], "default": "..."}}],
- "risks": ["<zh>"],
- "summary_zh": "<zh paragraph>"}}"""
+ "questions": [{{"project": <index>, "text": "<reply_language>", "options": ["<reply_language>"],
+                "default": "<one of options>"}}],
+ "risks": ["<reply_language>"],
+ "summary_zh": "<paragraph in the request's language>"}}"""
 
 
-def _prompt_doc(prompt, analysis, ctx, transcripts, current=None, instruction=None):
+# the languages a plan card's texts can be written in (the desk's UI languages): code -> the name the model reads
+REPLY_LANGS = {"en": "English", "zh": "Simplified Chinese", "fr": "French"}
+
+
+def reply_lang(prompt, ui_lang=None):
+    """The language of the plan card's model-written texts (questions, risks, why): the UI's language when the
+    caller gives one ("zh-CN" -> "zh"), else the request's own (an English request -> "en")."""
+    code = (ui_lang or "").split("-")[0].lower()
+    if code in REPLY_LANGS:
+        return code
+    from vstudio.publish import detect_lang
+    return "en" if detect_lang(prompt or "") == "en" else "zh"
+
+
+def _prompt_doc(prompt, analysis, ctx, transcripts, current=None, instruction=None, ui_lang=None):
     comp = I.compact(analysis)
-    doc = dict(request=prompt, materials=comp,
+    doc = dict(request=prompt, reply_language=REPLY_LANGS[reply_lang(prompt, ui_lang)], materials=comp,
                defaults=dict(platforms=ctx["platforms"], cleanup=ctx["cleanup"],      # speed: each recipe's own
                              language=ctx["language"], client=ctx.get("client_name"), style=ctx.get("style") or None),
                catalog=catalog())
@@ -866,7 +884,7 @@ def cli_timeout_for(chars):
 
 
 def _call_model(prompt, analysis, ctx, transcripts, provider=None, model=None, current=None, instruction=None,
-                call=None, timeout=None, on_event=None):
+                call=None, timeout=None, on_event=None, ui_lang=None):
     route = LLM.route(TASK, provider, model, ctx.get("llm_config"))
     info = dict(provider=route.provider, model=route.model, route=route.source)
     if route.provider == "none" and call is None:
@@ -874,7 +892,7 @@ def _call_model(prompt, analysis, ctx, transcripts, provider=None, model=None, c
         return None, info
     I.emit(on_event, stage="model", provider=route.provider, model=route.model)
     system = SYSTEM.format(phrases=PHRASE_TABLE)
-    body = _prompt_doc(prompt, analysis, ctx, transcripts, current, instruction)
+    body = _prompt_doc(prompt, analysis, ctx, transcripts, current, instruction, ui_lang)
     t0 = time.time()
     try:
         if call is not None:
@@ -993,8 +1011,9 @@ def _plan_id(prompt):
 
 
 def make_plan(prompt, inputs=None, client=None, provider=None, model=None, analysis=None, asr="auto", auto=None,
-              call=None, echo=None, language=None, timeout=None, on_event=None):
-    """-> plan dict. ``call(system, prompt) -> {json, model, cost_usd}`` replaces the model (tests). ``on_event``:
+              call=None, echo=None, language=None, timeout=None, on_event=None, ui_lang=None):
+    """-> plan dict. ``call(system, prompt) -> {json, model, cost_usd}`` replaces the model (tests). ``ui_lang``: the
+    language the creator reads the plan card in (en | zh | fr; default: the request's), see ``reply_lang``. ``on_event``:
     progress, one dict per step - the inventory's (scan / probe / listen / faces / transcribe, see ``inventory``),
     then {event: stage, stage: model, provider, model} for the AI call and {event: stage, stage: write}."""
     if analysis is None:
@@ -1010,8 +1029,9 @@ def make_plan(prompt, inputs=None, client=None, provider=None, model=None, analy
         if need:
             analysis = _upgrade_transcripts(analysis, need, language, echo, on_event)
     transcripts = _transcripts(analysis) if intent.get("extract") else {}
+    ui_lang = reply_lang(prompt, ui_lang)
     js, info = _call_model(prompt, analysis, ctx, transcripts, provider, model, call=call, timeout=timeout,
-                           on_event=on_event)
+                           on_event=on_event, ui_lang=ui_lang)
     I.emit(on_event, stage="write")
     warn = []
     questions, risks, summary = [], [], None
@@ -1053,7 +1073,7 @@ def make_plan(prompt, inputs=None, client=None, provider=None, model=None, analy
                                     asr=analysis.get("asr"), notes=analysis.get("notes") or []),
         materials=_materials(analysis), projects=projects,
         series=_series_for(projects, prompt), questions=_norm_questions(questions, projects), risks=risks,
-        warnings=warn, run=dict(pilot=1, auto=auto_ids))
+        warnings=warn, run=dict(pilot=1, auto=auto_ids), ui_lang=ui_lang)
     account_inputs(plan, analysis)
     plan["estimate"] = EST.total(projects)
     plan["summary_zh"] = with_look(summary, plan, _lang(plan)) if (summary and not info.get("fallback")) \
@@ -1125,10 +1145,12 @@ def _norm_questions(qs, projects):
 
 
 def revise(plan, instruction, provider=None, model=None, call=None, client=None, echo=None, timeout=None,
-           on_event=None):
+           on_event=None, ui_lang=None):
     """Follow-up instruction -> updated plan (model first, rules as the fallback). The analysis is re-read from
-    the cache (no media work unless the cache was cleared). ``on_event``: as ``make_plan``."""
+    the cache (no media work unless the cache was cleared). ``on_event``: as ``make_plan``; ``ui_lang``: as
+    ``make_plan`` (default: the plan's own)."""
     plan = copy.deepcopy(plan)
+    plan["ui_lang"] = reply_lang(plan["prompt"], ui_lang or plan.get("ui_lang"))
     analysis = I.analyze(plan["analysis"]["inputs"], asr=plan["analysis"].get("asr") or "sample", echo=echo,
                          on_event=on_event)
     if any(x.get("transcript") for x in plan.get("materials") or []):
@@ -1144,7 +1166,8 @@ def revise(plan, instruction, provider=None, model=None, call=None, client=None,
             intent_now[k] = follow[k]
     transcripts = _transcripts(analysis) if intent.get("extract") else {}
     js, info = _call_model(plan["prompt"], analysis, ctx, transcripts, provider, model, current=plan,
-                           instruction=instruction, call=call, timeout=timeout, on_event=on_event)
+                           instruction=instruction, call=call, timeout=timeout, on_event=on_event,
+                           ui_lang=plan["ui_lang"])
     I.emit(on_event, stage="write")
     warn, notes = [], []
     projects = []

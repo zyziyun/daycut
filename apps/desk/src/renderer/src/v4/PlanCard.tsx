@@ -38,6 +38,20 @@ export function planFacts(plan: IntakePlan) {
   return { clips, sizes, plats, wall, usd };
 }
 
+const HTML_LANG = { en: 'en', zh: 'zh-CN', fr: 'fr' } as const;
+
+/** The "things for you to decide" lines: the planner's questions, then its risks. A coded line is worded by the UI
+ * (no lang of its own); the planner's free text carries the language it was written in (``plan.ui_lang``). */
+export function decideLines(plan: IntakePlan): { text: string; lang?: string }[] {
+  const lang = plan.ui_lang ? HTML_LANG[plan.ui_lang] : undefined;
+  return [
+    ...(plan.questions ?? []).map((q) =>
+      q.code ? { text: emsg({ code: q.code, params: q.params, message: q.text, message_zh: q.text }) } : { text: q.text, lang },
+    ),
+    ...(plan.risks ?? []).map((r) => (typeof r === 'string' ? { text: r, lang } : { text: emsg(r) })),
+  ];
+}
+
 const STATE_KEY = {
   done: 'plan.step.state.done',
   current: 'plan.step.state.current',
@@ -172,10 +186,7 @@ export function PlanCard({ job, jobId, onRevise, onRetry, onReset, onStarted, sa
   const noAi = Boolean(plan.planner?.fallback);
   const rows = plan.projects.flatMap((p) => (p.items?.rows ?? []).map((r) => ({ p, r }))).slice(0, 8);
   const video = plan.materials.find((m) => m.kind === 'video');
-  const questions = [
-    ...(plan.questions ?? []).map((q) => (q.code ? emsg({ code: q.code, params: q.params, message: q.text, message_zh: q.text }) : q.text)),
-    ...(plan.risks ?? []).map((r) => emsg(r)),
-  ];
+  const questions = decideLines(plan);
   const start = async () => {
     if (!client) return;
     setStarting(true);
@@ -280,8 +291,8 @@ export function PlanCard({ job, jobId, onRevise, onRetry, onReset, onStarted, sa
           <div>
             <b style={{ fontWeight: 500 }}>{t('plan.decide', { n: questions.length })}</b>
             {questions.map((q, i) => (
-              <div key={i} className="muted" lang="zh-CN">
-                {q}
+              <div key={i} className="muted" lang={q.lang}>
+                {q.text}
               </div>
             ))}
           </div>
