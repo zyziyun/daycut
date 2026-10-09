@@ -15,6 +15,18 @@ App releases are tagged `v*`; engine-only releases are tagged `engine-v*`.
   their archive date and a **Restore** button (single or bulk); search and type filters work there, and an archived
   project still opens. Nothing on disk is deleted, and a project with a run going is never archived. Engine:
   `POST /api/history/archive` / `restore` (`{dir}` or `{dirs}`), `GET /api/history?archived=1`.
+- **Promo montage from b-roll**: `montage.clips` entries can name a source, `[source, start, end, label]` (a `broll`
+  index or file name; the old `[start, end, label]` still reads `highlights`). Each clip is re-encoded onto the
+  canvas (vertical clips get a blurred-fill pillarbox, 16:9 is cover-fit) with the privacy crop resolved per source.
+
+### Fixed
+
+- Promo post copy no longer appends the persona's default (career) hashtags: it uses `publish.tag_sets.promo`, or
+  only the post's own tags when the persona has none.
+- Delivered promos are no longer ~15 Mbps when ffmpeg has no libx264: the render is re-encoded to the platform's
+  bitrate target (8 Mbps at 1080p30 for YouTube / 小红书, 6 Mbps for B站) and the delivered size is reported.
+- The planner waits long enough for Claude Code on a typical intake (150 s floor, measured) before using Codex.
+- The promo footage map no longer flags an `about:` label that is on the card itself (scene title / items, pip tag).
 
 ## [0.2.2] - 2026-10-08
 

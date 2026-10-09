@@ -14,7 +14,7 @@ import os
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from common import Project  # noqa: E402
-from vstudio import publish  # noqa: E402
+from vstudio import formats, publish  # noqa: E402
 
 
 def main():
@@ -29,9 +29,10 @@ def main():
     if os.path.exists(tl_path) and post.get("chapters", True):
         chapters = json.load(open(tl_path, encoding="utf-8"))["chapters"]
     warns = []
+    use_p, tag_set = formats.post_tags("promo", post)     # persona publish.tag_sets.promo, never the career tags
     text = publish.post_body(None, post.get("body", []), chapters=chapters, links=post.get("links", []),
                              tags=post.get("tags", []), platform=a.platform, title=post.get("title", ""),
-                             warn=warns.append, use_persona_tags=post.get("use_persona_tags", True), tag_set=post.get("tag_set"))
+                             warn=warns.append, use_persona_tags=use_p, tag_set=tag_set)
     out = prj.p(post.get("out", "post.md"))
     open(out, "w", encoding="utf-8").write(text)
     print(text)

@@ -210,3 +210,26 @@ def test_order_key_puts_international_first_for_every_spelling():
     assert sorted(keys, key=P.order_key) == ["youtube-shorts-vertical", "tiktok", "xiaohongshu-full",
                                               "douyin:vertical", "视频号", "bilibili"]
     assert P.order_key("nope") == len(P.ORDER)
+
+
+def test_delivery_bitrate_targets():
+    """Hardware-encoder delivery target: 8 Mbps at 1080p30 (YouTube / 小红书), scaled by pixel rate, capped by the
+    profile's maxrate; B站 6 Mbps (it re-encodes above)."""
+    from vstudio import platform as PF
+    assert PF.delivery_bitrate(None) == 8_000_000
+    yt = PF.profile("youtube", use_persona=False)
+    assert PF.delivery_bitrate(yt, 1920, 1080, 30) == 8_000_000
+    assert 13_000_000 <= PF.delivery_bitrate(yt, 1920, 1080, 60) <= 14_000_000
+    assert PF.delivery_bitrate(yt, 3840, 2160, 30) == 16_000_000                 # the 16 M maxrate cap
+    assert PF.delivery_bitrate(PF.profile("xiaohongshu", "vertical", use_persona=False), 1080, 1440, 30) < 8_000_000
+    assert PF.delivery_bitrate(PF.profile("bilibili", use_persona=False), 1920, 1080, 30) == 6_000_000
+
+
+def test_delivery_args_hw_bitrate_only_for_non_x264():
+    from vstudio import media
+    vt = media.delivery_args(encoder="videotoolbox", hw_bitrate="8M", audio=None)
+    assert vt[vt.index("-b:v") + 1] == "8000000" and "-q:v" not in vt
+    x = media.delivery_args(encoder="libx264", crf=18, hw_bitrate="8M", maxrate="12M", audio=None)
+    assert "-crf" in x and "-b:v" not in x and "-maxrate" in x
+    explicit = media.delivery_args(encoder="videotoolbox", vbitrate="5M", hw_bitrate="8M", audio=None)
+    assert explicit[explicit.index("-b:v") + 1] == "5000000"

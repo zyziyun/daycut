@@ -846,21 +846,23 @@ def summary_zh(plan):
 
 
 # --------------------------------------------------------------------------- the model call
-# s per CLI provider attempt (claude-code / codex), then the next one in the chain: the same 90 s per-attempt policy as
-# Create (VSTUDIO_CREATE_AI_TIMEOUT) and the publish copy calls - for a small request. A big intake (a long transcript,
-# a folder of 1,000+ files: ~95k chars / ~47k tokens) takes Claude Code ~140 s to answer with a plan (measured with
-# claude 2.1.153 / Opus), so the limit grows with the prompt: +CLI_TIMEOUT_PER_1K s per 1,000 chars past
-# CLI_TIMEOUT_BASE_CHARS, at most MAX_CLI_TIMEOUT.
-DEFAULT_CLI_TIMEOUT = 90
+# s per CLI provider attempt (claude-code / codex), then the next one in the chain. Measured with claude 2.1.153 / Opus
+# (`claude -p`, the planner system prompt + a synthetic intake): 35.6k chars (a 13-file intake) 78 / 84 / 90 s,
+# 60k 91 / 104 s, 95k 75 / 64 s - the plan's length (3-5k output tokens) drives it more than the prompt. The old 90 s floor
+# + 2.5 s / 1k gave 129 s at 35.6k and real intakes with a longer plan ran out, so the floor carries ~1.7x the slowest
+# measurement: CLI_TIMEOUT_FLOOR s up to CLI_TIMEOUT_BASE_CHARS, +CLI_TIMEOUT_PER_1K s per 1,000 chars past it, at
+# most MAX_CLI_TIMEOUT (35.6k -> 181 s, 60k -> 230 s, 95k -> 300 s).
+CLI_TIMEOUT_FLOOR = 150
+DEFAULT_CLI_TIMEOUT = CLI_TIMEOUT_FLOOR          # back-compat name
 CLI_TIMEOUT_BASE_CHARS = 20000
-CLI_TIMEOUT_PER_1K = 2.5
+CLI_TIMEOUT_PER_1K = 2.0
 MAX_CLI_TIMEOUT = 420
 
 
 def cli_timeout_for(chars):
     """Seconds one CLI provider gets for an intake prompt of ``chars`` characters (system + body)."""
     extra = max(0, int(chars) - CLI_TIMEOUT_BASE_CHARS) / 1000 * CLI_TIMEOUT_PER_1K
-    return float(min(MAX_CLI_TIMEOUT, round(DEFAULT_CLI_TIMEOUT + extra)))
+    return float(min(MAX_CLI_TIMEOUT, round(CLI_TIMEOUT_FLOOR + extra)))
 
 
 def _call_model(prompt, analysis, ctx, transcripts, provider=None, model=None, current=None, instruction=None,

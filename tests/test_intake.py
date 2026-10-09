@@ -545,8 +545,9 @@ def test_cli_plan_revise_apply(tmp_path):
     assert r.returncode == 5 and json.loads(r.stdout)["ok"] is False
 
 
-def test_intake_cli_attempt_is_90s(monkeypatch):
-    """Each CLI provider attempt gets 90 s (the same per-attempt policy as Create), then the chain's fallback."""
+def test_intake_cli_attempt_has_a_floor(monkeypatch):
+    """Even a small intake writes a 2-3k token plan (60-90 s on Claude Code): each CLI provider attempt gets at least
+    CLI_TIMEOUT_FLOOR s, then the chain's fallback."""
     seen = {}
 
     def complete(task, system, body, **kw):
@@ -558,7 +559,7 @@ def test_intake_cli_attempt_is_90s(monkeypatch):
                                                                              source="test"))())
     monkeypatch.setattr(PL, "_prompt_doc", lambda *a, **k: "request")
     js, info = PL._call_model("剪干净", {}, {}, {})
-    assert js is None and info["fallback"] and seen["cli_timeout"] == 90
+    assert js is None and info["fallback"] and seen["cli_timeout"] == PL.CLI_TIMEOUT_FLOOR == 150
 
 
 def test_intake_cli_attempt_grows_with_the_prompt(monkeypatch):
@@ -576,4 +577,6 @@ def test_intake_cli_attempt_grows_with_the_prompt(monkeypatch):
     monkeypatch.setattr(PL, "_prompt_doc", lambda *a, **k: "x" * 90000)
     js, info = PL._call_model("剪干净", {}, {}, {})
     assert seen["cli_timeout"] >= 240 and info["cli_timeout"] == seen["cli_timeout"]
-    assert PL.cli_timeout_for(10 ** 7) == PL.MAX_CLI_TIMEOUT and PL.cli_timeout_for(5000) == 90
+    assert PL.cli_timeout_for(10 ** 7) == PL.MAX_CLI_TIMEOUT and PL.cli_timeout_for(5000) == PL.CLI_TIMEOUT_FLOOR
+    # a 13-file intake (~35.6k chars) took Claude Code 78-90 s (104 s at 60k): the limit keeps ~1.7x headroom
+    assert PL.cli_timeout_for(35600) >= 1.7 * 104 and PL.cli_timeout_for(60000) >= 1.7 * 104

@@ -1,6 +1,7 @@
 """Recurring formats (vstudio.formats) and the first-pass check (vstudio.firstpass) run before a result is shown."""
 import json
 import os
+import pathlib
 import subprocess
 import sys
 
@@ -254,3 +255,36 @@ def test_intake_routes_a_podcast_cut_into_clips_to_call_clips():
         assert max(sc, key=sc.get) == "call-clips", (t, sc)
     sc = recipe_scores("把这节课切片")
     assert max(sc, key=sc.get) == "longform-to-short"
+
+
+def test_promo_post_never_gets_the_default_career_tags():
+    """A promo / review post uses persona publish.tag_sets.promo, or only its own tags when there is none."""
+    assert F.get("promo", persona_formats={})["tag_set"] == "promo"
+    assert F.post_tags("promo", {}, persona_formats={}, tag_sets={}) == (False, None)
+    assert F.post_tags("promo", {}, persona_formats={}, tag_sets={"promo": ["AI视频"]}) == (True, "promo")
+    assert F.post_tags("promo", {"tag_set": "tech"}, persona_formats={}, tag_sets={}) == (True, "tech")
+    assert F.post_tags("promo", {"use_persona_tags": False}, persona_formats={}, tag_sets={"promo": ["x"]}) == (False, None)
+    assert F.post_tags("talking-head", {}, persona_formats={}, tag_sets={}) == (True, None)   # default tags stay
+    assert F.post_tags("lesson-points", {}, persona_formats={}, tag_sets={"": ["x"]}) == (False, None)
+
+
+def test_promo_post_copy_script_drops_career_tags(tmp_path, monkeypatch):
+    import subprocess
+    import sys
+    import yaml
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "persona.local.yaml").write_text(yaml.safe_dump(
+        {"publish": {"tags": ["AIEngineer", "北美求职", "转码"]}}, allow_unicode=True), encoding="utf-8")
+    cfg = tmp_path / "promo.config.yaml"
+    cfg.write_text(yaml.safe_dump({"talk": "t.mp4", "post": {"title": "四个 AI 视频平台横评", "body": ["实测对比"],
+                                                              "tags": ["AI视频", "可灵"], "chapters": False}},
+                                  allow_unicode=True), encoding="utf-8")
+    script = pathlib.Path(__file__).resolve().parents[1] / "workflows" / "promo-recut" / "scripts" / "post_copy.py"
+    env = dict(os.environ, VSTUDIO_DEFAULT_PERSONA="1", VSTUDIO_PERSONA=str(home / "persona.local.yaml"))
+    r = subprocess.run([sys.executable, str(script), str(cfg), "--platform", "xiaohongshu"], capture_output=True,
+                       text=True, encoding="utf-8", env=env)
+    assert r.returncode == 0, r.stderr
+    text = (tmp_path / "post.md").read_text(encoding="utf-8")
+    assert "#AI视频" in text and "#可灵" in text
+    assert "北美求职" not in text and "AIEngineer" not in text

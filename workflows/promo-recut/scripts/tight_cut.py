@@ -9,7 +9,8 @@
   --draft-subs  print subtitle lines (raw seconds) from the words that survive the cleanup
   (default)     grade the raw, cleanup.apply per part (auto edits + cut.reply, never a CONFIRM row without a
                 yes) -> work/body.mp4, outro.mp4, extra cuts (+ <part>.cleanup.json sidecars), loudnorm; the
-                highlights montage with internal crossfades; work/layout.json (raw -> cut TimeMaps, word times)
+                montage with internal crossfades (from `highlights`, or per clip from a `broll` source: each
+                segment re-encoded to the canvas, privacy-cropped per source); work/layout.json
   --verify      cleanup.verify every part: re-ASR, lost content words -> exit 1; leftover fillers / repeats listed
 
 Legacy config keys still work, translated to cleanup decisions: cut.drop [a, b) (word START in the range)
@@ -21,11 +22,13 @@ Run from anywhere:  python3 $VSTUDIO/workflows/promo-recut/scripts/tight_cut.py 
 """
 import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
 import argparse
+import hashlib
 import json
+import math
 import os
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from common import Project, P, hook_speed  # noqa: E402
+from common import Project, P, hook_speed, montage_clips, resolve_source  # noqa: E402
 import screen_crop  # noqa: E402
 from vstudio import asr, audio, cleanup, cut, media  # noqa: E402
 
@@ -263,10 +266,14 @@ def render_checked(asm, src, out, workdir, fps=30, what="montage", tol=0.5, args
     (or long) render means the source's timestamps are not continuous: re-encode it to a clean CFR copy in
     workdir and retry once; still off -> a clear error. Returns the source actually used."""
     args = enc_args() if args is None else args
-    cut.render_assembly(asm, [src], out, args=args)
+    many = isinstance(src, (list, tuple))
+    cut.render_assembly(asm, list(src) if many else [src], out, args=args)
     got = media.duration(out)
     if abs(got - asm.total) <= tol:
         return src
+    if many:                                     # clean CFR parts already: nothing to re-encode
+        raise SystemExit(f"{what}: rendered {got:.2f}s but planned {asm.total:.2f}s (clips - crossfades) from "
+                         f"{len(src)} re-encoded segments: check the clip times")
     print(f"  {what}: rendered {got:.2f}s but planned {asm.total:.2f}s (clips - crossfades): the source's timestamps "
           "look discontinuous; re-encoding it to a clean CFR copy and retrying")
     fixed = clean_cfr(src, workdir, fps)
@@ -288,6 +295,116 @@ def montage(src, clips, out, xf, scale, fps, lufs, workdir=None):
                    args=media.delivery_args(crf=16, preset="fast", faststart=False, audio_bitrate="192k"))
     audio.loudnorm_2pass(tmp, out, lufs=lufs)
     os.remove(tmp)
+
+
+def canvas_fit(src_wh, canvas_wh, rotation=0, tol=1.25):
+    """How a source frame fills the montage canvas: "crop" (cover) when its aspect is within ``tol`` of the
+    canvas (a 16:9 recording, a slightly taller cropped capture), else "blur" (sharp frame over a blurred fill
+    of itself: a vertical phone clip pillarboxed on 16:9)."""
+    w, h = src_wh
+    if int(rotation or 0) % 180 == 90:
+        w, h = h, w
+    if not w or not h:
+        return "crop"
+    r = (w / h) / (canvas_wh[0] / canvas_wh[1])
+    return "crop" if abs(math.log(r)) <= math.log(tol) else "blur"
+
+
+def _size(scale):
+    w, h = str(scale).replace("x", ":").split(":")
+    return int(w), int(h)
+
+
+def segment_cmd(src, start, dur, out, scale, fps, fit, has_audio):
+    """ffmpeg argv: [start, start + dur) of ``src`` re-encoded onto the ``scale`` canvas at ``fps`` (fit "crop" =
+    cover, "blur" = blurred-fill pillarbox / letterbox), 48 kHz stereo audio (silence when the source has none)."""
+    W, H = _size(scale)
+    chain = cut.fit_chain((W, H), fit)
+    if fit == "blur":
+        chain = chain.replace("{L}", "m")
+    g = f"[0:v]fps={fps},{chain},setsar=1,format=yuv420p[vout]"
+    cmd = ["ffmpeg", "-y", "-ss", f"{start:.3f}", "-i", src]
+    if has_audio:
+        g += ";[0:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo[aout]"
+        amap = "[aout]"
+    else:
+        cmd += ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"]
+        amap = "1:a"
+    return cmd + ["-filter_complex", g, "-map", "[vout]", "-map", amap, "-t", f"{dur:.3f}",
+                  *media.delivery_args(crf=16, preset="fast", faststart=False, audio_bitrate="192k"), out]
+
+
+def render_segment(src, start, end, out, scale, fps, fit, workdir, tol=0.5, k=0):
+    """One montage segment (``segment_cmd``) + the duration check: off by more than ``tol`` -> retry from a clean
+    CFR copy of the source (discontinuous timestamps); still off -> a clear error."""
+    info = media.probe(src)
+    sd = info.get("duration") or media.duration(src)
+    if end > sd + 0.05:
+        raise SystemExit(f"montage.clips[{k}]: [{start}, {end}] ends past {os.path.basename(src)} ({sd:.2f}s)")
+    want = end - start
+    has_a = bool(info.get("has_audio"))
+    media.run(segment_cmd(src, start, want, out, scale, fps, fit, has_a))
+    got = media.duration(out)
+    if abs(got - want) <= tol:
+        return out
+    print(f"  montage[{k}]: rendered {got:.2f}s but planned {want:.2f}s: the source's timestamps look discontinuous; "
+          "re-encoding it to a clean CFR copy and retrying")
+    media.run(segment_cmd(clean_cfr(src, workdir, fps), start, want, out, scale, fps, fit, has_a))
+    got = media.duration(out)
+    if abs(got - want) > tol:
+        raise SystemExit(f"montage.clips[{k}]: rendered {got:.2f}s but planned {want:.2f}s even from a clean re-encode "
+                         f"of {os.path.basename(src)} ({sd:.2f}s long)")
+    return out
+
+
+def montage_sources(prj, clips, highlights_crop=None):
+    """Per clip: (source path after its privacy crop, crop box or None). The crop resolves per source: clip
+    ``crop`` > for the highlights file montage.crop (``highlights_crop``) > unset = auto for files named like a
+    screen recording (screen_crop). montage.crop never switches a b-roll recording's auto crop off."""
+    out, done = [], {}
+    for k, c in enumerate(clips):
+        path = resolve_source(prj, c["src"], k)
+        hl = c["src"] in (None, "highlights")
+        spec = c["crop"] if "crop" in c else (highlights_crop if hl else None)
+        key = (path, json.dumps(spec))
+        if key not in done:
+            done[key] = screen_crop.clean(path, spec, prj.work)
+        out.append(done[key])
+    return out
+
+
+def montage_multi(prj, clips, out, xf, scale, fps, lufs, highlights_crop=None, force=False):
+    """Montage from named sources (b-roll recordings, finished cuts): every clip re-encoded onto the canvas
+    (vertical source: blurred-fill pillarbox; 16:9: cover; privacy crop per source) into work/montage_parts/
+    (cached by source + span + crop + canvas), then joined with crossfades, duration-checked and loudnormed.
+    Returns the sources used [(path, crop)]."""
+    srcs = montage_sources(prj, clips, highlights_crop)
+    pdir = prj.w("montage_parts")
+    os.makedirs(pdir, exist_ok=True)
+    parts, durs = [], []
+    for k, (c, (src, crop)) in enumerate(zip(clips, srcs)):
+        info = media.probe(src)
+        fit = c.get("fit") or canvas_fit((info["w"], info["h"]), _size(scale), info.get("rotation"))
+        st = os.stat(src)
+        sig = hashlib.sha1(json.dumps([os.path.abspath(src), st.st_size, st.st_mtime, c["start"], c["end"], scale, fps,
+                                       fit]).encode()).hexdigest()[:12]
+        seg = os.path.join(pdir, f"{k:02d}-{sig}.mp4")
+        if force or not os.path.exists(seg):
+            tmp = seg[:-4] + ".part.mp4"
+            render_segment(src, c["start"], c["end"], tmp, scale, fps, fit, prj.work, k=k)
+            os.replace(tmp, seg)
+        print(f"  montage[{k}] {os.path.basename(src)} {c['start']:g}-{c['end']:g}s ({fit}"
+              + (f", crop {crop}" if crop else "") + ")")
+        parts.append(seg)
+        durs.append(media.duration(seg))
+    asm = cut.xfade_assemble([(k, 0.0, d) for k, d in enumerate(durs)], xfade=xf, mute_pad=False, fps=fps,
+                             src_durations=durs)
+    tmp = out[:-4] + ".raw.mp4"
+    render_checked(asm, parts, tmp, prj.work, fps,
+                   args=media.delivery_args(crf=16, preset="fast", faststart=False, audio_bitrate="192k"))
+    audio.loudnorm_2pass(tmp, out, lufs=lufs)
+    os.remove(tmp)
+    return srcs
 
 
 # ---------------------------------------------------------------- hooks (the creator's picks, never auto)
@@ -415,10 +532,11 @@ def do_cut(prj, args):
         print(f"  {name}: {len(res['keep'])} segments, {len(res['applied'])} cleanup edits -> {layout['D'][name]:.2f}s")
 
     m = prj.get("montage") or {}
-    if m.get("clips"):
-        clips = [(c[0], c[1]) for c in m["clips"]]
+    mc = montage_clips(prj)
+    if mc and all(c["src"] is None and "crop" not in c and "fit" not in c for c in mc):
+        clips = [(c["start"], c["end"]) for c in mc]       # the highlights file: one source, trimmed in one graph
         out = prj.w("montage.mp4")
-        hsrc, crop = screen_crop.clean(prj.p(prj.cfg["highlights"]), m.get("crop"), prj.work)   # privacy crop
+        hsrc, crop = screen_crop.clean(resolve_source(prj, None), m.get("crop"), prj.work)   # privacy crop
         stamp = prj.w("montage.src")
         want = f"{hsrc}|{crop}"
         stale = open(stamp).read() != want if os.path.exists(stamp) else crop is not None
@@ -427,6 +545,19 @@ def do_cut(prj, args):
             open(stamp, "w").write(want)
         layout["D"]["montage"] = media.duration(out)
         layout["clips"] = [[c[0], c[1]] for c in clips]
+    elif mc:                                                # named sources (broll): one re-encoded segment per clip
+        out = prj.w("montage.mp4")
+        stamp = prj.w("montage.src")
+        xf, scale = m.get("crossfade", 0.3), m.get("scale", "1920:1080")
+        want = json.dumps(dict(clips=mc, crop=m.get("crop"), xf=xf, scale=scale, fps=fps, lufs=voice - 1,
+                               src=[resolve_source(prj, c["src"], k) for k, c in enumerate(mc)]), ensure_ascii=False)
+        stale = not os.path.exists(stamp) or open(stamp, encoding="utf-8").read() != want
+        if args.remontage or not os.path.exists(out) or stale:
+            montage_multi(prj, mc, out, xf, scale, fps, voice - 1, m.get("crop"), force=args.remontage)
+            open(stamp, "w", encoding="utf-8").write(want)
+        layout["D"]["montage"] = media.duration(out)
+        layout["clips"] = [[os.path.basename(resolve_source(prj, c["src"], k)), c["start"], c["end"]]
+                           for k, c in enumerate(mc)]
     hd, ht = build_hooks(prj, graded, fps, voice, force=args.regrade or args.rehook)
     if hd:
         layout["D"]["hooks"] = hd

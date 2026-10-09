@@ -19,7 +19,7 @@ import json
 import os
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from common import Project, P, link_or_copy, body_rate  # noqa: E402
+from common import Project, P, link_or_copy, body_rate, parse_clip  # noqa: E402
 import screen_crop  # noqa: E402
 from vstudio import hf, media, overlays, render  # noqa: E402
 from vstudio import platform as PF  # noqa: E402
@@ -483,9 +483,9 @@ def main():
 
     # ---------------- montage step labels (label null = previous label continues)
     mlab, t = [], 0.0
-    for clip in (mcfg.get("clips") or []) if has_m else []:
-        s, e = clip[0], clip[1]
-        lab = clip[2] if len(clip) > 2 else None
+    for k, clip in enumerate((mcfg.get("clips") or []) if has_m else []):
+        cp = parse_clip(clip, k)                    # [start, end, label] or [source, start, end, label]
+        s, e, lab = cp["start"], cp["end"], cp["label"]
         if lab:
             mlab.append({"s": r(M + TZ + t), "n": len(mlab) + 1, "t": lab})
         t += (e - s - XF) / MR
@@ -538,7 +538,8 @@ def main():
                           "hl": [[BT(tt), y0 - dy, y1 - dy, fr] for tt, y0, y1, fr in cd.get("highlights", [])],
                           **({"box": [BT(cd["box"][0]), cd["box"][1] - dy, cd["box"][2] - dy]} if cd.get("box") else {})})
             what = "img:" + os.path.basename(cd["img"])
-        footage.append(("card", cd["start"], cd["end"], s, e, what, cd.get("about")))
+        footage.append(("card", cd["start"], cd["end"], s, e, what, cd.get("about"),
+                        own_text(cd.get("scene"), cd.get("label"), cd.get("title"))))
     chips = c.get("chips") or {}
     CHIPS = [[BT(tt), txt, int(bool(star[0])) if star else 0] for tt, txt, *star in chips.get("items", [])]
     CHIP_END = BT(chips["end"]) if chips.get("end") is not None else (CARDS[-1]["e"] if CARDS else 0)
@@ -572,7 +573,7 @@ def main():
             win["images"] = [asset(screen_crop.clean(prj.p(f), w.get("crop"), prj.work)[0]) for f in imgs]
             what = f"images:{len(imgs)}"
         PIPS.append(win)
-        footage.append(("pip", w["start"], w["end"], s, e, what, w.get("about")))
+        footage.append(("pip", w["start"], w["end"], s, e, what, w.get("about"), own_text(w.get("tag"), w.get("label"))))
     PIPG = pip_layout(g) if PIPS else None
 
     chs = [list(x) for x in c.get("chapters") or []]
@@ -645,10 +646,38 @@ def main():
     print("Next: cd into it, `npx hyperframes check`, snapshot mid-transition frames, then scripts/export.sh")
 
 
+def own_text(*parts):
+    """Every string a card / pip window shows by itself (scene title, items, foot, label, pip tag ...), joined:
+    an `about` label that is on the footage itself is not a mismatch."""
+    out = []
+
+    def walk(x):
+        if isinstance(x, str):
+            out.append(x)
+        elif isinstance(x, (int, float)) and not isinstance(x, bool):
+            out.append(str(x))
+        elif isinstance(x, dict):
+            for k, v in x.items():
+                if k not in ("kind", "colors"):
+                    walk(v)
+        elif isinstance(x, (list, tuple)):
+            for v in x:
+                walk(v)
+    for p in parts:
+        walk(p)
+    return " ".join(out)
+
+
+def about_mismatch(about, said="", chapter="", own=""):
+    """True when the creator's `about` label is in none of: the captions of the window, its chapter, the text
+    the footage shows itself (scene title / items, pip tag)."""
+    return bool(about) and about.lower() not in " ".join((said, chapter, own)).lower()
+
+
 def print_footage(rows, chap, said):
     """What is on screen vs what is being said: raw time -> chapter -> footage (+ the creator's `about`
-    label and the caption at that moment). `!` = the about label is in neither the captions of the window
-    nor its chapter: likely the wrong footage for this stretch."""
+    label and the caption at that moment). `!` = the about label is in neither the captions of the window,
+    its chapter nor the footage's own text (scene title / items, pip tag): likely the wrong footage here."""
     def chapter_at(t):
         lab = ""
         for s, e, l in chap:
@@ -656,12 +685,10 @@ def print_footage(rows, chap, said):
                 lab = l
         return lab
     print("footage map (raw -> final | chapter | footage | about | said):")
-    for kind, ra, rb, fa, fb, what, about in sorted(rows, key=lambda x: x[3]):
+    for kind, ra, rb, fa, fb, what, about, *own in sorted(rows, key=lambda x: x[3]):
         txt = " ".join(t for s, e, t in said if s < fb and e > fa).replace("\n", " ")
         ch = chapter_at(fa)
-        flag = " "
-        if about and about.lower() not in (txt + " " + ch).lower():
-            flag = "!"
+        flag = "!" if about_mismatch(about, txt, ch, own[0] if own else "") else " "
         print(f" {flag} {kind:4} {float(ra):7.1f}-{float(rb):<7.1f} -> {fa:7.1f}-{fb:<7.1f} | {ch[:10]:10} | {what[:34]:34} | "
               f"{(about or '')[:12]:12} | {txt[:40]}")
 

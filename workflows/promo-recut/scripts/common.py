@@ -81,6 +81,76 @@ def hook_speed(prj):
     return float(formats.get("promo")["speed"]["hook"])
 
 
+# ---------------------------------------------------------------- montage clips
+_NUM = (int, float)
+
+
+def parse_clip(c, k=0):
+    """One montage.clips entry -> {"src": source ref or None (= highlights), "start", "end", "label", + "crop" /
+    "fit" when given}. Forms:
+      [start, end] / [start, end, label]                 the `highlights` file (label null = previous continues)
+      [source, start, end] / [source, start, end, label] source: a broll index (0 = first), a broll file name /
+                                                         stem / path, "highlights", or a config-relative path
+      {src, start, end, label, crop, fit}                the same as a mapping (crop / fit per clip)"""
+    if isinstance(c, dict):
+        src = c.get("src", c.get("source"))
+        if c.get("start") is None or c.get("end") is None:
+            raise SystemExit(f"montage.clips[{k}]: needs start and end")
+        out = dict(src=src, start=float(c["start"]), end=float(c["end"]), label=c.get("label"))
+        out.update({x: c[x] for x in ("crop", "fit") if x in c})
+    else:
+        c = list(c or [])
+        new = len(c) == 4 or (len(c) == 3 and (isinstance(c[0], str) or
+                                               (isinstance(c[2], _NUM) and not isinstance(c[2], bool))))
+        if new:
+            src, a, b, lab = (c + [None])[:4]
+        elif len(c) in (2, 3):
+            src, a, b, lab = None, c[0], c[1], (c[2] if len(c) > 2 else None)
+        else:
+            raise SystemExit(f"montage.clips[{k}]: want [start, end, label] or [source, start, end, label], got {c!r}")
+        out = dict(src=src, start=float(a), end=float(b), label=lab)
+    if isinstance(out["src"], bool) or (out["src"] is not None and not isinstance(out["src"], (str, int))):
+        raise SystemExit(f"montage.clips[{k}]: source {out['src']!r}: a broll index, file name or path")
+    if out["end"] - out["start"] < 0.5:
+        raise SystemExit(f"montage.clips[{k}]: [{out['start']}, {out['end']}] is shorter than 0.5 s")
+    return out
+
+
+def montage_clips(prj):
+    """config montage.clips, parsed (``parse_clip``); [] when there is no montage."""
+    return [parse_clip(c, k) for k, c in enumerate((prj.get("montage") or {}).get("clips") or [])]
+
+
+def broll_list(prj):
+    """The project's b-roll videos (config ``broll``: one path or a list), absolute."""
+    b = prj.get("broll") or []
+    return [prj.p(x) for x in ([b] if isinstance(b, str) else b) if x]
+
+
+def resolve_source(prj, ref, k=0):
+    """A clip's source ref -> absolute path. None / "highlights" = config highlights; an int = broll[ref];
+    a string = the broll entry with that path / file name / stem, else a config-relative path."""
+    br = broll_list(prj)
+    if ref is None or ref == "highlights":
+        if not prj.get("highlights"):
+            raise SystemExit(f"montage.clips[{k}]: no source named and the config has no highlights file: "
+                             "use [source, start, end, label] with a broll index or file name")
+        return prj.p(prj.get("highlights"))
+    if isinstance(ref, int):
+        if not 0 <= ref < len(br):
+            raise SystemExit(f"montage.clips[{k}]: broll index {ref} out of range (have {len(br)}: 0..{len(br) - 1})")
+        return br[ref]
+    for x in br:
+        base = os.path.basename(x)
+        if ref in (x, base, os.path.splitext(base)[0]):
+            return x
+    p = prj.p(ref)
+    if os.path.exists(p):
+        return p
+    names = ", ".join(f"{i}: {os.path.basename(x)}" for i, x in enumerate(br)) or "none"
+    raise SystemExit(f"montage.clips[{k}]: source {ref!r} is not a broll file ({names}) nor an existing path")
+
+
 def P(dotted, default=None):
     """persona lookup with a safe default, e.g. P('audio.loudness_lufs', -14)."""
     cur = persona()
