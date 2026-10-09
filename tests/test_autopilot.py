@@ -118,6 +118,8 @@ def test_cli_autopilot_flags_persist_and_ask_first_switches_back(tmp_path):
     assert d["decisions"] == [] and d["history"][0]["blocker"] == "needs-input"
     r = cli("resume", "--dir", p.dir, "--ask-first", "--json")
     assert json.loads(r.stdout)["autopilot"] is False
+    r = cli("autopilot", "--dir", p.dir, "--on", "--spend-cap", "3", "--no-judge", "--json")   # switch, no run
+    assert json.loads(r.stdout)["autopilot"] == dict(on=True, spend_cap=3.0, judge=False, ask=[], lang="fr")
 
 
 @pytest.fixture(scope="module")
@@ -173,3 +175,15 @@ def test_talkinghead_on_autopilot_runs_to_done_and_a_decision_can_be_taken_back(
     assert "cover" not in {d["checkpoint"] for d in AP.decisions(Project(p.dir))}   # hers now, not the AI's
     cov = [(e["event"], e.get("blocker")) for e in AP.history(Project(p.dir)) if e.get("checkpoint") == "cover"]
     assert cov[0][0] == "decided" and ("reopened", None) in cov and ("blocked", "asked") in cov
+
+
+def test_projects_registered_at_once_all_stay_listed(tmp_path, monkeypatch):
+    """Several projects started together (the desk's autopilot runs them side by side) all keep their registry row."""
+    from concurrent.futures import ProcessPoolExecutor
+    from vstudio.project import home as HM
+    monkeypatch.setenv("VSTUDIO_HOME", str(tmp_path / "shared"))
+    os.makedirs(str(tmp_path / "shared"), exist_ok=True)
+    dirs = [str(tmp_path / "shared" / f"p{k}") for k in range(12)]
+    with ProcessPoolExecutor(6) as ex:
+        list(ex.map(HM.register, dirs))
+    assert {p["dir"] for p in HM.projects()} == set(dirs)

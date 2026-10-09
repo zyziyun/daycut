@@ -522,6 +522,7 @@ class Project:
                 emit(dict(event="project-end", ts=now(), status="busy", exit_code=EXIT["busy"], error=str(e)))
                 return dict(status="busy", exit_code=EXIT["busy"], error=str(e))
             pend = self.pending()
+            ap = AP.refresh(self)["on"]                # switched in the app while this run goes: from now on
             if ap:
                 todo = []
                 for p in pend:

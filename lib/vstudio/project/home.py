@@ -50,7 +50,30 @@ def _live(p):
     return os.path.exists(os.path.join(d, "project.yaml"))
 
 
+class _RegistryLock:
+    """projects.json is read, changed and written by every process that makes or runs a project: several projects
+    started at once (the desk's autopilot) must not drop each other's row. One lock file next to it."""
+
+    def __enter__(self):
+        from vstudio import oscompat
+        path = registry_path() + ".lock"
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        self.f = open(path, "a")  # noqa: SIM115
+        oscompat.lock(self.f)
+        return self
+
+    def __exit__(self, *exc):
+        from vstudio import oscompat
+        oscompat.unlock(self.f)
+        self.f.close()
+
+
 def register(pdir, name=None, recipe=None, series=None, client=None, kind=None):
+    with _RegistryLock():
+        return _register(pdir, name, recipe, series, client, kind)
+
+
+def _register(pdir, name=None, recipe=None, series=None, client=None, kind=None):
     """Add / update the projects.json row of ``pdir``. ``name``, ``recipe`` or ``kind`` passed as None keep the
     row's existing value, so a partial call never rewrites a project into something else (series / client are
     taken as given: project.yaml is their source). One exception: an old ``kind: work`` row whose folder now holds
@@ -78,7 +101,8 @@ def register(pdir, name=None, recipe=None, series=None, client=None, kind=None):
 
 def unregister(pdir):
     real = os.path.realpath(pdir)
-    write_json(registry_path(), [p for p in projects() if os.path.realpath(p["dir"]) != real])
+    with _RegistryLock():
+        write_json(registry_path(), [p for p in projects() if os.path.realpath(p["dir"]) != real])
 
 
 def live_projects():

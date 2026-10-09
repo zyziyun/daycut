@@ -24,7 +24,7 @@ import threading
 import time
 
 from . import works as WK
-from .pilot import failure as pilot_failure, running as pilot_running
+from .pilot import failure as pilot_failure, queued as pilot_queued, running as pilot_running
 from .common import (batch_id, is_temp_path, keep_entry, live_status, need, prune_json_registry, read_json,
                      write_json)
 
@@ -129,6 +129,10 @@ def summarize_project(pdir):
         for k in ("name", "recipe", "client", "series"):
             if isinstance(data.get(k), str) and data[k]:
                 out[k] = data[k]
+        ap = data.get("autopilot")                  # the engine decides its checkpoints (vstudio.project.autopilot)
+        out["autopilot"] = bool(ap.get("on")) if isinstance(ap, dict) else bool(ap)
+        if isinstance(data.get("prompt"), str):
+            out["prompt"] = data["prompt"][:300]
     sdir = os.path.join(pdir, "state")
     if os.path.exists(os.path.join(sdir, "batch.db")):
         b = summarize_batch(sdir)
@@ -531,6 +535,9 @@ class History:
             run = None if kind_ == "batch" or fail else pilot_running(d)
             if run:
                 info["pilot"] = run
+            in_line = None if kind_ == "batch" or run else pilot_queued(d)
+            if in_line:
+                info["queued"] = in_line                 # waits for a free run slot (pilot.RunQueue): 1 = next
             if fail:
                 info["status"] = "failed"
                 info["failure"] = fail

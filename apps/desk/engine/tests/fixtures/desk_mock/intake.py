@@ -7,6 +7,11 @@ heartbeats like a real run, so Home's Running lane and the Inbox behave the same
   DESK_MOCK_PILOT_FAIL   auth: the pilot fails at 选段 like an expired Claude Code login, unless retried with another
                          provider
   DESK_MOCK_INTAKE_DOWN  n: the first n probes of the planning engine fail (a hiccup: the card's Try again works)
+
+Autopilot (a request sent with mode autopilot): the simulated run makes every clip (no pilot stop, no question),
+writes each finished clip into ``final/`` (a tiny real video + cover) and records what it decided in
+``.vstudio/mock-autopilot.json`` (``MockAutopilot`` serves it like ``vstudio.project decisions``). Runs go through the
+desk's run queue (``pilot.QUEUE``), so a third project waits in line like a real one.
 """
 import hashlib
 import json
@@ -189,6 +194,14 @@ def record_pilot(d, ok, error=None, provider=None):
                                           finished=time.time(), provider=provider))
 
 
+MOCK_AP = "mock-autopilot.json"
+
+
+def mock_autopilot(d):
+    """The simulated project's autopilot record: {on, decisions [like vstudio.project decisions], ask}."""
+    return read_json(os.path.join(d, ".vstudio", MOCK_AP), {}) or {}
+
+
 class MockIntake(Intake):
     """``Intake`` with the rule planner and the simulated pilot in place of ``python -m vstudio.intake``."""
 
@@ -240,17 +253,49 @@ class MockIntake(Intake):
         write_json(self._path(pid), p)
         return p
 
-    def _engine_apply(self, pid, plan, out_root, run):
+    def _engine_apply(self, pid, plan, out_root, run, autopilot=False):
         home = os.path.abspath(os.path.expanduser(os.environ.get("VSTUDIO_HOME") or "~/.config/vstudio"))
-        return self._mock_apply(plan, out_root, home, run)
+        return self._mock_apply(plan, out_root, home, run, autopilot)
 
-    def _spawn_pilot(self, d, provider=None):
+    def _spawn_pilot(self, d, provider=None, autopilot=False, lang=None):
         rec = read_json(os.path.join(d, ".vstudio", "work.json"), {}) or {}
         proj = dict(name=rec.get("title") or os.path.basename(d), items=dict(count=int(rec.get("count") or 3)))
-        write_json(os.path.join(d, P.REC), dict(pid=os.getpid(), started=time.time(), exit=None, provider=provider))
-        threading.Thread(target=self._mock_pilot, args=(d, proj, provider), daemon=True).start()
+        autopilot = autopilot or mock_autopilot(d).get("on")
+        self._queue_run(d, proj, provider, autopilot)
 
-    def _mock_apply(self, plan, out_root, home, run):
+    def _queue_run(self, d, proj, provider=None, autopilot=False, start_at=0):
+        """A simulated run through the desk's run queue (``pilot.QUEUE``): queued when the slots are taken."""
+        def start(done):
+            write_json(os.path.join(d, P.REC), dict(pid=os.getpid(), started=time.time(), exit=None, provider=provider))
+
+            def go():
+                try:
+                    if autopilot:
+                        self._mock_autopilot(d, proj, start_at)
+                    else:
+                        self._mock_pilot(d, proj, provider)
+                finally:
+                    done()
+                    if self.bus:
+                        self.bus.publish("batches")
+            threading.Thread(target=go, daemon=True).start()
+        if not P.QUEUE.submit(d, start):
+            write_json(os.path.join(d, P.REC), dict(pid=None, queued=True, queued_at=time.time(), exit=None,
+                                                    provider=provider))
+            if self.bus:
+                self.bus.publish("batches")
+
+    _apply_lock = threading.Lock()                # requests applied at once write one projects.json
+
+    def _mock_apply(self, plan, out_root, home, run, autopilot=False):
+        with self._apply_lock:
+            projects = self._mock_create(plan, out_root, home, autopilot)
+        if run:
+            for p_, proj in zip(projects, plan["projects"]):
+                self._queue_run(p_["dir"], proj, autopilot=autopilot)
+        return projects
+
+    def _mock_create(self, plan, out_root, home, autopilot=False):
         projects = []
         reg_path = os.path.join(home, "projects.json")
         reg = read_json(reg_path, []) or []
@@ -268,10 +313,59 @@ class MockIntake(Intake):
             reg.append(dict(dir=d, name=proj["name"], recipe=proj["recipe"], series=None, client=None,
                             created=time.strftime("%Y-%m-%dT%H:%M:%S"), kind="work"))
             projects.append(dict(dir=d, name=proj["name"], recipe=proj["recipe"]))
-            if run:
-                threading.Thread(target=self._mock_pilot, args=(d, proj), daemon=True).start()
+            if autopilot:
+                write_json(os.path.join(d, ".vstudio", MOCK_AP), dict(on=True, decisions=[], ask=[]))
         write_json(reg_path, reg)
         return projects
+
+    def _mock_autopilot(self, d, proj, start_at=0):
+        """The whole project, no question: each clip goes through the stages, lands in final/ and the decisions the
+        engine would have taken are recorded (one AI call for the unsure cuts, the rules for the rest)."""
+        import socket
+        from .engine import MockEngine
+        step = float(os.environ.get("DESK_MOCK_STEP", "0.25"))
+        n = int(proj["items"]["count"])
+        started = time.time()
+        stages = ("asr", "cleanup", "subs", "compose", "export", "qc", "copy")
+        os.makedirs(os.path.join(d, "final"), exist_ok=True)
+        for k in range(start_at, n):
+            if not mock_autopilot(d).get("on", True) and k > start_at:
+                # switched to "ask me first" while it ran: this clip is done, the rest waits for her
+                write_json(os.path.join(d, ".vstudio", "status.json"),
+                           dict(status="waiting", stage="review", progress=round(k / n, 2), message=f"{k}/{n}",
+                                started=started, heartbeat=time.time(), pid=os.getpid(), host=socket.gethostname(),
+                                needs_you=True, updated_by="desk-mock"))
+                return
+            for j, stage in enumerate(stages):
+                write_json(os.path.join(d, ".vstudio", "status.json"),
+                           dict(status="running", stage=stage, progress=round((k + (j + 1) / len(stages)) / n, 3),
+                                message=f"clip {k + 1} of {n}", eta=int(((n - k) * len(stages) - j) * step),
+                                started=started, heartbeat=time.time(), pid=os.getpid(), host=socket.gethostname(),
+                                updated_by="desk-mock"))
+                if self.bus:
+                    self.bus.publish("batches")
+                time.sleep(step)
+            name = f"{k + 1:02d}_clip"
+            MockEngine._mock_video(None, os.path.join(d, "final", f"{name}.mp4"))
+            MockEngine._mock_cover(None, os.path.join(d, "final", f"{name}_cover.jpg"))
+            ap = mock_autopilot(d)
+            item = f"s{k + 1:02d}"
+            ap["decisions"] = [x for x in ap.get("decisions") or [] if x.get("item") != item] + [
+                dict(checkpoint="filler", kind="filler-confirm", item=item, by="ai", provider="claude-code",
+                     reason="Cut the ums, kept the pause before the punchline", reason_code="ai",
+                     params=dict(cut=3, kept=1, n=4), labels=dict(en="Confirm filler cuts", zh="确认去 filler"),
+                     at=time.strftime("%Y-%m-%dT%H:%M:%S")),
+                dict(checkpoint="cover", kind="cover-pick", item=item, by="rules", reason="the best-scored frame",
+                     reason_code="cover-best", params=dict(pick=0), labels=dict(en="Pick the cover", zh="选封面"),
+                     at=time.strftime("%Y-%m-%dT%H:%M:%S"))]
+            write_json(os.path.join(d, ".vstudio", MOCK_AP), ap)
+        write_json(os.path.join(d, ".vstudio", "status.json"),
+                   dict(status="done", stage="done", progress=1.0, message="done", started=started,
+                        heartbeat=time.time(), finished=time.time(), pid=os.getpid(), host=socket.gethostname(),
+                        updated_by="desk-mock"))
+        with open(os.path.join(d, P.LOG), "a", encoding="utf-8") as f:
+            f.write(json.dumps(dict(event="project-end", status="done", exit_code=0)) + "\n")
+        write_json(os.path.join(d, P.REC), dict(pid=None, started=started, offset=0, exit=0, finished=time.time()))
 
     def _mock_pilot(self, d, proj, provider=None):
         """A simulated pilot: heartbeats like vstudio.batch.livestatus, then 'waiting' (needs you) after item 1.

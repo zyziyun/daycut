@@ -81,9 +81,12 @@ v0.4 (outputs.py, intake.py, inbox.py; engine command when available, desk imple
   GET  /api/outputs/<item>/<clip>/strip    timeline filmstrip sprite + audio peaks (timeline.py, cached);
                                            POST|GET .../transcribe 「听一遍」 -> output-transcribe events
   GET  /api/effects                        effects catalogue (zh labels, params, preview kind)
-  POST /api/intake {prompt, inputs[]}      -> {id}; GET /api/intake/<id>; POST .../revise {prompt}; POST .../apply
+  POST /api/intake {prompt, inputs[], platforms?, lang?, mode? autopilot|ask, sample_name?}  -> {id};
+                                           GET /api/intake/<id>; POST .../revise {prompt}; POST .../apply
                                            {plan?, run?}; POST .../stop (planning / revising); POST .../retry (a
-                                           failed plan / revision again); GET /api/intake/recent
+                                           failed plan / revision / apply again); POST .../discard; GET
+                                           /api/intake/recent; GET /api/intake/open (requests not projects yet)
+  GET  /api/autopilot/<item>; POST .../reopen {checkpoint, item}; POST .../mode {on}   (autopilot.py)
   GET  /api/sample                         the built-in sample recording (copied out of the app) -> {available, path, ...};
        POST /api/sample/remove {dir}       delete a project made from it (sample.py)
   POST /api/pilot/retry {item, provider?}  re-run a failed pilot (provider: every model task on it, e.g. codex)
@@ -456,7 +459,9 @@ class Api:
         from .history import History
         from .intake import Intake
         from .timeline import Strips
-        K = {**dict(History=History, Intake=Intake, Strips=Strips, CreateApi=CreateApi), **(kinds or {})}
+        from .autopilot import Autopilot
+        K = {**dict(History=History, Intake=Intake, Strips=Strips, CreateApi=CreateApi, Autopilot=Autopilot),
+             **(kinds or {})}
         self.history = K["History"](engine.data_dir, getattr(engine, "reg", None) or Registry(engine.data_dir), engine)
         from .inbox import Inbox
         from .outputs import Outputs, probe
@@ -471,6 +476,18 @@ class Api:
         self.sample = Sample(engine.data_dir, vstudio_home)
         self.intake = K["Intake"](engine.data_dir, bus, runner, engine.mode, probe=probe, sample=self.sample)
         self.inbox = Inbox(engine.data_dir, self.history, runner, engine.mode, bus)
+        self.autopilot = K["Autopilot"](self.history, runner if real else None, bus, intake=self.intake)
+        if real and runner is not None:            # runs that waited in line when the app quit go back in line
+            import threading
+
+            def requeue():
+                from . import pilot
+                try:
+                    dirs = [r["dir"] for r in self.history.list()["items"] if r.get("kind") in ("project", "work")]
+                    pilot.requeue(runner.python, runner.env, dirs, bus)
+                except Exception:  # noqa: BLE001  (the history is read again on the next list)
+                    pass
+            threading.Thread(target=requeue, daemon=True).start()
         from .calendar import Calendar
         self.calendar = Calendar(engine.data_dir, self.history, self.outputs, bus, mode=engine.mode)
         from .workpkg import WorkPackages
@@ -482,6 +499,7 @@ class Api:
         self.create = K["CreateApi"](engine.data_dir, bus, runner if real else None, engine.mode,
                                      history=self.history, calendar=self.calendar, outputs=self.outputs)
         self.inbox.extra.append(self.create.inbox_items)
+        self.inbox.extra.append(self.intake.inbox_items)
         from .share import Share                   # share for review: static page + feedback -> Inbox
         self.share = Share(engine.data_dir, self.history, self.outputs, self.inbox, bus)
         from .watermark import Watermark           # Settings › Watermark (vstudio.watermark settings + previews)
@@ -562,9 +580,12 @@ class Api:
                 need(isinstance(inputs, list) and len(inputs) <= 200, "inputs: up to 200 files / folders")
                 inputs = [_abs_path(p, "inputs[]") for p in inputs]
                 need(prompt.strip() or inputs, "say what to make or add files")
-                return self.intake.start(prompt.strip(), inputs, b.get("platforms"), b.get("lang"))
+                return self.intake.start(prompt.strip(), inputs, b.get("platforms"), b.get("lang"), b.get("mode"),
+                                         b.get("sample_name"))
             if parts == ["intake", "recent"] and method == "GET":
                 return self.intake.recent()
+            if parts == ["intake", "open"] and method == "GET":
+                return self.intake.open()
             need(len(parts) >= 2 and PID_RE.match(parts[1]), "bad plan id")
             if len(parts) == 2 and method == "GET":
                 return self.intake.get(parts[1])
@@ -578,6 +599,16 @@ class Api:
                 return self.intake.stop(parts[1])
             if parts[2:] == ["retry"] and method == "POST":
                 return self.intake.retry(parts[1])
+            if parts[2:] == ["discard"] and method == "POST":
+                return self.intake.discard(parts[1])
+        if parts[:1] == ["autopilot"] and len(parts) >= 2:
+            need(ID_RE.match(parts[1]), "bad item id")
+            if len(parts) == 2 and method == "GET":
+                return self.autopilot.get(parts[1])
+            if parts[2:] == ["reopen"] and method == "POST":
+                return self.autopilot.reopen(parts[1], b.get("checkpoint"), b.get("item") or "*")
+            if parts[2:] == ["mode"] and method == "POST":
+                return self.autopilot.mode(parts[1], b.get("on"))
         if parts == ["sample"] and method == "GET":
             return self.sample.info()
         if parts == ["sample", "remove"] and method == "POST":

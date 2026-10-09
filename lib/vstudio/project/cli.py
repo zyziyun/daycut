@@ -12,6 +12,7 @@ references/PROJECTS.md.
       [--json | --json-events]                        run until done or a checkpoint needs you (exit 7);
                                                       --autopilot: no pilot, every checkpoint decided by the AI
                                                       judge + rules and recorded; only blockers wait (autopilot.py)
+  autopilot --dir P [--on | --off] [--spend-cap N] [--judge | --no-judge] [--lang L]   switch it (no run)
   decisions --dir P [--history] [--json]              autopilot: what it decided, by whom, why
   reopen --dir P --id X [--item I]                    autopilot: take a decision back (the next run asks you)
   checkpoint --dir P [--id X] [--item I | --items a,b] [--answer JSON | --answer-file F | --default] [--run]
@@ -216,6 +217,16 @@ def cmd_decisions(a):
                            f" ({d.get('by')}: {d.get('reason')})" if not d.get("asked") else
                            f"{d['item']}: {d['checkpoint']} -> waits for you" for d in out["decisions"])
          or "no autopilot decisions")
+    return 0
+
+
+def cmd_autopilot(a):
+    from . import autopilot as AP
+    from .core import Project
+    p = Project(_dir(a))
+    s = AP.configure(p, on=True if a.on else False if a.off else None, spend_cap=a.spend_cap,
+                     judge=False if a.no_judge else True if a.judge else None, lang=a.lang)
+    _out(a, dict(ok=True, autopilot=s), f"autopilot {'on' if s['on'] else 'off'}")
     return 0
 
 
@@ -612,6 +623,13 @@ def build_parser():
         p.add_argument("--lang", choices=["en", "zh", "fr"], help="autopilot: the language of the judge's reasons")
     p = add("decisions", cmd_decisions, "autopilot: the decisions in force (+ --history: every one, with blockers)")
     p.add_argument("--history", action="store_true")
+    p = add("autopilot", cmd_autopilot, "autopilot on / off for a project (no run; the next run follows it)")
+    p.add_argument("--on", action="store_true")
+    p.add_argument("--off", action="store_true")
+    p.add_argument("--spend-cap", type=float)
+    p.add_argument("--judge", action="store_true")
+    p.add_argument("--no-judge", action="store_true")
+    p.add_argument("--lang", choices=["en", "zh", "fr"])
     p = add("reopen", cmd_reopen, "autopilot: take one decision back - the checkpoint waits for you on the next run")
     p.add_argument("--id", required=True)
     p.add_argument("--item", default="*")

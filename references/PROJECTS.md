@@ -142,6 +142,7 @@ checkpoint), `pause`, `run-end` + `checkpoint {job, checkpoint, checkpoint_kind,
 | `run \| resume ... --autopilot` | the same + `autopilot: true, blocked [{checkpoint, item}]`; events `auto-answer {checkpoint, item, value, by, reason}`, `autopilot-blocked {checkpoint, item, blocker, reason}` |
 | `decisions --dir P [--history] --json` | `{autopilot {on, spend_cap, judge, lang, ask}, decisions [{checkpoint, kind, item, labels, value, by, reason, reason_code, params, provider, at, payload} \| {checkpoint, item, asked: true}], history?}` |
 | `reopen --dir P --id X [--item I] --json` | `{ok, checkpoint, item, rerun {item: stages}}` |
+| `autopilot --dir P [--on \| --off] [--spend-cap N] [--judge \| --no-judge] [--lang L] --json` | `{ok, autopilot}` (no run; a run going reads it before its next round) |
 | `checkpoint --dir P [--id X] [--item I] --json` | `{pending: [payload...], n}` |
 | `checkpoint --dir P --id X [--item I \| --items a,b] (--answer JSON \| --answer-file F \| --default) [--run]` | `{ok, checkpoint, answered, rerun {item: stages}, run?}` (exit 5 + `{ok: false, error}` on an invalid answer) |
 | `set --dir P [--item I] --param k=v \| --set JSON` | the `refresh` result |

@@ -8,6 +8,14 @@ references/INTAKE.md). Plans are slow (inventory + ASR + a model call), so the d
 (``--ui-lang``), whatever language the request, the materials or the platforms are in.
   apply(id, plan?, run)  -> {projects [{dir, name, recipe}], series}; ``run`` starts each pilot in the background
 
+Projects from Home (``mode``): the request is a project the moment it is sent - Home is free for the next one and
+All projects lists it (``open()``: every request not made into projects yet, newest first) while it plans. ``mode``
+``autopilot`` (the desk's default): when the plan is ready it is applied at once (``vstudio.intake apply
+--autopilot``) and every project runs whole on autopilot (no pilot, no plan to confirm; the engine decides each
+checkpoint and records why). ``ask``: the plan waits in All projects for her Start (today's plan card, then a pilot of
+one). A request's job record (``<id>.job.json``: state, step, mode, error, applied) survives a restart; one that was
+planning when the desk quit is a failure she can try again. ``discard(id)``: she drops a plan (nothing was made).
+
 Real engine: ``vstudio.intake plan|revise|apply --json`` (plan JSON kept in ``<DESK_DATA_DIR>/intake/<id>.json``),
 pilots via ``vstudio.project run --dir D --pilot 1``. While a plan / revision runs, the engine's ``--json-events``
 become the job's ``progress`` (what the card shows instead of a spinner): {stage scan | probe | listen | faces |
@@ -101,6 +109,30 @@ class Intake:
         self._real = None
         self._why = None
         self._streams = None           # the engine's plan / revise take --json-events (probed once)
+        self._load_jobs()
+
+    JOB_KEYS = ("id", "state", "step", "prompt", "inputs", "error", "error_code", "error_provider", "started",
+                "seconds", "platforms", "lang", "mode", "sample_name", "applied", "discarded", "failed_apply",
+                "failed_revise", "name")
+
+    def _job_path(self, pid):
+        return os.path.join(self.dir, f"{pid}.job.json")
+
+    def _load_jobs(self):
+        """Requests from Home (``mode`` set) live on across a restart: All projects keeps listing the open ones."""
+        if not os.path.isdir(self.dir):
+            return
+        cut = time.time() - 30 * 86400
+        for f in os.listdir(self.dir):
+            if not f.endswith(".job.json"):
+                continue
+            j = read_json(os.path.join(self.dir, f), None)
+            if not isinstance(j, dict) or not re.match(r"^[0-9a-f]{12}$", str(j.get("id") or "")) or \
+                    (j.get("started") or 0) < cut:
+                continue
+            if j.get("state") == "running":    # the desk quit while it planned / applied: say so, offer Try again
+                j.update(state="error", error="the app was closed while this was being planned", error_code="stopped")
+            self.jobs[j["id"]] = j
 
     def real(self):
         """The engine's intake answers its probe (``vstudio.intake --help`` lists plan / apply). Probed once; a
@@ -181,6 +213,9 @@ class Intake:
                 return dict(self.jobs[pid])          # stopped by her: a late answer / the kill's error is dropped
             self.jobs[pid] = dict(self.jobs.get(pid) or {}, **kw)
             job = dict(self.jobs[pid])
+        if job.get("mode") and set(kw) - {"progress"}:
+            os.makedirs(self.dir, exist_ok=True)
+            write_json(self._job_path(pid), {k: job.get(k) for k in self.JOB_KEYS if job.get(k) is not None})
         if self.bus:
             self.bus.publish("intake", id=pid, state=job.get("state"))
         return job
@@ -193,6 +228,11 @@ class Intake:
             if not plan:
                 raise KeyError(f"no plan {pid}")
             j = dict(id=pid, state="done", plan=plan, prompt=plan.get("prompt"), inputs=plan.get("analysis", {}).get("inputs"))
+        elif j.get("plan") is None and j.get("state") != "running":
+            plan = read_json(self._path(pid), None)       # a request read back after a restart: its plan file
+            if plan:
+                with self._lock:
+                    self.jobs[pid] = j = dict(j, plan=plan)
         return dict(j)
 
     def recent(self, n=8):
@@ -209,18 +249,70 @@ class Intake:
                     break
         return out
 
+    def open(self):
+        """Requests from Home that are not projects yet (planning, a plan waiting for her Start, a failure), newest
+        first: what All projects lists above the projects."""
+        out = []
+        for j in list(self.jobs.values()):
+            if not j.get("mode") or j.get("applied") or j.get("discarded") or j.get("state") == "stopped":
+                continue
+            plan = j.get("plan") or {}
+            names = [p.get("name") for p in plan.get("projects") or [] if p.get("name")]
+            out.append(dict(id=j["id"], state=j.get("state"), step=j.get("step"), mode=j["mode"],
+                            prompt=j.get("prompt"), inputs=j.get("inputs") or [], started=j.get("started"),
+                            progress=j.get("progress"), error_code=j.get("error_code"), error=j.get("error"),
+                            name=j.get("name") or (names[0] if names else None), projects=len(names) or None,
+                            failed_apply=bool(j.get("failed_apply"))))
+        out.sort(key=lambda x: -(x.get("started") or 0))
+        return dict(items=out)
+
+    def inbox_items(self):
+        """For the Inbox: a plan that waits for her Start (ask me first) and a request that failed - the only two
+        moments a request from Home needs her before it is a project."""
+        out = []
+        for r in self.open()["items"]:
+            if r["state"] not in ("done", "error"):
+                continue
+            ready = r["state"] == "done"
+            out.append(dict(key=f"plan-{r['id']}-{r['state']}", kind="plan" if ready else "failed",
+                            group="choose" if ready else "other",
+                            project=dict(id=None, name=r.get("name") or (r.get("prompt") or "")[:60], kind="plan",
+                                         thumb=None, type="other"),
+                            code="inbox.planReady" if ready else "inbox.planFailed",
+                            params=dict(name=r.get("name") or (r.get("prompt") or "")[:60]), text=None, minutes=1,
+                            source="intake", href=f"#/projects?sel={r['id']}", at=r.get("started") or time.time()))
+        return out
+
+    def discard(self, pid):
+        """She drops a request that is not a project yet (a plan she does not want, a failure): it leaves All
+        projects; nothing was made, nothing is deleted."""
+        j = self.get(pid)
+        need(not j.get("applied"), "this request is already a project")
+        if j.get("state") == "running":
+            self.stop(pid)
+        self._set(pid, discarded=True)
+        if self.bus:
+            self.bus.publish("batches")
+        return dict(ok=True, id=pid)
+
     # ---------------------------------------------------------- plan / revise
-    def start(self, prompt, inputs, platforms=None, lang=None):
+    def start(self, prompt, inputs, platforms=None, lang=None, mode=None, sample_name=None):
         """``platforms``: the composer's platform chip (used when the request names none); ``lang``: the UI's
-        language, the one the card's questions are written in."""
+        language, the one the card's questions are written in. ``mode``: autopilot | ask (a project from Home, see
+        the module doc; None: a plan card of its own, e.g. the week plan's); ``sample_name``: the built-in sample's
+        projects are named so (labelled and deletable)."""
         lang = ui_lang(lang)
+        need(mode in (None, "autopilot", "ask"), "mode: autopilot | ask")
+        need(sample_name is None or (isinstance(sample_name, str) and 0 < len(sample_name) <= 80), "sample_name")
         need(platforms is None or (isinstance(platforms, list) and len(platforms) <= 20 and
                                    all(isinstance(p, str) and re.match(r"^[a-z][a-z-]{0,30}(:[a-z]{3,12})?$", p)
                                        for p in platforms)), "platforms: platform ids")
         pid = hashlib.sha1(f"{prompt}\0{inputs}\0{time.time()}".encode()).hexdigest()[:12]
         self._set(pid, id=pid, state="running", step="analyze", prompt=prompt, inputs=inputs, plan=None, error=None,
                   started=time.time(), op_started=time.time(), seconds=None, platforms=platforms or None,
-                  progress=None, lang=lang)
+                  progress=None, lang=lang, mode=mode, sample_name=sample_name)
+        if mode and self.bus:
+            self.bus.publish("batches")
         threading.Thread(target=self._plan, args=(pid, prompt, inputs), daemon=True).start()
         return dict(id=pid)
 
@@ -236,8 +328,28 @@ class Intake:
         try:
             self._need_engine()
             plan = self._engine_plan(pid, prompt, inputs)
-            self._set(pid, state="done", step="done", plan=plan, seconds=self._took(pid))
         except Exception as e:  # noqa: BLE001
+            self._fail(pid, e)
+            return
+        names = [p.get("name") for p in plan.get("projects") or [] if p.get("name")]
+        auto = (self.jobs.get(pid) or {}).get("mode") == "autopilot"
+        self._set(pid, state="running" if auto else "done", step="apply" if auto else "done", plan=plan,
+                  seconds=self._took(pid), name=names[0] if names else None)
+        if auto:
+            self._auto_apply(pid)
+        elif self.bus:
+            self.bus.publish("batches")
+            self.bus.publish("inbox")
+
+    def _auto_apply(self, pid):
+        """Autopilot: the plan is made into its projects and each runs whole, no Start to press."""
+        if (self.jobs.get(pid) or {}).get("state") == "stopped":
+            return
+        try:
+            self.apply(pid, run=True)
+            self._set(pid, state="done", step="done", failed_apply=None)
+        except Exception as e:  # noqa: BLE001
+            self._set(pid, failed_apply=True)
             self._fail(pid, e)
 
     def _engine_plan(self, pid, prompt, inputs):
@@ -267,6 +379,10 @@ class Intake:
         need(j.get("state") == "error", "only a failed plan can be tried again")
         if j.get("failed_revise"):
             return self.revise(pid, j["failed_revise"])
+        if j.get("failed_apply") and j.get("plan"):
+            self._set(pid, state="running", step="apply", error=None, error_code=None, error_provider=None)
+            threading.Thread(target=self._auto_apply, args=(pid,), daemon=True).start()
+            return dict(id=pid)
         self._set(pid, state="running", step="analyze", error=None, error_code=None, error_provider=None,
                   op_started=time.time(), seconds=None, progress=None)
         threading.Thread(target=self._plan, args=(pid, j.get("prompt") or "", j.get("inputs") or []),
@@ -309,8 +425,11 @@ class Intake:
         from . import pilot
         txt = str(e)
         code = "intake" if isinstance(e, Unavailable) else pilot.classify(txt)
-        self._set(pid, state="error", error=pilot.scrub(txt, 500), error_code=code,
-                  error_provider=None if isinstance(e, Unavailable) else pilot.provider_of(txt))
+        j = self._set(pid, state="error", error=pilot.scrub(txt, 500), error_code=code,
+                      error_provider=None if isinstance(e, Unavailable) else pilot.provider_of(txt))
+        if j.get("mode") and self.bus:              # a request from Home: All projects and the Inbox say so
+            self.bus.publish("batches")
+            self.bus.publish("inbox")
 
     def stop(self, pid):
         """「停止」 while planning / revising: ends the engine (and the model CLI it started); the composer is back."""
@@ -323,8 +442,15 @@ class Intake:
 
     # ---------------------------------------------------------- apply (+ pilot)
     def apply(self, pid, plan=None, run=True, out_root=None):
+        """``run``: start the projects (on autopilot when the request was sent that way, else a pilot of one)."""
         j = self.get(pid)
         need(j.get("plan") or plan, "the plan is not ready yet")
+        need(not j.get("applied"), "this plan is already made into projects")
+        if plan is None and j.get("sample_name"):     # the sample's projects carry the sample's name
+            src = j["plan"]
+            many = len(src.get("projects") or []) > 1
+            plan = dict(src, projects=[dict(p, name=f"{j['sample_name']} {k + 1}" if many else j["sample_name"])
+                                       for k, p in enumerate(src.get("projects") or [])])
         if plan is not None:                       # the creator edited rows / params on the card
             need(isinstance(plan, dict) and plan.get("kind") == "vstudio.intake.plan" and isinstance(plan.get("projects"), list),
                  "plan: a vstudio.intake.plan document")
@@ -336,7 +462,7 @@ class Intake:
             self._need_engine()
         except Unavailable as e:
             raise BadRequest(f"{e}. Nothing was made; try again.") from e
-        projects = self._engine_apply(pid, plan, out_root, run)
+        projects = self._engine_apply(pid, plan, out_root, run, autopilot=j.get("mode") == "autopilot")
         if self.sample is not None and self.sample.uses_sample(j.get("inputs")):
             self.sample.mark([p["dir"] for p in projects])
         self._set(pid, applied=projects)
@@ -344,20 +470,24 @@ class Intake:
             self.bus.publish("batches")
         return dict(ok=True, projects=projects, series=plan.get("series"))
 
-    def _engine_apply(self, pid, plan, out_root, run):
+    def _engine_apply(self, pid, plan, out_root, run, autopilot=False):
         doc = self.runner.sibling("vstudio.intake").json(["apply", "--plan", self._path(pid), "--out", out_root,
-                                                          "--json"], timeout=900)
+                                                          "--json", *(["--autopilot"] if autopilot else [])],
+                                                         timeout=900)
         projects = [dict(dir=p.get("dir"), name=p.get("name"), recipe=p.get("recipe"))
                     for p in doc.get("projects") or [] if isinstance(p, dict)]
         if run:
+            lang = (self.jobs.get(pid) or {}).get("lang")
             for p in projects:
                 if p["dir"]:
-                    self._spawn_pilot(p["dir"])
+                    self._spawn_pilot(p["dir"], autopilot=autopilot, lang=lang)
         return projects
 
-    def _spawn_pilot(self, d, provider=None):
+    def _spawn_pilot(self, d, provider=None, autopilot=False, lang=None):
+        """The project's first run: on autopilot the whole project, else a pilot of one (``pilot.run_args``)."""
         from . import pilot
-        pilot.spawn(self.runner.python, self.runner.env, d, provider=provider, bus=self.bus)
+        pilot.spawn(self.runner.python, self.runner.env, d, provider=provider, bus=self.bus,
+                    args=pilot.run_args(self.runner.python, d, autopilot, lang))
 
     def retry_pilot(self, d, provider=None):
         """「换 Codex 重试」/「重试」 after a failed pilot: the same run, every model task on ``provider``."""

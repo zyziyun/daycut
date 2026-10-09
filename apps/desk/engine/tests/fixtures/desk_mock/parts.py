@@ -7,6 +7,8 @@ import importlib.util
 import os
 import time
 
+from desk_engine.autopilot import Autopilot
+from desk_engine.common import BadRequest, need, write_json
 from desk_engine.create import CreateApi, Refused
 from desk_engine.history import History
 from desk_engine.timeline import Strips, parse_srt, tokens
@@ -24,6 +26,17 @@ class MockHistory(History):
         for d in sorted(self.extra_work):
             out.append(("work", d, "create", {}))
         return out, series
+
+    def list(self, *a, **kw):
+        """Simulated projects say whether they run on autopilot (a real project's project.yaml does)."""
+        from .intake import mock_autopilot
+        doc = super().list(*a, **kw)
+        for r in doc["items"]:
+            if r.get("kind") == "work" and r.get("dir"):
+                ap = mock_autopilot(r["dir"])
+                if ap:
+                    r["autopilot"] = bool(ap.get("on"))
+        return doc
 
     def _more_rows(self, have):
         """The in-memory demo batches have no folder on disk: listed like found batches."""
@@ -130,3 +143,67 @@ class MockCreateApi(CreateApi):
         if res.get("dir") and self.history is not None and hasattr(self.history, "extra_work"):
             self.history.extra_work.add(os.path.abspath(res["dir"]))
         return super()._after_handoff(res, schedule)
+
+
+class MockAutopilot(Autopilot):
+    """``vstudio.project decisions | reopen | autopilot`` for the simulated projects (``.vstudio/mock-autopilot.json``):
+    taking a decision back adds it to the folder's PICKS.md "creator should confirm" list, which the Inbox asks."""
+
+    def __init__(self, history, runner, bus=None, intake=None):
+        super().__init__(history, runner, bus, intake)
+        self.intake = intake
+
+    def _mock(self, item):
+        from .intake import MOCK_AP, mock_autopilot
+        e = self.history.find(item)
+        d = e.get("dir") or ""
+        return e, d, mock_autopilot(d), os.path.join(d, ".vstudio", MOCK_AP)
+
+    def get(self, item):
+        from desk_engine import pilot
+        _e, d, ap, _p = self._mock(item)
+        base = dict(item=item, running=bool(pilot.running(d)), queued=pilot.queued(d))
+        if not ap:
+            return dict(base, supported=False, autopilot=None, decisions=[])
+        asked = [dict(checkpoint=k.partition(":")[0], item=k.partition(":")[2], asked=True) for k in ap.get("ask") or []]
+        return dict(base, supported=True, autopilot=dict(on=bool(ap.get("on")), spend_cap=0, judge=True,
+                                                          ask=ap.get("ask") or []),
+                    decisions=sorted(ap.get("decisions") or [], key=lambda x: str(x.get("at")), reverse=True) + asked)
+
+    def reopen(self, item, checkpoint, sub="*"):
+        _e, d, ap, path = self._mock(item)
+        need(ap, "only a recipe project has decisions to take back")
+        hit = [x for x in ap.get("decisions") or [] if x["checkpoint"] == checkpoint and x["item"] == sub]
+        if not hit:
+            raise BadRequest(f"{checkpoint} has no answer for {sub}")
+        ap["decisions"] = [x for x in ap["decisions"] if x not in hit]
+        ap["ask"] = sorted(set(ap.get("ask") or []) | {f"{checkpoint}:{sub}"})
+        write_json(path, ap)
+        with open(os.path.join(d, "PICKS.md"), "a", encoding="utf-8") as f:
+            f.write(f"\n## Taken back from the autopilot (creator should confirm)\n- **{sub}** {checkpoint}: your call\n")
+        if self.bus:
+            self.bus.publish("batches")
+            self.bus.publish("inbox")
+        return dict(ok=True, checkpoint=checkpoint, item=sub, rerun={sub: [f"cp_{checkpoint}"]}, resumed=False)
+
+    def mode(self, item, on):
+        from desk_engine import pilot
+        need(isinstance(on, bool), "on: true (autopilot) or false (ask me first)")
+        e, d, ap, path = self._mock(item)
+        need(e.get("kind") == "work", "only a recipe project can switch to autopilot")
+        ap = dict(ap or dict(decisions=[], ask=[]), on=on)
+        write_json(path, ap)
+        resumed = False
+        live = (e.get("live") or {}).get("state")
+        if on and live == "waiting" and not pilot.running(d) and self.intake is not None:
+            import json as _json
+            rec = _json.load(open(os.path.join(d, ".vstudio", "work.json"), encoding="utf-8"))
+            made = len([f for f in os.listdir(os.path.join(d, "final"))
+                        if f.endswith(".mp4")]) if os.path.isdir(os.path.join(d, "final")) else 0
+            proj = dict(name=rec.get("title"), items=dict(count=int(rec.get("count") or 3)))
+            self.intake._queue_run(d, proj, autopilot=True, start_at=made)
+            resumed = True
+        if self.bus:
+            self.bus.publish("batches")
+            self.bus.publish("inbox")
+        return dict(ok=True, autopilot=dict(on=on), resumed=resumed)

@@ -124,6 +124,8 @@ def failure(d, now=None):
     if not isinstance(rec, dict) and not os.path.exists(log):
         return None
     rec = rec if isinstance(rec, dict) else {}
+    if rec.get("queued") and not rec.get("pid"):
+        return None                                           # waiting in line: an older run's end is history
     code = rec.get("exit")
     if code is None and rec.get("pid") and _pid_alive(rec.get("pid")):
         return None                                           # still running
@@ -187,8 +189,105 @@ def retry_env(env, provider):
     return out
 
 
+class RunQueue:
+    """How many project runs the desk starts at once (each run already uses the machine's cores / ASR / renderer to
+    its own limits): ``DESK_MAX_RUNS`` (default 2 on 8+ cores, else 1). A run asked for while the slots are taken
+    waits in line (``position``: 1 = next) and starts when one ends; the desk shows it as queued."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.active = set()
+        self.waiting = []                      # [(dir, start)] in order
+
+    def limit(self):
+        try:
+            n = int(os.environ.get("DESK_MAX_RUNS") or 0)
+        except ValueError:
+            n = 0
+        return n if n > 0 else (2 if (os.cpu_count() or 1) >= 8 else 1)
+
+    def submit(self, d, start):
+        """``start(done)`` starts the run and calls ``done()`` when it ends. -> True when it started now, False when
+        it waits in line (a project already running or waiting is not added twice)."""
+        rd = os.path.realpath(d)
+        with self._lock:
+            if rd in self.active or any(w == rd for w, _s in self.waiting):
+                return rd in self.active
+            if len(self.active) >= self.limit():
+                self.waiting.append((rd, start))
+                return False
+            self.active.add(rd)
+        self._go(rd, start)
+        return True
+
+    def _go(self, rd, start):
+        try:
+            start(lambda: self.done(rd))
+        except Exception:
+            self.done(rd)
+            raise
+
+    def done(self, rd):
+        nxt = None
+        with self._lock:
+            self.active.discard(rd)
+            if self.waiting and len(self.active) < self.limit():
+                nxt = self.waiting.pop(0)
+                self.active.add(nxt[0])
+        if nxt:
+            try:
+                self._go(*nxt)
+            except Exception:  # noqa: BLE001  (its record says it never started; the next one goes)
+                pass
+
+    def position(self, d):
+        rd = os.path.realpath(d)
+        with self._lock:
+            for k, (w, _s) in enumerate(self.waiting):
+                if w == rd:
+                    return k + 1
+        return None
+
+    def cancel(self, d):
+        rd = os.path.realpath(d)
+        with self._lock:
+            n = len(self.waiting)
+            self.waiting = [(w, s) for w, s in self.waiting if w != rd]
+            return n != len(self.waiting)
+
+
+QUEUE = RunQueue()
+
+
+def queued(d):
+    """The run of project ``d`` waits for a free slot -> its place in line (1 = next), else None."""
+    return QUEUE.position(d)
+
+
+def run_args(python, d, autopilot=False, lang=None):
+    """The desk's run of a new project: a pilot of one (ask me first) or the whole project on autopilot."""
+    how = ["--autopilot"] + (["--lang", lang] if lang in ("en", "zh", "fr") else []) if autopilot else ["--pilot", "1"]
+    return [python, "-m", "vstudio.project", "run", "--dir", d, *how, "--json-events"]
+
+
 def spawn(python, env, d, provider=None, bus=None, args=None):
-    """Start the pilot of project ``d`` in the background (or ``args`` instead of the default run command)."""
+    """Start the pilot of project ``d`` in the background (or ``args`` instead of the default run command), or put it
+    in line when the desk's run slots are taken (``RunQueue``): its record says ``queued`` until it starts."""
+    holder = {}
+
+    def start(done):
+        holder["rec"] = _start(python, env, d, provider, bus, args, done)
+    if QUEUE.submit(d, start):
+        return holder.get("rec") or dict(pid=None, started=None, running=True)
+    rec = dict(pid=None, started=None, offset=None, exit=None, finished=None, provider=provider, queued=True,
+               queued_at=time.time(), args=(args or [])[1:] or None)
+    write_json(os.path.join(d, REC), rec)
+    if bus:
+        bus.publish("batches")
+    return rec
+
+
+def _start(python, env, d, provider=None, bus=None, args=None, done=None):
     log_path = os.path.join(d, LOG)
     try:
         offset = os.path.getsize(log_path)
@@ -208,6 +307,8 @@ def spawn(python, env, d, provider=None, bus=None, args=None):
         if cur.get("pid") == p.pid:
             cur.update(exit=code, finished=time.time())
             write_json(os.path.join(d, REC), cur)
+        if done:
+            done()
         if bus:
             bus.publish("batches")
             bus.publish("inbox")
@@ -216,6 +317,20 @@ def spawn(python, env, d, provider=None, bus=None, args=None):
 
 
 _RESUME_LOCK = threading.Lock()   # two answers in a row: one run goes on, the second sees it running
+
+
+def requeue(python, env, dirs, bus=None):
+    """At start: runs that were waiting in line when the desk quit are put back in line (their record keeps the
+    command), so a queued project never sits unstarted. -> the folders put back."""
+    out = []
+    for d in dirs:
+        rec = read_json(os.path.join(d, REC), None)
+        if isinstance(rec, dict) and rec.get("queued") and not rec.get("pid") and rec.get("exit") is None:
+            a = rec.get("args")
+            spawn(python, env, d, provider=rec.get("provider"), bus=bus,
+                  args=[python, *a] if isinstance(a, list) and a else None)
+            out.append(d)
+    return out
 
 
 def resume_after_answer(runner, d, bus=None, spawner=None):

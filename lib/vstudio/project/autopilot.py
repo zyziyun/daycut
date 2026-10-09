@@ -51,6 +51,19 @@ def settings(project):
     return d
 
 
+def refresh(project):
+    """The settings as saved now: the app may switch autopilot while a run goes (read before each round)."""
+    import yaml
+    try:
+        with open(project.yaml_path, encoding="utf-8") as f:
+            d = yaml.safe_load(f) or {}
+    except (OSError, ValueError):
+        return settings(project)
+    if "autopilot" in d:
+        project.data["autopilot"] = d.get("autopilot")
+    return settings(project)
+
+
 def configure(project, on=None, spend_cap=None, judge=None, lang=None, save=True):
     """Turn autopilot on / off for a project (and its cap / judge / language) in project.yaml -> the settings."""
     d = settings(project)
