@@ -40,7 +40,8 @@ import sys
 #   series_labels False = never add 01/04, PART n, 第n集 corner labels or series lines; "ask" = only when told
 #   captions      "zh" | "en" | "bilingual"
 #   tag_set       persona publish.tag_sets entry for post copy; None = the persona's default tags;
-#                 "" = only the post's own tags (persona tags would be off-topic)
+#                 "" = only the post's own tags (persona tags would be off-topic); a named set the persona
+#                 does not have = only the post's own tags too (see post_tags)
 #   guests        None | "ask-mask" (offer a sticker over each other participant's head only, never the frame)
 #   rules         short extra rules learned from her corrections (shown in `show`, not in the summary line)
 #   audio         "required" = the render must have sound (her voice); "optional" = silent is fine (a product demo
@@ -59,6 +60,7 @@ FORMATS = {
     "promo": dict(
         labels=dict(zh="作品宣传 / 精选插片", en="Promo of your work"), workflow="promo-recut",
         speed=dict(body=1.2, hook=1.5, inserts=1.1), hooks="none", cleanup="tight", notes=True, progress=None,
+        tag_set="promo",
         cover=dict(aspect="video", style="retouched-portrait", retouch=True, min_luma=0.42, text="designed"),
         rules=["插入的成片片段标注「精选」，1.1x 就够", "不加 hook 蒙太奇：她的开场句 + 封面就够",
                "高端感：3D 截图卡片滚动高亮、分屏、定格放大，而不是静态贴图"]),
@@ -173,6 +175,36 @@ def get(name, persona_formats=None):
     f = _merge(f, pf.get(fid) or {})
     f["id"] = fid
     return f
+
+
+def _persona_tag_sets():
+    try:
+        from vstudio.config import persona
+        return ((persona() or {}).get("publish") or {}).get("tag_sets") or {}
+    except Exception:                                   # noqa: BLE001 - no persona = no tag sets
+        return {}
+
+
+def post_tags(name, post=None, persona_formats=None, tag_sets=None):
+    """(use_persona_tags, tag_set) for the post copy of a ``name`` video (vstudio.publish.post_body arguments).
+
+    The post's own ``use_persona_tags`` / ``tag_set`` win. Otherwise the format's ``tag_set``: None = the
+    persona's default ``publish.tags``; "" = only the post's own tags; a set name = ``publish.tag_sets[name]``
+    when the persona has it, else only the post's own tags - never the default (career) tags on an off-topic
+    post. Unknown format = the persona's default tags (the historical behaviour)."""
+    post = post or {}
+    if post.get("use_persona_tags") is False:
+        return False, None
+    if post.get("tag_set"):
+        return True, post["tag_set"]
+    try:
+        ts = get(name, persona_formats)["tag_set"]
+    except KeyError:
+        return True, None
+    if ts is None:
+        return True, None
+    sets = _persona_tag_sets() if tag_sets is None else tag_sets
+    return (True, ts) if ts and ts in sets else (False, None)
 
 
 def detect(text, materials=None):
