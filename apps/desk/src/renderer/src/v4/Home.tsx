@@ -755,7 +755,8 @@ function ContinueTile({ i }: { i: HistoryItem }) {
 }
 
 /** Project card used in 全部项目 (the whole card is the link). */
-export function ProjectTile({ i, onContext }: { i: HistoryItem; onContext?: (e: React.MouseEvent) => void }) {
+/** ``note`` replaces the "updated" date (the archived date under 已归档). */
+export function ProjectTile({ i, onContext, note }: { i: HistoryItem; onContext?: (e: React.MouseEvent) => void; note?: string }) {
   const inbox = useInbox();
   const raw = itemStatus(i);
   // never 「已完成」 while the inbox holds a decision for it
@@ -767,7 +768,7 @@ export function ProjectTile({ i, onContext }: { i: HistoryItem; onContext?: (e: 
       <div className="t clamp1">{i.name}</div>
       <div className="meta">
         <span className="clamp1">
-          {tk(typeKey) === typeKey ? t('type.other') : tk(typeKey)} · {fmtAgo(i.updated)}
+          {tk(typeKey) === typeKey ? t('type.other') : tk(typeKey)} · {note ?? fmtAgo(i.updated)}
         </span>
         <StatusPill s={s} />
       </div>

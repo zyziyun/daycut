@@ -1,12 +1,14 @@
-// 全部项目: a thumbnail grid (whole card clickable), one filter row (全部 / 运行中 / 需要你 / 已完成), search, type,
-// multi-select with bulk actions, inline rename, right-click menu, and the watched folders folded at the bottom.
+// 全部项目: a thumbnail grid (whole card clickable), one filter row (全部 / 运行中 / 需要你 / 已完成 / 已归档), search,
+// type, multi-select with bulk actions (归档 / 恢复), inline rename, right-click menu, and the watched folders folded at
+// the bottom. Archiving never deletes anything; archived projects are dimmed under 已归档 and still open.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CheckSquare, Copy, Eye, FolderOpen, FolderPlus, Pencil, Plus, Square, Trash2, Users } from 'lucide-react';
+import { Archive, ArchiveRestore, CheckSquare, Copy, Eye, FolderOpen, FolderPlus, Pencil, Plus, Square, Users } from 'lucide-react';
 import { PromptModal } from '../components/ui';
 import { useAgencyMode } from '../lib/prefs';
 import type { HistoryItem } from '../../../shared/v02';
 import { t, tk } from '../i18n';
 import { useEngine, useLoad } from '../lib/engine';
+import { archivedLine, archiveFlow, restoreFlow, shownProjects, type ProjectsFilter } from '../lib/archive';
 import { useHistory } from '../lib/history';
 import { useInbox } from '../lib/inbox';
 import { go, href } from '../lib/router';
@@ -15,12 +17,12 @@ import { ProjectTile } from './Home';
 import { Empty, More, Seg, SkGrid } from './kit';
 import { useUi } from './ui';
 
-type F = 'all' | 'running' | 'you' | 'done' | 'failed';
+type F = ProjectsFilter;
 const OWN = '\u0000own';
 const TYPES = ['talkinghead', 'slices', 'explainer', 'photo-story', 'vlog', 'podcast', 'aigc', 'script', 'batch', 'promo', 'slides', 'other'];
 
 export function Projects() {
-  const { data, reload } = useHistory();
+  const { data, reload, archived: archDoc, wantArchived } = useHistory();
   const { client } = useEngine();
   const ui = useUi();
   const [f, setF] = useState<F>(() => (sessionStorage.getItem('v4.pf') as F) || 'all');
@@ -34,10 +36,17 @@ export function Projects() {
   const [clientF, setClientF] = useState(''); // '' all · OWN her own · else the client name
   const [clientFor, setClientFor] = useState<HistoryItem | null>(null);
   useEffect(() => sessionStorage.setItem('v4.pf', f), [f]);
+  useEffect(() => {
+    if (f === 'archived') wantArchived();
+  }, [f, wantArchived]);
   // the page is shown: the list is read again (a project registered while she was elsewhere is in it at once)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => reload(), []);
   const items = useMemo(() => data?.items ?? [], [data]);
+  const archivedItems = useMemo(() => archDoc?.items ?? [], [archDoc]);
+  // the tab's count: the archived list once read, else the number the plain list reports
+  const nArchived = archDoc ? archivedItems.length : typeof data?.archived === 'number' ? data.archived : 0;
+  const inArchive = f === 'archived';
   // the tiles say 「需要你」 when the Inbox holds a decision: the filter row counts the same way
   const inbox = useInbox();
   const deciding = useMemo(() => new Set(inbox.items.filter((x) => x.kind !== 'failed' && x.project.id).map((x) => x.project.id!)), [inbox.items]);
@@ -52,7 +61,8 @@ export function Projects() {
   }, [items, deciding]);
   const clientNames = useMemo(() => [...new Set(items.map((i) => i.client).filter((c): c is string => !!c))].sort(), [items]);
   const clientOk = (i: HistoryItem) => !agency || !clientF || (clientF === OWN ? !i.client : i.client === clientF);
-  const shown = items.filter((i) => (f === 'all' || bucketOf(i) === f) && (!type || (i.type ?? 'other') === type) && clientOk(i) && (!q || `${i.name} ${i.recipe ?? ''} ${agency ? (i.client ?? '') : ''}`.toLowerCase().includes(q.toLowerCase())));
+  const shown = shownProjects(items, archivedItems, { f, q, type, bucketOf, clientOk, searchClient: agency });
+  const pool = inArchive ? archivedItems : items;
   const saveClient = async (i: HistoryItem, name: string) => {
     setClientFor(null);
     if (!client) return;
@@ -61,17 +71,14 @@ export function Projects() {
     ui.toast(t('editor.saved'));
   };
 
-  const remove = async (list: HistoryItem[]) => {
+  const archive = async (list: HistoryItem[]) => {
     if (!client || !list.length) return;
-    for (const i of list) await client.hideHistory(i.dir);
-    setSel(new Set());
-    reload();
-    ui.toast(`${t('projects.removed', { n: list.length })} ${t('projects.removeHint')}`, {
-      undo: async () => {
-        for (const i of list) await client.unhideOne(i.dir);
-        reload();
-      },
-    });
+    wantArchived(); // the Archived tab's count follows at once
+    if (await archiveFlow(client, ui, list, reload)) setSel(new Set());
+  };
+  const restore = async (list: HistoryItem[]) => {
+    if (!client || !list.length) return;
+    if (await restoreFlow(client, ui, list, reload)) setSel(new Set());
   };
   const rename = async (i: HistoryItem, name: string) => {
     setRenaming(null);
@@ -98,7 +105,9 @@ export function Projects() {
       ...(agency ? [{ label: t('projects.setClient'), icon: <Users className="ico" />, run: () => setClientFor(i), testId: 'menu-client' }] : []),
       { label: t('c.reveal'), icon: <FolderOpen className="ico" />, run: () => window.desk.showItem(i.dir) },
       { label: '', sep: true, run: () => undefined },
-      { label: t('c.remove'), icon: <Trash2 className="ico" />, run: () => remove([i]), testId: 'menu-remove' },
+      i.archived
+        ? { label: t('projects.restore'), icon: <ArchiveRestore className="ico" />, run: () => restore([i]), testId: 'menu-restore' }
+        : { label: t('projects.archive'), icon: <Archive className="ico" />, run: () => archive([i]), testId: 'menu-archive' },
     ]);
 
   return (
@@ -118,7 +127,7 @@ export function Projects() {
         <div className="tools">
           <Seg
             value={f}
-            onChange={setF}
+            onChange={(v) => (setF(v), setSel(new Set()))}
             testId="projects-filter"
             options={[
               { v: 'all', label: t('projects.f.all', { n: counts.all }) },
@@ -127,6 +136,8 @@ export function Projects() {
               { v: 'done', label: t('projects.f.done', { n: counts.done }) },
               // only when something failed: a calm row otherwise
               ...(counts.failed || f === 'failed' ? [{ v: 'failed' as const, label: t('projects.f.failed', { n: counts.failed }) }] : []),
+              // last, and only once something is archived (or she is in it)
+              ...(nArchived || inArchive ? [{ v: 'archived' as const, label: t('projects.f.archived', { n: nArchived }) }] : []),
             ]}
           />
           <span className="sp" />
@@ -155,9 +166,11 @@ export function Projects() {
             {t('c.select')}
           </button>
         </div>
-        {!data ? (
+        {!data || (inArchive && !archDoc) ? (
           <SkGrid />
-        ) : !items.length ? (
+        ) : inArchive && !archivedItems.length ? (
+          <Empty title={t('projects.archivedEmpty')} hint={t('projects.archivedEmptyHint')} />
+        ) : !inArchive && !items.length ? (
           <Empty
             title={t('projects.empty')}
             hint={t('projects.emptyHint')}
@@ -170,7 +183,7 @@ export function Projects() {
         ) : !shown.length ? (
           <Empty title={t('projects.noMatch', { q: q || tk(`type.${type}`) })} />
         ) : (
-          <div className="pgrid" data-testid="projects-grid">
+          <div className={`pgrid ${inArchive ? 'archived' : ''}`} data-testid="projects-grid">
             {shown.map((i) =>
               selecting ? (
                 <div key={i.id} className={`pcard ${sel.has(i.id) ? 'sel' : ''}`} onClick={() => toggle(sel, setSel, i.id)} data-testid="project-card" role="checkbox" aria-checked={sel.has(i.id)}>
@@ -182,6 +195,14 @@ export function Projects() {
               ) : renaming === i.id ? (
                 <div key={i.id} className="pcard">
                   <ProjectTileRename i={i} onDone={(n) => void rename(i, n)} />
+                </div>
+              ) : i.archived ? (
+                <div key={i.id} className="pcard-wrap archived" data-testid="archived-card">
+                  <ProjectTile i={i} onContext={menu(i)} note={archivedLine(i)} />
+                  <button className="btn sm restore" onClick={() => void restore([i])} data-testid="project-restore">
+                    <ArchiveRestore className="ico" />
+                    {t('projects.restore')}
+                  </button>
                 </div>
               ) : (
                 <ProjectTile key={i.id} i={i} onContext={menu(i)} />
@@ -196,14 +217,21 @@ export function Projects() {
               {t('c.selectAll')}
             </button>
             <span className="sp" />
-            <button className="btn" onClick={() => items.filter((i) => sel.has(i.id)).slice(0, 5).forEach((i) => void window.desk.showItem(i.dir))}>
+            <button className="btn" onClick={() => pool.filter((i) => sel.has(i.id)).slice(0, 5).forEach((i) => void window.desk.showItem(i.dir))}>
               <FolderOpen className="ico" />
               {t('c.reveal')}
             </button>
-            <button className="btn danger" onClick={() => void remove(items.filter((i) => sel.has(i.id)))} data-testid="projects-bulk-remove">
-              <Trash2 className="ico" />
-              {t('c.remove')}
-            </button>
+            {inArchive ? (
+              <button className="btn" onClick={() => void restore(pool.filter((i) => sel.has(i.id)))} data-testid="projects-bulk-restore">
+                <ArchiveRestore className="ico" />
+                {t('projects.restore')}
+              </button>
+            ) : (
+              <button className="btn" onClick={() => void archive(pool.filter((i) => sel.has(i.id)))} data-testid="projects-bulk-archive">
+                <Archive className="ico" />
+                {t('projects.archive')}
+              </button>
+            )}
           </div>
         )}
         <Watched />
