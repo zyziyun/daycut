@@ -503,7 +503,8 @@ def _bps(v):
 
 
 def delivery_args(crf=None, preset="medium", audio=True, audio_bitrate=None, faststart=True, fps=None,
-                  maxrate=None, vbitrate=None, maxrate_factor=1.15, bufsize=None, encoder=None, quality=None):
+                  maxrate=None, vbitrate=None, maxrate_factor=1.15, bufsize=None, encoder=None, quality=None,
+                  hw_bitrate=None):
     """Encoder args for a publishable MP4: H.264 High yuv420p, CRF (persona export.crf, 18),
     bt709 tags in the container AND the H.264 VUI (h264_metadata bsf, so iOS does not guess),
     AAC ``audio_bitrate`` (persona export.audio_bitrate, 192k) 48 kHz stereo, +faststart.
@@ -518,6 +519,9 @@ def delivery_args(crf=None, preset="medium", audio=True, audio_bitrate=None, fas
       ``-q:v`` from the CRF (18 -> 65) on Apple silicon unless vbitrate is given; no preset/crf) | "h264_mf"
       (Windows Media Foundation, bitrate from the CRF). Returns an arg list to put between the inputs/filters
       and the output path.
+    hw_bitrate: bitrate target ("8M" / bps, e.g. ``vstudio.platform.delivery_bitrate``) used as ``vbitrate`` when
+      the encoder is not libx264 and no vbitrate is given: videotoolbox's -q:v / MF's CRF mapping give ~15 Mbps
+      at 1080p30, 3x a libx264 CRF 19 file. libx264 keeps its CRF (``maxrate`` still caps it).
     From polish ``BT709``/``venc_args``/``step_finalize``, call-clips loudnorm/export block, longform
     ``_lfc.video_encoder``.
     """
@@ -525,6 +529,8 @@ def delivery_args(crf=None, preset="medium", audio=True, audio_bitrate=None, fas
     ex = _persona_export()
     crf = ex.get("crf", 18) if crf is None else crf
     encoder = h264.effective_encoder() if encoder is None else h264._norm(encoder)
+    if hw_bitrate and not vbitrate and encoder != "libx264":
+        vbitrate = hw_bitrate
     if encoder == "h264_videotoolbox":
         args = ["-c:v", "h264_videotoolbox", "-profile:v", "high", "-pix_fmt", "yuv420p"]
         if not vbitrate:

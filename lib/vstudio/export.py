@@ -542,7 +542,8 @@ def export_one(master, prof, out_dir, cues=None, covers=None, post=None, mode="f
         fps_out = prof.fps.get("default", 30)
     enc = dict(prof.encode)
     vargs = media.delivery_args(crf=enc.get("crf"), preset=preset, audio=None, faststart=False, encoder=encoder,
-                                maxrate=enc.get("maxrate"), bufsize=enc.get("bufsize"), vbitrate=enc.get("vbitrate"))
+                                maxrate=enc.get("maxrate"), bufsize=enc.get("bufsize"), vbitrate=enc.get("vbitrate"),
+                                hw_bitrate=P.delivery_bitrate(prof, prof.w, prof.h, fps_out or info["fps"] or 30))
     has_a = info["has_audio"]
     tmpd = workdir or tempfile.mkdtemp(prefix="vexport-")
     try:

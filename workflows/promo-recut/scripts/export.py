@@ -2,7 +2,12 @@
 """Render a promo-recut HyperFrames project and make it upload-ready:
 HyperFrames render -> two-pass loudnorm to persona audio.loudness_lufs (default -14 LUFS, TP -1.5,
 vstudio.audio.loudnorm_2pass, video stream-copied) -> BT.709 colour tags written into the H.264/HEVC
-stream + container with no re-encode, +faststart (vstudio.media.retag_bt709).
+stream + container with no re-encode, +faststart (vstudio.media.retag_bt709). The delivered size is reported.
+
+Bitrate: without libx264 (the bundled LGPL ffmpeg) HyperFrames encodes with h264_videotoolbox at ~15 Mbps
+(900 MB for 8 min 1080p). A render more than 25 % over the delivery target (vstudio.platform.delivery_bitrate:
+the --platform profile, else 8 Mbps at 1080p30, scaled by resolution / fps) has its video re-encoded to the
+target first (vstudio.media.delivery_args hw_bitrate; libx264 keeps CRF capped at the target). --keep-bitrate skips it.
 
   python3 $VSTUDIO/workflows/promo-recut/scripts/export.py promo my-promo.mp4 [--quality delivery]
   python3 $VSTUDIO/workflows/promo-recut/scripts/export.py --skip-render promo/renders/raw.mp4 my-promo.mp4
@@ -60,6 +65,32 @@ def render(proj, quality):
     return raw
 
 
+def video_bitrate(info, path):
+    """Average video bitrate (bps) of a probed file: the stream's bit_rate, else the file size over its duration."""
+    if info.get("vbitrate"):
+        return int(info["vbitrate"])
+    dur = info.get("duration") or 0
+    return int(os.path.getsize(path) * 8 / dur) if dur else 0
+
+
+def fit_bitrate(raw, out, prof=None, slack=1.25):
+    """Re-encode the video of ``raw`` to the delivery bitrate when it is more than ``slack`` over it (audio
+    copied). Returns (path to use, target bps, the raw's bps); ``raw`` itself when it is already small enough."""
+    from vstudio import platform as PF
+    info = media.probe(raw)
+    target = PF.delivery_bitrate(prof, info["w"], info["h"], info.get("fps") or 30)
+    have = video_bitrate(info, raw)
+    if not have or have <= target * slack:
+        return raw, target, have
+    enc = (prof.encode if prof is not None else {}) or {}
+    print(f"bitrate: render is {have / 1e6:.1f} Mbps, delivery target {target / 1e6:.1f} Mbps: re-encoding the video",
+          flush=True)
+    args = media.delivery_args(crf=enc.get("crf"), audio=None, faststart=False, hw_bitrate=target,
+                               maxrate=int(target * 1.5), bufsize=int(target * 3))     # libx264: CRF under that cap
+    media.run(["ffmpeg", "-y", "-i", raw, "-map", "0:v:0", "-map", "0:a?", "-c:a", "copy", *args, out])
+    return out, target, have
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0], formatter_class=argparse.RawDescriptionHelpFormatter,
                                  epilog=__doc__.split("\n", 1)[1])
@@ -69,10 +100,11 @@ def main():
                     help="hyperframes render --quality (default delivery)")
     ap.add_argument("--skip-render", action="store_true", help="src is an already rendered mp4: only deliver")
     ap.add_argument("--lufs", type=float, default=None, help="default persona audio.loudness_lufs (-14)")
+    ap.add_argument("--keep-bitrate", action="store_true", help="never re-encode the render to the delivery bitrate")
     ap.add_argument("--platform", default=None,
                     help="take LUFS / true peak from a vstudio.platform profile (e.g. douyin, youtube) and check length")
     a = ap.parse_args()
-    tp = -1.5
+    tp, prof = -1.5, None
     if a.platform:
         from vstudio import platform as PF
         prof = PF.profile(a.platform)
@@ -86,18 +118,29 @@ def main():
         fail(f"no rendered video at {raw}")
 
     tmp = os.path.splitext(a.out)[0] + ".loud.mp4"
+    fit = os.path.splitext(a.out)[0] + ".rate.mp4"
     try:
-        m = audio.loudnorm_2pass(raw, tmp, lufs=a.lufs, tp=tp)
+        src, target = raw, None
+        if not a.keep_bitrate:
+            src, target, _ = fit_bitrate(raw, fit, prof)
+        m = audio.loudnorm_2pass(src, tmp, lufs=a.lufs, tp=tp)
         print(f"loudnorm: measured {m['input_i']:.1f} LUFS, TP {m['input_tp']:.1f}")
         media.retag_bt709(tmp, a.out)
     except media.FFmpegError as e:
         fail(f"delivery (loudness / colour tags) failed: {proctail.clean_error(e)}")
     finally:
-        if os.path.exists(tmp):
-            os.remove(tmp)
+        for f in (tmp, fit):
+            if os.path.exists(f):
+                os.remove(f)
     print("->", a.out)
     info = media.probe(a.out)
     print({k: info[k] for k in ("vcodec", "w", "h", "fps", "duration", "primaries", "transfer", "acodec", "sample_rate")})
+    size = os.path.getsize(a.out)
+    print(f"size: {size / 1e6:.1f} MB, video {video_bitrate(info, a.out) / 1e6:.1f} Mbps"
+          + (f" (target {target / 1e6:.1f} Mbps)" if target else ""))
+    lim = ((prof.extra.get("limits") or {}).get("max_bytes") if prof is not None else None)
+    if lim and size > lim:
+        print(f"warning: {size / 1e6:.0f} MB is over the {prof.name} upload cap ({lim / 1e6:.0f} MB)")
     after = audio.measure_loudness(a.out)
     print(f"delivered: {after['input_i']:.1f} LUFS integrated, true peak {after['input_tp']:.1f} dBTP")
     if a.platform:

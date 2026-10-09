@@ -61,6 +61,10 @@ ORIENT_ALIASES = {"v": "vertical", "portrait": "vertical", "3:4": "vertical", "f
 _VERT_CAPTION = dict(size=[52, 72], max_chars_zh=14, max_chars_en=32, max_lines=2, stroke=0.09)
 _HORZ_CAPTION = dict(size=[44, 60], max_chars_zh=22, max_chars_en=48, max_lines=2, stroke=0.08)
 _LOUD = dict(lufs=-14.0, tp=-1.5)        # repo default (persona audio.loudness_lufs); see PLATFORMS.md
+# bitrate target at 1080p30 for an encoder without a trusted constant-quality mode (h264_videotoolbox, h264_mf,
+# nvenc ...: their -q:v / CRF mapping runs ~15 Mbps at 1080p30, 3x a libx264 CRF 19 file). YouTube advises ~8 Mbps
+# for 1080p30 SDR, 小红书 8-12 [PLATFORMS.md]; a profile's encode.hw_bitrate overrides it (B站: 6M, it re-encodes above)
+HW_BITRATE_1080P30 = 8_000_000
 
 # name -> common fields + per-orientation fields. Coordinates are px on that orientation's canvas.
 # safe: margins {top, bottom, left, right} + optional right_lower {w, from_y} keep-out (button column).
@@ -179,7 +183,7 @@ PLATFORMS = {
         chapters=dict(supported=True, min_count=2, min_len=5, first_zero=True,
                       note="分段章节 set in the uploader; timestamps in the description also link"),
         loudness=dict(_LOUD), fps=dict(default=30, max=120),
-        encode=dict(crf=18, maxrate="24M", bufsize="24M"),
+        encode=dict(crf=18, maxrate="24M", bufsize="24M", hw_bitrate="6M"),
         length=dict(sweet=[180, 900], max=36000, min=10),
         orientations=dict(
             horizontal=dict(w=1920, h=1080, aspect="16:9",
@@ -1057,6 +1061,31 @@ def check_text(p: Profile, title=None, body=None, tags=None):
         if tm:
             w += [f"tag '{t}' > {tm} chars" for t in (tags or []) if len(t) > tm]
     return w
+
+
+def _bps(v):
+    if isinstance(v, (int, float)):
+        return int(v)
+    v = str(v).strip()
+    mul = {"k": 1e3, "m": 1e6, "g": 1e9}.get(v[-1:].lower(), 1)
+    return int(float(v.rstrip("kKmMgG")) * mul)
+
+
+def delivery_bitrate(p: "Profile" = None, w=1920, h=1080, fps=30):
+    """Video bitrate (bps) to deliver ``w``x``h`` at ``fps`` with a hardware / bitrate-only H.264 encoder:
+    ``encode.hw_bitrate`` (else HW_BITRATE_1080P30) at 1080p30, scaled by pixel rate ** 0.75 (bits per pixel
+    drop as resolution / frame rate grow), capped by ``encode.maxrate`` and ``limits.max_bitrate``; rounded to
+    0.1 Mbps. 1080p30 -> 8 Mbps, 1080p60 -> ~13.5, 4K30 -> ~22.6 (16 M cap on YouTube), 1080x1440 -> ~6.4."""
+    enc = (p.encode if p is not None else {}) or {}
+    base = _bps(enc["hw_bitrate"]) if enc.get("hw_bitrate") else HW_BITRATE_1080P30
+    ratio = (float(w) * float(h) * float(fps or 30)) / (1920 * 1080 * 30)
+    br = base * ratio ** 0.75
+    caps = [_bps(enc["maxrate"])] if enc.get("maxrate") else []
+    lim = (p.extra.get("limits") if p is not None else None) or {}
+    if lim.get("max_bitrate"):
+        caps.append(_bps(lim["max_bitrate"]))
+    br = min([br] + caps)
+    return int(max(500_000, round(br / 1e5) * 1e5))
 
 
 def check_length(p: Profile, seconds: float):
