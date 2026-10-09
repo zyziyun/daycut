@@ -8,6 +8,8 @@ App releases are tagged `v*`; engine-only releases are tagged `engine-v*`.
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-10-09
+
 ### Added
 
 - **App Store lint** (`apps/desk/scripts/appstore/appstore_lint.py`, CI `appstore-lint.yml`): fails a build whose
@@ -27,8 +29,9 @@ App releases are tagged `v*`; engine-only releases are tagged `engine-v*`.
 
 - With no usable AI (no key yet, or a local model server without the routed model) a talking-head clip no longer
   fails at its post copy: the title and body are drafted from the spoken lines, as without an AI route.
-
-## [0.2.3] - 2026-10-08
+- The plan card's questions and no-AI plan texts follow the app's language (they could come out in Chinese).
+- The in-app sign-in terminal no longer drops a CLI's first output when it prints before the terminal is ready.
+- Windows: the engine starts again (the Unix socket server is only defined where Python has one).
 
 ### Added
 
