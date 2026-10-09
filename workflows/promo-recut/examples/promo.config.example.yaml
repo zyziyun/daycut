@@ -145,10 +145,16 @@ montage:                             # highlights video -> framed "screen" after
     - [80.0, 88.0, "第一步"]
     - [120.0, 128.0, "第二步"]
     - [200.0, 207.0, "总结"]
+    # from the b-roll inputs (`broll:` list: screen recordings, finished cuts) - name the source first:
+    # - [0, 12.0, 20.0, "可灵"]                  # broll index (0 = first)
+    # - ["FinePrint_v4-zh.mp4", 3.0, 9.0, null]  # broll file name / stem / path, or "highlights"
+    # - {src: 2, start: 5.0, end: 11.0, label: "录屏", crop: auto, fit: blur}   # per-clip crop / fit
+    # each named clip is re-encoded onto the canvas: vertical source -> blurred-fill pillarbox, 16:9 -> cover
   crossfade: 0.3                     # baked internal crossfades
   zoom_through: 0.5                  # body / montage overlap (body keeps playing underneath)
   scale: "1920:1080"
-  # crop: auto                       # privacy crop of the highlights source (default auto for screen recordings)
+  # crop: auto                       # privacy crop of the highlights source (default auto for screen recordings);
+                                     # b-roll sources: a clip's own crop, else auto for screen recordings
   title: 成片精选
   title_sub: agent 生成的完整讲解 · 节选
   badge: 精选

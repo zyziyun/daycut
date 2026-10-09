@@ -2,6 +2,7 @@
 
     python3 -m pytest tests/test_promo_pip_scenes.py -q
 """
+import os
 import pathlib
 import re
 import shutil
@@ -310,3 +311,123 @@ def test_cues_never_overlap_after_the_tail():
     assert next(c for c in cues if c["t"] == "再下一句")["e"] == pytest.approx(8.0 / 1.5 + 0.15, abs=1e-3)   # gap kept
     gap = next(c for c in cues if c["t"] == "隔开的")
     assert gap["e"] == pytest.approx(10.0 / 1.5 + 0.15, abs=1e-3)   # last cue untouched
+
+
+# ---------------------------------------------------------------- footage map
+def test_footage_about_matches_the_cards_own_text(capsys):
+    """about "平台" on a tiles card titled "4 个平台" while she lists the platform names is not a mismatch;
+    a pip tag counts too; an about found nowhere is still flagged."""
+    scene = SPECS["tiles"]
+    own = BP.own_text(scene, None)
+    assert "4 个平台" in own and "Seedance" in own and "tiles" not in own
+    said = [(10.0, 14.0, "可灵 Seedance MiniMax 还有 Muse")]
+    rows = [("card", 10, 14, 10.0, 14.0, "scene:tiles 4 个平台", "平台", own),
+            ("pip", 20, 24, 20.0, 24.0, "video:a.mp4", "价格", BP.own_text("价格对比")),
+            ("pip", 30, 34, 30.0, 34.0, "video:b.mp4", "分镜", BP.own_text("录屏")),
+            ("card", 40, 44, 40.0, 44.0, "img:x.png", "Muse", "")]           # legacy 7-item rows still work
+    BP.print_footage(rows, [[0.0, 100.0, "横评"]], said + [(40.0, 44.0, "Muse 的 token 计费")])
+    out = capsys.readouterr().out.splitlines()[1:]
+    assert [ln[1] for ln in out] == [" ", " ", "!", " "]
+    assert not BP.about_mismatch("平台", "可灵 Seedance", "横评", own)
+    assert BP.about_mismatch("平台", "可灵 Seedance", "横评", "")
+
+
+# ---------------------------------------------------------------- montage from b-roll sources
+def test_montage_clip_forms():
+    assert common.parse_clip([0.0, 8.0, "可灵"]) == dict(src=None, start=0.0, end=8.0, label="可灵")
+    assert common.parse_clip([16.0, 22.0, None])["src"] is None
+    assert common.parse_clip([2.0, 9.0]) == dict(src=None, start=2.0, end=9.0, label=None)
+    assert common.parse_clip([1, 3.0, 9.0, "Seedance"]) == dict(src=1, start=3.0, end=9.0, label="Seedance")
+    assert common.parse_clip([0, 0.0, 6.0]) == dict(src=0, start=0.0, end=6.0, label=None)     # index, no label
+    assert common.parse_clip(["a.mp4", 1.0, 4.0])["src"] == "a.mp4"
+    d = common.parse_clip({"src": 2, "start": 1, "end": 5, "crop": "auto", "fit": "blur"})
+    assert d["src"] == 2 and d["crop"] == "auto" and d["fit"] == "blur" and d["label"] is None
+    with pytest.raises(SystemExit, match="shorter"):
+        common.parse_clip([0, 4.0, 4.2, "x"])
+    with pytest.raises(SystemExit, match="want"):
+        common.parse_clip([1.0])
+
+
+def test_montage_source_resolution(tmp_path):
+    rec, cutf = tmp_path / "Screen Recording 1.mov", tmp_path / "out" / "FinePrint_v4-zh.mp4"
+    cutf.parent.mkdir()
+    for f in (rec, cutf, tmp_path / "hl.mp4", tmp_path / "local.mp4"):
+        f.write_bytes(b"x")
+    prj = _Prj({"highlights": "hl.mp4", "broll": [str(rec), str(cutf)]})
+    prj.p = lambda r: r if os.path.isabs(r) else str(tmp_path / r)
+    assert common.resolve_source(prj, None) == str(tmp_path / "hl.mp4")
+    assert common.resolve_source(prj, "highlights") == str(tmp_path / "hl.mp4")
+    assert common.resolve_source(prj, 1) == str(cutf)
+    assert common.resolve_source(prj, "FinePrint_v4-zh.mp4") == str(cutf)
+    assert common.resolve_source(prj, "FinePrint_v4-zh") == str(cutf)
+    assert common.resolve_source(prj, "local.mp4") == str(tmp_path / "local.mp4")
+    with pytest.raises(SystemExit, match="out of range"):
+        common.resolve_source(prj, 5)
+    with pytest.raises(SystemExit, match="0: Screen Recording 1.mov"):
+        common.resolve_source(prj, "nope.mp4")
+
+
+def test_canvas_fit_vertical_is_pillarboxed_169_is_cover():
+    assert TC.canvas_fit((1080, 1920), (1920, 1080)) == "blur"
+    assert TC.canvas_fit((1920, 1080), (1920, 1080)) == "crop"
+    assert TC.canvas_fit((1920, 956), (1920, 1080)) == "crop"            # a browser-cropped recording: cover
+    assert TC.canvas_fit((1920, 1080), (1920, 1080), rotation=90) == "blur"   # phone clip stored landscape + rotated
+    assert TC.canvas_fit((1440, 1080), (1920, 1080)) == "blur"           # 4:3 is past the 1.25x tolerance
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg not installed")
+def test_montage_multi_from_broll_sources(tmp_path):
+    """A vertical silent clip + a 16:9 clip with sound -> one 640x360 montage, duration = clips - crossfades."""
+    v = tmp_path / "phone.mp4"
+    h = tmp_path / "cut.mp4"
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=180x320:rate=30:duration=4",
+                    "-pix_fmt", "yuv420p", str(v)], check=True)
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=30:duration=5",
+                    "-f", "lavfi", "-i", "sine=frequency=440:duration=5", "-pix_fmt", "yuv420p", "-shortest", str(h)],
+                   check=True)
+    work = tmp_path / "work"
+    work.mkdir()
+    prj = _Prj({"broll": [str(v), str(h)]})
+    prj.p = lambda r: r if os.path.isabs(r) else str(tmp_path / r)
+    prj.work = str(work)
+    prj.w = lambda n: str(work / n)
+    clips = [common.parse_clip(c) for c in ([0, 0.5, 2.5, "竖屏"], ["cut.mp4", 1.0, 3.0, None])]
+    out = str(work / "montage.mp4")
+    TC.montage_multi(prj, clips, out, 0.3, "640:360", 30, -17)
+    from vstudio import media
+    info = media.probe(out)
+    assert (info["w"], info["h"]) == (640, 360) and info["has_audio"]
+    assert info["duration"] == pytest.approx(2.0 + 2.0 - 0.3, abs=0.1)
+    parts = sorted(os.listdir(work / "montage_parts"))
+    assert len(parts) == 2 and all(p.endswith(".mp4") for p in parts)
+    with pytest.raises(SystemExit, match="ends past"):
+        TC.montage_multi(prj, [common.parse_clip([0, 3.0, 9.0])], out, 0.3, "640:360", 30, -17)
+
+
+def test_montage_crop_is_per_source(monkeypatch):
+    """montage.crop: false (meant for the highlights file) keeps auto on b-roll recordings; a clip crop wins."""
+    seen = []
+    monkeypatch.setattr(TC.screen_crop, "clean", lambda path, spec, wd: (seen.append((os.path.basename(path), spec)),
+                                                                          (path, None))[1])
+    prj = _Prj({"highlights": "/x/hl.mp4", "broll": ["/x/Screen Recording 1.mov", "/x/cut.mp4"]})
+    prj.p = lambda r: r
+    prj.work = "/x/work"
+    clips = [common.parse_clip(c) for c in ([0.0, 4.0, "hl"], [0, 1.0, 5.0, None], [1, 1.0, 5.0, None],
+                                            {"src": 0, "start": 6, "end": 9, "crop": [0, 10, 100, 50]})]
+    TC.montage_sources(prj, clips, highlights_crop=False)
+    assert seen == [("hl.mp4", False), ("Screen Recording 1.mov", None), ("cut.mp4", None),
+                    ("Screen Recording 1.mov", [0, 10, 100, 50])]
+
+
+# ---------------------------------------------------------------- delivery bitrate (export.py)
+def test_export_reencodes_only_an_oversized_render(monkeypatch, tmp_path):
+    import export as EX
+    runs = []
+    monkeypatch.setattr(EX.media, "run", lambda cmd: runs.append(cmd))
+    info = dict(w=1920, h=1080, fps=30.0, duration=480.0, vbitrate=14_800_000)
+    monkeypatch.setattr(EX.media, "probe", lambda p: info)
+    out, target, have = EX.fit_bitrate("raw.mp4", str(tmp_path / "r.mp4"), PF.profile("youtube", use_persona=False))
+    assert out.endswith("r.mp4") and target == 8_000_000 and have == 14_800_000 and len(runs) == 1
+    assert "-c:a" in runs[0] and runs[0][runs[0].index("-c:a") + 1] == "copy"
+    info["vbitrate"] = 7_500_000
+    assert EX.fit_bitrate("raw.mp4", str(tmp_path / "r.mp4"))[0] == "raw.mp4" and len(runs) == 1

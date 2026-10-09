@@ -98,7 +98,10 @@ my-promo/
    sizes get a split cover: photo on one side, and on the other a dark panel with quote, title + highlighted
    term, a framed highlights thumbnail, chips, a red tag and a 记笔记 tag. Portrait sizes stack the photo on
    top. The post (`vstudio.publish.post_body`) gets the title (length checked per platform), body, links, a
-   chapter timeline from `promo/timeline.json` (MM:SS, floored) and tags.
+   chapter timeline from `promo/timeline.json` (MM:SS, floored) and tags: `post.tags` (the post's own) plus
+   the persona's `publish.tag_sets.promo` when it has one - never the default `publish.tags` (career tags on a
+   review / promo are off-topic). `post.tag_set: <name>` picks another set, `post.use_persona_tags: false` = own
+   tags only (`vstudio.formats.post_tags`).
 
 ## Timeline model (what build_promo computes)
 
@@ -143,6 +146,15 @@ its captions nor its chapter: likely the wrong recording for that stretch (e.g. 
 - **Montage robustness**: the montage (and hooks) render is checked against the plan (clips − crossfades, ±0.5 s).
   A short render means the source's timestamps jump (e.g. joined with `concat -c copy`): it is re-encoded once to a
   clean CFR copy in `work/` and retried, else the cut stops with an error.
+- **Montage from b-roll**: `montage.clips` entries are `[start, end, label]` on the `highlights` file, or
+  `[source, start, end, label]` (also `[source, start, end]` and `{src, start, end, label, crop, fit}`) where
+  source is a `broll:` index (0 = first), a b-roll file name / stem / path, `"highlights"` or a config-relative
+  path. With any named source every clip is re-encoded onto the `scale` canvas into `work/montage_parts/`
+  (cached): a vertical (or otherwise off-aspect, > 1.25x) source gets a blurred-fill pillarbox, a 16:9 one is
+  cover-fit; sources without audio get silence. The privacy crop resolves per source: clip `crop` >
+  `montage.crop` (the highlights file only) > auto for screen recordings, so `montage.crop: false` for a clean
+  highlights file never shows a b-roll recording's browser bar. Each segment is duration-checked (±0.5 s, one clean-CFR retry),
+  then the joined montage is checked like the highlights one.
 - Every new encode uses `vstudio.media` encoder selection (`media.delivery_args`): the bundled ffmpeg is LGPL
   without libx264 (h264_videotoolbox there).
 
