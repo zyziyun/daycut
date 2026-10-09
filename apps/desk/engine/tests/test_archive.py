@@ -205,5 +205,35 @@ class ArchiveTest(unittest.TestCase):
         with self.assertRaisesRegex(BadRequest, "still running"):
             R("POST", "/api/history/archive", dict(dir=self.a))
 
+
+class ArchivedInboxTest(unittest.TestCase):
+    """An archived project's checkpoints stayed in the Inbox, Home's "Needs you" and the badge (the engine's
+    inbox lists every project). Now they are marked ``archived`` and keep their project."""
+    setUp, tearDown = ArchiveTest.setUp, ArchiveTest.tearDown
+
+    def inbox_items(self):
+        from desk_engine import inbox as IB
+        from vstudio.project import inbox as PI
+        ib = IB.Inbox(self.data, self.h, mock.Mock(), "real")
+        ib._real = True
+        entry = dict(project=self.p, id="publish", item="01", kind="publish", options=[])
+        with mock.patch.object(PI, "inbox", return_value=dict(entries=[entry])):
+            return [i for i in ib.list()["items"] if i["source"] == "engine"]   # (the batches' own reviews aside)
+
+    def test_archive_marks_and_restore_unmarks(self):
+        pid = next(i["id"] for i in self.h.list()["items"] if i["name"] == "P")
+        [it] = self.inbox_items()
+        self.assertNotIn("archived", it)
+        self.assertEqual((it["project"]["id"], it["project"]["name"]), (pid, "P"))
+        self.h.archive([self.p])
+        [it] = self.inbox_items()
+        self.assertTrue(it["archived"])                                   # the global views leave it out
+        self.assertEqual((it["project"]["id"], it["project"]["name"]), (pid, "P"))   # its own page still finds it
+        self.h.restore([self.p])
+        [it] = self.inbox_items()
+        self.assertNotIn("archived", it)
+        self.assertEqual(it["project"]["id"], pid)
+
+
 if __name__ == "__main__":
     unittest.main()

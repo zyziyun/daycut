@@ -8,7 +8,8 @@ in the UI language. Sources:
 
 Answers for desk-side items are kept in ``<DESK_DATA_DIR>/inbox.json`` (never written into the creator's folder);
 an answer can be taken back (undo toast). Item: {key, kind, group choose|review|spend|other, project {id, name,
-kind, thumb}, code, params, text, options [{id, code?, text, clip, checked}], minutes, source, at}.
+kind, thumb}, code, params, text, options [{id, code?, text, clip, checked}], minutes, source, at, archived?}.
+``archived: true`` marks an item of an archived project (history ``hidden``): only that project's page lists it.
 """
 import hashlib
 import json
@@ -250,6 +251,12 @@ class Inbox:
         with self._engine_lock:
             self._engine_doc = (0.0, None)
 
+    def _archived_dirs(self):
+        try:
+            return set(self.history.archived_dirs())
+        except Exception:  # noqa: BLE001  (a history without archives: nothing is archived)
+            return set()
+
     def _answers(self):
         a = read_json(self.path, {}) or {}
         return a if isinstance(a, dict) else {}
@@ -309,11 +316,16 @@ class Inbox:
                 doc = self._engine_inbox()
                 engine_read = True
                 by_dir = {os.path.realpath(e["dir"]): e for e in hist}
+                hidden = self._archived_dirs()
+                arch_dir = None                   # archived rows, read only when an entry belongs to one
                 for p in (doc.get("entries") or doc.get("items") or doc.get("pending") or []) if isinstance(doc, dict) else []:
                     if not isinstance(p, dict):
                         continue
                     pd = os.path.realpath(p.get("project") or p.get("dir") or "")
-                    e = by_dir.get(pd) or {}
+                    archived = pd in hidden
+                    if archived and arch_dir is None:
+                        arch_dir = {os.path.realpath(r["dir"]): r for r in self.history.list(archived=True)["items"]}
+                    e = (arch_dir or {}).get(pd) or {} if archived else by_dir.get(pd) or {}
                     kind = p.get("kind") or p.get("checkpoint_kind") or "checkpoint"
                     spend = kind == "budget-approval"
                     params = dict(n=p.get("n_options") or 0)
@@ -342,6 +354,7 @@ class Inbox:
                                       previews=p.get("previews") or [],
                                       default=p.get("default"), minutes=1 if not author else 5, source="engine",
                                       engine=dict(dir=pd, id=p.get("id"), item=p.get("item")),
+                                      **({"archived": True} if archived else {}),
                                       **({"author": author, "labels": author["labels"]} if author else {})))
             except Exception:  # noqa: BLE001
                 pass
@@ -357,6 +370,8 @@ class Inbox:
                 items += [i for i in src() if i["key"] not in answers]
             except Exception:  # noqa: BLE001  (an optional source never breaks the inbox)
                 pass
+        # an archived project's checkpoints stay listed but marked ``archived``: the Inbox, Home, the badge and the
+        # triage queue leave them out; the project's own page still shows them (restore -> they are plain again)
         thumbs = [i["project"]["thumb"] for i in items if i["project"].get("thumb")]
         self.history.allow_media(thumbs + allow)
         # quickest first (the inbox reads top-down: what takes a minute goes before what takes ten); failures lead

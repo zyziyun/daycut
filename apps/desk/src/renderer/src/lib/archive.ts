@@ -1,7 +1,7 @@
 // Project archive (全部项目 › 归档 / 已归档): which projects a filter shows, the archive / restore flows with their undo
 // toasts, and the archived date line. Nothing on disk is ever deleted; a running project is never archived.
 import type { HistoryItem } from '../../../shared/v02';
-import { fmtDate, t } from '../i18n';
+import { fmtDate, t, tk } from '../i18n';
 
 export type ProjectsFilter = 'all' | 'running' | 'you' | 'done' | 'failed' | 'archived';
 
@@ -29,6 +29,15 @@ export function shownProjects(items: HistoryItem[], archived: HistoryItem[], o: 
       (!o.clientOk || o.clientOk(i)) &&
       (!ql || `${i.name} ${i.recipe ?? ''} ${o.searchClient ? (i.client ?? '') : ''}`.toLowerCase().includes(ql)),
   );
+}
+
+/** The empty state of a filter that shows nothing: the search text when there is one, else what is missing
+ * ("No running projects"), never a key. */
+export function noMatchText(o: Pick<ShownOpts, 'f' | 'q' | 'type'>): string {
+  const q = o.q.trim();
+  if (q) return t('projects.noMatch', { q });
+  if (o.f === 'all' && o.type) return t('projects.none.type', { type: tk(`type.${o.type}`) });
+  return t(`projects.none.${o.f}`);
 }
 
 /** A run is going (the engine refuses to archive it; the UI says so before asking). */

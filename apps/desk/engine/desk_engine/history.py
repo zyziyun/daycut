@@ -297,6 +297,10 @@ class History:
         names = cfg.get("names") if isinstance(cfg.get("names"), dict) else {}
         return names.get(rp) or os.path.basename(rp.rstrip(os.sep)) or rp
 
+    def archived_dirs(self):
+        """The archived projects' real paths (history.json ``hidden``): cheap, no folder is read."""
+        return set(self._cfg().get("hidden") or [])
+
     def archive(self, paths):
         """Archive projects: out of All projects into the Archived tab; nothing on disk is touched. A project with a
         run going is refused (the whole request: nothing is archived), never stopped. -> {ok, archived[], at}"""

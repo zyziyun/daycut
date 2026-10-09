@@ -466,6 +466,8 @@ export interface InboxItem {
   minutes?: number;
   failure?: import('./v02').PilotFailure;
   source: 'picks' | 'batch' | 'live' | 'engine' | 'pilot' | 'create' | 'feedback';
+  /** the item's project is archived: only that project's page lists it (not the Inbox, Home, badge, triage) */
+  archived?: boolean;
   at?: number | null;
   /** Create items open their own screen (#/create/...) instead of being answered here */
   href?: string;

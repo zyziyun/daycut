@@ -446,7 +446,7 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
   }, [odoc]);
   const marks = useMemo(() => (odoc ? markers(odoc, drafts) : []), [odoc, drafts]);
   const project = hist.data?.items.find((x) => x.id === id);
-  const pinItem = q.item ? inbox.items.find((x) => x.key === q.item) ?? null : null;
+  const pinItem = q.item ? inbox.all.find((x) => x.key === q.item) ?? null : null;
   const triageItem = triage ? inbox.items.find((x) => x.key === triage.keys[triage.i]) ?? null : null;
   if (err && !doc)
     return (

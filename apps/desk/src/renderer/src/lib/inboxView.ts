@@ -5,6 +5,11 @@ import { fmtList, getLang, has, intlLocale, t, tk } from '../i18n';
 import { failureReason } from '../v4/Failure';
 import { emsg } from '../v4/msg';
 
+/** The items that count as "needs you": not an archived project's (its own page still lists those). */
+export function activeItems(items: InboxItem[]): InboxItem[] {
+  return items.some((x) => x.archived) ? items.filter((x) => !x.archived) : items;
+}
+
 /** The card's title from the engine's code + params (UI language); the engine's own text otherwise. */
 export function inboxTitle(x: InboxItem): string {
   if (x.code === 'inbox.spend' && typeof x.params.amount === 'number') return t('inbox.spend', { amount: money(x.params.amount, String(x.params.currency ?? 'USD')) });

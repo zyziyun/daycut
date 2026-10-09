@@ -83,7 +83,7 @@ export function Project({ id, tab: asked }: { id: string; tab: ProjectTab }) {
     };
   }, [client, id, n, hist?.at]);
   useEffect(() => subscribe((e) => (e.type === 'output-edit' && e.item === id) || e.type === 'run-exit' ? reload() : undefined), [subscribe, id, reload]);
-  const pendingAll = inbox.items.filter((x) => x.project.id === id);
+  const pendingAll = inbox.all.filter((x) => x.project.id === id);
   const reviewItem = pendingAll.find((x) => x.kind === 'review');
   const raw = item ? itemStatus(item) : null;
   // 「已完成」 never sits next to 「审片 3」: clips waiting for her review make the project "needs you"
