@@ -33,7 +33,7 @@ items:
   sources: [segments, csv]
   planner: vstudio.project.adapters.longform:plan_items
   per_item: [range, title, chapter, hook, notes, tags, cuts, body, cleanup_reply]
-  shared: [layout_mode, platforms, series_name, speed, cleanup_profile, privacy_exclude]
+  shared: [layout_mode, platforms, series_name, speed, cleanup_profile, privacy_exclude, subtitles, subtitle_lang]
   variants: [platform, hook]
   share_cache: [probe, extract, asr, geometry, glossary]
 engine:
@@ -109,6 +109,16 @@ params:
       title: Speech language
       x-zh: 语言
       x-spec: asr.language
+    subtitles:
+      enum: [mono, bilingual, translated]
+      default: mono
+      title: Captions (mono = in subtitle_lang - the speech's own language unless she asked for another; bilingual = speech + subtitle_lang; translated = subtitle_lang only)
+      x-zh: 字幕（单语 = 字幕语言，默认就是说话的语言；双语 = 原文 + 字幕语言；只要译文）
+    subtitle_lang:
+      enum: [auto, zh, en]
+      default: auto
+      title: Caption language (auto = the speech's language; another one is translated at export)
+      x-zh: 字幕语言（auto = 说话的语言；选别的语言时导出前翻译）
     asr_prompt:
       type: string
       default: ""

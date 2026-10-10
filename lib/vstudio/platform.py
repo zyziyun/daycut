@@ -1140,7 +1140,14 @@ def fit_text_size(p: Profile, text: str, role="cjk-bold", fit_height=True):
         r = attempt(size)
         if r["fits"]:
             return r
-    r = attempt(lo, max_lines)
+    for size in range(lo - 2, int(lo * 0.8) - 1, -2):  # a little smaller before a third line
+        r = attempt(size)
+        if r["fits"]:
+            return r
+    # still too long (a whole spoken sentence in one cue): more lines at the min size, every line inside the caption
+    # box - never max_lines lines wider than the frame (a 3:4 crop cut "…ut it into many short clips. Then you post
+    # tl…" on both sides)
+    r = attempt(lo)
     r["fits"] = False
     return r
 

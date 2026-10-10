@@ -149,6 +149,22 @@ export function sortPlatforms<T>(items: T[], idOf: (x: T) => string, connected: 
     .map((e) => e.x);
 }
 
+/** What a new profile starts with: international first (her rule), the same pair Create starts from. */
+export const FIRST_PLATFORMS = ['tiktok', 'youtube-shorts'];
+/** What profiles made before 0.2.5 were seeded with whatever she posted to (not her choice). */
+export const OLD_FACTORY_PLATFORMS = ['xiaohongshu:full'];
+
+/** The platforms a new request from Home goes to: her own choice (Settings › New projects, or the chip), else the
+ * platforms of her publishing accounts, else the international pair - always in the registry's order (international
+ * first). ``accounts``: the adapter ids she has an account for. */
+export function homePlatforms(saved: string[] | null | undefined, accounts: string[] = []): string[] {
+  const mine = [...new Set((saved ?? []).filter(Boolean))];
+  const seeded = mine.length === 1 && mine[0] === OLD_FACTORY_PLATFORMS[0] && !accounts.some((a) => basePlatform(a) === 'xiaohongshu');
+  if (mine.length && !seeded) return orderPlatforms(mine, accounts);
+  const fromAccounts = [...new Set(accounts.map((a) => basePlatform(a)).filter((a) => BY_ID.has(a)))];
+  return orderPlatforms(fromAccounts.length ? fromAccounts : FIRST_PLATFORMS, accounts);
+}
+
 /** Every URL-looking run in a text (http(s)://, www., or a bare domain with a common TLD). */
 export function linksIn(text: string): string[] {
   return [...(text ?? '').matchAll(/(?:https?:\/\/|www\.)\S+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|io|ai|co|dev|app|me|tv|ly|gg|cn|xyz|fr|es)(?:\/\S*)?/giu)].map((m) => m[0]);

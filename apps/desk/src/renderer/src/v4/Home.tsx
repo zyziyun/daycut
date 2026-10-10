@@ -33,13 +33,16 @@ import { WEEK_WORDS } from '../../../shared/weekPlan';
 import { useWeekPlan } from '../weekplan/useWeekPlan';
 import { WeekPlanCard } from '../weekplan/WeekPlanCard';
 import '../theme/uxcore.css';
-import { orderPlatforms } from '../../../shared/platforms';
+import { homePlatforms, orderPlatforms } from '../../../shared/platforms';
 import { errText } from './msg';
 import { IS_LITE } from '../../../shared/edition';
 import { LiveCardLine } from './LiveLine';
 import { liveStep, liveText } from '../lib/liveStatus';
 import { itemPipeline } from '../lib/pipeline';
 import { keyHint } from '../lib/keys';
+
+/** Starting points whose request is a fixed intent (sent as written: the talking-head recipe, planned by the rules). */
+const FIXED_STARTS: MessageKey[] = ['home.idea2Prompt', 'sample.prompt'];
 
 /** First run: the starting points (title, what it does, the request it fills in). */
 const STARTS: { icon: typeof Film; title: MessageKey; sub: MessageKey; prompt: MessageKey }[] = [
@@ -115,7 +118,8 @@ export function Home() {
   }, [prompt, files]);
   useEffect(() => {
     void window.desk.getSettings().then((s) => {
-      setPlatforms(s.defaultPlatforms ?? []);
+      // her choice, else her accounts' platforms, else the international pair - international first (Create agrees)
+      setPlatforms(homePlatforms(s.defaultPlatforms, Object.keys(s.accounts ?? {}).filter((k) => (s.accounts[k] ?? []).length)));
       setAuto(s.autopilot !== false);
     });
   }, []);
@@ -160,6 +164,8 @@ export function Home() {
           const r = await (latest.current ?? client).startIntake(p.prompt, p.files, platforms ?? undefined, getLang(), {
             mode: auto ? 'autopilot' : 'ask',
             sampleName: p.sample ? t('sample.projectName') : undefined,
+            // a fixed intent (the sample, the talking-head start as written): no ~2 min planning call
+            recipe: p.sample || FIXED_STARTS.some((k) => t(k) === p.prompt.trim()) ? 'talkinghead' : undefined,
           });
           // the request is a project now (All projects lists it): Home is free for the next one
           const name = p.prompt.trim() ? p.prompt.trim().slice(0, 40) + (p.prompt.trim().length > 40 ? '…' : '') : base(p.files[0] ?? '');

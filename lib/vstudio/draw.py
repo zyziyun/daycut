@@ -283,9 +283,14 @@ def runs(text: str, keywords=None, mk: str = None):
     if cur:
         out.append((cur, hi))
     if keywords:
-        kw = [k for k in keywords if k]
+        from .en_common import is_function
+        # a latin keyword is a whole word ("it" never lights up inside "editor") and never a little function word
+        kw = [k for k in keywords if k and not (re.fullmatch(r"[A-Za-z' ]+", k) and (len(k.strip()) < 3 or
+                                                                                   is_function(k.strip().lower())))]
         if kw:
-            rx = re.compile("(" + "|".join(re.escape(k) for k in sorted(kw, key=len, reverse=True)) + ")")
+            rx = re.compile("(" + "|".join((r"(?<![A-Za-z])" + re.escape(k) + r"(?![A-Za-z])")
+                                           if re.match(r"[A-Za-z]", k) and re.search(r"[A-Za-z]$", k) else re.escape(k)
+                                           for k in sorted(kw, key=len, reverse=True)) + ")")
             split = []
             for t, h in out:
                 if h:

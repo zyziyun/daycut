@@ -306,6 +306,48 @@ def _duration_of(path, analysis):
     return None
 
 
+def _sentences_of(path, analysis):
+    f = next((x for x in analysis["files"] if x["path"] == path), None)
+    tr = I.load_transcript(f) if f else None
+    return [s for s in (tr or {}).get("sentences") or [] if s.get("te", 0) > s.get("t", 0)]
+
+
+SNAP_START_S = 3.0     # a pick that starts inside a sentence starts at that sentence (when it began this recently)
+SNAP_END_S = 8.0       # ... and ends at the end of the sentence it stops in (else at the sentence before)
+SNAP_TAIL_S = 0.15
+
+
+def snap_to_sentences(a, b, sentences, dur=None):
+    """A model's pick [a, b] (whole seconds, from a transcript with m:ss times) -> a range that starts at a sentence
+    start and ends at a sentence end: a clip never stops mid-sentence. The end goes forward to the end of the sentence
+    it falls in when that is at most SNAP_END_S away, else back to the end of the sentence before (when that keeps at
+    least half the pick); the start goes back to its sentence's start (at most SNAP_START_S), else forward to the
+    next one."""
+    if not sentences:
+        return a, b
+    S = sorted(sentences, key=lambda s: s["t"])
+    cur = next((s for s in S if s["t"] < a < s["te"]), None)
+    if cur is not None:
+        if a - cur["t"] <= SNAP_START_S:
+            a = cur["t"]
+        else:
+            nxt = next((s for s in S if s["t"] >= a), None)
+            a = nxt["t"] if nxt is not None and nxt["t"] < b else a
+    end = next((s for s in S if s["t"] < b < s["te"]), None)
+    if end is not None:
+        if end["te"] - b <= SNAP_END_S:
+            b = end["te"] + SNAP_TAIL_S
+        else:
+            prev = [s for s in S if s["te"] <= b and s["te"] > a]
+            if prev and prev[-1]["te"] - a >= 0.5 * (b - a):
+                b = prev[-1]["te"] + SNAP_TAIL_S
+            else:
+                b = end["te"] + SNAP_TAIL_S
+    if dur:
+        a, b = max(0.0, min(a, dur)), max(0.0, min(b, dur))
+    return a, b
+
+
 def normalize_project(raw, idx, analysis, intent, ctx, warn):
     rid = raw.get("recipe")
     try:
@@ -373,6 +415,7 @@ def normalize_project(raw, idx, analysis, intent, ctx, warn):
     rows = []
     src_path = _first_path(ins.get(fi) if fi else None) or _first_path(ins.get("source"))
     src_dur = _duration_of(src_path, analysis) if src_path else None
+    sents = None
     for k, r in enumerate(it.get("rows") or []):
         if not isinstance(r, dict):
             continue
@@ -390,6 +433,9 @@ def normalize_project(raw, idx, analysis, intent, ctx, warn):
             if a is not None:
                 if src_dur:
                     a, b = max(0.0, min(a, src_dur)), max(0.0, min(b, src_dur))
+                if sents is None:
+                    sents = _sentences_of(src_path, analysis) if src_path else []
+                a, b = snap_to_sentences(a, b, sents, src_dur)       # never ends mid-sentence
                 if b - a >= 3:
                     rp["range"] = [round(a, 2), round(b, 2)]
                 else:
@@ -672,8 +718,8 @@ def _apply_intent(m, params, sources, intent, items):
         params["mask"], sources["mask"] = ("sticker" if intent["mask"] else "off"), "prompt"
     if intent.get("subtitles") and "subtitles" in props:
         params["subtitles"], sources["subtitles"] = intent["subtitles"], "prompt"
-        if intent.get("subtitle_lang") and "subtitle_lang" in props:
-            params["subtitle_lang"], sources["subtitle_lang"] = intent["subtitle_lang"], "prompt"
+    if intent.get("subtitle_lang") and "subtitle_lang" in props:
+        params["subtitle_lang"], sources["subtitle_lang"] = intent["subtitle_lang"], "prompt"
     if intent.get("hook") is not None and "hook_default" in props:
         params["hook_default"], sources["hook_default"] = (0 if intent["hook"] else -1), "prompt"
     if intent.get("orientation") and m["id"] == "promo-recut":
@@ -1052,7 +1098,7 @@ def _plan_id(prompt):
 
 def make_plan(prompt, inputs=None, client=None, provider=None, model=None, analysis=None, asr="auto", auto=None,
               call=None, echo=None, language=None, timeout=None, on_event=None, ui_lang=None, ignore_needs=False,
-              http=None):
+              http=None, recipe=None):
     """-> plan dict. ``call(system, prompt) -> {json, model, cost_usd}`` replaces the model (tests). ``ui_lang``: the
     language the creator reads the plan card in (en | zh | fr; default: the request's), see ``reply_lang``. ``on_event``:
     progress, one dict per step - the inventory's (scan / probe / listen / faces / transcribe, see ``inventory``),
@@ -1081,6 +1127,12 @@ def make_plan(prompt, inputs=None, client=None, provider=None, model=None, analy
         needs.append(MSG.msg("intake.need.footage"))
     ctx = context(client)
     intent = R.parse_prompt(prompt)
+    if recipe:
+        # a request whose intent is fixed (the recorder's 「把我的录制做成口播」, Home's talking-head start): that recipe,
+        # planned by the rules from her words - no model call (about 2 minutes saved), nothing else picked
+        M.get(recipe)                                   # an unknown recipe fails here, in plain words
+        intent.update(scores={recipe: 1.0}, clauses=[], extract=False, exclude=[])
+        provider = "none"
     if asr != "off" and asr != "sample":
         need = _needs_transcript(intent, analysis) if asr == "auto" else [
             f for f in analysis["files"] if f["kind"] in ("video", "audio")]
@@ -1090,6 +1142,9 @@ def make_plan(prompt, inputs=None, client=None, provider=None, model=None, analy
     ui_lang = ctx["ui_lang"] = reply_lang(prompt, ui_lang)
     if needs:                       # she still has to give something: no model call until she has (or says go on)
         js, info = None, dict(provider="none", model=None, route="needs", fallback=True, reason="waiting for her")
+    elif recipe:
+        js, info = None, dict(provider="none", model=None, route="fixed", fallback=False,
+                              reason=f"fixed intent ({recipe}): planned by the rules, no model call")
     else:
         js, info = _call_model(prompt, analysis, ctx, transcripts, provider, model, call=call, timeout=timeout,
                                on_event=on_event, ui_lang=ui_lang)
@@ -1124,7 +1179,7 @@ def make_plan(prompt, inputs=None, client=None, provider=None, model=None, analy
             if p:
                 projects.append(p)
         questions, risks = (questions or rq), (risks + [r for r in rr if r not in risks])
-        info["fallback"] = True
+        info["fallback"] = info.get("route") != "fixed"
         info.setdefault("reason", "rule planner")
     if any(n["code"] == "intake.need.footage" for n in needs):
         projects, questions, risks = [], [], []       # nothing is made up without her recordings

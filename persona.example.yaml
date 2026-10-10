@@ -98,6 +98,8 @@ subtitles:
   max_en_chars: 90
   highlight_markup: "【】"  # 【term】 is emphasised the theme's way (marker band / accent), one per line
   term_fixes: {}           # ASR corrections, e.g. {"cloud code": "Claude Code"}
+  terms: []                # her glossary: words she says that speech models get wrong (brand, product, people),
+                           # e.g. [Reelfold, HyperFrames]: whisper is primed with them, near-miss spellings are fixed
   glossary: {}             # bilingual captions: fixed translations {source term: target term}, e.g. {"break the ice": "打破僵局"}
 
 voice:                     # style rules for scripts and post copy (see workflows/preproduction)
@@ -109,7 +111,8 @@ voice:                     # style rules for scripts and post copy (see workflow
     - no generic CTA
 
 publish:
-  tags: []                 # default hashtags appended to post copy (post_body use_persona_tags=True)
+  tags: []                 # standing hashtags, added to a post when they fit it (its words mention them)
+  tags_always: false       # true: every post gets all of them, whatever it is about
   tag_sets: {}             # named alternatives picked per post with tag_set:, e.g. {art: [看展, 艺术]}
                            # a post/spec can also set use_persona_tags: false to use only its own tags
   chapter_line: "时间线在下面，按需跳👇"

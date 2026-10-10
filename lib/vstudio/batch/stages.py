@@ -249,8 +249,9 @@ def run_compose(ctx):
     cues_path = write_json(ctx.path("cues.json"), {"cues": [c.to_dict() for c in cues]})
     hook_lines = (p.get("hook") or {}).get("lines") or []
     post = dict(title=p.get("title") or "", hook=p.get("post_hook") or "".join(hook_lines[:1]),
-                body=p.get("body") or "", tags=p.get("tags") or None,
-                use_persona_tags=p.get("use_persona_tags", True), tag_set=p.get("tag_set"))
+                body=p.get("body") or "", tags=p.get("tags") or None, tag_set=p.get("tag_set"))
+    if "use_persona_tags" in p:                       # only her explicit choice: absent lets English copy skip the
+        post["use_persona_tags"] = p["use_persona_tags"]   # (Chinese) persona tags (publish.platform_post)
     write_json(ctx.path("post.json"), post)
     return dict(master=master, cues=cues_path, post=ctx.path("post.json"), duration=round(dur, 3),
                 hook_dur=round(t, 3), n_cues=len(cues), files=[master, cues_path])
@@ -388,6 +389,7 @@ def run_export(ctx):
     if p.get("_copy_orig"):                           # copy edited in review: the post says the new copy
         post.update(title=p.get("title") or "", body=p.get("body") or "", tags=p.get("tags") or None)
     post = entity_post(post, (ctx.inputs.get("proofread") or {}).get("entity_fixes"))
+    ctx.caption_edits = ctx.caption_lang = None
     cues_path = caption_cues(ctx) if p.get("captions", True) else None
     call = import_ref((ctx.spec.get("copy") or {})["call"]) if (ctx.spec.get("copy") or {}).get("call") else None
     try:
@@ -402,7 +404,6 @@ def run_export(ctx):
     covers = p.get("cover")
     if isinstance(covers, dict):                      # `job edit --op cover`: {t, text, file}
         covers = [covers["file"]] if covers.get("file") else None
-    ctx.caption_edits = None
     man = X.export(c["master"], _plats(ctx.job), out_dir=ctx.path("exports"),
                    cues=cues_path, covers=covers, post=post,
                    mode=p.get("layout") or "pad-blur", preset=p.get("preset") or "medium",
@@ -431,6 +432,8 @@ def run_export(ctx):
                "given" if post.get("body") else None)
     if getattr(ctx, "caption_edits", None):
         out["caption_overrides"] = ctx.caption_edits
+    if getattr(ctx, "caption_lang", None):
+        out["caption_lang"] = ctx.caption_lang        # the caption language she asked for, and whether it was met
     return out
 
 
@@ -531,6 +534,8 @@ def _glossary_params(job, spec):
 def _gloss_context(spec, series=None):
     gl = [x.strip() for x in str((spec.get("asr") or {}).get("prompt") or "").split(",") if x.strip()]
     gl += [str(f[1]) for f in (spec.get("subtitles") or {}).get("term_fixes") or [] if isinstance(f, (list, tuple))]
+    from vstudio.asr import persona_terms
+    gl += [t for t in persona_terms() if t not in gl]   # her glossary: the proofreader knows her own words
     return gl
 
 
@@ -714,11 +719,53 @@ def sha1_file(path):
         return hashlib.sha1(f.read()).hexdigest()
 
 
+def caption_language(ctx, cues):
+    """The captions in the language she asked for (``subtitle_lang``; ``subtitles`` mono | bilingual | translated):
+    the speech's language needs nothing; another one is translated (the routed ``translate`` model, persona glossary
+    kept). No model / a failed call: the captions stay as spoken and ``ctx.caption_lang`` says so (QC warns) - never
+    silently the wrong language. -> (cues, report or None)"""
+    p = ctx.params
+    want = p.get("subtitle_lang") or "auto"
+    mode = p.get("subtitles") or "mono"
+    if want == "auto" and mode == "mono":
+        return cues, None
+    from vstudio import bilingual as B
+    from vstudio.publish import detect_lang
+    texts = [str((c or {}).get("text") or "") for c in cues if isinstance(c, dict)]
+    spoken = p.get("language") or (ctx.spec.get("asr") or {}).get("language") or detect_lang(texts)
+    spoken = "zh" if str(spoken).startswith("zh") else "en" if str(spoken).startswith("en") else str(spoken)
+    tgt = ("en" if spoken == "zh" else "zh") if want == "auto" else want
+    if tgt == spoken:
+        return cues, dict(asked=tgt, spoken=spoken, mode="mono", translated=0)
+    if mode == "mono":
+        mode = "translated"                          # 「加中文字幕」 over English speech: the captions are in Chinese
+    try:
+        out, info = B.translate_cues(cues, spoken, tgt, context=str(p.get("title") or ""))
+    except Exception as e:  # noqa: BLE001 - the captions stay as spoken, said out loud
+        out, info = [], dict(error=f"{type(e).__name__}: {e}"[:300])
+    done = sum(1 for c in out if (c.alt or "").strip())
+    rep = dict(asked=tgt, spoken=spoken, mode=mode, translated=done, of=len(cues), error=info.get("error"))
+    if not done:
+        ctx.log(f"captions: asked for {tgt}, speech is {spoken}; not translated ({info.get('error') or 'no output'})")
+        return cues, rep
+    return [c.to_dict() for c in B.apply_mode(out, mode)], rep
+
+
 def caption_cues(ctx):
     """The cues to burn: proofread's when it ran, else compose's; review caption edits (``caption_overrides``)
-    applied on top (written to the stage folder)."""
+    applied on top; in the caption language she asked for (written to the stage folder)."""
     pr = ctx.inputs.get("proofread") or {}
-    path = pr.get("cues") or ctx.inputs["compose"]["cues"]
+    path = _caption_edits(ctx, pr.get("cues") or ctx.inputs["compose"]["cues"])
+    d = read_json(path, {}) or {}
+    cues = d.get("cues") if isinstance(d, dict) else d
+    out, rep = caption_language(ctx, cues or [])
+    ctx.caption_lang = rep
+    if out is cues:
+        return path
+    return write_json(ctx.path("cues.lang.json"), dict(d, cues=out) if isinstance(d, dict) else dict(cues=out))
+
+
+def _caption_edits(ctx, path):
     ov = ctx.params.get("caption_overrides")
     if not ov:
         return path
@@ -784,6 +831,9 @@ def _keyp(*keys):
 def _export_params(job, spec):
     d = dict(_keyp("platforms", "layout", "crop_bottom", "captions", "cover", "preset", "trims")(job, spec),
              max_len=_p(job).get("max_len") or spec.get("max_len"))
+    for k in ("subtitles", "subtitle_lang"):          # only when set: older batches keep their keys
+        if _p(job).get(k) not in (None, "auto", "mono"):
+            d[k] = _p(job)[k]
     wm = _p(job).get("watermark") if _p(job).get("watermark") is not None else spec.get("watermark")
     if wm is not None:                                # only when set: older batches keep their keys
         d["watermark"] = wm

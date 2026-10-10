@@ -159,7 +159,12 @@ def tag_persona(monkeypatch):
 
 def test_post_body_tag_controls(tag_persona):
     base = publish.post_body("hook", "body", tags=["拉斐尔"], platform="xiaohongshu", warn=None)
-    assert "#拉斐尔" in base and "#AIEngineer" in base        # historical default kept
+    assert "#拉斐尔" in base and "#AIEngineer" not in base    # the standing tags only where they fit the post
+    fits = publish.post_body("我是 AI engineer", "在北美求职的第三年", tags=["拉斐尔"], platform="xiaohongshu", warn=None)
+    assert "#AIEngineer" in fits and "#北美求职" in fits
+    tag_persona["publish"]["tags_always"] = True              # her switch: on every post
+    assert "#AIEngineer" in publish.post_body("hook", "body", platform="xiaohongshu", warn=None)
+    tag_persona["publish"].pop("tags_always")
     own = publish.post_body("hook", "body", tags=["拉斐尔"], platform="xiaohongshu", warn=None,
                             use_persona_tags=False)
     assert "#拉斐尔" in own and "#AIEngineer" not in own

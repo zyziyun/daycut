@@ -17,6 +17,7 @@ import { href, useRouteQuery } from '../../lib/router';
 import { keyHint } from '../../lib/keys';
 import { useAssets } from '../../components/assets';
 import { downloadSummary } from '../../lib/firstRun';
+import { homePlatforms } from '../../../../shared/platforms';
 import { useUi } from '../../v4/ui';
 import { errText, useAction, useCreateLoad, waitJob } from '../api';
 import { Crumbs, l10n } from '../bits';
@@ -359,7 +360,11 @@ export function RecordStudio({ sid, eid, shot }: { sid?: string; eid?: string; s
           while (!modelsRef.current) await new Promise((r) => setTimeout(r, 1000));
         }
         const auto = (await window.desk.getSettings()).autopilot !== false;
-        const r = await client.startIntake(ask.trim() || t('rec.finishPrompt'), [res.assembled], undefined, getLang(), { mode: auto ? 'autopilot' : 'ask' });
+        // her own words are planned as usual; the plain 「make it a talking-head video」 is a fixed intent: the
+        // talking-head recipe straight away (no ~2 min planning call), to her platforms (international first)
+        const st = await window.desk.getSettings();
+        const plats = homePlatforms(st.defaultPlatforms, Object.keys(st.accounts ?? {}).filter((k) => (st.accounts[k] ?? []).length));
+        const r = await client.startIntake(ask.trim() || t('rec.finishPrompt'), [res.assembled], plats, getLang(), { mode: auto ? 'autopilot' : 'ask', recipe: ask.trim() ? undefined : 'talkinghead' });
         history.reload();
         const to = `${href({ name: 'projects' })}?sel=${encodeURIComponent(r.id)}`;
         ui.toast(t(auto ? 'rec.sent' : 'rec.sentAsk'), { action: { label: t('rec.open'), href: to }, ms: 8000 });

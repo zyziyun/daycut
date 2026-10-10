@@ -637,6 +637,68 @@ def _restart_rows(R, cx, taken):
     return out
 
 
+def _false_start_rows(R, cx, taken, found=()):
+    """A short sentence the speaker broke off and said again as the start of the next one ("The first habit is." ->
+    "The first habit is to plan the beats ..."): ASR closes the broken-off part with a full stop, so the restart
+    detector (which stops at a finished sentence) and the re-take detector (whole sentences alike) both miss it.
+    Every word of the short one is the next sentence's opening, within ``restart_window``: cut it, every time."""
+    st = cx.st
+    S = _sentences(R, cx)
+    out = []
+    for a in range(len(S) - 1):
+        s, nx = [w for w in S[a] if w["n"] not in HESITATION], [w for w in S[a + 1] if w["n"] not in HESITATION]
+        if not s or not nx:
+            continue
+        if nx[0]["t"] - s[-1]["te"] > st["restart_window"] or len(nx) <= len(s):
+            continue
+        pref = "".join(w["n"] for w in s)
+        cjk = bool(_CJK.search(pref))
+        if cjk:
+            ok = 2 <= len(pref) <= 16 and "".join(w["n"] for w in nx).startswith(pref)
+        else:
+            ok = 2 <= len(s) <= 7 and all(x["n"] == y["n"] for x, y in zip(s, nx))
+        if not ok or pref in cx.fill:
+            continue
+        i0, i1 = S[a][0]["i"], S[a][-1]["i"]
+        same = [r for r in found if r.get("i") is not None and r["i"] <= i0 and i1 <= r["j"]]
+        if same:
+            # the repeat detector saw it too, with a confidence that hangs on the pause length (0.7 or 0.88): a
+            # broken-off sentence is cut the same way every time
+            for r in same:
+                r["conf"] = max(r["conf"], 0.9)
+                r["reason"] += "; the whole broken-off sentence is said again: false start"
+            continue
+        if any(i in taken for i in range(i0, i1 + 1)):
+            continue
+        out.append(dict(kind="restart", i=i0, j=i1, conf=0.9, text=_join(S[a]),
+                        feat=dict(marker=True, m=len(s), false_start=True),
+                        reason=f"breaks off after '{_join(S[a])}' and says it again as "
+                               f"'{_join(S[a + 1][:len(S[a]) + 3])}': keep the full take"))
+    return out
+
+
+CUT_OFF_S = 0.3        # speech running this close into the end of the recording = cut off mid-sentence
+
+
+def _cut_off_rows(R, cx):
+    """A recording that stops mid-sentence ("... The editor keeps the last good take and|"): the last sentence has no
+    end and its last word runs into the end of the audio. A clip never ends mid-sentence: it ends on the sentence
+    before (the fragment is cut; she can keep it)."""
+    en = cx.en
+    if en is None or not R:
+        return []
+    S = _sentences(R, cx)
+    if len(S) < 2:
+        return []
+    last = S[-1][-1]
+    if _SENT_END.search(last["w"]) or getattr(en, "end", None) is None or en.end - last["te"] > CUT_OFF_S:
+        return []
+    if cx.hi < en.end - CUT_OFF_S:                    # a window inside the recording: its end is not the file's
+        return []
+    return [dict(kind="cut-off", i=S[-1][0]["i"], j=last["i"], conf=0.9, text=_join(S[-1]),
+                 reason=f"the recording stops mid-sentence ('{_join(S[-1][-4:])}'): the clip ends on the sentence before")]
+
+
 def _sentences(R, cx):
     S, cur = [], []
     for k, w in enumerate(R):
@@ -850,7 +912,12 @@ def detect(words, audio=None, ranges=None, profile=None, overrides=None, dropped
         found = [r for r in _filler_rows(R, cx)
                  if not any(x["i"] <= r["i"] and r["j"] <= x["j"] for x in stacked)] + stacked + _repeat_rows(R, cx)
         taken = {x for r in found if r["kind"] in ("repeat", "stammer") for x in range(r["i"], r["j"] + 1)}
-        found += _restart_rows(R, cx, taken) + _retake_rows(R, cx) + _merged_rows(R, cx)
+        restarts = _restart_rows(R, cx, taken)
+        taken |= {x for r in restarts for x in range(r["i"], r["j"] + 1)}
+        false_starts = _false_start_rows(R, cx, taken, found + restarts)
+        fs_words = {x for r in false_starts for x in range(r["i"], r["j"] + 1)}
+        retakes = [r for r in _retake_rows(R, cx) if not any(x in fs_words for x in range(r["i"], r["j"] + 1))]
+        found += restarts + false_starts + retakes + _merged_rows(R, cx) + _cut_off_rows(R, cx)
         for r in found:
             r["t0"], r["t1"] = _block_edges(cx, r["i"], r["j"], r.get("cut_to"))
             if en is not None and r.get("cut_to") is None and not r.get("patch"):

@@ -6,6 +6,7 @@ import type { AssetGroupStatus } from '../../src/shared/assets';
 import type { IntakePlan } from '../../src/shared/v04';
 import { LOCALES, setLang } from '../../src/renderer/src/i18n';
 import { firstRunEn, firstRunFr, firstRunZh } from '../../src/renderer/src/i18n/locales/firstRun';
+import { homePlatforms } from '../../src/shared/platforms';
 import { defaultPlatformsFor, downloadSummary, etaText, fmtBytes, nameAsSample, planSentence, speedOf } from '../../src/renderer/src/lib/firstRun';
 
 const g = (id: string, bytes: number, x: Partial<AssetGroupStatus> = {}): AssetGroupStatus => ({ id, required: true, installed: false, bytes, licence: '', ...x });
@@ -50,11 +51,22 @@ describe('time left', () => {
 });
 
 describe('defaultPlatformsFor', () => {
-  it('Chinese UI -> Xiaohongshu, any other -> TikTok + Shorts; her own choice is kept', () => {
-    expect(defaultPlatformsFor('zh-CN')).toEqual(['xiaohongshu:full']);
+  it('international first everywhere: TikTok + Shorts (a Chinese UI adds Xiaohongshu after them); her own choice is kept', () => {
+    expect(defaultPlatformsFor('zh-CN')).toEqual(['tiktok', 'youtube-shorts', 'xiaohongshu:full']);
+    expect(defaultPlatformsFor('zh-CN', ['tiktok', 'youtube-shorts'])).toEqual(['tiktok', 'youtube-shorts', 'xiaohongshu:full']);
     expect(defaultPlatformsFor('en', ['xiaohongshu:full'])).toEqual(['tiktok', 'youtube-shorts']);
     expect(defaultPlatformsFor('fr', [])).toEqual(['tiktok', 'youtube-shorts']);
     expect(defaultPlatformsFor('en', ['bilibili'])).toEqual(['bilibili']);
+  });
+});
+
+describe('homePlatforms (Home’s default follows the international-first rule)', () => {
+  it('a seeded 小红书 is not her choice; her accounts, else the international pair; always registry order', () => {
+    expect(homePlatforms(['xiaohongshu:full'])).toEqual(['youtube-shorts', 'tiktok']);
+    expect(homePlatforms(['xiaohongshu:full'], ['xiaohongshu'])).toEqual(['xiaohongshu:full']); // she posts there
+    expect(homePlatforms([], ['douyin', 'youtube'])).toEqual(['youtube', 'douyin']);
+    expect(homePlatforms(['douyin', 'tiktok'])).toEqual(['tiktok', 'douyin']);
+    expect(homePlatforms(null)).toEqual(['youtube-shorts', 'tiktok']);
   });
 });
 

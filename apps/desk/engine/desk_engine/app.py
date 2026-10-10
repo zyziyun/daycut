@@ -596,7 +596,7 @@ class Api:
                 inputs = [_abs_path(p, "inputs[]") for p in inputs]
                 need(prompt.strip() or inputs, "say what to make or add files")
                 return self.intake.start(prompt.strip(), inputs, b.get("platforms"), b.get("lang"), b.get("mode"),
-                                         b.get("sample_name"))
+                                         b.get("sample_name"), **({"recipe": b["recipe"]} if b.get("recipe") else {}))
             if parts == ["intake", "recent"] and method == "GET":
                 return self.intake.recent()
             if parts == ["intake", "open"] and method == "GET":

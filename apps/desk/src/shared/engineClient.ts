@@ -459,7 +459,9 @@ export class EngineClient {
   }
   /** platforms: the composer's platform chip (used when the request itself names none); lang: the UI language the
    * plan card's questions and risks are written in */
-  startIntake(prompt: string, inputs: string[], platforms?: string[], lang?: string, opts: { mode?: 'autopilot' | 'ask'; sampleName?: string } = {}) {
+  /** opts.recipe: the request's intent is fixed (the recorder's take, Home's talking-head start, the sample): planned by
+   * the rules for that recipe, without the ~2 min model call */
+  startIntake(prompt: string, inputs: string[], platforms?: string[], lang?: string, opts: { mode?: 'autopilot' | 'ask'; sampleName?: string; recipe?: string } = {}) {
     return this.req<{ id: string }>('POST', '/api/intake', {
       prompt: prompt.slice(0, 2000),
       inputs,
@@ -467,6 +469,7 @@ export class EngineClient {
       ...(lang ? { lang } : {}),
       ...(opts.mode ? { mode: opts.mode } : {}),
       ...(opts.sampleName ? { sample_name: opts.sampleName.slice(0, 80) } : {}),
+      ...(opts.recipe ? { recipe: opts.recipe } : {}),
     });
   }
   /** requests from Home that are not projects yet (All projects lists them first) */

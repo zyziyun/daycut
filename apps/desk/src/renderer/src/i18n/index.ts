@@ -81,6 +81,8 @@ export function fmtNumber(n: number, opts?: Intl.NumberFormatOptions): string {
 }
 
 export function fmtList(xs: string[]): string {
+  // Chinese "unit" lists have no separator at all ("YouTube ShortsTikTok小红书"): 、 between the items
+  if (lang === 'zh-CN') return xs.join('、');
   return new Intl.ListFormat(intlLocale(), { style: 'short', type: 'unit' }).format(xs);
 }
 
