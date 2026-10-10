@@ -827,8 +827,13 @@ class Outputs:
         trim = st.get("trim") or [None, None]
         out["trim"] = None if not trim or trim == [None, None] else dict(
             start=trim[0] if trim[0] is not None else 0, end=trim[1] if trim[1] is not None else dur)
-        cuts = [dict(start=c.get("start"), end=c.get("end"), index=i) for i, c in enumerate(st.get("cuts") or [])
-                if isinstance(c, dict)]
+        cuts = []
+        for i, c in enumerate(st.get("cuts") or []):
+            if isinstance(c, dict):
+                cuts.append(dict(start=c.get("start"), end=c.get("end"), index=i, **({"why": c["why"]} if c.get("why") else {})))
+            elif isinstance(c, (list, tuple)) and len(c) >= 2:      # the engine's state: [start, end, why]
+                why = str(c[2]).split(";")[0].strip() if len(c) > 2 and c[2] else ""
+                cuts.append(dict(start=c[0], end=c[1], index=i, **({"why": why} if why else {})))
         if not cuts and len(segs) > 1:
             cuts = [dict(start=a[1], end=b[0], index=i) for i, (a, b) in enumerate(zip(segs, segs[1:])) if b[0] - a[1] > 0.02]
         out["cuts"] = cuts
@@ -880,13 +885,20 @@ class Outputs:
         oid = self._output_id(e, c)
         if oid:
             eng = self._read("show", e["dir"], oid)
-            tr = read_json(os.path.join((eng.get("paths") or {}).get("dir") or "/nonexistent", "transcript.json"), None)
+            paths = eng.get("paths") or {}
+            tr = read_json(paths.get("transcript") or os.path.join(paths.get("dir") or "/nonexistent", "transcript.json"), None)
+            efile = (eng.get("output") or {}).get("file")
+            if efile and base["file"] and os.path.realpath(efile) != os.path.realpath(base["file"]) and os.path.isfile(efile):
+                # a pickup was spliced in: the clip plays (and is edited on) the spliced file
+                base = dict(base, file=efile, duration=(eng.get("output") or {}).get("duration") or base["duration"],
+                            files=[dict(base["files"][0], path=efile, duration=(eng.get("output") or {}).get("duration"))]
+                            + base["files"][1:])
             words = [dict(w=w["w"], t=w["t"], te=w["te"], **({"p": w["p"]} if w.get("p") is not None else {}))
                      for w in (tr or {}).get("words") or []] if isinstance(tr, dict) else None
             if not self._ext:                                  # older engine: the desk keeps the transcript
                 eng["chat"] = self._desk(e, clip_id).get("chat") or []
             doc = self._normalise(base, eng, item_id, words or None)
-            doc.update(engine="real", output_id=oid)
+            doc.update(engine="real", output_id=oid, pickups=eng.get("pickups") or [])
         else:
             st = self._desk(e, clip_id)
             caps, notes = self._caps(base["mode"], bool(base["file"]), bool(base["words"]))
@@ -903,10 +915,58 @@ class Outputs:
                                      simulated=True) for r in st.get("renders") or []])
             doc = self._normalise(base, eng, item_id)
             doc.update(engine="desk", output_id=None)
+        if e["kind"] == "work":
+            wrec = read_json(WK.record_path(e["dir"]), {}) or {}
+            rec = wrec.get("recording")
+            if isinstance(rec, dict) and rec.get("session"):
+                doc["title"] = wrec.get("title") or doc.get("title")
+                sess = read_json(os.path.join(e["dir"], "session.json"), {}) or {}
+                doc["recording"] = dict(session=rec["session"], dir=e["dir"], script=bool(rec.get("script")),
+                                        group=rec.get("group") or sess.get("group"), created=rec.get("created"),
+                                        studio=sess.get("studio", True) is not False)
+        doc.setdefault("pickups", [])
         paths = [f["path"] for f in doc.get("files") or []] + [doc.get("cover")] + \
             [r.get("file") for r in doc.get("renders") or []]
         self.history.allow_media([p for p in paths if p])
         return doc
+
+    # ---------------------------------------------------------- pickups (补录)
+    @staticmethod
+    def recordings_root():
+        try:
+            from vstudio.batch.clients import home
+            return os.path.join(home(), "recordings")
+        except ImportError:
+            return os.path.join(os.path.expanduser(os.environ.get("VSTUDIO_HOME") or "~/.config/vstudio"), "recordings")
+
+    def pickup(self, item_id, clip_id, session_dir, at_word=None, replace=None, sig=None):
+        """Splice a pickup recorded with the recorder (``session_dir``, a session under the recordings folder) into
+        the clip: before transcript word ``at_word``, or in place of words ``replace`` [i0, i1] (``sig`` = the
+        words_sig they were picked from). One undo step (``vstudio.project output pickup``) -> the clip document."""
+        e, c = self._clip(item_id, clip_id)
+        need(isinstance(session_dir, str) and os.path.isabs(session_dir), "session_dir: a recorder session")
+        root = os.path.realpath(self.recordings_root())
+        real = os.path.realpath(session_dir)
+        need(real.startswith(root + os.sep) and os.path.isfile(os.path.join(real, "session.json")),
+             "session_dir: a recorder session")
+        need((at_word is None) != (replace is None), "at_word or replace")
+        if at_word is not None:
+            need(isinstance(at_word, int) and not isinstance(at_word, bool) and 0 <= at_word <= 100000, "at_word: a word index")
+        if replace is not None:
+            need(isinstance(replace, list) and len(replace) == 2 and all(isinstance(x, int) and not isinstance(x, bool) and x >= 0 for x in replace)
+                 and replace[0] <= replace[1], "replace: [first word, last word]")
+        need(sig is None or (isinstance(sig, str) and re.match(r"^[0-9a-f]{6,40}$", sig)), "sig")
+        self._adopt_on_first_edit(e)
+        oid = self._output_id(e, c)
+        if not oid:
+            raise EngineMessage(_m("pickup-engine", "pickups need the video engine on this Mac", "补录需要本机的视频引擎"))
+        args = ["pickup", "--project", e["dir"], "--output", oid, "--src", real]
+        args += ["--at-word", str(at_word)] if at_word is not None else ["--replace", json.dumps(replace)]
+        if sig:
+            args += ["--sig", sig]
+        r = self._cli(args, timeout=1800)
+        self._publish(item_id, clip_id)
+        return dict(ok=True, step=r.get("step"), pickup=r.get("pickup"), doc=self.show(item_id, clip_id))
 
     # ---------------------------------------------------------- edit / undo / redo / render
     def _adopt_on_first_edit(self, e):

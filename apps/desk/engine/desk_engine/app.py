@@ -64,6 +64,8 @@ History (history.py; read-only discovery of past work: desk + engine registries,
 v0.4 (outputs.py, intake.py, inbox.py; engine command when available, desk implementation otherwise)
   GET  /api/outputs/<item>                 one clip per output {clips [{id, title, state, files, cover, post}], confirm}
   GET  /api/outputs/<item>/<clip>          player + editor document (words, captions, effects, caps, ops, version)
+  POST /api/outputs/<item>/<clip>/pickup   {session_dir, at_word | replace [i0, i1], sig?} splice a recorded pickup in
+                                           (one undo step) -> {step, pickup, doc}
   POST /api/outputs/<item>/<clip>/edit     {ops: [op...], by?, note?} (one undo step; a transcript cut {op: cut,
                                            words: [i0, i1], sig, why} also re-times captions / effects in that
                                            step);  /preview-edl {ops} -> kept ranges of pending cuts (live skip);
@@ -558,6 +560,9 @@ class Api:
                                              note=b.get("note"))
                 if verb == "preview-edl":
                     return self.outputs.preview_edl(parts[1], clip, b.get("ops"))
+                if verb == "pickup":
+                    return self.outputs.pickup(parts[1], clip, b.get("session_dir"), at_word=b.get("at_word"),
+                                               replace=b.get("replace"), sig=b.get("sig"))
                 if verb == "ask":
                     return self.outputs.ask(parts[1], clip, b.get("prompt"), context=b.get("context"))
                 if verb == "render":
