@@ -1,0 +1,54 @@
+/* The in-app update (update.tsx): sidebar pill, the one-time ready card, What's new, Settings › Updates. */
+.upd-pill { display: flex; flex-direction: column; gap: 8px; margin: 0 2px 6px; padding: 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-2); font-size: 12.5px; color: var(--text); min-width: 0; }
+.upd-pill-head { display: flex; align-items: flex-start; gap: 8px; min-width: 0; line-height: 1.3; }
+.upd-pill-head.link { background: none; border: 0; padding: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.upd-pill-head > .ico { flex: none; width: 16px; height: 16px; margin-top: 1px; color: var(--text-muted); }
+.upd-pill-head > b { flex: 1; min-width: 0; font-weight: 600; }
+.upd-pill-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.upd-pill-text b { font-weight: 600; }
+.upd-pill-text span { color: var(--text-muted); }
+.upd-pct { flex: none; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.upd-pill-btn { height: 28px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font: inherit; font-weight: 500; cursor: pointer; }
+.upd-pill-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+.upd-pill-btn:disabled { opacity: 0.7; cursor: default; }
+.upd-pill.ready { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: var(--accent-soft); }
+.upd-pill.ready .upd-pill-head > .ico { color: var(--accent); }
+.upd-pill.err { border-color: color-mix(in srgb, var(--warn) 50%, var(--border)); }
+.upd-pill.err .upd-pill-head > .ico { color: var(--warn); }
+.upd-bar { display: block; height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--text-muted) 22%, transparent); overflow: hidden; }
+.upd-bar > i { display: block; height: 100%; background: var(--accent); transition: width 300ms ease; }
+.upd-bar.wide { flex: 1; max-width: 240px; }
+/* the clip editor's narrow rail: the icon and (when ready) the button only */
+.v4.app.rail .upd-pill { padding: 6px; align-items: center; }
+.v4.app.rail .upd-pill-head > b, .v4.app.rail .upd-pill-text, .v4.app.rail .upd-pct, .v4.app.rail .upd-pill-btn:not(.primary) { display: none; }
+.v4.app.rail .upd-pill-btn.primary { padding: 0 6px; font-size: 11px; }
+
+.upd-card { position: fixed; z-index: 130; right: 20px; bottom: 20px; width: min(460px, calc(100vw - 40px)); display: flex; gap: 12px; padding: 16px 16px 16px 16px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border-strong, var(--border)); box-shadow: var(--shadow); animation: toastin 180ms var(--ease, ease); }
+.upd-card-icon { flex: none; width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); }
+.upd-card-icon .ico { width: 18px; height: 18px; }
+.upd-card-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+.upd-card-text b { font-size: 15px; font-weight: 600; }
+.upd-card-text > span { color: var(--text-muted); font-size: 13.5px; line-height: 1.45; }
+.upd-card-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.upd-card-actions .btn { height: 32px; padding: 0 14px; }
+.upd-card-x { position: absolute; top: 8px; right: 8px; width: 26px; height: 26px; border: 0; border-radius: 6px; background: none; color: var(--text-muted); cursor: pointer; display: grid; place-items: center; }
+.upd-card-x:hover { background: var(--surface-2); }
+.upd-card-x .ico { width: 15px; height: 15px; }
+
+.upd-notes { max-height: 55vh; overflow: auto; font-size: 14px; line-height: 1.55; user-select: text; }
+.upd-notes section + section { margin-top: 10px; }
+.upd-notes h4 { margin: 0 0 4px; font-size: 14.5px; }
+.upd-notes p { margin: 0 0 4px; }
+.upd-notes ul { margin: 0; padding-left: 18px; }
+.upd-notes li { margin: 2px 0; }
+.upd-prose { margin: 0; line-height: 1.55; color: var(--text-muted); }
+.upd-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+.upd-modal-actions .btn { height: 32px; padding: 0 14px; }
+
+.upd-row-actions { display: inline-flex; align-items: center; gap: 14px; flex: none; }
+.upd-row .btn { height: 32px; padding: 0 14px; }
+.s2-row.upd-status { min-height: 0; padding-top: 12px; padding-bottom: 12px; }
+.s2-row.upd-status.err .s2-rlabel { display: inline-flex; align-items: center; gap: 8px; color: var(--warn); }
+.s2-row.upd-status.err .s2-rlabel .ico { width: 16px; height: 16px; flex: none; }
+.upd-raw { font-family: var(--mono, ui-monospace, monospace); font-size: 12.5px; word-break: break-word; }
+.upd-auto { margin: 0; padding: 10px 20px 14px; border-top: 1px solid var(--border); }

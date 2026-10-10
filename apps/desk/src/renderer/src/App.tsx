@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Calendar, Home as HomeIcon, Inbox as InboxIcon, LayoutGrid, Settings as SettingsIcon } from 'lucide-react';
 import type { SettingsMsg } from '../../shared/deskApi';
-import { AssetsBanner, UpdateBadge } from './components/assets';
+import { AssetsBanner } from './components/assets';
+import { UpdatePill, UpdateProvider } from './components/update';
 import { BrandSymbol, BrandWordmark } from './components/Brand';
 import { getLang, normalizeLang, setLang, t, type MessageKey } from './i18n';
 import { EngineProvider, useEngine } from './lib/engine';
@@ -114,7 +115,7 @@ function Shell({ onSettings }: { onSettings: (s: SettingsMsg) => void }) {
         {nav({ name: 'projects' }, 'nav.projects', r.name === 'projects' || inProject, <LayoutGrid className="ico" />, 'nav-projects')}
         {nav({ name: 'calendar' }, 'nav.publishTop', r.name === 'calendar' || r.name === 'publish' || r.name === 'metrics' || r.name === 'channels' || r.name === 'postNow', <Calendar className="ico" />, 'nav-publish')}
         <div className="grow" />
-        <UpdateBadge />
+        <UpdatePill />
         {nav({ name: 'settings' }, 'nav.settings', r.name === 'clients' || r.name === 'client', <SettingsIcon className="ico" />, 'nav-settings')}
         <div className="eng" data-testid="engine-status" data-mode={error ? 'down' : (info?.mode ?? 'starting')}>
           {error ? (
@@ -239,8 +240,10 @@ export function App() {
         <HistoryProvider>
           <InboxProvider>
             <UiProvider theme={settings?.theme ?? 'studio-dark'} onTheme={onTheme} onLang={onLang}>
-              <Shell key={settings?.lang} onSettings={apply} />
-              <SupportLayer key={`sup-${settings?.lang}`} />
+              <UpdateProvider>
+                <Shell key={settings?.lang} onSettings={apply} />
+                <SupportLayer key={`sup-${settings?.lang}`} />
+              </UpdateProvider>
             </UiProvider>
           </InboxProvider>
         </HistoryProvider>

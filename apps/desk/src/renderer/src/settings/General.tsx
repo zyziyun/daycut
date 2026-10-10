@@ -1,5 +1,5 @@
 // Settings › General: one status line with one action, Appearance (language, theme, accent), How you work
-// (platforms for new projects, watched folders, tidy-up, 「我在帮别人做视频」), and the privacy line.
+// (platforms for new projects, watched folders, tidy-up, 「我在帮别人做视频」), Updates, and the privacy line.
 import { useState } from 'react';
 import { AlertTriangle, Check, Lock, XCircle } from 'lucide-react';
 import { LANGS, LOCALES, fmtList, t, tk } from '../i18n';
@@ -10,6 +10,7 @@ import { WatchFoldersField } from '../components/WatchFolders';
 import { CreateSettingsCard } from '../create';
 import { UsageSettingsGroup } from '../components/UsageConsent';
 import { LiteCard } from '../components/Lite';
+import { UpdateSettingsGroup } from '../components/update';
 import { IS_LITE } from '../../../shared/edition';
 import { PlatformPicker } from '../screens/Clients';
 import { PLATFORM_CHOICES } from '../screens/NewBatch';
@@ -164,6 +165,7 @@ export function GeneralSection({ settings: s, save, onChange }: SettingsCtx) {
           <Toggle checked={!!s.askAiEdits} onChange={(v) => void save({ askAiEdits: v })} label={t('fs.set.askAi')} testId="ask-ai-edits-toggle" />
         </Row>
       </Group>
+      {!IS_LITE && <UpdateSettingsGroup version={__APP_VERSION__} />}
       <div className="s2-group s2-labs">
         <CreateSettingsCard onChange={onChange} />
       </div>

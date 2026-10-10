@@ -5,7 +5,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { Clapperboard, ChevronLeft, Send, Settings2, Sparkles, Stamp, Wrench } from 'lucide-react';
 import { useCreateEnabled } from '../create';
 import { VideoGenSection } from '../create/settings/VideoGenSection';
-import type { SettingsMsg, UpdateStateMsg } from '../../../shared/deskApi';
+import type { SettingsMsg } from '../../../shared/deskApi';
+import { useUpdate } from '../components/update';
 import { t } from '../i18n';
 import { useUi } from '../v4/ui';
 import { AdvancedSection } from './Advanced';
@@ -56,17 +57,18 @@ function NavItem({ s, on }: { s: SettingsSection; on: boolean }) {
 }
 
 function VersionLine() {
-  const [u, setU] = useState<UpdateStateMsg | null>(null);
-  useEffect(() => window.desk.on('update:state', (d) => setU(d as UpdateStateMsg)), []);
+  const c = useUpdate();
+  const u = c?.u;
+  const restart = c?.restart;
   const state = u?.state === 'none' ? t('s2.upToDate') : u?.state === 'ready' ? t('s2.updateReady') : u?.state === 'downloading' ? t('s2.updating', { percent: u.percent ?? 0 }) : null;
   return (
     <div className="s2-version" data-testid="settings-version">
       {t('s2.version', { version: __APP_VERSION__ })}
       {IS_LITE && ` · ${t('lite.name')} · ${t('lite.updates')}`}
       {state && ` · ${state}`}
-      {u?.state === 'ready' && (
-        <button className="s2-link" onClick={() => void window.desk.update.install()} data-testid="update-ready">
-          {t('update.restart', { version: u.version ?? '' })}
+      {u?.state === 'ready' && restart && (
+        <button className="s2-link" onClick={restart} data-testid="settings-version-restart">
+          {t('upd.restart')}
         </button>
       )}
     </div>

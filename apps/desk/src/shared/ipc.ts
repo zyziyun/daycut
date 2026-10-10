@@ -156,6 +156,7 @@ export const ipcSchemas = {
   'assets:status': z.undefined(),
   'assets:install': z.strictObject({ ids: z.array(z.string().regex(/^[a-z0-9-]{1,40}$/)).max(20).optional() }),
   'assets:cancel': z.strictObject({ id: z.string().regex(/^[a-z0-9-]{1,40}$/).optional() }).optional(),
+  'update:get': z.undefined(),
   'update:check': z.undefined(),
   'update:install': z.undefined(),
   'history:watch': z.strictObject({ roots: z.array(absPath).max(20) }),

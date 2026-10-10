@@ -43,7 +43,7 @@ import { HistoryWatcher } from './historyWatch';
 import { UsageReporter, usageAllowedByEnv } from './usage';
 import { APP_NAME, applyIdentity } from './identity';
 import { SecretStore } from './secrets';
-import { checkForUpdates, initUpdater, installUpdate } from './updater';
+import { checkForUpdates, initUpdater, installUpdate, updateState } from './updater';
 import { registerCleanupIpc, registerV02Ipc, v02EngineEnv } from './v02';
 import { devOnly, setPackaged, tempOnly, testSwitch } from './testHooks';
 import { openFeedback, recordProblem, registerSupportIpc } from './support';
@@ -956,7 +956,8 @@ function registerIpc() {
     return { ...assets.status(), restartWhenIdle };
   });
   handle('assets:cancel', async (p) => assets.cancel(p?.id));
-  handle('update:check', async () => checkForUpdates());
+  handle('update:get', async () => updateState());
+  handle('update:check', async () => checkForUpdates(true));
   handle('update:install', async () => installUpdate());
   handle('history:watch', async (p) => {
     historyWatcher ??= new HistoryWatcher(() => win?.webContents.send('history:changed', { at: Date.now() }));
@@ -1111,7 +1112,7 @@ if (!app.requestSingleInstanceLock()) {
       tray.set(!!settings.get().openAtLogin);
     }
     if (IDENTITY.migrated) void reportMigratedProfile();
-    initUpdater((u) => win?.webContents.send('update:state', u));
+    initUpdater((u) => win?.webContents.send('update:state', u), mainLog);
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
       else if (win && !win.isVisible()) openRoute(); // started hidden at login: the Dock icon shows it
