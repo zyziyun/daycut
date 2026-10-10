@@ -41,6 +41,25 @@ Every material also gets a **role** (what the rule planner keys on): `call`, `le
 `talking-head`, `finished-edit` (burned captions or a final export with speech), `footage`, `podcast-audio`,
 `voice`, `music`, `photo`, `script`, `slides`, `doc`, `notes`, `subtitles`.
 
+### Requests with no files, links, "my Notion"
+
+A request with no files is planned from its words (`plan --prompt "..."` with no `--inputs`): an explainer / a
+series, 口播 scripts to record (preproduction), an AI video, slides - never "no inputs". What only she can give comes
+back as `needs` (message dicts) and the plan waits for it (no model call until she gives it):
+
+* `intake.need.footage` - the request cuts / edits her own recordings and none came with it (no project is made up);
+* `intake.need.notion` - it names her Notion and no Notion link or exported notes (a folder of .md / .html, e.g.
+  Notion > ••• > Export > Markdown & CSV, unzipped) came with it;
+* `intake.need.notion-private` / `intake.need.page-unreadable` - a pasted link could not be read.
+
+Links in the request are read first (`vstudio.intake.sources`): a web page (plain GET, 2 MB / 20 s, HTML -> Markdown
+with its headings) or a public Notion page (Notion's public page endpoint `/api/v3/loadPageChunk`, no login), kept
+as Markdown in `$VSTUDIO_CACHE/intake/sources/` and planned from like a dropped .md. A private page is said to be
+private; nothing is guessed. `--ignore-needs` plans without what is missing. No AI connector (MCP) is used by the
+planner: it plans from what was read on this machine (for private pages: export them, or share them to the web).
+A request that cannot be planned at all raises `PlanError` with a `code` (`plan-empty`: no words and no files); the
+`--json-events` error event carries it as `code: plan-<code>` for the app to word.
+
 ## 3. Plan
 
 The routed model (task `intake` of `vstudio.llm`: `llm.tasks.intake` or `llm.default` in the persona / client;

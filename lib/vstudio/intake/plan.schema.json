@@ -114,6 +114,10 @@
     "run": {"type": "object", "properties": {"pilot": {"type": ["integer", "null"]}, "auto": {"type": "array"}}},
     "summary_zh": {"type": "string"},
     "ui_lang": {"enum": ["en", "zh", "fr"], "description": "language of the model-written card texts (questions, risks, why)"},
-    "summary_lang": {"type": "string", "pattern": "^[a-z]{2}$", "description": "language summary_zh is written in"}
+    "summary_lang": {"type": "string", "pattern": "^[a-z]{2}$", "description": "language summary_zh is written in"},
+    "needs": {"type": "array", "description": "what only she can give before it runs (her recordings, her Notion notes): message dicts",
+              "items": {"type": "object", "required": ["code"], "properties": {"code": {"type": "string"}, "params": {"type": "object"}}}},
+    "sources": {"type": "array", "description": "links in the request that were read (vstudio.intake.sources)",
+                "items": {"type": "object", "properties": {"url": {"type": "string"}, "title": {"type": "string"}}}}
   }
 }

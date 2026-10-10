@@ -268,8 +268,9 @@ def test_cli_plan_json_events(tmp_path):
 def test_cli_plan_json_events_error(tmp_path):
     e = dict(os.environ)
     e["PYTHONPATH"] = os.path.join(ROOT, "lib") + os.pathsep + e.get("PYTHONPATH", "")
-    r = subprocess.run([sys.executable, "-m", "vstudio.intake", "plan", "--prompt", "x", "--provider", "none",
+    # nothing to plan (no words, no files): the error event carries the reason code the desk words for her
+    r = subprocess.run([sys.executable, "-m", "vstudio.intake", "plan", "--prompt", " ", "--provider", "none",
                         "--json-events"], capture_output=True, text=True, env=e)
     assert r.returncode != 0
     last = json.loads(r.stdout.strip().splitlines()[-1])
-    assert last["event"] == "error" and "no inputs" in last["error"]
+    assert last["event"] == "error" and "nothing to plan" in last["error"] and last["code"] == "plan-empty"

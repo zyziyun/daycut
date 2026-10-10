@@ -71,7 +71,11 @@ def cmd_analyze(a):
 def _with_events(a, make, out):
     """Run ``make(on_event)`` -> plan; with --json-events stream its progress and end with {event: done, plan}."""
     if not a.json_events:
-        p = make(None)
+        try:
+            p = make(None)
+        except PL.PlanError as e:
+            _out(a, dict(ok=False, error=str(e), code=f"plan-{e.code}"), f"error: {e}")
+            return 5
         _save(out, p)
         _out(a, p, _plan_text(p))
         return 0
@@ -81,7 +85,9 @@ def _with_events(a, make, out):
         p = make(emit)
         _save(out, p)
     except Exception as e:
-        emit(dict(event="error", ts=round(time.time(), 2), error=f"{type(e).__name__}: {e}"[:600]))
+        # a PlanError carries a code the desk words in her language (plan-empty ...); anything else is a crash
+        emit(dict(event="error", ts=round(time.time(), 2), error=f"{type(e).__name__}: {e}"[:600],
+                  code=f"plan-{e.code}" if isinstance(e, PL.PlanError) else None))
         raise
     emit(dict(event="done", ts=round(time.time(), 2), plan=p))
     stream.flush()
@@ -93,7 +99,7 @@ def cmd_plan(a):
     return _with_events(a, lambda ev: PL.make_plan(
         a.prompt, a.inputs, client=a.client, provider=a.provider, model=a.model, analysis=analysis, asr=a.asr,
         auto=[x for x in (a.auto or "").split(",") if x], echo=_echo(a), language=a.language, timeout=a.timeout,
-        on_event=ev, ui_lang=a.ui_lang), a.out)
+        on_event=ev, ui_lang=a.ui_lang, ignore_needs=a.ignore_needs), a.out)
 
 
 def cmd_revise(a):
@@ -141,7 +147,7 @@ def build_parser():
 
     p = add("plan", cmd_plan, "natural-language request + materials -> plan JSON")
     p.add_argument("--prompt", required=True)
-    p.add_argument("--inputs", nargs="+")
+    p.add_argument("--inputs", nargs="+", help="files / folders (none: a request planned from its words and links)")
     p.add_argument("--analysis", help="a saved `analyze --out` file instead of --inputs")
     p.add_argument("--client", help="client folder or slug (defaults, llm routes)")
     p.add_argument("--provider", help="LLM provider for task intake (default: the route; none = rules only)")
@@ -155,6 +161,8 @@ def build_parser():
     p.add_argument("--ui-lang", choices=sorted(PL.REPLY_LANGS), help="language of the plan's questions / risks "
                                                                      "(default: the request's)")
     p.add_argument("--out", help="write the plan JSON here")
+    p.add_argument("--ignore-needs", action="store_true",
+                   help="plan without what the request still needs from her (her Notion notes ...): no `needs`")
     p.add_argument("--json-events", action="store_true", help="progress events on stdout, then {event: done, plan}")
 
     p = add("revise", cmd_revise, "update a plan from a follow-up instruction")

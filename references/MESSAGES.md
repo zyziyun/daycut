@@ -53,6 +53,10 @@ The desk maps `code` to its own copy (en / zh-CN / fr below; `{name}` = a param)
 | `intake.option.mask.pick` | I'll pick | 我来指定 | Je choisis |
 | `intake.option.narration.voice` | Narration | 旁白 | Narration |
 | `intake.option.narration.music` | Music only | 纯音乐 | Musique seule |
+| `intake.need.footage` | Add the recordings you want cut - this request edits your own video. Drop them here | 把要剪的录像拖进来：这个请求是剪你自己的视频 | Ajoutez les enregistrements à monter - cette demande monte votre propre vidéo. Déposez-les ici |
+| `intake.need.notion` | Which Notion pages? Paste their links (pages shared to the web), or export them in Notion (••• › Export › Markdown & CSV), unzip and drop the folder here | 要用哪些 Notion 页面？贴上页面链接（已公开分享到网页的），或在 Notion 里导出（••• › 导出 › Markdown & CSV），解压后把文件夹拖进来 | Quelles pages Notion ? Collez leurs liens (pages partagées sur le web), ou exportez-les dans Notion (••• › Exporter › Markdown & CSV), décompressez et déposez le dossier ici |
+| `intake.need.notion-private` | Couldn't read this Notion page ({url}): it isn't shared to the web. Share it, or export it (••• › Export › Markdown & CSV), unzip and drop the folder here | 读不到这个 Notion 页面（{url}）：它没有公开分享到网页。打开分享，或导出（••• › 导出 › Markdown & CSV），解压后把文件夹拖进来 | Impossible de lire cette page Notion ({url}) : elle n'est pas partagée sur le web. Partagez-la, ou exportez-la (••• › Exporter › Markdown & CSV), décompressez et déposez le dossier ici |
+| `intake.need.page-unreadable` | Couldn't read {url}. Save the page as a PDF or Markdown file and drop it here | 读不到 {url}。把这个页面存成 PDF 或 Markdown 文件拖进来 | Impossible de lire {url}. Enregistrez la page en PDF ou en Markdown et déposez-la ici |
 | `intake.question` | {text} | {text} | {text} |
 | `intake.risk` | {text} | {text} | {text} |
 | `intake.warning` | {text} | {text} | {text} |

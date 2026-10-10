@@ -85,7 +85,8 @@ def clauses(text):
 def negations(text):
     """'不要讲解视频' / '别做封面' / 'no explainer' -> recipes excluded."""
     out = set()
-    for m in re.finditer(r"(?:不要|别做|不做|去掉|不需要|no)\s*([^，,。；;]{1,12})", _norm(text)):
+    # "no" as a word only ("notion", "notes" and "nothing" are not negations)
+    for m in re.finditer(r"(?:不要|别做|不做|去掉|不需要|(?<![a-z])no(?![a-z]))\s*([^，,。；;]{1,12})", _norm(text)):
         frag = m.group(1)
         out |= set(recipe_scores(frag))
     return out
@@ -554,7 +555,7 @@ def rule_projects(intent, analysis, ctx):
                 docs = [f for f in docs if rmap[f["id"]] in ("doc", "slides")] or docs
             if rid == "preproduction":
                 docs = [f for f in docs if rmap[f["id"]] in ("notes", "doc")] or docs
-            n = cnt
+            n = (intent.get("episodes") if len(chosen) == 1 else None) or cnt
             rows = []
             if docs:
                 used |= {f["id"] for f in docs}

@@ -25,6 +25,7 @@ from vstudio.project import manifests as M
 from . import estimate as EST
 from . import inventory as I
 from . import rules as R
+from . import sources as SRC
 
 PLAN_VERSION = 1
 SCHEMA_PATH = os.path.join(os.path.dirname(__file__), "plan.schema.json")
@@ -44,7 +45,21 @@ PLATFORM_EN = dict(PLATFORM_ZH, xiaohongshu="Xiaohongshu", douyin="Douyin", bili
 
 
 class PlanError(ValueError):
-    pass
+    """A request that cannot be planned; ``code`` says why in a word the desk turns into her language."""
+
+    def __init__(self, message, code="plan"):
+        super().__init__(message)
+        self.code = code
+
+
+# recipes that only cut / edit her own recordings: nothing to make without footage
+FOOTAGE_RECIPES = ("talkinghead", "longform-to-short", "call-clips", "lesson-clips", "interview-qa", "promo-recut",
+                   "polish", "vlog", "longform-course", "photo-story", "cover")
+# recipes that make a video from words alone (a topic, notes, a script): what a request with no files becomes
+WORDS_RECIPES = ("explainer", "preproduction", "ai-video", "slides", "launch-kit")
+# the request asks to cut / edit recordings (not to make something from a topic)
+_EDIT_VERBS = re.compile(r"剪|切|拆条|去气口|去口癖|精剪|粗剪|recut|\bcut\b|\btrim|\bedit\b|clips? from|"
+                         r"my (recording|video|footage|talk|podcast|interview)|这条|这段|这个视频|录像|录屏|素材", re.I)
 
 
 # --------------------------------------------------------------------------- context (persona / client defaults)
@@ -122,6 +137,11 @@ Rules:
   recordings, finished clips, "素材") goes into the recipe's "broll" input when it has one - all of it (a group id
   for a folder, or the files she named); an input without "multiple" takes ONE file, so never squeeze several
   videos into it (put the rest in "broll"). Say in risks which attached materials the plan does not use.
+- No materials at all ("materials" is empty): plan what can be made from the request's words alone - an explainer,
+  口播 scripts (preproduction) to record, an AI video, slides - e.g. a series of N episodes as a "list" of topics.
+  Text materials (notes, an exported Notion page, a web page) are the content to work from. If the request can only
+  be done by cutting her own recordings (a talking-head edit, slices of a video, a vlog), return "projects": [] and
+  "needs": ["footage"] - never invent materials.
 - Ask a question ONLY when the answer can't be defaulted and changes the result (e.g. whose face to hide). Never ask
   about things a checkpoint already covers (segment approval, filler cuts, cover pick, publish review).
 - Platforms: use the ids in the recipe's "platforms" list ("xiaohongshu:full" = 9:16, "xiaohongshu:vertical" = 3:4).
@@ -146,6 +166,7 @@ Return ONE JSON object:
  "questions": [{{"project": <index>, "text": "<reply_language>", "options": ["<reply_language>"],
                 "default": "<one of options>"}}],
  "risks": ["<reply_language>"],
+ "needs": ["footage"] (only when nothing can be made without her recordings; else omit),
  "summary_zh": "<paragraph in the request's language>",
  "summary_lang": "<two-letter code of the language summary_zh is written in: en, zh, fr ...>"}}"""
 
@@ -785,8 +806,13 @@ def _lang(plan):
 
 
 def template_summary(plan):
-    """The template summary in the request's language (an English request gets an English paragraph)."""
-    return summary_en(plan) if _lang(plan) == "en" else summary_zh(plan)
+    """The template summary in the request's language (an English request gets an English paragraph); a plan that
+    waits for her recordings says so (nothing else is planned)."""
+    en = _lang(plan) == "en"
+    if not plan["projects"] and plan.get("needs"):
+        n = plan["needs"][0]
+        return n["message"] if en else n["message_zh"]
+    return summary_en(plan) if en else summary_zh(plan)
 
 
 def summary_en(plan):
@@ -1025,16 +1051,34 @@ def _plan_id(prompt):
 
 
 def make_plan(prompt, inputs=None, client=None, provider=None, model=None, analysis=None, asr="auto", auto=None,
-              call=None, echo=None, language=None, timeout=None, on_event=None, ui_lang=None):
+              call=None, echo=None, language=None, timeout=None, on_event=None, ui_lang=None, ignore_needs=False,
+              http=None):
     """-> plan dict. ``call(system, prompt) -> {json, model, cost_usd}`` replaces the model (tests). ``ui_lang``: the
     language the creator reads the plan card in (en | zh | fr; default: the request's), see ``reply_lang``. ``on_event``:
     progress, one dict per step - the inventory's (scan / probe / listen / faces / transcribe, see ``inventory``),
-    then {event: stage, stage: model, provider, model} for the AI call and {event: stage, stage: write}."""
+    then {event: stage, stage: model, provider, model} for the AI call and {event: stage, stage: write}.
+
+    A request with no files is planned from its words (an explainer, scripts to record, an AI video ...); links in it
+    are read first (``sources``: web pages, public Notion pages). What only she can give comes back as ``needs``
+    (her recordings for a request that cuts footage, her Notion notes when she names them but they could not be
+    read): the plan waits for them instead of failing or guessing (``ignore_needs``: plan without them). ``http``:
+    the fetcher ``sources`` uses (tests)."""
+    needs, read = [], []
     if analysis is None:
-        if not inputs:
-            raise PlanError("no inputs (files / folders) given")
+        inputs = [str(x) for x in inputs or []]
+        src = SRC.resolve(prompt, inputs, http=http, echo=echo)
+        read = src["read"]
+        if read:
+            I.emit(on_event, stage="sources", n=len(read))
+        inputs = inputs + [x for x in src["inputs"] if x not in inputs]
+        needs = [] if ignore_needs else list(src["needs"])
+        if not inputs and not (prompt or "").strip():
+            raise PlanError("nothing to plan: no request and no files", code="empty")
         analysis = I.analyze(inputs, asr="off" if asr == "off" else "sample", language=language, echo=echo,
                              on_event=on_event)
+    media = [f for f in analysis["files"] if f["kind"] in ("video", "audio", "image")]
+    if not media and not ignore_needs and _wants_footage(prompt, analysis):
+        needs.append(MSG.msg("intake.need.footage"))
     ctx = context(client)
     intent = R.parse_prompt(prompt)
     if asr != "off" and asr != "sample":
@@ -1044,14 +1088,20 @@ def make_plan(prompt, inputs=None, client=None, provider=None, model=None, analy
             analysis = _upgrade_transcripts(analysis, need, language, echo, on_event)
     transcripts = _transcripts(analysis) if intent.get("extract") else {}
     ui_lang = ctx["ui_lang"] = reply_lang(prompt, ui_lang)
-    js, info = _call_model(prompt, analysis, ctx, transcripts, provider, model, call=call, timeout=timeout,
-                           on_event=on_event, ui_lang=ui_lang)
+    if needs:                       # she still has to give something: no model call until she has (or says go on)
+        js, info = None, dict(provider="none", model=None, route="needs", fallback=True, reason="waiting for her")
+    else:
+        js, info = _call_model(prompt, analysis, ctx, transcripts, provider, model, call=call, timeout=timeout,
+                               on_event=on_event, ui_lang=ui_lang)
     I.emit(on_event, stage="write")
     warn = []
     questions, risks, summary = [], [], None
     raw_projects = None
     if js is not None:
         raw_projects = js.get("projects") or []
+        if "footage" in [str(x) for x in js.get("needs") or []] and not media and not ignore_needs and \
+                not any(n["code"] == "intake.need.footage" for n in needs):
+            needs.append(MSG.msg("intake.need.footage"))
         questions = [q for q in js.get("questions") or [] if isinstance(q, dict) and q.get("text")]
         risks = [str(r) for r in js.get("risks") or [] if r]
         summary = js.get("summary_zh") if isinstance(js.get("summary_zh"), str) else None
@@ -1065,6 +1115,8 @@ def make_plan(prompt, inputs=None, client=None, provider=None, model=None, analy
         if not projects:
             info.update(fallback=True, reason="no sub-project of the model's plan passed validation")
             summary = None
+    if not projects and not media and not any(n["code"] == "intake.need.footage" for n in needs):
+        intent = _words_intent(intent, prompt)          # no files: a project made from the request's words
     if not projects:
         rp, rq, rr = R.rule_projects(intent, analysis, ctx)
         for x in rp:
@@ -1074,6 +1126,10 @@ def make_plan(prompt, inputs=None, client=None, provider=None, model=None, analy
         questions, risks = (questions or rq), (risks + [r for r in rr if r not in risks])
         info["fallback"] = True
         info.setdefault("reason", "rule planner")
+    if any(n["code"] == "intake.need.footage" for n in needs):
+        projects, questions, risks = [], [], []       # nothing is made up without her recordings
+    elif not projects and not media and not ignore_needs:
+        needs.append(MSG.msg("intake.need.footage"))
     for p in projects:
         resolve_focus(p, analysis, intent, warn)
     if intent.get("unsupported_platforms"):
@@ -1089,6 +1145,10 @@ def make_plan(prompt, inputs=None, client=None, provider=None, model=None, analy
         materials=_materials(analysis), projects=projects,
         series=_series_for(projects, prompt), questions=_norm_questions(questions, projects), risks=risks,
         warnings=warn, run=dict(pilot=1, auto=auto_ids), ui_lang=ui_lang)
+    if needs:
+        plan["needs"] = needs
+    if read:
+        plan["sources"] = read
     account_inputs(plan, analysis)
     plan["estimate"] = EST.total(projects)
     _set_summary(plan, summary, js, info)
@@ -1096,6 +1156,29 @@ def make_plan(prompt, inputs=None, client=None, provider=None, model=None, analy
     if errs:
         plan["warnings"] = warn + [MSG.Coded(f"schema: {e}", MSG.msg("intake.warning.schema", error=e)) for e in errs]
     return _messages(plan)
+
+
+def _wants_footage(prompt, analysis):
+    """A request with no media that only makes sense with her recordings: it says to cut / edit something and names
+    no recipe that makes a video from words (a topic, notes, a script)."""
+    if analysis["files"] and any(f["kind"] == "text" for f in analysis["files"]) and not _EDIT_VERBS.search(prompt or ""):
+        return False
+    sc = R.recipe_scores(prompt or "")
+    words = max([v for r, v in sc.items() if r in WORDS_RECIPES] or [0])
+    cut = max([v for r, v in sc.items() if r in FOOTAGE_RECIPES] or [0])
+    if words and words >= cut:
+        return False
+    return bool(cut) or bool(_EDIT_VERBS.search(prompt or ""))
+
+
+def _words_intent(intent, prompt):
+    """No files and no recipe the rules could run: make it an explainer (or a series of them) from the request."""
+    sc = dict(intent.get("scores") or {})
+    if any(r in sc for r in WORDS_RECIPES):
+        return intent
+    sc["explainer"] = max(sc.values() or [1]) + 1
+    clauses = [dict(c, scores=dict(c.get("scores") or {}, explainer=sc["explainer"])) for c in intent.get("clauses") or []]
+    return dict(intent, scores=sc, clauses=clauses)
 
 
 def _messages(plan):

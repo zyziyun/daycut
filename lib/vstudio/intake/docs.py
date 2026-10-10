@@ -13,7 +13,8 @@ import re
 
 TEXT_EXT = {".md", ".markdown", ".txt", ".text", ".rst"}
 SUB_EXT = {".srt", ".vtt", ".ass"}
-DOC_EXT = {".pdf", ".docx", ".pptx", ".json", ".csv", ".yaml", ".yml"} | TEXT_EXT | SUB_EXT
+HTML_EXT = {".html", ".htm"}                   # e.g. a Notion export as HTML (intake.sources reads links itself)
+DOC_EXT = {".pdf", ".docx", ".pptx", ".json", ".csv", ".yaml", ".yml"} | TEXT_EXT | SUB_EXT | HTML_EXT
 MAX_CHARS = 400_000            # stop extracting after this (a book-length PDF does not need more for a plan)
 EXCERPT = 300
 URL_RE = re.compile(r"https?://[^\s<>\"'）)\]】，。]+", re.I)
@@ -147,6 +148,10 @@ def extract(path):
         return _pptx(path)
     if ext in SUB_EXT:
         return _subs(path)
+    if ext in HTML_EXT:
+        from .sources import html_text
+        title, text = html_text(_read_text(path))
+        return (f"# {title}\n\n" if title else "") + text[:MAX_CHARS], {}
     if ext == ".json":
         t = _read_text(path)
         try:
