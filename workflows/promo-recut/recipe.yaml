@@ -170,18 +170,25 @@ checkpoints:
     scope: item
     after: prepare
     blocks: [suggest]
-    labels: {zh: "保留片段", en: "Keep spans"}
-    help: {zh: "在 promo.config.yaml 写 cut.body / cut.outro（原片秒数）", en: "Write cut.body / cut.outro KEEP spans (raw seconds) in promo.config.yaml"}
+    labels: {zh: "确认保留内容", en: "Check what's kept"}
+    help:
+      zh: AI 按你的要求从逐字稿里剪好了（删掉没讲完的开头、跑题、口误和你说要删的部分）；看一眼留下的内容
+      en: The AI cut your recording from the transcript and your request (unfinished opening, detours, slips and what you asked to drop); check what's kept
+    # drafted by the engine (vstudio.project.adapters.promo:draft_keep): cut.body KEEP spans from the transcript +
+    # her request (+ hooks / speeds she named); the payload's ``review`` is the transcript with kept / cut parts
     author:
       file: "{item_dir}/promo.config.yaml"
       template: workflows/promo-recut/examples/promo.config.example.yaml
       format: promo-recut config (YAML)
       doc: workflows/promo-recut/WORKFLOW.md
     payload: vstudio.project.adapters.common:author_payload
-    apply: vstudio.project.adapters.common:author_apply
+    apply: vstudio.project.adapters.promo:apply_keep
     answer:
       type: object
-      properties: {done: {type: boolean}, content: {type: string}}
+      properties:
+        done: {type: boolean}
+        content: {type: string}
+        spans: {type: array, items: {type: array, items: {type: number}, minItems: 2, maxItems: 2}}
     auto: never
   - id: filler
     kind: filler-confirm
@@ -204,10 +211,11 @@ checkpoints:
     scope: item
     after: draft_subs
     blocks: [build]
-    labels: {zh: "素材与高亮位置", en: "Cards, highlights, montage"}
+    labels: {zh: "确认字幕和插片", en: "Check captions and footage"}
     help:
-      zh: 在 promo.config.yaml 写字幕、截图卡片与高亮行（find_rows.py）、定格、蒙太奇、章节、片尾
-      en: Write subtitles, screenshot cards + highlight rows (find_rows.py), hold, montage, chapters, end card in promo.config.yaml
+      zh: AI 放好了字幕、录屏（全屏 + 右下角小头像）、截图卡片、精选蒙太奇、章节和片尾；看一眼
+      en: The AI placed the captions, your screen recordings (full screen, you small in the corner), screenshot cards, the montage, chapters and end card; take a look
+    # drafted by the engine (vstudio.project.adapters.promo:draft_package)
     author:
       file: "{item_dir}/promo.config.yaml"
       format: promo-recut config (YAML)

@@ -48,29 +48,41 @@ def dir_sha(path):
 
 
 def author_payload(env, cp):
+    """The file she would write - drafted by the engine first (``vstudio.project.drafts``: the recipe's drafter or
+    the AI; never the seeded template / SYNTHETIC example). ``default`` ({done: true}) only for a real draft or her
+    own file; ``review`` is the plain-language view the Inbox shows; ``draft_state`` missing | template | drafted |
+    hers; ``draft_error`` why nothing could be drafted."""
+    from .. import drafts as DR
     a = cp["author"]
     path = _author_path(env, cp)
+    tpl = os.path.join(M.ROOT, a["template"]) if a.get("template") else None
+    ctx = DR.Ctx.of_env(env)
+    rec = DR.ensure(ctx, cp, path, tpl, echo=env.log)
+    st = DR.state(path, tpl, cp, ctx.recipe)
+    usable = st in ("drafted", "hers")
+    extra = dict(review=DR.review(ctx, cp, path, tpl), draft_state=st, draft_by=(DR.read_side(path, cp["id"]) or
+                                                                                  {}).get("by") if usable else None,
+                 draft_error=(rec or {}).get("failed"))
     if os.path.isdir(path):
         sha = dir_sha(path)
         files = sorted(os.listdir(path))
-        return dict(file=path, exists=bool(sha), is_dir=True, files=files, format=a.get("format"),
+        return dict(file=path, exists=usable, is_dir=True, files=files, format=a.get("format"),
                     doc=os.path.join(M.ROOT, a["doc"]) if a.get("doc") else None, content=None,
                     options=[dict(file=path, sha=sha)], digest=sha or "missing",
-                    default=dict(done=True) if sha else None,
-                    previews=[dict(kind=_kind_of(f), path=os.path.join(path, f)) for f in files[:24]])
-    exists = os.path.exists(path) and os.path.getsize(path) > 0
+                    default=dict(done=True) if usable else None,
+                    previews=[dict(kind=_kind_of(f), path=os.path.join(path, f)) for f in files[:24]], **extra)
     text = None
-    if exists and os.path.getsize(path) < 200_000:
+    if usable and os.path.getsize(path) < 200_000:
         try:
             with open(path, encoding="utf-8") as f:
                 text = f.read()
         except (OSError, UnicodeDecodeError):
             text = None
-    return dict(file=path, exists=exists, template=os.path.join(M.ROOT, a["template"]) if a.get("template") else None,
-                format=a.get("format"), doc=os.path.join(M.ROOT, a["doc"]) if a.get("doc") else None,
+    return dict(file=path, exists=usable, template=tpl, format=a.get("format"),
+                doc=os.path.join(M.ROOT, a["doc"]) if a.get("doc") else None,
                 content=text, options=[dict(file=path, sha=file_sha(path))], digest=file_sha(path) or "missing",
-                default=dict(done=True) if exists else None,
-                previews=[dict(kind="text", path=path)] if exists else [])
+                default=dict(done=True) if usable else None,
+                previews=[dict(kind="text", path=path)] if usable else [], **extra)
 
 
 def author_apply(a):

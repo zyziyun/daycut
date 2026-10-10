@@ -99,7 +99,7 @@ params for project scope, `items_patch` for segment edits) and a digest; then th
 | `hook-pick` | talkinghead | `{pick: k}` (-1 none) or `{start, end, text}` |
 | `segment-approval` (project) | longform-to-short, call-clips, batch | `{approve: "all" \| [ids], drop: [ids], edits: {id: {start, end, title, hook}}}` |
 | `script-lock` | preproduction, explainer, ai-video | `{lock: true[, content]}` / author answer; digest = the file hash (an edit asks again) |
-| `storyboard-approval`, `author`, `media-selection` | explainer, promo, vlog, photo-story, slides, course, cover HTML | `{done: true}` or `{content: "..."}` for a file the human / agent writes (template seeded into the item) |
+| `storyboard-approval`, `author`, `media-selection` | explainer, promo, vlog, photo-story, slides, course, cover HTML | `{done: true}` (the draft as it is), `{content: "..."}`, or for promo-recut keep `{done, spans: [[a, b]]}` (exactly what she keeps); the engine drafts the file first (below) |
 | `voice-pick` | explainer | `{approve, voice, speed}` (cost estimate in the payload, before paid TTS) |
 | `budget-approval` (project) | ai-video | `{approve, budget, allow_unknown}`; payload `aggregate: [credits]` over items; never auto |
 | `take-selection` | ai-video | `{picks: {unit: take file}}` -> auto EDL |
@@ -108,6 +108,22 @@ params for project scope, `items_patch` for segment edits) and a digest; then th
 | `consent` (project) | call-clips | `{consent: true, who, note}`; never auto |
 | `review` | photo-story layout, polish speed | `{approve}` / `{speed}` |
 | `publish` | every video recipe | `{approve, reason}`; sets the batch review state; `export` takes approved items only. The default approve exists only when QC is not red, so `--auto publish` = exception review |
+
+**Drafts** (`vstudio.project.drafts`): an author / script-lock / storyboard / media-selection checkpoint never hands
+her a raw file to write. When the gate reaches it the engine drafts the file - the recipe's own drafter (promo-recut
+keep: the talk is transcribed into `work/audio.json` and the AI editor cuts what the request and good editing say -
+unfinished opening, detours, self-corrections, the passages she named - plus hooks / speeds she asked for; promo-recut
+package: captions from the cut, her screen recordings / screenshots / finished clips placed where she talks about
+them, chapters, end card, cover line, post; preproduction lock: the script from the topic) or the generic AI drafter
+(template + format guide + her request -> the file, checked to parse; text formats only). The draft is recorded in
+`<file>.<checkpoint>.draft.json` ({by ai | rules, provider, sha, review}). File states: `missing`, `template` (the
+untouched seed or a SYNTHETIC example: **never an answer**, not even on autopilot), `drafted`, `hers` (edited after).
+The payload carries `draft_state`, `draft_by`, `draft_error` and `review` - the plain-language view the Inbox shows
+instead of the file: `{kind keep-spans | package | outline | text, summary {code, params}, lines [{code, params}],
+segments [{i, t, te, text, keep, label}] (keep spans), text (a script)}`. `default` is set only for drafted / hers.
+`drafts.redraft(project, cp, item, instruction)` ("tell the AI what to change", or "draft it for me" on an older
+project) drafts again and updates the stored payload in place. Without a model: promo keep keeps everything (said
+so: `draft.keep-all-rules`), packaging = captions only, other files are not drafted (the checkpoint waits for her).
 
 Auto policy: `run --auto hook,filler` (or project.yaml `auto:` / the series) answers checkpoints whose manifest says
 `auto: default` with the payload default, then continues (rounds until nothing auto-answerable is left).
@@ -120,7 +136,8 @@ rules for everything else (default answer, QC verdict, drafted file; hooks stay 
 Each answer is recorded with `auto, by: ai | rules, reason, reason_code, params, provider` and a line in
 `state/autopilot.jsonl`; the payload stays in `state/checkpoints/`. Only real blockers wait for her: `consent`,
 `spend-cap` (a budget above `spend_cap` credits, default 0), `qc-red` (review of a red clip), `needs-input` (a file
-only she can write, no default), `asked` (one she took back). `decisions --dir P [--history]` lists them;
+nothing could be drafted for, no default), `asked` (one she took back). A drafted file is taken with the draft's own
+summary as the reason (`reason_code: drafted`, `by: ai` for an AI draft; `hers` for a file she edited). `decisions --dir P [--history]` lists them;
 `reopen --dir P --id X [--item I]` takes one back (the next run stops there and the Inbox asks her; her answer
 replaces the AI's).
 

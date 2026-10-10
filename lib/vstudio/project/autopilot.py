@@ -7,8 +7,9 @@ it can be looked at and changed afterwards. Only real blockers stay for the crea
     consent          a consent checkpoint (someone else's face / voice): never answered for her
     spend-cap        a budget approval above the cap (``spend_cap`` credits, default 0 = every budget asks)
     qc-red           the review before publishing on a clip whose QC is red (nothing to approve)
-    needs-input      a file only she can write (an ``author`` checkpoint whose file does not exist) or a checkpoint
-                     with no default and no AI answer
+    needs-input      an ``author`` checkpoint nothing could be drafted for (no model, a reply that did not parse;
+                     the engine drafts these files itself: ``drafts``) or a checkpoint with no default and no AI
+                     answer. A seeded template / SYNTHETIC example is never taken for a draft
     asked            she took a decision back ("change it"): the checkpoint waits for her answer
 
 project.yaml::
@@ -124,11 +125,21 @@ def rules(cp, pay, spend_cap=0.0):
                      dict(approve=cut, keep=keep), cut=len(cut), kept=len(keep), n=len(opts))
     if default is None:
         if kind in AUTHOR_KINDS:
-            return _block("needs-input", "a file only you can write is missing", file=os.path.basename(
-                str(pay.get("file") or "")))
+            # nothing drafted (no model, a reply that did not parse) - never the seeded template / example
+            return _block("needs-input", "nothing could be drafted for this step" + (
+                f" ({pay['draft_error']})" if pay.get("draft_error") else ""), file=os.path.basename(
+                str(pay.get("file") or "")), state=pay.get("draft_state"))
         return _block("needs-input", "nothing to go on (no default)")
     if kind in AUTHOR_KINDS:
-        return _rule("drafted", "the drafted file is used as it is", default)
+        rv = pay.get("review") or {}
+        summ = rv.get("summary") or {}
+        by = pay.get("draft_by")
+        params = dict(summ.get("params") or {}, summary=summ.get("code"), state=pay.get("draft_state"))
+        if by == "ai":
+            return dict(value=default, by="ai", provider=rv.get("provider"), reason=rv.get("ai_summary") or
+                        "the AI's draft", reason_code="drafted", params=params)
+        return _rule("drafted" if pay.get("draft_state") == "drafted" else "hers",
+                     "the drafted file" if pay.get("draft_state") == "drafted" else "your own file", default, **params)
     if kind == "hook-pick":
         pick = int((default or {}).get("pick", -1))
         return _rule("hook-default", "no cold open (your style)" if pick < 0 else f"opening {pick + 1}", default,
