@@ -360,6 +360,7 @@ test('transcript: select -> Delete -> skipped in the preview at once -> saved by
   expect(await steps()).toBe(s0 + 1);
   await page.getByTestId('cut-status-undo').click();
   await expect.poll(steps, { timeout: 15000 }).toBe(s0);
+  await expect(page.getByTestId('cut-marker')).toHaveCount(0); // the transcript is back as it was (no reflow mid-drag)
   // select 去给 Lakeside City College， (a drag across words) and press Delete
   const start = await page.evaluate(() => [...document.querySelectorAll('[data-testid=transcript-body] .w')].findIndex((e) => e.textContent?.startsWith('去给')));
   const a = await w(start).boundingBox();

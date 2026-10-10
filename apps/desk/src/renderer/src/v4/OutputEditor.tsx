@@ -209,6 +209,7 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
       try {
         await (redo ? client.redoOutput(id, clip, steps) : client.undoOutput(id, clip, steps));
         setRendered(null);
+        setSave((x) => (x.kind === 'saved' ? { kind: 'idle' } : x)); // "Cut saved · Undo" is about the step just undone / redone
         reload();
       } catch (e) {
         ui.toast(errText(e), { error: true });
