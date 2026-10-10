@@ -44,7 +44,7 @@ test.afterAll(async () => {
 test('the planner did not answer: a clear reason and Try again, nothing made; Try again plans', async () => {
   await expect(page.getByTestId('home')).toBeVisible({ timeout: 30000 });
   await page.evaluate(() => window.desk.setSettings({ autopilot: false })); // the plan card itself (no apply)
-  await page.getByTestId('composer-input').fill('把这段口播剪干净');
+  await page.getByTestId('composer-input').fill('做一期时间管理的讲解视频'); // words only: planned (a cut with no recording waits for it)
   await page.getByTestId('make-plan').click();
   await page.getByTestId('toast-action').first().click();
   await expect(page.getByTestId('plan-failed-reason')).toContainText(/planner didn’t answer/i, { timeout: 15000 });

@@ -302,6 +302,10 @@ class Inbox:
         hist = self.history.list()["items"]
         for e in hist:
             proj = dict(id=e["id"], name=e.get("name"), kind=e["kind"], thumb=e.get("thumb"), type=e.get("type"))
+            if not proj["thumb"] and e["kind"] == "project":    # a frame of her recording, never a letter
+                proj["video"] = _item_video(e["dir"], None)
+                if proj["video"]:
+                    allow.append(proj["video"])
             if e["kind"] == "work":
                 conf = WK.confirmations(e["dir"])
                 if conf:

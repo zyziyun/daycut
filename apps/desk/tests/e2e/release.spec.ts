@@ -4,6 +4,7 @@
 //     the project, an inbox item with 去登录 / 换 Codex 重试, a Failed count in All projects; the retry runs;
 //   - the French UI: first run and the main screens render with no missing keys.
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -13,10 +14,12 @@ let app: ElectronApplication;
 let page: Page;
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vsdesk-release-'));
 const SHOTS = process.env.DESK_SHOTS_DIR; // optional: screenshots of the fixed screens
+const recording = path.join(tmp, 'final_cut.mp4'); // a cut needs her recording (with none the request waits for it)
 
 test.describe.configure({ mode: 'serial' });
 
 test.beforeAll(async () => {
+  execFileSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=size=180x320:rate=30:duration=3', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', recording]);
   app = await electron.launch({
     args: [path.resolve(import.meta.dirname, '../..')],
     env: {
@@ -67,6 +70,10 @@ test('planning: elapsed time and a stop button; stop returns to the composer', a
 
 test('a failed pilot is visible: project, inbox, all projects; retry with Codex runs', async () => {
   test.setTimeout(90000);
+  await page.evaluate((f) => sessionStorage.setItem('v4.composer', JSON.stringify({ prompt: '', files: [f] })), recording);
+  await hash('#/inbox');
+  await hash('#/');
+  await expect(page.getByTestId('composer-files')).toContainText('final_cut.mp4');
   await page.getByTestId('composer-input').fill('把这条成片切成 3 条小红书切片');
   await page.getByTestId('make-plan').click();
   await page.getByTestId('toast-action').first().click();
