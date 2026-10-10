@@ -1,7 +1,7 @@
 {
   "name": "video-studio-desk",
   "productName": "Reelfold",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "private": true,
   "description": "Reelfold (千剪): one recording, folded out into every cut for every platform. Desktop app on the open-source Reelfold engine.",
   "main": "out/main/index.cjs",

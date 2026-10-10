@@ -8,6 +8,41 @@ App releases are tagged `v*`; engine-only releases are tagged `engine-v*`.
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-10-10
+
+### Added
+
+- **Autopilot** (default for new projects): a request sent from Home becomes a project at once and runs to finished
+  clips without a plan to confirm; the AI judges unsure filler cuts, every decision is logged with its reason and can
+  be changed later. Up to 2 projects run at once, the rest queue (and survive a restart). "Ask me first" restores the
+  confirm step (Settings › General, or per project). CLI: `vstudio.project run --autopilot`, `decisions`, `reopen`.
+- **Control room**: All projects lists Needs you / Running / Ready / Scheduled & out with a live pipeline per project,
+  what the AI decided, clips, and publishing. The old grid stays one click away.
+- **Requests without files**: planned from the words (explainer, series, scripts, AI video, slides); links are read
+  first (web pages, public Notion pages, exported Notion folders). What only the creator can give comes back as a
+  plain "needs" item instead of an error.
+- **Drafts instead of files to write**: author steps (promo keep spans and packaging, scripts, cues, configs …) are
+  drafted by the AI or the rules and reviewed in plain words (e.g. the transcript with cut sentences crossed out);
+  seeded templates are never taken as an answer.
+- **Skin smoothing** (磨皮 / 美颜): a face-tracked `portrait-retouch` effect the chat can apply, with strength and a
+  beauty mode.
+- **Record yourself, redesigned**: script or speak freely, teleprompter under the lens, one record button with a
+  countdown, device popovers with a live mic level, takes with thumbnails, and "Finish — make my video".
+
+### Changed
+
+- Transcript cuts and AI chat edits apply at once with Undo (no "Apply cuts" step); a setting brings back
+  "Ask before applying AI edits".
+- Publish cards, the drawer and the published list open the clip page; posted items link to the post.
+
+### Fixed
+
+- Record yourself: record, retake, camera, mic and Studio sound did nothing with an empty script or were not buttons.
+- Home could get stuck on "Couldn't make a plan"; plan errors now say why in plain words.
+- The Inbox showed raw YAML for promo steps and a letter instead of a thumbnail.
+- Concurrent run-store reads could hang the engine; stalled compose renders and ffmpeg are stopped.
+- Cuts render audio and video chains as separate filter graphs; Windows and Linux show Ctrl+ shortcut hints.
+
 ## [0.2.3] - 2026-10-09
 
 ### Added
@@ -217,6 +252,8 @@ in the commit log (formerly `video-studio` and `Daycut`).
 - API keys in the OS keychain; every IPC call validated; the local engine needs a per-session token.
 - No silent mock engine or demo mode in the product: a packaged app always runs the real engine.
 
-[Unreleased]: https://github.com/zyziyun/reelfold/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/zyziyun/reelfold/compare/v0.2.4...HEAD
+[0.2.4]: https://github.com/zyziyun/reelfold/compare/v0.2.3...v0.2.4
+[0.2.3]: https://github.com/zyziyun/reelfold/compare/v0.2.1...v0.2.3
 [0.2.1]: https://github.com/zyziyun/reelfold/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/zyziyun/reelfold/releases/tag/v0.2.0
