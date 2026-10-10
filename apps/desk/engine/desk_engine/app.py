@@ -86,7 +86,8 @@ v0.4 (outputs.py, intake.py, inbox.py; engine command when available, desk imple
                                            {plan?, run?}; POST .../stop (planning / revising); POST .../retry (a
                                            failed plan / revision / apply again); POST .../discard; GET
                                            /api/intake/recent; GET /api/intake/open (requests not projects yet)
-  GET  /api/autopilot/<item>; POST .../reopen {checkpoint, item}; POST .../mode {on}   (autopilot.py)
+  GET  /api/autopilot/<item>; POST .../reopen {checkpoint, item}; POST .../mode {on};
+       POST .../change {checkpoint, item, answer}   (autopilot.py)
   GET  /api/sample                         the built-in sample recording (copied out of the app) -> {available, path, ...};
        POST /api/sample/remove {dir}       delete a project made from it (sample.py)
   POST /api/pilot/retry {item, provider?}  re-run a failed pilot (provider: every model task on it, e.g. codex)
@@ -609,6 +610,8 @@ class Api:
                 return self.autopilot.reopen(parts[1], b.get("checkpoint"), b.get("item") or "*")
             if parts[2:] == ["mode"] and method == "POST":
                 return self.autopilot.mode(parts[1], b.get("on"))
+            if parts[2:] == ["change"] and method == "POST":
+                return self.autopilot.change(parts[1], b.get("checkpoint"), b.get("item"), b.get("answer"))
         if parts == ["sample"] and method == "GET":
             return self.sample.info()
         if parts == ["sample", "remove"] and method == "POST":

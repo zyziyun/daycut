@@ -240,6 +240,55 @@ class AutopilotDecisionsRealEngineTest(unittest.TestCase):
             P.spawn = saved
 
 
+class AutopilotTasteCallsTest(unittest.TestCase):
+    """The clip editor's decided taste calls (ux/fewer-steps): a talking-head project run on autopilot (rules, no AI
+    account) lists its filler / opening decisions with their options checked as decided; changing one in place
+    answers the checkpoint with her value and re-makes the clip in the background."""
+
+    def test_options_and_change(self):
+        tmp = tempfile.mkdtemp(prefix="apt-")
+        env = dict(os.environ, PYTHONPATH=os.path.join(ENGINE, "lib"), VSTUDIO_HOME=os.path.join(tmp, "vhome"),
+                   VSTUDIO_LLM_PROVIDER="none", VSTUDIO_DEFAULT_PERSONA="1",
+                   VSTUDIO_BATCH_BENCH=os.path.join(tmp, "bench.json"))
+        env.pop("VSTUDIO_PERSONA", None)
+        fx = os.path.join(ENGINE, "apps", "desk", "tests", "e2e", "fixture", "real_project.py")
+        r = subprocess.run([sys.executable, fx, tmp, "--autopilot"], env=env, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stdout[-2000:] + r.stderr[-2000:])
+        out = json.loads(r.stdout.strip().splitlines()[-1])
+        self.assertEqual(out["status"], "done")
+        d = out["dir"]
+        spawned = []
+        saved = P.spawn
+        P.spawn = lambda python, env_, dd, provider=None, bus=None, args=None: spawned.append(args) or {}
+        try:
+            ap = Autopilot(FakeHistory(d), CliRunner(sys.executable, env))
+            doc = ap.get("abcdefabcdef")
+            by = {x["checkpoint"]: x for x in doc["decisions"]}
+            fl = by["filler"]
+            self.assertEqual(fl["kind"], "filler-confirm")
+            o, = fl["options"]                       # "然后" after a pause: the rules kept it (not sure enough)
+            self.assertEqual((o["text"], o["checked"], o["kind"]), ("然后", False, "filler"))
+            self.assertTrue(o["ctx"]["before"].endswith("方法") and o["ctx"]["after"].startswith("来看"))
+            hk = by["hook"]
+            self.assertEqual(hk["value"], {"pick": -1})
+            self.assertTrue(hk["options"] and not any(x["checked"] for x in hk["options"]))
+            self.assertNotIn("options", by["cover"])
+            res = ap.change("abcdefabcdef", "filler", "talk", {"approve": [o["id"]], "keep": []})
+            self.assertTrue(res["ok"] and res["resumed"])
+            self.assertIn("resume", spawned[-1])
+            self.assertTrue({"apply", "export"} <= set((res.get("rerun") or {}).get("talk") or []))  # the clip is re-made
+            import yaml
+            with open(os.path.join(d, "project.yaml"), encoding="utf-8") as f:
+                rec = yaml.safe_load(f)["answers"]["filler"]["talk"]
+            self.assertEqual(rec["value"], {"approve": [3], "keep": []})
+            self.assertFalse(rec.get("auto"))           # hers now: no longer listed as the engine's
+            self.assertNotIn("filler", {x["checkpoint"] for x in ap.get("abcdefabcdef")["decisions"]})
+            with self.assertRaises(Exception):
+                ap.change("abcdefabcdef", "filler", "talk", {"approve": [3]})   # not an engine decision any more
+        finally:
+            P.spawn = saved
+
+
 class MockAutopilotRunTest(unittest.TestCase):
     """The test engine (DESK_ENGINE_MOCK): two requests back to back both become projects and finish every clip with
     no question; the decisions are listed; a third waits in line while two run."""

@@ -232,7 +232,8 @@ def engine_option(o, default=None, idx=0):
                     text=word, checked=o.get("checked", True) is not False, kind="filler", label=label,
                     detail=None, quote=_around(o.get("before"), word, o.get("after")) if has_ctx else None,
                     secs=-secs if secs else None, approx=False, at=None, before=None, choices=None, choice=None,
-                    recommended=default is not None and str(o.get("id")) == str(default))
+                    recommended=default is not None and str(o.get("id")) == str(default),
+                    ctx=dict(before=str(o.get("before") or "")[-40:], after=str(o.get("after") or "")[:40]))
     en = labels.get("en") or o.get("label") or o.get("text") or str(o.get("id") or idx)
     zh = labels.get("zh") or en
     return dict(id=str(o.get("id") if o.get("id") is not None else idx), clip=o.get("item"), clip_id=None,
