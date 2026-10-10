@@ -47,7 +47,15 @@ const api = <T,>(p: string) =>
     const info = await window.desk.engineInfo();
     return (await fetch(info.baseUrl + u, { headers: { Authorization: `Bearer ${info.token}` } })).json();
   }, p) as Promise<T>;
-const saved = () => JSON.parse(fs.readFileSync(path.join(vhome, 'watermark.json'), 'utf8'));
+// {} until the first save lands, and while one replaces it (Windows refuses the open then): polls just try again
+const saved = () => {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(vhome, 'watermark.json'), 'utf8'));
+  } catch (e) {
+    if (['ENOENT', 'EPERM', 'EBUSY', 'EACCES'].includes((e as NodeJS.ErrnoException).code ?? '')) return {};
+    throw e;
+  }
+};
 const noMissing = async () => expect(await page.evaluate(() => document.body.innerText.match(/⟦[^⟧]+⟧|\bwm\.[a-zA-Z][\w.-]+/g))).toBeNull();
 const previewV = () => page.getByTestId('wm-preview-v').getAttribute('src');
 

@@ -135,7 +135,9 @@ test('the drawer: only her platforms in Where, the title edited inline with 小�
   await d.getByTestId('pb-title').press('Enter');
   await expect.poll(async () => (await rows()).find((r) => r.clip === 'B_自媒体')?.title).toBe('再小的博主，也是博主');
   await expect(d.locator('[data-testid="pb-title-counts"] > span[data-pf="xiaohongshu"]')).toContainText('10/20');
-  // 小红书's own title: too long is marked, not cut
+  // 小红书's own title: too long is marked, not cut. It starts from the card title once the board has the saved one
+  // (the field is keyed on it: typing before that refresh lands would be reset, which a slow runner hits)
+  await expect(d.getByTestId('pb-post-title')).toHaveValue('再小的博主，也是博主');
   await d.getByTestId('pb-post-title').fill('再小的博主也是博主再小的博主也是博主再小的博主');
   await d.getByTestId('pb-post-title').press('Enter');
   await expect(d.getByTestId('pb-title-counter')).toContainText('23 / 20');

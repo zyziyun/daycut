@@ -418,10 +418,12 @@ test('transcript: select -> Delete -> skipped in the preview at once -> saved by
   await expect(page.getByTestId('cut-marker')).toHaveCount(1, { timeout: 15000 });
   await noMissingKeys();
   await shot('T5-applied');
-  // rapid deletes coalesce: three words deleted one after another -> one step
+  // rapid deletes coalesce: three words deleted one after another -> one step. Raw clicks at places measured first:
+  // the actionability checks of three locator clicks can outlast the save's quiet window on a slow runner
   const mid = before + 1;
-  for (const i of [1, 3, 5]) {
-    await w(i).click();
+  const at = await Promise.all([1, 3, 5].map(async (i) => (await w(i).boundingBox())!));
+  for (const b of at) {
+    await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2);
     await page.keyboard.press('Delete');
   }
   await expect(page.getByTestId('cut-status')).toHaveAttribute('data-state', 'saved', { timeout: 15000 });
