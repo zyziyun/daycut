@@ -36,7 +36,7 @@ import { PLATFORMS } from '../shared/platforms';
 import type { CalendarPost } from '../shared/v04';
 import { findBundledRuntime, runtimeEnv, type BundledRuntime } from './runtime';
 import { buildCsp, isAppUrl, isSafeExternal } from './security';
-import { installMediaPermissions, registerRecorderIpc, screenPickerAvailable, type Recorder } from './recorder';
+import { installDisplayMedia, installMediaPermissions, registerRecorderIpc, ScreenPick, type Recorder } from './recorder';
 import { createFlagFrom } from '../shared/recIpc';
 import { SettingsStore } from './settings';
 import { HistoryWatcher } from './historyWatch';
@@ -120,6 +120,7 @@ let enginePromise: Promise<EngineInfo> | null = null;
 let runtime: BundledRuntime | null = null;
 let assets: AssetManager;
 let recorder: Recorder | null = null;
+const screenPick = new ScreenPick();
 let scheduler: PublishScheduler | null = null;
 let vault: ApiVault;
 let youtube: YouTubeApi;
@@ -453,12 +454,10 @@ function hardenDefaultSession() {
   const ses = session.defaultSession;
   // deny by default; the one exception is camera / mic for the Create recorder in our own window (flag on)
   installMediaPermissions(ses, { flag: createOn, mainWebContents: () => win?.webContents ?? null, isApp: (u) => isAppUrl(u, APP_ORIGIN) });
-  if (screenPickerAvailable(FAKE_MEDIA)) {
-    // screen recording: the macOS system picker (15+); nothing is captured unless the creator picks a screen. Set up
-    // whether or not Create is on at launch (turning it on later must not leave the Screen button dead); refused
-    // while it is off. Tests (fake devices) share the app's own window instead of opening the OS picker.
-    ses.setDisplayMediaRequestHandler((req, cb) => (createOn() && FAKE_MEDIA && req.frame ? cb({ video: req.frame }) : cb({})), { useSystemPicker: !FAKE_MEDIA });
-  }
+  // screen recording: only the screen / window she picked in the recorder's own picker, once (src/main/recorder.ts).
+  // Set up whether or not Create is on at launch (turning it on later must not leave the Screen button dead); refused
+  // while it is off. Tests (fake devices) share the app's own window.
+  installDisplayMedia(ses, { flag: createOn, pick: screenPick, fakeMedia: FAKE_MEDIA });
   ses.on('will-download', (e) => e.preventDefault());
   if (IS_DEV) {
     ses.webRequest.onHeadersReceived((d, cb) => {
@@ -978,7 +977,13 @@ function registerIpc() {
       return { python: cfg.python, env: engineProcessEnv({ ...e, enginePath: cfg.enginePath }) };
     },
   });
-  recorder = registerRecorderIpc(handle, { flag: createOn, fakeMedia: FAKE_MEDIA });
+  recorder = registerRecorderIpc(handle, {
+    flag: createOn,
+    fakeMedia: FAKE_MEDIA,
+    fakeScreen: FAKE_MEDIA && process.env.DESK_E2E_SCREEN === 'denied' ? 'denied' : undefined,
+    pick: screenPick,
+    ownSources: () => BrowserWindow.getAllWindows().map((w) => w.getMediaSourceId()),
+  });
   registerCleanupIpc(handle, { win: () => win, client: () => client, lang: () => (settings.get().lang === 'zh-CN' ? 'zh' : 'en') });
 }
 

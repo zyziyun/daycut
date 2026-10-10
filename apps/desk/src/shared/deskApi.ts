@@ -7,6 +7,7 @@ import type { ApiStatusMsg } from './publish/apiPlatforms';
 import type { Confirmation } from './publish/gating';
 import type { EngineInfo } from './types';
 import type { UpdateStateMsg } from './update';
+import type { ScreensReply, TakeInfo } from './recIpc';
 
 export interface PublishStateMsg {
   adapterId: string | null;
@@ -244,16 +245,22 @@ export interface DeskApi {
   };
   /** Create recorder (main refuses while the Create flag is off) */
   rec: {
-    status(): Promise<{ camera: string; microphone: string; screen: string; platform: string; release: string; screenPicker: boolean }>;
+    status(): Promise<{ camera: string; microphone: string; screen: string; platform: string; release: string }>;
     ask(kind: 'camera' | 'microphone'): Promise<boolean>;
     openPrivacy(pane: 'camera' | 'microphone' | 'screen'): Promise<void>;
-    begin(req: { slug: string; title?: string; script: string[]; tracks: ('camera' | 'mic' | 'screen')[]; series?: string; episode?: string; shot?: string; mime?: Partial<Record<'camera' | 'mic' | 'screen', string>>; studio?: boolean }): Promise<{ sessionId: string; dir: string }>;
+    begin(req: { slug: string; title?: string; script: string[]; tracks: ('camera' | 'mic' | 'screen')[]; series?: string; episode?: string; shot?: string; mime?: Partial<Record<'camera' | 'mic' | 'screen', string>>; studio?: boolean; group?: string; pickup?: boolean }): Promise<{ sessionId: string; dir: string }>;
     chunk(req: { sessionId: string; track: 'camera' | 'mic' | 'screen'; seq: number; data: Uint8Array; startMs?: number }): Promise<{ ok: boolean; seq: number }>;
     mark(req: { sessionId: string; t: number; kind: 'line' | 'retake'; line: number }): Promise<{ ok: boolean; n: number }>;
-    end(sessionId: string): Promise<{ dir: string; tracks: string[]; marks: number }>;
+    end(sessionId: string, secs?: number): Promise<{ dir: string; tracks: string[]; marks: number }>;
+    /** the finished takes of one Record visit, newest first */
+    list(group: string): Promise<TakeInfo[]>;
     recover(): Promise<{ id: string; dir: string }[]>;
     /** delete a finished take: its folder goes to the Trash */
     discard(sessionId: string): Promise<{ ok: boolean }>;
+    /** what she can share; access 'denied' = macOS Screen Recording is off for Reelfold (asks once) */
+    screens(): Promise<ScreensReply>;
+    /** the source the next getDisplayMedia shares */
+    screenPick(id: string): Promise<{ ok: boolean }>;
   };
   confirmCleanup(batchId: string): Promise<{ confirmed: boolean; trashed: string[]; failed: string[]; outside: string[] }>;
   mediaUrl(path: string): string;

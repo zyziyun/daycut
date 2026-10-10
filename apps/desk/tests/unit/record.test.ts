@@ -5,11 +5,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('electron', () => ({ shell: { trashItem: vi.fn() }, systemPreferences: {} }));
+vi.mock('electron', () => ({ shell: { trashItem: vi.fn() }, systemPreferences: {}, desktopCapturer: {} }));
 
 import { blockReason, chosenTake, DEFAULT_PREFS, keyAction, lineSeconds, mainAction, parsePrefs, scriptLines, scriptSeconds, scrollStep, slugOf, WPM, type Take } from '../../src/renderer/src/create/record/recModel';
-import { recordedSeconds } from '../../src/renderer/src/create/record/useRecorder';
-import { Recorder, screenPickerAvailable } from '../../src/main/recorder';
+import { recordedSeconds, screenFailure } from '../../src/renderer/src/create/record/useRecorder';
+import { Recorder, screenAccess, ScreenPick, toScreenSources } from '../../src/main/recorder';
 import { validateIpc } from '../../src/shared/ipc';
 
 describe('recorder model', () => {
@@ -109,10 +109,37 @@ describe('recorder main side', () => {
     expect(validateIpc('rec:begin', { slug: 'a', script: [], tracks: ['camera'], studio: false })).toMatchObject({ studio: false });
   });
 
-  it('screen sharing has a picker on macOS 15+ (Darwin 24), or with the test devices', () => {
-    expect(screenPickerAvailable(false, 'darwin', '24.1.0')).toBe(true);
-    expect(screenPickerAvailable(false, 'darwin', '23.6.0')).toBe(false);
-    expect(screenPickerAvailable(false, 'win32', '10.0.22631')).toBe(false);
-    expect(screenPickerAvailable(true, 'win32', '10.0')).toBe(true);
+  it('screen picker: one armed pick per share, expiring; screens first; never our own window', () => {
+    const p = new ScreenPick(1000);
+    expect(p.take(0)).toBeNull();
+    p.arm('screen:1:0', 0);
+    expect(p.take(500)).toBe('screen:1:0');
+    expect(p.take(600)).toBeNull(); // used once
+    p.arm('window:9:0', 0);
+    expect(p.take(1500)).toBeNull(); // expired
+    const img = (empty: boolean) => ({ isEmpty: () => empty, toDataURL: () => 'data:image/png;base64,AA' }) as unknown as Electron.NativeImage;
+    const rows = toScreenSources(
+      [
+        { id: 'window:5:0', name: 'Keynote', thumbnail: img(false) },
+        { id: 'window:7:0', name: 'Reelfold', thumbnail: img(false) },
+        { id: 'screen:1:0', name: 'Built-in Display', thumbnail: img(true) },
+      ],
+      ['window:7:0'],
+    );
+    expect(rows.map((r) => [r.id, r.kind, r.thumb])).toEqual([
+      ['screen:1:0', 'screen', ''],
+      ['window:5:0', 'window', 'data:image/png;base64,AA'],
+    ]);
+  });
+
+  it('Screen Recording access: macOS asks; Windows / Linux need none; failures are never silent', () => {
+    expect(screenAccess('granted', 'darwin')).toBe('granted');
+    expect(screenAccess('denied', 'darwin')).toBe('denied');
+    expect(screenAccess('not-determined', 'darwin')).toBe('denied');
+    expect(screenAccess('unknown', 'win32')).toBe('granted');
+    expect(screenFailure(Object.assign(new Error('Permission denied by system'), { name: 'NotAllowedError' }))).toBe('denied');
+    expect(screenFailure(Object.assign(new Error('Timeout starting video source'), { name: 'AbortError' }))).toEqual({ error: 'Timeout starting video source' });
+    expect(validateIpc('rec:screenPick', { id: 'screen:1:0' })).toEqual({ id: 'screen:1:0' });
+    expect(() => validateIpc('rec:screenPick', { id: '' })).toThrow();
   });
 });

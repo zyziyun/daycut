@@ -139,6 +139,8 @@ export interface Step {
   note?: string | null;
   describe: EngineMsg[];
   retimed?: Retimed | null;
+  /** cancelled by a later revert step */
+  reverted?: boolean;
 }
 
 export interface OutputCaps {
@@ -186,7 +188,12 @@ export interface OutputDoc {
   caption_style: { size?: number; color?: string; highlight?: string; keywords?: string[]; position?: string };
   effects: EffectInstance[];
   trim: { start: number; end: number } | null;
-  cuts: { start: number; end: number; index: number }[];
+  /** why: the cut's reason (transcript, filler, pause, retake, ...; the first one when cuts merged) */
+  cuts: { start: number; end: number; index: number; why?: string }[];
+  /** pickups spliced in (补录), on the current timeline: their words are the ones inside [start, end] */
+  pickups?: Pickup[];
+  /** the clip is a take from Record yourself: Finish / Takes / Record another take */
+  recording?: { session: string; dir: string; script: boolean; group?: string | null; created?: string | null; studio?: boolean } | null;
   speed: number;
   title_band: { text: string; sub?: string } | null;
   cover_edit: { t?: number; text?: string; style?: string } | null;
@@ -199,6 +206,14 @@ export interface OutputDoc {
   safe_box?: number[] | null;
   caption_box?: number[] | null;
   engine: 'real' | 'desk';
+}
+
+export interface Pickup {
+  id: string;
+  start: number;
+  end: number;
+  text: string;
+  replaced: string;
 }
 
 export interface EffectDef {

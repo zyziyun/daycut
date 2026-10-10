@@ -129,7 +129,9 @@ describe('recorder IPC + permissions', () => {
     expect(allowMedia({ ...base, fromMainWindow: false })).toBe(false);
     expect(allowMedia({ ...base, isAppUrl: false })).toBe(false);
     expect(allowMedia({ ...base, permission: 'geolocation' })).toBe(false);
-    expect(allowMedia({ ...base, mediaTypes: [] })).toBe(false);
+    // getDisplayMedia asks for 'media' with no types (Electron 44): the screen she picked must get through
+    expect(allowMedia({ ...base, mediaTypes: [] })).toBe(true);
+    expect(allowMedia({ ...base, mediaTypes: [], flag: false })).toBe(false);
     expect(allowMedia({ ...base, mediaTypes: ['video', 'screen'] })).toBe(false);
     expect(createFlagFrom(undefined, undefined)).toBe(true);
     expect(createFlagFrom(false, undefined)).toBe(false);

@@ -3,6 +3,9 @@
 // popovers), your takes on the right with one primary action: Finish — make my video. Finish stitches the best take
 // of each line on this Mac (vstudio.create record ingest, target "assembled") and hands the file to an autopilot
 // request, exactly like a request from Home; from a storyboard shot it becomes that shot's take instead.
+// Stopping a take opens it straight in the clip editor (ux/record/pickups A): the whole take, transcribed on this Mac,
+// with the automatic cleanup already applied and pickups recorded from the transcript (target "edit"). The takes of
+// this visit (?group=) stay listed here: Record another take comes back to them.
 // Keys: Space record / stop · P pause · ⌘R say this line again · ↑ / ↓ change line.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AudioLines, Camera, ChevronLeft, ChevronRight, Lightbulb, Mic, Monitor, Pause, Play, RotateCcw, Settings2, Trash2 } from 'lucide-react';
@@ -10,7 +13,7 @@ import type { EpisodeView } from '../../../../shared/create';
 import { fmtClock, getLang, t } from '../../i18n';
 import { useHistory } from '../../lib/history';
 import { useEngine } from '../../lib/engine';
-import { href } from '../../lib/router';
+import { href, useRouteQuery } from '../../lib/router';
 import { keyHint } from '../../lib/keys';
 import { useAssets } from '../../components/assets';
 import { downloadSummary } from '../../lib/firstRun';
@@ -18,10 +21,19 @@ import { useUi } from '../../v4/ui';
 import { errText, useAction, useCreateLoad, waitJob } from '../api';
 import { Crumbs, l10n } from '../bits';
 import { Pop } from './Pop';
+import { ScreenPicker } from './ScreenPicker';
 import { blockReason, chosenTake, keyAction, loadPrefs, mainAction, savePrefs, scriptLines, scriptSeconds, scrollStep, SIZE_PX, slugOf, WPM, type Phase, type RecPrefs, type Take } from './recModel';
 import { Teleprompter } from './Teleprompter';
-import { useRecorder } from './useRecorder';
+import { loadDevices, useRecorder } from './useRecorder';
 import './record.css';
+
+interface Edited {
+  item?: string;
+  clip?: string;
+}
+
+const GROUP_RE = /^[a-z0-9]{6,32}$/;
+const newGroup = () => Math.random().toString(36).slice(2, 10).padEnd(8, '0');
 
 interface Ingested {
   assembled?: string;
@@ -72,12 +84,20 @@ export function RecordStudio({ sid, eid, shot }: { sid?: string; eid?: string; s
       savePrefs(n);
       return n;
     });
-  const [text, setText] = useState('');
-  const touched = useRef(false);
+  const query = useRouteQuery();
+  const [group] = useState(() => (query.group && GROUP_RE.test(query.group) ? query.group : newGroup()));
+  // the script of this visit survives a trip to the editor and back (Record another take)
+  const scriptKey = `rec.script.${group}`;
+  const [text, setTextS] = useState(() => (eid ? '' : (sessionStorage.getItem(scriptKey) ?? '')));
+  const setText = (v: string) => {
+    setTextS(v);
+    if (!eid) sessionStorage.setItem(scriptKey, v);
+  };
+  const touched = useRef(!!text);
   useEffect(() => {
-    if (fromEpisode && !touched.current) setText(fromEpisode);
+    if (fromEpisode && !touched.current) setTextS(fromEpisode);
   }, [fromEpisode]);
-  const [editing, setEditing] = useState(true);
+  const [editing, setEditing] = useState(() => !text);
   useEffect(() => {
     if (fromEpisode && !touched.current) setEditing(false);
   }, [fromEpisode]);
@@ -87,13 +107,16 @@ export function RecordStudio({ sid, eid, shot }: { sid?: string; eid?: string; s
 
   const rec = useRecorder();
   const { mark } = rec;
-  const [screenOk, setScreenOk] = useState(false);
   useEffect(() => {
-    void window.desk.rec
-      .status()
-      .then((s) => setScreenOk(!!s.screenPicker))
-      .catch(() => setScreenOk(false));
-  }, []);
+    // the visit's takes survive a trip to the editor and back: the group goes in the address
+    if (shot) return;
+    const [path, qs] = location.hash.split('?');
+    const p = new URLSearchParams(qs ?? '');
+    if (p.get('group') !== group) {
+      p.set('group', group);
+      window.history.replaceState(null, '', `${path}?${p.toString()}`);
+    }
+  }, [group, shot]);
   const [tp, setTp] = useState({ cur: 0, progress: 0 });
   const tpRef = useRef(tp);
   const reached = useRef(0);
@@ -103,9 +126,21 @@ export function RecordStudio({ sid, eid, shot }: { sid?: string; eid?: string; s
   const [takes, setTakes] = useState<Take[]>([]);
   const [chosen, setChosen] = useState<string | null>(null);
   const takeNo = useRef(0);
+  useEffect(() => {
+    if (shot) return;
+    void window.desk.rec
+      .list(group)
+      .then((list) => {
+        if (!list.length) return;
+        takeNo.current = Math.max(takeNo.current, list.length);
+        setTakes((cur) => [...cur, ...list.filter((x) => !cur.some((c) => c.id === x.id)).map((x, i) => ({ id: x.id, dir: x.dir, n: list.length - i, secs: x.secs, lines: x.lines, total: x.total, retakes: x.retakes, thumb: null }))]);
+        setChosen((c) => c ?? list[0].id);
+      })
+      .catch(() => undefined);
+  }, [group, shot]);
   const [ask, setAsk] = useState('');
   const [err, setErr] = useState<string | null>(null);
-  const [stage, setStage] = useState<'working' | 'models' | null>(null);
+  const [stage, setStage] = useState<'working' | 'models' | 'editing' | null>(null);
   const [shotDone, setShotDone] = useState<Ingested | null>(null);
   const finishing = useAction();
   const video = useRef<HTMLVideoElement | null>(null);
@@ -169,12 +204,13 @@ export function RecordStudio({ sid, eid, shot }: { sid?: string; eid?: string; s
     try {
       await rec.start({
         slug: slugOf(ep ? `ep${ep.no}` : 'recording'),
-        title: ep ? t('create.ep.title', { n: ep.no, title: ep.title }) : undefined,
+        title: ep ? t('create.ep.title', { n: ep.no, title: ep.title }) : t('pk.takeTitle', { when: new Date().toLocaleString(getLang(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }),
         script: lines,
         series: sid ?? ep?.series,
         episode: eid,
         shot,
         studio: prefs.studio,
+        ...(shot ? {} : { group }),
       });
       await mark('line', 0);
     } catch (e) {
@@ -214,8 +250,27 @@ export function RecordStudio({ sid, eid, shot }: { sid?: string; eid?: string; s
       };
       setTakes((x) => [tk, ...x]);
       setChosen(tk.id);
+      if (!(eid && shot)) void edit(tk); // straight to the second pass
     } catch (e) {
       setErr(errText(e));
+    }
+  };
+
+  /** The take in the clip editor: transcribed on this Mac, the automatic cleanup applied (target "edit"). */
+  const edit = async (tk: Take) => {
+    if (!client) return;
+    setErr(null);
+    setStage('editing');
+    try {
+      const { job } = await client.create.ingest(tk.dir, 'edit', sid ?? ep?.series);
+      const res = await waitJob<Edited>(client.create, job);
+      if (!res.item || !res.clip) throw new Error(t('rec.editFailed'));
+      history.reload();
+      location.hash = href({ name: 'clip', id: res.item, clip: res.clip });
+    } catch (e) {
+      setErr(errText(e));
+    } finally {
+      setStage(null);
     }
   };
 
@@ -433,7 +488,7 @@ export function RecordStudio({ sid, eid, shot }: { sid?: string; eid?: string; s
                 </button>
               </>
             ) : (
-              <button type="button" className="btn primary lg" disabled={rec.state === 'asking'} onClick={() => void rec.open()} data-testid="create-rec-allow">
+              <button type="button" className="btn primary lg" disabled={rec.state === 'asking'} onClick={() => void rec.open(loadDevices())} data-testid="create-rec-allow">
                 {t('rec.permAllow')}
               </button>
             )}
@@ -456,6 +511,11 @@ export function RecordStudio({ sid, eid, shot }: { sid?: string; eid?: string; s
                 </div>
               )}
               {phase === 'stopping' && <div className="rs-saving">{t('rec.saving')}</div>}
+              {stage === 'editing' && (
+                <div className="rs-count rs-preparing" role="status" data-testid="rec-preparing">
+                  <span>{t('rec.preparing')}</span>
+                </div>
+              )}
             </div>
 
             <div className="rs-dock" data-testid="rec-dock">
@@ -489,12 +549,7 @@ export function RecordStudio({ sid, eid, shot }: { sid?: string; eid?: string; s
                     </Pop>
                     <Pop id="screen" open={pop} onOpen={setPop} label={t('rec.screen')} icon={<Monitor className="ico" />} text={rec.screenOn ? t('rec.screenOn') : t('rec.screen')} className={rec.screenOn ? 'lit' : ''} testId="create-rec-screen">
                       <div className="rs-ph">{t('rec.screen')}</div>
-                      <div className="rs-note">{screenOk ? t('rec.screenBody') : t('rec.screenUnavailable')}</div>
-                      {screenOk && (
-                        <button type="button" className="btn sm" onClick={() => void rec.toggleScreen().then(() => setPop(null))} data-testid="rec-screen-toggle">
-                          {rec.screenOn ? t('rec.screenStop') : t('rec.screenShare')}
-                        </button>
-                      )}
+                      <ScreenPicker on={rec.screenOn} share={rec.shareScreen} stop={rec.stopScreen} done={() => setPop(null)} />
                     </Pop>
                   </>
                 )}
@@ -604,6 +659,11 @@ export function RecordStudio({ sid, eid, shot }: { sid?: string; eid?: string; s
                   </span>
                   {on && <span className="using">{t('rec.using')}</span>}
                 </button>
+                {!(eid && shot) && (
+                  <button type="button" className="btn sm" disabled={finishing.busy || !!stage || live} onClick={() => void edit(tk)} data-testid="rec-take-edit">
+                    {t('rec.edit')}
+                  </button>
+                )}
                 <button type="button" className="rs-icon del" disabled={finishing.busy} onClick={() => void discard(tk)} aria-label={t('rec.delete', { n: tk.n })} title={t('rec.delete', { n: tk.n })} data-testid="rec-take-delete">
                   <Trash2 className="ico" />
                 </button>
@@ -631,7 +691,7 @@ export function RecordStudio({ sid, eid, shot }: { sid?: string; eid?: string; s
                 {eid && shot ? t('rec.finishShot', { no: shot }) : t('rec.finish')}
               </button>
               <div className="rs-note" data-testid="rec-finish-note">
-                {stage === 'working' ? t('rec.working', { n: using?.n ?? 1 }) : stage === 'models' ? t('rec.waitModels') : !using ? t('rec.finishNeedTake') : <FinishNote />}
+                {stage === 'editing' ? t('rec.preparing') : stage === 'working' ? t('rec.working', { n: using?.n ?? 1 }) : stage === 'models' ? t('rec.waitModels') : !using ? t('rec.finishNeedTake') : <FinishNote />}
               </div>
             </>
           )}

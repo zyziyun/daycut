@@ -187,8 +187,10 @@ export function keptSeconds(keep: [number, number][]): number {
 }
 
 /** Words inside an applied cut collapse to one "✂ cut 2.7 s" marker: index of the first word -> the cut. */
-export function appliedRuns(words: Word[], cuts: { start: number; end: number; index: number }[]): Map<number, { i0: number; i1: number; cut: { start: number; end: number; index: number } }> {
-  const out = new Map<number, { i0: number; i1: number; cut: { start: number; end: number; index: number } }>();
+type AppliedCut = { start: number; end: number; index: number; why?: string };
+
+export function appliedRuns(words: Word[], cuts: AppliedCut[]): Map<number, { i0: number; i1: number; cut: AppliedCut }> {
+  const out = new Map<number, { i0: number; i1: number; cut: AppliedCut }>();
   for (const c of cuts) {
     let i0 = -1;
     let i1 = -1;
@@ -200,6 +202,16 @@ export function appliedRuns(words: Word[], cuts: { start: number; end: number; i
       } else if (i0 >= 0) break;
     }
     if (i0 >= 0) out.set(i0, { i0, i1, cut: c });
+  }
+  return out;
+}
+
+/** Applied cuts that only shorten the pause after word i (no word inside): gap index -> the cut. */
+export function gapCuts(words: Word[], cuts: AppliedCut[]): Map<number, AppliedCut> {
+  const out = new Map<number, AppliedCut>();
+  for (const c of cuts) {
+    const i = words.findIndex((w, k) => k + 1 < words.length && c.start >= w.te - 0.02 && c.end <= words[k + 1].t + 0.02);
+    if (i >= 0 && !out.has(i)) out.set(i, c);
   }
   return out;
 }

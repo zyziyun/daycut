@@ -51,7 +51,8 @@ test.describe('Create on', () => {
   const hash = (h: string) => page.evaluate((x) => (location.hash = x), h);
 
   test.beforeAll(async () => {
-    ({ app, page } = await launch({ DESK_CREATE: '1', DESK_E2E_FAKE_MEDIA: '1' }, 'on'));
+    // the fake microphone only beeps: fixture/rec_words.py transcribes it (a stopped take opens in the editor)
+    ({ app, page } = await launch({ DESK_CREATE: '1', DESK_E2E_FAKE_MEDIA: '1', VSTUDIO_OUTPUT_TRANSCRIBER: `${path.join(import.meta.dirname, 'fixture', 'rec_words.py')}:words` }, 'on'));
     // the mockups are light: screenshots in notebook-light
     await page.evaluate(() => window.desk.setSettings({ theme: 'notebook-light' }));
     await page.reload();
@@ -264,14 +265,16 @@ test.describe('Create on', () => {
     await expect(page.getByTestId('rec-mic-level')).toBeVisible();
     await page.getByTestId('rec-mic-opt').first().click();
     await expect(page.getByTestId('rec-mic-panel')).toHaveCount(0);
+    // Share a screen too: the app's picker lists what can be shared (the test devices: the app's own window)
     await page.getByTestId('create-rec-screen').click();
     await page.getByTestId('rec-screen-toggle').click();
+    await page.getByTestId('rec-screen-source').first().click();
     await expect(page.getByTestId('create-rec-screen')).toContainText('Sharing', { timeout: 15000 });
     await page.getByTestId('create-rec-screen').click();
     await page.getByTestId('rec-screen-toggle').click();
     await expect(page.getByTestId('create-rec-screen')).not.toContainText('Sharing');
 
-    // take 1: 3-2-1, record, pause / resume, say a line again, stop
+    // take 1: 3-2-1, record, pause / resume, say a line again, stop -> straight to the clip editor
     await start.click();
     await expect(page.getByTestId('rec-countdown')).toBeVisible();
     await expect(page.getByTestId('create-rec-live')).toBeVisible({ timeout: 6000 });
@@ -285,9 +288,17 @@ test.describe('Create on', () => {
     await page.waitForTimeout(1500);
     await shot(page, 'C08-record');
     await page.getByTestId('create-rec-stop').click();
+    await expect(page.getByTestId('editor')).toBeVisible({ timeout: 120000 });
+    await expect(page.getByTestId('editor-finish')).toBeVisible();
+    await shot(page, 'C08-record-editor');
+    // back to the recorder: the visit's take is listed
+    await page.getByTestId('editor-takes').click();
+    await page.getByTestId('editor-record-another').click();
     await expect(page.getByTestId('create-rec-take')).toHaveCount(1, { timeout: 20000 });
     await expect(page.getByTestId('create-rec-take').first()).toContainText('1 line said again');
-    // take 2 with the keyboard, no countdown: Space starts, Space stops
+    // take 2 with the keyboard, no countdown: Space starts, Space stops (-> its editor), then back again
+    await page.getByTestId('create-rec-allow').click();
+    await expect(page.getByTestId('create-rec-preview')).toBeVisible({ timeout: 20000 });
     await page.getByTestId('rec-settings').click();
     await page.getByTestId('rec-pref-countdown').click();
     await page.keyboard.press('Escape');
@@ -295,8 +306,11 @@ test.describe('Create on', () => {
     await expect(page.getByTestId('create-rec-live')).toBeVisible();
     await page.waitForTimeout(1500);
     await page.keyboard.press('Space');
+    await expect(page.getByTestId('editor')).toBeVisible({ timeout: 120000 });
+    await page.getByTestId('editor-takes').click();
+    await expect(page.getByTestId('editor-take')).toHaveCount(2);
+    await page.getByTestId('editor-record-another').click();
     await expect(page.getByTestId('create-rec-take')).toHaveCount(2, { timeout: 20000 });
-    await expect(page.getByTestId('create-rec-take').first()).toContainText('Using');
     // delete the newest (to the Trash), use the first
     await page.getByTestId('create-rec-take').first().getByTestId('rec-take-delete').click();
     await expect(page.getByTestId('create-rec-take')).toHaveCount(1);

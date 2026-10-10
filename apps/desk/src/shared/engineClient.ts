@@ -364,6 +364,14 @@ export class EngineClient {
       ...(meta ?? {}),
     });
   }
+  /** splice a pickup recorded with the recorder (session_dir) before word at_word, or in place of words replace */
+  pickupOutput(item: string, clip: string, body: { session_dir: string; at_word?: number; replace?: [number, number]; sig?: string | null }) {
+    return this.req<{ ok: boolean; step?: { id: string; describe: EngineMsg[] }; pickup?: { id: string; text: string; replaced: string; inserted: number; gain_db: number; room_db: number | null }; doc: OutputDoc }>(
+      'POST',
+      `/api/outputs/${bid(item)}/${clipId(clip)}/pickup`,
+      body,
+    );
+  }
   /** the kept ranges if these pending transcript cuts were applied (live skip preview; nothing is written) */
   previewEdl(item: string, clip: string, ops: EditOp[], signal?: AbortSignal) {
     return this.req<PreviewEdl>('POST', `/api/outputs/${bid(item)}/${clipId(clip)}/preview-edl`, { ops }, signal);

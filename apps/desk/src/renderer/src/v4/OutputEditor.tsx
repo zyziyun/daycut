@@ -5,7 +5,9 @@
 // it) where every change is a card. A breadcrumb says where the clip lives; arriving from the Inbox pins the question
 // in the chat, and "Review all in a row" adds the triage bar. Today's panels (裁剪 / 字幕 / 效果 / 标题与封面 / 导出)
 // live on in the optional 「精确编辑」 drawer (E). One filled button on screen: a draft's 应用 when AI edits wait for
-// her (Settings: ask before applying AI edits), else 导出.
+// her (Settings: ask before applying AI edits), else 导出 - or, for a take from Record yourself, Finish — make my video.
+// Pickups (ux/record/pickups): select words in the transcript -> Re-record (R) / Add after (⇧R) -> the player turns
+// into the camera (PickupStage) -> the pickup is spliced in as one undo step and marked in the transcript.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Check, ChevronRight, Contrast, GanttChart, Music, PanelRight, Redo2, Scissors, SkipForward, SlidersHorizontal, Sparkle, Sparkles, Square, Trash2, Type, Undo2, Upload, X, ZoomIn } from 'lucide-react';
 import type { ChatDoc } from '../../../shared/chatEdit';
@@ -38,6 +40,11 @@ import { CutStatus, type CutSave } from './transcript/CutStatus';
 import { TranscriptPane, type TranscriptApi } from './transcript/TranscriptPane';
 import { useStrip, useTranscribe } from '../lib/timelineMedia';
 import { isTyping, useUi } from './ui';
+import { useCreateEnabled } from '../create/flag';
+import { AutoCleanCard } from './pickup/AutoCleanCard';
+import { PickupStage } from './pickup/PickupStage';
+import { FinishButton, TakesMenu } from './pickup/RecordingBar';
+import { restoreOps, spotOf, type Spot } from './pickup/pickupModel';
 import '../theme/uxcore.css';
 import './transcript/transcript.css';
 import { keyHint } from '../lib/keys';
@@ -78,6 +85,10 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
   const [primary, setPrimary] = useState<Primary>('export');
   const [holdC, setHoldC] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const [pickup, setPickup] = useState<Spot | null>(null);
+  const pickupOn = useRef(false);
+  pickupOn.current = !!pickup;
+  const createOn = useCreateEnabled();
   const [rendered, setRendered] = useState<{ simulated?: boolean } | null>(null);
   const [drawer, setDrawer] = useState(() => sessionStorage.getItem('ce.drawer') === '1');
   const [effects, setEffects] = useState<EffectDef[]>([]);
@@ -387,6 +398,40 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
     },
     [client, id, clip, reload, ui],
   );
+  /** Bring back the recording's automatic cuts of one kind (one step, with Undo). */
+  const restoreAuto = useCallback(
+    async (indexes: number[]) => {
+      if (!client || !indexes.length) return false;
+      try {
+        await client.editOutput(id, clip, restoreOps(indexes), null, { by: 'you', note: 'transcript' });
+        setRendered(null);
+        reload();
+        ui.toast(t('pk.auto.restored', { n: indexes.length }), {
+          undo: async () => {
+            await client.undoOutput(id, clip);
+            reload();
+          },
+        });
+        return true;
+      } catch (e) {
+        ui.toast(errText(e), { error: true });
+        return false;
+      }
+    },
+    [client, id, clip, reload, ui],
+  );
+  /** Record a pickup at the selected words: the pending transcript cuts are saved first (the spot is in words). */
+  const startPickup = useCallback(
+    async (s: { a: number; b: number }, kind: Spot['kind']) => {
+      const d = docRef.current.doc;
+      if (!d || !d.words.length) return;
+      if (hasDrafts(draftsRef.current.d) && !(await committer.flush())) return;
+      pl.current?.pause();
+      setPickup(spotOf(d.words, s, kind));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
   const fixWord = useCallback(
     async (i: number, text: string) => {
       if (!odoc) return false;
@@ -431,6 +476,7 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
   // hold C original, E precise edit (fix text while words are selected), / the chat, Esc
   const keysRef = useRef<(e: KeyboardEvent) => void>(() => undefined);
   keysRef.current = (e: KeyboardEvent) => {
+    if (pickupOn.current) return; // the pickup recorder has the keys (Space, Esc)
     const mod = e.metaKey || e.ctrlKey;
     const k = e.key.toLowerCase();
     if (mod && !e.shiftKey && !e.altKey && ['1', '2', '3'].includes(e.key)) {
@@ -672,6 +718,7 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
               </h1>
             </span>
           </nav>
+          {doc.recording && <TakesMenu doc={odoc} />}
           <span className="meta" data-testid="editor-length">
             {pending && Math.abs(durNow - durAfter) > 0.05 ? (
               <>
@@ -696,7 +743,8 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
             <SlidersHorizontal className="ico" />
             {t('ce.precise')}
           </button>
-          <button className={`btn ${primary === 'export' ? 'primary' : ''}`} onClick={() => (split.openChat(), chat.current?.openCard('export'))} disabled={doc.caps.export === false} data-testid="editor-export">
+          {doc.recording && <FinishButton item={id} clip={clip} flush={flushCuts} primary={primary === 'export'} />}
+          <button className={`btn ${primary === 'export' && !doc.recording ? 'primary' : ''}`} onClick={() => (split.openChat(), chat.current?.openCard('export'))} disabled={doc.caps.export === false} data-testid="editor-export">
             <Upload className="ico" />
             {t('ce.export')}
           </button>
@@ -724,6 +772,29 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
               badge={holdC ? t('ce.original') : renderedCmp ? (renderedAfter ? t('ce.after') : t('fs.ai.rendering')) : before && !sameTimeline ? t('ce.before') : null}
               testId="editor-player"
             />
+            {pickup && (
+              <PickupStage
+                item={id}
+                clip={clip}
+                doc={odoc}
+                spot={pickup}
+                onCancel={() => setPickup(null)}
+                onDone={(r) => {
+                  setPickup(null);
+                  setDoc(r.doc as unknown as ChatDoc);
+                  setRendered(null);
+                  reload();
+                  const pk = (r.doc.pickups ?? []).slice().sort((x, y) => y.start - x.start)[0];
+                  if (pk) window.setTimeout(() => pl.current?.seek(Math.max(0, pk.start - 1)), 150);
+                  ui.toast(t('pk.added', { text: r.text.slice(0, 40) }), {
+                    undo: async () => {
+                      await client?.undoOutput(id, clip);
+                      reload();
+                    },
+                  });
+                }}
+              />
+            )}
             {flash && (
               <div key={flash.n} className="ce-flash" data-testid="skip-flash">
                 <SkipForward className="ico" />
@@ -801,6 +872,7 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
                 hits={find.open ? hits : undefined}
                 apiRef={tp}
                 onSelection={setTsel}
+                onPickup={createOn && doc.engine === 'real' && doc.mode === 'flattened' && doc.caps.audio !== false ? (x, k) => void startPickup(x, k) : undefined}
                 onDiscardAll={() => pending && window.confirm(t('te.discardAll')) && (cuts.clear(), setSave({ kind: 'idle' }))}
               />
             ) : (
@@ -922,7 +994,12 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
               />
             ) : null
           }
-          top={<DecidedCard item={id} clip={clip} words={odoc.words} seek={(x) => pl.current?.seek(x)} />}
+          top={
+            <>
+              <AutoCleanCard doc={odoc} restore={restoreAuto} />
+              <DecidedCard item={id} clip={clip} words={odoc.words} seek={(x) => pl.current?.seek(x)} />
+            </>
+          }
         />
         {drawer && (
           <section className="ce-drawer" data-testid="edit-panel">
