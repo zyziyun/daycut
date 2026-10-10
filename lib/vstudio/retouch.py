@@ -19,6 +19,7 @@ Edits are composited back through a feathered face-region mask, so warp ROI bord
 
     retouch(img, f=None, lm=None, **knobs)        # f: face dict (or list), lm: landmarker; see DEFAULTS
     retouch(frame, f=tracked, state=RetouchState(video=True), **knobs)   # video: temporal state
+    VideoRetoucher(video_knobs(strength, mode))(frame, t)              # video skin smoothing / beauty, tracked
 CLI:  python -m vstudio.retouch in.png out.png [--slim .06] [--eye .04] [--makeup .5] [--preset daily]
 See references/RETOUCH.md for every knob.
 """
@@ -811,6 +812,93 @@ def retouch(img, f=None, lm=None, **kw):
         k = keep[..., None]
         out = np.clip(out.astype(np.float32) * k + orig.astype(np.float32) * (1 - k) + .5, 0, 255).astype(np.uint8)
     return out
+
+
+# ---------------------------------------------------------------- video: skin smoothing / beauty per frame
+def video_knobs(strength=0.5, mode="skin"):
+    """The knobs of the output editor's skin smoothing (``mode`` "skin": de-shine + three-band smoothing + tone, face
+    shape and makeup untouched; "beauty": the same plus a light slim, eyes and the natural makeup, scaled). Strength
+    0.1-1; 0.5 = the talking-head video defaults (texture kept: pores stay)."""
+    s = min(1.0, max(0.0, float(strength)))
+    k = dict(slim=0.0, eye=0.0, eye_extra=0.0, makeup=0.0, body=0.0, shine=0.4 + 0.6 * s, shine_feather=2.5,
+             smooth=0.25 + 0.6 * s, light=0.06 * s, pores=0.85 - 0.15 * s, tone=0.15 + 0.3 * s, blemish=0.0,
+             undereye=0.15 + 0.3 * s, neck=0.5, grid=160, preset="natural")
+    if mode == "beauty":
+        k.update(slim=0.06 * s, eye=0.05 * s, makeup=0.45 * s)
+    return k
+
+
+class VideoRetoucher:
+    """Per-frame retouch of one continuous run of video frames (the output editor's ``portrait-retouch`` effect):
+    VideoFaceTracker (VIDEO-mode landmarks on a face crop, One Euro smoothed) + temporal RetouchState, so masks
+    neither flicker nor swim. Skin work runs on a copy at most ``work`` px on the short side and is added back as
+    an upsampled delta (full-resolution pore texture kept as it is). A frame without a face (or one too small)
+    passes through untouched; no face model on this machine -> every frame passes through (``missing`` says why).
+
+        rt = VideoRetoucher(video_knobs(0.5))
+        out = rt(frame_bgr, t_seconds)          # strictly increasing t; rt.close() at the end
+    """
+
+    MIN_FACE_FRAC = 0.06
+
+    def __init__(self, knobs=None, work=720):
+        self.k = dict(knobs or video_knobs())
+        self.work = int(work)
+        self.tr = None
+        self.st = RetouchState(video=True)
+        self.st_small = RetouchState(video=True)
+        self.last_ms = -1
+        self.resets = 0
+        self.missing = None
+        self.faces = 0
+
+    def _tracker(self):
+        if self.tr is None and self.missing is None:
+            try:
+                self.tr = F.VideoFaceTracker(1000.0)
+            except FileNotFoundError as e:       # MissingAsset: no face model -> pass-through, said once
+                self.missing = str(e)
+        return self.tr
+
+    def __call__(self, img, t):
+        tr = self._tracker()
+        if tr is None:
+            return img
+        ms = max(self.last_ms + 1, int(round(float(t) * 1000)))
+        self.last_ms = ms
+        f = tr(img, ms)
+        if f is None:
+            self.st.reset(); self.st_small.reset()
+            return img
+        h, w = img.shape[:2]
+        if np.ptp(f["pts"][:, 0]) < self.MIN_FACE_FRAC * min(h, w):
+            return img
+        if tr.sm.resets != self.resets:          # a cut / the face re-acquired: drop mask + warp state
+            self.resets = tr.sm.resets; self.st.reset(); self.st_small.reset()
+        self.faces += 1
+        fc = {"pts": f["pts"], "blend": f["blend"]}
+        q = _opts(**self.k)
+        warped, moved = (_warp(img, fc, q, self.st) if (q.slim > 0 or q.eye > 0 or q.eye_extra > 0)
+                         else (img, f["pts"]))
+        sc = min(1.0, self.work / float(min(h, w)))
+        if sc >= 0.999:
+            o = dict(self.k, slim=0.0, eye=0.0, eye_extra=0.0)
+            return retouch(warped, f={"pts": moved, "blend": f["blend"]}, lm=None, state=self.st_small, **o)
+        small = cv2.resize(warped, (int(w * sc), int(h * sc)), interpolation=cv2.INTER_AREA)
+        o = dict(self.k, slim=0.0, eye=0.0, eye_extra=0.0)
+        res = retouch(small, f={"pts": moved * sc, "blend": f["blend"]}, lm=None, state=self.st_small, **o)
+        delta = cv2.resize(res.astype(np.float32) - small.astype(np.float32), (w, h), interpolation=cv2.INTER_LINEAR)
+        out = warped.astype(np.float32) + delta
+        # the face-only composite of retouch(region=True): no warp seam outside the face
+        fw = np.ptp(moved[:, 0]); c = moved.mean(0); e = np.zeros((h, w), np.float32)
+        cv2.ellipse(e, (int(c[0]), int(c[1] + .1 * fw)), (int(fw * .8), int(np.ptp(moved[:, 1]) * .8)), 0, 0, 360, 1, -1)
+        kk = cv2.GaussianBlur(e, (0, 0), max(1.0, fw * .08))[..., None]
+        return np.clip(out * kk + img.astype(np.float32) * (1 - kk) + .5, 0, 255).astype(np.uint8)
+
+    def close(self):
+        if self.tr is not None:
+            self.tr.close()
+            self.tr = None
 
 
 def main():

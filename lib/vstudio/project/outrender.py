@@ -723,6 +723,8 @@ def _frame_pass(src, out, audio_wav, vis, tg, fps, quality, final_encode, beat):
             pass
         pd.stdout.close()
         pd.wait()
+        for _a, _b, L in layers:                       # trackers / models a layer holds (skin smoothing)
+            getattr(L, "close", lambda: None)()
         err = pe.stderr.read().decode(errors="replace")
         rc = pe.wait()
     if rc != 0 or i == 0:

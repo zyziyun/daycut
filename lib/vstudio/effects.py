@@ -506,11 +506,14 @@ _add("texture-generators", "Texture generators", "looks", "grain, light leak, in
      "`photostory/looks.py:make_grain/make_leak/make_ink/make_jag/make_bg/paper_bg`", [("seed", "fixed", "deterministic per seed")],
      "Building blocks for other effects", "n/a", "-", "-", ["Need a Ctx; xfade has Ctx-free leak / ink / jag"], "no", "Need a Ctx",
      ["grain", "leak", "ink", "jag", "bg", "paper"])
-_add("portrait-retouch", "Portrait retouch", "looks", "Face slim, eyes, de-shine, skin/makeup, body slim", [PIL],
-     {PIL: ["vstudio.retouch:retouch", "workflows/talkinghead/scripts/vertical/retouch_video.py"]}, "`lib/vstudio/retouch.py:retouch`",
-     [("slim", 0.05, ">0.08 starts to look warped"), ("smooth", 0.6, "above 0.8 skin goes plastic"), ("makeup", 0.5, "")],
-     "Covers and talking heads (creator decides)", "n/a", "whole clip", "always subtle", ["Check identity drift"], "tests/test_retouch.py",
-     "`retouch.retouch(img)`")
+_add("portrait-retouch", "Portrait retouch", "looks", "Face slim, eyes, de-shine, skin/makeup, body slim; video skin smoothing / beauty (tracked)", [PIL],
+     {PIL: ["vstudio.retouch:retouch", "vstudio.retouch:VideoRetoucher", "vstudio.project.outfx:SkinSmooth",
+            "workflows/talkinghead/scripts/vertical/retouch_video.py"]}, "`lib/vstudio/retouch.py:retouch`",
+     [("slim", 0.05, ">0.08 starts to look warped"), ("smooth", 0.6, "above 0.8 skin goes plastic"), ("makeup", 0.5, ""),
+      ("strength", 0.5, "output edit 磨皮美颜: 1.0 still keeps pores")],
+     "Covers and talking heads (creator decides); 磨皮 / 美颜 in the output editor", "n/a", "whole clip", "always subtle",
+     ["Check identity drift", "Per-frame on video: ~0.25 s a 1080p frame"], "tests/test_retouch.py",
+     "`retouch.retouch(img)`; video: `retouch.VideoRetoucher(retouch.video_knobs(0.5))(frame, t)`")
 
 # ------------------------------------------------------------------------------------------------
 # 9. Audio / SFX

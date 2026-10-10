@@ -1277,7 +1277,7 @@ def normalize(doc, st, op):
             e = dur if whole else min(dur, s + float(sp["default_dur"]))
         if e - s < 0.05 and sp["kind"] not in ("audio", "join"):
             raise _err("bad-time", f"{eid}: end must be after start", "结束要晚于开始", effect=eid, start=s, end=e)
-        if eid in ("end-fade", "vlog-grade", "music-bed", "progress-bar-pil") and \
+        if eid in ("end-fade", "vlog-grade", "music-bed", "progress-bar-pil", "portrait-retouch") and \
                 any(x["effect"] == eid for x in st["effects"]):
             raise _err("duplicate-effect", f"{eid} is already on this output (effect_update changes it)",
                        f"{sp['zh']} 已经有了（用 effect_update 修改）", effect=eid)
@@ -2017,6 +2017,11 @@ def _rule_ops(text, dur, ctx=None):
         ops.append(dict(op="effect_add", effect="progress-bar-pil", start=0))
     if re.search(r"淡出|fade out", text, re.I):
         ops.append(dict(op="effect_add", effect="end-fade", start=0))
+    if re.search(r"磨.?皮|美颜|美肤|修图|skin|beauty|retouch", text, re.I):
+        lv = 0.8 if re.search(r"强|多一点|明显|strong|more", text, re.I) else \
+            (0.3 if re.search(r"轻|一点点|稍微|light|subtle|a bit", text, re.I) else 0.5)
+        mode = "beauty" if re.search(r"美颜|瘦脸|化妆|妆|beauty|makeup|slim", text, re.I) else "skin"
+        ops.append(dict(op="effect_add", effect="portrait-retouch", start=0, params=dict(strength=lv, mode=mode)))
     if re.search(r"降噪|噪音|杂音|底噪|人声增强|人声优化|去回声|回音|studio sound|denoise|noise", text, re.I):
         lv = "strong" if re.search(r"强|很吵|厉害|strong|heavy", text, re.I) else \
             ("light" if re.search(r"轻|一点点|稍微|light|subtle", text, re.I) else "standard")

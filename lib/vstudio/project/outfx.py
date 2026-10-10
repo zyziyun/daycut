@@ -199,6 +199,12 @@ SPECS = {
         what_zh="整片调色：饱和度 / 对比度 / 暖色",
         params=dict(sat=_num(1.12, 0.5, 1.6, "饱和度"), contrast=_num(1.05, 0.7, 1.4, "对比度"),
                     warm={"type": "boolean", "default": True, "x-zh": "暖色"})),
+    "portrait-retouch": dict(
+        zh="磨皮美颜", en="Skin smoothing", kind="look", stage="frame", default_dur=None,
+        what_zh="人脸磨皮（跟踪人脸、保留毛孔纹理、去油光、匀肤色）；beauty 模式再加轻微瘦脸、提亮眼睛和淡妆。整片或一段",
+        params=dict(strength=_num(0.5, 0.1, 1.0, "强度"), mode=_str("skin", "模式 (skin 只磨皮 / beauty 美颜)",
+                                                                   enum=("skin", "beauty"))),
+        sample=dict(strength=0.6)),
 }
 
 ALIASES = {
@@ -223,6 +229,10 @@ ALIASES = {
     "transition": "xfade-joins", "xfade": "xfade-joins", "转场": "xfade-joins", "light-leak": "xfade-joins",
     "fade-out": "end-fade", "淡出": "end-fade",
     "grade": "vlog-grade", "look": "vlog-grade", "调色": "vlog-grade",
+    "skin": "portrait-retouch", "skin-smooth": "portrait-retouch", "skin-smoothing": "portrait-retouch",
+    "smooth-skin": "portrait-retouch", "beauty": "portrait-retouch", "beautify": "portrait-retouch",
+    "retouch": "portrait-retouch", "磨皮": "portrait-retouch", "磨个皮": "portrait-retouch", "美颜": "portrait-retouch",
+    "美颜磨皮": "portrait-retouch", "磨皮美颜": "portrait-retouch", "修图": "portrait-retouch", "美肤": "portrait-retouch",
     "marker": "marker-sweep", "highlight": "marker-sweep", "keyword": "marker-sweep", "划重点": "marker-sweep",
     "马克笔": "marker-sweep", "关键词": "marker-sweep",
     "rule": "chapter-rule", "chapter-line": "chapter-rule", "细线": "chapter-rule", "章节线": "chapter-rule",
@@ -679,6 +689,28 @@ class PunchIn(Layer):
         return img
 
 
+class SkinSmooth(Layer):
+    """``portrait-retouch``: face-tracked skin smoothing (or beauty) on the source frame, before any canvas work
+    (vstudio.retouch.VideoRetoucher: temporally stable masks, texture kept). One tracker per instance; frames
+    come in order. No face / no face model on this machine: the frame passes through untouched."""
+    camera = True
+
+    def __init__(self, inst, W, H, safe=None):
+        super().__init__(inst, W, H, safe)
+        self.rt = None
+
+    def draw(self, img, t, dur):
+        if self.rt is None:
+            from vstudio import retouch as RT
+            self.rt = RT.VideoRetoucher(RT.video_knobs(self.p.get("strength") or 0.5, self.p.get("mode") or "skin"))
+        img[:] = self.rt(img, t)
+        return img
+
+    def close(self):
+        if self.rt is not None:
+            self.rt.close()
+
+
 class Progress(Layer):
     """Whole-clip chapter progress bar; ``draw`` gets the edited clock via ``t`` (instance starts at 0)."""
 
@@ -801,7 +833,7 @@ LAYERS = {"pop-words": PopWords, "stacking-stamps": Stamp, "quote-card": QuoteCa
           "notes-panel": Notes, "overlay-images": Sticker, "badge": Badge, "red-box": RedBox,
           "chapter-card": ChapterCard, "punch-in": PunchIn, "progress-bar-pil": Progress,
           "marker-sweep": MarkerSweep, "chapter-rule": ChapterRule, "number-counter": NumberCounter,
-          "lower-third": LowerThird}
+          "lower-third": LowerThird, "portrait-retouch": SkinSmooth}
 
 
 def make_layer(inst, W, H, safe=None):
@@ -834,7 +866,7 @@ def thumbnail(eid, out, size=(360, 640)):
     W, H = size
     s = SPECS[k]
     img = _sample_bg(W, H)
-    if k in LAYERS:
+    if k in LAYERS and not (s["kind"] == "look"):          # a look needs a real face: a labelled card
         params, _ = validate(k, dict(s.get("sample") or {}))
         inst = dict(effect=k, params=params, start=0.0, end=4.0)
         if k == "progress-bar-pil":

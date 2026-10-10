@@ -190,6 +190,7 @@ frames rendered once into `$VSTUDIO_CACHE/output_fx/`.
 | `xfade-joins` | 转场 | timeline | transition (any `vstudio.xfade` name), duration: at a cut join = an xfade, elsewhere a flash / dip |
 | `end-fade` | 结尾淡出 | timeline | duration |
 | `vlog-grade` | 调色 | timeline | sat, contrast, warm |
+| `portrait-retouch` | 磨皮美颜 | frame | strength 0.1-1, mode skin \| beauty (whole clip; face-tracked `vstudio.retouch.VideoRetoucher`, texture kept, no face = untouched; aliases 磨皮 / 美颜 / skin / beauty) |
 
 ## 5. Render (`output render [--quality preview|final] [--targets primary,douyin:vertical|all] [--json-events]`)
 

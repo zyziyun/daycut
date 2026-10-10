@@ -114,10 +114,16 @@ EFFECTS = [
     dict(id="vlog-grade", label=dict(en="Colour grade", zh="调色"), category="grade", stage="timeline", default_dur=0,
          whole=True, description=dict(en="Warmer, punchier colour", zh="更暖、更有层次的色调"),
          params=dict(sat=_num(1.1, 0.5, 1.6, "饱和度"), warm=_num(0.1, -0.5, 0.5, "暖色"))),
+    dict(id="portrait-retouch", label=dict(en="Skin smoothing", zh="磨皮美颜"), category="grade", stage="frame",
+         default_dur=0, whole=True,
+         description=dict(en="Face-tracked skin smoothing that keeps texture; beauty adds a light slim, eyes and makeup",
+                          zh="跟踪人脸磨皮，保留皮肤纹理；美颜模式再加轻微瘦脸、提亮眼睛和淡妆"),
+         params=dict(strength=_num(0.5, 0.1, 1.0, "强度"), mode=_str("skin", "模式", ["skin", "beauty"]))),
 ]
 EFFECT_BY_ID = {e["id"]: e for e in EFFECTS}
 ALIASES = {"pop-word": "pop-words", "弹字": "pop-words", "弹出大字": "pop-words", "印章": "stacking-stamps",
-           "推近": "punch-in", "progress-bar": "progress-bar-pil", "进度条": "progress-bar-pil"}
+           "推近": "punch-in", "progress-bar": "progress-bar-pil", "进度条": "progress-bar-pil",
+           "磨皮": "portrait-retouch", "美颜": "portrait-retouch", "skin": "portrait-retouch", "beauty": "portrait-retouch"}
 
 
 # ------------------------------------------------------------------ media facts (ffprobe, cached)
@@ -620,7 +626,7 @@ def retime(state, base, cut_ops):
     extra, removed, trimmed, sfx = [], [], [], 0
     by = {x["id"]: x for x in EFFECTS}
     for e in state["effects"]:
-        if e["effect"] in ("music-bed", "end-fade", "vlog-grade", "progress-bar-pil", "xfade-joins"):
+        if e["effect"] in ("music-bed", "end-fade", "vlog-grade", "progress-bar-pil", "xfade-joins", "portrait-retouch"):
             continue
         lab = (by.get(e["effect"]) or {}).get("label") or dict(en=e["effect"], zh=e["effect"])
         before = max(0.0, e["end"] - e["start"])
@@ -1594,6 +1600,14 @@ def propose(doc, prompt, context=None):
         add(dict(op="trim", start=a, end=round(dur, 3)), _m("op-trim", f"start at {a:g}s", f"去掉开头 {a:g} 秒",
                                                               start=a, end=round(dur, 3)),
             _m("why-style", "as asked", "按你说的调整"))
+    if re.search(r"磨.?皮|美颜|美肤|skin|beauty|retouch", p, re.I):                  # the engine's literal phrases
+        lv = 0.8 if re.search(r"强|多一点|明显|strong|more", p, re.I) else \
+            (0.3 if re.search(r"轻|一点点|稍微|light|subtle|a bit", p, re.I) else 0.5)
+        mode = "beauty" if re.search(r"美颜|瘦脸|化妆|妆|beauty|makeup|slim", p, re.I) else "skin"
+        add(dict(op="effect_add", effect="portrait-retouch", start=0, end=round(dur, 3),
+                 params=dict(strength=lv, mode=mode)),
+            _m("op-effect-add", "add Skin smoothing to the whole clip", "整条加磨皮美颜", effect="portrait-retouch",
+               start=0, end=round(dur, 3)), _m("why-style", "as asked", "按你说的调整"))
     if re.search(r"进度条|progress bar", p, re.I):
         add(dict(op="effect_add", effect="progress-bar-pil", start=0, end=round(dur, 3)),
             _m("op-effect-add", "add a progress bar", "加进度条", effect="progress-bar-pil", start=0, end=round(dur, 3)),
