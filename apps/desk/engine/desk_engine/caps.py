@@ -171,7 +171,7 @@ class CliRunner:
             raise CliError(f"{self.module} {args[0]}: timed out after {timeout or self.timeout:.0f} s")
         if done is None or p.returncode != 0:
             why = (failed or {}).get("error") or " | ".join(tail[-3:]) or "no done event"
-            raise CliError(f"{self.module} {args[0]} exited {p.returncode}: {why}")
+            raise CliError(f"{self.module} {args[0]} exited {p.returncode}: {why}", failed)
         return done
 
 

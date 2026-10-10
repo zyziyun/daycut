@@ -24,6 +24,8 @@ from . import inbox_labels as L
 from . import works as WK
 from .common import need, read_json, write_json
 
+# checkpoints whose answer is a file the engine drafts (vstudio.project.drafts): shown as the draft, in plain words
+AUTHOR_KINDS = ("author", "script-lock", "storyboard-approval", "media-selection")
 GROUP = {"confirm": "choose", "filler-confirm": "choose", "hook-pick": "choose", "segment-approval": "choose",
          "keywords": "choose", "cover-pick": "choose", "take-selection": "choose", "media-selection": "choose",
          "script-lock": "choose",
@@ -55,40 +57,66 @@ def _with_clip(opt, raw, item):
     return opt
 
 
-PREVIEW_LINES = 40
-
-
-def _head(path, n=PREVIEW_LINES, max_bytes=64000):
-    """The first ``n`` lines of a text file + whether there is more (None when it cannot be read as text)."""
-    try:
-        with open(path, encoding="utf-8") as f:
-            text = f.read(max_bytes)
-    except (OSError, UnicodeDecodeError, ValueError):
-        return None, False
-    lines = text.splitlines()
-    return "\n".join(lines[:n]), len(lines) > n or len(text) >= max_bytes
-
-
 def author_block(p, pd):
-    """An ``author`` checkpoint (she writes / approves a file: promo-recut "Keep spans", "Cards, highlights, montage")
-    -> what the Inbox shows instead of options: {labels, help {zh, en}, file, exists, template, doc, format, preview,
-    more, preview_of file|template}. The payload file (state/checkpoints/<item>/<id>.json) fills what the engine's
-    inbox entry leaves out (template, doc)."""
+    """An ``author`` checkpoint (promo-recut "Check what's kept", an explainer's script, a launch kit's details ...)
+    -> what the Inbox shows: never the file. {labels, recipe, checkpoint, state missing | template | drafted | hers,
+    review (the engine's plain-language view: a summary, lines, the transcript with kept / cut parts, a script's
+    text), can_draft (the engine can draft it: "Draft it for me" / "ask in plain words"), draft_error, exists, file
+    (only for "Advanced: open the file")}. An older payload (no ``draft_state``) is read again here: a file that is
+    still the seeded template / SYNTHETIC example is "template" - never shown as hers, never her answer."""
     pay = {}
     if p.get("item") and p.get("id") and pd:
         pay = read_json(os.path.join(pd, "state", "checkpoints", str(p["item"]), f"{p['id']}.json"), None) or {}
     get = lambda k: p.get(k) if p.get(k) is not None else pay.get(k)  # noqa: E731
     f = get("file")
-    exists = bool(get("exists")) and bool(f) and os.path.exists(f)
-    tpl = get("template")
-    src = f if exists else (tpl if tpl and os.path.isfile(tpl) else None)
-    preview, more = (None, False)
-    if src and os.path.isfile(src):
-        preview, more = _head(src)
-    help_ = get("help") if isinstance(get("help"), dict) else {}
-    return dict(labels=get("labels") if isinstance(get("labels"), dict) else {}, help=help_, file=f, exists=exists,
-                is_dir=bool(get("is_dir")), template=tpl, doc=get("doc"), format=get("format"), preview=preview,
-                more=more, preview_of=("file" if src == f else "template") if src else None)
+    if not f:
+        return None                           # a script lock / storyboard with no file of its own: options as usual
+    recipe, cid = get("recipe"), p.get("id") or pay.get("id")
+    st, review = pay.get("draft_state"), pay.get("review")
+    can = False
+    try:
+        from vstudio.project import drafts as DR
+        if not st:
+            st = DR.state(f, get("template"), cid, recipe)
+        if review is None and st in ("drafted", "hers") and f:
+            review = DR.outline_review(f, DR.read_side(f, cid))
+        can = bool(DR._drafter(recipe, cid)) or bool(f and not os.path.isdir(f) and f.lower().endswith(DR.TEXT_EXT))
+    except Exception:  # noqa: BLE001  (an engine without drafts: the file decides)
+        st = st or ("hers" if f and os.path.exists(f) else "missing")
+    return dict(labels=get("labels") if isinstance(get("labels"), dict) else {}, recipe=recipe, checkpoint=cid,
+                state=st, review=review, can_draft=can, draft_error=pay.get("draft_error"),
+                exists=st in ("drafted", "hers"), is_dir=bool(get("is_dir")), file=f, doc=get("doc"))
+
+
+def _project_name(pd):
+    """A project the history does not list: its own name (project.yaml), not its folder ("01-AIGC")."""
+    try:
+        import yaml
+        with open(os.path.join(pd, "project.yaml"), encoding="utf-8") as f:
+            n = (yaml.safe_load(f) or {}).get("name")
+        if isinstance(n, str) and n.strip():
+            return n.strip()
+    except Exception:  # noqa: BLE001
+        pass
+    return os.path.basename(pd)
+
+
+def _item_video(pd, item):
+    """The item's own recording (its first video input): the Inbox row's picture when the project has no cover yet."""
+    try:
+        import yaml
+        with open(os.path.join(pd, "project.yaml"), encoding="utf-8") as f:
+            d = yaml.safe_load(f) or {}
+    except Exception:  # noqa: BLE001
+        return None
+    its = [i for i in d.get("items") or [] if isinstance(i, dict)]
+    it = next((i for i in its if i.get("id") == item), its[0] if its else {})
+    ins = dict(d.get("inputs") or {}, **(it.get("inputs") or {}))
+    for v in ins.values():
+        for x in (v if isinstance(v, list) else [v]):
+            if isinstance(x, str) and x.lower().endswith((".mp4", ".mov", ".m4v", ".webm", ".mkv")) and os.path.isfile(x):
+                return x
+    return None
 
 
 def open_path(path):
@@ -106,10 +134,15 @@ def engine_answer(kind, answer):
     """The desk's generic answer (``{approve: [option ids], keep: [...]}`` from her ticks) in the shape the engine
     checkpoint's schema wants; None = use the checkpoint's default."""
     if kind == "author":
-        # she wrote / approved the file: {done: true} (+ content when the desk sends the text itself); the generic
-        # ticks of an older desk ({approve: ["0"]}) mean the same
+        # she approved the draft: {done: true}; + spans (keep spans: what she selected to keep in the transcript) or
+        # content (the file's text); the generic ticks of an older desk ({approve: ["0"]}) mean the same
         v = answer if isinstance(answer, dict) else {}
-        return dict(done=True, **({"content": v["content"]} if isinstance(v.get("content"), str) else {}))
+        out = dict(done=True)
+        if isinstance(v.get("content"), str):
+            out["content"] = v["content"]
+        if isinstance(v.get("spans"), list) and all(isinstance(x, list) and len(x) == 2 for x in v["spans"]):
+            out["spans"] = [[float(a), float(b)] for a, b in v["spans"]]
+        return out
     if not isinstance(answer, dict) or "approve" not in answer or not isinstance(answer.get("approve"), list):
         return answer or None
     ids = [int(x) for x in answer["approve"] if str(x).lstrip("-").isdigit()]
@@ -218,6 +251,7 @@ class Inbox:
         self.extra = []          # more sources: callables -> [item] (Create: takes to pick, paused runs ...)
         self.handlers = {}       # source -> fn(item, answer): desk-side items that act when answered (feedback)
         self.undo_hooks = []     # fn(keys): an answer taken back
+        self._drafting = {}      # inbox key -> started (a draft being written: "Drafting ..." on the item)
 
     def real(self):
         """The engine has project checkpoints (``vstudio.project.inbox``): checked in this process, no CLI start."""
@@ -337,22 +371,27 @@ class Inbox:
                                for o in raw if str(o.get("file") or "").endswith((".mp4", ".mov"))
                                and os.sep + "exports" + os.sep in str(o.get("file"))]
                         allow += [o["file"] for o in raw]
-                    author = author_block(p, pd) if kind == "author" else None
+                    author = author_block(p, pd) if kind in AUTHOR_KINDS else None
                     if author:
-                        raw = []                          # the file is the decision, never a "☑ 1 0" option row
-                        allow += [x for x in (author["file"], author["template"], author["doc"]) if x]
+                        raw = []                          # the draft is the decision, never a "☑ 1 0" option row
+                        allow += [x for x in (author["file"], author["doc"]) if x]
+                        author["drafting"] = self._drafting.get(_key(pd, p.get("id"), p.get("item"))) is not None
+                    video = None if e.get("thumb") else _item_video(pd, p.get("item"))
+                    if video:
+                        allow.append(video)
                     items.append(dict(key=_key(pd, p.get("id"), p.get("item"), p.get("digest")), kind=kind,
                                       group=GROUP.get(kind, "other"),
-                                      project=dict(id=e.get("id"), name=e.get("name") or os.path.basename(pd),
-                                                   kind=e.get("kind"), thumb=e.get("thumb"), type=e.get("type")),
+                                      project=dict(id=e.get("id"), name=e.get("name") or _project_name(pd),
+                                                   kind=e.get("kind"), thumb=e.get("thumb"), type=e.get("type"),
+                                                   video=video),
                                       code=("inbox.spend" if spend and params.get("amount") is not None
                                             else f"checkpoint.{kind}"), params=params,
                                       text=(p.get("labels") or {}).get("zh") or p.get("label"),
                                       label=p.get("label_info"),
                                       options=[_with_clip(L.engine_option(o, p.get("default"), i), o, p.get("item"))
                                                for i, o in enumerate(raw)],
-                                      previews=p.get("previews") or [],
-                                      default=p.get("default"), minutes=1 if not author else 5, source="engine",
+                                      previews=[] if author else p.get("previews") or [],
+                                      default=p.get("default"), minutes=1 if not author else 2, source="engine",
                                       engine=dict(dir=pd, id=p.get("id"), item=p.get("item")),
                                       **({"archived": True} if archived else {}),
                                       **({"author": author, "labels": author["labels"]} if author else {})))
@@ -434,6 +473,37 @@ class Inbox:
                     self.bus.publish("batches")
             except Exception as e:  # noqa: BLE001  (the answer itself is saved; say why nothing ran)
                 print(f"[inbox] resume after answer failed for {d}: {e}", file=sys.stderr, flush=True)
+
+    def redraft(self, key, instruction=None):
+        """「Draft it for me」/「Ask in plain words」 on an author item: the engine drafts the file again (following
+        ``instruction``), in the background (a model call takes a minute or two); the item says "Drafting ..." and
+        the Inbox reloads when the new draft is in (``vstudio.project.drafts.redraft``)."""
+        need(isinstance(key, str) and re.match(r"^[0-9a-f]{16}$", key), "key: an inbox key")
+        need(instruction is None or (isinstance(instruction, str) and len(instruction) <= 1000), "instruction: text")
+        it = next((i for i in self.list()["items"] if i["key"] == key), None)
+        need(it is not None and it.get("author"), f"no draft to change for {key}")
+        need(it["author"].get("can_draft"), "this step can't be drafted by the AI")
+        eng = it["engine"]
+        dk = _key(eng["dir"], eng["id"], eng.get("item"))
+        need(dk not in self._drafting, "already drafting")
+        self._drafting[dk] = time.time()
+        if self.bus:
+            self.bus.publish("inbox")
+
+        def go():
+            try:
+                from vstudio.project import drafts as DR
+                from vstudio.project.core import Project
+                DR.redraft(Project(eng["dir"]), eng["id"], eng.get("item"), (instruction or "").strip() or None)
+            except Exception as e:  # noqa: BLE001  (the item stays as it was; the reason is logged)
+                print(f"[inbox] redraft failed for {eng['dir']} {eng['id']}: {e}", file=sys.stderr, flush=True)
+            finally:
+                self._drafting.pop(dk, None)
+                self._forget_engine()
+                if self.bus:
+                    self.bus.publish("inbox")
+        threading.Thread(target=go, daemon=True).start()
+        return dict(ok=True, drafting=True)
 
     opener = staticmethod(open_path)
 

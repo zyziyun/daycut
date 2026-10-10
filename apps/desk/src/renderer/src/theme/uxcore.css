@@ -204,3 +204,18 @@
 .ux-pin-opts .ux-opt.act { background: var(--surface); border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
 .ux-pin-opts .ux-choices { margin-left: 0; }
 .ux-pin-ft { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border); }
+
+/* ---- an author step's draft in the Inbox (v4/DraftReview): her transcript with kept / cut sentences, plain lines */
+.ux-draft-sum { font-size: 15px; }
+.ux-keep { max-height: 360px; overflow: auto; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); font-size: 15px; line-height: 1.75; user-select: text; }
+.ux-sent { cursor: pointer; border-radius: 4px; padding: 1px 0; transition: background var(--t) var(--ease), color var(--t) var(--ease); }
+.ux-sent:hover { background: var(--accent-soft); }
+.ux-sent.cut { color: var(--text-faint); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--danger, #d14b4b) 70%, transparent); }
+.ux-sent.mine { box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--accent) 55%, transparent); }
+.ux-cutlab { font-style: normal; text-decoration: none; display: inline-block; margin: 0 4px; padding: 0 6px; border-radius: 6px; font-size: 12px; line-height: 20px; color: var(--text-muted); background: var(--surface-2); vertical-align: 1px; }
+.ux-draft-line { padding: 8px 12px; border-radius: 10px; background: var(--surface-2); font-size: 14px; }
+.ux-draft-text { white-space: pre-wrap; max-height: 360px; overflow: auto; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; font-size: 14px; line-height: 1.6; user-select: text; }
+.ux-draft-ask .inp { flex: 1; min-width: 0; }
+.ux-ith.ph-thumb { display: flex; align-items: center; justify-content: center; color: var(--text-muted); }
+.ux-needs-drop { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 14px; margin: 10px 0; border: 1.5px dashed var(--border-strong); border-radius: 12px; }
+.ux-needs-drop.over { border-color: var(--accent); background: var(--accent-soft); }

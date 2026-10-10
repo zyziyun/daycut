@@ -16,6 +16,13 @@ checkpoint and records why). ``ask``: the plan waits in All projects for her Sta
 one). A request's job record (``<id>.job.json``: state, step, mode, error, applied) survives a restart; one that was
 planning when the desk quit is a failure she can try again. ``discard(id)``: she drops a plan (nothing was made).
 
+A request that still needs something only she can give (the plan's ``needs``: her recordings for a request that cuts
+footage, her Notion notes she named but that could not be read) is neither planned further nor applied: state
+``needs`` (All projects + an Inbox item "Add ..."). ``add(id, inputs, text)``: she drops the files / pastes the links,
+the request is planned again with them; ``go_on(id)``: plan it without (``plan --ignore-needs``). A request with no
+files at all is planned from its words (explainer, scripts, AI video ...: ``vstudio.intake`` decides).
+A failed plan keeps the engine's own reason code (``plan-empty`` ...; ``error_code``), never only "exited 1".
+
 Real engine: ``vstudio.intake plan|revise|apply --json`` (plan JSON kept in ``<DESK_DATA_DIR>/intake/<id>.json``),
 pilots via ``vstudio.project run --dir D --pilot 1``. While a plan / revision runs, the engine's ``--json-events``
 become the job's ``progress`` (what the card shows instead of a spinner): {stage scan | probe | listen | faces |
@@ -113,7 +120,7 @@ class Intake:
 
     JOB_KEYS = ("id", "state", "step", "prompt", "inputs", "error", "error_code", "error_provider", "started",
                 "seconds", "platforms", "lang", "mode", "sample_name", "applied", "discarded", "failed_apply",
-                "failed_revise", "name")
+                "failed_revise", "name", "needs", "ignore_needs")
 
     def _job_path(self, pid):
         return os.path.join(self.dir, f"{pid}.job.json")
@@ -262,24 +269,29 @@ class Intake:
                             prompt=j.get("prompt"), inputs=j.get("inputs") or [], started=j.get("started"),
                             progress=j.get("progress"), error_code=j.get("error_code"), error=j.get("error"),
                             name=j.get("name") or (names[0] if names else None), projects=len(names) or None,
-                            failed_apply=bool(j.get("failed_apply"))))
+                            failed_apply=bool(j.get("failed_apply")), needs=j.get("needs") or None))
         out.sort(key=lambda x: -(x.get("started") or 0))
         return dict(items=out)
 
     def inbox_items(self):
-        """For the Inbox: a plan that waits for her Start (ask me first) and a request that failed - the only two
-        moments a request from Home needs her before it is a project."""
+        """For the Inbox: a plan that waits for her Start (ask me first), a request that waits for something only she
+        can give (her recordings, her notes: ``needs``) and a request that failed - the only moments a request from
+        Home needs her before it is a project."""
         out = []
         for r in self.open()["items"]:
-            if r["state"] not in ("done", "error"):
+            if r["state"] not in ("done", "error", "needs"):
                 continue
-            ready = r["state"] == "done"
-            out.append(dict(key=f"plan-{r['id']}-{r['state']}", kind="plan" if ready else "failed",
-                            group="choose" if ready else "other",
-                            project=dict(id=None, name=r.get("name") or (r.get("prompt") or "")[:60], kind="plan",
-                                         thumb=None, type="other"),
-                            code="inbox.planReady" if ready else "inbox.planFailed",
-                            params=dict(name=r.get("name") or (r.get("prompt") or "")[:60]), text=None, minutes=1,
+            kind = {"done": "plan", "error": "failed", "needs": "needs"}[r["state"]]
+            first = (r.get("needs") or [{}])[0]
+            name = r.get("name") or (r.get("prompt") or "")[:60]
+            out.append(dict(key=f"plan-{r['id']}-{r['state']}", kind=kind,
+                            group={"plan": "choose", "needs": "choose"}.get(kind, "other"),
+                            project=dict(id=None, name=name, kind="plan", thumb=None, type="other"),
+                            code={"plan": "inbox.planReady", "failed": "inbox.planFailed",
+                                  "needs": "inbox.planNeeds"}[kind],
+                            params=dict(name=name), text=None, minutes=1,
+                            need=first if kind == "needs" else None,
+                            error_code=r.get("error_code") if kind == "failed" else None,
                             source="intake", href=f"#/projects?sel={r['id']}", at=r.get("started") or time.time()))
         return out
 
@@ -332,9 +344,16 @@ class Intake:
             self._fail(pid, e)
             return
         names = [p.get("name") for p in plan.get("projects") or [] if p.get("name")]
+        if plan.get("needs"):                       # something only she can give: it waits for her, nothing runs
+            self._set(pid, state="needs", step="needs", plan=plan, needs=plan["needs"], seconds=self._took(pid),
+                      name=names[0] if names else None)
+            if self.bus:
+                self.bus.publish("batches")
+                self.bus.publish("inbox")
+            return
         auto = (self.jobs.get(pid) or {}).get("mode") == "autopilot"
         self._set(pid, state="running" if auto else "done", step="apply" if auto else "done", plan=plan,
-                  seconds=self._took(pid), name=names[0] if names else None)
+                  seconds=self._took(pid), name=names[0] if names else None, needs=None)
         if auto:
             self._auto_apply(pid)
         elif self.bus:
@@ -362,6 +381,8 @@ class Intake:
             args += ["--auto", ",".join(auto)]
         if inputs:
             args += ["--inputs", *inputs]
+        if (self.jobs.get(pid) or {}).get("ignore_needs"):
+            args += ["--ignore-needs"]
         args += self._lang_args(pid)
         self._set(pid, step="plan")
         plan = self._run(pid, args, timeout=1800)
@@ -386,6 +407,33 @@ class Intake:
             return dict(id=pid)
         self._set(pid, state="running", step="analyze", error=None, error_code=None, error_provider=None,
                   op_started=time.time(), seconds=None, progress=None)
+        threading.Thread(target=self._plan, args=(pid, j.get("prompt") or "", j.get("inputs") or []),
+                         daemon=True).start()
+        return dict(id=pid)
+
+    def add(self, pid, inputs=None, text=None):
+        """She gives what the request waited for: files / folders she dropped (``inputs``) and / or links she pasted
+        (``text``, added to the request). The request is planned again with them."""
+        j = self.get(pid)
+        need(j.get("state") in ("needs", "error", "done") and not j.get("applied"), "this request is not waiting")
+        inputs = [p for p in inputs or [] if isinstance(p, str)]
+        text = (text or "").strip()
+        need(inputs or text, "add files or paste links")
+        need(len(text) <= 2000, "text: max 2000 chars")
+        prompt = (j.get("prompt") or "") + (("\n" + text) if text else "")
+        merged = list(dict.fromkeys([*(j.get("inputs") or []), *inputs]))
+        self._set(pid, state="running", step="analyze", prompt=prompt, inputs=merged, error=None, error_code=None,
+                  error_provider=None, needs=None, ignore_needs=None, plan=None, op_started=time.time(),
+                  seconds=None, progress=None)
+        threading.Thread(target=self._plan, args=(pid, prompt, merged), daemon=True).start()
+        return dict(id=pid)
+
+    def go_on(self, pid):
+        """「Plan it without」: the request is planned from what she gave (no ``needs``)."""
+        j = self.get(pid)
+        need(j.get("state") == "needs", "this request is not waiting for anything")
+        self._set(pid, state="running", step="analyze", error=None, error_code=None, needs=None, ignore_needs=True,
+                  plan=None, op_started=time.time(), seconds=None, progress=None)
         threading.Thread(target=self._plan, args=(pid, j.get("prompt") or "", j.get("inputs") or []),
                          daemon=True).start()
         return dict(id=pid)
@@ -425,7 +473,9 @@ class Intake:
         """A plain reason code for the card (pilot.classify) and the error without paths."""
         from . import pilot
         txt = str(e)
-        code = "intake" if isinstance(e, Unavailable) else pilot.classify(txt)
+        own = str(((getattr(e, "doc", None) or {}) if isinstance(getattr(e, "doc", None), dict) else {}).get("code") or "")
+        code = "intake" if isinstance(e, Unavailable) else own if re.match(r"^plan-[a-z-]{2,30}$", own) else \
+            "plan-empty" if "no inputs" in txt else pilot.classify(txt)
         j = self._set(pid, state="error", error=pilot.scrub(txt, 500), error_code=code,
                       error_provider=None if isinstance(e, Unavailable) else pilot.provider_of(txt))
         if j.get("mode") and self.bus:              # a request from Home: All projects and the Inbox say so

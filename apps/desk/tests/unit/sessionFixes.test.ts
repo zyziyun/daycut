@@ -7,7 +7,7 @@ import type { InboxItem } from '../../src/shared/v04';
 import type { LiveStatus, PilotFailure } from '../../src/shared/v02';
 import { fallbackNotice } from '../../src/shared/aiRoutes';
 import { setLang, t } from '../../src/renderer/src/i18n';
-import { authorHelp, authorTitle, inboxSub, inboxTitle, shortPath } from '../../src/renderer/src/lib/inboxView';
+import { authorHelp, authorTitle, inboxSub, inboxTitle } from '../../src/renderer/src/lib/inboxView';
 import { agoText, liveLine, liveMeta, pendingFor, STALE_S } from '../../src/renderer/src/lib/liveStatus';
 import { stampChanged } from '../../src/renderer/src/lib/history';
 import { failureReason } from '../../src/renderer/src/v4/Failure';
@@ -26,33 +26,41 @@ const author: InboxItem = {
   source: 'engine',
   labels: { zh: '保留片段', en: 'Keep spans' },
   author: {
-    labels: { zh: '保留片段', en: 'Keep spans' },
-    help: { zh: '在 promo.config.yaml 写 cut.body / cut.outro（原片秒数）', en: 'Write cut.body / cut.outro KEEP spans (raw seconds) in promo.config.yaml' },
+    labels: { zh: '确认保留内容', en: 'Check what’s kept' },
+    recipe: 'promo-recut',
+    checkpoint: 'keep',
+    state: 'drafted',
+    can_draft: true,
+    review: {
+      kind: 'keep-spans',
+      by: 'ai',
+      summary: { code: 'draft.keep', params: { kept: 580, total: 764, cuts: ['the unfinished opening', 'the joke detour', 'the Hedra part'], n: 3 } },
+      segments: [],
+      kept_s: 580,
+      total_s: 764,
+    },
     file: '/home/me/.config/vstudio/projects/dfab/01-AIGC/items/AIGC/promo.config.yaml',
     exists: true,
-    template: null,
-    doc: '/Applications/Reelfold.app/Contents/Resources/runtime/vstudio/workflows/promo-recut/WORKFLOW.md',
-    preview: 'talk: inputs/talk.mp4\ncut:\n  body: []',
-    more: false,
-    preview_of: 'file',
   },
 };
 
 describe('author checkpoints in the Inbox', () => {
-  it('read as the checkpoint label + help + file, never "Write your part" or a raw option index', () => {
-    expect(inboxTitle(author)).toBe('Keep spans');
-    expect(authorTitle(author)).toBe('Keep spans');
-    expect(authorHelp(author)).toMatch(/KEEP spans/);
-    expect(inboxSub(author)).toBe('promo.config.yaml');
-    expect(shortPath(author.author!.file)).toBe('…/items/AIGC/promo.config.yaml');
+  it('read as plain words: the step, what to do, what the draft keeps - never the file, YAML or raw seconds', () => {
+    expect(inboxTitle(author)).toBe('Check what’s kept');
+    expect(authorTitle(author)).toBe('Check what’s kept');
+    expect(authorHelp(author)).toMatch(/Crossed-out sentences are cut/);
+    expect(inboxSub(author)).toBe('Keeps 9:40 of 12:44 — cuts the unfinished opening, the joke detour, the Hedra part');
+    for (const s of [inboxTitle(author), authorHelp(author), inboxSub(author)]) expect(s).not.toMatch(/yaml|cut\.body|promo\.config|\//i);
     setLang('zh-CN');
-    expect(inboxTitle(author)).toBe('保留片段');
-    expect(authorHelp(author)).toMatch(/原片秒数/);
+    expect(inboxTitle(author)).toBe('确认保留内容');
+    expect(inboxSub(author)).toMatch(/^保留 12:44 里的 9:40——剪掉/);
   });
-  it('fall back to the help line and the generic title when the engine gave none', () => {
-    const bare = { ...author, labels: null, text: null, author: { ...author.author!, labels: {}, help: {} } };
-    expect(inboxTitle(bare)).toBe(t('checkpoint.author'));
-    expect(authorHelp(bare)).toBe(t('inbox.author.lead'));
+  it('a step nothing is drafted for says so (and the generic title when the desk has none for it)', () => {
+    const bare = { ...author, labels: null, text: null, author: { ...author.author!, recipe: 'x', checkpoint: 'y', labels: {}, state: 'template' as const, review: null } };
+    expect(inboxTitle(bare)).toBe(t('draft.titleAny'));
+    expect(authorHelp(bare)).toBe(t('draft.lead.none'));
+    expect(inboxSub(bare)).toBe(t('draft.lead.none'));
+    expect(inboxSub({ ...bare, author: { ...bare.author, drafting: true } })).toBe(t('draft.drafting'));
   });
 });
 

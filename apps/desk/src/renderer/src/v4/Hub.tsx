@@ -12,7 +12,7 @@ import { useHistory } from '../lib/history';
 import { useInbox } from '../lib/inbox';
 import { clipHref, inboxHref, projectHref } from '../lib/nav';
 import { decisionWords, hubGroups, postsOf, requestPipeline, STEPS, stepState, type GroupId, type HubRow, type Pipeline } from '../lib/pipeline';
-import { href, routeQuery } from '../lib/router';
+import { go, href, routeQuery } from '../lib/router';
 import { useIntakeJob } from '../lib/useIntakeJob';
 import { failureReason, FailureActions } from './Failure';
 import { Empty, Thumb } from './kit';
@@ -155,6 +155,8 @@ function stateLine(p: Pipeline, i?: HistoryItem, r?: OpenRequest): string {
       return r?.mode === 'autopilot' && r.state === 'done' ? t('hub.s.run') : t('hub.s.planning');
     case 'plan-ready':
       return t('hub.s.planReady');
+    case 'you':
+      return r?.state === 'needs' ? t('hub.s.needs') : t('hub.s.you');
     case 'queued':
       return t('hub.s.queued', { n: i?.queued ?? 1 });
     case 'run': {
@@ -224,6 +226,19 @@ function RequestDetail({ r, onApplied }: { r: OpenRequest; onApplied: (dirs: str
       ui.toast(errText(e), { error: true });
     }
   };
+  /** 「Start over」: the request goes (nothing was made) and Home has her words and files back in the box */
+  const startOver = async () => {
+    if (!client) return;
+    try {
+      await client.discardIntake(r.id);
+    } catch {
+      // already gone: Home is still where she starts over
+    }
+    sessionStorage.setItem('v4.composer', JSON.stringify({ prompt: r.prompt ?? '', files: r.inputs ?? [] }));
+    sessionStorage.removeItem('v4.hubSel');
+    reload();
+    go({ name: 'home' });
+  };
   const p = requestPipeline(r);
   return (
     <div className="hub-d" data-testid="hub-request" data-mode={r.mode}>
@@ -252,7 +267,7 @@ function RequestDetail({ r, onApplied }: { r: OpenRequest; onApplied: (dirs: str
         jobId={r.id}
         onRevise={(s) => void revise(s).catch((e) => ui.toast(errText(e), { error: true }))}
         onRetry={() => void retry().catch((e) => ui.toast(errText(e), { error: true }))}
-        onReset={() => void discard()}
+        onReset={() => void startOver()}
         onStarted={() => reload()}
         onApplied={onApplied}
       />

@@ -7,6 +7,11 @@ heartbeats like a real run, so Home's Running lane and the Inbox behave the same
   DESK_MOCK_PILOT_FAIL   auth: the pilot fails at 选段 like an expired Claude Code login, unless retried with another
                          provider
   DESK_MOCK_INTAKE_DOWN  n: the first n probes of the planning engine fail (a hiccup: the card's Try again works)
+  DESK_MOCK_PLAN_FAIL    n: the first n plans fail like a planner that timed out (the error event of the real CLI)
+
+Like the real planner: a request with no files is planned from its words (an explainer for "科普 / explain ..."), a
+request that cuts footage but has none waits for it (``needs`` intake.need.footage, no project), one that names
+Notion with no Notion link / exported notes waits for them (intake.need.notion) - see vstudio.intake.sources.
 
 Autopilot (a request sent with mode autopilot): the simulated run makes every clip (no pilot stop, no question),
 writes each finished clip into ``final/`` (a tiny real video + cover) and records what it decided in
@@ -106,8 +111,11 @@ def rule_plan(prompt, inputs, probe=None, plan_id=None, defaults=None, ui_lang=N
     machine = round(max(1.0, sum(r["params"]["range"][1] - r["params"]["range"][0] for r in rows) / 60 * 3.2), 1)
     est = dict(machine_min=machine, wall_min=round(machine / 2 + 2, 1), api_usd=round(dur / 60 * 0.01, 2),
                storage_mb=int(machine * 90), measured=False, paid_steps=[])
-    name = ((video or mats[0])["name"].rsplit(".", 1)[0] if mats else "新项目")[:24]
+    name = ((video or mats[0])["name"].rsplit(".", 1)[0] if mats else (prompt or "新项目").split("\n")[0])[:24]
     name = re.sub(r"[_-]?(final|成片)$", "", name, flags=re.I) or name
+    if not video and recipe not in ("explainer", "ai-video", "preproduction"):
+        m2 = re.search(r"([0-9]+|[一两二三四五六七八九十])\s*集", text)
+        count = _num(m2.group(1)) if m2 else (count if re.search(r"条|clips?|videos?", text, re.I) else 1)
     proj = dict(id="p1", recipe=recipe, recipe_label=label, type=typ,
                 name=f"{name} · {count} 条{label if count > 1 else ''}".strip(), why="按你说的做",
                 materials=[x["id"] for x in mats], inputs={"video": [video["path"]]} if video else {},
@@ -132,12 +140,29 @@ def rule_plan(prompt, inputs, probe=None, plan_id=None, defaults=None, ui_lang=N
     summary = (f"这是{src}。我会做出 {count} 条{label}，每条 {int(min_s)}–{int(max_s)} 秒，"
                f"出{'、'.join(zh for _, zh in plats)} {' 和 '.join(aspects)} {'两个版本' if len(aspects) > 1 else '版本'}，配封面和文案。")
     pid = plan_id or hashlib.sha1(f"{prompt}{inputs}{time.time()}".encode()).hexdigest()[:12]
+    needs = []
+    media = [x for x in mats if x["kind"] in ("video", "image", "audio", "folder")]
+    words = re.search(r"讲解|科普|explain|短剧|AI ?视频|脚本|稿|series|系列", prompt or "", re.I)
+    if not media and not words and re.search(r"剪|切|口播|cut|edit|clips?|podcast|播客|vlog", prompt or "", re.I):
+        needs.append(dict(code="intake.need.footage", params={}, message="Add the recordings you want cut",
+                          message_zh="把要剪的录像拖进来"))
+    has_notes = any(x["path"].lower().endswith((".md", ".html", ".htm")) or x["kind"] == "folder" for x in mats)
+    if re.search(r"notion", prompt or "", re.I) and not re.search(r"notion\.(so|site)/", prompt or "", re.I) and not has_notes:
+        needs.append(dict(code="intake.need.notion", params={}, message="Which Notion pages?",
+                          message_zh="要用哪些 Notion 页面？"))
+    if not media and not needs and recipe not in ("explainer", "ai-video", "preproduction"):
+        recipe, label, typ = "explainer", "讲解视频", "explainer"
+        proj.update(recipe=recipe, recipe_label=label, type=typ)
+    if any(n["code"] == "intake.need.footage" for n in needs):
+        summary = needs[0]["message_zh"]
     return dict(version=1, kind="vstudio.intake.plan", id=pid, created=time.strftime("%Y-%m-%dT%H:%M:%S"),
                 prompt=prompt, client=None, revisions=[],
                 planner=dict(provider="rules", model=None, route="desk", fallback=True, cost_usd=0, seconds=0.1),
-                analysis=dict(inputs=list(inputs), totals=dict(files=len(mats))), materials=mats, projects=[proj],
+                analysis=dict(inputs=list(inputs), totals=dict(files=len(mats))), materials=mats,
+                projects=[] if any(n["code"] == "intake.need.footage" for n in needs) else [proj],
                 series=None, questions=questions, risks=[], warnings=[], estimate=est, run=dict(pilot=1, auto=[]),
-                summary_zh=summary, summary_lang="zh", **({"ui_lang": ui_lang} if ui_lang else {}))
+                summary_zh=summary, summary_lang="zh", **({"ui_lang": ui_lang} if ui_lang else {}),
+                **({"needs": needs} if needs else {}))
 
 
 def rule_revise(plan, prompt):
@@ -235,10 +260,24 @@ class MockIntake(Intake):
         ev("model", provider="claude-code")
         time.sleep(step)                                   # the model call
 
+    _plan_fails = 0
+
     def _engine_plan(self, pid, prompt, inputs):
         step = float(os.environ.get("DESK_MOCK_STEP", "0.25"))
         self._set(pid, step="plan")
         self._simulate_progress(pid, inputs, step)
+        if MockIntake._plan_fails < int(os.environ.get("DESK_MOCK_PLAN_FAIL") or 0):
+            MockIntake._plan_fails += 1
+            from desk_engine.caps import CliError
+            raise CliError("vstudio.intake plan exited 1: TimeoutError: claude-code: timed out after 235 s",
+                           dict(event="error", error="TimeoutError: claude-code: timed out after 235 s", code=None))
+        if (self.jobs.get(pid) or {}).get("ignore_needs"):
+            plats = (self.jobs.get(pid) or {}).get("platforms")
+            plan = rule_plan(prompt, inputs, self.probe, pid, dict(self.defaults(), **({"platforms": plats} if plats else {})),
+                             (self.jobs.get(pid) or {}).get("lang"))
+            plan.pop("needs", None)
+            write_json(self._path(pid), plan)
+            return plan
         time.sleep(float(os.environ.get("DESK_MOCK_PLAN_DELAY", "0")))
         plats = (self.jobs.get(pid) or {}).get("platforms")
         plan = rule_plan(prompt, inputs, self.probe, pid, dict(self.defaults(), **({"platforms": plats} if plats else {})),

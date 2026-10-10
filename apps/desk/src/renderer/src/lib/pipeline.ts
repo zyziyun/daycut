@@ -47,6 +47,7 @@ export function postsOf(posts: CalendarPost[], item: string): { scheduled: numbe
 
 export function requestPipeline(r: OpenRequest): Pipeline {
   if (r.state === 'error') return { state: 'failed', current: 'plan', progress: null, eta: null };
+  if (r.state === 'needs') return { state: 'you', current: 'plan', progress: null, eta: null }; // waits for her files / pages
   if (r.state === 'done') return { state: r.mode === 'ask' ? 'plan-ready' : 'planning', current: 'plan', progress: 1, eta: null };
   const p = r.progress;
   const frac = p?.total_s ? Math.min(1, (p.done_s ?? 0) / p.total_s) : null;
@@ -92,7 +93,7 @@ export function hubGroups(items: HistoryItem[], requests: OpenRequest[], posts: 
   for (const r of requests) {
     const p = requestPipeline(r);
     const row: HubRow = { kind: 'request', id: r.id, r, p, at: r.started ?? now };
-    out[p.state === 'failed' || p.state === 'plan-ready' ? 'you' : 'run'].push(row);
+    out[p.state === 'failed' || p.state === 'plan-ready' || p.state === 'you' ? 'you' : 'run'].push(row);
   }
   for (const i of items) {
     const p = itemPipeline(i, posts, deciding.has(i.id));
@@ -141,6 +142,16 @@ export function decisionWords(d: AutopilotDecision): { key: string; params: Reco
       return { key: 'ap.d.segments', params: {} };
     case 'keywords':
       return { key: 'ap.d.keywords', params: {} };
+    case 'author':
+    case 'script-lock':
+    case 'storyboard-approval':
+    case 'media-selection': {
+      // the AI's draft of a step she would have written (vstudio.project.drafts); keep spans say how much stays
+      const m = (s: number) => `${Math.floor(Math.round(s) / 60)}:${String(Math.round(s) % 60).padStart(2, '0')}`;
+      if (String(p.summary ?? '').startsWith('draft.keep') && typeof p.kept === 'number' && typeof p.total === 'number')
+        return { key: 'ap.d.keep', params: { kept: m(n('kept')), total: m(n('total')) } };
+      return { key: 'ap.d.drafted', params: {} };
+    }
     default:
       return { key: 'ap.d.default', params: {} };
   }

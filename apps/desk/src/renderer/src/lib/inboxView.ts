@@ -1,6 +1,6 @@
 // The Inbox in words (pure, unit-tested): titles from the engine's codes, the one-line "what it is about", option
 // labels, "−6 s", money, and the answer an item sends from her ticks and choices.
-import type { InboxItem, InboxOption } from '../../../shared/v04';
+import type { DraftMsg, DraftSegment, InboxItem, InboxOption } from '../../../shared/v04';
 import { fmtList, getLang, has, intlLocale, t, tk } from '../i18n';
 import { failureReason } from '../v4/Failure';
 import { emsg } from '../v4/msg';
@@ -21,25 +21,49 @@ export function inboxTitle(x: InboxItem): string {
   return x.text ?? t('inbox.checkpoint');
 }
 
-/** An author checkpoint's own label in the UI language ("Keep spans" / "保留片段"), else "Write your part". */
+/** An author checkpoint's title in plain words: the desk's own for the recipe's step ("Check what's kept"), else the
+ * checkpoint's label in the UI language, else "Check the AI's draft". */
 export function authorTitle(x: Pick<InboxItem, 'labels' | 'author' | 'text'>): string {
-  const l = x.labels ?? x.author?.labels ?? {};
-  const own = getLang() === 'zh-CN' ? l.zh || l.en : l.en || l.zh;
-  return own || x.text || t('checkpoint.author');
+  const a = x.author;
+  const own = a?.recipe && a.checkpoint ? `draft.title.${a.recipe}.${a.checkpoint}` : '';
+  if (own && has(own)) return tk(own);
+  const l = x.labels ?? a?.labels ?? {};
+  const lab = getLang() === 'zh-CN' ? l.zh || l.en : l.en || l.zh;
+  return lab || t('draft.titleAny');
 }
 
-/** What to do, in the UI language: the checkpoint's help ("Write cut.body / cut.outro KEEP spans ..."). */
+/** What the step asks of her, in plain words (never the engine's "write cut.body ..." help). */
 export function authorHelp(x: Pick<InboxItem, 'author'>): string {
-  const h = x.author?.help ?? {};
-  const own = getLang() === 'zh-CN' ? h.zh || h.en : h.en || h.zh;
-  return own || t('inbox.author.lead');
+  const a = x.author;
+  if (!a) return t('draft.lead.any');
+  if (a.drafting) return t('draft.lead.drafting');
+  if (a.state === 'missing' || a.state === 'template' || !a.review) return t('draft.lead.none');
+  if (a.review.kind === 'keep-spans') return a.review.by === 'rules' ? t('draft.lead.keepRules') : t('draft.lead.keep');
+  if (a.review.kind === 'package') return t('draft.lead.package');
+  return t('draft.lead.any');
 }
 
-/** "…/items/AIGC/promo.config.yaml": the end of a long path (the folder layout above it means nothing to her). */
-export function shortPath(p: string | null | undefined, keep = 3): string {
-  if (!p) return '';
-  const parts = p.split(/[\\/]/).filter(Boolean);
-  return parts.length > keep ? `…/${parts.slice(-keep).join('/')}` : p;
+/** m:ss of a length in seconds ("9:40"), for the keep summary. */
+export function mmss(s: number | null | undefined): string {
+  const v = Math.max(0, Math.round(Number(s) || 0));
+  return `${Math.floor(v / 60)}:${String(v % 60).padStart(2, '0')}`;
+}
+
+/** A draft's summary in the UI language (``code`` + ``params`` from the engine). */
+export function draftSummary(m: DraftMsg | null | undefined): string {
+  if (!m) return '';
+  const p = (m.params ?? {}) as Record<string, unknown>;
+  const vars: Record<string, string | number> = {};
+  for (const [k, v] of Object.entries(p)) {
+    if (v === null || v === undefined) continue;
+    if ((k === 'kept' || k === 'total') && typeof v === 'number') vars[k] = mmss(v);
+    else if (Array.isArray(v)) vars[k] = k === 'at' ? v.map((x) => mmss(Number(x))).join(', ') : fmtList(v.map(String));
+    else vars[k] = typeof v === 'number' || typeof v === 'string' ? v : String(v);
+  }
+  if (m.code === 'draft.keep' && !vars.cuts) return t('draft.keepShort', { kept: vars.kept ?? '', total: vars.total ?? '' });
+  const key = m.code;
+  if (has(key)) return tk(key, vars);
+  return typeof vars.text === 'string' ? vars.text : '';
 }
 
 export function issueText(code: string, vars: Record<string, string | number> = {}): string {
@@ -58,7 +82,8 @@ export function money(amount: number, currency: string): string {
 /** The second line of a row: what it is about, in a few words. */
 export function inboxSub(x: InboxItem): string {
   if (x.failure) return failureReason(x.failure);
-  if (x.author) return x.author.file ? (x.author.file.split(/[\\/]/).pop() ?? '') : '';
+  if (x.author) return x.author.drafting ? t('draft.drafting') : x.author.review ? draftSummary(x.author.review.summary) : t('draft.lead.none');
+  if (x.kind === 'needs' && x.need) return emsg(x.need);
   if (x.kind === 'review') {
     const r = x.reasons ?? [];
     return r.length ? fmtList(r.slice(0, 2).map((y) => issueText(y.code))) : x.params.total ? t('inbox.passed', { passed: x.params.passed, total: x.params.total }) : '';
@@ -96,3 +121,32 @@ export function answerOf(x: InboxItem, picked?: Set<string>, choices?: Record<st
   return { approve: opts.filter((o) => on.has(o.id)).map((o) => o.id), keep: opts.filter((o) => !on.has(o.id)).map((o) => o.id), ...(Object.keys(ch).length ? { choices: ch } : {}) };
 }
 
+
+/** A keep-spans review with her clicks applied: which sentences are kept (``edits``: sentence id -> keep). */
+export function keptOf(segs: DraftSegment[], edits: Record<number, boolean> | null | undefined): Set<number> {
+  return new Set(segs.filter((s) => (edits && s.i in edits ? edits[s.i] : s.keep)).map((s) => s.i));
+}
+
+/** Kept sentences -> the KEEP spans the engine writes into the cut (raw seconds; neighbours < 0.8 s apart merge),
+ * the same rule as the engine's own draft (vstudio.project.adapters.promo._spans). */
+export function keptSpans(segs: DraftSegment[], kept: Set<number>): [number, number][] {
+  const out: [number, number][] = [];
+  for (const s of segs) {
+    if (!kept.has(s.i)) continue;
+    const a = Math.max(0, s.t - 0.05);
+    const b = s.te + 0.05;
+    const last = out[out.length - 1];
+    if (last && a - last[1] < 0.8) last[1] = Math.round(b * 100) / 100;
+    else out.push([Math.round(a * 100) / 100, Math.round(b * 100) / 100]);
+  }
+  return out;
+}
+
+export function keptSeconds(segs: DraftSegment[], kept: Set<number>): number {
+  return segs.reduce((n, s) => n + (kept.has(s.i) ? s.te - s.t : 0), 0);
+}
+
+/** Her clicks changed what the AI kept. */
+export function keptChanged(segs: DraftSegment[], edits: Record<number, boolean> | null | undefined): boolean {
+  return !!edits && segs.some((s) => s.i in edits && edits[s.i] !== s.keep);
+}

@@ -368,6 +368,10 @@ export interface IntakePlan {
   risks: (string | EngineMsg)[];
   warnings: string[];
   estimate: { machine_min?: number; wall_min?: number; api_usd?: number };
+  /** what only she can give before it runs (her recordings, her Notion pages): the request waits (state needs) */
+  needs?: EngineMsg[];
+  /** links in the request that were read (web pages, public Notion pages) */
+  sources?: { url: string; title?: string; chars?: number; notion?: boolean }[];
   /** the plan's paragraph (despite the name: in ``summary_lang``) */
   summary_zh: string;
   /** the language summary_zh is written in (two-letter code; older plans: none) */
@@ -406,7 +410,8 @@ export interface IntakeProgress {
 
 export interface IntakeJob {
   id: string;
-  state: 'running' | 'done' | 'error' | 'stopped';
+  /** needs: the plan waits for something only she can give (``needs``: her recordings, her Notion pages) */
+  state: 'running' | 'done' | 'error' | 'stopped' | 'needs';
   started?: number;
   step?: string;
   progress?: IntakeProgress | null;
@@ -424,12 +429,13 @@ export interface IntakeJob {
   /** a request from Home: autopilot (applied and run at once) or ask (the plan waits for her Start) */
   mode?: 'autopilot' | 'ask' | null;
   name?: string | null;
+  needs?: EngineMsg[] | null;
 }
 
 /** GET /api/intake/open: requests from Home that are not projects yet (planning, a plan waiting for her, a failure). */
 export interface OpenRequest {
   id: string;
-  state: 'running' | 'done' | 'error';
+  state: 'running' | 'done' | 'error' | 'needs';
   step?: string | null;
   mode: 'autopilot' | 'ask';
   prompt?: string | null;
@@ -442,6 +448,8 @@ export interface OpenRequest {
   name?: string | null;
   projects?: number | null;
   failed_apply?: boolean;
+  /** state needs: what it waits for */
+  needs?: EngineMsg[] | null;
 }
 
 /** One decision the autopilot took (``vstudio.project decisions``), or one she took back (``asked``). */
@@ -509,7 +517,7 @@ export interface InboxItem {
   key: string;
   kind: string;
   group: InboxGroup;
-  project: { id: string | null; name: string | null; kind?: string; thumb?: string | null; type?: string };
+  project: { id: string | null; name: string | null; kind?: string; thumb?: string | null; type?: string; video?: string | null };
   code: string | null;
   params: Record<string, string | number>;
   text: string | null;
@@ -527,24 +535,67 @@ export interface InboxItem {
   href?: string;
   /** the checkpoint's own label (author checkpoints: "Keep spans" / "保留片段") */
   labels?: { zh?: string; en?: string } | null;
-  /** kind "author": she writes / approves a file; answered {done: true} */
+  /** kind "author": the engine's draft she checks; answered {done: true} (+ spans: what she keeps) */
   author?: InboxAuthor | null;
+  /** kind "needs": what a request from Home waits for (her recordings, her Notion pages) */
+  need?: EngineMsg | null;
+  /** kind "failed" (a request): the plan's own reason code */
+  error_code?: string | null;
 }
 
-/** An author checkpoint's file (engine/desk_engine/inbox.py author_block). */
+/** A message the engine words with a code + params (the desk has the text in each UI language). */
+export interface DraftMsg {
+  code: string;
+  params: Record<string, unknown>;
+}
+
+/** One sentence of her recording in a keep-spans review: kept or cut (with the AI's label for the cut). */
+export interface DraftSegment {
+  i: number;
+  t: number;
+  te: number;
+  text: string;
+  keep: boolean;
+  label?: string | null;
+}
+
+/** The engine's plain-language view of a drafted file (vstudio.project.drafts): what the Inbox shows instead of it. */
+export interface DraftReview {
+  kind: 'keep-spans' | 'package' | 'outline' | 'text';
+  by?: 'ai' | 'rules' | 'her';
+  provider?: string | null;
+  summary: DraftMsg;
+  lines?: DraftMsg[];
+  /** keep spans: the transcript as sentences, each kept or cut */
+  segments?: DraftSegment[];
+  kept_s?: number;
+  total_s?: number;
+  hooks?: number;
+  speeds?: { body?: number; hooks?: number };
+  /** a script: its text (what she reads) */
+  text?: string;
+  ai_summary?: string;
+  ai_error?: string;
+}
+
+/** An author checkpoint (engine/desk_engine/inbox.py author_block): the engine drafts the file; she checks the draft
+ * in plain words. ``file`` is only for "Advanced: open the file". */
 export interface InboxAuthor {
   labels?: { zh?: string; en?: string };
-  help?: { zh?: string; en?: string };
+  recipe?: string | null;
+  checkpoint?: string | null;
+  /** missing | template (the seeded example: not a draft) | drafted | hers */
+  state?: 'missing' | 'template' | 'drafted' | 'hers';
+  review?: DraftReview | null;
+  /** the engine can draft it ("Draft it for me", "ask in plain words") */
+  can_draft?: boolean;
+  /** a draft is being written now */
+  drafting?: boolean;
+  draft_error?: string | null;
   file: string | null;
   exists: boolean;
   is_dir?: boolean;
-  template?: string | null;
   doc?: string | null;
-  format?: string | null;
-  /** the first lines of the file (or of the template while the file does not exist yet) */
-  preview: string | null;
-  more?: boolean;
-  preview_of?: 'file' | 'template' | null;
 }
 
 export interface InboxDoc {

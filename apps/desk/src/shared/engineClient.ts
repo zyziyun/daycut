@@ -460,6 +460,14 @@ export class EngineClient {
   discardIntake(id: string) {
     return this.req<{ ok: boolean }>('POST', `/api/intake/${pid(id)}/discard`, {});
   }
+  /** what a request waited for (``needs``): the files she dropped and / or the links she pasted; planned again */
+  addToIntake(id: string, inputs: string[], text?: string) {
+    return this.req<{ id: string }>('POST', `/api/intake/${pid(id)}/add`, { inputs, ...(text ? { text: text.slice(0, 2000) } : {}) });
+  }
+  /** plan a waiting request without what it asked for (her Notion pages ...) */
+  goOnIntake(id: string) {
+    return this.req<{ id: string }>('POST', `/api/intake/${pid(id)}/go-on`, {});
+  }
   /** what the autopilot decided for a project, and whether it is on */
   autopilot(item: string) {
     return this.req<AutopilotDoc>('GET', `/api/autopilot/${bid(item)}`);
@@ -511,6 +519,10 @@ export class EngineClient {
   /** an author item's file (or its template / guide) in the default editor */
   openInboxFile(key: string, which: 'file' | 'template' | 'doc' = 'file') {
     return this.req<{ ok: boolean; path: string }>('POST', '/api/inbox/open', { key, which });
+  }
+  /** an author item drafted again by the engine (in the background): "Draft it for me" / "ask in plain words" */
+  redraftInbox(key: string, instruction?: string) {
+    return this.req<{ ok: boolean; drafting: boolean }>('POST', '/api/inbox/redraft', { key, ...(instruction ? { instruction: instruction.slice(0, 1000) } : {}) });
   }
   /** share for review: what the dialog offers (clips, versions, privacy warnings) */
   shareOptions(item: string) {

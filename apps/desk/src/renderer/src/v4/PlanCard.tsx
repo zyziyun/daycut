@@ -1,9 +1,9 @@
 // The AI plan card (mockups/02-plan): one paragraph (the engine's summary, in the content language), the clips it
 // will make, four numbers, the one thing to decide, "just say it" revisions, and ONE primary: start with a pilot.
 import { useState } from 'react';
-import { Check, RotateCcw, Send, Sparkles, Square } from 'lucide-react';
+import { Check, FolderOpen, Plus, RotateCcw, Send, Sparkles, Square } from 'lucide-react';
 import type { IntakeJob, IntakePlan } from '../../../shared/v04';
-import { fmtClock, fmtMinutes, fmtMoney, getLang, t, type Lang } from '../i18n';
+import { fmtClock, fmtMinutes, fmtMoney, getLang, has, t, type Lang } from '../i18n';
 import { nameAsSample, planSentence } from '../lib/firstRun';
 import { planProgressView, type PlanProgressView } from '../lib/planProgress';
 import { useEngine } from '../lib/engine';
@@ -13,6 +13,7 @@ import { platformName } from './Home';
 import { Elapsed, More, Sk } from './kit';
 import { failureReason } from './Failure';
 import { emsg, errText } from './msg';
+import { IS_LITE } from '../../../shared/edition';
 import { useUi } from './ui';
 import { AnsweredBy, FallbackNote } from './AiChip';
 import { openReport } from '../support/Support';
@@ -129,19 +130,26 @@ export function PlanCard({ job, jobId, onRevise, onRetry, onReset, onStarted, on
     onReset();
   };
   if (job?.state === 'stopped') return null;
+  if (job?.state === 'needs') return <NeedsCard job={job} jobId={jobId} onReset={onReset} />;
   if (job?.state === 'error') {
+    const code = job.error_code ?? 'unknown';
+    const why = plainError(job.error);
+    const known = code !== 'unknown' && has(`fail.reason.${code}`);
     return (
-      <div className="card plan" data-testid="plan-card">
+      <div className="card plan" data-testid="plan-card" data-state="error">
         <div className="row">
           <i className="dot error" />
           <b style={{ fontWeight: 500 }}>{t('plan.failed')}</b>
         </div>
         <p className="muted" data-testid="plan-failed-reason">
-          {failureReason({ state: 'failed', code: job.error_code ?? 'unknown', provider: job.error_provider ?? null, error: job.error ?? '', at: null })}
+          {known || !why ? failureReason({ state: 'failed', code, provider: job.error_provider ?? null, error: job.error ?? '', at: null }) : t('plan.failedWhy', { why })}
         </p>
         {job.error && (
-          <details className="muted small">
+          <details className="muted small" data-testid="plan-failed-details">
             <summary>{t('plan.details')}</summary>
+            <div>
+              {t('plan.failedDetail')}: {why || job.error}
+            </div>
             <span className="mono">{job.error}</span>
           </details>
         )}
@@ -149,11 +157,11 @@ export function PlanCard({ job, jobId, onRevise, onRetry, onReset, onStarted, on
           <button className="btn primary" onClick={onRetry} data-testid="plan-retry">
             {t('c.retry')}
           </button>
-          <button className="btn" onClick={onReset}>
+          <button className="btn" onClick={onReset} data-testid="plan-start-over">
             <RotateCcw className="ico" />
             {t('plan.discard')}
           </button>
-          <button className="btn ghost" onClick={() => openReport({ kind: 'job', code: job.error_code ?? 'unknown', message: job.error || 'plan failed' })} data-testid="plan-report">
+          <button className="btn ghost" onClick={() => openReport({ kind: 'job', code, message: job.error || 'plan failed' })} data-testid="plan-report">
             {t('sup.rp.report')}
           </button>
         </div>
@@ -370,6 +378,126 @@ export function PlanCard({ job, jobId, onRevise, onRetry, onReset, onStarted, on
           )}
         </div>
       </More>
+    </div>
+  );
+}
+
+/** The engine's error in words she can read: no "vstudio.intake plan exited 1:", no exception class, no paths. */
+export function plainError(err: string | null | undefined): string {
+  let s = String(err ?? '').trim();
+  s = s.replace(/^[\w.]+ \w+ exited -?\d+:\s*/, '').replace(/^(?:[A-Z]\w*(?:Error|Exception)|CliError):\s*/, '');
+  s = s.replace(/(?:\/(?:Users|home|private|var|tmp|Volumes|opt|Applications)\/|[A-Za-z]:\\)[^\s'"]*/g, '…');
+  return s.length > 240 ? `${s.slice(0, 239)}…` : s;
+}
+
+/** A request that waits for something only she can give (``needs``: her recordings, her Notion pages): what it
+ * needs in words, a drop target + Add files / a folder, a box for page links, and "Plan without it" when it can. */
+function NeedsCard({ job, jobId, onReset }: { job: IntakeJob; jobId: string; onReset: () => void }) {
+  const { client } = useEngine();
+  const ui = useUi();
+  const [files, setFiles] = useState<string[]>([]);
+  const [links, setLinks] = useState('');
+  const [over, setOver] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const needs = job.needs ?? job.plan?.needs ?? [];
+  const footage = needs.some((n) => n.code === 'intake.need.footage');
+  const plan = job.plan;
+  const add = async (kind: 'files' | 'folder') => {
+    const got = kind === 'files' ? await window.desk.openFiles('any') : [await window.desk.openFolder()].filter((x): x is string => !!x);
+    if (got.length) setFiles((f) => [...new Set([...f, ...got])]);
+  };
+  const send = async () => {
+    if (!client || busy || !(files.length || links.trim())) return;
+    setBusy(true);
+    try {
+      await client.addToIntake(jobId, files, links.trim() || undefined);
+      ui.toast(t('plan.needs.added'));
+    } catch (e) {
+      ui.toast(errText(e), { error: true });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const goOn = async () => {
+    if (!client || busy) return;
+    setBusy(true);
+    try {
+      await client.goOnIntake(jobId);
+      ui.toast(t('plan.needs.going'));
+    } catch (e) {
+      ui.toast(errText(e), { error: true });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="card plan" data-testid="plan-card" data-state="needs">
+      <div className="row">
+        <i className="dot you" />
+        <b style={{ fontWeight: 500 }}>{t('plan.needs.title')}</b>
+      </div>
+      {needs.map((n, i) => (
+        <p key={i} className="lead" data-testid="plan-need" data-code={n.code}>
+          {emsg(n)}
+        </p>
+      ))}
+      <div
+        className={`ux-needs-drop ${over ? 'over' : ''}`}
+        data-own-drop
+        onDragOver={(e) => {
+          e.preventDefault();
+          setOver(true);
+        }}
+        onDragLeave={() => setOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setOver(false);
+          const paths = [...e.dataTransfer.files].map((f) => window.desk.pathForFile?.(f) ?? '').filter(Boolean);
+          if (paths.length) setFiles((f) => [...new Set([...f, ...paths])]);
+          if (paths.length && IS_LITE) void window.desk.grantAccess?.(paths).catch(() => undefined);
+        }}
+        data-testid="plan-need-drop"
+      >
+        <span className="muted">{t('plan.needs.drop')}</span>
+        <div className="row" style={{ gap: 8 }}>
+          <button className="btn" onClick={() => void add('files')} data-testid="plan-need-add">
+            <Plus className="ico" />
+            {t('plan.needs.add')}
+          </button>
+          <button className="btn ghost" onClick={() => void add('folder')} data-testid="plan-need-folder">
+            <FolderOpen className="ico" />
+            {t('plan.needs.addFolder')}
+          </button>
+        </div>
+        {files.length > 0 && (
+          <div className="muted small" data-testid="plan-need-files">
+            {files.map((f) => f.replace(/[\\/]+$/, '').split(/[\\/]/).pop()).join(' · ')}
+          </div>
+        )}
+      </div>
+      {!footage && (
+        <textarea className="inp" rows={2} style={{ width: '100%', resize: 'vertical' }} value={links} onChange={(e) => setLinks(e.target.value)} placeholder={t('plan.needs.paste')} data-testid="plan-need-links" />
+      )}
+      {plan && plan.projects?.length > 0 && !footage && (
+        <p className="muted small" lang={plan.summary_lang === 'zh' ? 'zh-CN' : plan.summary_lang} data-testid="plan-need-summary">
+          {plan.summary_zh}
+        </p>
+      )}
+      <div className="row">
+        <button className="btn primary" onClick={() => void send()} disabled={busy || !(files.length || links.trim())} data-testid="plan-need-send">
+          {t('plan.needs.send')}
+        </button>
+        {!footage && (
+          <button className="btn" onClick={() => void goOn()} disabled={busy} data-testid="plan-need-go-on">
+            {t('plan.needs.goOn')}
+          </button>
+        )}
+        <span className="sp" />
+        <button className="btn ghost" onClick={onReset} data-testid="plan-start-over">
+          <RotateCcw className="ico" />
+          {t('plan.discard')}
+        </button>
+      </div>
     </div>
   );
 }

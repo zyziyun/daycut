@@ -395,7 +395,7 @@ class IntakeTest(unittest.TestCase):
         root = tempfile.mkdtemp()
         with mock.patch.dict(os.environ, {"VSTUDIO_HOME": os.path.join(root, "home"), "DESK_MOCK_STEP": "0.01"}):
             it = DM.MockIntake(os.path.join(root, "desk"), None)
-            pid = it.start("剪一条口播", [])["id"]
+            pid = it.start("做一期讲解视频", [])["id"]          # words only: planned (a cut with no footage waits)
             for _ in range(200):
                 if it.get(pid)["state"] != "running":
                     break
@@ -407,7 +407,7 @@ class IntakeTest(unittest.TestCase):
             with open(os.path.join(root, "home", "projects.json"), encoding="utf-8") as f:
                 reg = json.load(f)
             self.assertEqual(reg[0]["dir"], d)
-            self.assertEqual(it.recent()[0]["prompt"], "剪一条口播")
+            self.assertEqual(it.recent()[0]["prompt"], "做一期讲解视频")
 
 
 class IntakeEngineHiccupTest(unittest.TestCase):
@@ -530,7 +530,7 @@ class PlanTimingTest(unittest.TestCase):
         root = tempfile.mkdtemp()
         with mock.patch.dict(os.environ, {"VSTUDIO_HOME": os.path.join(root, "home"), "DESK_MOCK_STEP": "0.3"}):
             it = DM.MockIntake(os.path.join(root, "desk"), None)
-            pid = it.start("剪一条口播", [])["id"]
+            pid = it.start("做一期讲解视频", [])["id"]
             for _ in range(300):
                 if it.get(pid)["state"] != "running":
                     break

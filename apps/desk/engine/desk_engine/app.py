@@ -86,6 +86,8 @@ v0.4 (outputs.py, intake.py, inbox.py; engine command when available, desk imple
                                            {plan?, run?}; POST .../stop (planning / revising); POST .../retry (a
                                            failed plan / revision / apply again); POST .../discard; GET
                                            /api/intake/recent; GET /api/intake/open (requests not projects yet)
+                                           POST .../add {inputs?, text?} (what a ``needs`` request waited for);
+                                           POST .../go-on (plan it without)
   GET  /api/autopilot/<item>; POST .../reopen {checkpoint, item}; POST .../mode {on};
        POST .../change {checkpoint, item, answer}   (autopilot.py)
   GET  /api/sample                         the built-in sample recording (copied out of the app) -> {available, path, ...};
@@ -108,7 +110,9 @@ v0.4 (outputs.py, intake.py, inbox.py; engine command when available, desk imple
                                            9:16 / 16:9 frames; POST {patch}; POST /api/watermark/logo {path}
   GET  /api/inbox                          every decision waiting for the creator; POST /api/inbox/answer {keys,
                                            answer?}; POST /api/inbox/undo {keys}; POST /api/inbox/open {key,
-                                           which file|template|doc} (an author item's file in the default editor)
+                                           which file|template|doc} (an author item's file in the default editor);
+                                           POST /api/inbox/redraft {key, instruction?} (the engine drafts an author
+                                           item again, in the background: "Draft it for me" / "ask in plain words")
 """
 import hmac
 import json
@@ -602,6 +606,13 @@ class Api:
                 return self.intake.retry(parts[1])
             if parts[2:] == ["discard"] and method == "POST":
                 return self.intake.discard(parts[1])
+            if parts[2:] == ["add"] and method == "POST":
+                inputs = b.get("inputs") or []
+                need(isinstance(inputs, list) and len(inputs) <= 200, "inputs: up to 200 files / folders")
+                need(b.get("text") is None or isinstance(b.get("text"), str), "text: links / words")
+                return self.intake.add(parts[1], [_abs_path(p, "inputs[]") for p in inputs], b.get("text"))
+            if parts[2:] == ["go-on"] and method == "POST":
+                return self.intake.go_on(parts[1])
         if parts[:1] == ["autopilot"] and len(parts) >= 2:
             need(ID_RE.match(parts[1]), "bad item id")
             if len(parts) == 2 and method == "GET":
@@ -681,6 +692,8 @@ class Api:
                 return self.inbox.undo(b.get("keys"))
             if parts == ["inbox", "open"] and method == "POST":
                 return self.inbox.open_file(b.get("key"), b.get("which") or "file")
+            if parts == ["inbox", "redraft"] and method == "POST":
+                return self.inbox.redraft(b.get("key"), b.get("instruction"))
         return None
 
     def route_v02(self, method, parts, query, body):

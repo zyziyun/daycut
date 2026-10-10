@@ -4,10 +4,11 @@
 // first (never file paths or raw numbers: the engine gives labels + choices), and ONE primary button. Resolving an
 // item moves on to the next one with an Undo toast; "Review all in a row" opens the triage queue in the editor.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, Check, ChevronDown, ChevronRight, FileDown, FileText, FolderOpen, Pause, Play } from 'lucide-react';
-import type { InboxAuthor, InboxItem, InboxOption } from '../../../shared/v04';
+import { AlertTriangle, ArrowRight, Check, ChevronDown, ChevronRight, FileDown, FileText, Film, Inbox as InboxIcon, Pause, Play, Sparkles } from 'lucide-react';
+import type { InboxItem, InboxOption } from '../../../shared/v04';
 import { fmtClock, intlLocale, t } from '../i18n';
-import { answerOf, authorHelp, clipName, inboxSub, inboxTitle, issueText, money, optionLabel, secsLabel, shortPath } from '../lib/inboxView';
+import { answerOf, authorHelp, clipName, inboxSub, inboxTitle, issueText, keptChanged, keptOf, keptSpans, money, optionLabel, secsLabel } from '../lib/inboxView';
+import { DraftPane, useDraftIt, type KeepEdits } from './DraftReview';
 import { useEngine } from '../lib/engine';
 import { useInbox } from '../lib/inbox';
 import { clipHref, itemTarget, projectHref, startTriage, triageStep, useTriageState } from '../lib/nav';
@@ -234,9 +235,17 @@ function InboxRow({ x, on, skipped, onClick }: { x: InboxItem; on: boolean; skip
   );
 }
 
+/** The row's picture: the clip / project cover, else a frame of the item's own recording, else an icon for what
+ * the item is (never a letter of the project's name: "01-AIGC" read as a "0"). */
 export function InboxThumb({ x, src }: { x: InboxItem; src?: string | null }) {
-  if (src) return <Thumb src={src} className="ux-ith" />;
-  return <div className={`th ux-ith ph-thumb ${x.failure ? 'err' : ''}`}>{x.failure ? '!' : (x.project.name ?? '?').slice(0, 1)}</div>;
+  const video = src ? null : (x.project.video ?? null);
+  if (src || video) return <Thumb src={src} video={video} className="ux-ith" />;
+  const Icon = x.failure || x.kind === 'failed' ? AlertTriangle : x.author ? FileText : x.kind === 'plan' || x.kind === 'needs' ? Sparkles : x.kind === 'review' || x.kind === 'publish' ? Film : InboxIcon;
+  return (
+    <div className={`th ux-ith ph-thumb ${x.failure || x.kind === 'failed' ? 'err' : ''}`} data-testid="inbox-thumb-icon">
+      <Icon className="ico" />
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------- the selected item
@@ -249,11 +258,20 @@ function ItemPane({ x, onDone, onSkip }: { x: InboxItem; onDone: (answer?: Recor
   const cur = opts.find((o) => o.id === act) ?? null;
   const confirmable = x.kind === 'confirm' || opts.length > 0 || x.code === 'inbox.spend';
   const author = x.author ?? null;
+  const [edits, setEdits] = useState<KeepEdits | null>(null);
+  const draftIt = useDraftIt(x.key);
+  const segs = author?.review?.kind === 'keep-spans' ? (author.review.segments ?? []) : [];
+  const mine = keptChanged(segs, edits);
   const primary = (): void => {
     if (x.failure) return;
     if (x.href) return void (location.hash = x.href);
     if (x.kind === 'review' && x.project.id) return go({ name: 'focus', id: x.project.id });
-    if (author) return author.exists ? onDone({ done: true }) : undefined; // the file is the answer: {done: true}
+    if (author) {
+      if (author.drafting) return;
+      if (!author.review) return author.can_draft ? void draftIt() : undefined;
+      // the draft as it is = the step's own default; her clicks = exactly what she keeps
+      return onDone(mine ? { done: true, spans: keptSpans(segs, keptOf(segs, edits)) } : undefined);
+    }
     onDone(confirmable ? answerOf(x, picked, choices) : undefined);
   };
   const primaryRef = useRef(primary);
@@ -319,7 +337,7 @@ function ItemPane({ x, onDone, onSkip }: { x: InboxItem; onDone: (answer?: Recor
               <div className="ux-optt">{failureReason(x.failure)}</div>
             </div>
           ) : author ? (
-            <AuthorPane itemKey={x.key} a={author} />
+            <DraftPane itemKey={x.key} a={author} edits={edits} onEdits={setEdits} />
           ) : x.kind === 'review' ? (
             <div className="col" style={{ gap: 10 }}>
               {(x.reasons ?? []).map((r) => (
@@ -371,9 +389,9 @@ function ItemPane({ x, onDone, onSkip }: { x: InboxItem; onDone: (answer?: Recor
             {t('inbox.openCreate')}
           </a>
         ) : author ? (
-          <button className="btn primary lg" onClick={primary} disabled={!author.exists} title={author.exists ? undefined : t('inbox.author.missing')} data-testid="inbox-confirm">
-            <Check className="ico" />
-            {t('inbox.author.continue')}
+          <button className="btn primary lg" onClick={primary} disabled={!!author.drafting || (!author.review && !author.can_draft)} data-testid="inbox-confirm">
+            {author.review ? <Check className="ico" /> : <Sparkles className="ico" />}
+            {author.drafting ? t('draft.drafting') : !author.review ? t('draft.draftIt') : mine ? t('draft.acceptMine') : t('draft.accept')}
             <span className="kbd on">↵</span>
           </button>
         ) : (
@@ -400,69 +418,13 @@ function ItemPane({ x, onDone, onSkip }: { x: InboxItem; onDone: (answer?: Recor
 
 function leadOf(x: InboxItem): string {
   if (x.author) return authorHelp(x);
+  if (x.kind === 'needs' && x.need) return emsg(x.need);
   if (x.kind === 'confirm') return t('inbox.confirmLead');
   if (x.kind === 'review') return x.params.total ? t('inbox.passed', { passed: x.params.passed, total: x.params.total }) : '';
   if (x.code === 'inbox.spend') return t('inbox.spendLead');
   if (x.failure) return t('inbox.failedLead');
   if (x.source === 'feedback') return t('inbox.feedbackLead');
   return x.label ? emsg(x.label) : (x.text ?? '');
-}
-
-/** An author checkpoint: the file she writes / approves (path, open in editor, show in Finder, the guide) and its
- * first lines. Never the raw option index ("☑ 1 0"). */
-export function AuthorPane({ itemKey, a }: { itemKey: string; a: InboxAuthor }) {
-  const { client } = useEngine();
-  const ui = useUi();
-  const open = async (which: 'file' | 'template' | 'doc') => {
-    try {
-      await client?.openInboxFile(itemKey, which);
-    } catch (e) {
-      ui.toast(errText(e), { error: true });
-    }
-  };
-  return (
-    <div className="col" style={{ gap: 10, minWidth: 0 }} data-testid="inbox-author">
-      <div className="ux-opt">
-        <div className="muted small">{t('inbox.author.file')}</div>
-        <div className="ux-optt clamp1" title={a.file ?? ''} style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }} data-testid="inbox-author-file">
-          {shortPath(a.file)}
-        </div>
-        <div className="row" style={{ gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-          {a.exists && (
-            <button className="btn" onClick={() => void open('file')} data-testid="inbox-author-open">
-              <FileText className="ico" />
-              {t('inbox.author.open')}
-            </button>
-          )}
-          {a.exists && a.file && (
-            <button className="btn ghost" onClick={() => void window.desk.showItem(a.file!)} data-testid="inbox-author-reveal">
-              <FolderOpen className="ico" />
-              {t('c.reveal')}
-            </button>
-          )}
-          {a.doc && (
-            <button className="btn ghost" onClick={() => void open('doc')} data-testid="inbox-author-guide">
-              {t('inbox.author.guide')}
-            </button>
-          )}
-        </div>
-      </div>
-      {!a.exists && (
-        <div className="notice small" role="status" data-testid="inbox-author-missing">
-          {t('inbox.author.missing')}
-        </div>
-      )}
-      {a.preview != null && (
-        <div className="col" style={{ gap: 4, minWidth: 0 }}>
-          <div className="muted small">{a.preview_of === 'template' ? t('inbox.author.previewTemplate') : t('inbox.author.preview')}</div>
-          <pre className="note" style={{ whiteSpace: 'pre-wrap', fontFamily: 'var(--font-mono)', fontSize: 12, maxHeight: 320, overflow: 'auto', userSelect: 'text', margin: 0 }} data-testid="inbox-author-preview">
-            {a.preview}
-            {a.more ? `\n${t('inbox.author.more')}` : ''}
-          </pre>
-        </div>
-      )}
-    </div>
-  );
 }
 
 export function OptionCard({
