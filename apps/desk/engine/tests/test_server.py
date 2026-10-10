@@ -61,6 +61,18 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(body["mode"], "mock")
         self.assertEqual(hdr.get("Access-Control-Allow-Origin"), ORIGIN)
 
+    def test_tcp_backlog_takes_a_burst(self):
+        # Windows refuses a TCP connect once the listen backlog is full (no SYN retry): the editor opens more than
+        # the default 5 at once
+        self.assertGreaterEqual(self.httpd.request_queue_size, 64)
+        self.assertTrue(self.httpd.daemon_threads)
+        conns = [socket.create_connection(("127.0.0.1", self.api.port), timeout=5) for _ in range(40)]
+        try:
+            self.assertEqual(self.req("GET", "/api/health")[0], 200)
+        finally:
+            for c in conns:
+                c.close()
+
     def test_origin_and_host_guard(self):
         self.assertEqual(self.req("GET", "/api/health", origin="https://evil.example")[0], 403)
         self.assertEqual(self.req("GET", "/api/health", host="evil.example:80")[0], 421)
