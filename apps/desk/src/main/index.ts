@@ -16,7 +16,7 @@ import { AssetManager, defaultHfHub, sharedEngineCache } from './assets';
 import { registerAiIpc, syncRoutesFile } from './aiAccounts';
 import { APP_MIME, resolveAppFile } from './appProtocol';
 import { installAppMenu } from './appMenu';
-import { defaultEnginePath, EngineProcess, engineProcessEnv, findPython } from './engine';
+import { defaultEnginePath, describeExit, EngineProcess, engineProcessEnv, findPython } from './engine';
 import { engineFetch, engineSocketPath, forwardToEngine } from './engineTransport';
 import { allowedMedia, mediaMime, parseRange, pathFromMediaUrl } from './media';
 import { loadAdapters } from './publish/adapters';
@@ -251,7 +251,13 @@ function startEngine(): Promise<EngineInfo> {
       dataDir: cfg.dataDir,
       allowedOrigins: [APP_ORIGIN],
       mock: testSwitch('DESK_ENGINE_MOCK'),
-      onCrash: (code, tail) => recordProblem('sidecar', `exit ${code}`, `engine exited (${code})`, tail.join('\n')),
+      onCrash: (exit, tail) => {
+        // quitting (also to install an update): the engine going away is expected, never a problem to report
+        if (appQuitting || gen !== engineGen) return;
+        const d = describeExit(exit);
+        if (!d.crash) return;
+        recordProblem('sidecar', d.code, d.message, tail.join('\n'));
+      },
       socketPath: engineSocket(),
       onDied: (detail) => onEngineCrash(gen, detail),
       ...withV02Env(engineEnv(cfg.runtime !== 'system')),

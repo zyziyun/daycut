@@ -12,7 +12,8 @@ Environment
                         there it fails the start instead)
   ANTHROPIC_API_KEY / OPENAI_API_KEY   segment-planning providers (from the OS keychain via the desk)
 Prints one line ``{"ready": true, "socket": "<path>" | "port": N, "mode": "real"|"mock"}`` on stdout, then serves until
-stdin closes (the parent died) or SIGTERM.
+stdin closes (the parent died) or SIGTERM / SIGINT. SIGUSR1 prints every thread's stack to stderr and SIGUSR2 is
+noted there; neither stops the engine (keep_running_on_stray_signals).
 """
 import importlib
 import json
@@ -87,7 +88,33 @@ def warm(api):
         print(f"[engine] warm-up: {e}", file=sys.stderr, flush=True)
 
 
+def _noted(signum, _frame):
+    msg = f"[engine] ignored signal {signal.Signals(signum).name}: only SIGTERM / SIGINT or closing stdin stop the engine\n"
+    try:
+        os.write(2, msg.encode())           # not print(): a handler may run while the main thread writes stderr
+    except OSError:
+        pass
+
+
+def keep_running_on_stray_signals():
+    """SIGUSR1 / SIGUSR2 end a Python process by default. Nothing in the desk sends them, but another process may: a
+    stack-dump attempt (``kill -USR1 <pid>`` is the usual "print your threads" request for Python / Node services)
+    ended a running engine in 0.2.3 (main.log: "engine exited (SIGUSR1)"). SIGUSR1 now does what the sender wanted -
+    faulthandler prints every thread's stack to stderr (the desk keeps it in the engine log; it works even while a
+    thread holds the GIL) - and SIGUSR2 is noted; the engine keeps serving. A handler, not SIG_IGN: an ignored signal
+    would stay ignored in every ffmpeg / CLI child the engine starts. Windows has neither signal."""
+    if not hasattr(signal, "SIGUSR1"):
+        return
+    import faulthandler
+    try:
+        faulthandler.register(signal.SIGUSR1, file=sys.stderr, all_threads=True, chain=False)
+    except (AttributeError, RuntimeError, ValueError, OSError):    # no usable stderr: at least do not die
+        signal.signal(signal.SIGUSR1, _noted)
+    signal.signal(signal.SIGUSR2, _noted)
+
+
 def main():
+    keep_running_on_stray_signals()         # first: a stray signal during start-up must not end it either
     token = os.environ.get("DESK_TOKEN")
     if not token or len(token) < 32:
         print(json.dumps(dict(ready=False, error="DESK_TOKEN missing / too short")), flush=True)
