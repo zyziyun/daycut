@@ -8,6 +8,42 @@ App releases are tagged `v*`; engine-only releases are tagged `engine-v*`.
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-10-11
+
+### Added
+
+- **Studio** (now the main screen): every video in one list — 要你看 / 进行中 / 可以发 / 已排期, each with its current
+  step, time left and progress — and one page per clip: editable title, player with covers, caption looks and
+  versions, the question that needs you, the transcript, per-platform copy and schedule, and one AI bar. Inbox is a
+  filter; the nav is Studio · Calendar · Settings; "＋ New video" (⌘N) starts text, files, Record yourself or Create.
+  Title + copy + cover + schedule takes 4 clicks on one screen (was 14+ across 4).
+- **Pickups**: stopping a recording opens it in the editor with the automatic cleanup marked; select words and
+  Re-record (R) or Add after (⇧R) — loudness, room tone and joins are matched.
+- **Update prompt**: "Update ready — Restart to update" with What's new, download progress, and "Restart when done"
+  while projects run; Settings › General shows the version and Check for updates (not in the App Store edition).
+- **Attention**: Dock badge with what needs you, notifications that open the exact clip, ⌘K to any video, ↑/↓ and
+  ⌘1–9 to switch.
+- A live "see the process" log per running project; the step bar follows the engine's real stages, with time left.
+
+### Changed
+
+- One title per clip: the AI's title by default, editable in the editor header and synced to the post titles.
+- A clip opens with its transcript (no "listen first"); cover, caption and other edits re-render in the background,
+  and publishing uses the edited clip.
+- One status vocabulary everywhere; plain words instead of job ids, stage ids and recipe jargon; strict i18n checks.
+- Captions follow the requested language (translated when a model is routed), stay inside the safe area, and keep
+  the brand spelled right; hashtags are added only when relevant; clips end on whole sentences; repeated takes are
+  removed consistently; fixed-intent requests (record / talking head) skip the planning model.
+- Home's default platforms follow her choice and accounts, international first.
+
+### Fixed
+
+- "Share a screen too" did nothing (the media permission refused screen capture; the system picker timed out); a
+  denied Screen Recording permission now says how to allow it.
+- The engine no longer exits on SIGUSR1 (it dumps thread stacks); crash reports name the signal; quitting or
+  restarting to update is not reported as a crash.
+- The transcript's Restore popover can be clicked with the mouse.
+
 ## [0.2.4] - 2026-10-10
 
 ### Added
@@ -252,7 +288,8 @@ in the commit log (formerly `video-studio` and `Daycut`).
 - API keys in the OS keychain; every IPC call validated; the local engine needs a per-session token.
 - No silent mock engine or demo mode in the product: a packaged app always runs the real engine.
 
-[Unreleased]: https://github.com/zyziyun/reelfold/compare/v0.2.4...HEAD
+[Unreleased]: https://github.com/zyziyun/reelfold/compare/v0.2.5...HEAD
+[0.2.5]: https://github.com/zyziyun/reelfold/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/zyziyun/reelfold/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/zyziyun/reelfold/compare/v0.2.1...v0.2.3
 [0.2.1]: https://github.com/zyziyun/reelfold/compare/v0.2.0...v0.2.1
