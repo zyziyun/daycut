@@ -128,8 +128,16 @@ test('cover, captions, schedule and copy on the clip editor; the clip re-renders
   await expect
     .poll(async () => (await api<{ posts: { item: string; clip: string; platform: string; caption: string }[] }>('/api/calendar')).posts.find((p) => p.item === id && p.platform.startsWith('youtube'))?.caption, { timeout: 15000 })
     .toBe('One recording, a week of posts. #creator');
+  // the title, in the header of the same screen: one click, type, Enter - every platform's title follows
+  await click(page.getByTestId('editor-title-edit'));
+  await page.getByTestId('editor-title-input').fill('One recording, a week of posts');
+  await page.getByTestId('editor-title-input').press('Enter');
+  await expect(page.getByTestId('editor-title')).toHaveText('One recording, a week of posts');
+  await expect
+    .poll(async () => (await api<{ posts: { item: string; clip: string; title: string }[] }>('/api/calendar')).posts.filter((p) => p.item === id && p.clip === 'talk').map((p) => p.title), { timeout: 15000 })
+    .toEqual(['One recording, a week of posts', 'One recording, a week of posts', 'One recording, a week of posts']);
   await shot('B3-scheduled-copy');
-  // copy + cover + schedule in 3 clicks on one screen (+1 for the title in the header = 4)
-  expect(clicks).toBe(3);
-  fs.writeFileSync(path.join(SHOTS, 'clicks.json'), JSON.stringify({ copy_cover_schedule: clicks, screens: 1 }));
+  // title + copy + cover + schedule: 4 clicks on one screen (the review measured 14+ over 4 screens before)
+  expect(clicks).toBe(4);
+  fs.writeFileSync(path.join(SHOTS, 'clicks.json'), JSON.stringify({ title_copy_cover_schedule: clicks, screens: 1 }));
 });

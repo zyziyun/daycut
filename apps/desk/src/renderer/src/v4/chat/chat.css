@@ -198,7 +198,9 @@
 /* the editor wants the video to be the hero: the app nav becomes a rail */
 .v4.app.rail { grid-template-columns: 56px 1fr; }
 .v4.app.rail .side { padding: 40px 8px 16px; align-items: center; }
-.v4.app.rail .side .label, .v4.app.rail .side .ws b, .v4.app.rail .side .eng { display: none; }
+.v4.app.rail .side .label, .v4.app.rail .side .ws b { display: none; }
+/* the engine's state stays visible as its dot */
+.v4.app.rail .side .eng { font-size: 0; padding: var(--s1) 0; justify-content: center; }
 .v4.app.rail .side .ws { width: 36px; height: 36px; padding: 6px; justify-content: center; margin-bottom: 16px; }
 .v4.app.rail .side .nav { width: 40px; padding: 0; justify-content: center; position: relative; }
 .v4.app.rail .side .nav .count { position: absolute; top: 4px; right: 4px; min-width: 8px; width: 8px; height: 8px; padding: 0; font-size: 0; }

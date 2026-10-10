@@ -153,7 +153,7 @@ export function ControlRoom() {
   );
 }
 
-function stateLine(p: Pipeline, i?: HistoryItem, r?: OpenRequest): string {
+export function stateLine(p: Pipeline, i?: HistoryItem, r?: OpenRequest): string {
   switch (p.state) {
     case 'planning':
       return r?.mode === 'autopilot' && r.state === 'done' ? t('hub.s.run') : t('hub.s.planning');
@@ -215,7 +215,7 @@ function Steps({ p }: { p: Pipeline }) {
 }
 
 // ---------------------------------------------------------------- a request (not a project yet)
-function RequestDetail({ r, onApplied }: { r: OpenRequest; onApplied: (dirs: string[]) => void }) {
+export function RequestDetail({ r, onApplied }: { r: OpenRequest; onApplied: (dirs: string[]) => void }) {
   const { client } = useEngine();
   const { reload } = useHistory();
   const ui = useUi();
@@ -280,7 +280,7 @@ function RequestDetail({ r, onApplied }: { r: OpenRequest; onApplied: (dirs: str
 }
 
 // ---------------------------------------------------------------- a project
-function ProjectDetail({ i, p, posts }: { i: HistoryItem; p: Pipeline; posts: CalendarPost[] }) {
+export function ProjectDetail({ i, p, posts }: { i: HistoryItem; p: Pipeline; posts: CalendarPost[] }) {
   const { client, subscribe } = useEngine();
   const { reload: reloadHist } = useHistory();
   const ui = useUi();

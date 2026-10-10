@@ -256,7 +256,7 @@ export function InboxThumb({ x, src }: { x: InboxItem; src?: string | null }) {
 }
 
 // ---------------------------------------------------------------- the selected item
-function ItemPane({ x, onDone, onSkip }: { x: InboxItem; onDone: (answer?: Record<string, unknown>) => void; onSkip: () => void }) {
+export function ItemPane({ x, onDone, onSkip }: { x: InboxItem; onDone: (answer?: Record<string, unknown>) => void; onSkip: () => void }) {
   const opts = x.options ?? [];
   const [picked, setPicked] = useState<Set<string>>(() => new Set(opts.filter((o) => o.checked !== false).map((o) => o.id)));
   const [choices, setChoices] = useState<Record<string, string>>({});

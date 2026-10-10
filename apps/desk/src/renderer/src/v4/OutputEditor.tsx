@@ -9,12 +9,12 @@
 // Pickups (ux/record/pickups): select words in the transcript -> Re-record (R) / Add after (⇧R) -> the player turns
 // into the camera (PickupStage) -> the pickup is spliced in as one undo step and marked in the transcript.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ChevronDown, ChevronRight, Contrast, GanttChart, Music, PanelRight, Redo2, Scissors, SkipForward, SlidersHorizontal, Sparkle, Sparkles, Square, Trash2, Type, Undo2, Upload, X, ZoomIn } from 'lucide-react';
+import { ArrowLeft, CalendarClock, ChevronDown, ChevronRight, Contrast, GanttChart, Music, PanelRight, Redo2, Scissors, SkipForward, SlidersHorizontal, Sparkle, Sparkles, Square, Trash2, Type, Undo2, Upload, X, ZoomIn } from 'lucide-react';
 import type { ChatDoc } from '../../../shared/chatEdit';
 import { EngineError } from '../../../shared/engineClient';
-import type { ClipFile, EditOp, EffectDef, OutputDoc } from '../../../shared/v04';
+import type { ClipFile, EditOp, EffectDef, InboxItem, OutputDoc } from '../../../shared/v04';
 import { fmtClock, getLang, t, type MessageKey } from '../i18n';
-import { useEngine } from '../lib/engine';
+import { useEngine, useLoad } from '../lib/engine';
 import { useHistory } from '../lib/history';
 import { useInbox } from '../lib/inbox';
 import { previewDoc } from '../lib/outputs';
@@ -50,7 +50,8 @@ import '../theme/uxcore.css';
 import './transcript/transcript.css';
 import { keyHint } from '../lib/keys';
 import { useAutoRender } from '../lib/autoRender';
-import { ClipInfoPanel, RenderPill } from './ClipInfo';
+import { CaptionLooks, ClipCovers, ClipInfoPanel, ClipScheduleView, ClipVersions, RenderPill, useClipSchedule } from './ClipInfo';
+import { ProjectAIPanel } from './ProjectAIPanel';
 
 // cover, captions, versions and export live in the clip's info (ClipInfo) now; the drawer keeps the precise tools
 type Tab = 'trim' | 'effects';
@@ -66,7 +67,11 @@ function fixedKey(id: string, clip: string) {
   return `ce.fixed.${id}/${clip}`;
 }
 
-export function OutputEditor({ id, clip }: { id: string; clip: string }) {
+/** `layout`: classic (the editor page) or studio (the Studio's one page per video, layout A of the 2026-10 review:
+ * player with cover / captions / versions on the left, the question, the transcript and the post on the right, one AI
+ * bar at the bottom). `ask`: the Studio row's open question about this clip (shown at the top of the page). */
+export function OutputEditor({ id, clip, layout = 'classic', ask = null, place = null }: { id: string; clip: string; layout?: 'classic' | 'studio'; ask?: InboxItem | null; place?: { project: string | null; pos: [number, number] | null } | null }) {
+  const studio = layout === 'studio';
   const { client, subscribe } = useEngine();
   const ui = useUi();
   const q = useRouteQuery();
@@ -92,6 +97,8 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
   const [, setRendered] = useState<{ simulated?: boolean } | null>(null);
   const [drawer, setDrawer] = useState(() => sessionStorage.getItem('ce.drawer') === '1');
   const [info, setInfo] = useState(() => localStorage.getItem('ce.info') !== '0');
+  // the Studio page's AI: one bar at the bottom; what it says opens the conversation over the right column
+  const [ai, setAi] = useState<{ open: boolean; all: boolean; text: string }>({ open: false, all: false, text: '' });
   const [effects, setEffects] = useState<EffectDef[]>([]);
   const [flash, setFlash] = useState<{ secs: number; n: number } | null>(null);
   // the pinned question's ticked cuts the clip does not have yet: skipped in the preview while she reviews
@@ -153,7 +160,8 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
   }, [doc, q.t]);
 
   const odoc = doc as unknown as OutputDoc | null;
-  const lowerTab: LowerTab = split.layout.tab ?? (odoc ? defaultTab(odoc) : 'transcript');
+  // the Studio page reads as words first (layout A): the transcript unless the clip has none
+  const lowerTab: LowerTab = split.layout.tab ?? (odoc ? (studio && odoc.words.length ? 'transcript' : defaultTab(odoc)) : 'transcript');
   const words = useMemo(() => odoc?.words ?? [], [odoc]);
   const pending = hasDrafts(cuts.drafts);
   const dkey = useMemo(() => JSON.stringify(cuts.drafts), [cuts.drafts]);
@@ -369,6 +377,7 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
   const flushCuts = useCallback(() => committer.flush(), [committer]);
   // every saved change re-renders the clip in the background (what goes out is what she sees)
   const auto = useAutoRender(id, clip, odoc, flushCuts);
+  const sched = useClipSchedule(id, clip);
   // the rendered "after" of a look: render the clip as it is now (once; an unchanged clip is a cache hit)
   const wantsRender = !holdC && preview.compare && !!preview.before && !!preview.rendered && !!doc && !doc.renders.some((r) => r.fresh && !r.simulated);
   const renderRef = useRef<() => void>(() => undefined);
@@ -484,6 +493,7 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
     const mod = e.metaKey || e.ctrlKey;
     const k = e.key.toLowerCase();
     if (mod && !e.shiftKey && !e.altKey && ['1', '2', '3'].includes(e.key)) {
+      if (studio) return; // the Studio's ⌘1–9 pick a video
       e.preventDefault();
       e.stopImmediatePropagation(); // not the app's ⌘1-⌘4 navigation while editing
       split.setPreset((['watch', 'balanced', 'edit'] as const)[Number(e.key) - 1]);
@@ -491,7 +501,8 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
     }
     if (mod && e.key === '\\') {
       e.preventDefault();
-      split.toggleChat();
+      if (studio) setAi((a) => ({ ...a, open: !a.open }));
+      else split.toggleChat();
       return;
     }
     if (mod && k === 'e' && !e.shiftKey) {
@@ -519,6 +530,11 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
       else void undo(1, e.shiftKey);
     } else if (!mod && e.key === '/') {
       e.preventDefault();
+      if (studio) {
+        setAi((a) => ({ ...a, open: true, all: false }));
+        window.setTimeout(() => chat.current?.focus('/'), 30);
+        return;
+      }
       split.openChat();
       chat.current?.focus('/');
     } else if (!mod && !e.altKey && k === 'e') {
@@ -643,7 +659,7 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
   }, [odoc]);
   const marks = useMemo(() => (odoc ? markers(odoc, drafts) : []), [odoc, drafts]);
   const project = hist.data?.items.find((x) => x.id === id);
-  const pinItem = q.item ? inbox.all.find((x) => x.key === q.item) ?? null : null;
+  const pinItem = (q.item ? inbox.all.find((x) => x.key === q.item) : null) ?? (studio ? ask : null);
   const triageItem = triage ? inbox.items.find((x) => x.key === triage.keys[triage.i]) ?? null : null;
   if (err && !doc)
     return (
@@ -700,6 +716,386 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
   const cutNote = doc.mode === 'flattened' && doc.caps.cut_strategy === 'snap_captions' ? t('te.note.snap') : null;
   const stageRows = `minmax(0, ${split.stage}fr) 8px minmax(${180}px, ${1 - split.stage}fr)`;
 
+  const stageEl = (
+    <section className="ce-stage">
+      <Player
+        ref={pl}
+        key={files.map((f) => f.path).join('|')}
+        files={files}
+        fps={doc.fps}
+        duration={doc.duration}
+        captions={doc.captions.map((c) => ({ ...c }))}
+        captionStyle={doc.caption_style}
+        effects={view.effects}
+        cuts={playerCuts}
+        trim={useFresh ? null : view.trim}
+        onTime={onTime}
+        onPlaying={setPlaying}
+        onSkip={onSkip}
+        strip={strip}
+        ticks={[...marks.map((m) => ({ t: m.a, b: m.b, tone: m.tone })), ...spans.map(([a, b]) => ({ t: a, b, tone: 'draft' as const }))]}
+        onSelection={setSel}
+        compare={compare}
+        badge={holdC ? t('ce.original') : renderedCmp ? (renderedAfter ? t('ce.after') : t('fs.ai.rendering')) : before && !sameTimeline ? t('ce.before') : null}
+        testId="editor-player"
+      />
+      {pickup && (
+        <PickupStage
+          item={id}
+          clip={clip}
+          doc={odoc}
+          spot={pickup}
+          onCancel={() => setPickup(null)}
+          onDone={(r) => {
+            setPickup(null);
+            setDoc(r.doc as unknown as ChatDoc);
+            setRendered(null);
+            reload();
+            const pk = (r.doc.pickups ?? []).slice().sort((x, y) => y.start - x.start)[0];
+            if (pk) window.setTimeout(() => pl.current?.seek(Math.max(0, pk.start - 1)), 150);
+            ui.toast(t('pk.added', { text: r.text.slice(0, 40) }), {
+              undo: async () => {
+                await client?.undoOutput(id, clip);
+                reload();
+              },
+            });
+          }}
+        />
+      )}
+      {flash && (
+        <div key={flash.n} className="ce-flash" data-testid="skip-flash">
+          <SkipForward className="ico" />
+          {t('te.skippedS', { s: flash.secs.toFixed(1) })}
+        </div>
+      )}
+    </section>
+  );
+  const lowerEl = (
+    <LowerPane
+      tab={lowerTab}
+      onTab={split.setTab}
+      preset={split.layout.preset}
+      onPreset={split.setPreset}
+      chips={words.length ? <MarksChips doc={odoc} drafts={cuts.drafts} setDrafts={setTextDrafts} onJump={jumpWord} /> : null}
+      search={
+        words.length
+          ? {
+              open: find.open,
+              q: find.q,
+              n: hitStarts.length,
+              setOpen: (v) => setFind((f) => ({ ...f, open: v, q: v ? f.q : '' })),
+              setQ: (s) => setFind((f) => ({ ...f, q: s, k: -1 })),
+              next: () => {
+                if (!hitStarts.length) return;
+                const k = (find.k + 1) % hitStarts.length;
+                setFind((f) => ({ ...f, k }));
+                jumpWord(hitStarts[k]);
+              },
+              cutAll: () => setTextDrafts((d) => ({ words: { ...d.words, ...Object.fromEntries([...hits].map((i) => [i, d.words[i] ?? 'transcript'])) }, gaps: d.gaps })),
+            }
+          : null
+      }
+      footer={
+        <CutStatus
+          s={save}
+          note={pending || save.kind === 'saved' ? cutNote : null}
+          onUndo={() => void undoSaved()}
+          onRetry={() => void committer.retry()}
+          onDiscard={() => {
+            cuts.clear();
+            setSave({ kind: 'idle' });
+          }}
+        />
+      }
+    >
+      {lowerTab === 'transcript' ? (
+        <TranscriptPane
+          doc={odoc}
+          time={time}
+          playing={playing}
+          drafts={cuts.drafts}
+          setDrafts={setTextDrafts}
+          seek={(x) => pl.current?.seek(x)}
+          playFrom={(x) => {
+            pl.current?.seek(x);
+            pl.current?.play();
+          }}
+          fixed={fixed}
+          canFix={canFix}
+          fixWhyNot={doc.mode === 'flattened' ? t('te.fixBurned') : t('te.fixNoCaptions')}
+          onFix={fixWord}
+          onRestoreCut={(i) => void restoreCut(i)}
+          onRestoreCuts={(ix) => void restoreAuto(ix)}
+          transcribe={transcribe}
+          hits={find.open ? hits : undefined}
+          apiRef={tp}
+          onSelection={setTsel}
+          onPickup={createOn && doc.engine === 'real' && doc.mode === 'flattened' && doc.caps.audio !== false ? (x, k) => void startPickup(x, k) : undefined}
+          onDiscardAll={() => pending && window.confirm(t('te.discardAll')) && (cuts.clear(), setSave({ kind: 'idle' }))}
+        />
+      ) : (
+        <div className="ce-tl">
+          <Timeline
+            doc={view}
+            time={time}
+            playing={playing}
+            selection={sel}
+            selectedFx={fxSel}
+            strip={strip}
+            stripFailed={stripFailed}
+            transcribe={transcribe}
+            defs={effects}
+            pending={spans}
+            fill
+            header={
+              marks.some((m) => m.tone === 'draft') || doc.steps.length || pending ? (
+                <>
+                  <span className="lg">
+                    <i className="d" />
+                    {t('ce.legend.draft')}
+                  </span>
+                  <span className="lg">
+                    <i className="a" />
+                    {t('ce.legend.applied')}
+                  </span>
+                  {preview.compare && <span>{t('ce.holdC')}</span>}
+                </>
+              ) : doc.words.length ? (
+                <span>{t('ce.tlHint')}</span>
+              ) : null
+            }
+            markers={marks}
+            onMarker={(turn) => (split.openChat(), chat.current?.focusTurn(turn))}
+            onSeek={(x) => pl.current?.seek(x)}
+            onSelect={(s) => {
+              setSel(s);
+              pl.current?.setSelection(s);
+            }}
+            onSelectFx={(f) => {
+              setFxSel(f);
+              if (f) setTab('effects');
+            }}
+            onMoveFx={(fx, start, end) => void edit([{ op: 'effect_update', id: fx.id, start, end }])}
+            onTrim={(a, b) => void edit([{ op: 'trim', start: a, end: b }])}
+          />
+        </div>
+      )}
+    </LowerPane>
+  );
+  const pinEl = pinItem ? (
+    <PinnedQuestion
+      key={pinItem.key}
+      item={pinItem}
+      items={inbox.items}
+      clip={clip}
+      seek={(x) => {
+        pl.current?.seek(Math.max(0, x - 3));
+        pl.current?.play();
+      }}
+      onSkip={() => (triage ? triageStep(inbox.items, 1) : studio ? undefined : history.back())}
+      words={odoc.words}
+      onPreviewCuts={setPinCuts}
+    />
+  ) : null;
+  const chatEl = (
+    <ChatPanel
+      ref={chat}
+      item={id}
+      clip={clip}
+      doc={doc}
+      defs={effects}
+      time={time}
+      sel={sel}
+      fxSel={fxSel}
+      onClearSel={() => (setSel(null), pl.current?.setSelection(null))}
+      onClearFx={() => setFxSel(null)}
+      seek={(x) => pl.current?.seek(x)}
+      playRange={playRange}
+      reload={() => (setRendered(null), reload())}
+      onDrafts={setDrafts}
+      onPreview={onPreview}
+      onPrimary={setPrimary}
+      flush={flushCuts}
+      collapsed={studio ? false : split.collapsed}
+      onToggle={studio ? () => setAi((a) => ({ ...a, open: false })) : split.toggleChat}
+      lead={lowerTab === 'transcript' && words.length ? t('te.chatLead') : null}
+      textSuggestions={textSugs}
+      onShowInTranscript={(x) => {
+        split.setTab('transcript');
+        pl.current?.seek(x);
+        window.setTimeout(() => {
+          const i = odoc.words.findIndex((w) => w.te >= x);
+          if (i >= 0) tp.current?.reveal(i);
+        }, 80);
+      }}
+      pinned={studio ? null : pinEl}
+      top={
+        <>
+          <AutoCleanCard doc={odoc} restore={restoreAuto} />
+          <DecidedCard item={id} clip={clip} words={odoc.words} seek={(x) => pl.current?.seek(x)} />
+        </>
+      }
+    />
+  );
+  const drawerEl = drawer ? (
+      <section className="ce-drawer" data-testid="edit-panel">
+        <div className="dh">
+          <b>{t('ce.drawer.title')}</b>
+          <span className="sp" />
+          <button className="btn ghost icon sm" onClick={() => setDrawer(false)} aria-label={t('ce.drawer.close')} data-testid="close-precise">
+            <X className="ico" />
+          </button>
+        </div>
+        <nav className="tabs4" role="tablist">
+          {TABS.map(([k, label]) => (
+            <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)} data-testid={`etab-${k}`}>
+              {t(label)}
+            </button>
+          ))}
+        </nav>
+        <div className="body">
+          {tab === 'trim' && <TrimPanel doc={view} time={time} sel={sel} edit={edit} onClearSel={() => (setSel(null), pl.current?.setSelection(null))} />}
+          {tab === 'effects' && <EffectsPanel doc={odoc} defs={effects} time={time} sel={sel} fxSel={fxSel} setFxSel={setFxSel} edit={edit} firstWord={firstWord} />}
+          <Edits doc={odoc} onUndoTo={(k) => void undo(doc.steps.length - k)} />
+        </div>
+      </section>
+  ) : null;
+  if (studio) {
+    const say = (text: string) => {
+      const x = text.trim();
+      if (!x) return;
+      setAi({ open: true, all: ai.all, text: '' });
+      if (!ai.all) window.setTimeout(() => chat.current?.send(x), 30);
+    };
+    const projClips = (hist.data?.items.find((x) => x.id === id) ? place?.pos?.[1] : null) ?? null;
+    return (
+      <div className={`cs ${ai.open ? 'ai-open' : ''}`} data-testid="editor" data-layout="studio">
+        <header className="cs-top">
+          <div className="cs-title">
+            <span className="cs-where muted clamp1" data-testid="studio-where">
+              {[place?.project ?? project?.name, place?.pos ? `${place.pos[0]}/${place.pos[1]}` : null].filter(Boolean).join(' · ')}
+            </span>
+            <span className="row" style={{ gap: 8, minWidth: 0 }}>
+              <ClipTitle item={id} clip={clip} title={doc.title} custom={doc.title_custom} onSaved={reload} />
+              {pinItem && <span className="cs-ask" data-testid="studio-ask-chip">{t('st.askChip')}</span>}
+            </span>
+          </div>
+          <span className="meta" data-testid="editor-length">
+            {pending && Math.abs(durNow - durAfter) > 0.05 ? (
+              <>
+                {fmtClock(durNow)} <span className="arrow">→ {fmtClock(durAfter)}</span>
+              </>
+            ) : (
+              fmtClock(durNow || doc.duration)
+            )}
+          </span>
+          <RenderPill s={auto.state} onRetry={auto.now} />
+          <span className="sp" />
+          <div className="grp">
+            <button className="btn ghost icon sm" disabled={!doc.undo && !(pending && cuts.canUndo)} onClick={() => (pending && cuts.canUndo ? cuts.undo() : void undo())} aria-label={t('c.undo')} data-tip={`${t('c.undo')} · ${keyHint('⌘Z')}`} data-testid="editor-undo">
+              <Undo2 className="ico" />
+            </button>
+            <button className="btn ghost icon sm" disabled={!doc.redo && !cuts.canRedo} onClick={() => (cuts.canRedo ? cuts.redo() : void undo(1, true))} aria-label={t('c.redo')} data-tip={`${t('c.redo')} · ${keyHint('⇧⌘Z')}`} data-testid="editor-redo">
+              <Redo2 className="ico" />
+            </button>
+          </div>
+          <button className={`btn ghost ${drawer ? 'toggle on' : ''}`} onClick={() => setDrawer(!drawer)} aria-pressed={drawer} data-tip={`${t('ce.preciseTip')} · E`} data-testid="toggle-precise">
+            <SlidersHorizontal className="ico" />
+            {t('ce.precise')}
+          </button>
+          {doc.recording && <FinishButton item={id} clip={clip} flush={flushCuts} primary={false} />}
+          <button className="btn" onClick={() => (setAi((a) => ({ ...a, open: true, all: false })), window.setTimeout(() => chat.current?.openCard('export'), 30))} disabled={doc.caps.export === false} data-testid="editor-export">
+            <Upload className="ico" />
+            {t('st.exportFile')}
+          </button>
+          {sched.g ? (
+            <button className="btn" onClick={() => document.querySelector('[data-testid=ci-schedule]')?.scrollIntoView({ block: 'center', behavior: 'smooth' })} data-testid="studio-scheduled">
+              <CalendarClock className="ico" />
+              {sched.scheduledWhen}
+            </button>
+          ) : (
+            // one filled button: the question's answer while one waits, else Schedule
+            <button className={`btn ${pinItem ? '' : 'primary'}`} disabled={!sched.loaded || !sched.pfs.length} onClick={() => void sched.scheduleNow()} title={sched.when ? t('ci.schedule', { when: sched.when }) : t('ci.noPlatforms')} data-testid="studio-schedule">
+              <CalendarClock className="ico" />
+              {t('st.schedule')}
+            </button>
+          )}
+        </header>
+        <div className="cs-body">
+          <section className="cs-left">
+            {stageEl}
+            <div className="ci cs-media">
+              <div className="ci-sec">
+                <span className="ci-lbl">{t('st.coverHint')}</span>
+                <ClipCovers doc={odoc} strip={strip} time={time} edit={edit} />
+              </div>
+              <div className="ci-sec">
+                <span className="ci-lbl">{t('ci.captions')}</span>
+                <CaptionLooks doc={odoc} edit={edit} />
+              </div>
+              <div className="ci-sec">
+                <span className="ci-lbl">{t('ci.versions')}</span>
+                <ClipVersions doc={odoc} edit={edit} />
+              </div>
+            </div>
+          </section>
+          <section className="cs-right">
+            {pinEl && <div className="cs-ask-card" data-testid="studio-question">{pinEl}</div>}
+            <div className="cs-lower">{lowerEl}</div>
+            <div className="ci cs-post">
+              <ClipScheduleView s={sched} compact />
+            </div>
+          </section>
+          <aside className="cs-ai-pane" aria-hidden={!ai.open} data-testid="studio-ai-pane">
+            <div className="cs-ai-hd">
+              <div className="seg" role="radiogroup" aria-label={t('st.ai.scope')}>
+                <button role="radio" aria-checked={!ai.all} className={!ai.all ? 'on' : ''} onClick={() => setAi((a) => ({ ...a, all: false }))} data-testid="studio-ai-one">
+                  {t('st.ai.one')}
+                </button>
+                <button role="radio" aria-checked={ai.all} className={ai.all ? 'on' : ''} onClick={() => setAi((a) => ({ ...a, all: true }))} data-testid="studio-ai-all">
+                  {t('st.ai.all', { n: projClips ?? 1 })}
+                </button>
+              </div>
+              <span className="sp" />
+              <button className="btn ghost icon sm" onClick={() => setAi((a) => ({ ...a, open: false }))} aria-label={t('c.close')} data-testid="studio-ai-close">
+                <X className="ico" />
+              </button>
+            </div>
+            <div className={`cs-ai-body ${ai.all ? 'all' : 'one'}`}>
+              {chatEl}
+              {ai.all && <AllClipsAI item={id} onApplied={reload} />}
+            </div>
+          </aside>
+        </div>
+        <footer className="cs-ai">
+          <Sparkle className="ico" />
+          <input
+            className="cs-ai-input"
+            value={ai.text}
+            placeholder={t('st.ai.placeholder')}
+            onChange={(e) => setAi((a) => ({ ...a, text: e.target.value }))}
+            onFocus={() => ai.all && setAi((a) => ({ ...a, open: true }))}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                say(ai.text);
+              }
+              if (e.key === 'Escape') setAi((a) => ({ ...a, open: false }));
+            }}
+            aria-label={t('st.ai.placeholder')}
+            data-testid="studio-ai-input"
+          />
+          <button className="btn sm" onClick={() => say(t('st.ai.tighterPrompt'))} data-testid="studio-ai-tighter">
+            {t('st.ai.tighter')}
+          </button>
+          <button className={`btn sm ${ai.open ? 'toggle on' : ''}`} onClick={() => setAi((a) => ({ ...a, open: !a.open }))} aria-pressed={ai.open} data-testid="studio-ai-toggle">
+            {t('st.ai.open')}
+          </button>
+        </footer>
+        {drawerEl}
+      </div>
+    );
+  }
   return (
     <div className={`ce-wrap ${triage && q.triage ? 'triage' : ''}`}>
       {triage && q.triage === '1' && <TriageBar item={triageItem} items={inbox.items} />}
@@ -751,58 +1147,7 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
           </button>
         </header>
         <main className="ce-main ce-split3" ref={split.ref} style={{ gridTemplateRows: stageRows }}>
-          <section className="ce-stage">
-            <Player
-              ref={pl}
-              key={files.map((f) => f.path).join('|')}
-              files={files}
-              fps={doc.fps}
-              duration={doc.duration}
-              captions={doc.captions.map((c) => ({ ...c }))}
-              captionStyle={doc.caption_style}
-              effects={view.effects}
-              cuts={playerCuts}
-              trim={useFresh ? null : view.trim}
-              onTime={onTime}
-              onPlaying={setPlaying}
-              onSkip={onSkip}
-              strip={strip}
-              ticks={[...marks.map((m) => ({ t: m.a, b: m.b, tone: m.tone })), ...spans.map(([a, b]) => ({ t: a, b, tone: 'draft' as const }))]}
-              onSelection={setSel}
-              compare={compare}
-              badge={holdC ? t('ce.original') : renderedCmp ? (renderedAfter ? t('ce.after') : t('fs.ai.rendering')) : before && !sameTimeline ? t('ce.before') : null}
-              testId="editor-player"
-            />
-            {pickup && (
-              <PickupStage
-                item={id}
-                clip={clip}
-                doc={odoc}
-                spot={pickup}
-                onCancel={() => setPickup(null)}
-                onDone={(r) => {
-                  setPickup(null);
-                  setDoc(r.doc as unknown as ChatDoc);
-                  setRendered(null);
-                  reload();
-                  const pk = (r.doc.pickups ?? []).slice().sort((x, y) => y.start - x.start)[0];
-                  if (pk) window.setTimeout(() => pl.current?.seek(Math.max(0, pk.start - 1)), 150);
-                  ui.toast(t('pk.added', { text: r.text.slice(0, 40) }), {
-                    undo: async () => {
-                      await client?.undoOutput(id, clip);
-                      reload();
-                    },
-                  });
-                }}
-              />
-            )}
-            {flash && (
-              <div key={flash.n} className="ce-flash" data-testid="skip-flash">
-                <SkipForward className="ico" />
-                {t('te.skippedS', { s: flash.secs.toFixed(1) })}
-              </div>
-            )}
-          </section>
+          {stageEl}
           <div
             className="ce-hsplit"
             role="separator"
@@ -815,116 +1160,7 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
           >
             <i />
           </div>
-          <LowerPane
-            tab={lowerTab}
-            onTab={split.setTab}
-            preset={split.layout.preset}
-            onPreset={split.setPreset}
-            chips={words.length ? <MarksChips doc={odoc} drafts={cuts.drafts} setDrafts={setTextDrafts} onJump={jumpWord} /> : null}
-            search={
-              words.length
-                ? {
-                    open: find.open,
-                    q: find.q,
-                    n: hitStarts.length,
-                    setOpen: (v) => setFind((f) => ({ ...f, open: v, q: v ? f.q : '' })),
-                    setQ: (s) => setFind((f) => ({ ...f, q: s, k: -1 })),
-                    next: () => {
-                      if (!hitStarts.length) return;
-                      const k = (find.k + 1) % hitStarts.length;
-                      setFind((f) => ({ ...f, k }));
-                      jumpWord(hitStarts[k]);
-                    },
-                    cutAll: () => setTextDrafts((d) => ({ words: { ...d.words, ...Object.fromEntries([...hits].map((i) => [i, d.words[i] ?? 'transcript'])) }, gaps: d.gaps })),
-                  }
-                : null
-            }
-            footer={
-              <CutStatus
-                s={save}
-                note={pending || save.kind === 'saved' ? cutNote : null}
-                onUndo={() => void undoSaved()}
-                onRetry={() => void committer.retry()}
-                onDiscard={() => {
-                  cuts.clear();
-                  setSave({ kind: 'idle' });
-                }}
-              />
-            }
-          >
-            {lowerTab === 'transcript' ? (
-              <TranscriptPane
-                doc={odoc}
-                time={time}
-                playing={playing}
-                drafts={cuts.drafts}
-                setDrafts={setTextDrafts}
-                seek={(x) => pl.current?.seek(x)}
-                playFrom={(x) => {
-                  pl.current?.seek(x);
-                  pl.current?.play();
-                }}
-                fixed={fixed}
-                canFix={canFix}
-                fixWhyNot={doc.mode === 'flattened' ? t('te.fixBurned') : t('te.fixNoCaptions')}
-                onFix={fixWord}
-                onRestoreCut={(i) => void restoreCut(i)}
-                onRestoreCuts={(ix) => void restoreAuto(ix)}
-                transcribe={transcribe}
-                hits={find.open ? hits : undefined}
-                apiRef={tp}
-                onSelection={setTsel}
-                onPickup={createOn && doc.engine === 'real' && doc.mode === 'flattened' && doc.caps.audio !== false ? (x, k) => void startPickup(x, k) : undefined}
-                onDiscardAll={() => pending && window.confirm(t('te.discardAll')) && (cuts.clear(), setSave({ kind: 'idle' }))}
-              />
-            ) : (
-              <div className="ce-tl">
-                <Timeline
-                  doc={view}
-                  time={time}
-                  playing={playing}
-                  selection={sel}
-                  selectedFx={fxSel}
-                  strip={strip}
-                  stripFailed={stripFailed}
-                  transcribe={transcribe}
-                  defs={effects}
-                  pending={spans}
-                  fill
-                  header={
-                    marks.some((m) => m.tone === 'draft') || doc.steps.length || pending ? (
-                      <>
-                        <span className="lg">
-                          <i className="d" />
-                          {t('ce.legend.draft')}
-                        </span>
-                        <span className="lg">
-                          <i className="a" />
-                          {t('ce.legend.applied')}
-                        </span>
-                        {preview.compare && <span>{t('ce.holdC')}</span>}
-                      </>
-                    ) : doc.words.length ? (
-                      <span>{t('ce.tlHint')}</span>
-                    ) : null
-                  }
-                  markers={marks}
-                  onMarker={(turn) => (split.openChat(), chat.current?.focusTurn(turn))}
-                  onSeek={(x) => pl.current?.seek(x)}
-                  onSelect={(s) => {
-                    setSel(s);
-                    pl.current?.setSelection(s);
-                  }}
-                  onSelectFx={(f) => {
-                    setFxSel(f);
-                    if (f) setTab('effects');
-                  }}
-                  onMoveFx={(fx, start, end) => void edit([{ op: 'effect_update', id: fx.id, start, end }])}
-                  onTrim={(a, b) => void edit([{ op: 'trim', start: a, end: b }])}
-                />
-              </div>
-            )}
-          </LowerPane>
+          {lowerEl}
         </main>
         <div
           className="ce-split"
@@ -956,91 +1192,23 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
               {t('ci.show')}
             </button>
           )}
-          {!split.collapsed && info && <ClipInfoPanel item={id} clip={clip} doc={odoc} strip={strip} time={time} edit={edit} />}
-        <ChatPanel
-          ref={chat}
-          item={id}
-          clip={clip}
-          doc={doc}
-          defs={effects}
-          time={time}
-          sel={sel}
-          fxSel={fxSel}
-          onClearSel={() => (setSel(null), pl.current?.setSelection(null))}
-          onClearFx={() => setFxSel(null)}
-          seek={(x) => pl.current?.seek(x)}
-          playRange={playRange}
-          reload={() => (setRendered(null), reload())}
-          onDrafts={setDrafts}
-          onPreview={onPreview}
-          onPrimary={setPrimary}
-          flush={flushCuts}
-          collapsed={split.collapsed}
-          onToggle={split.toggleChat}
-          lead={lowerTab === 'transcript' && words.length ? t('te.chatLead') : null}
-          textSuggestions={textSugs}
-          onShowInTranscript={(x) => {
-            split.setTab('transcript');
-            pl.current?.seek(x);
-            window.setTimeout(() => {
-              const i = odoc.words.findIndex((w) => w.te >= x);
-              if (i >= 0) tp.current?.reveal(i);
-            }, 80);
-          }}
-          pinned={
-            pinItem ? (
-              <PinnedQuestion
-                key={pinItem.key}
-                item={pinItem}
-                items={inbox.items}
-                clip={clip}
-                seek={(x) => {
-                  pl.current?.seek(Math.max(0, x - 3));
-                  pl.current?.play();
-                }}
-                onSkip={() => (triage ? triageStep(inbox.items, 1) : history.back())}
-                words={odoc.words}
-                onPreviewCuts={setPinCuts}
-              />
-            ) : null
-          }
-          top={
-            <>
-              <AutoCleanCard doc={odoc} restore={restoreAuto} />
-              <DecidedCard item={id} clip={clip} words={odoc.words} seek={(x) => pl.current?.seek(x)} />
-            </>
-          }
-        />
+          {!split.collapsed && info && <ClipInfoPanel doc={odoc} strip={strip} time={time} edit={edit} sched={sched} />}
+        {chatEl}
         </div>
-        {drawer && (
-          <section className="ce-drawer" data-testid="edit-panel">
-            <div className="dh">
-              <b>{t('ce.drawer.title')}</b>
-              <span className="sp" />
-              <button className="btn ghost icon sm" onClick={() => setDrawer(false)} aria-label={t('ce.drawer.close')} data-testid="close-precise">
-                <X className="ico" />
-              </button>
-            </div>
-            <nav className="tabs4" role="tablist">
-              {TABS.map(([k, label]) => (
-                <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)} data-testid={`etab-${k}`}>
-                  {t(label)}
-                </button>
-              ))}
-            </nav>
-            <div className="body">
-              {tab === 'trim' && <TrimPanel doc={view} time={time} sel={sel} edit={edit} onClearSel={() => (setSel(null), pl.current?.setSelection(null))} />}
-              {tab === 'effects' && <EffectsPanel doc={odoc} defs={effects} time={time} sel={sel} fxSel={fxSel} setFxSel={setFxSel} edit={edit} firstWord={firstWord} />}
-              <Edits doc={odoc} onUndoTo={(k) => void undo(doc.steps.length - k)} />
-            </div>
-          </section>
-        )}
+        {drawerEl}
       </div>
     </div>
   );
 }
 
 type EditFn = (ops: EditOp[], undoToast?: boolean) => Promise<boolean>;
+
+/** The AI bar's 「全部 N 条一起改」: the project-level AI over every finished clip of this one's project. */
+function AllClipsAI({ item, onApplied }: { item: string; onApplied: () => void }) {
+  const { data } = useLoad((c) => c.clips(item), [item]);
+  const clips = (data?.clips ?? []).filter((c) => !c.extra && c.files.length && c.state !== 'running' && c.state !== 'queued');
+  return <ProjectAIPanel item={item} clips={clips} onApplied={onApplied} testId="studio-project-ai" />;
+}
 
 function TrimPanel({ doc, time, sel, edit, onClearSel }: { doc: OutputDoc; time: number; sel: { a: number; b: number } | null; edit: EditFn; onClearSel: () => void }) {
   const a = doc.trim?.start ?? 0;

@@ -37,7 +37,7 @@ import type { CalendarPost } from '../shared/v04';
 import { findBundledRuntime, runtimeEnv, type BundledRuntime } from './runtime';
 import { buildCsp, isAppUrl, isSafeExternal } from './security';
 import { installDisplayMedia, installMediaPermissions, registerRecorderIpc, ScreenPick, type Recorder } from './recorder';
-import { createFlagFrom } from '../shared/recIpc';
+import { createFlagFrom, studioFlagFrom } from '../shared/recIpc';
 import { SettingsStore } from './settings';
 import { HistoryWatcher } from './historyWatch';
 import { UsageReporter, usageAllowedByEnv } from './usage';
@@ -217,9 +217,14 @@ function createOn(): boolean {
   return createFlagFrom(settings?.get().createPage, app.isPackaged ? undefined : process.env.DESK_CREATE);
 }
 
+/** The Studio flag: the saved setting (else the default); DESK_STUDIO=1/0 overrides it in dev / test builds only. */
+function studioOn(): boolean {
+  return studioFlagFrom(settings?.get().studio, app.isPackaged ? undefined : process.env.DESK_STUDIO);
+}
+
 function settingsMsg() {
   const s = settings.get();
-  return { ...s, createPage: createOn(), firstRunDone: s.firstRunDone || testSwitch('DESK_SKIP_FIRST_RUN'), resolved: resolvedConfig(), packaged: app.isPackaged, platform: process.platform, edition: EDITION };
+  return { ...s, createPage: createOn(), studio: studioOn(), firstRunDone: s.firstRunDone || testSwitch('DESK_SKIP_FIRST_RUN'), resolved: resolvedConfig(), packaged: app.isPackaged, platform: process.platform, edition: EDITION };
 }
 
 /** One engine socket per app session (Windows: null, a TCP port the engine picks), reused by every restart: the old
@@ -792,7 +797,7 @@ function registerIpc() {
       tray?.set(p.openAtLogin);
     }
     // engine path / Python apply on the next engine start: Settings shows "Restart to apply" (one click)
-    return { ...settingsMsg(), ...next, createPage: createOn(), firstRunDone: settingsMsg().firstRunDone, resolved: resolvedConfig(), packaged: app.isPackaged, platform: process.platform };
+    return { ...settingsMsg(), ...next, createPage: createOn(), studio: studioOn(), firstRunDone: settingsMsg().firstRunDone, resolved: resolvedConfig(), packaged: app.isPackaged, platform: process.platform };
   });
 
   // ---------------- publish

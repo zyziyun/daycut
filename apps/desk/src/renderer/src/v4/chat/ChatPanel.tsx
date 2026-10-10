@@ -27,6 +27,8 @@ import { keyHint } from '../../lib/keys';
 
 export interface ChatApi {
   focus(text?: string): void;
+  /** say it (the Studio's AI bar): the same as typing it here and pressing Enter */
+  send(text: string): void;
   applyLatest(): void;
   openCard(kind: CardKind): void;
   focusTurn(id: string): void;
@@ -350,6 +352,9 @@ export const ChatPanel = forwardRef<ChatApi, Props>(function ChatPanel(p, ref) {
     focus(s?: string) {
       if (s != null) setText(s);
       ta.current?.focus();
+    },
+    send(s: string) {
+      void send(s);
     },
     applyLatest() {
       const x = turns.find((y) => y.id === primaryTurn);

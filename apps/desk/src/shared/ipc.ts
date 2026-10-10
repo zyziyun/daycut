@@ -70,6 +70,7 @@ export const ipcSchemas = {
     autopilot: z.boolean().optional(),
     createPage: z.boolean().optional(),
     createLocalGen: z.boolean().optional(),
+    studio: z.boolean().optional(),
     usagePings: z.enum(['on', 'off']).optional(),
     openAtLogin: z.boolean().optional(),
   }),

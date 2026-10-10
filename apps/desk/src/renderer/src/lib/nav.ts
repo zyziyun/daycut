@@ -15,8 +15,13 @@ export function clipHref(id: string, clip: string, opts: { t?: number | null; it
   if (opts.t != null && Number.isFinite(opts.t)) q.set('t', String(Math.round(opts.t * 100) / 100));
   if (opts.item) q.set('item', opts.item);
   if (opts.triage) q.set('triage', '1');
+  return withQuery(href({ name: 'clip', id, clip }), q);
+}
+
+/** A hash + more query (the Studio's #/studio?f=you already has one). */
+function withQuery(h: string, q: URLSearchParams): string {
   const s = q.toString();
-  return href({ name: 'clip', id, clip }) + (s ? `?${s}` : '');
+  return s ? `${h}${h.includes('?') ? '&' : '?'}${s}` : h;
 }
 
 /** A scheduled post on the Publish board. */
@@ -28,8 +33,7 @@ export function inboxHref(opts: { item?: string | null; triage?: boolean } = {})
   const q = new URLSearchParams();
   if (opts.item) q.set('item', opts.item);
   if (opts.triage) q.set('triage', '1');
-  const s = q.toString();
-  return href({ name: 'inbox' }) + (s ? `?${s}` : '');
+  return withQuery(href({ name: 'inbox' }), q);
 }
 
 /** Where an inbox item opens: the editor at its first clip (and the moment it is about), else the Inbox itself. */

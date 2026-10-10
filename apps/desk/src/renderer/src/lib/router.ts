@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createEnabled } from '../create/flag';
+import { studioEnabled } from './studioFlag';
 
 // Hash routes (v0.4): #/ home · #/inbox · #/projects · #/p/<id>[/<tab>] · #/p/<id>/clip/<clip> (editor)
 //   · #/p/<id>/focus (full-screen review) · #/publish · #/publish/accounts (publishing accounts) · #/settings · #/new[/recording]
@@ -7,6 +8,9 @@ import { createEnabled } from '../create/flag';
 //   · #/metrics · #/welcome. Old #/work[/<id>] and #/batches links land on the new pages.
 export type ProjectTab = 'clips' | 'review' | 'deliver' | 'history' | 'files';
 export type Route =
+  /** #/studio[/<project>[/<clip>]]: every video in one list, one page per video (the Studio flag; with it on, Home,
+   * the Inbox, All projects, a project's clips and the clip editor land here) */
+  | { name: 'studio'; id?: string; clip?: string }
   | { name: 'home' }
   | { name: 'inbox' }
   | { name: 'projects' }
@@ -50,7 +54,29 @@ export function parseRoute(hash: string): Route {
       return x;
     }
   });
+  const r = parseOwn(p);
+  return studioEnabled() ? toStudio(r) : r.name === 'studio' ? { name: 'home' } : r;
+}
+
+/** With the Studio on, the pages it replaces open in it (the filter / selection ride along in the query). */
+export function toStudio(r: Route): Route {
+  switch (r.name) {
+    case 'home':
+    case 'inbox':
+    case 'projects':
+      return { name: 'studio' };
+    case 'project':
+      return r.tab ? r : { name: 'studio', id: r.id };
+    case 'clip':
+      return { name: 'studio', id: r.id, clip: r.clip };
+    default:
+      return r;
+  }
+}
+
+function parseOwn(p: string[]): Route {
   if (!p.length || p[0] === 'home') return { name: 'home' };
+  if (p[0] === 'studio') return p[1] && ID.test(p[1]) ? (p[2] ? { name: 'studio', id: p[1], clip: p[2] } : { name: 'studio', id: p[1] }) : { name: 'studio' };
   if (p[0] === 'inbox') return { name: 'inbox' };
   if (p[0] === 'projects' || p[0] === 'batches') return { name: 'projects' };
   if (p[0] === 'work') return p[1] && ID.test(p[1]) ? { name: 'project', id: p[1] } : { name: 'projects' };
@@ -77,7 +103,13 @@ export function parseRoute(hash: string): Route {
 }
 
 export function href(r: Route): string {
+  if (studioEnabled() && r.name !== 'studio') {
+    const s = toStudio(r);
+    if (s.name === 'studio') return href(s) + (r.name === 'inbox' ? '?f=you' : '');
+  }
   switch (r.name) {
+    case 'studio':
+      return `#/studio${r.id ? `/${r.id}${r.clip ? `/${encodeURIComponent(r.clip)}` : ''}` : ''}`;
     case 'home':
       return '#/';
     case 'settings':

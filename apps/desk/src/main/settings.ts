@@ -37,6 +37,8 @@ export interface Settings {
   createPage?: boolean;
   /** Create: local draft generation on this Mac (second flag, on top of createPage) */
   createLocalGen?: boolean;
+  /** the Studio: every video in one list, one page per video (unset = shared/recIpc STUDIO_DEFAULT) */
+  studio?: boolean;
   /** anonymous usage counts (main/usage.ts): 'on' only after she chose it; unset (never asked) = off */
   usagePings?: 'on' | 'off';
   /** start hidden at login, with a menu-bar icon, so scheduled posts get their "Time to post" notification */

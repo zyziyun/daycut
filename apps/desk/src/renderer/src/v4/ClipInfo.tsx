@@ -170,9 +170,9 @@ export function RenderPill({ s, onRetry }: { s: RenderState; onRetry?: () => voi
 }
 
 // ---------------------------------------------------------------- copy + when
-/** The clip's post: unscheduled -> its platforms + "Schedule · <next free slot>"; scheduled -> when, where, and the
- * copy per platform (the publish drawer's component, same rows). */
-export function ClipSchedule({ item, clip, compact = false }: { item: string; clip: string; compact?: boolean }) {
+/** A clip's calendar rows, its platforms and the next free slot - shared by the post section and the Studio's
+ * 「排期发布」 in the page header (one load of the calendar). */
+export function useClipSchedule(item: string, clip: string) {
   const ui = useUi();
   const { subscribe } = useEngine();
   const { data, actions, client, reload } = usePublishData();
@@ -186,11 +186,13 @@ export function ClipSchedule({ item, clip, compact = false }: { item: string; cl
   const groups = useMemo(() => groupPosts(mine, accounts.connected), [mine, accounts.connected]);
   const g = groups.find((x) => x.day >= today && x.status !== 'posted') ?? groups[groups.length - 1] ?? null;
   const [off, setOff] = useState<string[]>([]);
-  const pfs = accounts.connected.filter((pf) => !off.includes(pf));
+  const pfs = useMemo(() => accounts.connected.filter((pf) => !off.includes(pf)), [accounts.connected, off]);
   const day = useMemo(() => nextFreeDay(posts, new Date(), pfs.map((pf) => accounts.timeOf(pf))), [posts, pfs, accounts]);
   const rows: Row[] = useMemo(() => (g ? sortIds(g.on.map((p) => base(p.platform))).map((pf) => ({ pf, post: g.on.find((p) => base(p.platform) === pf)! })) : []), [g]);
   const [tab, setTab] = useState('');
-  const curTab = rows.some((r) => r.pf === tab) ? tab : firstTab(rows);
+  const fmtWhen = (d: string, hm: string) => fmtDate(`${d}T${hm}`, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+  const when = pfs[0] ? fmtWhen(day, accounts.timeOf(pfs[0])) : '';
+  const scheduleNow = () => (pfs.length ? actions.add(pfs.map((pf) => ({ item, clip, platform: pf, at: `${day}T${accounts.timeOf(pf)}` }))) : Promise.resolve(undefined));
   const shorten = async (text: string, platform: string) => {
     try {
       return await client?.shortenCaption({ text, platform });
@@ -201,7 +203,19 @@ export function ClipSchedule({ item, clip, compact = false }: { item: string; cl
       reload();
     }
   };
-  if (!data) return <div className="ci-sched" data-testid="ci-schedule" aria-busy="true" />;
+  return { item, clip, loaded: !!data, g, rows, accounts, actions, off, setOff, pfs, when, scheduledWhen: g ? fmtWhen(g.day, g.time) : '', scheduleNow, tab: rows.some((r) => r.pf === tab) ? tab : firstTab(rows), setTab, shorten };
+}
+export type ClipScheduleState = ReturnType<typeof useClipSchedule>;
+
+/** The clip's post: unscheduled -> its platforms + "Schedule · <next free slot>"; scheduled -> when, where, and the
+ * copy per platform (the publish drawer's component, same rows). */
+export function ClipSchedule({ item, clip, compact = false }: { item: string; clip: string; compact?: boolean }) {
+  return <ClipScheduleView s={useClipSchedule(item, clip)} compact={compact} />;
+}
+
+export function ClipScheduleView({ s, compact = false }: { s: ClipScheduleState; compact?: boolean }) {
+  const { g, accounts, actions, off, setOff, pfs, rows } = s;
+  if (!s.loaded) return <div className="ci-sched" data-testid="ci-schedule" aria-busy="true" />;
   if (!g) {
     if (!accounts.connected.length)
       return (
@@ -211,8 +225,6 @@ export function ClipSchedule({ item, clip, compact = false }: { item: string; cl
           </a>
         </div>
       );
-    const first = pfs[0];
-    const when = first ? fmtDate(`${day}T${accounts.timeOf(first)}`, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : '';
     return (
       <div className="ci-sched" data-testid="ci-schedule" data-state="unscheduled">
         <div className="ci-chips">
@@ -226,14 +238,9 @@ export function ClipSchedule({ item, clip, compact = false }: { item: string; cl
             );
           })}
         </div>
-        <button
-          className="btn ci-schedule-btn"
-          disabled={!pfs.length}
-          onClick={() => void actions.add(pfs.map((pf) => ({ item, clip, platform: pf, at: `${day}T${accounts.timeOf(pf)}` })))}
-          data-testid="ci-schedule-btn"
-        >
+        <button className="btn ci-schedule-btn" disabled={!pfs.length} onClick={() => void s.scheduleNow()} data-testid="ci-schedule-btn">
           <CalendarClock className="ico" />
-          {t('ci.schedule', { when })}
+          {t('ci.schedule', { when: s.when })}
         </button>
         {!compact && <p className="ci-note">{t('ci.assist')}</p>}
       </div>
@@ -275,14 +282,14 @@ export function ClipSchedule({ item, clip, compact = false }: { item: string; cl
           );
         })}
       </div>
-      {rows.length > 0 && <PostCopy rows={rows} tab={curTab} setTab={setTab} accounts={accounts} actions={actions} shorten={shorten} />}
+      {rows.length > 0 && <PostCopy rows={rows} tab={s.tab} setTab={s.setTab} accounts={accounts} actions={actions} shorten={s.shorten} />}
       {!compact && <p className="ci-note">{t('ci.assist')}</p>}
     </div>
   );
 }
 
 // ---------------------------------------------------------------- the inspector (layout B)
-export function ClipInfoPanel({ item, clip, doc, strip, time, edit }: { item: string; clip: string; doc: OutputDoc; strip: StripInfo | null; time: number; edit: EditFn }) {
+export function ClipInfoPanel({ doc, strip, time, edit, sched }: { doc: OutputDoc; strip: StripInfo | null; time: number; edit: EditFn; sched: ClipScheduleState }) {
   return (
     <section className="ci" data-testid="clip-info">
       <div className="ci-sec">
@@ -299,7 +306,7 @@ export function ClipInfoPanel({ item, clip, doc, strip, time, edit }: { item: st
       </div>
       <div className="ci-sec">
         <span className="ci-lbl">{t('ci.post')}</span>
-        <ClipSchedule item={item} clip={clip} />
+        <ClipScheduleView s={sched} />
       </div>
     </section>
   );

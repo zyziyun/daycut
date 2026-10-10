@@ -372,7 +372,7 @@ export function Home() {
 }
 
 // ---------------------------------------------------------------- the platform chip (editable defaults)
-function PlatformChip({ value, onChange }: { value: string[] | null; onChange: (v: string[]) => void }) {
+export function PlatformChip({ value, onChange }: { value: string[] | null; onChange: (v: string[]) => void }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement | null>(null);
   useEffect(() => {

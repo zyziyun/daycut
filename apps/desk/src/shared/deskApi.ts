@@ -78,6 +78,8 @@ export interface SettingsMsg {
   autopilot?: boolean;
   /** Create page flag (DESK_CREATE=1/0 overrides it) */
   createPage?: boolean;
+  /** the Studio (one list of every video, one page per video); resolved with DESK_STUDIO in main */
+  studio?: boolean;
   createLocalGen?: boolean;
   /** anonymous usage counts: 'on' only after she chose it; unset (never asked) = off */
   usagePings?: 'on' | 'off';
@@ -154,7 +156,7 @@ export interface DeskApi {
   openLogs(): Promise<void>;
   copyText(text: string): Promise<void>;
   getSettings(): Promise<SettingsMsg>;
-  setSettings(patch: Partial<Pick<SettingsMsg, 'enginePath' | 'python' | 'lang' | 'theme' | 'accent' | 'defaultPlatforms' | 'cleanupDays' | 'agencyMode' | 'askAiEdits' | 'autopilot' | 'createPage' | 'createLocalGen' | 'usagePings' | 'openAtLogin'>>): Promise<SettingsMsg>;
+  setSettings(patch: Partial<Pick<SettingsMsg, 'enginePath' | 'python' | 'lang' | 'theme' | 'accent' | 'defaultPlatforms' | 'cleanupDays' | 'agencyMode' | 'askAiEdits' | 'autopilot' | 'createPage' | 'createLocalGen' | 'studio' | 'usagePings' | 'openAtLogin'>>): Promise<SettingsMsg>;
   openFiles(kind: 'video' | 'any'): Promise<string[]>;
   /** absolute path of a file dropped on the window (Electron webUtils; '' when unavailable) */
   pathForFile(file: File): string;
