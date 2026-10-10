@@ -258,6 +258,7 @@ class Runner:
         from . import livestatus as LS
         from .clients import activate
         pulse = LS.Pulse(LS.owner_dir(self.dir), self._live_fields, by="batch")
+        self._pulse = pulse
         try:
             with activate(self.dir), pulse:       # the client's persona overlay; live status heartbeat (desk app)
                 res = self._run()
@@ -270,8 +271,35 @@ class Runner:
     def _live_fields(self):
         stages = sorted({f"{v[0]}:{v[1].name}" for v in list(getattr(self, "inflight", {}).values())})
         prog = (self.n_done / self.n_total) if self.n_total else None
-        return dict(stage=", ".join(stages[:4]) or None, progress=prog,
-                    message=f"{len(self.finished)}/{self.jobs_total} jobs" if self.jobs_total else None)
+        done = len(self.finished)
+        return dict(stage=", ".join(stages[:4]) or None, progress=prog, eta=self._eta(prog),
+                    message=f"{done}/{self.jobs_total} jobs" if self.jobs_total else None,
+                    jobs_done=done if self.jobs_total else None, jobs_total=self.jobs_total or None,
+                    live_code="jobs" if self.jobs_total else None,
+                    live_params=dict(done=done, total=self.jobs_total) if self.jobs_total else None)
+
+    def _eta(self, prog):
+        """Seconds left: the benchmark's wall-time estimate for this run (batch_bench) while little is done, then the
+        pace this run actually has (elapsed / done) - None before the run starts."""
+        t0, wall = getattr(self, "_t_run", None), getattr(self, "_est_wall", None)
+        if t0 is None or prog is None:
+            return None
+        left_bench = (wall or 0.0) * (1.0 - prog)
+        if prog < 0.15 or now() - t0 < 20:
+            return round(left_bench) if wall else None
+        left_pace = (now() - t0) * (1.0 - prog) / max(prog, 1e-6)
+        return round(left_pace if not wall else 0.7 * left_pace + 0.3 * left_bench)
+
+    def _beat(self):
+        """The live status at a stage start (the desk's step bar follows the real stage, not a 20 s heartbeat)."""
+        p = getattr(self, "_pulse", None)
+        if p is None or now() - getattr(self, "_last_beat", 0.0) < 1.0:
+            return
+        self._last_beat = now()
+        try:
+            p.beat()
+        except Exception:  # noqa: BLE001  (status is best effort)
+            pass
 
     def _result(self, status, code, **kw):
         self.emit("run-end", status=status, exit_code=code, finished=self.finished, pause_reason=self.pause_reason)
@@ -303,6 +331,7 @@ class Runner:
             self.say("nothing to run")
             return self._result("idle", 0)
         est = EST.estimate(self.store, self.recipe, self.spec, self.limits, jobs=jobs)
+        self._t_run, self._est_wall = now(), float(est.get("wall_s") or 0.0) or None
         if not est["budget"]["ok"]:
             msg = "; ".join(est["budget"]["over"])
             self.store.log("refused", f"over budget: {msg}")
@@ -485,6 +514,7 @@ class Runner:
         fut = self.pool.submit(_call, st.fn, ctx)
         self.inflight[fut] = (jid, st, res, key, d)
         self.emit("stage-start", job=jid, stage=st.name, resource=res, attempt=(r.get("attempts") or 0) + 1)
+        self._beat()
         self.count[res] += 1
         self.peak[res] = max(self.peak[res], self.count[res])
         return "started"

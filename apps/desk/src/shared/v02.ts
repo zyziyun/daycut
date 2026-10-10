@@ -399,6 +399,24 @@ export interface LiveStatus {
   jobs_done?: number | null;
   jobs_total?: number | null;
 }
+/** One event of a run, as codes (desk_engine.pilot.progress_feed). */
+export interface ProgressEvent {
+  at?: number | null;
+  event: 'run-start' | 'stage-start' | 'stage-done' | 'stage-retry' | 'stage-fail' | 'job-done' | 'checkpoint' | 'auto-answer' | 'autopilot-blocked' | 'pause' | 'run-end' | 'project-end';
+  job?: string;
+  item?: string;
+  stage?: string;
+  state?: string;
+  checkpoint?: string;
+  kind?: string;
+  by?: string;
+  n?: number;
+  exit_code?: number;
+}
+export interface ProgressFeed {
+  events: ProgressEvent[];
+  running: boolean;
+}
 export const WORK_TYPES = ['talkinghead', 'slices', 'explainer', 'photo-story', 'vlog', 'podcast', 'aigc', 'script', 'batch', 'promo', 'slides', 'other'] as const;
 export interface HistoryItem {
   kind: 'batch' | 'project' | 'work';

@@ -2,8 +2,8 @@
 // English + 简体中文 here; French lives in fr.ts with everything else.
 
 export const releaseEn = {
-  'status.failed': 'Failed',
-  'projects.f.failed': 'Failed {n}',
+  'status.failed': 'Stopped',
+  'projects.f.failed': 'Stopped {n}',
   'project.sub.failed': 'The first clip couldn’t be made. Nothing was lost — fix the cause below and try again.',
   'project.empty.failed': 'No clips yet — the first one failed.',
   'project.empty.running': 'The first clip is on its way. It shows up here as soon as it’s ready.',
@@ -77,8 +77,8 @@ export const releaseEn = {
 };
 
 export const releaseZh: Record<keyof typeof releaseEn, string> = {
-  'status.failed': '失败',
-  'projects.f.failed': '失败 {n}',
+  'status.failed': '停下了',
+  'projects.f.failed': '停下了 {n}',
   'project.sub.failed': '第 1 条没做出来。什么都没丢，按下面的提示处理后再试一次。',
   'project.empty.failed': '还没有成片：第 1 条没做出来。',
   'project.empty.running': '第 1 条正在做，做好就会出现在这里。',

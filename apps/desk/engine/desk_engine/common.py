@@ -202,7 +202,7 @@ def live_words(rec, state):
     out["stages"] = stages
     done, total = rec.get("jobs_done"), rec.get("jobs_total")
     msg = str(rec.get("message") or "").strip()
-    code, params = rec.get("message_code"), dict(rec.get("message_params") or {})
+    code, params = rec.get("live_code"), dict(rec.get("live_params") or {})
     if not code and msg:
         m = _JOBS_RE.match(msg)
         if m:

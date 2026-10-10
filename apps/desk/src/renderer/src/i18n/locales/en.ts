@@ -41,8 +41,8 @@ export const v04En = {
 
   'status.running': 'Running',
   'status.you': 'Needs you',
-  'status.done': 'Done',
-  'status.error': 'Error',
+  'status.done': 'Ready',
+  'status.error': 'Stopped',
 
   'time.justNow': 'just now',
   'time.today': 'today',
@@ -203,7 +203,7 @@ export const v04En = {
   'projects.f.all': 'All {n}',
   'projects.f.running': 'Running {n}',
   'projects.f.you': 'Needs you {n}',
-  'projects.f.done': 'Done {n}',
+  'projects.f.done': 'Ready {n}',
   'projects.search': 'Search projects and titles…',
   'projects.type': 'Type',
   'projects.anyType': 'Any type',

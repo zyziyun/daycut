@@ -2,14 +2,14 @@
 // s003:export · 100% · no update for 4 min", 「asr」, "第 reelfold-main 条", "Xiaohongshu · vertical") - the desk words
 // them itself, from the codes the engine sidecar derives (desk_engine/common.live_words).
 import { afterEach, describe, expect, it } from 'vitest';
-import type { LiveStatus } from '../../src/shared/v02';
+import type { HistoryItem, LiveStatus } from '../../src/shared/v02';
 import type { InboxItem } from '../../src/shared/v04';
 import { setLang } from '../../src/renderer/src/i18n';
 import { inboxClip, inboxSub, optionLabel } from '../../src/renderer/src/lib/inboxView';
-import { liveLine, liveMeta, liveText } from '../../src/renderer/src/lib/liveStatus';
-import { stepOfLive, stepOfStage } from '../../src/renderer/src/lib/pipeline';
+import { clipWords, liveLine, liveMeta, liveText } from '../../src/renderer/src/lib/liveStatus';
+import { itemPipeline, stepOfLive, stepOfStage } from '../../src/renderer/src/lib/pipeline';
+import { feedLine } from '../../src/renderer/src/v4/ProgressFeed';
 import { clipStatus } from '../../src/renderer/src/lib/status';
-import { clipWords } from '../../src/renderer/src/v4/Hub';
 
 afterEach(() => setLang('en'));
 const now = 1_800_000_000;
@@ -68,5 +68,27 @@ describe('clips are named, never by their job id', () => {
   it('a stopped clip is not "ready"; a clip waiting for her needs her', () => {
     expect(clipStatus({ state: 'failed' })).toBe('error');
     expect(clipStatus({ state: 'waiting' })).toBe('you');
+  });
+});
+
+describe('one status vocabulary; a project waiting for her is filed under Needs you', () => {
+  const item = (o: Partial<HistoryItem>): HistoryItem => ({ kind: 'project', id: 'p1', dir: '/p', name: 'p', recipe: null, client: null, created: 0, updated: 0, counts: { total: 2, done: 1, approved: 0, red: 0, failed: 0 }, status: 'in-progress', ...o }) as unknown as HistoryItem;
+  it('an Inbox question wins over a run that is still going', () => {
+    const p = itemPipeline(item({ live: live({ code: 'jobs', params: { done: 1, total: 2 }, stage: 's002:asr', progress: 0.5 }) }), [], true);
+    expect(p.state).toBe('you');
+    expect(itemPipeline(item({ live: live({ stage: 's002:asr', progress: 0.5, eta: 90 }) }), [], false)).toMatchObject({ state: 'run', current: 'transcribe', eta: 90 });
+  });
+  it('the AI deciding between rounds is at that question’s step, in words', () => {
+    const l = live({ code: 'deciding', params: { kind: 'cover-pick' }, stages: [{ job: null, stage: 'cp_cover-pick' }], stage: 'cp_cover-pick' });
+    expect(itemPipeline(item({ live: l })).current).toBe('render');
+    setLang('zh-CN');
+    expect(liveText(l)).toBe('AI 正在定：选一张封面');
+  });
+  it('the run line by line', () => {
+    const clips = [{ id: 's001', title: '一次录完' }];
+    expect(feedLine({ event: 'stage-start', job: 's001', stage: 'asr' }, clips)).toBe('“一次录完” · Transcribe…');
+    expect(feedLine({ event: 'auto-answer', item: 's001', kind: 'cover-pick', by: 'ai' }, clips)).toBe('“一次录完” · the AI decided: Pick a cover');
+    expect(feedLine({ event: 'job-done', job: 's001', state: 'failed' }, clips)).toBe('“一次录完” didn’t finish');
+    expect(feedLine({ event: 'stage-done', job: 's001', stage: 'asr' }, clips)).toBeNull();
   });
 });

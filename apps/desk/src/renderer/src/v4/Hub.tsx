@@ -20,9 +20,10 @@ import { failureReason, FailureActions } from './Failure';
 import { Empty, Thumb } from './kit';
 import { errText } from './msg';
 import { PlanCard } from './PlanCard';
+import { ProgressFeed } from './ProgressFeed';
 import { scheduleClips } from './Project';
 import { useUi } from './ui';
-import { liveText } from '../lib/liveStatus';
+import { clipWords, liveText } from '../lib/liveStatus';
 import './hub.css';
 
 const GROUPS: [GroupId, MessageKey][] = [
@@ -301,6 +302,8 @@ function ProjectDetail({ i, p, posts }: { i: HistoryItem; p: Pipeline; posts: Ca
   const pp = postsOf(posts, i.id);
   const unscheduled = ready.filter((c) => !mine.some((x) => x.clip === c.id));
   const on = ap?.supported ? !!ap.autopilot?.on : !!i.autopilot;
+  // 「看过程」: open by itself while it runs (what it is doing right now), a click away otherwise
+  const [feedOpen, setFeedOpen] = useState(p.state === 'run');
   const setMode = async (v: boolean) => {
     if (!client || v === on) return;
     try {
@@ -340,6 +343,11 @@ function ProjectDetail({ i, p, posts }: { i: HistoryItem; p: Pipeline; posts: Ca
         <div className="row">
           <b data-testid="hub-state-line">{stateLine(p, i)}</b>
           <span className="sp" />
+          {(i.kind === 'project' || live) && (
+            <button className="btn ghost sm hub-feedbtn" onClick={() => setFeedOpen(!feedOpen)} aria-expanded={feedOpen} data-testid="hub-feed-toggle">
+              {t(feedOpen ? 'feed.hide' : 'feed.show')}
+            </button>
+          )}
           {p.state === 'you' && (
             <a className="btn soft sm" href={inboxHref()} data-testid="hub-to-inbox">
               {t('hub.openInbox')}
@@ -355,6 +363,7 @@ function ProjectDetail({ i, p, posts }: { i: HistoryItem; p: Pipeline; posts: Ca
           </div>
         )}
         <Steps p={p} />
+        {feedOpen && <ProgressFeed item={i.id} clips={clips} running={live || p.state === 'run'} />}
       </div>
       {ap?.supported !== false && <Decisions item={i.id} doc={ap} clips={clips} busy={p.state === 'run'} onChanged={() => (reloadAp(), reloadHist())} />}
       <div className="card hub-card" data-testid="hub-clips">
@@ -442,15 +451,6 @@ function decisionLabel(d: AutopilotDecision): string {
   const l = d.labels ?? {};
   const own = getLang() === 'zh-CN' ? l.zh || l.en : l.en || l.zh;
   return own || t('hub.decisionOther');
-}
-
-/** Which clip a decision is about, by its title (「一次录完」) or its place (第 2 条) - never the job id. */
-export function clipWords(id: string | null | undefined, clips: Pick<Clip, 'id' | 'title'>[]): string | null {
-  if (!id || id === '*') return null;
-  const k = clips.findIndex((c) => c.id === id);
-  if (k < 0) return null;
-  const title = clips[k].title?.trim();
-  return title && title !== id ? t('hub.clipNamed', { title }) : t('hub.clipN', { n: k + 1 });
 }
 
 function Decisions({ item, doc, clips, busy, onChanged }: { item: string; doc: AutopilotDoc | null; clips: Clip[]; busy: boolean; onChanged: () => void }) {

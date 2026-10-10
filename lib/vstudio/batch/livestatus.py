@@ -2,7 +2,9 @@
 terminal ``vstudio.batch run``, Claude Code + the skill, an agent).
 
     <dir>/.vstudio/status.json  {status running|waiting|done|failed, stage, progress 0..1, message, eta (s),
-                                 needs_you, started, heartbeat, pid, host, updated_by}
+                                 needs_you, started, heartbeat, pid, host, updated_by, jobs_done, jobs_total,
+                                 live_code + live_params (the batch / project line as a code the desk words:
+                                 jobs {done, total} | deciding {kind} | checkpoint {ids, kinds})}
 
 Writers: the batch runner (a heartbeat thread while ``run`` holds the lock; a project's ``state/`` batch writes to
 the project folder), ``Project.run`` (``waiting`` + ``needs_you`` at a checkpoint), ``vstudio.project touch`` /
@@ -63,6 +65,11 @@ def write(d, status, stage=None, progress=None, message=None, eta=None, needs_yo
         for k, v in (("stage", stage), ("message", message), ("eta", eta)):
             if v is not None:
                 rec[k] = v
+        if message is not None and not extra.get("live_code"):
+            rec.pop("live_code", None)          # a new free-text message: the old coded line no longer applies
+            rec.pop("live_params", None)
+        if status != "running":
+            rec.pop("eta", None)                # time left only while it runs
         if progress is not None:
             rec["progress"] = max(0.0, min(1.0, float(progress)))
         rec["needs_you"] = bool(needs_you) if needs_you is not None else (status == "waiting" and old.get("needs_you", False))
@@ -174,9 +181,13 @@ class Pulse:
             f = dict(self.fields_fn() or {})
         except Exception:  # noqa: BLE001
             f = {}
+        if kw.get("message") is not None and "live_code" not in kw:
+            f.pop("live_code", None)            # the final line says it in its own words
+            f.pop("live_params", None)
         f.update({k: v for k, v in kw.items() if v is not None})
         return write(self.d, status, by=self.by, **{k: f.get(k) for k in ("stage", "progress", "message", "eta",
-                                                                            "needs_you")})
+                                                                            "needs_you", "jobs_done", "jobs_total",
+                                                                            "live_code", "live_params")})
 
     def _loop(self):
         while not self._stop.wait(self.every):

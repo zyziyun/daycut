@@ -138,8 +138,8 @@ describe('the empty state of a filter', () => {
     setLang('en');
     expect(noMatchText({ f: 'running', q: '', type: '' })).toBe('No running projects');
     expect(noMatchText({ f: 'you', q: '  ', type: '' })).toBe('Nothing needs you right now');
-    expect(noMatchText({ f: 'done', q: '', type: '' })).toBe('No finished projects yet');
-    expect(noMatchText({ f: 'failed', q: '', type: '' })).toBe('No failed projects');
+    expect(noMatchText({ f: 'done', q: '', type: '' })).toBe('No ready projects yet');
+    expect(noMatchText({ f: 'failed', q: '', type: '' })).toBe('No stopped projects');
     expect(noMatchText({ f: 'archived', q: '', type: 'promo' })).toBe('No archived projects match these filters');
     expect(noMatchText({ f: 'all', q: '', type: 'batch' })).toBe('No “Batch” projects');
     for (const f of ['all', 'running', 'you', 'done', 'failed', 'archived'] as const) expect(noMatchText({ f, q: '', type: '' })).not.toMatch(/type\.|projects\./);
@@ -149,7 +149,7 @@ describe('the empty state of a filter', () => {
     setLang('en');
     expect(noMatchText({ f: 'running', q: 'promo ', type: '' })).toBe('Nothing matches “promo”.');
     setLang('zh-CN');
-    expect(noMatchText({ f: 'running', q: '', type: '' })).toBe('没有运行中的项目');
+    expect(noMatchText({ f: 'running', q: '', type: '' })).toBe('没有进行中的项目');
     expect(noMatchText({ f: 'all', q: '口播', type: '' })).toBe('没有找到「口播」。');
     setLang('fr');
     expect(noMatchText({ f: 'running', q: '', type: '' })).toBe('Aucun projet en cours');

@@ -108,14 +108,14 @@ test('进行中: an external run shows live on Home, 出错 when its heartbeat s
   heartbeat({});
   const lane = page.getByTestId('live-lane');
   await expect(lane).toContainText('clip B', { timeout: 15000 }); // fs watch -> refresh, no polling
-  await expect(lane.getByTestId('live-state')).toHaveText(/运行中|Running/);
+  await expect(lane.getByTestId('live-state')).toHaveText(/进行中|Running/);
   await expect(page.getByTestId('running-badge')).toHaveText('1');
   heartbeat({ pid: 999999, heartbeat: Date.now() / 1000 - 3600 }); // the external process died an hour ago
   await expect(lane.getByTestId('live-row')).toHaveCount(0, { timeout: 15000 });
   await expect(page.getByTestId('running-badge')).toHaveCount(0);
   await page.getByTestId('nav-projects').click();
   await page.getByTestId('projects-type').selectOption('');
-  await expect(page.getByTestId('project-card').filter({ hasText: 'fuye' }).getByTestId('status')).toHaveText(/出错|Error/);
+  await expect(page.getByTestId('project-card').filter({ hasText: 'fuye' }).getByTestId('status')).toHaveText(/停下了|Stopped/); // one status vocabulary
   heartbeat({ status: 'waiting', needs_you: true, message: 'checkpoint: hooks' });
   await page.getByTestId('nav-home').click();
   // parked at a checkpoint: not "running" any more - it waits in the Inbox (Home shows the top of it)

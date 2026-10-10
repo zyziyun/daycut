@@ -386,20 +386,27 @@ class MockIntake(Intake):
                                 started=started, heartbeat=time.time(), pid=os.getpid(), host=socket.gethostname(),
                                 needs_you=True, updated_by="desk-mock"))
                 return
+            item = f"s{k + 1:02d}"
             for j, stage in enumerate(stages):
+                # what the real batch runner writes (vstudio.batch.run._live_fields): "<job>:<stage>", "k/n jobs",
+                # the coded line and the time left - the desk words it ("Clip 1 of 3 · Transcribe · about 1 min left")
                 write_json(os.path.join(d, ".vstudio", "status.json"),
-                           dict(status="running", stage=stage, progress=round((k + (j + 1) / len(stages)) / n, 3),
-                                message=f"clip {k + 1} of {n}", eta=int(((n - k) * len(stages) - j) * step),
+                           dict(status="running", stage=f"{item}:{stage}", progress=round((k + j / len(stages)) / n, 3),
+                                message=f"{k}/{n} jobs", jobs_done=k, jobs_total=n, live_code="jobs",
+                                live_params=dict(done=k, total=n), eta=int(((n - k) * len(stages) - j) * step),
                                 started=started, heartbeat=time.time(), pid=os.getpid(), host=socket.gethostname(),
                                 updated_by="desk-mock"))
+                with open(os.path.join(d, P.LOG), "a", encoding="utf-8") as f:   # the run's events (「看过程」)
+                    f.write(json.dumps(dict(event="stage-start", ts=time.time(), job=item, stage=stage)) + "\n")
                 if self.bus:
                     self.bus.publish("batches")
                 time.sleep(step)
             name = f"{k + 1:02d}_clip"
             MockEngine._mock_video(None, os.path.join(d, "final", f"{name}.mp4"))
             MockEngine._mock_cover(None, os.path.join(d, "final", f"{name}_cover.jpg"))
+            with open(os.path.join(d, P.LOG), "a", encoding="utf-8") as f:
+                f.write(json.dumps(dict(event="job-done", ts=time.time(), job=item, state="done")) + "\n")
             ap = mock_autopilot(d)
-            item = f"s{k + 1:02d}"
             ap["decisions"] = [x for x in ap.get("decisions") or [] if x.get("item") != item] + [
                 dict(checkpoint="filler", kind="filler-confirm", item=item, by="ai", provider="claude-code",
                      reason="Cut the ums, kept the pause before the punchline", reason_code="ai",
@@ -410,7 +417,7 @@ class MockIntake(Intake):
                      at=time.strftime("%Y-%m-%dT%H:%M:%S"))]
             write_json(os.path.join(d, ".vstudio", MOCK_AP), ap)
         write_json(os.path.join(d, ".vstudio", "status.json"),
-                   dict(status="done", stage="done", progress=1.0, message="done", started=started,
+                   dict(status="done", stage="done", progress=1.0, message=f"done: {n} jobs", started=started,
                         heartbeat=time.time(), finished=time.time(), pid=os.getpid(), host=socket.gethostname(),
                         updated_by="desk-mock"))
         with open(os.path.join(d, P.LOG), "a", encoding="utf-8") as f:

@@ -117,7 +117,7 @@ export const autopilotZh: Record<keyof typeof autopilotEn, string> = {
   'hub.search': '找项目',
   'hub.g.you': '需要你',
   'hub.g.run': '进行中',
-  'hub.g.ready': '已做好',
+  'hub.g.ready': '做好了',
   'hub.g.out': '已排期 / 已发布',
   'hub.g.earlier': '更早',
   'hub.empty': '还没有项目——去首页说说要做什么。',

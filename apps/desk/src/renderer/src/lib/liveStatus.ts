@@ -3,7 +3,7 @@
 // project page and the All-projects card show it instead of a static "Working on it": the message, the step, the
 // progress and how fresh the heartbeat is. Pure (unit-tested).
 import type { LiveStatus } from '../../../shared/v02';
-import type { InboxItem } from '../../../shared/v04';
+import type { Clip, InboxItem } from '../../../shared/v04';
 import { has, t, tk, type MessageKey } from '../i18n';
 import { stepOfLive } from './pipeline';
 
@@ -43,6 +43,10 @@ export function liveText(live: LiveStatus | null | undefined): string {
       const words = kinds.map((k) => (has(`checkpoint.${k}`) ? tk(`checkpoint.${k}`) : null)).filter((x): x is string => !!x);
       return words.length ? t('live.c.checkpoint', { what: [...new Set(words)].join(' · ') }) : t('live.c.waiting');
     }
+    case 'deciding': {
+      const k = String(p.kind ?? '');
+      return t('live.c.deciding', { what: has(`checkpoint.${k}`) ? tk(`checkpoint.${k}`) : t('hub.decisionOther') });
+    }
     case 'waiting':
     case 'paused':
       return t('live.c.waiting');
@@ -55,6 +59,15 @@ export function liveText(live: LiveStatus | null | undefined): string {
     default:
       return (live.message ?? '').trim();
   }
+}
+
+/** Which clip something is about, by its title (「一次录完」) or its place (第 2 条) - never the job id. */
+export function clipWords(id: string | null | undefined, clips: Pick<Clip, 'id' | 'title'>[]): string | null {
+  if (!id || id === '*') return null;
+  const k = clips.findIndex((c) => c.id === id);
+  if (k < 0) return null;
+  const title = clips[k].title?.trim();
+  return title && title !== id ? t('hub.clipNamed', { title }) : t('hub.clipN', { n: k + 1 });
 }
 
 /** The step a live run is at, in words ("Captions"), or '' when the engine did not say. */

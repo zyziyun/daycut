@@ -61,6 +61,7 @@ History (history.py; read-only discovery of past work: desk + engine registries,
   POST /api/history/client {dir, client}   agency mode: the client a project is for ('' = her own)
   GET  /api/history/item/<id>              one entry; work folders + detail {outputs, covers, sheets, posts, notes}
   POST /api/history/item/<id>/adopt        {recipe?: guess|name, title?} plain work folder -> .vstudio/work.json
+  GET  /api/history/item/<id>/progress?n=  the run's last events as codes (「看过程」 in the control room)
 v0.4 (outputs.py, intake.py, inbox.py; engine command when available, desk implementation otherwise)
   GET  /api/outputs/<item>                 one clip per output {clips [{id, title, state, files, cover, post}], confirm}
   GET  /api/outputs/<item>/<clip>          player + editor document (words, captions, effects, caps, ops, version)
@@ -761,6 +762,11 @@ class Api:
                 need(ID_RE.match(parts[2]), "bad item id")
                 if len(parts) == 3 and method == "GET":
                     return h.item(parts[2])
+                if parts[3:] == ["progress"] and method == "GET":
+                    from .pilot import progress_feed
+                    n = q("n") or "30"
+                    need(n.isdigit(), "n: a number")
+                    return progress_feed(h.find(parts[2])["dir"], int(n))
                 if parts[3:] == ["adopt"] and method == "POST":
                     b = body if isinstance(body, dict) else {}
                     rec = b.get("recipe") or "guess"

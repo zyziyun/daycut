@@ -725,9 +725,9 @@ const v04Fr: Record<keyof typeof v04En, string> = {
   'engine.demo': 'Mode démo',
 
   'status.running': 'En cours',
-  'status.you': 'Vous attend',
-  'status.done': 'Terminé',
-  'status.error': 'Erreur',
+  'status.you': 'À vous',
+  'status.done': 'Prêt',
+  'status.error': 'Arrêté',
 
   'time.justNow': 'à l’instant',
   'time.today': 'aujourd’hui',
@@ -887,8 +887,8 @@ const v04Fr: Record<keyof typeof v04En, string> = {
   'projects.new': 'Nouveau',
   'projects.f.all': 'Tout ({n})',
   'projects.f.running': 'En cours ({n})',
-  'projects.f.you': 'Vous attend ({n})',
-  'projects.f.done': 'Terminés ({n})',
+  'projects.f.you': 'À vous ({n})',
+  'projects.f.done': 'Prêts ({n})',
   'projects.search': 'Rechercher projets et titres…',
   'projects.type': 'Type',
   'projects.anyType': 'Tous types',
@@ -1784,8 +1784,8 @@ const projectAiFr: Record<keyof typeof projectAiEn, string> = {
 
 // ---------------------------------------------------------------- ./release.ts
 const releaseFr: Record<keyof typeof releaseEn, string> = {
-  'status.failed': 'Échec',
-  'projects.f.failed': 'Échecs ({n})',
+  'status.failed': 'Arrêté',
+  'projects.f.failed': 'Arrêtés ({n})',
   'project.sub.failed': 'Le premier clip n’a pas pu être créé. Rien n’est perdu : corrigez la cause ci-dessous et réessayez.',
   'project.empty.failed': 'Pas encore de clips : le premier a échoué.',
   'project.empty.running': 'Le premier clip est en route. Il apparaîtra ici dès qu’il sera prêt.',

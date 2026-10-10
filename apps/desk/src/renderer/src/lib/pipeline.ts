@@ -73,8 +73,9 @@ export function itemPipeline(i: HistoryItem, posts: CalendarPost[] = [], hasDeci
   const at = stepOfLive(live);
   if (i.queued) return { state: 'queued', current: 'plan', progress: null, eta: null };
   if (s === 'error') return { state: 'failed', current: at ?? stepOfStage(i.failure?.stage) ?? 'plan', progress, eta: null };
+  // something waits for her (an Inbox question, a run parked at one): she is what it waits for - 「需要你」, not 「进行中」
+  if (s === 'you' || hasDecision || live?.needs_you) return { state: 'you', current: at ?? 'check', progress: s === 'run' ? progress : null, eta: null };
   if (s === 'run') return { state: 'run', current: at ?? 'plan', progress, eta };
-  if (s === 'you' || hasDecision || live?.needs_you) return { state: 'you', current: at ?? 'check', progress, eta: null };
   const p = postsOf(posts, i.id);
   if (p.total && p.scheduled === 0) return { state: 'out', current: 'out', progress: 1, eta: null };
   if (p.total) return { state: 'scheduled', current: 'out', progress: 1, eta: null };

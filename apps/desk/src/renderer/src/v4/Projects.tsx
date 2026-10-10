@@ -59,8 +59,12 @@ export function Projects() {
 
 function ProjectsGrid({ viewSeg }: { viewSeg: React.ReactNode }) {
   const { data, reload, archived: archDoc, wantArchived } = useHistory();
-  const { client } = useEngine();
+  const { client, subscribe } = useEngine();
   const ui = useUi();
+  // the posts: a tile says 已排期 / 已发布 like the control room does
+  const { data: cal, reload: reloadCal } = useLoad((c) => c.calendar(undefined, { queue: false }).catch(() => c.calendar()), []);
+  useEffect(() => subscribe((e) => void (e.type === 'calendar' && reloadCal())), [subscribe]); // eslint-disable-line react-hooks/exhaustive-deps
+  const posts = cal?.posts ?? [];
   const [f, setF] = useState<F>(() => (sessionStorage.getItem('v4.pf') as F) || 'all');
   const [q, setQ] = useState('');
   const [type, setType] = useState('');
@@ -226,7 +230,7 @@ function ProjectsGrid({ viewSeg }: { viewSeg: React.ReactNode }) {
                 <div key={i.id} className={`pcard ${sel.has(i.id) ? 'sel' : ''}`} onClick={() => toggle(sel, setSel, i.id)} data-testid="project-card" role="checkbox" aria-checked={sel.has(i.id)}>
                   <span className="pick">{sel.has(i.id) ? <CheckSquare className="ico" /> : <Square className="ico" />}</span>
                   <div style={{ pointerEvents: 'none' }}>
-                    <ProjectTile i={i} />
+                    <ProjectTile i={i} posts={posts} />
                   </div>
                 </div>
               ) : renaming === i.id ? (
@@ -235,14 +239,14 @@ function ProjectsGrid({ viewSeg }: { viewSeg: React.ReactNode }) {
                 </div>
               ) : i.archived ? (
                 <div key={i.id} className="pcard-wrap archived" data-testid="archived-card">
-                  <ProjectTile i={i} onContext={menu(i)} note={archivedLine(i)} />
+                  <ProjectTile i={i} onContext={menu(i)} note={archivedLine(i)} posts={posts} />
                   <button className="btn sm restore" onClick={() => void restore([i])} data-testid="project-restore">
                     <ArchiveRestore className="ico" />
                     {t('projects.restore')}
                   </button>
                 </div>
               ) : (
-                <ProjectTile key={i.id} i={i} onContext={menu(i)} />
+                <ProjectTile key={i.id} i={i} onContext={menu(i)} posts={posts} />
               ),
             )}
           </div>

@@ -83,3 +83,28 @@ def test_batch_runner_writes_status(tmp_path, monkeypatch):
     st = LS.read(bdir)
     assert st["updated_by"] == "batch" and st["state"] == ("done" if res["status"] == "done" else "failed")
     assert st["progress"] == 1.0 and st["started"] <= st["heartbeat"]
+    # the line as a code the desk words (never only "3/3 jobs"), the clip count, and no time left once it is over
+    assert st["jobs_total"] == 3 and st["jobs_done"] == 3 and "eta" not in st
+    assert st["message"].endswith("jobs") and "live_code" not in st          # the final line is free text again
+
+
+def test_runner_fields_eta_and_codes(tmp_path):
+    from vstudio.batch.run import Runner
+    r = Runner.__new__(Runner)
+    r.inflight, r.finished, r.n_done, r.n_total, r.jobs_total = {}, [], 0, 0, 0
+    assert r._live_fields()["live_code"] is None and r._eta(None) is None
+    r.jobs_total, r.n_total, r.n_done, r.finished = 3, 30, 3, [dict(id="s001")]
+    r._t_run, r._est_wall = time.time() - 5, 120.0
+    f = r._live_fields()
+    assert (f["live_code"], f["live_params"], f["jobs_done"], f["jobs_total"]) == ("jobs", dict(done=1, total=3), 1, 3)
+    assert f["eta"] == round(120 * 0.9)                    # little done yet: the benchmark's estimate
+    r._t_run, r.n_done = time.time() - 60, 15                # half done in a minute: the run's own pace counts
+    assert 40 <= r._eta(0.5) <= 70
+
+
+def test_codes_follow_the_message(tmp_path):
+    d = str(tmp_path / "p")
+    LS.write(d, "running", message="0/2 jobs", live_code="jobs", live_params=dict(done=0, total=2), eta=40)
+    LS.write(d, "waiting", needs_you=True, message="waits for you")
+    rec = json.loads(open(LS.status_path(d)).read())
+    assert "live_code" not in rec and "eta" not in rec         # a new free-text line: the old code and time left go

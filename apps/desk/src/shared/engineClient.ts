@@ -31,6 +31,7 @@ import type {
   EditResult,
   HistoryConfig,
   HistoryDetail,
+  ProgressFeed,
   HistoryDoc,
   SampleInfo,
   MetricsDoc,
@@ -305,6 +306,10 @@ export class EngineClient {
   }
   historyItem(id: string) {
     return this.req<HistoryDetail>('GET', `/api/history/item/${bid(id)}`);
+  }
+  /** 「看过程」: the run's last events as codes (the desk words them) */
+  progressFeed(id: string, n = 30) {
+    return this.req<ProgressFeed>('GET', `/api/history/item/${bid(id)}/progress?n=${n}`);
   }
   adoptHistory(id: string, body: { recipe?: string; title?: string } = {}) {
     return this.req<{ ok: boolean; dir: string; type: string; recipe: string | null }>('POST', `/api/history/item/${bid(id)}/adopt`, body);

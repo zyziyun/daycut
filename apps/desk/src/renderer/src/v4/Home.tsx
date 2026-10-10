@@ -38,6 +38,7 @@ import { errText } from './msg';
 import { IS_LITE } from '../../../shared/edition';
 import { LiveCardLine } from './LiveLine';
 import { liveStep, liveText } from '../lib/liveStatus';
+import { itemPipeline } from '../lib/pipeline';
 import { keyHint } from '../lib/keys';
 
 /** First run: the starting points (title, what it does, the request it fills in). */
@@ -722,11 +723,14 @@ function ContinueTile({ i }: { i: HistoryItem }) {
 
 /** Project card used in 全部项目 (the whole card is the link). */
 /** ``note`` replaces the "updated" date (the archived date under 已归档). */
-export function ProjectTile({ i, onContext, note }: { i: HistoryItem; onContext?: (e: React.MouseEvent) => void; note?: string }) {
+export function ProjectTile({ i, onContext, note, posts }: { i: HistoryItem; onContext?: (e: React.MouseEvent) => void; note?: string; posts?: CalendarPost[] }) {
   const inbox = useInbox();
   const raw = itemStatus(i);
-  // never 「已完成」 while the inbox holds a decision for it
-  const s = raw === 'done' && inbox.items.some((x) => x.project.id === i.id && x.kind !== 'failed') ? 'you' : raw;
+  const asks = inbox.items.some((x) => x.project.id === i.id && x.kind !== 'failed');
+  // the control room's words: needs you while the inbox holds a question for it; scheduled / out once it has posts
+  const s = (raw === 'done' || raw === 'run') && asks ? 'you' : raw;
+  const p = posts ? itemPipeline(i, posts, asks) : null;
+  const label = s === 'done' && p && (p.state === 'scheduled' || p.state === 'out') ? t(`hub.s.${p.state}`) : undefined;
   const typeKey = `type.${i.type ?? 'other'}`;
   return (
     <a className="pcard" href={projectHref(i.id)} onContextMenu={onContext} data-testid="project-card">
@@ -736,7 +740,7 @@ export function ProjectTile({ i, onContext, note }: { i: HistoryItem; onContext?
         <span className="clamp1">
           {tk(typeKey) === typeKey ? t('type.other') : tk(typeKey)} · {note ?? fmtAgo(i.updated)}
         </span>
-        <StatusPill s={s} />
+        <StatusPill s={s} label={label} />
       </div>
       <LiveCardLine live={i.live} />
       <ArrowRight className="sr" />
