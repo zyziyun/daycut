@@ -868,6 +868,7 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
                 fixWhyNot={doc.mode === 'flattened' ? t('te.fixBurned') : t('te.fixNoCaptions')}
                 onFix={fixWord}
                 onRestoreCut={(i) => void restoreCut(i)}
+                onRestoreCuts={(ix) => void restoreAuto(ix)}
                 transcribe={transcribe}
                 hits={find.open ? hits : undefined}
                 apiRef={tp}

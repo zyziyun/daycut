@@ -418,6 +418,39 @@ test('transcript: select -> Delete -> skipped in the preview at once -> saved by
   await expect(page.getByTestId('cut-marker')).toHaveCount(1, { timeout: 15000 });
   await noMissingKeys();
   await shot('T5-applied');
+  // the marker's Restore with a real mouse: hover the marker, travel up across the gap into the popover (it stays
+  // open and is not under the paragraph above), click Restore; then ⌘Z puts the cut back
+  const mk = (await page.getByTestId('cut-marker').boundingBox())!;
+  await page.mouse.move(mk.x + mk.width / 2, mk.y + mk.height / 2);
+  const rb = page.getByTestId('cut-marker-restore');
+  await expect(rb).toBeVisible();
+  const r = (await rb.boundingBox())!;
+  await page.mouse.move(r.x + r.width / 2, r.y + r.height / 2, { steps: 12 });
+  expect(await page.evaluate(([x, y]) => !!document.elementFromPoint(x, y)?.closest('[data-testid=cut-marker-restore]'), [r.x + r.width / 2, r.y + r.height / 2])).toBe(true);
+  await shot('T5b-restore-hover');
+  await page.mouse.down();
+  await page.mouse.up();
+  await expect(page.getByTestId('cut-marker')).toHaveCount(0, { timeout: 15000 });
+  await expect.poll(steps, { timeout: 15000 }).toBe(before + 2);
+  await page.getByTestId('editor-title').click();
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect(page.getByTestId('cut-marker')).toHaveCount(1, { timeout: 15000 });
+  await expect.poll(steps, { timeout: 15000 }).toBe(before + 1);
+  // a click on the marker keeps its popover open without hovering; Esc closes it
+  await page.getByTestId('cut-marker').click();
+  await page.mouse.move(5, 5);
+  await expect(rb).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(rb).toBeHidden();
+  // a selection across the cut offers Restore in its bar
+  const sa = (await w(start - 1).boundingBox())!;
+  const sb = (await w(start + 4).boundingBox())!;
+  await page.mouse.move(sa.x + 3, sa.y + sa.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(sb.x + sb.width - 3, sb.y + sb.height / 2, { steps: 6 });
+  await page.mouse.up();
+  await expect(page.getByTestId('sel-restore-cuts')).toContainText('Restore the cut');
+  await page.keyboard.press('Escape');
   // rapid deletes coalesce: three words deleted one after another -> one step. Raw clicks at places measured first:
   // the actionability checks of three locator clicks can outlast the save's quiet window on a slow runner
   const mid = before + 1;

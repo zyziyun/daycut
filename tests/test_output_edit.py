@@ -548,3 +548,25 @@ def test_editor_words_join_subwords_and_redo_old_split_cache():
     assert O._split_terms(old) and not O._split_terms(dict(old, joined=1))
     assert not O._split_terms(dict(words=[dict(w="Hello", t=0, te=0.4), dict(w="world", t=0.4, te=0.8)]))  # English
     assert not O._split_terms(dict(words=[dict(w="这个", t=0, te=0.3), dict(w="RAG", t=0.3, te=0.6)]))
+
+
+def test_pipeline_output_opens_with_its_words_without_asr(th, monkeypatch):
+    """A pipeline-made output has its transcript at once: the source words mapped through the job's cuts, cached
+    as the output's transcript - no second ASR pass (the editor used to wait for 「听一遍」)."""
+    oid = O.list_outputs(th)["outputs"][0]["id"]
+    rec, doc = O._load(th, oid)
+    p = O.transcript_path(doc)
+    if os.path.exists(p):
+        os.remove(p)
+
+    def boom(*a, **k):
+        raise AssertionError("transcribed again")
+    monkeypatch.setattr(O, "TRANSCRIBE", boom)
+    s = O.show(th, oid)
+    assert s["words_sig"] and os.path.exists(p)
+    W = json.load(open(p, encoding="utf-8"))["words"]
+    assert len(W) >= 10 and O.words(doc) == W
+    body = [c for c in rec["cues"] if (c.get("meta") or {}).get("kind") != "hook"]
+    assert body
+    for c in body:                                           # captions and words come from the same cut
+        assert min(abs(w["t"] - c["start"]) for w in W) < 0.05, c

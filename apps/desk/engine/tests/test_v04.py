@@ -681,3 +681,31 @@ class CliRunnerEventsTest(unittest.TestCase):
             r.events(["plan"], lambda ev: None, timeout=0.5, track=[])
         self.assertIn("timed out", str(cm.exception))
         self.assertLess(time.time() - t0, 10)
+
+
+class MappedWordsTest(unittest.TestCase):
+    """A batch clip opens with its words: the pipeline's transcript mapped through the job's cuts, not 「听一遍」."""
+
+    def test_batch_clip_has_words_from_the_apply_sidecar(self):
+        from vstudio import cleanup
+        root = tempfile.mkdtemp()
+        b = make_batch(os.path.join(root, "b"), jobs=(("ep01", "done", "green"),))
+        jd = os.path.join(b, "jobs", "ep01")
+        for sub in ("apply", os.path.join("export", "exports")):
+            os.makedirs(os.path.join(jd, sub), exist_ok=True)
+        with open(os.path.join(jd, "job.json"), "w", encoding="utf-8") as f:
+            json.dump(dict(id="ep01", params=dict(title="Plan first")), f)
+        words = [dict(w=w, t=t, te=t + 0.3) for w, t in (("plan", 0.5), ("um", 1.0), ("first", 1.6))]
+        cleanup.write_sidecar(os.path.join(jd, "apply", "body.mp4"), "src.mp4", [(0.4, 0.9), (1.5, 2.0)], words)
+        open(os.path.join(jd, "export", "exports", "youtube-vertical.mp4"), "wb").close()
+        with open(os.path.join(jd, "export", "exports", "manifest.json"), "w", encoding="utf-8") as f:
+            json.dump(dict(exports=[dict(file="youtube-vertical.mp4", platform="youtube", orientation="vertical",
+                                         w=1080, h=1920, duration=1.0)]), f)
+        data = os.path.join(root, "desk")
+        with mock.patch.dict(os.environ, {"DESK_HISTORY_WATCH": ""}):
+            h = History(data, Registry(data))
+            item = h.open(b)["id"]
+            doc = OU.Outputs(data, h).show(item, "ep01")
+        self.assertEqual([w["w"] for w in doc["words"]], ["plan", "first"])
+        self.assertAlmostEqual(doc["words"][1]["t"], 0.6, places=2)
+        self.assertTrue(doc["words_sig"])

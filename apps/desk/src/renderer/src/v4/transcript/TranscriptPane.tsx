@@ -36,6 +36,8 @@ interface Props {
   fixWhyNot?: string;
   onFix: (i: number, text: string) => Promise<boolean>;
   onRestoreCut: (index: number) => void;
+  /** bring back several applied cuts at once (the selection bar's Restore) */
+  onRestoreCuts?: (indexes: number[]) => void;
   transcribe?: { state: TranscribeState; start: () => void } | null;
   /** search hits (word indices) from the ⌘F box */
   hits?: Set<number>;
@@ -54,6 +56,8 @@ export function TranscriptPane(p: Props) {
   const body = useRef<HTMLDivElement | null>(null);
   const [sel, setSelS] = useState<Sel>(null);
   const [fix, setFix] = useState<number | null>(null);
+  /** the cut marker whose Restore popover was clicked open (stays open without hovering) */
+  const [openCut, setOpenCut] = useState<number | null>(null);
   const [view, setView] = useState<[number, number]>([0, 0]);
   const anchor = useRef<number | null>(null);
   const dragging = useRef(false);
@@ -251,6 +255,35 @@ export function TranscriptPane(p: Props) {
   }, [sel, lo, placed]);
   const info = sel ? selectionInfo(words, lo, hi) : null;
   const allPending = sel ? range(lo, hi).every((i) => i in drafts.words) : false;
+  const onRestoreCut = p.onRestoreCut;
+  const restoreCut = useCallback(
+    (i: number) => {
+      setOpenCut(null);
+      onRestoreCut(i);
+    },
+    [onRestoreCut],
+  );
+  const toggleCut = useCallback((i: number) => setOpenCut((c) => (c === i ? null : i)), []);
+  // a clicked-open marker popover closes on Esc or a click anywhere else
+  useEffect(() => {
+    if (openCut == null) return;
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      setOpenCut(null);
+    };
+    const down = (e: PointerEvent) => {
+      if (!(e.target as HTMLElement | null)?.closest?.('.cutmark')) setOpenCut(null);
+    };
+    window.addEventListener('keydown', key, true);
+    window.addEventListener('pointerdown', down, true);
+    return () => {
+      window.removeEventListener('keydown', key, true);
+      window.removeEventListener('pointerdown', down, true);
+    };
+  }, [openCut]);
+  // applied cuts inside the selection: the bar brings them back (the marker's popover does one at a time)
+  const cutsInSel = sel ? [...applied.values()].filter((r) => r.i0 >= lo && r.i1 <= hi).map((r) => r.cut.index) : [];
   const spans = useMemo(() => draftSpans(words, drafts), [words, drafts]);
 
   if (!words.length) {
@@ -324,12 +357,26 @@ export function TranscriptPane(p: Props) {
             hkey={p.hits ? hitKey(p.hits, pa.i0, pa.i1) : ''}
             onGap={(i) => setDrafts((d) => toggleGap(d, i))}
             onRestoreWords={(a, b) => setDrafts((d) => toggleRange(d, a, b))}
-            onRestoreCut={p.onRestoreCut}
+            onRestoreCut={restoreCut}
+            openCut={openCut}
+            onToggleCut={toggleCut}
             onSeek={p.seek}
           />
         ))}
         {sel && barPos && info && fix == null && (
           <div className="tp-selbar" ref={bar} style={{ left: barPos.x, top: Math.max(0, barPos.y) }} onPointerDown={(e) => e.stopPropagation()} data-testid="selection-bar">
+            {cutsInSel.length > 0 && p.onRestoreCuts && (
+              <button
+                onClick={() => {
+                  p.onRestoreCuts?.(cutsInSel);
+                  setSel(null);
+                }}
+                data-testid="sel-restore-cuts"
+              >
+                <RotateCcw className="ico" />
+                {t('st.restoreCuts', { n: cutsInSel.length })}
+              </button>
+            )}
             <button className="danger" onClick={cut} data-testid="sel-delete">
               {allPending ? <RotateCcw className="ico" /> : <Trash2 className="ico" />}
               {allPending ? t('te.restore') : t('te.delete')}
@@ -436,6 +483,8 @@ interface ParaProps {
   onGap: (i: number) => void;
   onRestoreWords: (a: number, b: number) => void;
   onRestoreCut: (index: number) => void;
+  openCut: number | null;
+  onToggleCut: (index: number) => void;
   onSeek: (t: number) => void;
 }
 
@@ -448,7 +497,16 @@ const Para = memo(
       if (run) {
         const secs = run.cut.end - run.cut.start;
         out.push(
-          <span key={`c${i}`} className="cutmark" data-cut={run.cut.index} data-testid="cut-marker">
+          <span
+            key={`c${i}`}
+            className={`cutmark${p.openCut === run.cut.index ? ' open' : ''}`}
+            data-cut={run.cut.index}
+            data-testid="cut-marker"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              if (!(e.target as HTMLElement).closest('.cm-pop')) p.onToggleCut(run.cut.index);
+            }}
+          >
             <Scissors className="ico" />
             {cutLabel(run.cut.why, secs)}
             <span className="cm-pop" onPointerDown={(e) => e.stopPropagation()}>
@@ -531,5 +589,5 @@ const Para = memo(
       </div>
     );
   },
-  (a, b) => a.sel?.[0] === b.sel?.[0] && a.sel?.[1] === b.sel?.[1] && a.dkey === b.dkey && a.hkey === b.hkey && a.words === b.words && a.applied === b.applied && a.picked === b.picked && a.shortened === b.shortened && a.fixed === b.fixed && a.fillers === b.fillers && a.lowconf === b.lowconf && a.pauses === b.pauses && a.onRestoreCut === b.onRestoreCut,
+  (a, b) => a.sel?.[0] === b.sel?.[0] && a.sel?.[1] === b.sel?.[1] && a.dkey === b.dkey && a.hkey === b.hkey && a.words === b.words && a.applied === b.applied && a.picked === b.picked && a.shortened === b.shortened && a.fixed === b.fixed && a.fillers === b.fillers && a.lowconf === b.lowconf && a.pauses === b.pauses && a.onRestoreCut === b.onRestoreCut && a.openCut === b.openCut,
 );

@@ -742,6 +742,9 @@ def words(doc, required=True):
     tr = read_json(path, None)
     if isinstance(tr, dict) and tr.get("sig") == _tsig(doc) and not _split_terms(tr):
         return tr["words"]
+    W = _pipeline_words(doc)
+    if W:
+        return W
     if not doc.rec["info"]["has_audio"]:
         if required:
             raise _err("no-audio", "the output has no audio: nothing to transcribe", "成片没有音轨，无法转写")
@@ -813,11 +816,34 @@ def words_sig(W):
 
 
 def cached_words(doc):
-    """The cached transcript words of this output (never transcribes) or None."""
+    """The cached transcript words of this output (never transcribes) or None. A speech-pipeline cut that was
+    never transcribed gets the pipeline's own words, mapped through its cuts (``_pipeline_words``)."""
     tr = read_json(transcript_path(doc), None)
     if isinstance(tr, dict) and tr.get("sig") == _tsig(doc) and isinstance(tr.get("words"), list):
         return tr["words"]
-    return None
+    return _pipeline_words(doc)
+
+
+def _pipeline_words(doc):
+    """The source transcript mapped through the batch job's cuts (``batch.transcripts.mapped_words``) for an
+    output that is a pipeline cut and not a pickup splice: cached as its transcript so it opens with words and
+    word cuts snap to them, no second ASR pass. None otherwise."""
+    if _tsig(doc) != doc.d["source_sig"]:
+        return None
+    try:
+        from vstudio.batch.transcripts import mapped_words
+        W = mapped_words(doc.rec["file"], duration=doc.rec["info"].get("duration"))
+        if not W and doc.rec.get("master"):
+            W = mapped_words(doc.rec["master"], duration=doc.rec["info"].get("duration"))
+    except Exception:  # noqa: BLE001  (a hint: the output is transcribed as before)
+        return None
+    if not W:
+        return None
+    try:
+        write_words(doc, W)
+    except OSError:
+        pass
+    return W
 
 
 def _energy(doc, W):

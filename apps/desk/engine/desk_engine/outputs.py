@@ -205,6 +205,15 @@ def _asr_for(file, workdir=None, extra=()):
     return []
 
 
+def _mapped_words(file, duration):
+    """The pipeline's own transcript mapped through the clip's cuts (no second ASR pass) -> words or []."""
+    try:
+        from vstudio.batch.transcripts import mapped_words
+        return mapped_words(file, duration=duration or None) or []
+    except Exception:  # noqa: BLE001  (an older engine: 「听一遍」 transcribes it)
+        return []
+
+
 def waveform(words, duration, n=None):
     """A speech-shaped envelope from the word timings (deterministic; ~8 bars per second)."""
     if not duration:
@@ -795,6 +804,8 @@ class Outputs:
             mode = "pipeline" if captions else "flattened"
             if not words:
                 words = _words_from_asr(read_json(os.path.join(jobdir, "compose", "out", "final.mp4.asr.json"), None))
+        if not words and file:
+            words = _mapped_words(file, dur)
         return dict(id=c["id"], title=c["title"], state=c["state"], file=file, files=c["files"], cover=c.get("cover"),
                     post=c.get("post"), duration=dur, fps=(main or {}).get("fps") or info.get("fps") or 30,
                     w=(main or {}).get("w") or info.get("w"), h=(main or {}).get("h") or info.get("h"),

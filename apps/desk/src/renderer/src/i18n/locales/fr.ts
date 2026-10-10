@@ -18,6 +18,7 @@ import { autopilotFr } from './autopilot';
 import { recordFr } from './record';
 import { fewerStepsFr } from './fewerSteps';
 import { pickupsFr } from './pickups';
+import { studioFr } from './studio';
 import { settingsV2Fr } from './settingsV2';
 import { watermarkFr } from './watermark';
 import { archiveFr } from './archive';
@@ -1858,4 +1859,4 @@ const releaseFr: Record<keyof typeof releaseEn, string> = {
   'set.developerHint': 'Pour travailler sur Reelfold lui-même. Rien de tout cela n’est nécessaire pour faire des vidéos.',
 };
 
-export const fr: Record<MessageKey, string> = { ...legacyFr, ...legacyFrV02, ...v04Fr, ...aiaccFr, ...publishPlatformsFr, ...chatEditFr, ...channelsFr, ...projectAiFr, ...aboutFr, ...releaseFr, ...publishBoardFr, ...publishLoopFr, ...settingsV2Fr, ...createFr, ...pluginsFr, ...uxCoreFr, ...usageFr, ...weekPlanFr, ...shareFr, ...qaFr, ...firstRunFr, ...liteFr, ...sessionFixesFr, ...watermarkFr, ...archiveFr, ...autopilotFr, ...recordFr, ...fewerStepsFr, ...pickupsFr, ...draftsFr, ...updateFr };
+export const fr: Record<MessageKey, string> = { ...legacyFr, ...legacyFrV02, ...v04Fr, ...aiaccFr, ...publishPlatformsFr, ...chatEditFr, ...channelsFr, ...projectAiFr, ...aboutFr, ...releaseFr, ...publishBoardFr, ...publishLoopFr, ...settingsV2Fr, ...createFr, ...pluginsFr, ...uxCoreFr, ...usageFr, ...weekPlanFr, ...shareFr, ...qaFr, ...firstRunFr, ...liteFr, ...sessionFixesFr, ...watermarkFr, ...archiveFr, ...autopilotFr, ...recordFr, ...fewerStepsFr, ...pickupsFr, ...studioFr, ...draftsFr, ...updateFr };
