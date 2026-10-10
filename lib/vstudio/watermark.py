@@ -335,12 +335,22 @@ def generate(text, style="badge", color="#FFFFFF", out=None):
     if not text:
         raise ValueError("generate: type your handle or name first")
     validate(dict(text=text, style=style, color=color))
-    im = badge_image(text, style, color)
-    if out is None:
-        key = hashlib.sha1(json.dumps([text, style, _color(color), 2]).encode()).hexdigest()[:10]
-        out = os.path.join(asset_dir(), f"generated-{key}.png")
-        if os.path.exists(out):
-            return out
+    if out is not None:
+        return _write_png(badge_image(text, style, color), out)
+    key = hashlib.sha1(json.dumps([text, style, _color(color), 2]).encode()).hexdigest()[:10]
+    out = os.path.join(asset_dir(), f"generated-{key}.png")
+    # named by its content, so written once: parallel previews never replace it while another one opens it (Windows
+    # refuses that open)
+    with _GEN_LOCK:
+        if not os.path.exists(out):
+            _write_png(badge_image(text, style, color), out)
+    return out
+
+
+_GEN_LOCK = threading.Lock()
+
+
+def _write_png(im, out):
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     tmp = "%s.%d.%d.part" % (out, os.getpid(), threading.get_ident())   # atomic: a parallel preview never reads half
     im.save(tmp, "PNG")
