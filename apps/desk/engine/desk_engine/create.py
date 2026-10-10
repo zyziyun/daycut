@@ -19,7 +19,7 @@ Routes (GET / POST, Bearer auth like everything else):
        episodes/<eid>/run {stage, estimate_id?, confirm_code?, max_cny?, allow_unknown?, only?} -> {job} | 409
        episodes/<eid>/stop   episodes/<eid>/takes/<no> {take}   episodes/<eid>/import {files[]}
        episodes/<eid>/handoff {languages[], schedule} -> {job}; done: {project_id, clip, posts}
-       record/ingest {session_dir, target, series?} -> {job}    record/recover    spend/cap {cap_cny}
+       record/ingest {session_dir, target project:talkinghead|assembled|shot:EID/NO, series?} -> {job}    record/recover    spend/cap {cap_cny}
   Plugins (docs/PLUGINS.md):
   GET  plugins?lang=          POST plugins/<kind>:<id> {enabled?, settings?}
   POST import {path, importer?, format?, lang?} -> {job}; done: {series, episode, n}     import/sniff {path}
@@ -505,7 +505,7 @@ class CreateApi:
             root = os.path.realpath(self.recordings_root())
             need(os.path.realpath(d).startswith(root + os.sep), "session_dir: a recorder session")
             tgt = b.get("target") or "project:talkinghead"
-            need(tgt == "project:talkinghead" or re.match(r"^shot:[a-z0-9][a-z0-9-]{0,47}/\d{2,3}$", tgt), "target")
+            need(tgt in ("project:talkinghead", "assembled") or re.match(r"^shot:[a-z0-9][a-z0-9-]{0,47}/\d{2,3}$", tgt), "target")
             args = ["record", "ingest", d, "--target", tgt]
             if b.get("series"):
                 args += ["--series", _sid(b["series"])]

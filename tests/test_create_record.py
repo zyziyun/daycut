@@ -67,6 +67,18 @@ def test_ingest_creates_talkinghead_project(home):
 
 
 @needs_ffmpeg
+def test_ingest_assembled_only_makes_no_project_and_keeps_raw_sound(home, monkeypatch):
+    d = session(str(home), [dict(t=0.0, kind="line", line=0)])
+    sess = json.load(open(os.path.join(d, "session.json")))
+    json.dump(dict(sess, studio=False), open(os.path.join(d, "session.json"), "w"))
+    from vstudio import studiosound
+    monkeypatch.setattr(studiosound, "enhance", lambda *a, **k: (_ for _ in ()).throw(AssertionError("studio sound")))
+    res = RE.ingest(d, "assembled")
+    assert os.path.exists(res["assembled"]) and "project_dir" not in res
+    assert not os.path.exists(os.path.join(d, "project"))
+
+
+@needs_ffmpeg
 def test_recover_locked_session(home):
     d = session(str(home), [], seconds=2, lock=True)
     out = RE.recover()

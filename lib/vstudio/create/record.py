@@ -1,9 +1,10 @@
 """Recorder ingest (SPEC §1.6): a recorder session folder -> best take per line -> studio sound -> a talking-head
-project (or one shot's take).
+project, one shot's take, or (target ``assembled``) just the cleaned file the desk starts an autopilot request with.
 
     <recordings>/<ts>-<slug>/session.json   {id, slug, created, script [lines], tracks {camera|mic|screen:
                                              {file, start_ms, mime}}, series?, episode?, shot?}
                              camera.webm mic.webm screen.webm?   (1 s chunks appended while recording)
+                             (session.json studio: false = keep the raw sound, no studio-sound pass)
                              takes.json      [{t (s from the start), kind line|retake, line}]
                              recording.lock  (while live; left behind = the app quit mid-take -> recover())
 
@@ -196,7 +197,7 @@ def ingest(session_dir, target="project:talkinghead", series=None, on_event=None
     if not edl:
         edl = [dict(line=0, start=0.0, end=round(total, 3), attempts=1)]
     ev("clean")
-    out = cut(take, edl, os.path.join(d, "assembled.mp4"))
+    out = cut(take, edl, os.path.join(d, "assembled.mp4"), studio=sess.get("studio", True) is not False)
     res = dict(ok=True, session=os.path.basename(d), dir=d, assembled=out, duration=round(duration(out), 2),
                lines=[dict(e, text=lines[e["line"]] if e["line"] < len(lines) else "") for e in edl],
                retakes=sum(1 for m in marks if m.get("kind") == "retake"), transcript=words is not None)
@@ -206,6 +207,8 @@ def ingest(session_dir, target="project:talkinghead", series=None, on_event=None
         dst = os.path.join(work, f"{store.need_shot(no)}_rec.mp4")
         shutil.copy2(out, dst)
         res["imported"] = jobs.import_takes(store.need_eid(eid), [dst])["imported"]
+    elif target == "assembled":
+        pass                                   # only the cleaned file: the desk hands it to an autopilot request
     else:
         from vstudio.project.core import Project
         name = sess.get("title") or sess.get("slug") or os.path.basename(d)

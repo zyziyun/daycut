@@ -12,7 +12,7 @@ exit code 2). ``--json-events``: progress as JSON lines (``{"event": ...}``) bef
     making [--series SID]                     takes pick EID --shot 07 --take FILE | takes import EID FILES...
     prompts EID                               (即梦: the prompts to paste; you press Generate on the site)
     handoff EID [--languages zh,en,fr] [--no-schedule]
-    record ingest DIR --target project:talkinghead|shot:EID/NO [--series SID] | record recover
+    record ingest DIR --target project:talkinghead|assembled|shot:EID/NO [--series SID] | record recover
     spend [--series SID] [--set-cap CNY]
     plugins [list | enable KEY | disable KEY | set KEY --settings-json J]     (KEY = <kind>:<id>; docs/PLUGINS.md)
     import PATH [--into EID] [--importer ID] [--format F]   a board (HyperFrames, shot list, EDL / OTIO / XML)
