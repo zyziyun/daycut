@@ -1,3 +1,5 @@
+// Runs the app with the Studio off (DESK_STUDIO=0): the pages before the Studio (2026-10 review step 7) stay
+// supported behind its flag, and this spec covers them.
 // The chat-first clip editor (ux/CHAT_EDIT.md, direction C), window hidden, mock engine (desk implementation: no
 // model, no network), isolated profile. In English and 简体中文: a request is applied at once (ux/fewer-steps) ->
 // before / after on the player -> Undo restores; with "Ask before applying AI edits" a draft card -> adjust it in the
@@ -34,7 +36,7 @@ test.beforeAll(async () => {
   }
   app = await electron.launch({
     args: [path.resolve(import.meta.dirname, '../..')],
-    env: { ...process.env, DESK_ENGINE_MOCK: '1', DESK_MOCK_STEP: '0.02', DESK_EXPORT_STEP: '0.4', DESK_USER_DATA: path.join(tmp, 'profile'), VSTUDIO_HOME: path.join(tmp, 'vhome'), DESK_HISTORY_WATCH: watch, DESK_HIDE_WINDOW: '1', DESK_SHARED_CACHE: path.join(tmp, 'cache'), DESK_HF_HUB: '', DESK_SKIP_FIRST_RUN: '1', VITE_DEV_SERVER_URL: '' },
+    env: { ...process.env, DESK_ENGINE_MOCK: '1', DESK_MOCK_STEP: '0.02', DESK_EXPORT_STEP: '0.4', DESK_USER_DATA: path.join(tmp, 'profile'), VSTUDIO_HOME: path.join(tmp, 'vhome'), DESK_HISTORY_WATCH: watch, DESK_STUDIO: '0', DESK_HIDE_WINDOW: '1', DESK_SHARED_CACHE: path.join(tmp, 'cache'), DESK_HF_HUB: '', DESK_SKIP_FIRST_RUN: '1', VITE_DEV_SERVER_URL: '' },
   });
   page = await app.firstWindow();
   await page.setViewportSize({ width: 1440, height: 900 });

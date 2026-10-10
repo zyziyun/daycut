@@ -1,3 +1,5 @@
+// Runs the app with the Studio off (DESK_STUDIO=0): the pages before the Studio (2026-10 review step 7) stay
+// supported behind its flag, and this spec covers them.
 // v0.4 (window hidden, mock engine, isolated profile): composer -> AI plan card -> revise -> start (pilot) ->
 // project; a fuye-like work folder -> the clip in the large player -> full screen (F / Esc) -> second-pass edit
 // (trim + pop word + 让 AI 改) -> render -> undo; and every main screen in English and 简体中文 with no missing
@@ -39,7 +41,7 @@ test.beforeAll(async () => {
   fs.writeFileSync(recording, 'not really a video');
   app = await electron.launch({
     args: [path.resolve(import.meta.dirname, '../..')],
-    env: { ...process.env, DESK_ENGINE_MOCK: '1', DESK_MOCK_STEP: '0.02', DESK_USER_DATA: path.join(tmp, 'profile'), VSTUDIO_HOME: path.join(tmp, 'vhome'), DESK_HISTORY_WATCH: watch, DESK_HIDE_WINDOW: '1', DESK_SHARED_CACHE: path.join(tmp, 'cache'), DESK_HF_HUB: '', DESK_SKIP_FIRST_RUN: '1', VITE_DEV_SERVER_URL: '' },
+    env: { ...process.env, DESK_ENGINE_MOCK: '1', DESK_MOCK_STEP: '0.02', DESK_USER_DATA: path.join(tmp, 'profile'), VSTUDIO_HOME: path.join(tmp, 'vhome'), DESK_HISTORY_WATCH: watch, DESK_STUDIO: '0', DESK_HIDE_WINDOW: '1', DESK_SHARED_CACHE: path.join(tmp, 'cache'), DESK_HF_HUB: '', DESK_SKIP_FIRST_RUN: '1', VITE_DEV_SERVER_URL: '' },
   });
   page = await app.firstWindow();
   await page.setViewportSize({ width: 1440, height: 900 });

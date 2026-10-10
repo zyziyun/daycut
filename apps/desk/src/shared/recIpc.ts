@@ -89,7 +89,7 @@ export type ScreensReply = { access: 'granted'; sources: ScreenSource[] } | { ac
 /** DESK_CREATE=1 / 0 (tests) beats the saved setting. */
 /** The Studio (one list of every video + one page per video, 2026-10 review): the saved setting, else the default;
  * DESK_STUDIO=1/0 overrides it in dev / test builds. */
-export const STUDIO_DEFAULT = false;
+export const STUDIO_DEFAULT = true;
 export function studioFlagFrom(saved: boolean | undefined, env: string | undefined): boolean {
   if (env === '1') return true;
   if (env === '0') return false;

@@ -5,16 +5,17 @@
 // whole project opens the question itself. ＋ New video (⌘N) starts the next one from here; ↑ ↓ and ⌘1–9 switch.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Play, Plus, Sparkles } from 'lucide-react';
-import type { CalendarPost, Clip, InboxItem } from '../../../shared/v04';
-import { fmtClock, fmtDate, fmtMinutes, t, type MessageKey } from '../i18n';
-import { useEngine, useLoad } from '../lib/engine';
+import type { CalendarPost, InboxItem } from '../../../shared/v04';
+import { fmtClock, fmtDate, fmtMinutes, t } from '../i18n';
 import { useHistory } from '../lib/history';
 import { useInbox } from '../lib/inbox';
 import { inboxTitle } from '../lib/inboxView';
 import { keyHint } from '../lib/keys';
 import { startTriage } from '../lib/nav';
 import { href, routeQuery } from '../lib/router';
-import { STUDIO_FILTERS, grouped, needsYou, studioRows, timeLeft, type StudioFilter, type StudioGroup, type StudioRow } from '../lib/studio';
+import { VIDEO_STATUS_KEY } from '../../../shared/videoStatus';
+import { STUDIO_FILTERS, grouped, needsYou, timeLeft, type StudioFilter, type StudioGroup, type StudioRow } from '../lib/studio';
+import { rowHref, useStudioData } from '../lib/studioData';
 import { platformName } from './Home';
 import { ItemPane, useResolve } from './Inbox';
 import { Empty, Thumb } from './kit';
@@ -27,33 +28,6 @@ import './studio.css';
 
 const FKEY = 'studio.filter';
 
-/** Every recent project's clips, loaded once per project version (a run's new clip shows as soon as it exists). */
-function useClipsOf(ids: { id: string; v: string }[]) {
-  const { client, subscribe } = useEngine();
-  const [clips, setClips] = useState<Record<string, Clip[] | undefined>>({});
-  const seen = useRef<Record<string, string>>({});
-  const [n, setN] = useState(0);
-  useEffect(() => subscribe((e) => (e.type === 'output-edit' || e.type === 'calendar' ? ((seen.current = {}), setN((x) => x + 1)) : undefined)), [subscribe]);
-  const key = ids.map((x) => `${x.id}:${x.v}`).join('|');
-  useEffect(() => {
-    if (!client) return;
-    let alive = true;
-    for (const { id, v } of ids) {
-      if (seen.current[id] === v) continue;
-      seen.current[id] = v;
-      client
-        .clips(id)
-        .then((d) => alive && setClips((c) => ({ ...c, [id]: d.clips })))
-        .catch(() => alive && setClips((c) => ({ ...c, [id]: [] })));
-    }
-    return () => {
-      alive = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client, key, n]);
-  return clips;
-}
-
 /** 「连着看」: clips waiting for her review play one after another (space approves, X sends back - Focus); other
  * questions come one after another on their clips' pages. */
 function inRow(items: InboxItem[]) {
@@ -62,24 +36,10 @@ function inRow(items: InboxItem[]) {
   else startTriage(items);
 }
 
-function rowHref(r: StudioRow): string {
-  if (r.kind === 'clip') return href({ name: 'studio', id: r.item!, clip: r.clip! });
-  if (r.kind === 'project') return href({ name: 'studio', id: r.item! }) + (r.ask ? `?ask=${encodeURIComponent(r.ask.key)}` : '');
-  return `${href({ name: 'studio' })}?sel=${r.r!.id}`;
-}
-
 export function Studio({ id, clip }: { id?: string; clip?: string }) {
-  const { data: hist, requests = [] } = useHistory();
+  const { data: hist } = useHistory();
   const inbox = useInbox();
-  const { subscribe } = useEngine();
-  const { data: cal, reload: reloadCal } = useLoad((c) => c.calendar(undefined, { queue: false }).catch(() => c.calendar()), []);
-  useEffect(() => subscribe((e) => void (e.type === 'calendar' && reloadCal())), [subscribe]); // eslint-disable-line react-hooks/exhaustive-deps
-  const posts = useMemo(() => cal?.posts ?? [], [cal]);
-  const items = useMemo(() => hist?.items ?? [], [hist]);
-  const now = Date.now() / 1000;
-  const recent = useMemo(() => items.filter((i) => now - (i.updated ?? i.created ?? 0) < 14 * 86400 || i.live?.state === 'running' || i.live?.state === 'waiting'), [items]); // eslint-disable-line react-hooks/exhaustive-deps
-  const clips = useClipsOf(recent.map((i) => ({ id: i.id, v: `${i.updated ?? 0}:${i.status}:${i.live?.state ?? ''}` })));
-  const rows = useMemo(() => studioRows(recent, requests, clips, posts, inbox.items), [recent, requests, clips, posts, inbox.items]);
+  const { rows, posts } = useStudioData();
   const groups = useMemo(() => grouped(rows), [rows]);
   const q = routeQuery();
   const [filter, setFilterS] = useState<StudioFilter>(() => (STUDIO_FILTERS.includes(q.f as StudioFilter) ? (q.f as StudioFilter) : ((sessionStorage.getItem(FKEY) as StudioFilter | null) ?? 'all')));
@@ -111,7 +71,14 @@ export function Studio({ id, clip }: { id?: string; clip?: string }) {
     if (!selKey && first && hist) history.replaceState(null, '', rowHref(first));
     if (!selKey && first && hist) window.dispatchEvent(new HashChangeEvent('hashchange'));
   }, [selKey, first?.key, !!hist]); // eslint-disable-line react-hooks/exhaustive-deps
-  const [composer, setComposer] = useState(false);
+  // ＋ New video from anywhere (⌘N, ⌘K): the composer opens here
+  const [composer, setComposer] = useState(() => sessionStorage.getItem('studio.compose') === '1');
+  useEffect(() => {
+    sessionStorage.removeItem('studio.compose');
+    const on = () => (sessionStorage.removeItem('studio.compose'), setComposer(true));
+    window.addEventListener('studio:compose', on);
+    return () => window.removeEventListener('studio:compose', on);
+  }, []);
 
   // ↑ ↓ the next / previous video, ⌘1–9 the n-th one in the list
   const go = useCallback((r: StudioRow | undefined) => r && (location.hash = rowHref(r)), []);
@@ -123,11 +90,6 @@ export function Studio({ id, clip }: { id?: string; clip?: string }) {
       e.preventDefault();
       e.stopImmediatePropagation();
       go(list[Number(e.key) - 1]);
-      return;
-    }
-    if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'n') {
-      e.preventDefault();
-      setComposer(true);
       return;
     }
     if (isTyping(e.target) || mod || e.altKey || e.shiftKey) return;
@@ -164,7 +126,7 @@ export function Studio({ id, clip }: { id?: string; clip?: string }) {
         <div className="st-filters" role="tablist" aria-label={t('st.filters')}>
           {STUDIO_FILTERS.map((f) => (
             <button key={f} role="tab" aria-selected={filter === f} className={`st-f ${filter === f ? 'on' : ''} ${f === 'you' && count('you') ? 'you' : ''}`} onClick={() => setFilter(f)} data-testid={`studio-f-${f}`}>
-              {t(`st.f.${f}` as MessageKey)}
+              {f === 'all' ? t('st.f.all') : t(VIDEO_STATUS_KEY[f])}
               {count(f) > 0 && <b className="n">{count(f)}</b>}
             </button>
           ))}
@@ -180,7 +142,7 @@ export function Studio({ id, clip }: { id?: string; clip?: string }) {
               <section key={g} className="st-group" data-testid={`studio-group-${g}`}>
                 <h3>
                   <span>
-                    {t(`st.f.${g}` as MessageKey)} · {l.length}
+                    {t(VIDEO_STATUS_KEY[g])} · {l.length}
                   </span>
                   <span className="sp" />
                   {g === 'you' && inbox.items.length > 0 && (
@@ -234,7 +196,7 @@ function StudioListRow({ r, on, n }: { r: StudioRow; on: boolean; n: number }) {
   const pct = r.p.progress == null ? null : Math.round(r.p.progress * 100);
   const where = [r.project, r.pos ? `${r.pos[0]}/${r.pos[1]}` : null].filter(Boolean).join(' · ');
   return (
-    <a className={`st-row ${on ? 'on' : ''}`} href={rowHref(r)} aria-current={on ? 'true' : undefined} data-testid="studio-row" data-row={r.key} data-group={r.group} data-kind={r.kind} title={n > 0 && n < 10 ? `${r.title} · ${keyHint(`⌘${n}`)}` : r.title}>
+    <a className={`st-row ${on ? 'on' : ''}`} href={rowHref(r)} aria-current={on ? 'true' : undefined} data-testid="studio-row" data-row={r.key} data-group={r.group} data-kind={r.kind} data-tone={r.tone} title={n > 0 && n < 10 ? `${r.title} · ${keyHint(`⌘${n}`)}` : r.title}>
       <Thumb src={r.thumb} className="st-th" />
       <span className="tx">
         <b className="clamp1" lang="zh-CN">

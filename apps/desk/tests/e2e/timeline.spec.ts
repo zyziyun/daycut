@@ -1,3 +1,5 @@
+// Runs the app with the Studio off (DESK_STUDIO=0): the pages before the Studio (2026-10 review step 7) stay
+// supported behind its flag, and this spec covers them.
 // The clip editor's scrub bar + timeline, window hidden, mock engine (desk implementation, mock 「听一遍」), isolated
 // profile: click the scrub bar to seek (hover shows a frame + the time), click the timeline to seek, drag the playhead,
 // zoom (+ / Fit / ⌘+ / ⌘0) with the ruler and the view following, the filmstrip + waveform from the engine's sprite /
@@ -29,7 +31,7 @@ test.beforeAll(async () => {
   fs.writeFileSync(path.join(fuye, 'final', 'A_换圈子.mp4.asr.json'), JSON.stringify({ segments: [{ start: 0.2, end: 6.6, words: w.map(([word, start, end]) => ({ word, start, end })) }] }));
   app = await electron.launch({
     args: [path.resolve(import.meta.dirname, '../..')],
-    env: { ...process.env, DESK_ENGINE_MOCK: '1', DESK_MOCK_STEP: '0.02', DESK_MOCK_ASR_STEP: '0.5', DESK_USER_DATA: path.join(tmp, 'profile'), VSTUDIO_HOME: path.join(tmp, 'vhome'), DESK_HISTORY_WATCH: watch, DESK_HIDE_WINDOW: '1', DESK_SHARED_CACHE: path.join(tmp, 'cache'), DESK_HF_HUB: '', DESK_SKIP_FIRST_RUN: '1', VITE_DEV_SERVER_URL: '' },
+    env: { ...process.env, DESK_ENGINE_MOCK: '1', DESK_MOCK_STEP: '0.02', DESK_MOCK_ASR_STEP: '0.5', DESK_USER_DATA: path.join(tmp, 'profile'), VSTUDIO_HOME: path.join(tmp, 'vhome'), DESK_HISTORY_WATCH: watch, DESK_STUDIO: '0', DESK_HIDE_WINDOW: '1', DESK_SHARED_CACHE: path.join(tmp, 'cache'), DESK_HF_HUB: '', DESK_SKIP_FIRST_RUN: '1', VITE_DEV_SERVER_URL: '' },
   });
   page = await app.firstWindow();
   await page.setViewportSize({ width: 1440, height: 900 });

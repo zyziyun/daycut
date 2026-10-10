@@ -1,3 +1,5 @@
+// Runs the app with the Studio off (DESK_STUDIO=0): the pages before the Studio (2026-10 review step 7) stay
+// supported behind its flag, and this spec covers them.
 // Autopilot + the control room (window hidden, test engine, isolated profile):
 //   Home sends two requests back to back (Home is free again at once) -> both show up in All projects and run side
 //   by side to finished clips with no plan to confirm and no question; the Inbox stays empty; the control room shows
@@ -31,7 +33,7 @@ test.beforeAll(async () => {
       DESK_USER_DATA: path.join(tmp, 'profile'),
       VSTUDIO_HOME: path.join(tmp, 'vhome'),
       DESK_HISTORY_WATCH: '',
-      DESK_HIDE_WINDOW: '1',
+      DESK_STUDIO: '0', DESK_HIDE_WINDOW: '1',
       DESK_SHARED_CACHE: path.join(tmp, 'cache'),
       DESK_HF_HUB: '',
       DESK_SKIP_FIRST_RUN: '1',

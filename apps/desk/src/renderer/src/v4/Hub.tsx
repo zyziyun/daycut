@@ -14,15 +14,16 @@ import { useHistory } from '../lib/history';
 import { useInbox } from '../lib/inbox';
 import { clipHref, inboxHref, projectHref } from '../lib/nav';
 import { decisionWords, hubGroups, postsOf, requestPipeline, STEPS, stepState, type GroupId, type HubRow, type Pipeline } from '../lib/pipeline';
-import { go, href, routeQuery } from '../lib/router';
+import { href, routeQuery } from '../lib/router';
 import { useIntakeJob } from '../lib/useIntakeJob';
+import { studioEnabled } from '../lib/studioFlag';
 import { failureReason, FailureActions } from './Failure';
 import { Empty, Thumb } from './kit';
 import { errText } from './msg';
 import { PlanCard } from './PlanCard';
 import { ProgressFeed } from './ProgressFeed';
 import { scheduleClips } from './Project';
-import { useUi } from './ui';
+import { newVideo, useUi } from './ui';
 import { clipWords, liveText } from '../lib/liveStatus';
 import './hub.css';
 
@@ -241,7 +242,7 @@ export function RequestDetail({ r, onApplied }: { r: OpenRequest; onApplied: (di
     sessionStorage.setItem('v4.composer', JSON.stringify({ prompt: r.prompt ?? '', files: r.inputs ?? [] }));
     sessionStorage.removeItem('v4.hubSel');
     reload();
-    go({ name: 'home' });
+    newVideo(); // the composer with her words (the Studio's ＋ New video, else Home)
   };
   const p = requestPipeline(r);
   return (
@@ -335,8 +336,8 @@ export function ProjectDetail({ i, p, posts }: { i: HistoryItem; p: Pipeline; po
             </button>
           </div>
         )}
-        <a className="btn" href={projectHref(i.id)} data-testid="hub-open">
-          {t('hub.open')}
+        <a className="btn" href={studioEnabled() ? href({ name: 'project', id: i.id, tab: 'clips' }) : projectHref(i.id)} data-testid="hub-open">
+          {studioEnabled() ? t('st.details') : t('hub.open')}
         </a>
       </header>
       <div className="card hub-card" data-testid="hub-status">

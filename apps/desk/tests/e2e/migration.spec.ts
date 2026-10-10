@@ -1,3 +1,5 @@
+// Runs the app with the Studio off (DESK_STUDIO=0): the pages before the Studio (2026-10 review step 7) stay
+// supported behind its flag, and this spec covers them.
 // The Reelfold rename, end to end with real Electron safeStorage: an old profile (written under the old app name, so
 // its API key and cookies are encrypted with the old "<name> Safe Storage" keychain item) is copied into
 // <appData>/Reelfold on the first launch; settings, the encrypted key and a platform login cookie still read; the old
@@ -30,7 +32,7 @@ const ENV = {
   DESK_USER_DATA: '',
   VSTUDIO_HOME: path.join(appData, 'vhome'),
   DESK_HISTORY_WATCH: '',
-  DESK_HIDE_WINDOW: '1',
+  DESK_STUDIO: '0', DESK_HIDE_WINDOW: '1',
   DESK_SHARED_CACHE: path.join(appData, 'cache'),
   DESK_HF_HUB: '',
   DESK_SKIP_FIRST_RUN: '1',

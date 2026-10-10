@@ -1,3 +1,5 @@
+// Runs the app with the Studio off (DESK_STUDIO=0): the pages before the Studio (2026-10 review step 7) stay
+// supported behind its flag, and this spec covers them.
 // The in-app update against a real electron-updater feed (latest-mac.yml + a zip with its sha512, from a local
 // server; DESK_UPDATE_FEED writes it as the dev build's app-update.yml). Real: the launch check, the feed parsing,
 // the download with its progress, the checksum, the release notes. Faked in this test only: Squirrel.Mac (Electron's
@@ -50,7 +52,7 @@ async function launch(profile: string): Promise<ElectronApplication> {
       DESK_SHARED_CACHE: path.join(tmp, 'cache'),
       DESK_HF_HUB: '',
       DESK_HISTORY_WATCH: watch,
-      DESK_HIDE_WINDOW: '1',
+      DESK_STUDIO: '0', DESK_HIDE_WINDOW: '1',
       DESK_SKIP_FIRST_RUN: '1',
       DESK_DISABLE_UPDATES: '',
       DESK_UPDATE_FEED: feed,

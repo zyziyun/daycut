@@ -1,3 +1,5 @@
+// Runs the app with the Studio off (DESK_STUDIO=0): the pages before the Studio (2026-10 review step 7) stay
+// supported behind its flag, and this spec covers them.
 // First ten minutes (window hidden, mock engine, a FRESH profile, no AI logged in): the wizard says "continue without
 // AI" out loud and lands on Home; Home offers the built-in sample; one click plans it (planned without AI, said in the
 // UI language), Start makes a project labelled as the sample, and the sample can be deleted again.
@@ -40,7 +42,7 @@ test.beforeAll(async () => {
       DESK_USER_DATA: path.join(tmp, 'profile'),
       VSTUDIO_HOME: path.join(tmp, 'vhome'),
       DESK_HISTORY_WATCH: '',
-      DESK_HIDE_WINDOW: '1',
+      DESK_STUDIO: '0', DESK_HIDE_WINDOW: '1',
       DESK_SHARED_CACHE: path.join(tmp, 'cache'),
       DESK_HF_HUB: '',
       DESK_SKIP_FIRST_RUN: '',

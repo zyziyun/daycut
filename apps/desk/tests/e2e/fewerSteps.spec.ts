@@ -1,5 +1,5 @@
 // Fewer steps (ux/fewer-steps) in the real app with the REAL engine sidecar (no mock engine), isolated temp profile,
-// window hidden. A talking-head project (fixture/real_project.py: synthetic tone-burst talk + the engine tests' fake
+// window hidden, on the clip's one page in the Studio (2026-10 review step 7: the editor link opens there). A talking-head project (fixture/real_project.py: synthetic tone-burst talk + the engine tests' fake
 // transcriber, the only fakes; the made clip opens with the pipeline's own words) runs on autopilot to the end
 // (rules decide, no AI account), then in its clip editor:
 //   - delete words in the transcript -> the preview skips them at once -> saved by itself (no Apply) -> Export right
@@ -85,8 +85,10 @@ const dur = (f: string) => Number(execFileSync('ffprobe', ['-v', 'error', '-show
 const exportFile = () => path.join(project, 'state', 'jobs', 'talk', 'export', 'exports', 'xiaohongshu-full.mp4');
 
 async function openClip() {
-  await hash(`#/p/${id}/clip/talk`);
-  await expect(page.getByTestId('editor')).toBeVisible({ timeout: 60000 });
+  await hash(`#/p/${id}/clip/talk`); // the old editor link lands on the clip's page in the Studio
+  await expect(page.getByTestId('studio')).toBeVisible({ timeout: 60000 });
+  await expect(page.getByTestId('editor')).toHaveAttribute('data-layout', 'studio', { timeout: 60000 });
+  if (await page.getByTestId('studio-ai-pane').isVisible()) await page.getByTestId('studio-ai-close').click(); // the page, not the conversation
   await page.getByTestId('tab-transcript').click();
   // the words are there on open: the pipeline's transcript mapped through the clip's cuts (nobody listened again)
   await expect(page.locator('[data-testid=transcript-body] .w').first()).toBeVisible({ timeout: 60000 });
@@ -139,8 +141,10 @@ test('transcript: delete -> skipped at once -> saved by itself (no Apply) -> Exp
 
 test('chat: "磨个皮?" applies real skin smoothing at once, with Undo and Before / after; the clip renders with it', async () => {
   test.setTimeout(300000);
-  await page.getByTestId('chat-input').fill('磨个皮?');
-  await page.getByTestId('chat-input').press('Enter');
+  // the page's one AI bar: what she says opens the conversation and goes in
+  await page.getByTestId('studio-ai-input').fill('磨个皮?');
+  await page.getByTestId('studio-ai-input').press('Enter');
+  await expect(page.getByTestId('studio-ai-pane')).toBeVisible();
   const card = page.getByTestId('applied-card');
   await expect(card).toBeVisible({ timeout: 120000 });
   await expect(card).toContainText(/Skin smoothing/);

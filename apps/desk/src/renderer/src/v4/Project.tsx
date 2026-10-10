@@ -15,6 +15,7 @@ import { useInbox } from '../lib/inbox';
 import { go, href, type ProjectTab } from '../lib/router';
 import { clipStatus, itemStatus, STATUS_KEY } from '../lib/status';
 import { ProjectAIPanel } from './ProjectAIPanel';
+import { useStudioEnabled } from '../lib/studioFlag';
 import { inboxSub, inboxTitle } from './Inbox';
 import { authorHelp } from '../lib/inboxView';
 import { LiveBanner } from './LiveLine';
@@ -73,6 +74,7 @@ export async function scheduleClips(client: EngineClient, ui: Pick<Ui, 'toast'>,
 }
 
 export function Project({ id, tab: asked }: { id: string; tab: ProjectTab }) {
+  const studioOn = useStudioEnabled();
   const { client, subscribe } = useEngine();
   const { data: hist, reload: reloadHist, archived, wantArchived } = useHistory();
   const inbox = useInbox();
@@ -199,7 +201,7 @@ export function Project({ id, tab: asked }: { id: string; tab: ProjectTab }) {
   ) : null;
 
   return (
-    <div className={`proj`} data-testid="project">
+    <div className={`proj ${studioOn ? 'noai' : ''}`} data-testid="project">
       <div className="scroll">
         <div className="pg wide">
           <a className="back" href={href({ name: 'projects' })}>
@@ -383,6 +385,8 @@ export function Project({ id, tab: asked }: { id: string; tab: ProjectTab }) {
           {tab === 'files' && <FilesTab id={id} extras={extras} />}
         </div>
       </div>
+      {/* with the Studio, the AI is its one bar (this clip / all N clips): the details page has none of its own */}
+      {!studioOn && (
       <ProjectAIPanel
         item={id}
         clips={done.map((c) => ({ id: c.id, title: c.title }))}
@@ -391,6 +395,7 @@ export function Project({ id, tab: asked }: { id: string; tab: ProjectTab }) {
         liveText={s === 'run' ? liveText(item?.live) || null : null}
         onApplied={reload}
       />
+      )}
       {shareClip && <ShareDialog item={id} only={[shareClip]} onClose={() => setShareClip(null)} />}
       {playing && (
         <PlayerOverlay

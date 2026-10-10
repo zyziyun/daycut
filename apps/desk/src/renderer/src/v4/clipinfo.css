@@ -26,6 +26,7 @@
 .ci-render .pb-link { display: inline-flex; align-items: center; gap: 4px; }
 .ci-sched { display: flex; flex-direction: column; gap: 10px; }
 .ci-when { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ci-when .pb-field { height: 34px; }
 .ci-schedule-btn { align-self: flex-start; }
 .ci .pb-ctabs { margin-top: 2px; }
 /* the editor's right column (layout B): the clip's info above the chat */

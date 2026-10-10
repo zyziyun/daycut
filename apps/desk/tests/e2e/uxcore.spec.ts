@@ -1,3 +1,5 @@
+// Runs the app with the Studio off (DESK_STUDIO=0): the pages before the Studio (2026-10 review step 7) stay
+// supported behind its flag, and this spec covers them.
 // Home + Inbox + how the pages connect (ux/home-redesign) and text-based editing (ux/text-edit), window hidden,
 // mock engine (desk implementation), isolated profile:
 //   Home busy (Inbox top 3 + n more, Running only while running, Going out today, editable platform chip, no AI chip)
@@ -133,7 +135,7 @@ test.beforeAll(async () => {
   heartbeat(live, { message: 'Making shots 4 of 12' });
   app = await electron.launch({
     args: [path.resolve(import.meta.dirname, '../..')],
-    env: { ...process.env, DESK_ENGINE_MOCK: '1', DESK_MOCK_STEP: '0.02', DESK_USER_DATA: path.join(tmp, 'profile'), VSTUDIO_HOME: path.join(tmp, 'vhome'), DESK_HISTORY_WATCH: watch, DESK_HIDE_WINDOW: '1', DESK_SHARED_CACHE: path.join(tmp, 'cache'), DESK_HF_HUB: '', DESK_SKIP_FIRST_RUN: '1', VITE_DEV_SERVER_URL: '' },
+    env: { ...process.env, DESK_ENGINE_MOCK: '1', DESK_MOCK_STEP: '0.02', DESK_USER_DATA: path.join(tmp, 'profile'), VSTUDIO_HOME: path.join(tmp, 'vhome'), DESK_HISTORY_WATCH: watch, DESK_STUDIO: '0', DESK_HIDE_WINDOW: '1', DESK_SHARED_CACHE: path.join(tmp, 'cache'), DESK_HF_HUB: '', DESK_SKIP_FIRST_RUN: '1', VITE_DEV_SERVER_URL: '' },
   });
   page = await app.firstWindow();
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -596,7 +598,7 @@ test('first run: no projects yet -> the starting points (8 with lesson and q&a)'
   fs.mkdirSync(empty, { recursive: true });
   const app2 = await electron.launch({
     args: [path.resolve(import.meta.dirname, '../..')],
-    env: { ...process.env, DESK_ENGINE_MOCK: '1', DESK_MOCK_SEED: '0', DESK_USER_DATA: path.join(tmp, 'profile2'), VSTUDIO_HOME: path.join(tmp, 'vhome2'), DESK_HISTORY_WATCH: empty, DESK_HIDE_WINDOW: '1', DESK_SHARED_CACHE: path.join(tmp, 'cache'), DESK_HF_HUB: '', DESK_SKIP_FIRST_RUN: '1', VITE_DEV_SERVER_URL: '' },
+    env: { ...process.env, DESK_ENGINE_MOCK: '1', DESK_MOCK_SEED: '0', DESK_USER_DATA: path.join(tmp, 'profile2'), VSTUDIO_HOME: path.join(tmp, 'vhome2'), DESK_HISTORY_WATCH: empty, DESK_STUDIO: '0', DESK_HIDE_WINDOW: '1', DESK_SHARED_CACHE: path.join(tmp, 'cache'), DESK_HF_HUB: '', DESK_SKIP_FIRST_RUN: '1', VITE_DEV_SERVER_URL: '' },
   });
   try {
     const p2 = await app2.firstWindow();

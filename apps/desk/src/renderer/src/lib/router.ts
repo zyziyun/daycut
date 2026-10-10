@@ -131,7 +131,8 @@ export function href(r: Route): string {
     case 'new':
       return r.mode ? `#/new/${r.mode}` : '#/new';
     case 'project':
-      return `#/p/${r.id}${r.tab && r.tab !== 'clips' ? `/${r.tab}` : ''}`;
+      // with the Studio, a project's own page (its details: clips, review, history, files) is always a tab
+      return `#/p/${r.id}${r.tab && (r.tab !== 'clips' || studioEnabled()) ? `/${r.tab}` : ''}`;
     case 'clip':
       return `#/p/${r.id}/clip/${encodeURIComponent(r.clip)}`;
     case 'focus':

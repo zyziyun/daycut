@@ -1,3 +1,5 @@
+// Runs the app with the Studio off (DESK_STUDIO=0): the pages before the Studio (2026-10 review step 7) stay
+// supported behind its flag, and this spec covers them.
 // Record -> second pass -> pickup (ux/record/pickups) in the real app with the REAL engine sidecar (no mock engine),
 // Chromium's fake camera / microphone, isolated temp profile, window hidden. The only fake is the transcriber
 // (fixture/rec_words.py: the fake microphone only beeps). Flow:
@@ -35,7 +37,7 @@ async function launch(profile: string, extra: Record<string, string> = {}) {
     DESK_E2E_FAKE_MEDIA: '1',
     DESK_USER_DATA: path.join(tmp, `profile-${profile}`),
     DESK_HISTORY_WATCH: '',
-    DESK_HIDE_WINDOW: '1',
+    DESK_STUDIO: '0', DESK_HIDE_WINDOW: '1',
     DESK_SHARED_CACHE: path.join(tmp, 'cache'),
     DESK_HF_HUB: '',
     DESK_SKIP_FIRST_RUN: '1',

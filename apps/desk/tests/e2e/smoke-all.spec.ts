@@ -1,3 +1,5 @@
+// Runs the app with the Studio off (DESK_STUDIO=0): the pages before the Studio (2026-10 review step 7) stay
+// supported behind its flag, and this spec covers them.
 // Click-everything smoke (qa/BUGS.md): visit every screen and click every safe control on it, one at a time, then
 // fail on console errors, uncaught page errors / rejections and IPC validation errors in the main process. Catches
 // the "small bugs in real use" class (a scrub bar that throws, a menu that closes on open, an IPC payload the schema
@@ -56,7 +58,7 @@ test.beforeAll(async () => {
   fixture();
   app = await electron.launch({
     args: [path.resolve(import.meta.dirname, '../..')],
-    env: { ...process.env, DESK_ENGINE_MOCK: '1', DESK_MOCK_STEP: '0.02', DESK_USER_DATA: path.join(tmp, 'profile'), VSTUDIO_HOME: path.join(tmp, 'vhome'), DESK_HISTORY_WATCH: watch, DESK_HIDE_WINDOW: '1', DESK_SHARED_CACHE: path.join(tmp, 'cache'), DESK_HF_HUB: '', DESK_SKIP_FIRST_RUN: '1', DESK_CREATE: '1', DESK_DISABLE_UPDATES: '1', VITE_DEV_SERVER_URL: '' },
+    env: { ...process.env, DESK_ENGINE_MOCK: '1', DESK_MOCK_STEP: '0.02', DESK_USER_DATA: path.join(tmp, 'profile'), VSTUDIO_HOME: path.join(tmp, 'vhome'), DESK_HISTORY_WATCH: watch, DESK_STUDIO: '0', DESK_HIDE_WINDOW: '1', DESK_SHARED_CACHE: path.join(tmp, 'cache'), DESK_HF_HUB: '', DESK_SKIP_FIRST_RUN: '1', DESK_CREATE: '1', DESK_DISABLE_UPDATES: '1', VITE_DEV_SERVER_URL: '' },
   });
   // nothing may reach the desktop: dialogs, Finder, the default browser, notifications
   await app.evaluate(({ dialog, shell, Notification }) => {

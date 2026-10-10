@@ -1,3 +1,5 @@
+// Runs the app with the Studio off (DESK_STUDIO=0): the pages before the Studio (2026-10 review step 7) stay
+// supported behind its flag, and this spec covers them.
 // v0.2 release fixes (review/REVIEW.md §4), mock engine, hidden window, isolated profile:
 //   - planning shows the elapsed time and can be stopped;
 //   - a pilot that fails (expired Claude Code login in segment planning) is visible: red status + plain reason on
@@ -31,7 +33,7 @@ test.beforeAll(async () => {
       DESK_USER_DATA: path.join(tmp, 'profile'),
       VSTUDIO_HOME: path.join(tmp, 'vhome'),
       DESK_HISTORY_WATCH: '',
-      DESK_HIDE_WINDOW: '1',
+      DESK_STUDIO: '0', DESK_HIDE_WINDOW: '1',
       DESK_SHARED_CACHE: path.join(tmp, 'cache'),
       DESK_HF_HUB: '',
       DESK_SKIP_FIRST_RUN: '1',

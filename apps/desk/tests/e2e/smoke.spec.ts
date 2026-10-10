@@ -18,7 +18,6 @@ test.beforeAll(async () => {
   });
   page = await app.firstWindow();
   await page.waitForURL(/^app:\/\/desk\//); // the window loads once the engine is up
-  await page.evaluate(() => sessionStorage.setItem('v4.pview', 'grid')); // All projects as the grid (the control room: autopilot.spec)
 });
 
 test.afterAll(async () => {
@@ -50,11 +49,17 @@ test('the app is Reelfold: name, About panel, menu', async () => {
   expect([...id.top, ...id.labels].join('|')).not.toMatch(/Electron|video-studio/);
 });
 
-test('engine starts (mock), Home and the project grid render', async () => {
+test('engine starts (mock); the app is three places: the Studio (every video), the Calendar, Settings', async () => {
   await expect(page.getByTestId('engine-status')).toHaveAttribute('data-mode', 'mock', { timeout: 30000 });
-  await expect(page.getByTestId('home')).toBeVisible();
-  await page.getByTestId('nav-projects').click();
-  await expect(page.getByTestId('project-card').filter({ hasText: 'demo-course' })).toBeVisible({ timeout: 15000 });
+  await expect(page.getByTestId('studio')).toBeVisible();
+  await expect(page.locator('.side a.nav')).toHaveCount(3);
+  for (const n of ['nav-studio', 'nav-publish', 'nav-settings']) await expect(page.getByTestId(n)).toBeVisible();
+  await expect(page.getByTestId('studio-row').filter({ hasText: 'demo-course' }).first()).toBeVisible({ timeout: 15000 });
+  // the old pages land in the Studio
+  for (const h of ['#/home', '#/inbox', '#/projects']) {
+    await page.evaluate((x) => (location.hash = x), h);
+    await expect(page.getByTestId('studio')).toBeVisible();
+  }
 });
 
 test('engine refuses requests without the token', async () => {
@@ -72,7 +77,9 @@ test('board, review and job detail render (per-batch tools behind the project pa
     const b = await (await fetch(info.baseUrl + '/api/batches', { headers: { Authorization: `Bearer ${info.token}` } })).json();
     return b.find((x: { name: string }) => x.name === 'demo-course').id as string;
   });
-  await page.getByTestId('project-card').filter({ hasText: 'demo-course' }).click();
+  // a project's details (its own page) open from the Studio
+  await page.getByTestId('studio-row').filter({ hasText: 'demo-course' }).first().click();
+  await page.getByTestId('hub-open').click();
   await expect(page.getByTestId('project-title')).toHaveText('demo-course');
   await page.evaluate((x) => (location.hash = `#/b/${x}/board`), id);
   await expect(page.locator('.lane').first()).toBeVisible();

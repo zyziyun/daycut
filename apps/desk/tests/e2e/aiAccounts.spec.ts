@@ -1,3 +1,5 @@
+// Runs the app with the Studio off (DESK_STUDIO=0): the pages before the Studio (2026-10 review step 7) stay
+// supported behind its flag, and this spec covers them.
 // AI accounts & models (window hidden, mock engine, isolated profile, mocked CLI status via DESK_AI_MOCK):
 // Settings -> the page shows Claude Code "login expired" and Codex "logged in" -> 登录 opens the in-app terminal,
 // the (fake) login command exits -> the status is checked again (logged in · Max) -> switch the default provider ->
@@ -66,7 +68,7 @@ test.beforeAll(async () => {
       DESK_USER_DATA: path.join(tmp, 'profile'),
       VSTUDIO_HOME: path.join(tmp, 'vhome'),
       DESK_HISTORY_WATCH: watch,
-      DESK_HIDE_WINDOW: '1',
+      DESK_STUDIO: '0', DESK_HIDE_WINDOW: '1',
       DESK_SHARED_CACHE: path.join(tmp, 'cache'),
       DESK_HF_HUB: '',
       DESK_SKIP_FIRST_RUN: '1',

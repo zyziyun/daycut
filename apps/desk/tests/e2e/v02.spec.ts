@@ -1,3 +1,5 @@
+// Runs the app with the Studio off (DESK_STUDIO=0): the pages before the Studio (2026-10 review step 7) stay
+// supported behind its flag, and this spec covers them.
 // v0.2 happy path in mock mode (no keys, no network): first-run wizard -> client (agency mode) -> new batch from a
 // raw recording (AI segment planning, segment review) -> estimate -> pilot -> full run -> in-review edits
 // (caption fix with faithful check, hook swap, trim, undo, re-render affected) -> delivery package -> metrics
@@ -20,7 +22,7 @@ test.beforeAll(async () => {
   fs.writeFileSync(recording, 'not really a video');
   app = await electron.launch({
     args: [path.resolve(import.meta.dirname, '../..')],
-    env: { ...process.env, DESK_ENGINE_MOCK: '1', DESK_MOCK_STEP: '0.01', DESK_USER_DATA: path.join(tmp, 'profile'), VSTUDIO_HOME: path.join(tmp, 'vhome'), DESK_HISTORY_WATCH: '', DESK_HIDE_WINDOW: '1', DESK_SHARED_CACHE: path.join(tmp, 'cache'), DESK_HF_HUB: '', VITE_DEV_SERVER_URL: '' },
+    env: { ...process.env, DESK_ENGINE_MOCK: '1', DESK_MOCK_STEP: '0.01', DESK_USER_DATA: path.join(tmp, 'profile'), VSTUDIO_HOME: path.join(tmp, 'vhome'), DESK_HISTORY_WATCH: '', DESK_STUDIO: '0', DESK_HIDE_WINDOW: '1', DESK_SHARED_CACHE: path.join(tmp, 'cache'), DESK_HF_HUB: '', VITE_DEV_SERVER_URL: '' },
   });
   page = await app.firstWindow();
   await page.waitForURL(/^app:\/\/desk\//);

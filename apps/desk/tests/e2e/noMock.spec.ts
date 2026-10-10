@@ -1,3 +1,5 @@
+// Runs the app with the Studio off (DESK_STUDIO=0): the pages before the Studio (2026-10 review step 7) stay
+// supported behind its flag, and this spec covers them.
 // No mock in the product (qa/BUGS.md "mock-in-product"): when the planning engine does not answer, "Make a plan"
 // says so with Try again and makes nothing (it used to write fake projects and fake pilot results); Try again plans
 // for real and the card says how long planning really took. Test engine (DESK_ENGINE_MOCK=1, dev build only),
@@ -24,7 +26,7 @@ test.beforeAll(async () => {
       DESK_USER_DATA: path.join(tmp, 'profile'),
       VSTUDIO_HOME: path.join(tmp, 'vhome'),
       DESK_HISTORY_WATCH: '',
-      DESK_HIDE_WINDOW: '1',
+      DESK_STUDIO: '0', DESK_HIDE_WINDOW: '1',
       DESK_SHARED_CACHE: path.join(tmp, 'cache'),
       DESK_HF_HUB: '',
       DESK_SKIP_FIRST_RUN: '1',

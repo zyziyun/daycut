@@ -1,3 +1,5 @@
+// Runs the app with the Studio off (DESK_STUDIO=0): the pages before the Studio (2026-10 review step 7) stay
+// supported behind its flag, and this spec covers them.
 // History: past work in a watched folder shows up on the Batches page without an import; search filters it;
 // "remove from list" hides it and leaves the files alone. Mock engine, isolated profile and registries.
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
@@ -55,7 +57,7 @@ test.beforeAll(async () => {
   fs.writeFileSync(path.join(fuye, 'work', 'render.log'), 'frame 1\nframe 2\nrendering clip B');
   app = await electron.launch({
     args: [path.resolve(import.meta.dirname, '../..')],
-    env: { ...process.env, DESK_ENGINE_MOCK: '1', DESK_USER_DATA: path.join(tmp, 'profile'), VSTUDIO_HOME: path.join(tmp, 'vhome'), DESK_HISTORY_WATCH: watch, DESK_HIDE_WINDOW: '1', DESK_SHARED_CACHE: path.join(tmp, 'cache'), DESK_HF_HUB: '', DESK_SKIP_FIRST_RUN: '1', VITE_DEV_SERVER_URL: '' },
+    env: { ...process.env, DESK_ENGINE_MOCK: '1', DESK_USER_DATA: path.join(tmp, 'profile'), VSTUDIO_HOME: path.join(tmp, 'vhome'), DESK_HISTORY_WATCH: watch, DESK_STUDIO: '0', DESK_HIDE_WINDOW: '1', DESK_SHARED_CACHE: path.join(tmp, 'cache'), DESK_HF_HUB: '', DESK_SKIP_FIRST_RUN: '1', VITE_DEV_SERVER_URL: '' },
   });
   page = await app.firstWindow();
   await page.waitForURL(/^app:\/\/desk\//);
@@ -108,7 +110,7 @@ test('进行中: an external run shows live on Home, 出错 when its heartbeat s
   heartbeat({});
   const lane = page.getByTestId('live-lane');
   await expect(lane).toContainText('clip B', { timeout: 15000 }); // fs watch -> refresh, no polling
-  await expect(lane.getByTestId('live-state')).toHaveText(/进行中|Running/);
+  await expect(lane.getByTestId('live-state')).toHaveText(/进行中|In progress/);
   await expect(page.getByTestId('running-badge')).toHaveText('1');
   heartbeat({ pid: 999999, heartbeat: Date.now() / 1000 - 3600 }); // the external process died an hour ago
   await expect(lane.getByTestId('live-row')).toHaveCount(0, { timeout: 15000 });

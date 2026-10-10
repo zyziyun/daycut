@@ -202,3 +202,4 @@ test('zh-CN + fr: the Studio and a clip page read in her language', async () => 
   }
   await page.evaluate(async () => window.desk.setSettings({ lang: 'en' }));
 });
+

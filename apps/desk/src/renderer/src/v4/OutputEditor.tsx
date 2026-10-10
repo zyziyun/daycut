@@ -20,7 +20,7 @@ import { useInbox } from '../lib/inbox';
 import { previewDoc } from '../lib/outputs';
 import { snapEdge } from '../lib/timeline';
 import { projectHref, triageStep, useTriageState } from '../lib/nav';
-import { useRouteQuery } from '../lib/router';
+import { href, useRouteQuery } from '../lib/router';
 import { markers, type Primary } from '../lib/chatEdit';
 import { AutoCommit, COMMIT_DELAY_MS, draftKey, draftsKey, loadDrafts, storeCommitted, subtractDrafts, useTextCuts } from '../lib/textCuts';
 import { defaultTab, draftOps, draftSpans, fixInCue, hasDrafts, joinWords, keepToCuts, keptSeconds, segments, wordRuns, type Drafts } from '../lib/transcript';
@@ -897,6 +897,13 @@ export function OutputEditor({ id, clip, layout = 'classic', ask = null, place =
       onPreviewCuts={setPinCuts}
     />
   ) : null;
+  // what was already done to the clip by itself (the recording's cleanup, the AI's calls), each with Undo / Change
+  const madeEl = (
+    <>
+      <AutoCleanCard doc={odoc} restore={restoreAuto} />
+      <DecidedCard item={id} clip={clip} words={odoc.words} seek={(x) => pl.current?.seek(x)} />
+    </>
+  );
   const chatEl = (
     <ChatPanel
       ref={chat}
@@ -929,12 +936,7 @@ export function OutputEditor({ id, clip, layout = 'classic', ask = null, place =
         }, 80);
       }}
       pinned={studio ? null : pinEl}
-      top={
-        <>
-          <AutoCleanCard doc={odoc} restore={restoreAuto} />
-          <DecidedCard item={id} clip={clip} words={odoc.words} seek={(x) => pl.current?.seek(x)} />
-        </>
-      }
+      top={studio ? null : madeEl}
     />
   );
   const drawerEl = drawer ? (
@@ -973,7 +975,10 @@ export function OutputEditor({ id, clip, layout = 'classic', ask = null, place =
         <header className="cs-top">
           <div className="cs-title">
             <span className="cs-where muted clamp1" data-testid="studio-where">
-              {[place?.project ?? project?.name, place?.pos ? `${place.pos[0]}/${place.pos[1]}` : null].filter(Boolean).join(' · ')}
+              <a href={href({ name: 'project', id, tab: 'clips' })} title={t('st.details')} data-testid="studio-details">
+                {place?.project ?? project?.name}
+              </a>
+              {place?.pos ? ` · ${place.pos[0]}/${place.pos[1]}` : ''}
             </span>
             <span className="row" style={{ gap: 8, minWidth: 0 }}>
               <ClipTitle item={id} clip={clip} title={doc.title} custom={doc.title_custom} onSaved={reload} />
@@ -1041,6 +1046,7 @@ export function OutputEditor({ id, clip, layout = 'classic', ask = null, place =
           </section>
           <section className="cs-right">
             {pinEl && <div className="cs-ask-card" data-testid="studio-question">{pinEl}</div>}
+            <div className="cs-made">{madeEl}</div>
             <div className="cs-lower">{lowerEl}</div>
             <div className="ci cs-post">
               <ClipScheduleView s={sched} compact />

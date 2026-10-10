@@ -1,3 +1,5 @@
+// Runs the app with the Studio off (DESK_STUDIO=0): the pages before the Studio (2026-10 review step 7) stay
+// supported behind its flag, and this spec covers them.
 // Opt-in anonymous usage counts, window hidden, mock engine, isolated profile, a local server in place of
 // t.reelfold.com (REELFOLD_USAGE=1 lets this test build send at all; REELFOLD_USAGE_BASE points it here):
 //   - first run shows the choice unchecked; nothing reaches the server before she opts in
@@ -50,7 +52,7 @@ function launch(profile: string, extra: Record<string, string> = {}) {
       DESK_SHARED_CACHE: path.join(profile, 'cache'),
       DESK_HF_HUB: '',
       DESK_HISTORY_WATCH: '',
-      DESK_HIDE_WINDOW: '1',
+      DESK_STUDIO: '0', DESK_HIDE_WINDOW: '1',
       DESK_DISABLE_UPDATES: '1',
       DESK_SKIP_FIRST_RUN: '',
       VITE_DEV_SERVER_URL: '',

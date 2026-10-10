@@ -1,3 +1,5 @@
+// Runs the app with the Studio off (DESK_STUDIO=0): the pages before the Studio (2026-10 review step 7) stay
+// supported behind its flag, and this spec covers them.
 // Regression: first-run downloads must never close the window, reload the page or leave the wizard step.
 // Creator report: the app quit / jumped to the main page after one model finished downloading. Here three asset
 // groups (a large throttled file, a zip that is extracted, a group with engine env -> engine restart) are queued
@@ -96,7 +98,7 @@ test.beforeAll(async () => {
     DESK_HF_HUB: '', // never the user's Hugging Face cache
     VSTUDIO_HOME: path.join(work, 'vhome'), // never the user's engine registries
     DESK_HISTORY_WATCH: '', // never scan the user's folders
-    DESK_HIDE_WINDOW: '1', // never on the user's screen
+    DESK_STUDIO: '0', DESK_HIDE_WINDOW: '1', // never on the user's screen
     DESK_RUNTIME_DIR: fakeRuntime(),
     // CI exports DESK_PYTHON; it outranks the runtime, which would make the app "system" and drop the downloads step
     DESK_PYTHON: '',

@@ -37,6 +37,7 @@ import { UiProvider } from './v4/ui';
 import { SupportLayer } from './support/Support';
 import { CreateNavIcon, CreateScreen, setCreatePrefs, useCreateEnabled } from './create';
 import { setStudioPrefs, useStudioEnabled } from './lib/studioFlag';
+import { StudioProvider } from './lib/studioData';
 import { Studio } from './v4/Studio';
 
 function NavLink({ to, on, icon, label, count, testId }: { to: Route; on: boolean; icon: React.ReactNode; label: string; count?: React.ReactNode; testId: string }) {
@@ -252,12 +253,14 @@ export function App() {
       ) : (
         <HistoryProvider>
           <InboxProvider>
-            <UiProvider theme={settings?.theme ?? 'studio-dark'} onTheme={onTheme} onLang={onLang}>
-              <UpdateProvider>
-                <Shell key={settings?.lang} onSettings={apply} />
-                <SupportLayer key={`sup-${settings?.lang}`} />
-              </UpdateProvider>
-            </UiProvider>
+            <StudioProvider>
+              <UiProvider theme={settings?.theme ?? 'studio-dark'} onTheme={onTheme} onLang={onLang}>
+                <UpdateProvider>
+                  <Shell key={settings?.lang} onSettings={apply} />
+                  <SupportLayer key={`sup-${settings?.lang}`} />
+                </UpdateProvider>
+              </UiProvider>
+            </StudioProvider>
           </InboxProvider>
         </HistoryProvider>
       )}

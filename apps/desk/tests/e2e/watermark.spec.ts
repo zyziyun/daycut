@@ -1,3 +1,5 @@
+// Runs the app with the Studio off (DESK_STUDIO=0): the pages before the Studio (2026-10 review step 7) stay
+// supported behind its flag, and this spec covers them.
 // Watermark, end to end on the real engine (this repo's lib/: window hidden, isolated profile + VSTUDIO_HOME, a work
 // folder with one tiny 9:16 clip): Settings › Watermark renders in en / 简体中文 / Français with no missing message;
 // typing a handle sets it up (and turns "Add to every video" on), the engine-drawn previews change, Generate makes a
@@ -29,7 +31,7 @@ test.beforeAll(async () => {
   execFileSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', `testsrc2=size=${W}x${H}:rate=25:duration=2`, '-f', 'lavfi', '-i', 'sine=frequency=440:duration=2', '-shortest', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', path.join(fin, `${CLIP}.mp4`)]);
   app = await electron.launch({
     args: [path.resolve(import.meta.dirname, '../..')],
-    env: { ...process.env, DESK_USER_DATA: path.join(tmp, 'profile'), VSTUDIO_HOME: vhome, DESK_HISTORY_WATCH: watch, DESK_HIDE_WINDOW: '1', DESK_SHARED_CACHE: path.join(tmp, 'cache'), DESK_HF_HUB: '', DESK_SKIP_FIRST_RUN: '1', VITE_DEV_SERVER_URL: '' },
+    env: { ...process.env, DESK_USER_DATA: path.join(tmp, 'profile'), VSTUDIO_HOME: vhome, DESK_HISTORY_WATCH: watch, DESK_STUDIO: '0', DESK_HIDE_WINDOW: '1', DESK_SHARED_CACHE: path.join(tmp, 'cache'), DESK_HF_HUB: '', DESK_SKIP_FIRST_RUN: '1', VITE_DEV_SERVER_URL: '' },
   });
   page = await app.firstWindow();
   await page.setViewportSize({ width: 1440, height: 900 });

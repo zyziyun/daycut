@@ -1,3 +1,5 @@
+// Runs the app with the Studio off (DESK_STUDIO=0): the pages before the Studio (2026-10 review step 7) stay
+// supported behind its flag, and this spec covers them.
 // "Check what's kept" in the real app with the REAL engine sidecar (no mock engine), an isolated temp profile, window
 // hidden. Two promo-recut projects on a tiny synthetic talk (fixture/promo_project.py: tone-burst words + the engine
 // tests' fake transcriber, the only fakes; no AI account, so the engine drafts by its rules). Found in her 0.2.3 Inbox
@@ -41,7 +43,7 @@ test.beforeAll(async () => {
   fx = JSON.parse(out.trim().split('\n').pop()!);
   app = await electron.launch({
     args: [path.resolve(import.meta.dirname, '../..')],
-    env: { ...env, PYTHONPATH: '', DESK_ENGINE_MOCK: '', DESK_USER_DATA: path.join(tmp, 'profile'), DESK_HISTORY_WATCH: '', DESK_HIDE_WINDOW: '1', DESK_SHARED_CACHE: path.join(tmp, 'cache'), DESK_HF_HUB: '', DESK_SKIP_FIRST_RUN: '1', VITE_DEV_SERVER_URL: '' },
+    env: { ...env, PYTHONPATH: '', DESK_ENGINE_MOCK: '', DESK_USER_DATA: path.join(tmp, 'profile'), DESK_HISTORY_WATCH: '', DESK_STUDIO: '0', DESK_HIDE_WINDOW: '1', DESK_SHARED_CACHE: path.join(tmp, 'cache'), DESK_HF_HUB: '', DESK_SKIP_FIRST_RUN: '1', VITE_DEV_SERVER_URL: '' },
   });
   page = await app.firstWindow();
   await page.setViewportSize({ width: 1440, height: 900 });

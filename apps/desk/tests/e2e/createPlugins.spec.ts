@@ -1,3 +1,5 @@
+// Runs the app with the Studio off (DESK_STUDIO=0): the pages before the Studio (2026-10 review step 7) stay
+// supported behind its flag, and this spec covers them.
 // Create plugins end to end (mock engine = fake video services; isolated profile; window hidden; the file picker is
 // stubbed in the main process): Import board on Create home with the HyperFrames fixture -> the episode's storyboard
 // (3 shots, 2 set to HyperFrames); Settings › Video generation lists the plugins and turns a folder plugin on;
@@ -65,7 +67,7 @@ test.describe('Create plugins', () => {
         VSTUDIO_HOME: path.join(tmp, 'vhome'),
         VSTUDIO_PLUGINS_PATH: PLUGS,
         DESK_HISTORY_WATCH: path.join(tmp, 'none'),
-        DESK_HIDE_WINDOW: '1',
+        DESK_STUDIO: '0', DESK_HIDE_WINDOW: '1',
         DESK_SHARED_CACHE: path.join(tmp, 'cache'),
         DESK_HF_HUB: '',
         DESK_SKIP_FIRST_RUN: '1',

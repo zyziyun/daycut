@@ -7,9 +7,11 @@ import type { CalendarPost, Clip, InboxItem, OpenRequest } from '../../../shared
 import { itemPipeline, requestPipeline, type Pipeline } from './pipeline';
 import { clipStatus } from './status';
 
-export type StudioGroup = 'you' | 'run' | 'ready' | 'scheduled';
+import { STUDIO_GROUPS as GROUPS } from '../../../shared/videoStatus';
+
+export type StudioGroup = (typeof GROUPS)[number];
 export type StudioFilter = 'all' | StudioGroup;
-export const STUDIO_GROUPS: StudioGroup[] = ['you', 'run', 'ready', 'scheduled'];
+export const STUDIO_GROUPS: StudioGroup[] = [...GROUPS];
 export const STUDIO_FILTERS: StudioFilter[] = ['all', ...STUDIO_GROUPS];
 
 export interface StudioRow {

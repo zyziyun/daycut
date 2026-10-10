@@ -86,7 +86,7 @@ const api = <T,>(p: string, body?: unknown) =>
 
 /** Names that stay as they are in every language (brands, platforms, AI tools, file types, keys). */
 const NAMES = [
-  'Reelfold', 'YouTube', 'Shorts', 'TikTok', 'Instagram', 'Reels', 'Threads', 'Facebook', 'LinkedIn', 'Pinterest', 'Snapchat', 'Reddit', 'Dailymotion', 'Kwai', 'RedNote',
+  'Reelfold', 'Studio', 'YouTube', 'Shorts', 'TikTok', 'Instagram', 'Reels', 'Threads', 'Facebook', 'LinkedIn', 'Pinterest', 'Snapchat', 'Reddit', 'Dailymotion', 'Kwai', 'RedNote',
   'AI', 'Claude', 'Code', 'Codex', 'ChatGPT', 'OpenAI', 'Gemini', 'Ollama', 'API', 'Whisper', 'MLX', 'ffmpeg', 'Node', 'macOS', 'Mac', 'Windows', 'GitHub', 'MIT',
   'mp4', 'mov', 'jpg', 'png', 'srt', 'vtt', 'zip', 'JSON', 'CSV', 'Markdown', 'XML', 'EDL', 'OTIO', 'Premiere', 'Final', 'Cut', 'Pro', 'HyperFrames', 'Veo', 'Seedance', 'MiniMax', 'DeepSeek', 'Kimi', 'Anthropic',
   'Esc', 'Enter', 'Tab', 'Shift', 'Cmd', 'Ctrl', 'Alt', 'Delete', 'Backspace', 'Space', 'OK', 'URL', 'LUFS', 'HDR', 'CC0', 'Max', 'Plus',
@@ -99,7 +99,7 @@ async function scan(lang: string, content: string[]) {
       const all = document.body.innerText;
       const missing = all.match(/⟦[^⟧]+⟧/g);
       if (missing) out.push(`missing: ${[...new Set(missing)].join(', ')}`);
-      const rawKeys = all.match(/\b(?:home|plan|inbox|projects|project|clip|ai|ap|hub|live|ct|pb|pl|pub|fail|checkpoint|player|editor|ce|te|palette|keys|status|nav|set|em|issue|focus|rec|create|draft)\.[a-zA-Z][\w-]*(?:\.[\w-]+)*\b/g);
+      const rawKeys = all.match(/\b(?:home|plan|inbox|projects|project|clip|ai|ap|hub|live|ct|pb|pl|pub|fail|checkpoint|player|editor|ce|te|palette|keys|status|nav|set|em|issue|focus|rec|create|draft|st|ci|vs)\.[a-zA-Z][\w-]*(?:\.[\w-]+)*\b/g);
       if (rawKeys) out.push(`raw keys: ${[...new Set(rawKeys)].join(', ')}`);
       // the visible words of the UI itself: her content (titles, names, prompts, captions, file names) is skipped
       const skip = '[lang]:not(html), .clamp1, .clamp2, kbd, code, pre, input, textarea, video, [data-content], .ce-chat, .chat, .tp, [data-testid="transcript"], [data-testid="player"]';
@@ -150,15 +150,16 @@ for (const lang of ['en', 'zh-CN', 'fr'] as const) {
       for (const c of d.clips) for (const x of [c.id, c.title, c.post?.title, c.post?.body, ...(c.post?.tags ?? [])]) if (x) content.add(x);
     }
     const madeClip = (await api<{ clips: { id: string }[] }>(`/api/outputs/${ids.made}`)).clips[0].id;
+    // the Studio is the app (2026-10 review step 7): its list, its filters, a parked video, a made one, a project's
+    // details; then the Calendar, Create and Settings
     const screens: [string, string][] = [
-      ['home', '#/'],
-      ['inbox', '#/inbox'],
-      ['control-parked', `#/projects?sel=${ids.parked}`],
-      ['control-made', `#/projects?sel=${ids.made}`],
-      ['grid', 'GRID'],
-      ['project-parked', `#/p/${ids.parked}`],
-      ['project-made', `#/p/${ids.made}`],
-      ['clip', `#/p/${ids.made}/clip/${encodeURIComponent(madeClip)}`],
+      ['studio', '#/studio'],
+      ['studio-needs-you', '#/studio?f=you'],
+      ['studio-in-progress', '#/studio?f=run'],
+      ['studio-parked', `#/studio/${ids.parked}/talk`],
+      ['studio-made', `#/studio/${ids.made}/${encodeURIComponent(madeClip)}`],
+      ['details-parked', `#/p/${ids.parked}/clips`],
+      ['details-made', `#/p/${ids.made}/clips`],
       ['publish', '#/publish'],
       ['create', '#/create'],
       ['settings', '#/settings'],
@@ -179,7 +180,7 @@ for (const lang of ['en', 'zh-CN', 'fr'] as const) {
         if (tomorrow.getDay() === 1) await page.getByTestId('pb-next').click();
         await expect(page.getByTestId('pb-warn').first()).toBeVisible({ timeout: 15000 });
       }
-      if (name === 'inbox') await expect(page.getByTestId('inbox-item').first()).toBeVisible({ timeout: 30000 });
+      if (name === 'studio-needs-you') await expect(page.locator('[data-testid=studio-group-you] [data-testid=studio-row]').first()).toBeVisible({ timeout: 30000 });
       await page.screenshot({ path: path.join(SHOTS, `${lang}-${name}.png`) });
       for (const p of await scan(lang, [...content])) problems.push(`${name}: ${p}`);
     }

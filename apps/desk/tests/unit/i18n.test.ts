@@ -28,7 +28,7 @@ describe('locales', () => {
       expect(bad, `${l} placeholders`).toEqual([]);
     }
     expect(LANGS).toEqual(['en', 'zh-CN', 'fr']);
-    expect(zhCN['status.you']).toBe('需要你');
+    expect(zhCN['status.you']).toBe('要你看'); // one set of status words (shared/videoStatus)
   });
 
   it('English is the default; zh / zh-CN map to the registered locale', () => {
@@ -47,7 +47,7 @@ describe('locales', () => {
     expect(formatMessage('Hi {name}', 'en', { name: '小红' })).toBe('Hi 小红');
     setLang('zh-CN');
     expect(t('projects.clips', { n: 4 })).toBe('4 条');
-    expect(t('status.you')).toBe('需要你');
+    expect(t('status.you')).toBe('要你看');
     setLang('en');
     expect(t('projects.clips', { n: 4 })).toBe('4 clips');
     expect(tk('no.such.key')).toBe('no.such.key');

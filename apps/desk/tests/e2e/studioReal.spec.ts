@@ -110,3 +110,39 @@ test('the review in a row (连着看) publishes it; the made clip opens as one p
   await expect(page.getByTestId('transcript-listen')).toHaveCount(0);
   await shot('R2-studio-clip-real');
 });
+
+test('title + copy + cover + schedule on the clip page: 4 clicks, one screen', async () => {
+  test.setTimeout(240000);
+  await page.evaluate(async () => window.desk.setSettings({ defaultPlatforms: ['youtube', 'tiktok', 'xiaohongshu'] }));
+  await hash('#/studio');
+  await row().click();
+  await expect(page.getByTestId('editor')).toHaveAttribute('data-layout', 'studio', { timeout: 30000 });
+  let clicks = 0;
+  const click = async (l: ReturnType<typeof page.getByTestId>) => {
+    clicks++;
+    await l.click();
+  };
+  // cover: a frame
+  await expect(page.getByTestId('ci-cover').first()).toBeVisible({ timeout: 30000 });
+  await click(page.getByTestId('ci-cover').nth(2));
+  await expect(page.getByTestId('ci-render')).toBeVisible({ timeout: 15000 });
+  // schedule: the header's one button, the next free slot on her platforms
+  await click(page.getByTestId('studio-schedule'));
+  await expect(page.getByTestId('studio-scheduled')).toBeVisible({ timeout: 15000 });
+  // the copy, per platform (the post section under the transcript)
+  const cap = page.getByTestId('pb-caption');
+  await click(cap);
+  await cap.fill('One recording, a week of posts. #creator');
+  // the title, in the header
+  await click(page.getByTestId('editor-title-edit'));
+  await page.getByTestId('editor-title-input').fill('一条录像变一周内容');
+  await page.getByTestId('editor-title-input').press('Enter');
+  await expect(page.getByTestId('editor-title')).toHaveText('一条录像变一周内容');
+  await expect
+    .poll(async () => (await api<{ posts: { item: string; clip: string; title: string; caption: string }[] }>('/api/calendar')).posts.filter((p) => p.item === id && p.clip === 'talk').map((p) => p.title), { timeout: 15000 })
+    .toEqual(['一条录像变一周内容', '一条录像变一周内容', '一条录像变一周内容']);
+  await expect(page.getByTestId('ci-render')).toHaveAttribute('data-phase', 'done', { timeout: 180000 });
+  await shot('R3-studio-four-clicks');
+  expect(clicks).toBe(4);
+  fs.writeFileSync(path.join(SHOTS, 'clicks-studio.json'), JSON.stringify({ title_copy_cover_schedule: clicks, screens: 1, layout: 'A (Studio)' }));
+});

@@ -1,13 +1,14 @@
 // App-wide overlays: undo toasts, right-click menus, the ⌘K command palette, the ? shortcut sheet, drop-anywhere
 // (files dropped on the window start a new request on Home), and the global keyboard shortcuts.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ArrowRight, Bot, Calendar, CalendarClock, FolderOpen, Home, Inbox, Keyboard, Languages, LayoutGrid, Moon, Pause, Search, Send, Settings, Sparkles, Sun, Undo2, Video } from 'lucide-react';
+import { ArrowRight, Bot, Calendar, CalendarClock, Clapperboard, FolderOpen, Home, Inbox, Keyboard, Languages, LayoutGrid, Moon, Pause, Search, Send, Settings, Sparkles, Sun, Undo2, Video } from 'lucide-react';
 import { LANGS, LOCALES, fmtTime as fmtTimeOf, getLang, t, type MessageKey } from '../i18n';
 import { useEngine } from '../lib/engine';
 import { useHistory } from '../lib/history';
 import { postHref, useBackForwardKeys } from '../lib/nav';
 import { go, type Route } from '../lib/router';
 import { keyHint } from '../lib/keys';
+import { studioEnabled } from '../lib/studioFlag';
 
 // ---------------------------------------------------------------- toasts
 interface Toast {
@@ -160,9 +161,13 @@ export function UiProvider({
         return;
       }
       if (mod && !e.shiftKey && !e.altKey && ['1', '2', '3', '4'].includes(e.key)) {
+        // with the Studio the app has two places (+ Settings ⌘,): ⌘1 the Studio, ⌘2 the Calendar (in the Studio
+        // itself ⌘1–9 pick a video: its own handler runs first)
+        const r: Route[] = studioEnabled() ? [{ name: 'studio' }, { name: 'calendar' }] : [{ name: 'home' }, { name: 'inbox' }, { name: 'projects' }, { name: 'calendar' }];
+        const to = r[Number(e.key) - 1];
+        if (!to) return;
         e.preventDefault();
-        const r: Route[] = [{ name: 'home' }, { name: 'inbox' }, { name: 'projects' }, { name: 'calendar' }];
-        go(r[Number(e.key) - 1]);
+        go(to);
         return;
       }
       if (mod && e.key === ',') {
@@ -172,8 +177,7 @@ export function UiProvider({
       }
       if (mod && e.key.toLowerCase() === 'n') {
         e.preventDefault();
-        go({ name: 'home' });
-        setTimeout(() => document.querySelector<HTMLTextAreaElement>('[data-testid=composer-input]')?.focus(), 50);
+        newVideo();
         return;
       }
       if (e.key === 'Escape') {
@@ -299,6 +303,18 @@ export function isTyping(target: EventTarget | null): boolean {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
 }
 
+/** ＋ New video (⌘N, ⌘K): the Studio's composer, open and focused; without the Studio, Home's. */
+export function newVideo() {
+  if (studioEnabled()) {
+    sessionStorage.setItem('studio.compose', '1');
+    go({ name: 'studio' });
+    window.dispatchEvent(new Event('studio:compose'));
+    return;
+  }
+  go({ name: 'home' });
+  setTimeout(() => document.querySelector<HTMLTextAreaElement>('[data-testid=composer-input]')?.focus(), 50);
+}
+
 // ---------------------------------------------------------------- ⌘K
 interface Cmd {
   id: string;
@@ -330,10 +346,14 @@ function Palette({ onClose, openSheet, theme, onTheme, onLang }: { onClose: () =
     const goC = (id: string, key: MessageKey, r: Route, icon: ReactNode, hint?: string): Cmd => ({ id, group: 'go', label: t(key), icon, run: () => go(r), hint });
     const other = theme === 'studio-dark' ? 'notebook-light' : 'studio-dark';
     const list: Cmd[] = [
-      goC('home', 'nav.home', { name: 'home' }, <Home className="ico" />, keyHint('⌘1')),
-      goC('inbox', 'nav.inbox', { name: 'inbox' }, <Inbox className="ico" />, keyHint('⌘2')),
-      goC('projects', 'nav.projects', { name: 'projects' }, <LayoutGrid className="ico" />, keyHint('⌘3')),
-      goC('publish', 'nav.publishTop', { name: 'calendar' }, <Calendar className="ico" />, keyHint('⌘4')),
+      ...(studioEnabled()
+        ? [goC('studio', 'st.nav', { name: 'studio' }, <Clapperboard className="ico" />, keyHint('⌘1')), goC('publish', 'nav.publishTop', { name: 'calendar' }, <Calendar className="ico" />, keyHint('⌘2'))]
+        : [
+            goC('home', 'nav.home', { name: 'home' }, <Home className="ico" />, keyHint('⌘1')),
+            goC('inbox', 'nav.inbox', { name: 'inbox' }, <Inbox className="ico" />, keyHint('⌘2')),
+            goC('projects', 'nav.projects', { name: 'projects' }, <LayoutGrid className="ico" />, keyHint('⌘3')),
+            goC('publish', 'nav.publishTop', { name: 'calendar' }, <Calendar className="ico" />, keyHint('⌘4')),
+          ]),
       goC('settings', 'nav.settings', { name: 'settings' }, <Settings className="ico" />, keyHint('⌘,')),
       {
         id: 'new',
@@ -341,10 +361,7 @@ function Palette({ onClose, openSheet, theme, onTheme, onLang }: { onClose: () =
         label: t('palette.newPrompt'),
         icon: <Sparkles className="ico" />,
         hint: keyHint('⌘N'),
-        run: () => {
-          go({ name: 'home' });
-          setTimeout(() => document.querySelector<HTMLTextAreaElement>('[data-testid=composer-input]')?.focus(), 50);
-        },
+        run: newVideo,
       },
       ...LANGS.filter((l) => l !== getLang()).map<Cmd>((l) => ({ id: `lang-${l}`, group: 'actions', label: t('palette.lang', { l: LOCALES[l].label }), icon: <Languages className="ico" />, run: () => onLang(l) })),
       { id: 'theme', group: 'actions', label: t('palette.theme', { th: t(other === 'studio-dark' ? 'set.theme.studio-dark' : 'set.theme.notebook-light') }), icon: other === 'studio-dark' ? <Moon className="ico" /> : <Sun className="ico" />, run: () => onTheme(other) },
@@ -455,6 +472,7 @@ export const SHORTCUTS: [MessageKey, string][] = [
   ['keys.backForward', keyHint('⌘[ · ⌘]')],
   ['keys.help', '?'],
   ['keys.go', keyHint('⌘1 – ⌘4')],
+  ['keys.studioPick', `${keyHint('⌘1 – ⌘9')} · ↑ ↓`],
   ['keys.newPrompt', keyHint('⌘N')],
   ['keys.search', '/'],
   ['keys.play', 'Space · K'],
