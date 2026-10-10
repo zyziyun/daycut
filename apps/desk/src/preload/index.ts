@@ -93,6 +93,7 @@ const api: DeskApi = {
     cancel: (id) => call('assets:cancel', id ? { id } : undefined),
   },
   update: {
+    get: () => call('update:get'),
     check: () => call('update:check'),
     install: () => call('update:install'),
   },

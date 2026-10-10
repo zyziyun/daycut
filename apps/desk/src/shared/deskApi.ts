@@ -6,6 +6,7 @@ import type { Adapter } from './publish/adapterSchema';
 import type { ApiStatusMsg } from './publish/apiPlatforms';
 import type { Confirmation } from './publish/gating';
 import type { EngineInfo } from './types';
+import type { UpdateStateMsg } from './update';
 
 export interface PublishStateMsg {
   adapterId: string | null;
@@ -136,12 +137,7 @@ export interface FillRequestMsg {
   params?: Record<string, string>;
 }
 
-export interface UpdateStateMsg {
-  state: 'disabled' | 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'none' | 'error';
-  version?: string;
-  percent?: number;
-  error?: string;
-}
+export type { UpdateStateMsg };
 
 export interface DeskApi {
   engineInfo(): Promise<EngineInfo>;
@@ -222,8 +218,12 @@ export interface DeskApi {
     cancel(id?: string): Promise<void>;
   };
   update: {
+    /** the current state, without checking */
+    get(): Promise<UpdateStateMsg>;
+    /** check now (Settings › General › Check for updates) */
     check(): Promise<UpdateStateMsg>;
-    install(): Promise<void>;
+    /** quit, install the downloaded update and relaunch; -> the state (error, in plain words, when it cannot) */
+    install(): Promise<UpdateStateMsg>;
   };
   on(event: 'publish:state' | 'publish:fillStep' | 'engine:status' | 'assets:progress' | 'update:state' | 'history:changed' | 'notify:open' | 'term:data' | 'term:exit' | 'ai:routes' | 'publish:due' | 'publish:posted' | 'publish:channels' | 'support:problem' | 'support:open', cb: (data: unknown) => void): () => void;
   /** watch these folders for live job changes ('history:changed' events); -> the folders watched */

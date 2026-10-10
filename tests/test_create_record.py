@@ -101,3 +101,15 @@ def test_recorder_transcript_words_reads_words_of_keys(monkeypatch):
         dict(word=" 你好", start=0.4, end=0.8), dict(word="世界", start=0.9, end=1.5)])]))
     w = RE.transcript_words("x.mp4")
     assert w == [dict(word="你好", start=0.4, end=0.8), dict(word="世界", start=0.9, end=1.5)]
+
+
+def test_ffmpeg_never_reads_the_callers_stdin(monkeypatch):
+    # Windows: ffmpeg stalls on an inherited stdin pipe nobody writes to (the desk engine's) - the stitch never ended
+    seen = {}
+
+    def fake_run(args, **kw):
+        seen.update(kw)
+        return subprocess.CompletedProcess(args, 0, b"", b"")
+    monkeypatch.setattr(RE.subprocess, "run", fake_run)
+    RE._run(["ffmpeg", "-version"])
+    assert seen.get("stdin") is subprocess.DEVNULL

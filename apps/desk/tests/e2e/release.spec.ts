@@ -26,7 +26,7 @@ test.beforeAll(async () => {
       ...process.env,
       DESK_ENGINE_MOCK: '1',
       DESK_MOCK_STEP: '0.05',
-      DESK_MOCK_PLAN_DELAY: '3',
+      DESK_MOCK_PLAN_DELAY: '8', // long enough to see and press Stop on a slow runner (stopping ends it early)
       DESK_MOCK_PILOT_FAIL: 'auth',
       DESK_USER_DATA: path.join(tmp, 'profile'),
       VSTUDIO_HOME: path.join(tmp, 'vhome'),

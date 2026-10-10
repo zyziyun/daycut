@@ -1,8 +1,7 @@
-// First-run downloads (fonts, MediaPipe models, Whisper weights, optional Chromium) and the update indicator.
+// First-run downloads (fonts, MediaPipe models, Whisper weights, optional Chromium). The update pill: update.tsx.
 import { useEffect, useRef, useState } from 'react';
 import { Check } from 'lucide-react';
 import type { AssetsStatusMsg } from '../../../shared/assets';
-import type { UpdateStateMsg } from '../../../shared/deskApi';
 import { t, tk } from '../i18n';
 import { downloadSummary, etaText, fmtBytes, speedOf } from '../lib/firstRun';
 
@@ -220,18 +219,5 @@ export function AssetsCard({ primary = true, showDir = false }: { primary?: bool
         )}
       </div>
     </div>
-  );
-}
-
-export function UpdateBadge() {
-  const [u, setU] = useState<UpdateStateMsg | null>(null);
-  useEffect(() => window.desk.on('update:state', (d) => setU(d as UpdateStateMsg)), []);
-  if (!u || (u.state !== 'ready' && u.state !== 'downloading')) return null;
-  return u.state === 'ready' ? (
-    <button className="btn primary small" data-testid="update-ready" onClick={() => window.desk.update.install()}>
-      {t('update.restart', { version: u.version ?? '' })}
-    </button>
-  ) : (
-    <span className="muted small">{t('update.downloading', { percent: u.percent ?? 0 })}</span>
   );
 }

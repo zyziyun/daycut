@@ -22,8 +22,8 @@ export interface EngineConfig {
   dataDir: string;
   allowedOrigins: string[];
   mock?: boolean;
-  /** the sidecar exited without being asked to (crash report: exit code + the last log lines) */
-  onCrash?: (code: number | null, tail: string[]) => void;
+  /** the sidecar exited without being asked to (crash report: exit code or signal + the last log lines) */
+  onCrash?: (exit: EngineExit, tail: string[]) => void;
   /** extra variables (bundled runtime, downloaded assets) */
   env?: Record<string, string>;
   /** folders put in front of PATH / PYTHONPATH */
@@ -35,6 +35,21 @@ export interface EngineConfig {
   socketPath?: string | null;
   /** the engine died on its own after it was up (crash, OOM, killed): not called for stop() / a failed start */
   onDied?: (detail: string) => void;
+}
+
+export interface EngineExit {
+  code: number | null;
+  signal: NodeJS.Signals | null;
+}
+
+/** An engine exit in words for the problem report (a signal exit has no code: reports used to say "exit null").
+ * `crash`: worth a problem report - a non-zero code or a signal. Exit 0 is the engine stopping cleanly because it was
+ * asked to from outside (SIGTERM / SIGINT, e.g. a Ctrl-C or a logout reaching the whole process group just before the
+ * app's own quit): the app restarts it, but nothing went wrong in it. */
+export function describeExit({ code, signal }: EngineExit): { code: string; message: string; crash: boolean } {
+  if (signal) return { code: `signal ${signal}`, message: `engine was ended by ${signal} from outside the app`, crash: true };
+  if (code === 0) return { code: 'exit 0', message: 'engine stopped on its own (exit 0)', crash: false };
+  return { code: `exit ${code ?? '?'}`, message: `engine exited with code ${code ?? '?'}`, crash: true };
 }
 
 export function newToken(): string {
@@ -184,18 +199,18 @@ export class EngineProcess {
       });
       readline.createInterface({ input: child.stderr! }).on('line', (l) => this.push(l));
       child.on('error', (e) => done(new Error(`cannot start ${this.cfg.python}: ${e.message}`)));
-      child.on('exit', (code) => {
+      child.on('exit', (code, signal) => {
         this.info = null;
         this.target = null;
         this.child = null;
         // stopped on purpose (restart / quit): not an engine failure
         if (this.stopping) return done(Object.assign(new Error('engine stopped'), { stopped: true }));
         try {
-          this.cfg.onCrash?.(code, this.log.slice(-20));
+          this.cfg.onCrash?.({ code, signal }, this.log.slice(-20));
         } catch {
           /* reporting must not break the restart path */
         }
-        const detail = `engine exited (${code ?? child.signalCode}): ${this.log.slice(-5).join(' | ')}`;
+        const detail = `engine exited (${code ?? signal}): ${this.log.slice(-5).join(' | ')}`;
         // after a successful start nobody awaits the promise any more: tell the owner, or the app keeps saying
         // "Ready" while every request fails with "engine unreachable"
         if (settled) this.cfg.onDied?.(detail);

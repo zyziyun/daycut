@@ -17,7 +17,7 @@ export function isPackagedBuild() {
   return packagedBuild;
 }
 
-export type DevOnlyHook = 'DESK_AI_MOCK' | 'DESK_PYTHON' | 'DESK_RUNTIME_DIR' | 'DESK_ASSETS_MANIFEST' | 'REELFOLD_USAGE_BASE';
+export type DevOnlyHook = 'DESK_AI_MOCK' | 'DESK_PYTHON' | 'DESK_RUNTIME_DIR' | 'DESK_ASSETS_MANIFEST' | 'REELFOLD_USAGE_BASE' | 'DESK_UPDATE_FEED';
 
 export function devOnly(name: DevOnlyHook, env: NodeJS.ProcessEnv = process.env, packaged = packagedBuild): string | undefined {
   return packaged ? undefined : env[name] || undefined;

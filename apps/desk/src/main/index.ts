@@ -16,7 +16,7 @@ import { AssetManager, defaultHfHub, sharedEngineCache } from './assets';
 import { registerAiIpc, syncRoutesFile } from './aiAccounts';
 import { APP_MIME, resolveAppFile } from './appProtocol';
 import { installAppMenu } from './appMenu';
-import { defaultEnginePath, EngineProcess, engineProcessEnv, findPython } from './engine';
+import { defaultEnginePath, describeExit, EngineProcess, engineProcessEnv, findPython } from './engine';
 import { engineFetch, engineSocketPath, forwardToEngine } from './engineTransport';
 import { allowedMedia, mediaMime, parseRange, pathFromMediaUrl } from './media';
 import { loadAdapters } from './publish/adapters';
@@ -43,7 +43,7 @@ import { HistoryWatcher } from './historyWatch';
 import { UsageReporter, usageAllowedByEnv } from './usage';
 import { APP_NAME, applyIdentity } from './identity';
 import { SecretStore } from './secrets';
-import { checkForUpdates, initUpdater, installUpdate } from './updater';
+import { checkForUpdates, initUpdater, installUpdate, updateState } from './updater';
 import { registerCleanupIpc, registerV02Ipc, v02EngineEnv } from './v02';
 import { devOnly, setPackaged, tempOnly, testSwitch } from './testHooks';
 import { openFeedback, recordProblem, registerSupportIpc } from './support';
@@ -251,7 +251,13 @@ function startEngine(): Promise<EngineInfo> {
       dataDir: cfg.dataDir,
       allowedOrigins: [APP_ORIGIN],
       mock: testSwitch('DESK_ENGINE_MOCK'),
-      onCrash: (code, tail) => recordProblem('sidecar', `exit ${code}`, `engine exited (${code})`, tail.join('\n')),
+      onCrash: (exit, tail) => {
+        // quitting (also to install an update): the engine going away is expected, never a problem to report
+        if (appQuitting || gen !== engineGen) return;
+        const d = describeExit(exit);
+        if (!d.crash) return;
+        recordProblem('sidecar', d.code, d.message, tail.join('\n'));
+      },
       socketPath: engineSocket(),
       onDied: (detail) => onEngineCrash(gen, detail),
       ...withV02Env(engineEnv(cfg.runtime !== 'system')),
@@ -950,7 +956,8 @@ function registerIpc() {
     return { ...assets.status(), restartWhenIdle };
   });
   handle('assets:cancel', async (p) => assets.cancel(p?.id));
-  handle('update:check', async () => checkForUpdates());
+  handle('update:get', async () => updateState());
+  handle('update:check', async () => checkForUpdates(true));
   handle('update:install', async () => installUpdate());
   handle('history:watch', async (p) => {
     historyWatcher ??= new HistoryWatcher(() => win?.webContents.send('history:changed', { at: Date.now() }));
@@ -1105,7 +1112,7 @@ if (!app.requestSingleInstanceLock()) {
       tray.set(!!settings.get().openAtLogin);
     }
     if (IDENTITY.migrated) void reportMigratedProfile();
-    initUpdater((u) => win?.webContents.send('update:state', u));
+    initUpdater((u) => win?.webContents.send('update:state', u), mainLog);
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
       else if (win && !win.isVisible()) openRoute(); // started hidden at login: the Dock icon shows it

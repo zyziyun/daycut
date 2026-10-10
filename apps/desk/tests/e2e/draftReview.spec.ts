@@ -96,7 +96,14 @@ test('cutting sentences by clicking them answers with exactly what she keeps; th
   await expect(page.locator('.toast.error')).toHaveCount(0);
   // the cut is hers: the config holds the two kept sentences, the review says so
   const cfg = path.join(fx.drafted.dir, 'items', 'AIGC-talk', 'promo.config.yaml');
-  await expect.poll(() => fs.readFileSync(cfg, 'utf8'), { timeout: 30000 }).toContain('adjusted by you');
+  const read = () => {
+    try {
+      return fs.readFileSync(cfg, 'utf8');
+    } catch {
+      return ''; // being replaced right now (Windows refuses the open then): the next poll reads it
+    }
+  };
+  await expect.poll(read, { timeout: 30000 }).toContain('adjusted by you');
   const body = fs.readFileSync(cfg, 'utf8').match(/body:\s*\n?((?:\s*-?\s*\[[^\]]*\]\s*)+)/)?.[0] ?? '';
   expect(body.match(/\[/g)?.length).toBeGreaterThanOrEqual(2);
   // the run continues by itself (next stop: the filler cuts or later - not the keep step again)

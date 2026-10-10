@@ -13,7 +13,7 @@ import datetime as dt
 import os
 import shutil
 
-from vstudio import media
+from vstudio import media, oscompat
 
 from .api import verify_manifest  # noqa: F401  (public: recompute the confirmation code of a manifest)
 from .store import Store
@@ -95,7 +95,7 @@ def package(batch_dir, out=None, per_day=None, start=None, times=None, include_p
             f.write(f"confirmation code: {code}\nitems: {len(items)} posts, {len(jobs)} jobs, "
                     f"{per_day}/day/platform from {start}\n")
         shutil.rmtree(final, ignore_errors=True)
-        os.replace(pdir, final)
+        oscompat.replace(pdir, final)
         pdir = final
         for j in jobs:
             store.set_job(j["id"], state="packaged")

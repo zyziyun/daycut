@@ -158,8 +158,18 @@ class CreateApi:
         self._need_engine()
         r = self.runner
         cmd = [r.python, "-m", "vstudio.create", "--json-events", *args]
-        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=r.env,
-                             stdin=subprocess.DEVNULL, start_new_session=True)
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8",
+                             errors="replace", env=r.env, stdin=subprocess.DEVNULL, start_new_session=True)
+        tail = []
+
+        def drain():
+            # stderr is read while stdout is: a child whose log outgrows the pipe (about 4 KB on Windows: progress
+            # bars, warnings) would otherwise block on it while we wait for stdout - a job that never ends
+            for line in p.stderr:
+                tail.append(line.rstrip())
+                del tail[:-20]
+        t_err = threading.Thread(target=drain, daemon=True)
+        t_err.start()
         killed = []
         watchdog = None
         if limit:
@@ -186,10 +196,10 @@ class CreateApi:
                 result = doc["result"]
             elif doc.get("event"):
                 on_event(doc)
-        err = p.stderr.read()
         p.wait()
+        t_err.join(timeout=5)
         p.stdout.close()
-        p.stderr.close()
+        err = "\n".join(tail)
         if watchdog:
             watchdog.cancel()
         if killed:

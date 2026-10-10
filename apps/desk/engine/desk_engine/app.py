@@ -1069,6 +1069,13 @@ if hasattr(socketserver, "UnixStreamServer"):
                 pass
 
 
+class TcpHTTPServer(ThreadingHTTPServer):
+    """127.0.0.1 (Windows). A full backlog refuses a connect on Windows TCP too (WSAECONNREFUSED, no SYN retry as on
+    macOS / Linux), and the default backlog is 5: the editor opens more requests than that at once."""
+    daemon_threads = True
+    request_queue_size = 128
+
+
 def serve(api, host="127.0.0.1", port=0, socket_path=None):
     """Serve the API in a background thread: on a Unix socket when `socket_path` is given (macOS / Linux), else on
     host:port (Windows)."""
@@ -1076,8 +1083,7 @@ def serve(api, host="127.0.0.1", port=0, socket_path=None):
         httpd = UnixHTTPServer(socket_path, make_handler(api))
         api.socket_path = socket_path
     else:
-        httpd = ThreadingHTTPServer((host, port), make_handler(api))
-        httpd.daemon_threads = True
+        httpd = TcpHTTPServer((host, port), make_handler(api))
         api.port = httpd.server_address[1]
     t = threading.Thread(target=httpd.serve_forever, daemon=True)
     t.start()

@@ -450,7 +450,7 @@ def run_animatic(eid, on_event=None):
             try:
                 subprocess.run([ff, "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", lst, "-vf",
                                 "scale=360:640,format=yuv420p", "-r", "24", "-c:v", "libx264", "-preset", "ultrafast",
-                                out], check=True, capture_output=True, timeout=300)
+                                out], check=True, capture_output=True, timeout=300, stdin=subprocess.DEVNULL)
             except (subprocess.SubprocessError, OSError):
                 out = None
         else:

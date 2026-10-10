@@ -25,7 +25,8 @@ test.beforeAll(async () => {
     env: {
       ...process.env,
       DESK_ENGINE_MOCK: '1',
-      DESK_MOCK_STEP: '0.3',
+      // a run outlasts sending the next two requests (three UI round trips; several times slower on the Windows runner)
+      DESK_MOCK_STEP: process.platform === 'win32' ? '1' : '0.3',
       DESK_MAX_RUNS: '2',
       DESK_USER_DATA: path.join(tmp, 'profile'),
       VSTUDIO_HOME: path.join(tmp, 'vhome'),

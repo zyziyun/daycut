@@ -67,7 +67,7 @@ jobs:
     name: Windows smoke (preview, non-blocking)
     runs-on: windows-latest
     continue-on-error: true
-    timeout-minutes: 60
+    timeout-minutes: 90
     defaults:
       run:
         shell: bash
@@ -115,6 +115,9 @@ jobs:
         run: python -m pytest -q -p no:cacheprovider
       - name: Electron e2e (hidden windows, mock + real engine)
         if: success() || failure()
+        # like the macOS job (no local ASR models): faster-whisper is installed here for the pytest above, and would
+        # download a Whisper model inside an e2e run
+        env: { HF_HUB_OFFLINE: '1' }
         run: npx playwright test
       - uses: actions/upload-artifact@v7
         if: failure()

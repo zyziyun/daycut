@@ -5,6 +5,7 @@
 // cover = couverture, hook = accroche, filler = hésitations, talking head = face caméra, engine = moteur,
 // Inbox = Boîte de réception, Needs you = Vous attend, timeline = timeline.
 import { draftsFr } from './drafts';
+import { updateFr } from './update';
 import { usageFr } from './usage';
 import { shareFr } from './share';
 import { qaFr } from './qa';
@@ -1856,4 +1857,4 @@ const releaseFr: Record<keyof typeof releaseEn, string> = {
   'set.developerHint': 'Pour travailler sur Reelfold lui-même. Rien de tout cela n’est nécessaire pour faire des vidéos.',
 };
 
-export const fr: Record<MessageKey, string> = { ...legacyFr, ...legacyFrV02, ...v04Fr, ...aiaccFr, ...publishPlatformsFr, ...chatEditFr, ...channelsFr, ...projectAiFr, ...aboutFr, ...releaseFr, ...publishBoardFr, ...publishLoopFr, ...settingsV2Fr, ...createFr, ...pluginsFr, ...uxCoreFr, ...usageFr, ...weekPlanFr, ...shareFr, ...qaFr, ...firstRunFr, ...liteFr, ...sessionFixesFr, ...watermarkFr, ...archiveFr, ...autopilotFr, ...recordFr, ...fewerStepsFr, ...draftsFr };
+export const fr: Record<MessageKey, string> = { ...legacyFr, ...legacyFrV02, ...v04Fr, ...aiaccFr, ...publishPlatformsFr, ...chatEditFr, ...channelsFr, ...projectAiFr, ...aboutFr, ...releaseFr, ...publishBoardFr, ...publishLoopFr, ...settingsV2Fr, ...createFr, ...pluginsFr, ...uxCoreFr, ...usageFr, ...weekPlanFr, ...shareFr, ...qaFr, ...firstRunFr, ...liteFr, ...sessionFixesFr, ...watermarkFr, ...archiveFr, ...autopilotFr, ...recordFr, ...fewerStepsFr, ...draftsFr, ...updateFr };

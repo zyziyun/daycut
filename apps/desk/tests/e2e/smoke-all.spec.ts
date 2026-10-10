@@ -50,7 +50,7 @@ function fixture() {
 }
 
 test.describe.configure({ mode: 'serial' });
-test.setTimeout(240_000);
+test.setTimeout(process.platform === 'win32' ? 600_000 : 240_000); // clicks every control; Windows runner ~2x slower
 
 test.beforeAll(async () => {
   fixture();

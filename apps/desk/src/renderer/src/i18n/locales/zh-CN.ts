@@ -1,5 +1,6 @@
 // 简体中文。Record<MessageKey, string>: a key missing here is a type error.
 import { draftsZh } from './drafts';
+import { updateZh } from './update';
 import { usageZh } from './usage';
 import { shareZh } from './share';
 import { qaZh } from './qa';
@@ -592,4 +593,4 @@ const v04Zh: Record<keyof typeof v04En, string> = {
   'editor.zoomFit': '全部',
 };
 
-export const zhCN: Record<MessageKey, string> = { ...legacyZh, ...legacyZhV02, ...v04Zh, ...aiaccZh, ...publishPlatformsZh, ...chatEditZh, ...channelsZh, ...projectAiZh, ...aboutZh, ...releaseZh, ...publishBoardZh, ...publishLoopZh, ...settingsV2Zh, ...createZh, ...pluginsZh, ...uxCoreZh, ...usageZh, ...weekPlanZh, ...shareZh, ...qaZh, ...firstRunZh, ...liteZh, ...sessionFixesZh, ...watermarkZh, ...archiveZh, ...autopilotZh, ...recordZh, ...fewerStepsZh, ...draftsZh };
+export const zhCN: Record<MessageKey, string> = { ...legacyZh, ...legacyZhV02, ...v04Zh, ...aiaccZh, ...publishPlatformsZh, ...chatEditZh, ...channelsZh, ...projectAiZh, ...aboutZh, ...releaseZh, ...publishBoardZh, ...publishLoopZh, ...settingsV2Zh, ...createZh, ...pluginsZh, ...uxCoreZh, ...usageZh, ...weekPlanZh, ...shareZh, ...qaZh, ...firstRunZh, ...liteZh, ...sessionFixesZh, ...watermarkZh, ...archiveZh, ...autopilotZh, ...recordZh, ...fewerStepsZh, ...draftsZh, ...updateZh };

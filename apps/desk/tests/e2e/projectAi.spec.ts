@@ -28,7 +28,7 @@ test.beforeAll(async () => {
   fs.writeFileSync(path.join(fuye, 'work', 'clipdefs.py'), 'CLIPS = dict(\n  A=dict(kicker="副业复盘"),\n)\n');
   app = await electron.launch({
     args: [path.resolve(import.meta.dirname, '../..')],
-    env: { ...process.env, DESK_ENGINE_MOCK: '1', DESK_PROJECT_ASK_DELAY: '1.5', DESK_USER_DATA: path.join(tmp, 'profile'), VSTUDIO_HOME: path.join(tmp, 'vhome'), DESK_HISTORY_WATCH: watch, DESK_HIDE_WINDOW: '1', DESK_SHARED_CACHE: path.join(tmp, 'cache'), DESK_HF_HUB: '', DESK_SKIP_FIRST_RUN: '1', VITE_DEV_SERVER_URL: '' },
+    env: { ...process.env, DESK_ENGINE_MOCK: '1', DESK_PROJECT_ASK_DELAY: '5', DESK_USER_DATA: path.join(tmp, 'profile'), VSTUDIO_HOME: path.join(tmp, 'vhome'), DESK_HISTORY_WATCH: watch, DESK_HIDE_WINDOW: '1', DESK_SHARED_CACHE: path.join(tmp, 'cache'), DESK_HF_HUB: '', DESK_SKIP_FIRST_RUN: '1', VITE_DEV_SERVER_URL: '' },
   });
   page = await app.firstWindow();
   await page.setViewportSize({ width: 1440, height: 900 });

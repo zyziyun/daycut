@@ -10,7 +10,7 @@ import { goCreate } from '../routes';
 
 const JIMENG = 'https://jimeng.jianying.com/';
 
-export function TakesView({ ep, onChanged }: { ep: EpisodeView; onChanged: () => void }) {
+export function TakesView({ ep, onChanged }: { ep: EpisodeView; onChanged: () => void | Promise<void> }) {
   const c = useCreate();
   const act = useAction();
   const withTakes = ep.shots.filter((s) => s.takes.length > 0);
@@ -53,7 +53,7 @@ export function TakesView({ ep, onChanged }: { ep: EpisodeView; onChanged: () =>
                         void act.run(async () => {
                           if (!c) return;
                           await c.pick(ep.id, s.no, tk.file);
-                          onChanged();
+                          await onChanged(); // the buttons stay off until they show the pick
                         })
                       }
                       data-testid="create-take-use"
