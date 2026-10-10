@@ -85,7 +85,11 @@ jobs:
         run: |
           python -m pip install -r tests/requirements.txt
           python -c "import yaml, numpy, cv2, mediapipe, faster_whisper; print('deps ok')"
-          choco install ffmpeg -y --no-progress >/dev/null
+          # the Chocolatey download fails now and then: retry, and show why when it does
+          for i in 1 2 3; do
+            choco install ffmpeg -y --no-progress > "$RUNNER_TEMP/choco.log" 2>&1 && break
+            tail -20 "$RUNNER_TEMP/choco.log"; sleep 30
+          done
           ffmpeg -hide_banner -version | head -1
           echo "DESK_PYTHON=$(python -c 'import sys; print(sys.executable)')" >> "$GITHUB_ENV"
       - run: npm ci
