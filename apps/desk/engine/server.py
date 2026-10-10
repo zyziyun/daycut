@@ -14,6 +14,7 @@ Environment
 Prints one line ``{"ready": true, "socket": "<path>" | "port": N, "mode": "real"|"mock"}`` on stdout, then serves until
 stdin closes (the parent died) or SIGTERM.
 """
+import importlib
 import json
 import os
 import signal
@@ -55,11 +56,22 @@ def make_engine(data_dir, bus):
     return RealEngine(data_dir, reg, bus, engine_path=engine_path), None
 
 
-def preload():
+# The test engine runs Create jobs in this process (desk_mock: no subprocess), so the recorder's stitch imports the
+# local ASR here, on a job thread: its native libraries too, when installed.
+TEST_ENGINE_NATIVE = ("faster_whisper", "onnxruntime")      # + CTranslate2, PyAV (not cv2 too: two FFmpeg builds on a Mac)
+
+
+def preload(test_engine=False):
     """Import what opening a clip and the inbox poll use in this process, in the main thread BEFORE any other thread
     starts. Windows: loading numpy's DLLs (OpenBLAS starts its thread pool under the DLL loader lock) in a background
     thread while other threads are being created (request threads, subprocess pipe readers) deadlocks the whole
-    process - it stays alive, prints "ready" and never answers a request. ~0.2 s on a Mac."""
+    process - it stays alive, prints "ready" and never answers a request. ~0.2 s on a Mac. The test engine too: its
+    routes (share, the transcript's preview) import the same modules lazily, and its Create jobs more."""
+    for mod in ("numpy",) + (TEST_ENGINE_NATIVE if test_engine else ()):
+        try:                                # named: the DLLs that deadlock, whatever vstudio imports below
+            importlib.import_module(mod)
+        except Exception:  # noqa: BLE001  (not installed / broken: whatever uses it reports that)
+            pass
     try:
         import vstudio.project.inbox  # noqa: F401
         import vstudio.project.outputs  # noqa: F401
@@ -89,8 +101,8 @@ def main():
     except ImportError as e:
         print(json.dumps(dict(ready=False, error=f"the video engine (vstudio) cannot be loaded: {e}")), flush=True)
         return 3
+    preload(test_engine=engine.mode != "real")                       # before any thread (see preload)
     if engine.mode == "real":
-        preload()                                                     # before any thread (see preload)
         runner = CliRunner(engine.python, runner_env(engine.engine_path))
         caps = Capabilities(runner)
         threading.Thread(target=caps.probe, daemon=True).start()      # warm the cache off the start-up path
