@@ -20,6 +20,7 @@ import { CaptionsCard, CARD_ICON, CoverCard, EffectCard, ExportCard, FallbackCar
 import { CutCard } from './CutCard';
 import './chat.css';
 import { trackUsage } from '../../lib/usage';
+import { keyHint } from '../../lib/keys';
 
 export interface ChatApi {
   focus(text?: string): void;
@@ -642,7 +643,7 @@ export const ChatPanel = forwardRef<ChatApi, Props>(function ChatPanel(p, ref) {
   if (p.collapsed)
     return (
       <aside className="cc cc-rail" data-testid="chat-panel" data-collapsed="1">
-        <button className="btn ghost icon" onClick={p.onToggle} aria-label={t('te.chatOpen')} data-tip={`${t('te.chatOpen')} · ⌘\\`} data-testid="chat-expand">
+        <button className="btn ghost icon" onClick={p.onToggle} aria-label={t('te.chatOpen')} data-tip={`${t('te.chatOpen')} · ${keyHint('⌘\\')}`} data-testid="chat-expand">
           <PanelRightOpen className="ico" />
         </button>
         <button className="btn ghost icon" onClick={p.onToggle} aria-label={t('ce.chatTitle')}>
@@ -658,7 +659,7 @@ export const ChatPanel = forwardRef<ChatApi, Props>(function ChatPanel(p, ref) {
         <b>{t('ce.chatTitle')}</b>
         <span style={{ flex: 1 }} />
         {p.onToggle && (
-          <button className="btn ghost icon sm" onClick={p.onToggle} aria-label={t('te.chatClose')} data-tip={`${t('te.chatClose')} · ⌘\\`} data-testid="chat-collapse">
+          <button className="btn ghost icon sm" onClick={p.onToggle} aria-label={t('te.chatClose')} data-tip={`${t('te.chatClose')} · ${keyHint('⌘\\')}`} data-testid="chat-collapse">
             <PanelRightClose className="ico" />
           </button>
         )}

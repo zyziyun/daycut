@@ -161,9 +161,9 @@ test('zoom: + doubles, Fit returns, ⌘+ / ⌘0, the view scrolls and seeking st
   await expect.poll(pps).toBeCloseTo(fit, 2);
   // keyboard zoom (focus outside the composer)
   await page.mouse.click(film.x + 5, film.y + film.height / 2);
-  await page.keyboard.press('Meta+=');
+  await page.keyboard.press('ControlOrMeta+=');
   await expect.poll(pps).toBeCloseTo(fit * 2, 1);
-  await page.keyboard.press('Meta+0');
+  await page.keyboard.press('ControlOrMeta+0');
   await expect.poll(pps).toBeCloseTo(fit, 2);
 });
 

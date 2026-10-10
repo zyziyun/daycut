@@ -138,7 +138,7 @@ for (const [lang, clip] of [['en', 'A_换圈子'], ['zh-CN', 'B_底气']] as con
     // a second card, then undo the FIRST one only: the speed change stays
     await say(s.speed);
     await expect(page.getByTestId('change-card')).toBeVisible({ timeout: 15000 });
-    await page.keyboard.press('Meta+Enter'); // ⌘↵ applies the newest draft
+    await page.keyboard.press('ControlOrMeta+Enter'); // ⌘↵ applies the newest draft
     await expect(page.getByTestId('applied-line')).toHaveCount(2);
     await page.getByTestId('applied-line').first().getByTestId('applied-undo').click();
     await expect(page.getByTestId('reverted-line')).toHaveCount(1);
@@ -168,7 +168,7 @@ for (const [lang, clip] of [['en', 'A_换圈子'], ['zh-CN', 'B_底气']] as con
 
   test(`${lang}: slash commands open cards without the model; / and ⌘K; Esc`, async () => {
     await page.getByTestId('editor-title').click();
-    await page.keyboard.press('Meta+k'); // ⌘K is the app-wide jump palette, in the editor too
+    await page.keyboard.press('ControlOrMeta+k'); // ⌘K is the app-wide jump palette, in the editor too
     await expect(page.getByTestId('palette')).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('palette')).toHaveCount(0);

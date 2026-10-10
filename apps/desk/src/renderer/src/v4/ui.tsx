@@ -7,6 +7,7 @@ import { useEngine } from '../lib/engine';
 import { useHistory } from '../lib/history';
 import { postHref, useBackForwardKeys } from '../lib/nav';
 import { go, type Route } from '../lib/router';
+import { keyHint } from '../lib/keys';
 
 // ---------------------------------------------------------------- toasts
 interface Toast {
@@ -329,17 +330,17 @@ function Palette({ onClose, openSheet, theme, onTheme, onLang }: { onClose: () =
     const goC = (id: string, key: MessageKey, r: Route, icon: ReactNode, hint?: string): Cmd => ({ id, group: 'go', label: t(key), icon, run: () => go(r), hint });
     const other = theme === 'studio-dark' ? 'notebook-light' : 'studio-dark';
     const list: Cmd[] = [
-      goC('home', 'nav.home', { name: 'home' }, <Home className="ico" />, '⌘1'),
-      goC('inbox', 'nav.inbox', { name: 'inbox' }, <Inbox className="ico" />, '⌘2'),
-      goC('projects', 'nav.projects', { name: 'projects' }, <LayoutGrid className="ico" />, '⌘3'),
-      goC('publish', 'nav.publishTop', { name: 'calendar' }, <Calendar className="ico" />, '⌘4'),
-      goC('settings', 'nav.settings', { name: 'settings' }, <Settings className="ico" />, '⌘,'),
+      goC('home', 'nav.home', { name: 'home' }, <Home className="ico" />, keyHint('⌘1')),
+      goC('inbox', 'nav.inbox', { name: 'inbox' }, <Inbox className="ico" />, keyHint('⌘2')),
+      goC('projects', 'nav.projects', { name: 'projects' }, <LayoutGrid className="ico" />, keyHint('⌘3')),
+      goC('publish', 'nav.publishTop', { name: 'calendar' }, <Calendar className="ico" />, keyHint('⌘4')),
+      goC('settings', 'nav.settings', { name: 'settings' }, <Settings className="ico" />, keyHint('⌘,')),
       {
         id: 'new',
         group: 'actions',
         label: t('palette.newPrompt'),
         icon: <Sparkles className="ico" />,
-        hint: '⌘N',
+        hint: keyHint('⌘N'),
         run: () => {
           go({ name: 'home' });
           setTimeout(() => document.querySelector<HTMLTextAreaElement>('[data-testid=composer-input]')?.focus(), 50);
@@ -348,7 +349,7 @@ function Palette({ onClose, openSheet, theme, onTheme, onLang }: { onClose: () =
       ...LANGS.filter((l) => l !== getLang()).map<Cmd>((l) => ({ id: `lang-${l}`, group: 'actions', label: t('palette.lang', { l: LOCALES[l].label }), icon: <Languages className="ico" />, run: () => onLang(l) })),
       { id: 'theme', group: 'actions', label: t('palette.theme', { th: t(other === 'studio-dark' ? 'set.theme.studio-dark' : 'set.theme.notebook-light') }), icon: other === 'studio-dark' ? <Moon className="ico" /> : <Sun className="ico" />, run: () => onTheme(other) },
       { id: 'keys', group: 'actions', label: t('palette.shortcuts'), icon: <Keyboard className="ico" />, hint: '?', run: openSheet },
-      { id: 'set-general', group: 'settings', label: t('palette.set.general'), icon: <Settings className="ico" />, hint: '⌘,', run: () => go({ name: 'settings' }) },
+      { id: 'set-general', group: 'settings', label: t('palette.set.general'), icon: <Settings className="ico" />, hint: keyHint('⌘,'), run: () => go({ name: 'settings' }) },
       { id: 'set-ai', group: 'settings', label: t('palette.set.ai'), icon: <Bot className="ico" />, run: () => go({ name: 'aiAccounts' }) },
       { id: 'set-accounts', group: 'settings', label: t('palette.set.accounts'), icon: <Send className="ico" />, run: () => go({ name: 'channels' }) },
     ];
@@ -450,11 +451,11 @@ function Palette({ onClose, openSheet, theme, onTheme, onLang }: { onClose: () =
 
 // ---------------------------------------------------------------- ? cheat sheet
 export const SHORTCUTS: [MessageKey, string][] = [
-  ['keys.palette', '⌘K'],
-  ['keys.backForward', '⌘[ · ⌘]'],
+  ['keys.palette', keyHint('⌘K')],
+  ['keys.backForward', keyHint('⌘[ · ⌘]')],
   ['keys.help', '?'],
-  ['keys.go', '⌘1 – ⌘4'],
-  ['keys.newPrompt', '⌘N'],
+  ['keys.go', keyHint('⌘1 – ⌘4')],
+  ['keys.newPrompt', keyHint('⌘N')],
   ['keys.search', '/'],
   ['keys.play', 'Space · K'],
   ['keys.shuttle', 'J · K · L'],
@@ -464,7 +465,7 @@ export const SHORTCUTS: [MessageKey, string][] = [
   ['keys.full', 'F'],
   ['keys.exit', 'Esc'],
   ['keys.approve', 'Space · X · E'],
-  ['keys.undo', '⌘Z'],
+  ['keys.undo', keyHint('⌘Z')],
 ];
 
 function Sheet({ onClose }: { onClose: () => void }) {

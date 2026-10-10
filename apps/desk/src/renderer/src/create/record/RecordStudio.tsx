@@ -11,6 +11,7 @@ import { useAction, useCreate, useCreateLoad, waitJob } from '../api';
 import { Crumbs, l10n } from '../bits';
 import { lineSeconds, Teleprompter } from './Teleprompter';
 import { useRecorder } from './useRecorder';
+import { keyHint } from '../../lib/keys';
 
 interface Ingested {
   project_id?: string;
@@ -257,7 +258,7 @@ export function RecordStudio({ sid, eid, shot }: { sid?: string; eid?: string; s
               </span>
               <button className="cr-ctrl" disabled={!recording} onClick={retake} data-testid="create-rec-retake">
                 <RotateCcw className="ico" />
-                <span className="tx">{t('create.rec.retake')}</span> ⌘R
+                <span className="tx">{t('create.rec.retake')}</span> {keyHint('⌘R')}
               </button>
             </div>
           </>

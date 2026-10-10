@@ -37,6 +37,7 @@ import { orderPlatforms } from '../../../shared/platforms';
 import { errText } from './msg';
 import { IS_LITE } from '../../../shared/edition';
 import { LiveCardLine } from './LiveLine';
+import { keyHint } from '../lib/keys';
 
 /** First run: the starting points (title, what it does, the request it fills in). */
 const STARTS: { icon: typeof Film; title: MessageKey; sub: MessageKey; prompt: MessageKey }[] = [
@@ -296,9 +297,7 @@ export function Home() {
               </button>
               <PlatformChip value={platforms} onChange={savePlatforms} />
               <span className="sp" />
-              <span className="ux-kbdhint" aria-hidden>
-                ⌘↵
-              </span>
+              <span className="ux-kbdhint" aria-hidden>{keyHint('⌘↵')}</span>
               <button className={`btn lg ux-make ${ready ? 'primary' : ''}`} disabled={busy || !ready || !!waitDl} onClick={() => void submit()} data-testid="make-plan">
                 <Sparkles className="ico" />
                 {auto ? t('home.submitAuto') : t('home.submit')}

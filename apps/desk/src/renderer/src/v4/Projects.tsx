@@ -17,6 +17,7 @@ import { ProjectTile } from './Home';
 import { ControlRoom } from './Hub';
 import { Empty, More, Seg, SkGrid } from './kit';
 import { useUi } from './ui';
+import { keyHint } from '../lib/keys';
 
 type F = ProjectsFilter;
 const OWN = '\u0000own';
@@ -44,7 +45,7 @@ export function Projects() {
           </div>
           <span className="sp" />
           {viewSeg}
-          <button className="btn primary" onClick={() => go({ name: 'home' })} data-tip="⌘N">
+          <button className="btn primary" onClick={() => go({ name: 'home' })} data-tip={keyHint('⌘N')}>
             <Plus className="ico" />
             {t('projects.new')}
           </button>
@@ -155,7 +156,7 @@ function ProjectsGrid({ viewSeg }: { viewSeg: React.ReactNode }) {
           </div>
           <span className="sp" />
           {viewSeg}
-          <button className="btn primary" onClick={() => go({ name: 'home' })} data-tip="⌘N">
+          <button className="btn primary" onClick={() => go({ name: 'home' })} data-tip={keyHint('⌘N')}>
             <Plus className="ico" />
             {t('projects.new')}
           </button>

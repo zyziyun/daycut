@@ -180,7 +180,7 @@ test('second-pass edit: trim, pop word (精确编辑 drawer), 让 AI 改 (chat),
 
 test('⌘K palette, ? shortcuts, drop target', async () => {
   await page.getByTestId('nav-home').click();
-  await page.keyboard.press('Meta+k');
+  await page.keyboard.press('ControlOrMeta+k');
   await expect(page.getByTestId('palette')).toBeVisible();
   await page.getByTestId('palette-input').fill('inbox');
   await page.keyboard.press('Enter');

@@ -2,6 +2,7 @@
 // one filled button while cuts are pending; it is off (with the reason) when less than a second would be left.
 import { Scissors } from 'lucide-react';
 import { t } from '../../i18n';
+import { keyHint } from '../../lib/keys';
 
 export function PendingBar({ n, secs, tooShort, note, busy, onDiscard, onApply }: { n: number; secs: number; tooShort: boolean; note?: string | null; busy: boolean; onDiscard: () => void; onApply: () => void }) {
   return (
@@ -20,7 +21,7 @@ export function PendingBar({ n, secs, tooShort, note, busy, onDiscard, onApply }
       <button className="btn primary" disabled={tooShort || busy} onClick={onApply} title={tooShort ? t('te.tooShort') : undefined} data-testid="pending-apply">
         <Scissors className="ico" />
         {busy ? t('ce.applying') : t('te.apply')}
-        <span className="kbd on">⌘↵</span>
+        <span className="kbd on">{keyHint('⌘↵')}</span>
       </button>
     </div>
   );

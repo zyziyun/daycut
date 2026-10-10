@@ -7,6 +7,7 @@ import { t, tk } from '../i18n';
 import { useEngine, useLoad } from '../lib/engine';
 import { href } from '../lib/router';
 import { PlatformPicker, StageBadge } from './Clients';
+import { keyHint } from '../lib/keys';
 
 const list = (s: string) =>
   s
@@ -108,7 +109,7 @@ export function ClientDetail({ slug }: { slug: string }) {
           client.yaml
         </span>
         <button className="btn primary" disabled={!dirty} onClick={save} data-testid="client-save">
-          {t('clients.save')} <kbd>⌘S</kbd>
+          {t('clients.save')} <kbd>{keyHint('⌘S')}</kbd>
         </button>
       </div>
       <div className="page" style={{ display: 'grid', gridTemplateColumns: 'minmax(420px, 1fr) minmax(320px, 420px)', gap: 16, alignItems: 'start' }}>

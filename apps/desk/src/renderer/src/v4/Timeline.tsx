@@ -32,6 +32,7 @@ import { isTyping } from './ui';
 import { media } from './kit';
 import { effectLabel } from './msg';
 import './timeline.css';
+import { keyHint } from '../lib/keys';
 
 export interface TimelineMarker {
   id: string;
@@ -269,13 +270,13 @@ export function Timeline(p: TimelineProps) {
       <div className="tl2-bar">
         <div className="lead">{p.header}</div>
         <div className="zm" role="group" aria-label={t('tl.fit')}>
-          <button className="btn ghost icon sm" onClick={() => zoomBy(0.5)} disabled={zoom === null} aria-label={t('tl.zoomOut')} data-tip={`${t('tl.zoomOut')} · ⌘−`} data-testid="tl-zoom-out">
+          <button className="btn ghost icon sm" onClick={() => zoomBy(0.5)} disabled={zoom === null} aria-label={t('tl.zoomOut')} data-tip={`${t('tl.zoomOut')} · ${keyHint('⌘−')}`} data-testid="tl-zoom-out">
             <ZoomOut className="ico" />
           </button>
-          <button className={`btn ghost sm fitb ${zoom === null ? 'on' : ''}`} onClick={() => setZoom(null)} aria-pressed={zoom === null} data-tip={`${t('tl.fitTip')} · ⌘0`} data-testid="tl-fit">
+          <button className={`btn ghost sm fitb ${zoom === null ? 'on' : ''}`} onClick={() => setZoom(null)} aria-pressed={zoom === null} data-tip={`${t('tl.fitTip')} · ${keyHint('⌘0')}`} data-testid="tl-fit">
             {t('tl.fit')}
           </button>
-          <button className="btn ghost icon sm" onClick={() => zoomBy(2)} disabled={pps >= 399} aria-label={t('tl.zoomIn')} data-tip={`${t('tl.zoomIn')} · ⌘+`} data-testid="tl-zoom-in">
+          <button className="btn ghost icon sm" onClick={() => zoomBy(2)} disabled={pps >= 399} aria-label={t('tl.zoomIn')} data-tip={`${t('tl.zoomIn')} · ${keyHint('⌘+')}`} data-testid="tl-zoom-in">
             <ZoomIn className="ico" />
           </button>
         </div>

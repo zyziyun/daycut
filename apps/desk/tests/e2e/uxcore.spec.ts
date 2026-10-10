@@ -321,14 +321,14 @@ test('Review all in a row: the triage bar, the pinned question in the editor; Sk
 
 test('⌘K jumps to clips, posts and settings; ⌘[ goes back', async () => {
   await hash('#/');
-  await page.keyboard.press('Meta+k');
+  await page.keyboard.press('ControlOrMeta+k');
   await page.getByTestId('palette-input').fill('AI accounts');
   await expect(page.getByTestId('palette-item').first()).toContainText(/AI accounts/);
   await page.keyboard.press('Enter');
   await expect(page).toHaveURL(/#\/settings\/ai/);
-  await page.keyboard.press('Meta+[');
+  await page.keyboard.press('ControlOrMeta+[');
   await expect(page.getByTestId('home')).toBeVisible();
-  await page.keyboard.press('Meta+k');
+  await page.keyboard.press('ControlOrMeta+k');
   await page.getByTestId('palette-input').fill('底气');
   await expect(page.getByTestId('palette-item').filter({ hasText: '底气' }).first()).toBeVisible({ timeout: 15000 });
   await shot('K1-palette');
@@ -403,7 +403,7 @@ test('transcript: select -> Delete -> pending + skipped in preview -> ⌘↵ = o
     return (await (await fetch(`${base}/api/outputs/${id}/${encodeURIComponent('A_换圈子')}`, { headers: auth })).json()).steps.length;
   });
   await page.getByTestId('transcript-body').focus();
-  await page.keyboard.press('Meta+Enter');
+  await page.keyboard.press('ControlOrMeta+Enter');
   await expect(page.getByTestId('cut-card')).toBeVisible({ timeout: 15000 });
   await expect(page.getByTestId('cut-card')).toContainText('Cut 1 phrase');
   await expect(page.getByTestId('cut-card')).toContainText('Lakeside City College');
@@ -460,17 +460,17 @@ test('split presets: ⌘3 / ⌘1 / ⌘2, drag + double-click reset, saved across
   const stageH = () => page.locator('.ce-stage').evaluate((el) => el.getBoundingClientRect().height);
   const mainH = () => page.locator('.ce-split3').evaluate((el) => el.getBoundingClientRect().height);
   await page.locator('.ce-top').click();
-  await page.keyboard.press('Meta+3');
+  await page.keyboard.press('ControlOrMeta+3');
   await expect.poll(async () => (await stageH()) / (await mainH())).toBeLessThan(0.4);
   await expect(page.getByTestId('preset-edit')).toHaveAttribute('aria-pressed', 'true');
   await shot('T6-editfocus');
-  await page.keyboard.press('Meta+1');
+  await page.keyboard.press('ControlOrMeta+1');
   await expect.poll(async () => (await stageH()) / (await mainH())).toBeGreaterThan(0.6);
-  await page.keyboard.press('Meta+\\');
+  await page.keyboard.press('ControlOrMeta+\\');
   await expect(page.getByTestId('chat-panel')).toHaveAttribute('data-collapsed', '1');
   await shot('T7-playerfocus');
-  await page.keyboard.press('Meta+\\');
-  await page.keyboard.press('Meta+3');
+  await page.keyboard.press('ControlOrMeta+\\');
+  await page.keyboard.press('ControlOrMeta+3');
   await page.reload();
   await page.waitForURL(/^app:\/\/desk\//);
   await expect(page.getByTestId('editor')).toBeVisible({ timeout: 30000 });
