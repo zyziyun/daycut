@@ -817,14 +817,15 @@ def retouch(img, f=None, lm=None, **kw):
 # ---------------------------------------------------------------- video: skin smoothing / beauty per frame
 def video_knobs(strength=0.5, mode="skin"):
     """The knobs of the output editor's skin smoothing (``mode`` "skin": de-shine + three-band smoothing + tone, face
-    shape and makeup untouched; "beauty": the same plus a light slim, eyes and the natural makeup, scaled). Strength
-    0.1-1; 0.5 = the talking-head video defaults (texture kept: pores stay)."""
+    shape and makeup untouched; "beauty": the same plus slightly brighter eyes and the natural makeup, scaled - no
+    face slimming on video: a slimmer jaw shows as a notch against the background where the face mask ends).
+    Strength 0.1-1; 0.5 = the talking-head video defaults (texture kept: pores stay)."""
     s = min(1.0, max(0.0, float(strength)))
     k = dict(slim=0.0, eye=0.0, eye_extra=0.0, makeup=0.0, body=0.0, shine=0.4 + 0.6 * s, shine_feather=2.5,
              smooth=0.25 + 0.6 * s, light=0.06 * s, pores=0.85 - 0.15 * s, tone=0.15 + 0.3 * s, blemish=0.0,
              undereye=0.15 + 0.3 * s, neck=0.5, grid=160, preset="natural")
     if mode == "beauty":
-        k.update(slim=0.06 * s, eye=0.05 * s, makeup=0.45 * s)
+        k.update(eye=0.04 * s, makeup=0.45 * s, light=0.08 * s)
     return k
 
 

@@ -116,8 +116,8 @@ EFFECTS = [
          params=dict(sat=_num(1.1, 0.5, 1.6, "饱和度"), warm=_num(0.1, -0.5, 0.5, "暖色"))),
     dict(id="portrait-retouch", label=dict(en="Skin smoothing", zh="磨皮美颜"), category="grade", stage="frame",
          default_dur=0, whole=True,
-         description=dict(en="Face-tracked skin smoothing that keeps texture; beauty adds a light slim, eyes and makeup",
-                          zh="跟踪人脸磨皮，保留皮肤纹理；美颜模式再加轻微瘦脸、提亮眼睛和淡妆"),
+         description=dict(en="Face-tracked skin smoothing that keeps texture; beauty adds brighter eyes and light makeup",
+                          zh="跟踪人脸磨皮，保留皮肤纹理；美颜模式再加提亮眼睛和淡妆"),
          params=dict(strength=_num(0.5, 0.1, 1.0, "强度"), mode=_str("skin", "模式", ["skin", "beauty"]))),
 ]
 EFFECT_BY_ID = {e["id"]: e for e in EFFECTS}

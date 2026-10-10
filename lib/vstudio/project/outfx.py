@@ -201,7 +201,7 @@ SPECS = {
                     warm={"type": "boolean", "default": True, "x-zh": "暖色"})),
     "portrait-retouch": dict(
         zh="磨皮美颜", en="Skin smoothing", kind="look", stage="frame", default_dur=None,
-        what_zh="人脸磨皮（跟踪人脸、保留毛孔纹理、去油光、匀肤色）；beauty 模式再加轻微瘦脸、提亮眼睛和淡妆。整片或一段",
+        what_zh="人脸磨皮（跟踪人脸、保留毛孔纹理、去油光、匀肤色）；beauty 模式再加提亮眼睛和淡妆（视频不瘦脸）。整片或一段",
         params=dict(strength=_num(0.5, 0.1, 1.0, "强度"), mode=_str("skin", "模式 (skin 只磨皮 / beauty 美颜)",
                                                                    enum=("skin", "beauty"))),
         sample=dict(strength=0.6)),

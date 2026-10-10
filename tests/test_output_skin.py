@@ -68,12 +68,12 @@ def test_no_model_rule_understands_skin_smoothing():
     assert op["params"] == dict(strength=0.3, mode="skin")
 
 
-def test_knobs_skin_keeps_the_face_shape_beauty_adds_a_little():
+def test_knobs_skin_keeps_the_face_shape_beauty_adds_eyes_and_makeup():
     a, b = RT.video_knobs(0.3), RT.video_knobs(1.0)
     assert a["slim"] == a["eye"] == a["makeup"] == 0 and a["smooth"] < b["smooth"] <= 0.85
     assert b["pores"] >= 0.65                                    # texture kept even at full strength
     c = RT.video_knobs(1.0, "beauty")
-    assert 0 < c["slim"] <= 0.06 and c["makeup"] > 0 and c["smooth"] == b["smooth"]
+    assert c["slim"] == 0 and 0 < c["eye"] <= 0.04 and c["makeup"] > 0 and c["smooth"] == b["smooth"]
 
 
 def test_layer_smooths_the_tracked_face_only(face):
