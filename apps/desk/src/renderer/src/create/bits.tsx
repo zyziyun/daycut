@@ -6,6 +6,7 @@ import { swatch, yuan } from '../../../shared/create';
 import { getLang, t, tk, type MessageKey } from '../i18n';
 import { media } from '../v4/kit';
 import { createHref, type CreateRoute } from './routes';
+import { keyHint } from '../lib/keys';
 
 /** {en, zh, fr} -> the UI language (zh-CN -> zh), English fallback. */
 export function l10n(d: L10n | string | undefined | null): string {
@@ -174,7 +175,7 @@ export function AskBar({ placeholder, onAsk, busy, testId }: { placeholder: stri
     >
       <Sparkles className="ico" />
       <input value={v} onChange={(e) => setV(e.target.value)} placeholder={placeholder} aria-label={placeholder} data-testid={testId} disabled={busy} />
-      <span className="cr-hint">⌘K</span>
+      <span className="cr-hint">{keyHint('⌘K')}</span>
     </form>
   );
 }

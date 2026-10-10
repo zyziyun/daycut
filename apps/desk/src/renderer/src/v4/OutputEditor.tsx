@@ -38,6 +38,7 @@ import { useStrip, useTranscribe } from '../lib/timelineMedia';
 import { isTyping, useUi } from './ui';
 import '../theme/uxcore.css';
 import './transcript/transcript.css';
+import { keyHint } from '../lib/keys';
 
 type Tab = 'trim' | 'captions' | 'effects' | 'cover' | 'export';
 const TABS: [Tab, MessageKey][] = [
@@ -535,10 +536,10 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
           <span className="sp" />
           <ShareButton item={id} clips={[clip]} label={false} className="btn ghost icon sm" testId="editor-share" />
           <div className="grp">
-            <button className="btn ghost icon sm" disabled={!doc.undo && !(pending && cuts.canUndo)} onClick={() => (pending && cuts.canUndo ? cuts.undo() : void undo())} aria-label={t('c.undo')} data-tip={`${t('c.undo')} · ⌘Z`} data-testid="editor-undo">
+            <button className="btn ghost icon sm" disabled={!doc.undo && !(pending && cuts.canUndo)} onClick={() => (pending && cuts.canUndo ? cuts.undo() : void undo())} aria-label={t('c.undo')} data-tip={`${t('c.undo')} · ${keyHint('⌘Z')}`} data-testid="editor-undo">
               <Undo2 className="ico" />
             </button>
-            <button className="btn ghost icon sm" disabled={!doc.redo && !cuts.canRedo} onClick={() => (cuts.canRedo ? cuts.redo() : void undo(1, true))} aria-label={t('c.redo')} data-tip={`${t('c.redo')} · ⇧⌘Z`} data-testid="editor-redo">
+            <button className="btn ghost icon sm" disabled={!doc.redo && !cuts.canRedo} onClick={() => (cuts.canRedo ? cuts.redo() : void undo(1, true))} aria-label={t('c.redo')} data-tip={`${t('c.redo')} · ${keyHint('⇧⌘Z')}`} data-testid="editor-redo">
               <Redo2 className="ico" />
             </button>
           </div>
@@ -585,8 +586,8 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
             className="ce-hsplit"
             role="separator"
             aria-orientation="horizontal"
-            aria-label={t('te.dividerTip')}
-            data-tip={t('te.dividerTip')}
+            aria-label={t('te.dividerTip', { key: keyHint('⌘2') })}
+            data-tip={t('te.dividerTip', { key: keyHint('⌘2') })}
             onPointerDown={split.dragDivider}
             onDoubleClick={split.reset}
             data-testid="split-divider"

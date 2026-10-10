@@ -167,7 +167,7 @@ test('job detail: caption fix (faithful check), hook swap, trim, undo, re-render
   await page.getByTestId('copy-save').click();
   await expect(page.getByTestId('edit-msg')).toBeVisible();
   await page.locator('.topbar h1').click(); // leave the input so ⌘Z is the editor's
-  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z');
+  await page.keyboard.press(process.platform === 'darwin' ? 'ControlOrMeta+z' : 'Control+z');
   await expect(page.getByTestId('edit-msg')).toHaveText(/已撤销|Undone/);
   const jd = await api<{ edit: { copy: { title: string }; history: unknown[]; pending: string[] } }>(`/api/batches/${batchId}/jobs/s001`);
   expect(jd.edit.copy.title).toBe('E2E 改过的标题');

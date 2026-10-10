@@ -4,6 +4,7 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import { AlignLeft, PanelBottom, PanelTop, Rows2, Scissors, Search, Table2, X } from 'lucide-react';
 import { t } from '../i18n';
 import type { LowerTab, Preset } from '../lib/useSplit';
+import { keyHint } from '../lib/keys';
 
 export function LowerPane({
   tab,
@@ -29,19 +30,19 @@ export function LowerPane({
     if (search?.open) inp.current?.focus();
   }, [search?.open]);
   const P: [Preset, typeof PanelTop, string][] = [
-    ['watch', PanelBottom, `${t('te.preset.watch')} · ⌘1`],
-    ['balanced', Rows2, `${t('te.preset.balanced')} · ⌘2`],
-    ['edit', PanelTop, `${t('te.preset.edit')} · ⌘3`],
+    ['watch', PanelBottom, `${t('te.preset.watch')} · ${keyHint('⌘1')}`],
+    ['balanced', Rows2, `${t('te.preset.balanced')} · ${keyHint('⌘2')}`],
+    ['edit', PanelTop, `${t('te.preset.edit')} · ${keyHint('⌘3')}`],
   ];
   return (
     <section className="lp" data-testid="lower-pane" data-tab={tab}>
       <div className="lp-bar">
         <div className="seg lp-tabs" role="tablist">
-          <button role="tab" aria-selected={tab === 'transcript'} className={tab === 'transcript' ? 'on' : ''} onClick={() => onTab('transcript')} data-tip={`${t('te.tab.transcript')} · ⌘E`} data-testid="tab-transcript">
+          <button role="tab" aria-selected={tab === 'transcript'} className={tab === 'transcript' ? 'on' : ''} onClick={() => onTab('transcript')} data-tip={`${t('te.tab.transcript')} · ${keyHint('⌘E')}`} data-testid="tab-transcript">
             <AlignLeft className="ico" />
             {t('te.tab.transcript')}
           </button>
-          <button role="tab" aria-selected={tab === 'timeline'} className={tab === 'timeline' ? 'on' : ''} onClick={() => onTab('timeline')} data-tip={`${t('te.tab.timeline')} · ⌘E`} data-testid="tab-timeline">
+          <button role="tab" aria-selected={tab === 'timeline'} className={tab === 'timeline' ? 'on' : ''} onClick={() => onTab('timeline')} data-tip={`${t('te.tab.timeline')} · ${keyHint('⌘E')}`} data-testid="tab-timeline">
             <Table2 className="ico" />
             {t('te.tab.timeline')}
           </button>
@@ -79,7 +80,7 @@ export function LowerPane({
                 </button>
               </>
             ) : (
-              <button className="btn ghost icon sm" onClick={() => search.setOpen(true)} aria-label={t('te.find')} data-tip={`${t('te.find')} · ⌘F`} data-testid="find-open">
+              <button className="btn ghost icon sm" onClick={() => search.setOpen(true)} aria-label={t('te.find')} data-tip={`${t('te.find')} · ${keyHint('⌘F')}`} data-testid="find-open">
                 <Search className="ico" />
               </button>
             )}

@@ -5,6 +5,7 @@ import { Check, CheckCircle2, Scissors, Undo2 } from 'lucide-react';
 import type { ChatDoc, ChatTurn, HistStep } from '../../../../shared/chatEdit';
 import { fmtClock, fmtList, t } from '../../i18n';
 import { effectLabel } from '../msg';
+import { keyHint } from '../../lib/keys';
 
 export interface CutCardMeta {
   before?: number;
@@ -105,7 +106,7 @@ export function CutCard({ turn, doc, state, onUndo, onRestore, onShow }: { turn:
             <button className="btn ghost sm" onClick={onUndo} data-testid="cut-card-undo">
               <Undo2 className="ico" />
               {t('c.undo')}
-              <span className="kbd">⌘Z</span>
+              <span className="kbd">{keyHint('⌘Z')}</span>
             </button>
           ) : (
             onRestore && (

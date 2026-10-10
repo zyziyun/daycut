@@ -13,6 +13,7 @@ import { PlanError, PlanProgress } from './PlanStatus';
 import { BoardDrop, ImportBoardButton, ImportNote, useBoardImport } from './ImportBoard';
 import { FormatArt, l10n, uiLang3 } from './bits';
 import { createHref, goCreate } from './routes';
+import { keyHint } from '../lib/keys';
 
 const BUDGETS = [0, 30, 60, 100, 300, 1000];
 /** the engine gives up after 200 s and the sidecar stops it at 260 s; the page stops waiting a little later */
@@ -174,7 +175,7 @@ export function CreateHome() {
             )}
           </span>
           <span className="sp" />
-          <span className="cr-hint">⌘↵</span>
+          <span className="cr-hint">{keyHint('⌘↵')}</span>
           <button className="btn primary lg" disabled={act.busy || (!prompt.trim() && !fmt)} onClick={() => void plan('auto')} data-testid="create-plan">
             <Sparkles className="ico" />
             {act.busy ? t('create.home.planning') : t('create.home.plan')}

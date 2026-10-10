@@ -10,6 +10,7 @@ import { hms } from '../lib/format';
 import { wordsText } from '../lib/transcript';
 import { EdgeEditor } from './SegmentReview';
 import { ErrorBox, Media } from './ui';
+import { keyHint } from '../lib/keys';
 
 type Tab = 'captions' | 'hook' | 'trim' | 'cut' | 'notes' | 'cover' | 'copy';
 const TABS: Tab[] = ['captions', 'hook', 'trim', 'cut', 'notes', 'cover', 'copy'];
@@ -97,8 +98,8 @@ export function JobEditor({ batch, job, info, getTime, onChanged }: { batch: str
           ))}
         </div>
         <div style={{ flex: 1 }} />
-        <button className="btn sm" disabled={!info.history.length} onClick={undo} title="⌘Z" data-testid="edit-undo">
-          ↶ {t('edit.undo')} <kbd>⌘Z</kbd>
+        <button className="btn sm" disabled={!info.history.length} onClick={undo} title={keyHint('⌘Z')} data-testid="edit-undo">
+          ↶ {t('edit.undo')} <kbd>{keyHint('⌘Z')}</kbd>
         </button>
       </div>
       <div className={`rerunbar ${info.pending.length ? 'on' : ''}`} data-testid="rerun-bar">
