@@ -28,6 +28,8 @@ export interface Settings {
   channels?: Record<string, ChannelPrefs>;
   /** 「我在帮别人做视频」: shows clients (filter in 全部项目, client field, delivery). Off: everything is her own. */
   agencyMode?: boolean;
+  /** the clip editor's chat: AI edits wait for her Apply (default off: they apply at once, with Undo) */
+  askAiEdits?: boolean;
   /** new projects from Home run on autopilot (the engine plans, decides and finishes them; default) - false: the
    * plan waits for her Start and a pilot of one comes first ("Ask me first") */
   autopilot?: boolean;

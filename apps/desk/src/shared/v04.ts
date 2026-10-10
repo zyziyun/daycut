@@ -458,6 +458,8 @@ export interface AutopilotDecision {
   provider?: string | null;
   at?: string | null;
   asked?: boolean;
+  /** taste calls (filler-confirm, hook-pick): the options, each ``checked`` as the engine decided */
+  options?: InboxOption[];
 }
 
 /** GET /api/autopilot/<item> */
@@ -499,6 +501,8 @@ export interface InboxOption {
   choices?: { id: string; label: EngineMsg; secs?: number | null; recommended?: boolean }[] | null;
   choice?: string | null;
   recommended?: boolean;
+  /** an engine filler cut: the words around it (finds it in the clip's transcript) */
+  ctx?: { before?: string | null; after?: string | null } | null;
 }
 
 export interface InboxItem {

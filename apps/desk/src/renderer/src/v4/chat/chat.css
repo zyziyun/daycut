@@ -51,6 +51,10 @@
 .card2 .chd { display: flex; align-items: center; gap: 10px; padding: 12px 14px 8px; }
 .card2 .chd .ic { width: 26px; height: 26px; border-radius: 7px; background: var(--surface-3); color: var(--warn); display: flex; align-items: center; justify-content: center; flex: none; }
 .card2.tool .chd .ic { color: var(--accent); }
+.card2.done { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.card2.done .chd .ic.ok { color: var(--accent); background: var(--accent-soft); }
+.crow.done { grid-template-columns: 26px minmax(0, 1fr); }
+.crow.done .ic { color: var(--accent); }
 .card2 .chd b { font-weight: 500; font-size: var(--fs-2); }
 .card2 .chd .mono, .mono { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .card2 .pill { font-size: 11px; height: 20px; padding: 0 8px; border-radius: 10px; display: inline-flex; align-items: center; background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }

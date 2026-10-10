@@ -102,12 +102,17 @@
 .tp-fix .was { color: var(--text-muted); font-size: 15px; }
 .tp-fix .was s { text-decoration-color: var(--text-faint); }
 .tp-fix .inp { flex: 1; height: 34px; font-size: 15px; }
-.tp-pending { position: absolute; left: var(--s3); right: var(--s3); bottom: 14px; z-index: 8; display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 18px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border-strong); box-shadow: var(--shadow); font-size: 14px; animation: ce-in 180ms var(--ease); }
-.tp-pending .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--danger); }
-.tp-pending b { font-weight: 600; }
-.tp-pending .minus { color: var(--danger); font-weight: 600; }
-.tp-pending .warn { color: var(--warn); max-width: 280px; }
-.tp-pending .btn { height: 38px; }
+.tp-status { position: absolute; right: var(--s3); bottom: 14px; z-index: 8; display: inline-flex; align-items: center; gap: 8px; max-width: calc(100% - 2 * var(--s3)); height: 38px; padding: 0 6px 0 14px; border-radius: 19px; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow); font-size: 13.5px; color: var(--text-muted); animation: ce-in 180ms var(--ease); }
+.tp-status .ico { width: 15px; height: 15px; flex: none; }
+.tp-status .ico.ok { color: var(--accent); }
+.tp-status .ico.warn { color: var(--warn); }
+.tp-status .ico.spin { animation: tp-spin 900ms linear infinite; }
+.tp-status .minus { color: var(--text); font-weight: 500; }
+.tp-status .note { color: var(--warn); max-width: 260px; }
+.tp-status.saving { padding-right: 14px; }
+.tp-status.error { border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); color: var(--text); }
+.tp-status.error .ico.warn { color: var(--danger); }
+@keyframes tp-spin { to { transform: rotate(360deg); } }
 
 /* ---------------------------------------------------------------- applied cut card in the chat */
 .cutcard .chd .ic { color: var(--text); }
@@ -121,3 +126,20 @@
 .cutfx .ico { width: 14px; height: 14px; color: var(--accent); }
 .cutcard.muted2 { opacity: 0.7; }
 .cc-pinned { flex: none; max-height: 62%; overflow-y: auto; padding: 12px var(--s2) 0; }
+.cc-pinned:empty { display: none; }
+/* what the AI already decided on the clip (ux/fewer-steps): made decisions, each with Undo / Change */
+.ux-pin.decided { border-color: var(--border-strong); }
+.ux-pin.decided .ux-pin-hd { background: var(--surface-2); color: var(--text); }
+.ux-pin.decided .ux-pin-hd .ico { color: var(--accent); }
+.ux-pin .dec-lead { font-weight: 400; font-size: 13.5px; padding-top: 10px; }
+.dec-row { display: flex; flex-direction: column; gap: 6px; padding: 8px 8px 8px 10px; border-radius: var(--radius); background: var(--surface-2); }
+.dec-main { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.dec-ic { width: 24px; height: 24px; border-radius: 6px; display: flex; align-items: center; justify-content: center; flex: none; background: var(--accent-soft); color: var(--accent); }
+.dec-ic .ico { width: 14px; height: 14px; }
+.dec-row.kept .dec-ic { background: var(--surface-3); color: var(--text-muted); }
+.dec-tx { flex: 1; min-width: 0; font-size: 14px; }
+.dec-tx .small { font-size: 12.5px; }
+.dec-picks { display: flex; flex-direction: column; gap: 4px; padding-left: 34px; }
+.dec-pick { text-align: left; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font: inherit; font-size: 13.5px; cursor: pointer; }
+.dec-pick:hover:not(:disabled) { border-color: var(--accent); }
+.dec-pick.on { border-color: var(--accent); background: var(--accent-soft); cursor: default; }

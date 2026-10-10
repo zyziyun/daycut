@@ -1,6 +1,8 @@
-// 「和 AI 一起改」: the clip's conversation (persisted with the clip's edit doc) where every AI change is a card you
-// review, adjust, compare and apply; applied cards collapse to one line and undo ON THEIR OWN (an older card is
-// reverted alone, the later ones stay). Slash commands open the tool cards without the model.
+// 「和 AI 一起改」: the clip's conversation (persisted with the clip's edit doc). What she asks for in plain words is
+// applied at once (ux/fewer-steps: act, then make it undoable) - the card says what changed, with Undo and Before/after;
+// only what removes a lot or cannot be taken back cheaply waits for Apply, and Settings › "Ask before applying AI
+// edits" makes every change wait. Older cards collapse to one line and undo ON THEIR OWN (an older card is reverted
+// alone, the later ones stay). Slash commands open the tool cards without the model.
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { ArrowUp, Check, Crop, Image as ImageIcon, MessageSquare, PanelRightClose, PanelRightOpen, Scissors, Sparkles, Square, Undo2, Upload, Wand2, X } from 'lucide-react';
 import type { AskContext, CardKind, ChatDoc, ChatTurn } from '../../../../shared/chatEdit';
@@ -8,7 +10,8 @@ import { providerName } from '../../../../shared/aiRoutes';
 import { EngineError } from '../../../../shared/engineClient';
 import type { EditOp, EffectDef } from '../../../../shared/v04';
 import { fmtClock, getLang, intlLocale, t, type MessageKey } from '../../i18n';
-import { cardFor, cardState, contextOf, costLine, lengthChange, offlineFrom, slashCommand, slashMatches, suggestions, undoPlan, undoToCount, SLASH, type Primary, type Suggestion } from '../../lib/chatEdit';
+import { askFirstReason, needsRenderedCompare, cardFor, cardState, contextOf, costLine, lengthChange, offlineFrom, slashCommand, slashMatches, suggestions, undoPlan, undoToCount, SLASH, type Primary, type Suggestion } from '../../lib/chatEdit';
+import { useAskAiEdits } from '../../lib/prefs';
 import { useEngine } from '../../lib/engine';
 import { go } from '../../lib/router';
 import { textLang } from '../../lib/transcript';
@@ -45,15 +48,19 @@ interface Props {
   reload: () => void;
   /** amber markers + the player's "after": the draft ops; compare = the split wipe is on */
   onDrafts: (d: { turn: string; ops: EditOp[] }[]) => void;
-  onPreview: (p: { ops: EditOp[] | null; compare: boolean }) => void;
+  onPreview: (p: { ops: EditOp[] | null; compare: boolean; before?: ChatDoc | null; rendered?: boolean }) => void;
   onPrimary: (p: Primary) => void;
   /** an inbox question pinned on top of the conversation (triage / arrived from the Inbox) */
   pinned?: React.ReactNode;
+  /** shown in the same place when nothing is pinned: what the AI already decided on this clip */
+  top?: React.ReactNode;
   /** the column folded to a 48 px rail (⌘\) */
   collapsed?: boolean;
   onToggle?: () => void;
   /** a transcript cut card's "Show in transcript" */
   onShowInTranscript?: (t: number) => void;
+  /** save what the transcript has not saved yet (Export renders the cuts made a moment ago); false = it could not */
+  flush?: () => Promise<boolean>;
   /** suggestions that act in the transcript without the model (fillers -> pending cuts), shown first */
   textSuggestions?: { id: string; icon: typeof Scissors; title: string; sub: string; run: () => void }[];
   /** the empty state's first line (the transcript is open: "select words and press Delete") */
@@ -80,7 +87,11 @@ export const ChatPanel = forwardRef<ChatApi, Props>(function ChatPanel(p, ref) {
   const [pending, setPending] = useState<{ text: string; ctx: AskContext | null; token: number; turn?: string } | null>(null);
   // /ask answered but its turn never showed up in the clip's conversation: stop the spinner and say so
   const [lost, setLost] = useState<{ text: string; ctx: AskContext | null } | null>(null);
-  const [cmp, setCmp] = useState<{ turn: string; ops: EditOp[] } | null>(null);
+  // Before / after: a draft's ops over the clip, or an applied change against the clip as it was before it
+  const [cmp, setCmp] = useState<{ turn: string; ops: EditOp[]; before?: ChatDoc; rendered?: boolean } | null>(null);
+  // the clip as it was before each change applied in this session (its Before / after)
+  const [befores, setBefores] = useState<Record<string, ChatDoc>>({});
+  const askAi = useAskAiEdits();
   const [conflict, setConflict] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [errs, setErrs] = useState<Record<string, string>>({});
@@ -101,6 +112,7 @@ export const ChatPanel = forwardRef<ChatApi, Props>(function ChatPanel(p, ref) {
     setConflict({});
     setErrs({});
     setLost(null);
+    setBefores({});
   }, [clip]);
   useEffect(() => {
     if (pending?.turn && turns.some((x) => x.id === pending.turn)) setPending(null);
@@ -135,6 +147,9 @@ export const ChatPanel = forwardRef<ChatApi, Props>(function ChatPanel(p, ref) {
     return l.ops.filter((_, i) => l.checked[i]);
   }, [opsOf]);
   const states = useMemo(() => Object.fromEntries(turns.map((x) => [x.id, cardState(x, doc)])), [turns, doc]);
+  useEffect(() => {
+    if (cmp?.before && states[cmp.turn] !== 'applied') setCmp(null);
+  }, [cmp, states]);
   const isOpenCard = (x: ChatTurn) => !!x.card && x.card !== 'transcript' && states[x.id] === 'note' && !runs[x.id];
   const lastAi = [...turns].reverse().find((x) => x.role === 'ai');
   const offline = lastAi ? offlineFrom({ warnings: lastAi.warnings ?? [] }) : null;
@@ -148,6 +163,7 @@ export const ChatPanel = forwardRef<ChatApi, Props>(function ChatPanel(p, ref) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [turns, states, adjust, runs]);
   const exporting = Object.values(runs).some((r) => r.state === 'running');
+  const newestChange = [...turns].reverse().find((x) => x.role === 'ai' && x.proposals.length)?.id ?? null;
   const offlineCard = !!lastAi && !!offline && !lastAi.proposals.length && turns[turns.length - 1]?.id === lastAi.id;
   const primary: Primary = primaryTurn ? 'apply' : exporting ? 'none' : offlineCard ? 'connect' : 'export';
   const { onPrimary, onDrafts, onPreview } = p;
@@ -157,7 +173,7 @@ export const ChatPanel = forwardRef<ChatApi, Props>(function ChatPanel(p, ref) {
   useEffect(() => onDrafts(drafts), [dkey]); // eslint-disable-line react-hooks/exhaustive-deps
   const latestDraftOps = drafts.length ? drafts[drafts.length - 1].ops : null;
   const pkey = JSON.stringify([cmp, latestDraftOps]);
-  useEffect(() => onPreview(cmp ? { ops: cmp.ops, compare: true } : { ops: latestDraftOps, compare: false }), [pkey]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => onPreview(cmp ? (cmp.before ? { ops: null, compare: true, before: cmp.before, rendered: cmp.rendered } : { ops: cmp.ops, compare: true }) : { ops: latestDraftOps, compare: false }), [pkey, cmp?.before, cmp?.rendered]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // export progress (output-render events of this job)
   useEffect(
@@ -197,6 +213,18 @@ export const ChatPanel = forwardRef<ChatApi, Props>(function ChatPanel(p, ref) {
     try {
       const r = await client.askOutput(item, clip, q, ctx);
       if (tok.current !== token) return;
+      // act at once, make it undoable: the change goes on the clip now (Undo / Before / after on its card); what
+      // removes most of the clip or cannot be taken back cheaply - or everything, when she asked for that - waits
+      const ops = (r.proposals ?? []).map((x) => x.op);
+      if (r.turn && ops.length && !askAi && !askFirstReason(ops, doc)) {
+        const turn = r.turn;
+        setBefores((m) => ({ ...m, [turn]: doc }));
+        try {
+          await client.editOutput(item, clip, ops, turn);
+        } catch (e) {
+          setErrs((m) => ({ ...m, [turn]: errText(e) }));
+        }
+      }
       setPending((x) => (x && x.token === token ? { ...x, turn: r.turn ?? undefined } : x));
       p.reload();
       if (!r.turn) setPending(null);
@@ -223,6 +251,7 @@ export const ChatPanel = forwardRef<ChatApi, Props>(function ChatPanel(p, ref) {
     if (!client || !ops.length) return;
     setBusy(x.id);
     setErrs((m) => ({ ...m, [x.id]: '' }));
+    setBefores((m) => ({ ...m, [x.id]: doc }));
     try {
       await client.editOutput(item, clip, ops, x.id);
       if (cmp?.turn === x.id) setCmp(null);
@@ -285,6 +314,8 @@ export const ChatPanel = forwardRef<ChatApi, Props>(function ChatPanel(p, ref) {
     setRuns((rs) => ({ ...rs, [x.id]: { job: null, targets: rt, rows: {}, state: 'running', started: Date.now() } }));
     window.setTimeout(() => log.current?.scrollTo({ top: 1e9, behavior: 'smooth' }), 60);
     try {
+      // the transcript's last deletes go into this export (saved now if the timer has not done it yet)
+      if (p.flush && !(await p.flush())) throw new Error(t('fs.cut.notSaved'));
       if (add.length) await client.editOutput(item, clip, add.map((tg) => ({ op: 'export_add', target: tg, layout: doc.mode === 'flattened' && tg.endsWith(':horizontal') ? 'band' : 'auto' })), x.id);
       else await client.updateChatTurn(item, clip, x.id, { status: 'applied' });
       const j = await client.exportOutput(item, clip, rt, watermark);
@@ -382,6 +413,7 @@ export const ChatPanel = forwardRef<ChatApi, Props>(function ChatPanel(p, ref) {
     const on = l.ops.filter((_, i) => l.checked[i]);
     const isP = x.id === primaryTurn;
     const lt = lenTxt(on);
+    const waits = askFirstReason(on, doc);
     return (
       <div className="card2 draft" data-testid="change-card">
         <div className="chd">
@@ -432,6 +464,7 @@ export const ChatPanel = forwardRef<ChatApi, Props>(function ChatPanel(p, ref) {
             );
           })}
           {errs[x.id] && <span className="drop1" data-testid="change-error">{t('ce.partial', { why: errs[x.id] })}</span>}
+          {!askAi && !errs[x.id] && waits && <span className="muted" data-testid="change-waits">{t(`fs.ai.waits.${waits}` as MessageKey)}</span>}
         </div>
         <div className="cft">
           <button className={`btn ${isP ? 'primary' : ''}`} disabled={!on.length || busy === x.id} onClick={() => void apply(x, on)} data-testid="change-apply">
@@ -450,6 +483,61 @@ export const ChatPanel = forwardRef<ChatApi, Props>(function ChatPanel(p, ref) {
           <button className="btn ghost" onClick={() => void setStatus(x, 'discarded')} data-testid="change-discard">
             {t('ce.discard')}
           </button>
+        </div>
+      </div>
+    );
+  };
+
+  /** The newest applied AI change, open: what changed, Undo, Before / after (against the clip as it was). */
+  const appliedCard = (x: ChatTurn) => {
+    const ops = x.proposals.map((q) => q.op);
+    const before = befores[x.id];
+    const l = before ? lengthChange(before as never, ops) : null;
+    const lt = l && Math.abs(l.before - l.after) > 0.05 ? `${r1(l.before)} → ${r1(l.after)}` : '';
+    const on = cmp?.turn === x.id;
+    return (
+      <div className="card2 done" data-testid="applied-card">
+        <div className="chd" data-testid="applied-line">
+          <span className="ic ok">
+            <Check className="ico" />
+          </span>
+          <b>{t('fs.ai.applied', { n: x.applied_ops ?? ops.length })}</b>
+          <span style={{ flex: 1 }} />
+          {lt && <span className="mono">{lt}</span>}
+        </div>
+        <div className="cbd" style={{ gap: 6 }}>
+          {groups(ops).map((g) => {
+            const i = g[0];
+            const op = ops[i];
+            const pr = x.proposals[i];
+            const Icon = rowIcon(op);
+            const many = g.length > 1;
+            const title = many ? t('ce.row.cuts', { n: g.length }) : op.op === 'effect_add' || !pr ? describeOp(op) : emsg(pr.describe) || describeOp(op);
+            const secs = g.reduce((s2, j) => s2 + (ops[j].op === 'cut' ? (ops[j] as { end: number }).end - (ops[j] as { start: number }).start : 0), 0);
+            const sub = many ? t('ce.row.cutsSub', { s: secs.toFixed(1) }) : subOf(op, pr ? emsg(pr.why) : '');
+            return (
+              <div key={i} className="crow done" data-testid="applied-row">
+                <span className="ic">
+                  <Icon className="ico" style={{ width: 14, height: 14 }} />
+                </span>
+                <div style={{ minWidth: 0 }}>
+                  <div className="t clamp1" lang="zh-CN">{title}</div>
+                  <div className="s clamp1">{sub}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div className="cft">
+          <button className="btn" onClick={() => void undo(x)} data-tip={t('ce.undoTip')} data-testid="applied-undo">
+            <Undo2 className="ico" />
+            {t('ce.undo')}
+          </button>
+          {before && (
+            <button className={`btn ${on ? 'toggle on' : ''}`} onClick={() => setCmp(on ? null : { turn: x.id, ops, before, rendered: needsRenderedCompare(ops) })} aria-pressed={on} data-tip={needsRenderedCompare(ops) ? t('fs.ai.renderedTip') : undefined} data-testid="applied-compare">
+              {t('ce.compare')}
+            </button>
+          )}
         </div>
       </div>
     );
@@ -561,7 +649,7 @@ export const ChatPanel = forwardRef<ChatApi, Props>(function ChatPanel(p, ref) {
       const idx = kind === 'trim' ? l.ops.map((o, i) => (cardFor(o) === 'trim' ? i : -1)).filter((i) => i >= 0) : kind === 'captions' ? l.ops.map((o, i) => (cardFor(o) === 'captions' ? i : -1)).filter((i) => i >= 0) : [adj.i];
       body = kind ? toolCard(x, kind, idx.map((i) => l.ops[i]), (next) => replaceOps(x, idx, next), () => setAdjust(null), t('ce.done')) : null;
     } else if (st === 'draft' && x.proposals.length) body = changeCard(x);
-    else if (x.proposals.length) body = doneLine(x);
+    else if (x.proposals.length) body = st === 'applied' && x.id === newestChange && !conflict[x.id] ? appliedCard(x) : doneLine(x);
     else if (off && x.id === lastAi?.id)
       body = <FallbackCard q={x.text ?? ''} failed={off === 'llm-failed'} primary={primary === 'connect'} onTool={(k) => void openCard(k)} onSay={(s) => void send(s)} onConnect={() => go({ name: 'aiAccounts' })} onRetry={() => void send(x.text ?? '')} />;
     return (
@@ -664,7 +752,7 @@ export const ChatPanel = forwardRef<ChatApi, Props>(function ChatPanel(p, ref) {
           </button>
         )}
       </div>
-      {p.pinned && <div className="cc-pinned">{p.pinned}</div>}
+      {(p.pinned || p.top) && <div className="cc-pinned">{p.pinned || p.top}</div>}
       <div className="cc-log" ref={log} data-testid="chat-log">
         {day && <div className="cc-day">{day}</div>}
         {!turns.length && !pending && (

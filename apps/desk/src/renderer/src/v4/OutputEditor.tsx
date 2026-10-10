@@ -1,10 +1,11 @@
 // 二次编辑, chat-first (ux/CHAT_EDIT.md direction C) + text-based editing (ux/text-edit): the video on top, the lower
-// pane under it - Transcript (Descript mode: select words, Delete = a pending cut, skipped while previewing, one Apply
-// = one step) or Timeline - with a resizable split (⌘1 / ⌘2 / ⌘3, drag, double-click), and 「和 AI 一起改」 a column on
-// the right (320-560 px, ⌘\ folds it) where every change is a card. A breadcrumb says where the clip lives; arriving
-// from the Inbox pins the question in the chat, and "Review all in a row" adds the triage bar. Today's panels
-// (裁剪 / 字幕 / 效果 / 标题与封面 / 导出) live on in the optional 「精确编辑」 drawer (E). One filled button on screen:
-// Apply cuts while cuts are pending, else the newest draft's 应用, else 导出.
+// pane under it - Transcript (Descript mode: select words, Delete = cut, effective at once: the preview skips it and a
+// burst of deletes is saved as one step by itself a moment later, with Undo - ux/fewer-steps) or Timeline - with a
+// resizable split (⌘1 / ⌘2 / ⌘3, drag, double-click), and 「和 AI 一起改」 a column on the right (320-560 px, ⌘\ folds
+// it) where every change is a card. A breadcrumb says where the clip lives; arriving from the Inbox pins the question
+// in the chat, and "Review all in a row" adds the triage bar. Today's panels (裁剪 / 字幕 / 效果 / 标题与封面 / 导出)
+// live on in the optional 「精确编辑」 drawer (E). One filled button on screen: a draft's 应用 when AI edits wait for
+// her (Settings: ask before applying AI edits), else 导出.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Check, ChevronRight, Contrast, GanttChart, Music, PanelRight, Redo2, Scissors, SkipForward, SlidersHorizontal, Sparkle, Sparkles, Square, Trash2, Type, Undo2, Upload, X, ZoomIn } from 'lucide-react';
 import type { ChatDoc } from '../../../shared/chatEdit';
@@ -19,20 +20,21 @@ import { snapEdge } from '../lib/timeline';
 import { projectHref, triageStep, useTriageState } from '../lib/nav';
 import { useRouteQuery } from '../lib/router';
 import { markers, type Primary } from '../lib/chatEdit';
-import { useTextCuts, draftKey } from '../lib/textCuts';
-import { defaultTab, draftCount, draftOps, draftSpans, fixInCue, hasDrafts, joinWords, keepToCuts, keptSeconds, segments, wordRuns, type Drafts } from '../lib/transcript';
+import { AutoCommit, COMMIT_DELAY_MS, draftKey, draftsKey, loadDrafts, storeCommitted, subtractDrafts, useTextCuts } from '../lib/textCuts';
+import { defaultTab, draftOps, draftSpans, fixInCue, hasDrafts, joinWords, keepToCuts, keptSeconds, segments, wordRuns, type Drafts } from '../lib/transcript';
 import { useSplit, type LowerTab } from '../lib/useSplit';
 import { ChatPanel, type ChatApi } from './chat/ChatPanel';
 import { Empty, media, Sk } from './kit';
 import { LowerPane } from './LowerPane';
 import { effectLabel, emsg, errText, humanizeParam, setEffectLabels } from './msg';
+import { DecidedCard } from './DecidedCard';
 import { PinnedQuestion } from './PinnedQuestion';
 import { ShareButton } from './ShareDialog';
 import { Player, type PlayerApi } from './Player';
 import { Timeline } from './Timeline';
 import { TriageBar } from './TriageBar';
 import { MarksChips } from './transcript/MarksMenu';
-import { PendingBar } from './transcript/PendingBar';
+import { CutStatus, type CutSave } from './transcript/CutStatus';
 import { TranscriptPane, type TranscriptApi } from './transcript/TranscriptPane';
 import { useStrip, useTranscribe } from '../lib/timelineMedia';
 import { isTyping, useUi } from './ui';
@@ -49,6 +51,9 @@ const TABS: [Tab, MessageKey][] = [
   ['export', 'editor.tab.export'],
 ];
 const TARGETS = ['3:4', '9:16', '16:9'] as const;
+
+/** saves still running per clip (an editor that was left): a reopened editor waits for them (never cuts twice) */
+const INFLIGHT = new Map<string, Promise<Drafts | null>>();
 
 function fixedKey(id: string, clip: string) {
   return `ce.fixed.${id}/${clip}`;
@@ -68,7 +73,7 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
   const [playing, setPlaying] = useState(false);
   const [sel, setSel] = useState<{ a: number; b: number } | null>(null);
   const [fxSel, setFxSel] = useState<string | null>(null);
-  const [preview, setPreview] = useState<{ ops: EditOp[] | null; compare: boolean }>({ ops: null, compare: false });
+  const [preview, setPreview] = useState<{ ops: EditOp[] | null; compare: boolean; before?: ChatDoc | null; rendered?: boolean }>({ ops: null, compare: false });
   const [drafts, setDrafts] = useState<{ turn: string; ops: EditOp[] }[]>([]);
   const [primary, setPrimary] = useState<Primary>('export');
   const [holdC, setHoldC] = useState(false);
@@ -77,6 +82,8 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
   const [drawer, setDrawer] = useState(() => sessionStorage.getItem('ce.drawer') === '1');
   const [effects, setEffects] = useState<EffectDef[]>([]);
   const [flash, setFlash] = useState<{ secs: number; n: number } | null>(null);
+  // the pinned question's ticked cuts the clip does not have yet: skipped in the preview while she reviews
+  const [pinCuts, setPinCuts] = useState<[number, number][]>([]);
   const [edl, setEdl] = useState<{ key: string; keep: [number, number][] } | null>(null);
   const [tsel, setTsel] = useState(false);
   const [find, setFind] = useState({ open: false, q: '', k: -1 });
@@ -96,13 +103,15 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
   const seekedFromQuery = useRef(false);
   const [n, setN] = useState(0);
   const reload = useCallback(() => setN((x) => x + 1), []);
+  /** whose clip `doc` is (it stays on screen while the next clip loads) */
+  const docKey = useRef('');
 
   useEffect(() => {
     if (!client) return;
     let alive = true;
     client
       .output(id, clip)
-      .then((d) => alive && (setDoc(d as ChatDoc), setErr(null)))
+      .then((d) => alive && ((docKey.current = draftKey(id, clip)), setDoc(d as ChatDoc), setErr(null)))
       .catch((e) => alive && setErr(errText(e)));
     return () => {
       alive = false;
@@ -208,36 +217,163 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
     [client, id, clip, reload, ui],
   );
 
-  // ---------------------------------------------------------------- Apply the pending cuts (one step + a chat card)
-  const applyCuts = useCallback(async () => {
-    if (!client || !odoc || !pending || busy) return;
-    const ops = draftOps(odoc.words, cuts.drafts, odoc.words_sig);
-    if (!ops.length) return cuts.clear();
-    setBusy('cuts');
+  // ---------------------------------------------------------------- deletes save by themselves (ux/fewer-steps)
+  // A burst of deletes = one engine step + one cut card in the chat, saved COMMIT_DELAY_MS after the last one, one save
+  // at a time; the preview skips the words from the first moment. Leaving the clip, ⌘↵ and Export save at once.
+  const dk = draftKey(id, clip);
+  const draftsRef = useRef<{ key: string; d: Drafts }>({ key: dk, d: cuts.drafts });
+  draftsRef.current = { key: dk, d: cuts.drafts };
+  const docRef = useRef<{ key: string; doc: OutputDoc | null }>({ key: dk, doc: null });
+  if (odoc && docKey.current === dk) docRef.current = { key: dk, doc: odoc };
+  const mounted = useRef(true);
+  const [save, setSave] = useState<CutSave>({ kind: 'idle' });
+  const committedRef = useRef(cuts.committed);
+  committedRef.current = cuts.committed;
+  const saveCut = useCallback(
+    (k: string, item: string, c: string) =>
+      async (v: Drafts): Promise<boolean> => {
+        if (!client) return false;
+        // the same clip reopened while the last editor's save still runs: wait for it, never send those words twice
+        const prev = INFLIGHT.get(k);
+        if (prev) {
+          const done = await prev;
+          if (done) {
+            v = subtractDrafts(v, done);
+            if (draftsRef.current.key === k) draftsRef.current = { key: k, d: subtractDrafts(draftsRef.current.d, done) };
+            committedRef.current(done);
+          }
+          if (!hasDrafts(v)) return true;
+        }
+        let ok: (d: Drafts | null) => void = () => undefined;
+        INFLIGHT.set(k, new Promise((r) => (ok = r)));
+        try {
+          const d = docRef.current.key === k && docRef.current.doc ? docRef.current.doc : ((await client.output(item, c)) as unknown as OutputDoc);
+          const ops = draftOps(d.words, v, d.words_sig);
+          const sp = d.speed || 1;
+          const kept0 = keptSeconds(segments(d.duration, d.cuts, d.trim)) / sp;
+          const kept1 = keptSeconds(segments(d.duration, [...d.cuts, ...draftSpans(d.words, v).map(([a, b]) => ({ start: a, end: b }))], d.trim)) / sp;
+          const secs = Math.round(Math.max(0, kept0 - kept1) * 10) / 10;
+          const done = () => {
+            if (mounted.current && draftsRef.current.key === k) {
+              draftsRef.current = { key: k, d: subtractDrafts(draftsRef.current.d, v) };
+              committedRef.current(v);
+            } else storeCommitted(k, v);
+          };
+          if (!ops.length) {
+            done();
+            ok(v);
+            return true;
+          }
+          if (mounted.current) setSave({ kind: 'saving', secs });
+          const r = await client.editOutput(item, c, ops, null, { by: 'you', note: 'transcript' });
+          const runs = wordRuns(v);
+          const said = runs.map(([a, b]) => joinWords(d.words, a, b)).join(' / ');
+          if (r.step?.id)
+            await client
+              .addChatTurn(item, c, { role: 'user', card: 'transcript', status: 'applied', applied_step: r.step.id, applied_ops: ops.length, text: said.slice(0, 1800), reply: JSON.stringify({ before: Math.round(kept0 * 10) / 10, after: Math.round(kept1 * 10) / 10, phrases: runs.length, pauses: ops.length - runs.length, secs }) })
+              .catch(() => undefined);
+          // the clip with the cut first, then the drafts go: the preview never plays the words for a moment
+          if (mounted.current && docRef.current.key === k) {
+            const fresh = await client.output(item, c).catch(() => null);
+            if (fresh && mounted.current && docRef.current.key === k) setDoc(fresh as ChatDoc);
+          }
+          done();
+          ok(v);
+          if (mounted.current && docRef.current.key === k) {
+            setRendered(null);
+            setSave({ kind: 'saved', secs, step: r.step?.id ?? null });
+            const w = r.warnings?.find((x) => x.code !== 'source-changed');
+            if (w) ui.toast(emsg(w));
+          }
+          return true;
+        } catch (e) {
+          ok(null);
+          if (e instanceof EngineError && e.code === 'stale-words') {
+            // the words changed under the drafts (re-transcribed): they cannot be placed any more
+            if (mounted.current && draftsRef.current.key === k) cuts.clear();
+            else storeCommitted(k, v);
+            reload();
+          }
+          if (mounted.current && docRef.current.key === k) setSave({ kind: 'error', why: errText(e) });
+          return false;
+        } finally {
+          if (INFLIGHT.get(k)) INFLIGHT.delete(k);
+        }
+      },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [client],
+  );
+  const committer = useMemo(
+    () =>
+      new AutoCommit<Drafts>({
+        get: () => (draftsRef.current.key === dk ? draftsRef.current.d : loadDrafts(dk).cur),
+        empty: (v) => !hasDrafts(v),
+        key: draftsKey,
+        delay: COMMIT_DELAY_MS,
+        // less than a second would be left: nothing is saved (the status says so, Undo brings the words back)
+        ready: (v) => {
+          const d = docRef.current.key === dk ? docRef.current.doc : null;
+          if (!d) return true;
+          const left = keptSeconds(segments(d.duration, [...d.cuts, ...draftSpans(d.words, v).map(([a, b]) => ({ start: a, end: b }))], d.trim));
+          return left >= 1;
+        },
+        commit: saveCut(dk, id, clip),
+      }),
+    [dk, id, clip, saveCut],
+  );
+  useEffect(
+    () => () => {
+      // leaving the clip (or the editor): what is not saved yet is saved now, in the background
+      void committer.flush();
+    },
+    [committer],
+  );
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const draftSig = useMemo(() => draftsKey(cuts.drafts), [cuts.drafts]);
+  useEffect(() => {
+    if (!odoc) return;
+    if (pending && durAfter < 1) {
+      setSave({ kind: 'short' });
+      return;
+    }
+    if (pending) setSave((x) => (x.kind === 'error' || x.kind === 'saving' ? x : { kind: 'saving', secs: Math.max(0, durNow - durAfter) }));
+    else setSave((x) => (x.kind === 'short' || (x.kind === 'saving' && !committer.busy) ? { kind: 'idle' } : x));
+    committer.changed();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftSig, committer, !!odoc]);
+  // "Saved" fades after a few seconds (⌘Z still undoes)
+  useEffect(() => {
+    if (save.kind !== 'saved') return;
+    const tm = window.setTimeout(() => setSave((x) => (x === save ? { kind: 'idle' } : x)), 5000);
+    return () => window.clearTimeout(tm);
+  }, [save]);
+  const flushCuts = useCallback(() => committer.flush(), [committer]);
+  // the rendered "after" of a look: render the clip as it is now (once; an unchanged clip is a cache hit)
+  const wantsRender = !holdC && preview.compare && !!preview.before && !!preview.rendered && !!doc && !doc.renders.some((r) => r.fresh && !r.simulated);
+  const renderRef = useRef<() => void>(() => undefined);
+  useEffect(() => {
+    if (wantsRender && busy !== 'render') renderRef.current();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wantsRender]);
+  const undoSaved = useCallback(async () => {
+    if (save.kind === 'short') return cuts.undo();
+    if (save.kind !== 'saved' || !client || !save.step) return;
+    setSave({ kind: 'idle' });
     try {
-      const r = await client.editOutput(id, clip, ops, null, { by: 'you', note: 'transcript' });
-      const said = wordRuns(cuts.drafts)
-        .map(([a, b]) => joinWords(odoc.words, a, b))
-        .join(' / ');
-      if (r.step?.id)
-        await client
-          .addChatTurn(id, clip, { role: 'user', card: 'transcript', status: 'applied', applied_step: r.step.id, applied_ops: ops.length, text: said.slice(0, 1800), reply: JSON.stringify({ before: Math.round(durNow * 10) / 10, after: Math.round(durAfter * 10) / 10, phrases: wordRuns(cuts.drafts).length, pauses: ops.length - wordRuns(cuts.drafts).length, secs: Math.round((durNow - durAfter) * 10) / 10 }) })
-          .catch(() => undefined);
-      cuts.clear();
+      const last = doc?.steps[doc.steps.length - 1];
+      if (last?.id === save.step) await client.undoOutput(id, clip, 1);
+      else await client.revertOutput(id, clip, save.step);
       setRendered(null);
       reload();
-      const w = r.warnings?.find((x) => x.code !== 'source-changed');
-      if (w) ui.toast(emsg(w));
     } catch (e) {
-      if (e instanceof EngineError && e.code === 'stale-words') {
-        cuts.clear();
-        reload();
-      }
       ui.toast(errText(e), { error: true });
-    } finally {
-      setBusy(null);
     }
-  }, [client, odoc, pending, busy, cuts, id, clip, durNow, durAfter, reload, ui]);
+  }, [save, client, doc, id, clip, cuts, reload, ui]);
   const restoreCut = useCallback(
     async (index: number) => {
       if (!client) return;
@@ -319,7 +455,7 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
     }
     if (mod && e.key === 'Enter') {
       e.preventDefault();
-      if (pending) void applyCuts();
+      if (pending) void flushCuts();
       else chat.current?.applyLatest();
       return;
     }
@@ -366,6 +502,7 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
   const render = async (quality: 'preview' | 'final' = 'preview', targets = 'primary') => {
     if (!client) return;
     setBusy('render');
+    if (!(await flushCuts())) return setBusy(null); // the transcript's cuts belong in this render
     try {
       const r = await client.renderOutput(id, clip, { quality, targets });
       setRendered({ simulated: r.simulated });
@@ -376,6 +513,7 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
       setBusy(null);
     }
   };
+  renderRef.current = () => void render('preview');
   const playRange = useCallback((a: number, b: number) => {
     pl.current?.seek(a);
     stopAt.current = b;
@@ -396,7 +534,7 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
   }, [flash]);
   const { strip, failed: stripFailed } = useStrip(client, id, clip, doc?.files[0]?.path ?? null);
   const transcribe = useTranscribe(client, subscribe, id, clip, reload);
-  const onPreview = useCallback((v: { ops: EditOp[] | null; compare: boolean }) => setPreview(v), []);
+  const onPreview = useCallback((v: { ops: EditOp[] | null; compare: boolean; before?: ChatDoc | null; rendered?: boolean }) => setPreview(v), []);
   const setTextDrafts = useCallback((f: (d: Drafts) => Drafts) => cuts.set(f), [cuts]);
   const jumpWord = useCallback(
     (i: number) => {
@@ -408,7 +546,14 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
     [odoc],
   );
 
-  const view = useMemo(() => (odoc ? previewDoc(odoc, holdC ? null : preview.ops) : null), [odoc, preview.ops, holdC]);
+  // Before / after of an applied AI change: the clip as it was. Same timeline -> the split wipe over the overlays;
+  // cuts / trim / speed changed -> the player plays the before version (badge "Before") until it is toggled off
+  // a look the live player cannot draw (skin smoothing, a grade, sound): "after" is the clip rendered once, played
+  // against the live view (which is the before of that look)
+  const renderedCmp = !holdC && preview.compare && !!preview.before && !!preview.rendered;
+  const before = !holdC && preview.compare && preview.before && !preview.rendered ? (preview.before as unknown as OutputDoc) : null;
+  const sameTimeline = !!before && !!odoc && JSON.stringify([before.cuts, before.trim ?? null, before.speed]) === JSON.stringify([odoc.cuts, odoc.trim ?? null, odoc.speed]);
+  const view = useMemo(() => (odoc ? (before && !sameTimeline ? previewDoc(before, null) : previewDoc(odoc, holdC || before ? null : preview.ops)) : null), [odoc, preview.ops, holdC, before, sameTimeline]);
   // the transcript's own suggestions in the chat: fillers become pending cuts (no model), unsure words to check
   const textSugs = useMemo(() => {
     if (!odoc?.marks?.length) return [];
@@ -485,20 +630,23 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
     );
 
   const fresh = doc.renders.filter((r) => r.fresh && !r.simulated);
+  const renderedAfter = renderedCmp && fresh.length > 0;
   // the transcript speaks in the original's seconds: while it is open (or cuts are pending) the player plays the
   // original and previews every cut by skipping it; otherwise the newest render leads
-  const sourceTimes = lowerTab === 'transcript' || pending;
-  const useFresh = fresh.length > 0 && !sourceTimes;
+  const sourceTimes = lowerTab === 'transcript' || pending || pinCuts.length > 0 || (!!before && !sameTimeline);
+  const useFresh = fresh.length > 0 && (!sourceTimes || renderedAfter);
   const files: ClipFile[] = useFresh
     ? [...fresh.map((r) => ({ path: r.file, aspect: r.target === 'primary' ? (doc.files[0]?.aspect ?? '3:4') : r.target, label: t('editor.editedVersion') })), ...doc.files.map((f) => ({ ...f, label: t('c.original') }))]
     : doc.files;
-  const playerCuts = useFresh ? [] : [...view.cuts, ...(pending ? keepToCuts(keep, doc.duration).filter((c) => !view.cuts.some((v) => Math.abs(v.start - c.start) < 0.01 && Math.abs(v.end - c.end) < 0.01)) : [])];
+  const playerCuts = useFresh
+    ? []
+    : [...view.cuts, ...(pending ? keepToCuts(keep, doc.duration).filter((c) => !view.cuts.some((v) => Math.abs(v.start - c.start) < 0.01 && Math.abs(v.end - c.end) < 0.01)) : []), ...pinCuts.map(([a, b]) => ({ start: a, end: b }))];
   const dirty = doc.steps.length > 0 && !doc.renders.some((r) => r.fresh);
   const capsNote = doc.caps_notes.find((m) => m.code === 'captions-add-only') ?? doc.caps_notes.find((m) => m.code === 'flattened');
   const firstWord = doc.words.find((w) => w.w.length >= 2)?.w;
   const aspect = doc.files[0]?.aspect;
-  const compare = preview.compare && !holdC && preview.ops ? { effects: odoc.effects, labels: [t('ce.before'), t('ce.after')] as [string, string] } : null;
-  const nPending = draftCount(cuts.drafts);
+  const labels = [t('ce.before'), t('ce.after')] as [string, string];
+  const compare = before ? (sameTimeline ? { effects: before.effects, captions: before.captions, labels } : null) : preview.compare && !holdC && preview.ops ? { effects: odoc.effects, labels } : null;
   const canFix = !!doc.caps.caption_text && doc.captions.some((c) => !c.added);
   const cutNote = doc.mode === 'flattened' && doc.caps.cut_strategy === 'snap_captions' ? t('te.note.snap') : null;
   const stageRows = `minmax(0, ${split.stage}fr) 8px minmax(${180}px, ${1 - split.stage}fr)`;
@@ -547,7 +695,7 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
             <SlidersHorizontal className="ico" />
             {t('ce.precise')}
           </button>
-          <button className={`btn ${primary === 'export' && !pending ? 'primary' : ''}`} onClick={() => (split.openChat(), chat.current?.openCard('export'))} disabled={doc.caps.export === false} data-testid="editor-export">
+          <button className={`btn ${primary === 'export' ? 'primary' : ''}`} onClick={() => (split.openChat(), chat.current?.openCard('export'))} disabled={doc.caps.export === false} data-testid="editor-export">
             <Upload className="ico" />
             {t('ce.export')}
           </button>
@@ -572,7 +720,7 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
               ticks={[...marks.map((m) => ({ t: m.a, b: m.b, tone: m.tone })), ...spans.map(([a, b]) => ({ t: a, b, tone: 'draft' as const }))]}
               onSelection={setSel}
               compare={compare}
-              badge={holdC ? t('ce.original') : null}
+              badge={holdC ? t('ce.original') : renderedCmp ? (renderedAfter ? t('ce.after') : t('fs.ai.rendering')) : before && !sameTimeline ? t('ce.before') : null}
               testId="editor-player"
             />
             {flash && (
@@ -619,9 +767,16 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
                 : null
             }
             footer={
-              pending ? (
-                <PendingBar n={nPending} secs={Math.max(0, durNow - durAfter)} tooShort={durAfter < 1} note={cutNote} busy={busy === 'cuts'} onDiscard={() => cuts.clear()} onApply={() => void applyCuts()} />
-              ) : null
+              <CutStatus
+                s={save}
+                note={pending || save.kind === 'saved' ? cutNote : null}
+                onUndo={() => void undoSaved()}
+                onRetry={() => void committer.retry()}
+                onDiscard={() => {
+                  cuts.clear();
+                  setSave({ kind: 'idle' });
+                }}
+              />
             }
           >
             {lowerTab === 'transcript' ? (
@@ -645,7 +800,7 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
                 hits={find.open ? hits : undefined}
                 apiRef={tp}
                 onSelection={setTsel}
-                onDiscardAll={() => pending && window.confirm(t('te.discardAll')) && cuts.clear()}
+                onDiscardAll={() => pending && window.confirm(t('te.discardAll')) && (cuts.clear(), setSave({ kind: 'idle' }))}
               />
             ) : (
               <div className="ce-tl">
@@ -736,6 +891,7 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
           onDrafts={setDrafts}
           onPreview={onPreview}
           onPrimary={setPrimary}
+          flush={flushCuts}
           collapsed={split.collapsed}
           onToggle={split.toggleChat}
           lead={lowerTab === 'transcript' && words.length ? t('te.chatLead') : null}
@@ -760,9 +916,12 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
                   pl.current?.play();
                 }}
                 onSkip={() => (triage ? triageStep(inbox.items, 1) : history.back())}
+                words={odoc.words}
+                onPreviewCuts={setPinCuts}
               />
             ) : null
           }
+          top={<DecidedCard item={id} clip={clip} words={odoc.words} seek={(x) => pl.current?.seek(x)} />}
         />
         {drawer && (
           <section className="ce-drawer" data-testid="edit-panel">

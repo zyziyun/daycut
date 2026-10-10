@@ -157,13 +157,13 @@ test('second-pass edit: trim, pop word (精确编辑 drawer), 让 AI 改 (chat),
 
   await page.getByTestId('chat-input').fill('再紧凑一点');
   await page.getByTestId('chat-input').press('Enter');
-  const prop = page.getByTestId('change-card');
-  await expect(prop).toBeVisible({ timeout: 15000 });
-  await prop.getByTestId('change-compare').click(); // before / after preview, nothing applied yet
-  await expect(page.getByTestId('edit-step')).toHaveCount(2);
-  await prop.getByTestId('change-apply').click();
+  const done = page.getByTestId('applied-card'); // applied at once (ux/fewer-steps), with Undo and Before / after
+  await expect(done).toBeVisible({ timeout: 15000 });
   await expect(page.getByTestId('edit-step')).toHaveCount(3);
-  await page.getByTestId('applied-undo').click(); // the newest card: a plain undo
+  await done.getByTestId('applied-compare').click(); // the clip as it was ...
+  await expect(done.getByTestId('applied-compare')).toHaveAttribute('aria-pressed', 'true');
+  await done.getByTestId('applied-compare').click(); // ... and back
+  await done.getByTestId('applied-undo').click(); // the newest card: a plain undo
   await expect(page.getByTestId('edit-step')).toHaveCount(2);
 
   await page.getByTestId('render').click();

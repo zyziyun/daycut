@@ -160,6 +160,9 @@ export function GeneralSection({ settings: s, save, onChange }: SettingsCtx) {
         >
           <Toggle checked={!!s.agencyMode} onChange={(v) => void save({ agencyMode: v })} label={t('s2.agency')} testId="agency-toggle" />
         </Row>
+        <Row label={t('fs.set.askAi')} hint={t('fs.set.askAiHint')}>
+          <Toggle checked={!!s.askAiEdits} onChange={(v) => void save({ askAiEdits: v })} label={t('fs.set.askAi')} testId="ask-ai-edits-toggle" />
+        </Row>
       </Group>
       <div className="s2-group s2-labs">
         <CreateSettingsCard onChange={onChange} />

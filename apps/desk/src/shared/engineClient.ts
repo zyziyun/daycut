@@ -468,6 +468,10 @@ export class EngineClient {
   autopilotReopen(item: string, checkpoint: string, sub: string) {
     return this.req<{ ok: boolean; resumed?: boolean }>('POST', `/api/autopilot/${bid(item)}/reopen`, { checkpoint, item: sub });
   }
+  /** she changes one taste call the engine made, in place (Undo / Change in the clip editor): the clip is re-made */
+  autopilotChange(item: string, checkpoint: string, sub: string, answer: { approve: string[]; keep: string[] }) {
+    return this.req<{ ok: boolean; resumed?: boolean }>('POST', `/api/autopilot/${bid(item)}/change`, { checkpoint, item: sub, answer });
+  }
   /** autopilot (true) or ask me first (false) for one project */
   autopilotMode(item: string, on: boolean) {
     return this.req<{ ok: boolean; resumed?: boolean }>('POST', `/api/autopilot/${bid(item)}/mode`, { on });

@@ -5,8 +5,9 @@
 //   Inbox: list + preview, plain-language options (no paths / raw numbers), Confirm -> auto-advance + Undo, ↑ ↓ / E
 //   Review all in a row: the editor's triage bar + the pinned question, Skip / Next / ← Inbox
 //   ⌘K jumps to clips / posts / settings, ⌘[ goes back
-//   Transcript: select words -> Delete -> pending (struck, still there) -> the preview skips them -> ⌘↵ -> one step +
-//   the cut card in the chat -> Undo; filler chips; split presets ⌘1 / ⌘3 persist across a reload, divider reset
+//   Transcript: select words -> Delete -> the preview skips them at once -> saved by itself (one step per burst, no
+//   Apply) + the cut card in the chat -> ⌘Z / ⇧⌘Z -> Undo; filler chips; split presets ⌘1 / ⌘3 persist across a
+//   reload, divider reset
 // Screenshots of every state go to test-results/uxcore (compared by eye with ux/home-redesign + ux/text-edit).
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
@@ -336,22 +337,31 @@ test('⌘K jumps to clips, posts and settings; ⌘[ goes back', async () => {
   await expect(page).toHaveURL(/#\/(publish\?post=|p\/)/);
 });
 
-test('transcript: select -> Delete -> pending + skipped in preview -> ⌘↵ = one step + the cut card -> Undo', async () => {
+test('transcript: select -> Delete -> skipped in the preview at once -> saved by itself as one step + the cut card (no Apply) -> ⌘Z / ⇧⌘Z -> Undo', async () => {
   await hash(`#/p/${fuyeId}/clip/${encodeURIComponent('A_换圈子')}`);
   await expect(page.getByTestId('transcript-body')).toBeVisible({ timeout: 30000 }); // talking-head: Transcript first
   await expect(page.getByTestId('lower-pane')).toHaveAttribute('data-tab', 'transcript');
   const w = (i: number) => page.locator(`[data-testid=transcript-body] .w[data-i="${i}"]`);
   await expect(w(0)).toHaveText('你在');
+  const steps = () =>
+    api<number>(async ({ base, auth }) => {
+      const h = await (await fetch(`${base}/api/history`, { headers: auth })).json();
+      const id = (h.items as { id: string; name: string }[]).find((x) => x.name === 'fuye')!.id;
+      return (await (await fetch(`${base}/api/outputs/${id}/${encodeURIComponent('A_换圈子')}`, { headers: auth })).json()).steps.length;
+    });
   // the fillers chip knows 嗯 / 那个 / 就是
   await expect(page.getByTestId('marks-filler')).toContainText('3');
-  // the chat offers the same without the model: fillers -> pending cuts
+  // the chat offers the same without the model: fillers -> cut at once, saved by itself (one step), Undo
   await expect(page.getByTestId('sug-fillers')).toContainText('Remove 3 filler words');
   await shot('T1-balanced');
+  const s0 = await steps();
   await page.getByTestId('sug-fillers').click();
-  await expect(page.getByTestId('pending-bar')).toContainText('3 cuts pending');
-  await page.getByTestId('pending-discard').click();
+  await expect(page.getByTestId('cut-status')).toHaveAttribute('data-state', 'saved', { timeout: 15000 });
+  expect(await steps()).toBe(s0 + 1);
+  await page.getByTestId('cut-status-undo').click();
+  await expect.poll(steps, { timeout: 15000 }).toBe(s0);
   // select 去给 Lakeside City College， (a drag across words) and press Delete
-  const start = (await page.evaluate(() => [...document.querySelectorAll('[data-testid=transcript-body] .w')].findIndex((e) => e.textContent?.startsWith('去给'))));
+  const start = await page.evaluate(() => [...document.querySelectorAll('[data-testid=transcript-body] .w')].findIndex((e) => e.textContent?.startsWith('去给')));
   const a = await w(start).boundingBox();
   const b = await w(start + 3).boundingBox();
   await page.mouse.move(a!.x + 3, a!.y + a!.height / 2);
@@ -360,73 +370,70 @@ test('transcript: select -> Delete -> pending + skipped in preview -> ⌘↵ = o
   await page.mouse.up();
   await expect(page.getByTestId('selection-bar')).toBeVisible();
   await expect(page.getByTestId('selection-bar')).toContainText('4 words');
+  const before = await steps();
   await page.keyboard.press('Delete');
-  await expect(w(start)).toHaveClass(/\bp\b/); // pending: struck through, still there
-  await expect(page.getByTestId('pending-bar')).toContainText('1 cut pending');
+  // effective at once: the length says so and the preview skips it before anything is saved; no Apply step anywhere
   await expect(page.getByTestId('editor-length')).toContainText('→');
-  await expect(page.locator('.btn.primary:visible')).toHaveCount(1); // Apply cuts is the one filled button
-  await expect(page.getByTestId('pending-apply')).toHaveClass(/primary/);
-  // the preview skips it: play from just before, the playhead jumps over the cut
-  const cutStart = await page.evaluate((i) => {
-    const el = document.querySelector(`[data-testid=transcript-body] .w[data-i="${i}"]`);
-    return el ? i : -1;
-  }, start);
-  expect(cutStart).toBe(start);
+  await expect(page.getByTestId('pending-apply')).toHaveCount(0);
+  await expect(page.getByTestId('pending-bar')).toHaveCount(0);
   const t0 = words()[start].start;
   const t1 = words()[start + 3].end;
-  await page.evaluate((x) => {
-    const v = document.querySelector('[data-testid=player-video]') as HTMLVideoElement;
-    v.currentTime = x;
-    void v.play();
-  }, t0 - 0.6);
+  const playFrom = (x: number) =>
+    page.evaluate((y) => {
+      const v = document.querySelector('[data-testid=player-video]') as HTMLVideoElement;
+      v.currentTime = y;
+      void v.play();
+    }, x);
+  await playFrom(t0 - 0.6);
   await expect(page.getByTestId('skip-flash')).toBeVisible({ timeout: 5000 });
   // past the cut and still playing (never stuck on the cut's last frame), the flash goes away
   await expect.poll(() => page.evaluate(() => (document.querySelector('[data-testid=player-video]') as HTMLVideoElement).currentTime), { timeout: 5000 }).toBeGreaterThan(t1 + 0.4);
   await expect(page.getByTestId('skip-flash')).toHaveCount(0, { timeout: 3000 });
-  await page.evaluate((x) => {
-    const v = document.querySelector('[data-testid=player-video]') as HTMLVideoElement;
-    v.currentTime = x;
-    void v.play();
-  }, t0 - 0.6);
+  await page.evaluate(() => (document.querySelector('[data-testid=player-video]') as HTMLVideoElement).pause());
+  // saved by itself a moment later: ONE step, the card in the chat, a cut marker in the transcript, a quiet status
+  await expect(page.getByTestId('cut-status')).toHaveAttribute('data-state', 'saved', { timeout: 15000 });
+  const card = page.getByTestId('cut-card').filter({ hasText: 'Lakeside' }); // (the fillers' card above it says Undone)
+  await expect(card).toBeVisible({ timeout: 15000 });
+  await expect(card).toContainText('Cut 1 phrase');
+  await expect(card).toContainText('Lakeside City College');
+  await expect(page.getByTestId('cut-marker')).toHaveCount(1);
+  expect(await steps()).toBe(before + 1);
+  await expect(page.locator('.btn.primary:visible')).toHaveCount(1); // Export stays the one filled button
+  await expect(page.getByTestId('editor-export')).toHaveClass(/primary/);
+  await shot('T3-selected-pending');
+  // still skipped in the preview once saved
+  await playFrom(t0 - 0.6);
   await expect(page.getByTestId('skip-flash')).toBeVisible({ timeout: 5000 });
   await page.evaluate(() => (document.querySelector('[data-testid=player-video]') as HTMLVideoElement).pause());
-  await shot('T3-selected-pending');
-  // the same pending cut on the timeline tab
+  // the same cut on the timeline tab
   await page.getByTestId('tab-timeline').click();
-  await expect(page.getByTestId('tl-pending')).toHaveCount(1);
   await shot('T4-timeline-pending');
   await page.getByTestId('tab-transcript').click();
-  // ⌘↵ applies: ONE step, the card in the chat, a cut marker in the transcript
-  const before = await api<number>(async ({ base, auth }) => {
-    const h = await (await fetch(`${base}/api/history`, { headers: auth })).json();
-    const id = (h.items as { id: string; name: string }[]).find((x) => x.name === 'fuye')!.id;
-    return (await (await fetch(`${base}/api/outputs/${id}/${encodeURIComponent('A_换圈子')}`, { headers: auth })).json()).steps.length;
-  });
-  await page.getByTestId('transcript-body').focus();
-  await page.keyboard.press('ControlOrMeta+Enter');
-  await expect(page.getByTestId('cut-card')).toBeVisible({ timeout: 15000 });
-  await expect(page.getByTestId('cut-card')).toContainText('Cut 1 phrase');
-  await expect(page.getByTestId('cut-card')).toContainText('Lakeside City College');
-  await expect(page.getByTestId('cut-marker')).toHaveCount(1);
-  await expect(page.getByTestId('pending-bar')).toHaveCount(0);
-  const after = await api<number>(async ({ base, auth }) => {
-    const h = await (await fetch(`${base}/api/history`, { headers: auth })).json();
-    const id = (h.items as { id: string; name: string }[]).find((x) => x.name === 'fuye')!.id;
-    return (await (await fetch(`${base}/api/outputs/${id}/${encodeURIComponent('A_换圈子')}`, { headers: auth })).json()).steps.length;
-  });
-  expect(after).toBe(before + 1);
+  // ⌘Z takes the step back, ⇧⌘Z puts it back
+  await page.getByTestId('editor-title').click();
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect(page.getByTestId('cut-marker')).toHaveCount(0, { timeout: 15000 });
+  await page.keyboard.press('ControlOrMeta+Shift+z');
+  await expect(page.getByTestId('cut-marker')).toHaveCount(1, { timeout: 15000 });
   await noMissingKeys();
   await shot('T5-applied');
-  // fillers: remove all from the chip menu -> pending
+  // rapid deletes coalesce: three words deleted one after another -> one step
+  const mid = before + 1;
+  for (const i of [1, 3, 5]) {
+    await w(i).click();
+    await page.keyboard.press('Delete');
+  }
+  await expect(page.getByTestId('cut-status')).toHaveAttribute('data-state', 'saved', { timeout: 15000 });
+  expect(await steps()).toBe(mid + 1);
+  await page.getByTestId('cut-status-undo').click();
+  await expect.poll(steps, { timeout: 15000 }).toBe(mid);
+  // fillers: the chip menu
   await page.getByTestId('marks-filler').click();
   await expect(page.getByTestId('marks-menu-filler')).toBeVisible();
   await shot('T2-fillers-menu');
-  await page.getByTestId('marks-remove-all').click();
-  await expect(page.getByTestId('pending-bar')).toContainText(/3 cuts pending/);
-  await page.getByTestId('pending-discard').click();
-  await expect(page.getByTestId('pending-bar')).toHaveCount(0);
+  await page.keyboard.press('Escape');
   // Undo in the card = the whole batch back
-  await page.getByTestId('cut-card-undo').click();
+  await card.getByTestId('cut-card-undo').click();
   await expect(page.getByTestId('cut-marker')).toHaveCount(0, { timeout: 15000 });
   await expect(w(start)).not.toHaveClass(/\bp\b/);
 });
@@ -503,8 +510,10 @@ test('zh-CN + dark: Home, Inbox, the transcript', async () => {
   await expect(page.getByTestId('transcript-body')).toBeVisible({ timeout: 30000 });
   await page.getByTestId('marks-filler').click();
   await page.getByTestId('marks-remove-all').click();
+  await expect(page.getByTestId('cut-status')).toHaveAttribute('data-state', 'saved', { timeout: 15000 });
   await shot('T3-zh-pending');
-  await page.getByTestId('pending-discard').click();
+  await page.getByTestId('cut-status-undo').click();
+  await expect(page.getByTestId('cut-status')).toHaveCount(0);
   await setLook('en', 'studio-dark');
   await hash('#/');
   await expect(page.getByTestId('home-inbox')).toBeVisible({ timeout: 30000 });
@@ -513,8 +522,10 @@ test('zh-CN + dark: Home, Inbox, the transcript', async () => {
   await expect(page.getByTestId('transcript-body')).toBeVisible({ timeout: 30000 });
   await page.getByTestId('marks-filler').click();
   await page.getByTestId('marks-remove-all').click();
+  await expect(page.getByTestId('cut-status')).toHaveAttribute('data-state', 'saved', { timeout: 15000 });
   await shot('T3-dark-pending');
-  await page.getByTestId('pending-discard').click();
+  await page.getByTestId('cut-status-undo').click();
+  await expect(page.getByTestId('cut-status')).toHaveCount(0);
   await setLook('fr');
   await hash('#/');
   await expect(page.getByTestId('home-inbox')).toBeVisible({ timeout: 30000 });

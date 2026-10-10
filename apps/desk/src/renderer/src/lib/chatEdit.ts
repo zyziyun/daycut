@@ -229,3 +229,27 @@ export function offlineFrom(r: { provider?: string | null; warnings?: { code: st
   if (codes.includes('no-model')) return 'no-model';
   return null;
 }
+
+export type AskReason = 'reset' | 'export-remove' | 'most-of-clip';
+
+/** Why an AI change waits for her Apply although AI edits apply at once (ux/fewer-steps): starting the clip over
+ * (every edit goes), dropping a version she exports, or a cut / trim that takes more than half of what is left.
+ * Everything else is applied straight away with Undo. (None of the clip edits costs money; a paid op would wait
+ * here too.) */
+export function askFirstReason(ops: EditOp[], doc: OutputDoc): AskReason | null {
+  if (ops.some((o) => o.op === 'reset')) return 'reset';
+  if (ops.some((o) => o.op === 'export_remove')) return 'export-remove';
+  if (ops.some((o) => o.op === 'cut' || o.op === 'trim')) {
+    const l = lengthChange(doc, ops);
+    if (l.before > 0 && l.after < l.before * 0.5) return 'most-of-clip';
+  }
+  return null;
+}
+
+/** Changes the live player cannot draw (a whole-clip look such as skin smoothing or a grade, a zoom, a transition,
+ * sound): their Before / after renders the clip once and plays that against the live view. Text overlays, captions,
+ * cuts, trims and speed are shown live. */
+export function needsRenderedCompare(ops: EditOp[]): boolean {
+  // (theme / loudness ops come from the engine's model too; EditOp does not list them)
+  return ops.some((o) => ['theme', 'loudness'].includes(o.op as string) || (o.op === 'effect_add' && typeof o.params?.text !== 'string'));
+}

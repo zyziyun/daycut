@@ -1,7 +1,8 @@
 // The chat-first clip editor (ux/CHAT_EDIT.md, direction C), window hidden, mock engine (desk implementation: no
-// model, no network), isolated profile. In English and 简体中文: a request -> a draft change card -> adjust it in the
-// effect card -> before / after on the player -> apply -> a second card -> undo the OLDER card only (the later one
-// stays) -> the conversation survives a reload; slash commands open cards without the model; the export card shows
+// model, no network), isolated profile. In English and 简体中文: a request is applied at once (ux/fewer-steps) ->
+// before / after on the player -> Undo restores; with "Ask before applying AI edits" a draft card -> adjust it in the
+// effect card -> compare -> apply; a second card -> undo the OLDER card only (the later one stays) -> the
+// conversation survives a reload; slash commands open cards without the model; the export card shows
 // progress per version; the AI-unavailable card; ⌘K, hold C, Esc; one filled button; no missing message keys.
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
@@ -95,7 +96,7 @@ const L = {
 for (const [lang, clip] of [['en', 'A_换圈子'], ['zh-CN', 'B_底气']] as const) {
   const s = L[lang];
 
-  test(`${lang}: request -> draft card -> adjust in the effect card -> compare -> apply -> undo the older card only`, async () => {
+  test(`${lang}: a request applies at once -> before / after -> Undo restores; ask first: draft -> adjust -> apply; undo the older card only`, async () => {
     await openEditor(lang, clip);
     // empty state: suggestions from THIS clip (its pause and its words), Export is the one filled button
     await expect(page.getByTestId('chat-empty')).toBeVisible();
@@ -104,49 +105,67 @@ for (const [lang, clip] of [['en', 'A_换圈子'], ['zh-CN', 'B_底气']] as con
     await expect(page.getByTestId('editor-export')).toHaveClass(/primary/);
     await noMissingKeys();
 
+    // act at once, make it undoable (ux/fewer-steps): no Apply step
     await say(s.pop);
-    const card = page.getByTestId('change-card');
+    const card = page.getByTestId('applied-card');
     await expect(card).toBeVisible({ timeout: 15000 });
+    await expect(page.getByTestId('change-card')).toHaveCount(0);
+    await expect(page.getByTestId('editor-export')).toHaveClass(/primary/);
+    await expect(page.locator('.btn.primary:visible')).toHaveCount(1);
+    await expect(page.getByTestId('chat-cost')).toContainText(/\$0\.00/);
+    let d = await api(clip);
+    expect(d.effects.map((e: { params: { text: string } }) => e.params.text)).toEqual(['底气']);
+    // before / after on the player: the clip as it was against now
+    await card.getByTestId('applied-compare').click();
+    await expect(page.getByTestId('compare-wipe')).toBeVisible();
+    await card.getByTestId('applied-compare').click();
+    await expect(page.getByTestId('compare-wipe')).toHaveCount(0);
+    // Undo restores
+    await card.getByTestId('applied-undo').click();
+    await expect(page.getByTestId('undone-line')).toHaveCount(1);
+    d = await api(clip);
+    expect(d.effects).toEqual([]);
+    await noMissingKeys();
+
+    // Settings › Ask before applying AI edits: the change waits as a draft card (adjust, compare, apply)
+    await page.evaluate(() => window.desk.setSettings({ askAiEdits: true }));
+    await openEditor(lang, clip);
+    await say(s.pop);
+    const draft = page.getByTestId('change-card');
+    await expect(draft).toBeVisible({ timeout: 15000 });
     await expect(page.getByTestId('tl-marker-draft').first()).toBeVisible(); // amber on the timeline
     await expect(page.getByTestId('editor-export')).not.toHaveClass(/primary/); // 应用 is now the one filled button
     await expect(page.getByTestId('change-apply')).toHaveClass(/primary/);
     await expect(page.locator('.btn.primary:visible')).toHaveCount(1);
-    await expect(page.getByTestId('chat-cost')).toContainText(/\$0\.00/);
-
-    // adjust: the effect card, colour + when it shows; Done returns to the change set
-    await card.getByTestId('change-adjust').first().click();
+    await draft.getByTestId('change-adjust').first().click();
     const fx = page.getByTestId('card-effect');
     await expect(fx).toBeVisible();
     await fx.getByTestId('fx-colour-E5484D').click();
     await expect(fx.getByTestId('fx-span')).toContainText('0:02.9');
     await fx.getByTestId('card-apply').click();
-    await expect(card).toBeVisible();
-
-    // before / after on the player itself, nothing applied yet
-    await card.getByTestId('change-compare').click();
+    await expect(draft).toBeVisible();
+    await draft.getByTestId('change-compare').click();
     await expect(page.getByTestId('compare-wipe')).toBeVisible();
-    expect((await api(clip)).undo).toBe(0);
-    await card.getByTestId('change-compare').click();
-    await expect(page.getByTestId('compare-wipe')).toHaveCount(0);
-
-    await card.getByTestId('change-apply').click();
-    await expect(page.getByTestId('applied-line')).toHaveCount(1);
+    expect((await api(clip)).effects).toEqual([]); // nothing applied yet
+    await draft.getByTestId('change-compare').click();
+    await draft.getByTestId('change-apply').click();
+    await expect(page.getByTestId('applied-card')).toBeVisible();
     await expect(page.getByTestId('editor-export')).toHaveClass(/primary/);
-    let d = await api(clip);
+    d = await api(clip);
     expect(d.effects.map((e: { params: { text: string; color: string } }) => [e.params.text, e.params.color])).toEqual([['底气', '#E5484D']]);
+    await page.evaluate(() => window.desk.setSettings({ askAiEdits: false }));
+    await openEditor(lang, clip);
 
-    // a second card, then undo the FIRST one only: the speed change stays
+    // a second change (applied at once), then undo the FIRST one only: the speed change stays
     await say(s.speed);
-    await expect(page.getByTestId('change-card')).toBeVisible({ timeout: 15000 });
-    await page.keyboard.press('ControlOrMeta+Enter'); // ⌘↵ applies the newest draft
-    await expect(page.getByTestId('applied-line')).toHaveCount(2);
+    await expect(page.getByTestId('applied-line')).toHaveCount(2, { timeout: 15000 }); // the older line + the new card
     await page.getByTestId('applied-line').first().getByTestId('applied-undo').click();
     await expect(page.getByTestId('reverted-line')).toHaveCount(1);
     await expect(page.getByTestId('applied-line')).toHaveCount(1);
     d = await api(clip);
     expect(d.effects).toEqual([]);
     expect(d.speed).toBe(1.1);
-    expect(d.steps.length).toBe(3); // pop, speed, revert(pop)
+    expect(d.steps.length).toBe(3); // pop, speed, revert(pop) (the first pop was undone)
 
     // hold C: the original
     await page.getByTestId('editor-title').click();
@@ -159,7 +178,7 @@ for (const [lang, clip] of [['en', 'A_换圈子'], ['zh-CN', 'B_底气']] as con
     await page.reload();
     await page.waitForURL(/^app:\/\/desk\//);
     await expect(page.getByTestId('chat-panel')).toBeVisible({ timeout: 30000 });
-    await expect(page.getByTestId('chat-me')).toHaveCount(2);
+    await expect(page.getByTestId('chat-me')).toHaveCount(3);
     await expect(page.getByTestId('reverted-line')).toHaveCount(1);
     await page.getByTestId('reverted-restore').click(); // the reverted card comes back
     await expect(page.getByTestId('applied-line')).toHaveCount(2);
@@ -218,10 +237,11 @@ for (const [lang, clip] of [['en', 'A_换圈子'], ['zh-CN', 'B_底气']] as con
     await expect(off).toBeVisible({ timeout: 15000 });
     await expect(page.getByTestId('model-chip-off')).toBeVisible();
     await expect(off.getByTestId('off-connect')).toHaveClass(/primary/);
-    await off.getByTestId('off-phrase').first().click(); // "speed 1.1×" is understood without a model
-    await expect(page.getByTestId('change-card')).toBeVisible({ timeout: 15000 });
-    await page.getByTestId('change-discard').click();
-    await expect(page.getByTestId('discarded-line').last()).toBeVisible();
+    await off.getByTestId('off-phrase').first().click(); // "speed 1.1×" is understood without a model: applied at once
+    const done = page.getByTestId('applied-card');
+    await expect(done).toBeVisible({ timeout: 15000 });
+    await done.getByTestId('applied-undo').click(); // Discard became Undo
+    await expect(page.getByTestId('undone-line').last()).toBeVisible();
     await noMissingKeys();
     await page.evaluate(() => localStorage.removeItem('i18n.strict'));
   });

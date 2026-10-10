@@ -5,7 +5,8 @@ her: hook / cover answered by their defaults, a filler cut to confirm.
     python real_project.py ROOT [--pilot]   (VSTUDIO_HOME etc. from the environment) -> prints {dir, truth, ...}
 
 ``--pilot``: two clips, run as the desk starts a project (a pilot of one), which parks the first clip at its filler
-question and leaves the second unmade.
+question and leaves the second unmade. ``--autopilot``: run on autopilot (rules decide; no AI account) to the end, so
+the clip is made and its decisions are in the autopilot log.
 """
 import json
 import os
@@ -53,6 +54,7 @@ media = os.path.join(ROOT, "media")
 os.makedirs(media, exist_ok=True)
 x, truth, dur = synth(WORDS)
 PILOT = "--pilot" in sys.argv
+AUTO = "--autopilot" in sys.argv
 for name in (("talk.mp4", "talk2.mp4") if PILOT else ("talk.mp4",)):
     H.make_video(os.path.join(media, name), x, 48000, dur)
 tp = os.path.join(ROOT, "truth.json")
@@ -68,6 +70,15 @@ p = Project.create(os.path.join(ROOT, "projects", "talk"), recipe="talkinghead",
                    auto=["hook", "cover"],
                    spec=dict(plugins=["vstudio.project.registry", "_batch_helpers"], plugin_paths=[TESTS],
                              asr=dict(transcriber="_batch_helpers:fake_transcriber"), proofread=dict(enabled=False)))
-r = p.run(pilot=1 if PILOT else None)
+r = p.run(pilot=1 if PILOT else None, autopilot=True if AUTO else None)
+if AUTO and r["status"] == "done":
+    # the clip editor's words for the made clip (what "Listen to this clip" would hear): the cleaned body's words
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import out_words  # noqa: E402
+    from vstudio.project import outputs as O  # noqa: E402
+    O.TRANSCRIBE = out_words.words
+    for o in O.list_outputs(p.dir)["outputs"]:
+        _rec, doc = O._load(p.dir, o["id"])
+        O.words(doc)
 print(json.dumps(dict(dir=p.dir, truth=tp, plugin_path=TESTS, status=r["status"], items=[i["id"] for i in p.data["items"]],
                       pending=[(x["item"], x["id"]) for x in r["pending"]]), ensure_ascii=False))
