@@ -6,19 +6,19 @@ import { ArchiveRestore, ArrowLeft, CalendarPlus, Copy, FolderOpen, Maximize2, P
 import type { HistoryDetail } from '../../../shared/v02';
 import type { Clip, ClipsDoc, InboxItem, OutputDoc } from '../../../shared/v04';
 import { basePlatform, orderPlatforms, platformInfo } from '../../../shared/platforms';
-import { fmtDate, fmtMinutes, t } from '../i18n';
+import { fmtDate, fmtMinutes, has, t, tk } from '../i18n';
 import { useEngine } from '../lib/engine';
 import type { EngineClient } from '../../../shared/engineClient';
 import { archivedLine, restoreFlow } from '../lib/archive';
 import { useHistory } from '../lib/history';
 import { useInbox } from '../lib/inbox';
 import { go, href, type ProjectTab } from '../lib/router';
-import { clipStatus, itemStatus } from '../lib/status';
+import { clipStatus, itemStatus, STATUS_KEY } from '../lib/status';
 import { ProjectAIPanel } from './ProjectAIPanel';
 import { inboxSub, inboxTitle } from './Inbox';
 import { authorHelp } from '../lib/inboxView';
 import { LiveBanner } from './LiveLine';
-import { liveLine, pendingFor } from '../lib/liveStatus';
+import { liveLine, liveStep, liveText, pendingFor } from '../lib/liveStatus';
 import { inboxHref } from '../lib/nav';
 import { Elapsed, Empty, More, SkGrid, StatusPill, Thumb } from './kit';
 import { FailureActions, failureReason } from './Failure';
@@ -127,7 +127,7 @@ export function Project({ id, tab: asked }: { id: string; tab: ProjectTab }) {
   const pending = pendingAll;
   const review = reviewItem;
   const confirm = pending.find((x) => x.kind === 'confirm' || x.group === 'choose');
-  const done = clips.filter((c) => c.state !== 'queued' && c.state !== 'running' && c.files.length);
+  const done = clips.filter((c) => c.state !== 'queued' && c.state !== 'running' && c.state !== 'failed' && c.files.length);
   const isBatch = item?.kind === 'batch' || item?.kind === 'project';
 
   const schedule = async (list: Clip[]) => {
@@ -281,7 +281,7 @@ export function Project({ id, tab: asked }: { id: string; tab: ProjectTab }) {
               <div className="sp">
                 <b>
                   {t('project.pilot.running')}
-                  {item.live?.stage ? ` · ${item.live.stage}` : ''}
+                  {liveStep(item.live) ? ` · ${liveStep(item.live)}` : ''}
                 </b>
                 <span className="muted">
                   {t('project.pilot.elapsed')} <Elapsed since={item.live?.started ?? item.pilot?.started ?? null} />
@@ -388,7 +388,7 @@ export function Project({ id, tab: asked }: { id: string; tab: ProjectTab }) {
         clips={done.map((c) => ({ id: c.id, title: c.title }))}
         selected={sel && done.includes(sel) ? { id: sel.id, title: sel.title } : null}
         running={s === 'run'}
-        liveText={s === 'run' ? item?.live?.message : null}
+        liveText={s === 'run' ? liveText(item?.live) || null : null}
         onApplied={reload}
       />
       {shareClip && <ShareDialog item={id} only={[shareClip]} onClose={() => setShareClip(null)} />}
@@ -432,7 +432,7 @@ function ClipCard({ c, on, aspect, onAspect, onPick, onPlay, onContext, eta }: {
       </div>
       {ready ? (
         <div className="row" onClick={(e) => e.stopPropagation()}>
-          {c.files.length > 1 ? (
+          {c.files.length > 1 && st !== 'error' ? (
             <div className="vers">
               {c.files.map((f) => (
                 <button key={f.aspect} className={f.aspect === file?.aspect ? 'on' : ''} onClick={() => onAspect(f.aspect)} data-testid={`clip-size-${f.aspect}`}>
@@ -495,11 +495,11 @@ function DetailBody({ id, kind, d, load }: { id: string; kind?: string; d: Histo
       ))}
       <div className="kv">
         <span>{t('project.folder')}</span>
-        <span>{d.dir}</span>
+        <span data-content>{d.dir}</span>
         <span>{t('c.details')}</span>
         <span>
-          {d.kind} · {d.recipe ?? '–'} · {d.status}
-          {d.live?.stage ? ` · ${d.live.stage}` : ''}
+          {/* what kind of video and where it is, in words (not the engine's kind · recipe · state ids) */}
+          {[has(`type.${d.type ?? 'other'}`) ? tk(`type.${d.type ?? 'other'}`) : t('type.other'), (() => { const st = itemStatus(d); return st ? t(STATUS_KEY[st]) : ''; })(), liveStep(d.live)].filter(Boolean).join(' · ')}
         </span>
       </div>
       <div className="row">

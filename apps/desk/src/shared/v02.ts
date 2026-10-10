@@ -390,6 +390,32 @@ export interface LiveStatus {
   age?: number | null;
   needs_you: boolean;
   updated_by?: string | null;
+  /** the stages running now, one per clip (the engine writes "s003:export, s004:asr") */
+  stages?: { job: string | null; stage: string }[];
+  /** the engine's own status line as a code the desk words: jobs {done,total} | finished {n} | some-failed {n} |
+   * checkpoint {kinds} | items-failed {n} | waiting | pilot | paused | over-budget | done */
+  code?: string | null;
+  params?: Record<string, unknown> | null;
+  jobs_done?: number | null;
+  jobs_total?: number | null;
+}
+/** One event of a run, as codes (desk_engine.pilot.progress_feed). */
+export interface ProgressEvent {
+  at?: number | null;
+  event: 'run-start' | 'stage-start' | 'stage-done' | 'stage-retry' | 'stage-fail' | 'job-done' | 'checkpoint' | 'auto-answer' | 'autopilot-blocked' | 'pause' | 'run-end' | 'project-end';
+  job?: string;
+  item?: string;
+  stage?: string;
+  state?: string;
+  checkpoint?: string;
+  kind?: string;
+  by?: string;
+  n?: number;
+  exit_code?: number;
+}
+export interface ProgressFeed {
+  events: ProgressEvent[];
+  running: boolean;
 }
 export const WORK_TYPES = ['talkinghead', 'slices', 'explainer', 'photo-story', 'vlog', 'podcast', 'aigc', 'script', 'batch', 'promo', 'slides', 'other'] as const;
 export interface HistoryItem {

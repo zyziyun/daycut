@@ -106,7 +106,7 @@ parameter extraction. `planner.fallback: true` + `planner.reason` say so.
                         "why": "..."}]},
     "params": {"platforms": ["xiaohongshu:full"], "captions": false, "speed": 1.0, "cleanup_profile": "gentle"},
     "param_sources": {"platforms": "prompt", "captions": "material", "speed": "planner"},
-    "checkpoints": [{"id": "filler", "kind": "filler-confirm", "label": "确认去 filler", "needs_you": true, "auto": "default"}],
+    "checkpoints": [{"id": "filler", "kind": "filler-confirm", "label": "确认去口癖", "needs_you": true, "auto": "default"}],
     "estimate": {"machine_min": 3.7, "wall_min": 1.8, "storage_mb": 383, "api_usd": 0.0, "credits": null,
                  "measured": true, "paid_steps": [], "basis": {"source_s": 653, "output_s": 222, "items": 3, "platforms": 1}},
     "outputs": {"platforms": ["xiaohongshu:full"], "videos": 3, "workflow_md": "workflows/talkinghead/WORKFLOW.md"}

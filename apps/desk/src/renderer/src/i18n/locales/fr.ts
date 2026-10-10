@@ -17,6 +17,8 @@ import { weekPlanFr } from './weekPlan';
 import { autopilotFr } from './autopilot';
 import { recordFr } from './record';
 import { fewerStepsFr } from './fewerSteps';
+import { pickupsFr } from './pickups';
+import { studioFr } from './studio';
 import { settingsV2Fr } from './settingsV2';
 import { watermarkFr } from './watermark';
 import { archiveFr } from './archive';
@@ -723,9 +725,9 @@ const v04Fr: Record<keyof typeof v04En, string> = {
   'engine.demo': 'Mode démo',
 
   'status.running': 'En cours',
-  'status.you': 'Vous attend',
-  'status.done': 'Terminé',
-  'status.error': 'Erreur',
+  'status.you': 'À vous',
+  'status.done': 'Prêt',
+  'status.error': 'Arrêté',
 
   'time.justNow': 'à l’instant',
   'time.today': 'aujourd’hui',
@@ -885,8 +887,8 @@ const v04Fr: Record<keyof typeof v04En, string> = {
   'projects.new': 'Nouveau',
   'projects.f.all': 'Tout ({n})',
   'projects.f.running': 'En cours ({n})',
-  'projects.f.you': 'Vous attend ({n})',
-  'projects.f.done': 'Terminés ({n})',
+  'projects.f.you': 'À vous ({n})',
+  'projects.f.done': 'Prêts ({n})',
   'projects.search': 'Rechercher projets et titres…',
   'projects.type': 'Type',
   'projects.anyType': 'Tous types',
@@ -1782,8 +1784,8 @@ const projectAiFr: Record<keyof typeof projectAiEn, string> = {
 
 // ---------------------------------------------------------------- ./release.ts
 const releaseFr: Record<keyof typeof releaseEn, string> = {
-  'status.failed': 'Échec',
-  'projects.f.failed': 'Échecs ({n})',
+  'status.failed': 'Arrêté',
+  'projects.f.failed': 'Arrêtés ({n})',
   'project.sub.failed': 'Le premier clip n’a pas pu être créé. Rien n’est perdu : corrigez la cause ci-dessous et réessayez.',
   'project.empty.failed': 'Pas encore de clips : le premier a échoué.',
   'project.empty.running': 'Le premier clip est en route. Il apparaîtra ici dès qu’il sera prêt.',
@@ -1857,4 +1859,4 @@ const releaseFr: Record<keyof typeof releaseEn, string> = {
   'set.developerHint': 'Pour travailler sur Reelfold lui-même. Rien de tout cela n’est nécessaire pour faire des vidéos.',
 };
 
-export const fr: Record<MessageKey, string> = { ...legacyFr, ...legacyFrV02, ...v04Fr, ...aiaccFr, ...publishPlatformsFr, ...chatEditFr, ...channelsFr, ...projectAiFr, ...aboutFr, ...releaseFr, ...publishBoardFr, ...publishLoopFr, ...settingsV2Fr, ...createFr, ...pluginsFr, ...uxCoreFr, ...usageFr, ...weekPlanFr, ...shareFr, ...qaFr, ...firstRunFr, ...liteFr, ...sessionFixesFr, ...watermarkFr, ...archiveFr, ...autopilotFr, ...recordFr, ...fewerStepsFr, ...draftsFr, ...updateFr };
+export const fr: Record<MessageKey, string> = { ...legacyFr, ...legacyFrV02, ...v04Fr, ...aiaccFr, ...publishPlatformsFr, ...chatEditFr, ...channelsFr, ...projectAiFr, ...aboutFr, ...releaseFr, ...publishBoardFr, ...publishLoopFr, ...settingsV2Fr, ...createFr, ...pluginsFr, ...uxCoreFr, ...usageFr, ...weekPlanFr, ...shareFr, ...qaFr, ...firstRunFr, ...liteFr, ...sessionFixesFr, ...watermarkFr, ...archiveFr, ...autopilotFr, ...recordFr, ...fewerStepsFr, ...pickupsFr, ...studioFr, ...draftsFr, ...updateFr };

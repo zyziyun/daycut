@@ -681,3 +681,83 @@ class CliRunnerEventsTest(unittest.TestCase):
             r.events(["plan"], lambda ev: None, timeout=0.5, track=[])
         self.assertIn("timed out", str(cm.exception))
         self.assertLess(time.time() - t0, 10)
+
+
+class MappedWordsTest(unittest.TestCase):
+    """A batch clip opens with its words: the pipeline's transcript mapped through the job's cuts, not 「听一遍」."""
+
+    def test_batch_clip_has_words_from_the_apply_sidecar(self):
+        from vstudio import cleanup
+        root = tempfile.mkdtemp()
+        b = make_batch(os.path.join(root, "b"), jobs=(("ep01", "done", "green"),))
+        jd = os.path.join(b, "jobs", "ep01")
+        for sub in ("apply", os.path.join("export", "exports")):
+            os.makedirs(os.path.join(jd, sub), exist_ok=True)
+        with open(os.path.join(jd, "job.json"), "w", encoding="utf-8") as f:
+            json.dump(dict(id="ep01", params=dict(title="Plan first")), f)
+        words = [dict(w=w, t=t, te=t + 0.3) for w, t in (("plan", 0.5), ("um", 1.0), ("first", 1.6))]
+        cleanup.write_sidecar(os.path.join(jd, "apply", "body.mp4"), "src.mp4", [(0.4, 0.9), (1.5, 2.0)], words)
+        open(os.path.join(jd, "export", "exports", "youtube-vertical.mp4"), "wb").close()
+        with open(os.path.join(jd, "export", "exports", "manifest.json"), "w", encoding="utf-8") as f:
+            json.dump(dict(exports=[dict(file="youtube-vertical.mp4", platform="youtube", orientation="vertical",
+                                         w=1080, h=1920, duration=1.0)]), f)
+        data = os.path.join(root, "desk")
+        with mock.patch.dict(os.environ, {"DESK_HISTORY_WATCH": ""}):
+            h = History(data, Registry(data))
+            item = h.open(b)["id"]
+            doc = OU.Outputs(data, h).show(item, "ep01")
+        self.assertEqual([w["w"] for w in doc["words"]], ["plan", "first"])
+        self.assertAlmostEqual(doc["words"][1]["t"], 0.6, places=2)
+        self.assertTrue(doc["words_sig"])
+
+
+class PublishedTest(Fixture):
+    """An edited clip is listed (for publishing, the calendar, the queue) with its fresh final renders; the editor
+    keeps editing the original."""
+
+    def test_fresh_final_renders_stand_in_for_the_original(self):
+        orig = self.o.clips(self.item)["clips"][0]
+        f0 = orig["files"][0]["path"]
+        oid = "final/A_换圈子.mp4"
+        rdir = tempfile.mkdtemp()
+        prim, vert, cov = (os.path.join(rdir, n) for n in ("primary.final.mp4", "douyin-vertical.final.mp4", "c.jpg"))
+        for p in (prim, vert, cov):
+            open(p, "wb").close()
+        fin = dict(primary=dict(file=prim, cover=cov, w=1080, h=1440, duration=20.0),
+                   **{"douyin:vertical": dict(file=vert, cover=None, w=1080, h=1920, duration=20.0)})
+        self.o._engine_list = lambda e: {os.path.realpath(f0): oid}
+        self.o._edited[os.path.realpath(self.d)] = {oid}
+        with mock.patch("vstudio.project.outrender.fresh_finals", return_value=fin):
+            c = self.o.clips(self.item)["clips"][0]
+        self.assertTrue(c["edited"])
+        self.assertEqual(c["files"][0]["path"], prim)
+        self.assertEqual(c["cover"], cov)
+        self.assertEqual(next(f for f in c["files"] if f["aspect"] == "9:16")["path"], vert)
+        with mock.patch("vstudio.project.outrender.fresh_finals", return_value={}):
+            c = self.o.clips(self.item)["clips"][0]
+        self.assertEqual(c["files"][0]["path"], f0)
+        self.assertTrue(c["edited_stale"])
+        self.assertEqual(self.o._clip(self.item, c["id"])[1]["files"][0]["path"], f0)   # the editor's own file
+
+
+class RenderQueueTest(Fixture):
+    def test_renders_of_one_clip_run_one_after_the_other(self):
+        """A background render and her Export never write the same stage files at once: the second waits."""
+        events = []
+
+        class Bus:
+            def publish(self, kind, **kw):
+                if kind == "output-render":
+                    events.append((kw.get("job"), kw.get("event")))
+        self.o.bus = Bus()
+        with mock.patch.dict(os.environ, {"DESK_EXPORT_STEP": "0.05"}):
+            a = self.o.export(self.item, "A_换圈子", ["primary"])["job"]
+            b = self.o.export(self.item, "A_换圈子", ["primary"])["job"]
+            t0 = time.time()
+            while sum(1 for _, ev in events if ev == "render-done") < 2 and time.time() - t0 < 20:
+                time.sleep(0.05)
+        order = [j for j, ev in events if ev in ("target-start", "render-done")]
+        self.assertEqual(len(order), 4)
+        first = order[0]
+        self.assertEqual(order[:2], [first, first])               # one starts and finishes before the other starts
+        self.assertEqual(set(order), {a, b})

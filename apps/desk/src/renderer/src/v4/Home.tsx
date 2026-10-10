@@ -33,11 +33,16 @@ import { WEEK_WORDS } from '../../../shared/weekPlan';
 import { useWeekPlan } from '../weekplan/useWeekPlan';
 import { WeekPlanCard } from '../weekplan/WeekPlanCard';
 import '../theme/uxcore.css';
-import { orderPlatforms } from '../../../shared/platforms';
+import { homePlatforms, orderPlatforms } from '../../../shared/platforms';
 import { errText } from './msg';
 import { IS_LITE } from '../../../shared/edition';
 import { LiveCardLine } from './LiveLine';
+import { liveStep, liveText } from '../lib/liveStatus';
+import { itemPipeline } from '../lib/pipeline';
 import { keyHint } from '../lib/keys';
+
+/** Starting points whose request is a fixed intent (sent as written: the talking-head recipe, planned by the rules). */
+const FIXED_STARTS: MessageKey[] = ['home.idea2Prompt', 'sample.prompt'];
 
 /** First run: the starting points (title, what it does, the request it fills in). */
 const STARTS: { icon: typeof Film; title: MessageKey; sub: MessageKey; prompt: MessageKey }[] = [
@@ -113,7 +118,8 @@ export function Home() {
   }, [prompt, files]);
   useEffect(() => {
     void window.desk.getSettings().then((s) => {
-      setPlatforms(s.defaultPlatforms ?? []);
+      // her choice, else her accounts' platforms, else the international pair - international first (Create agrees)
+      setPlatforms(homePlatforms(s.defaultPlatforms, Object.keys(s.accounts ?? {}).filter((k) => (s.accounts[k] ?? []).length)));
       setAuto(s.autopilot !== false);
     });
   }, []);
@@ -158,6 +164,8 @@ export function Home() {
           const r = await (latest.current ?? client).startIntake(p.prompt, p.files, platforms ?? undefined, getLang(), {
             mode: auto ? 'autopilot' : 'ask',
             sampleName: p.sample ? t('sample.projectName') : undefined,
+            // a fixed intent (the sample, the talking-head start as written): no ~2 min planning call
+            recipe: p.sample || FIXED_STARTS.some((k) => t(k) === p.prompt.trim()) ? 'talkinghead' : undefined,
           });
           // the request is a project now (All projects lists it): Home is free for the next one
           const name = p.prompt.trim() ? p.prompt.trim().slice(0, 40) + (p.prompt.trim().length > 40 ? '…' : '') : base(p.files[0] ?? '');
@@ -621,7 +629,7 @@ function RunCard({ i }: { i: HistoryItem }) {
           <b className="clamp1">{i.name}</b>
         </div>
         <div className="row1 muted">
-          <span className="clamp1">{i.live?.message || i.live?.stage || ''}</span>
+          <span className="clamp1">{liveText(i.live) || liveStep(i.live)}</span>
           <span className="sp" />
           {eta ? <span className="num">{t('time.minutes', { n: Math.max(1, Math.round(eta / 60)) })}</span> : null}
         </div>
@@ -691,7 +699,7 @@ function ContinueTile({ i }: { i: HistoryItem }) {
   const left = i.counts ? i.counts.total - Math.max(i.counts.done, i.counts.approved) : 0;
   const line =
     i.live?.state === 'running'
-      ? `${t('status.running')}${i.live.message ? ` · ${i.live.message}` : ''}`
+      ? [t('status.running'), liveText(i.live) || liveStep(i.live)].filter(Boolean).join(' · ')
       : asks
         ? t('home.tile.asks', { n: asks })
         : left > 0 && i.counts.total
@@ -721,11 +729,14 @@ function ContinueTile({ i }: { i: HistoryItem }) {
 
 /** Project card used in 全部项目 (the whole card is the link). */
 /** ``note`` replaces the "updated" date (the archived date under 已归档). */
-export function ProjectTile({ i, onContext, note }: { i: HistoryItem; onContext?: (e: React.MouseEvent) => void; note?: string }) {
+export function ProjectTile({ i, onContext, note, posts }: { i: HistoryItem; onContext?: (e: React.MouseEvent) => void; note?: string; posts?: CalendarPost[] }) {
   const inbox = useInbox();
   const raw = itemStatus(i);
-  // never 「已完成」 while the inbox holds a decision for it
-  const s = raw === 'done' && inbox.items.some((x) => x.project.id === i.id && x.kind !== 'failed') ? 'you' : raw;
+  const asks = inbox.items.some((x) => x.project.id === i.id && x.kind !== 'failed');
+  // the control room's words: needs you while the inbox holds a question for it; scheduled / out once it has posts
+  const s = (raw === 'done' || raw === 'run') && asks ? 'you' : raw;
+  const p = posts ? itemPipeline(i, posts, asks) : null;
+  const label = s === 'done' && p && (p.state === 'scheduled' || p.state === 'out') ? t(`hub.s.${p.state}`) : undefined;
   const typeKey = `type.${i.type ?? 'other'}`;
   return (
     <a className="pcard" href={projectHref(i.id)} onContextMenu={onContext} data-testid="project-card">
@@ -735,7 +746,7 @@ export function ProjectTile({ i, onContext, note }: { i: HistoryItem; onContext?
         <span className="clamp1">
           {tk(typeKey) === typeKey ? t('type.other') : tk(typeKey)} · {note ?? fmtAgo(i.updated)}
         </span>
-        <StatusPill s={s} />
+        <StatusPill s={s} label={label} />
       </div>
       <LiveCardLine live={i.live} />
       <ArrowRight className="sr" />

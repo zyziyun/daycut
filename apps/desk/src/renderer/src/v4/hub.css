@@ -56,6 +56,7 @@
 .hub-clip .th { border-radius: 8px; overflow: hidden; }
 .hub-clip .t { font-size: 13px; }
 .hub-clip .q { font-size: 12px; }
+.hub-clip .q.bad { color: var(--danger); }
 .hub-clip.off { opacity: 0.55; }
 a.hub-clip:hover .th { outline: 2px solid var(--accent); outline-offset: 1px; }
 
@@ -63,3 +64,9 @@ a.hub-clip:hover .th { outline: 2px solid var(--accent); outline-offset: 1px; }
   .hub { grid-template-columns: 260px minmax(0, 1fr); }
   .hub-detail { padding: var(--s2); }
 }
+/* 「看过程」: the run's last steps in words */
+.hub-feed { list-style: none; margin: 10px 0 0; padding: 8px 0 0; border-top: 1px solid var(--border); display: grid; gap: 3px; font-size: 12px; }
+.hub-feed li { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 8px; }
+.hub-feed li .ln { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hub-feed li.bad .ln { color: var(--danger); }
+.hub-feedbtn { margin-left: 4px; }

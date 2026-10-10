@@ -3,8 +3,9 @@
 // project page and the All-projects card show it instead of a static "Working on it": the message, the step, the
 // progress and how fresh the heartbeat is. Pure (unit-tested).
 import type { LiveStatus } from '../../../shared/v02';
-import type { InboxItem } from '../../../shared/v04';
-import { t } from '../i18n';
+import type { Clip, InboxItem } from '../../../shared/v04';
+import { has, t, tk, type MessageKey } from '../i18n';
+import { stepOfLive } from './pipeline';
 
 /** A heartbeat older than this reads "no update for …" instead of "updated … ago". */
 export const STALE_S = 120;
@@ -19,15 +20,73 @@ export interface LiveLine {
   stale: boolean;
 }
 
-/** The live line for a project, or null when there is nothing live to say (no message, step or progress). */
+/** The engine's status line in her words: "Clip 2 of 3", "Waiting for you: look before posting", or the free text an
+ * agent wrote (never the engine's own "0/1 jobs" / "checkpoint: publish"). */
+export function liveText(live: LiveStatus | null | undefined): string {
+  if (!live) return '';
+  const p = (live.params ?? {}) as Record<string, unknown>;
+  const n = (k: string) => (typeof p[k] === 'number' ? (p[k] as number) : 0);
+  switch (live.code) {
+    case 'jobs': {
+      const total = n('total');
+      if (!total) return '';
+      return live.state === 'running' ? t('live.c.jobs', { k: Math.min(total, n('done') + 1), n: total, done: n('done') }) : t('live.c.jobsDone', { done: n('done'), n: total });
+    }
+    case 'finished':
+      return t('live.c.finished', { n: n('n') });
+    case 'some-failed':
+      return t('live.c.someFailed', { n: n('n') });
+    case 'items-failed':
+      return t('live.c.itemsFailed', { n: n('n') });
+    case 'checkpoint': {
+      const kinds = Array.isArray(p.kinds) ? (p.kinds as unknown[]).map(String) : [];
+      const words = kinds.map((k) => (has(`checkpoint.${k}`) ? tk(`checkpoint.${k}`) : null)).filter((x): x is string => !!x);
+      return words.length ? t('live.c.checkpoint', { what: [...new Set(words)].join(' · ') }) : t('live.c.waiting');
+    }
+    case 'deciding': {
+      const k = String(p.kind ?? '');
+      return t('live.c.deciding', { what: has(`checkpoint.${k}`) ? tk(`checkpoint.${k}`) : t('hub.decisionOther') });
+    }
+    case 'waiting':
+    case 'paused':
+      return t('live.c.waiting');
+    case 'pilot':
+      return t('live.c.pilot');
+    case 'over-budget':
+      return t('live.c.overBudget');
+    case 'done':
+      return t('live.c.done');
+    default:
+      return (live.message ?? '').trim();
+  }
+}
+
+/** Which clip something is about, by its title (「一次录完」) or its place (第 2 条) - never the job id. */
+export function clipWords(id: string | null | undefined, clips: Pick<Clip, 'id' | 'title'>[]): string | null {
+  if (!id || id === '*') return null;
+  const k = clips.findIndex((c) => c.id === id);
+  if (k < 0) return null;
+  const title = clips[k].title?.trim();
+  return title && title !== id ? t('hub.clipNamed', { title }) : t('hub.clipN', { n: k + 1 });
+}
+
+/** The step a live run is at, in words ("Captions"), or '' when the engine did not say. */
+export function liveStep(live: LiveStatus | null | undefined): string {
+  const s = stepOfLive(live);
+  return s ? t(`hub.step.${s}` as MessageKey) : '';
+}
+
+/** The live line for a project, or null when there is nothing live to say (no message, step or progress). Waiting
+ * shows no step / percentage / "no update for …" (nothing is stuck while it waits for her). */
 export function liveLine(live: LiveStatus | null | undefined, now = Date.now() / 1000): LiveLine | null {
   if (!live || (live.state !== 'running' && live.state !== 'waiting')) return null;
-  const message = (live.message ?? '').trim();
-  const stage = (live.stage ?? '').trim();
-  const p = typeof live.progress === 'number' && isFinite(live.progress) ? live.progress : null;
+  const running = live.state === 'running';
+  const message = liveText(live);
+  const stage = running ? liveStep(live) : '';
+  const p = running && typeof live.progress === 'number' && isFinite(live.progress) ? live.progress : null;
   if (!message && !stage && p == null) return null;
   const pct = p == null ? null : Math.round(Math.min(1, Math.max(0, p > 1 ? p / 100 : p)) * 100);
-  const age = live.heartbeat ? Math.max(0, now - live.heartbeat) : (live.age ?? null);
+  const age = !running ? null : live.heartbeat ? Math.max(0, now - live.heartbeat) : (live.age ?? null);
   return { message, stage, pct, age, stale: age != null && age > STALE_S };
 }
 

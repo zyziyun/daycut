@@ -155,7 +155,7 @@ def parse_prompt(text):
     sub = subtitles_of(t)
     if sub:
         intent.update(sub)
-    tl = SUB_LANG_RX.sub(" ", t)                      # "中英字幕" / "Chinese and English subtitles" name captions, not speech
+    tl = SUB_LANG_AFTER_RX.sub(" ", SUB_LANG_RX.sub(" ", t))   # "中英字幕" / "字幕用英文" name captions, not speech
     if re.search(r"英文|英语|english", tl):
         intent["language"] = "en"
     elif re.search(r"中文|普通话", tl):
@@ -192,6 +192,10 @@ SUB_LANG_RX = re.compile(r"(?:中英(?:文)?|英中|中文和英文|英文和中
                          r"(?:的)?\s*(?:字幕|subtitles?|captions?|subs)", re.I)
 
 
+SUB_LANG_AFTER_RX = re.compile(r"(?:字幕|subtitles?|captions?|subs)\s*(?:用|要|要用|是|in)\s*(?:中文|汉语|英文|英语|chinese|english)",
+                               re.I)
+
+
 def subtitles_of(t):
     """Caption language wishes -> {subtitles: mono|bilingual|translated, subtitle_lang?}."""
     t = (t or "").lower()
@@ -209,6 +213,12 @@ def subtitles_of(t):
         return dict(subtitles="bilingual")
     if re.search(r"不要翻译|不用翻译|只要原文字幕|no translation|source[- ]language only", t):
         return dict(subtitles="mono")
+    # plain "加中文字幕" / "English captions": the language the captions are in (the speech may be another one -
+    # the export translates then; same language = the transcript as it is)
+    m = re.search(r"(中文|汉语|简体|chinese|英文|英语|english)\s*(?:的)?\s*(?:字幕|subtitles?|captions?|subs)\b", t) or \
+        re.search(r"(?:字幕|subtitles?|captions?|subs)\s*(?:用|要|in)\s*(中文|汉语|chinese|英文|英语|english)", t)
+    if m:
+        return dict(subtitle_lang="zh" if re.match(r"中|汉|简|chinese", m.group(1)) else "en")
     return {}
 
 

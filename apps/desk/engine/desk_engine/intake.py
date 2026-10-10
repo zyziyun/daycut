@@ -308,12 +308,14 @@ class Intake:
         return dict(ok=True, id=pid)
 
     # ---------------------------------------------------------- plan / revise
-    def start(self, prompt, inputs, platforms=None, lang=None, mode=None, sample_name=None):
+    def start(self, prompt, inputs, platforms=None, lang=None, mode=None, sample_name=None, recipe=None):
         """``platforms``: the composer's platform chip (used when the request names none); ``lang``: the UI's
         language, the one the card's questions are written in. ``mode``: autopilot | ask (a project from Home, see
         the module doc; None: a plan card of its own, e.g. the week plan's); ``sample_name``: the built-in sample's
-        projects are named so (labelled and deletable)."""
+        projects are named so (labelled and deletable). ``recipe``: the request's intent is fixed (the recorder's
+        「做成口播」, Home's talking-head start): planned by the rules for that recipe, no model call."""
         lang = ui_lang(lang)
+        need(recipe is None or (isinstance(recipe, str) and re.match(r"^[a-z][a-z0-9-]{1,40}$", recipe)), "recipe: id")
         need(mode in (None, "autopilot", "ask"), "mode: autopilot | ask")
         need(sample_name is None or (isinstance(sample_name, str) and 0 < len(sample_name) <= 80), "sample_name")
         need(platforms is None or (isinstance(platforms, list) and len(platforms) <= 20 and
@@ -322,7 +324,7 @@ class Intake:
         pid = hashlib.sha1(f"{prompt}\0{inputs}\0{time.time()}".encode()).hexdigest()[:12]
         self._set(pid, id=pid, state="running", step="analyze", prompt=prompt, inputs=inputs, plan=None, error=None,
                   started=time.time(), op_started=time.time(), seconds=None, platforms=platforms or None,
-                  progress=None, lang=lang, mode=mode, sample_name=sample_name)
+                  progress=None, lang=lang, mode=mode, sample_name=sample_name, recipe=recipe)
         if mode and self.bus:
             self.bus.publish("batches")
         threading.Thread(target=self._plan, args=(pid, prompt, inputs), daemon=True).start()
@@ -383,6 +385,8 @@ class Intake:
             args += ["--inputs", *inputs]
         if (self.jobs.get(pid) or {}).get("ignore_needs"):
             args += ["--ignore-needs"]
+        if (self.jobs.get(pid) or {}).get("recipe"):
+            args += ["--recipe", self.jobs[pid]["recipe"]]
         args += self._lang_args(pid)
         self._set(pid, step="plan")
         plan = self._run(pid, args, timeout=1800)

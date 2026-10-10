@@ -71,14 +71,5 @@ p = Project.create(os.path.join(ROOT, "projects", "talk"), recipe="talkinghead",
                    spec=dict(plugins=["vstudio.project.registry", "_batch_helpers"], plugin_paths=[TESTS],
                              asr=dict(transcriber="_batch_helpers:fake_transcriber"), proofread=dict(enabled=False)))
 r = p.run(pilot=1 if PILOT else None, autopilot=True if AUTO else None)
-if AUTO and r["status"] == "done":
-    # the clip editor's words for the made clip (what "Listen to this clip" would hear): the cleaned body's words
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    import out_words  # noqa: E402
-    from vstudio.project import outputs as O  # noqa: E402
-    O.TRANSCRIBE = out_words.words
-    for o in O.list_outputs(p.dir)["outputs"]:
-        _rec, doc = O._load(p.dir, o["id"])
-        O.words(doc)
 print(json.dumps(dict(dir=p.dir, truth=tp, plugin_path=TESTS, status=r["status"], items=[i["id"] for i in p.data["items"]],
                       pending=[(x["item"], x["id"]) for x in r["pending"]]), ensure_ascii=False))

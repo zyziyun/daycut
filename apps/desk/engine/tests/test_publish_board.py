@@ -52,8 +52,12 @@ class Board(unittest.TestCase):
         p = next(x for x in ps if x["platform"] == "xiaohongshu")
         self.assertEqual(p["status"], "draft")
         self.assertTrue(p["enabled"])
-        self.assertIn("同一个行业待越久，思路越窄", p["caption"])          # the clip's post copy
+        self.assertNotIn("同一个行业待越久，思路越窄", p["caption"])       # 小红书 has a title field: not repeated
+        self.assertEqual(p["title"], "同一个行业待越久，思路越窄")           # the AI's title is the clip's title
+        self.assertIn("正文第一段", p["caption"])                          # the clip's post copy
         self.assertIn("#副业", p["caption"])
+        x = next(x for x in ps if x["platform"] == "x")
+        self.assertTrue(x["caption"].startswith("同一个行业待越久，思路越窄"))  # X has no title field: it leads
         self.assertFalse(p["caption_custom"])
         self.assertEqual(p["limit"], 1000)
         self.assertEqual(p["project"], "fuye")
@@ -175,7 +179,10 @@ class TitleAndPostedTest(Board):
         self.assertEqual(ps[xhs]["title_length"], 10)
         self.assertTrue(ps[yt]["title_custom"])
         self.assertEqual(ps[yt]["platform_title"], "Even a small creator is a creator")
-        self.assertEqual(ps[yt]["title"], original)              # the card's title is untouched
+        self.assertEqual(ps[yt]["title"], "再小的博主，也是博主")  # one title per clip: every card follows
+        self.assertEqual(ps[yt]["platform_title"], "Even a small creator is a creator")   # her own one still wins
+        clip = next(c for c in self.o.clips(self.item)["clips"] if c["id"] == A)
+        self.assertEqual((clip["title"], clip["title_custom"]), ("再小的博主，也是博主", True))   # the editor header
         self.assertEqual(ps[yt]["title_limit"], 100)
         # 小红书 counts CJK as 1, latin as 0.5: 21 CJK characters are over, 30 latin letters are not
         self.cal.update(xhs, dict(platform_title="一" * 21))
@@ -192,6 +199,7 @@ class TitleAndPostedTest(Board):
         self.assertFalse(p["title_custom"])
         self.cal.update(xhs, dict(title=None))
         self.assertEqual(next(x for x in self.posts() if x["id"] == xhs)["title"], original)
+        self.assertFalse(next(c for c in self.o.clips(self.item)["clips"] if c["id"] == A)["title_custom"])
 
     def test_posts_only_skips_the_queue_scan(self):
         self.cal.add_many([dict(item=self.item, clip=A, platform="xiaohongshu", at="2026-10-07T20:00")])
@@ -257,6 +265,11 @@ class ParseTest(unittest.TestCase):
         self.assertEqual(post_text(dict(title="标题", body="正文", tags=["a", "b"])), "标题\n\n正文\n\n#a #b")
         self.assertEqual(post_text(dict(title="标题", body="正文 #a", tags=["a"])), "标题\n\n正文 #a")
         self.assertEqual(post_text(None), "")
+        # a platform with a title field gets the title there, not again as the text's first line; X leads with it
+        self.assertEqual(post_text(dict(title="标题", body="正文", tags=["a"]), "youtube"), "正文\n\n#a")
+        self.assertEqual(post_text(dict(title="标题", body="正文", tags=["a"]), "xiaohongshu:vertical"), "正文\n\n#a")
+        self.assertEqual(post_text(dict(title="标题", body="正文", tags=["a"]), "x"), "标题\n\n正文\n\n#a")
+        self.assertEqual(post_text(dict(title="标题", body="", tags=["a"]), "youtube"), "标题\n\n#a")   # no body: never empty
         n, lim = text_limit("x", "中文ab")
         self.assertEqual((n, lim), (6, 280))
         self.assertEqual(text_limit("xiaohongshu:vertical", "abc")[1], 1000)

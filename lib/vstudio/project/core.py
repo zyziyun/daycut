@@ -92,13 +92,24 @@ class ProjectRunner(Runner):
         self._progress()
 
 
+def _live_deciding(pdir, p, item):
+    """On autopilot the AI answers a question between rounds (picks the cover, the hook ...): the live status says so,
+    at that question's step - not the plan step, and not "done" while the run goes on."""
+    from vstudio.batch import livestatus as LS
+    kind = p.get("kind") or p.get("id") or "checkpoint"
+    LS.write(pdir, "running", by="project", stage=f"cp_{kind}", message=f"deciding: {kind}", live_code="deciding",
+             live_params=dict(kind=kind, item=item))
+
+
 def _live_end(pdir, code, pend, failed):
     """The project's live status after a run (desk app 进行中 lane): needs-you at a checkpoint, done, failed."""
     from vstudio.batch import livestatus as LS
     if code == EXIT["waiting"] or code in (EXIT["paused"], EXIT["pilot"]):
         ids = sorted({p.get("id") for p in pend if p.get("id")})
-        LS.write(pdir, "waiting", needs_you=True, by="project",
-                 message=("checkpoint: " + ", ".join(ids)) if ids else "waits for you (pilot review / paused)")
+        kinds = sorted({p.get("kind") for p in pend if p.get("kind")})
+        LS.write(pdir, "waiting", needs_you=True, by="project", stage=f"cp_{kinds[0]}" if kinds else "",
+                 message=("checkpoint: " + ", ".join(ids)) if ids else "waits for you (pilot review / paused)",
+                 live_code="checkpoint" if ids else "waiting", live_params=dict(ids=ids, kinds=kinds) if ids else None)
     elif code == EXIT["failed"]:
         LS.write(pdir, "failed", by="project", message=f"{len(failed)} item(s) failed")
     elif code == EXIT["done"]:
@@ -530,6 +541,7 @@ class Project:
                     target = "*" if p["scope"] == "project" else p["item"]
                     if (p["id"], target) in blocked:
                         continue
+                    _live_deciding(self.dir, p, target)
                     d = AP.decide(self, p, complete=judge)
                     if d.get("blocker"):
                         blocked.add((p["id"], target))
@@ -554,7 +566,7 @@ class Project:
                 if d:
                     AP.log(self, dict(event="decided", checkpoint=p["id"], kind=p.get("kind"), item=target,
                                       value=value, **AP.answer_meta(d), ai_error=d.get("ai_error")))
-                emit(dict(event="auto-answer", ts=now(), checkpoint=p["id"], item=target, value=value,
+                emit(dict(event="auto-answer", ts=now(), checkpoint=p["id"], kind=p.get("kind"), item=target, value=value,
                           **({"by": d["by"], "reason": d.get("reason")} if d else {})))
             self.plan()
             rounds += 1

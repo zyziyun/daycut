@@ -58,7 +58,7 @@ export function GeneralSection({ settings: s, save, onChange }: SettingsCtx) {
       <LiteCard />
       <Group title={t('s2.appearance')} testId="settings-appearance">
         <Row label={t('s2.language')} hint={t('s2.languageHint')}>
-          <Segmented value={s.lang} onChange={(l) => void save({ lang: l })} options={LANGS.map((l) => ({ v: l, label: LOCALES[l].label, testId: `lang-${l}` }))} testId="settings-lang" />
+          <Segmented value={s.lang} onChange={(l) => void save({ lang: l })} options={LANGS.map((l) => ({ v: l, label: LOCALES[l].label, testId: `lang-${l}`, lang: LOCALES[l].intl }))} testId="settings-lang" />
         </Row>
         <Row label={t('s2.theme')}>
           <Segmented

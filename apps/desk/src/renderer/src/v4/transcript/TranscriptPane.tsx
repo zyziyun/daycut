@@ -5,14 +5,16 @@
 // dotted underline, caption-only fixes with a teal underline (E / double-click), applied cuts collapsed to a small
 // "✂ cut 2.7 s" marker. Words are spans with data-i; the selection is word indices, never the browser's.
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { AudioLines, Pencil, Play, RotateCcw, Scissors, Trash2 } from 'lucide-react';
+import { AudioLines, ListPlus, Pencil, Play, RotateCcw, Scissors, Trash2 } from 'lucide-react';
 import type { OutputDoc, TextMark, Word } from '../../../../shared/v04';
 import type { TranscribeState } from '../../../../shared/timeline';
 import { fmtClock, t } from '../../i18n';
-import { appliedRuns, draftSpans, joinWords, paragraphs, selectionInfo, spaceBefore, textLang, toggleGap, toggleRange, wordIndexAt, type Drafts } from '../../lib/transcript';
+import { appliedRuns, draftSpans, gapCuts, joinWords, paragraphs, selectionInfo, spaceBefore, textLang, toggleGap, toggleRange, wordIndexAt, type Drafts } from '../../lib/transcript';
 import { listenEstimate } from '../../lib/timeline';
 import { FixWordPopover } from './FixWordPopover';
 import { TranscriptMinimap } from './TranscriptMinimap';
+import { pickupWords } from '../pickup/pickupModel';
+import '../pickup/pickup.css';
 import './transcript.css';
 
 export interface TranscriptApi {
@@ -34,12 +36,16 @@ interface Props {
   fixWhyNot?: string;
   onFix: (i: number, text: string) => Promise<boolean>;
   onRestoreCut: (index: number) => void;
+  /** bring back several applied cuts at once (the selection bar's Restore) */
+  onRestoreCuts?: (indexes: number[]) => void;
   transcribe?: { state: TranscribeState; start: () => void } | null;
   /** search hits (word indices) from the ⌘F box */
   hits?: Set<number>;
   apiRef?: React.MutableRefObject<TranscriptApi | null>;
   onSelection?: (has: boolean) => void;
   onDiscardAll?: () => void;
+  /** record a pickup in place of the selected words (replace) or right after them (insert) */
+  onPickup?: (sel: { a: number; b: number }, kind: 'replace' | 'insert') => void;
 }
 
 type Sel = { a: number; b: number } | null;
@@ -50,6 +56,8 @@ export function TranscriptPane(p: Props) {
   const body = useRef<HTMLDivElement | null>(null);
   const [sel, setSelS] = useState<Sel>(null);
   const [fix, setFix] = useState<number | null>(null);
+  /** the cut marker whose Restore popover was clicked open (stays open without hovering) */
+  const [openCut, setOpenCut] = useState<number | null>(null);
   const [view, setView] = useState<[number, number]>([0, 0]);
   const anchor = useRef<number | null>(null);
   const dragging = useRef(false);
@@ -62,6 +70,8 @@ export function TranscriptPane(p: Props) {
   const lowconf = useMemo(() => new Set([...marks.filter((m) => m.kind === 'lowconf').flatMap((m) => range(m.i0, m.i1)), ...words.flatMap((w, i) => (w.p != null && w.p < 0.5 ? [i] : []))]), [marks, words]);
   const pauses = useMemo(() => new Map(marks.filter((m) => m.kind === 'pause').map((m) => [m.i0, m] as [number, TextMark])), [marks]);
   const applied = useMemo(() => appliedRuns(words, doc.cuts), [words, doc.cuts]);
+  const picked = useMemo(() => pickupWords(words, doc.pickups), [words, doc.pickups]);
+  const shortened = useMemo(() => gapCuts(words, doc.cuts), [words, doc.cuts]);
   const hidden = useMemo(() => {
     const s = new Set<number>();
     for (const r of applied.values()) for (let i = r.i0; i <= r.i1; i++) s.add(i);
@@ -75,6 +85,8 @@ export function TranscriptPane(p: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [p.onSelection],
   );
+  // other words (a pickup spliced in, a new transcript): a selection by index would point at the wrong words
+  useEffect(() => setSel(null), [doc.words_sig, setSel]);
   const lo = sel ? Math.min(sel.a, sel.b) : -1;
   const hi = sel ? Math.max(sel.a, sel.b) : -1;
 
@@ -197,6 +209,10 @@ export function TranscriptPane(p: Props) {
         e.preventDefault();
         cut();
       }
+    } else if ((e.key === 'r' || e.key === 'R') && !mod && !e.altKey && sel && p.onPickup) {
+      e.preventDefault();
+      e.stopPropagation();
+      p.onPickup({ a: lo, b: hi }, e.shiftKey ? 'insert' : 'replace');
     } else if ((e.key === 'e' || e.key === 'E') && !mod && !e.altKey && sel) {
       e.preventDefault();
       e.stopPropagation();
@@ -225,14 +241,49 @@ export function TranscriptPane(p: Props) {
 
   // floating selection bar, above the first selected word
   const [barPos, setBarPos] = useState<{ x: number; y: number } | null>(null);
+  const bar = useRef<HTMLDivElement | null>(null);
+  const placed = barPos != null; // placed once more with the bar's real width
   useLayoutEffect(() => {
     if (!sel || !body.current) return setBarPos(null);
     const w = body.current.querySelector(`.w[data-i="${lo}"]`) as HTMLElement | null;
     if (!w) return setBarPos(null);
-    setBarPos({ x: Math.max(8, w.offsetLeft - 8), y: w.offsetTop - 46 });
-  }, [sel, lo]);
+    // above the first selected word; below it on the first line; never past the right edge
+    const width = bar.current?.offsetWidth ?? 0;
+    const room = body.current.clientWidth - width - 8;
+    const above = w.offsetTop - 46;
+    setBarPos({ x: Math.max(8, Math.min(w.offsetLeft - 8, room)), y: above >= body.current.scrollTop ? above : w.offsetTop + w.offsetHeight + 6 });
+  }, [sel, lo, placed]);
   const info = sel ? selectionInfo(words, lo, hi) : null;
   const allPending = sel ? range(lo, hi).every((i) => i in drafts.words) : false;
+  const onRestoreCut = p.onRestoreCut;
+  const restoreCut = useCallback(
+    (i: number) => {
+      setOpenCut(null);
+      onRestoreCut(i);
+    },
+    [onRestoreCut],
+  );
+  const toggleCut = useCallback((i: number) => setOpenCut((c) => (c === i ? null : i)), []);
+  // a clicked-open marker popover closes on Esc or a click anywhere else
+  useEffect(() => {
+    if (openCut == null) return;
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      setOpenCut(null);
+    };
+    const down = (e: PointerEvent) => {
+      if (!(e.target as HTMLElement | null)?.closest?.('.cutmark')) setOpenCut(null);
+    };
+    window.addEventListener('keydown', key, true);
+    window.addEventListener('pointerdown', down, true);
+    return () => {
+      window.removeEventListener('keydown', key, true);
+      window.removeEventListener('pointerdown', down, true);
+    };
+  }, [openCut]);
+  // applied cuts inside the selection: the bar brings them back (the marker's popover does one at a time)
+  const cutsInSel = sel ? [...applied.values()].filter((r) => r.i0 >= lo && r.i1 <= hi).map((r) => r.cut.index) : [];
   const spans = useMemo(() => draftSpans(words, drafts), [words, drafts]);
 
   if (!words.length) {
@@ -298,18 +349,34 @@ export function TranscriptPane(p: Props) {
             lowconf={lowconf}
             pauses={pauses}
             applied={applied}
+            picked={picked}
+            shortened={shortened}
             hidden={hidden}
             fixed={p.fixed}
             hits={p.hits}
             hkey={p.hits ? hitKey(p.hits, pa.i0, pa.i1) : ''}
             onGap={(i) => setDrafts((d) => toggleGap(d, i))}
             onRestoreWords={(a, b) => setDrafts((d) => toggleRange(d, a, b))}
-            onRestoreCut={p.onRestoreCut}
+            onRestoreCut={restoreCut}
+            openCut={openCut}
+            onToggleCut={toggleCut}
             onSeek={p.seek}
           />
         ))}
         {sel && barPos && info && fix == null && (
-          <div className="tp-selbar" style={{ left: barPos.x, top: Math.max(0, barPos.y) }} onPointerDown={(e) => e.stopPropagation()} data-testid="selection-bar">
+          <div className="tp-selbar" ref={bar} style={{ left: barPos.x, top: Math.max(0, barPos.y) }} onPointerDown={(e) => e.stopPropagation()} data-testid="selection-bar">
+            {cutsInSel.length > 0 && p.onRestoreCuts && (
+              <button
+                onClick={() => {
+                  p.onRestoreCuts?.(cutsInSel);
+                  setSel(null);
+                }}
+                data-testid="sel-restore-cuts"
+              >
+                <RotateCcw className="ico" />
+                {t('st.restoreCuts', { n: cutsInSel.length })}
+              </button>
+            )}
             <button className="danger" onClick={cut} data-testid="sel-delete">
               {allPending ? <RotateCcw className="ico" /> : <Trash2 className="ico" />}
               {allPending ? t('te.restore') : t('te.delete')}
@@ -320,6 +387,20 @@ export function TranscriptPane(p: Props) {
               {t('te.fixText')}
               <span className="kbd">E</span>
             </button>
+            {p.onPickup && (
+              <>
+                <button className="rec" onClick={() => p.onPickup?.({ a: lo, b: hi }, 'replace')} title={t('pk.rerecordTip')} data-testid="sel-rerecord">
+                  <span className="dot" />
+                  {t('pk.rerecord')}
+                  <span className="kbd">R</span>
+                </button>
+                <button onClick={() => p.onPickup?.({ a: lo, b: hi }, 'insert')} title={t('pk.addAfterTip')} data-testid="sel-add-after">
+                  <ListPlus className="ico" />
+                  {t('pk.addAfter')}
+                  <span className="kbd">⇧R</span>
+                </button>
+              </>
+            )}
             <button onClick={() => p.playFrom(words[lo].t)} data-testid="sel-play">
               <Play className="ico" />
               {t('te.playFrom')}
@@ -354,6 +435,15 @@ export function TranscriptPane(p: Props) {
   );
 }
 
+/** "✂ retake 4.1 s" / "✂ um 0.4 s" / "✂ pause 1.2 s" for the recording's automatic cuts, else "✂ cut 2.7 s". */
+function cutLabel(why: string | undefined, secs: number): string {
+  const s = secs.toFixed(1);
+  if (why === 'retake') return t('pk.cut.retake', { s });
+  if (why === 'filler') return t('pk.cut.filler', { s });
+  if (why === 'pause') return t('pk.cut.pause', { s });
+  return t('te.cutMark', { s });
+}
+
 const range = (a: number, b: number) => Array.from({ length: Math.max(0, b - a + 1) }, (_, k) => a + k);
 
 function draftKeyOf(d: Drafts, a: number, b: number): string {
@@ -384,6 +474,8 @@ interface ParaProps {
   lowconf: Set<number>;
   pauses: Map<number, TextMark>;
   applied: ReturnType<typeof appliedRuns>;
+  picked: Map<number, number>;
+  shortened: ReturnType<typeof gapCuts>;
   hidden: Set<number>;
   fixed: Record<number, string>;
   hits?: Set<number>;
@@ -391,6 +483,8 @@ interface ParaProps {
   onGap: (i: number) => void;
   onRestoreWords: (a: number, b: number) => void;
   onRestoreCut: (index: number) => void;
+  openCut: number | null;
+  onToggleCut: (index: number) => void;
   onSeek: (t: number) => void;
 }
 
@@ -403,9 +497,18 @@ const Para = memo(
       if (run) {
         const secs = run.cut.end - run.cut.start;
         out.push(
-          <span key={`c${i}`} className="cutmark" data-cut={run.cut.index} data-testid="cut-marker">
+          <span
+            key={`c${i}`}
+            className={`cutmark${p.openCut === run.cut.index ? ' open' : ''}`}
+            data-cut={run.cut.index}
+            data-testid="cut-marker"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              if (!(e.target as HTMLElement).closest('.cm-pop')) p.onToggleCut(run.cut.index);
+            }}
+          >
             <Scissors className="ico" />
-            {t('te.cutMark', { s: secs.toFixed(1) })}
+            {cutLabel(run.cut.why, secs)}
             <span className="cm-pop" onPointerDown={(e) => e.stopPropagation()}>
               <s lang={textLang(joinWords(p.words, run.i0, run.i1))}>{joinWords(p.words, run.i0, run.i1)}</s>
               <button onClick={() => p.onRestoreCut(run.cut.index)} data-testid="cut-marker-restore">
@@ -431,6 +534,14 @@ const Para = memo(
       if (p.fixed[i] != null) cls.push('fx');
       if (p.sel && i >= p.sel[0] && i <= p.sel[1]) cls.push('sel');
       if (p.hits?.has(i)) cls.push('hit');
+      const pk = p.picked.get(i);
+      if (pk) cls.push('pk');
+      if (pk && p.picked.get(i - 1) !== pk)
+        out.push(
+          <span key={`pk${i}`} className="pktag" data-testid="pickup-tag">
+            {t('pk.tag', { n: pk })}
+          </span>,
+        );
       const sp = spaceBefore(p.words[i - 1], w) && i > p.i0 ? ' ' : '';
       // the first pending word of a run carries the hover Restore
       const first = pend && !p.drafts.words[i - 1];
@@ -448,6 +559,16 @@ const Para = memo(
           )}
         </span>,
       );
+      const done = p.shortened.get(i);
+      if (done && i < p.i1) {
+        out.push(
+          <button key={`g${i}`} className="gap p applied" onPointerDown={(e) => e.stopPropagation()} onClick={() => p.onRestoreCut(done.index)} title={t('pk.pauseRestore')} data-testid="pause-cut">
+            {cutLabel(done.why ?? 'pause', done.end - done.start)}
+          </button>,
+        );
+        i++;
+        continue;
+      }
       const gap = p.pauses.get(i);
       if (gap && i < p.i1) {
         const on = p.drafts.gaps.includes(i);
@@ -468,5 +589,5 @@ const Para = memo(
       </div>
     );
   },
-  (a, b) => a.sel?.[0] === b.sel?.[0] && a.sel?.[1] === b.sel?.[1] && a.dkey === b.dkey && a.hkey === b.hkey && a.words === b.words && a.applied === b.applied && a.fixed === b.fixed && a.fillers === b.fillers && a.lowconf === b.lowconf && a.pauses === b.pauses && a.onRestoreCut === b.onRestoreCut,
+  (a, b) => a.sel?.[0] === b.sel?.[0] && a.sel?.[1] === b.sel?.[1] && a.dkey === b.dkey && a.hkey === b.hkey && a.words === b.words && a.applied === b.applied && a.picked === b.picked && a.shortened === b.shortened && a.fixed === b.fixed && a.fillers === b.fillers && a.lowconf === b.lowconf && a.pauses === b.pauses && a.onRestoreCut === b.onRestoreCut && a.openCut === b.openCut,
 );

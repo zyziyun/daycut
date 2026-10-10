@@ -23,7 +23,8 @@ items:
   sources: [single, files, folder, csv, variants]
   from_input: video
   per_item: [title, body, tags, range, cleanup_reply, hook, cover]
-  shared: [pipeline, edit_style, theme, platforms, speed, hook_speed, cleanup_profile, layout, language, keywords]
+  shared: [pipeline, edit_style, theme, platforms, speed, hook_speed, cleanup_profile, layout, language, keywords, subtitles,
+           subtitle_lang]
   variants: [platform, hook, language]
   share_cache: [probe, extract, asr, glossary]
 engine:
@@ -111,6 +112,16 @@ params:
       title: Speech language
       x-zh: 语言
       x-spec: asr.language
+    subtitles:
+      enum: [mono, bilingual, translated]
+      default: mono
+      title: Captions (mono = in subtitle_lang - the speech's own language unless she asked for another; bilingual = speech + subtitle_lang; translated = subtitle_lang only)
+      x-zh: 字幕（单语 = 字幕语言，默认就是说话的语言；双语 = 原文 + 字幕语言；只要译文）
+    subtitle_lang:
+      enum: [auto, zh, en]
+      default: auto
+      title: Caption language (auto = the speech's language; another one is translated at export)
+      x-zh: 字幕语言（auto = 说话的语言；选别的语言时导出前翻译）
     asr_prompt:
       type: string
       default: ""
@@ -213,7 +224,7 @@ checkpoints:
     scope: item
     after: hooks
     blocks: [cleanup]
-    labels: {zh: "选 hook", en: "Pick the hook"}
+    labels: {zh: "选开头", en: "Pick the hook"}
     help: {zh: "从逐字稿里排好的候选里选冷开场（-1 不加）", en: "Pick the cold open from the ranked transcript sentences (-1: none)"}
     payload: vstudio.project.adapters.common:hook_payload
     apply: vstudio.project.adapters.common:hook_apply
@@ -229,7 +240,7 @@ checkpoints:
     kind: filler-confirm
     scope: item
     after: cleanup
-    labels: {zh: "确认去 filler", en: "Confirm filler cuts"}
+    labels: {zh: "确认去口癖", en: "Confirm filler cuts"}
     help: {zh: "AUTO 已删；CONFIRM 行需要你的确认（可按类型批量）", en: "AUTO rows are cut; CONFIRM rows need a yes (bulk by kind)"}
     payload: vstudio.project.adapters.common:filler_payload
     apply: vstudio.project.adapters.common:filler_apply

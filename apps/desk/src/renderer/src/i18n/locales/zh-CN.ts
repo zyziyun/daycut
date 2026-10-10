@@ -12,6 +12,8 @@ import { weekPlanZh } from './weekPlan';
 import { autopilotZh } from './autopilot';
 import { recordZh } from './record';
 import { fewerStepsZh } from './fewerSteps';
+import { pickupsZh } from './pickups';
+import { studioZh } from './studio';
 import { settingsV2Zh } from './settingsV2';
 import { watermarkZh } from './watermark';
 import { archiveZh } from './archive';
@@ -38,10 +40,10 @@ const v04Zh: Record<keyof typeof v04En, string> = {
   'engine.ready': '本机就绪',
   'engine.demo': '演示模式',
 
-  'status.running': '运行中',
+  'status.running': '进行中',
   'status.you': '需要你',
-  'status.done': '已完成',
-  'status.error': '出错',
+  'status.done': '做好了',
+  'status.error': '停下了',
 
   'time.justNow': '刚刚',
   'time.today': '今天',
@@ -200,9 +202,9 @@ const v04Zh: Record<keyof typeof v04En, string> = {
   'projects.subtitle': '这台电脑上做过的所有视频，点开就能看成片。',
   'projects.new': '新建',
   'projects.f.all': '全部 {n}',
-  'projects.f.running': '运行中 {n}',
+  'projects.f.running': '进行中 {n}',
   'projects.f.you': '需要你 {n}',
-  'projects.f.done': '已完成 {n}',
+  'projects.f.done': '做好了 {n}',
   'projects.search': '搜索项目、标题…',
   'projects.type': '类型',
   'projects.anyType': '全部类型',
@@ -593,4 +595,4 @@ const v04Zh: Record<keyof typeof v04En, string> = {
   'editor.zoomFit': '全部',
 };
 
-export const zhCN: Record<MessageKey, string> = { ...legacyZh, ...legacyZhV02, ...v04Zh, ...aiaccZh, ...publishPlatformsZh, ...chatEditZh, ...channelsZh, ...projectAiZh, ...aboutZh, ...releaseZh, ...publishBoardZh, ...publishLoopZh, ...settingsV2Zh, ...createZh, ...pluginsZh, ...uxCoreZh, ...usageZh, ...weekPlanZh, ...shareZh, ...qaZh, ...firstRunZh, ...liteZh, ...sessionFixesZh, ...watermarkZh, ...archiveZh, ...autopilotZh, ...recordZh, ...fewerStepsZh, ...draftsZh, ...updateZh };
+export const zhCN: Record<MessageKey, string> = { ...legacyZh, ...legacyZhV02, ...v04Zh, ...aiaccZh, ...publishPlatformsZh, ...chatEditZh, ...channelsZh, ...projectAiZh, ...aboutZh, ...releaseZh, ...publishBoardZh, ...publishLoopZh, ...settingsV2Zh, ...createZh, ...pluginsZh, ...uxCoreZh, ...usageZh, ...weekPlanZh, ...shareZh, ...qaZh, ...firstRunZh, ...liteZh, ...sessionFixesZh, ...watermarkZh, ...archiveZh, ...autopilotZh, ...recordZh, ...fewerStepsZh, ...pickupsZh, ...studioZh, ...draftsZh, ...updateZh };

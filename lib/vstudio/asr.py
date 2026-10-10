@@ -68,6 +68,7 @@ GENERIC_TERM_FIXES = [
     (r"readnning|readning", "reasoning"),
     (r"思维导徒", "思维导图"),
     (r"favor out|figur out", "figure out"),
+    (r"(?i)(?<![a-z])(?:re[ae]l-?fold|reel fold)(?![a-z])", "Reelfold"),  # this app's own name ("Realfold", "Reel fold")
 ]
 
 
@@ -78,6 +79,62 @@ def _persona_fixes():
         return ((persona().get("subtitles") or {}).get("term_fixes")) or {}
     except Exception:
         return {}
+
+
+def persona_terms():
+    """Her glossary: the words she says that a speech model gets wrong (her brand, product and people names) -
+    persona ``subtitles.terms`` [str]. Whisper is primed with them and a near-miss spelling is put right."""
+    try:
+        from .config import persona
+        t = (persona().get("subtitles") or {}).get("terms") or []
+        return [str(x).strip() for x in t if str(x).strip()] if isinstance(t, list) else []
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _edits(a, b):
+    """Levenshtein distance (short words: the glossary check)."""
+    if a == b:
+        return 0
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
+def apply_terms(text, terms=None):
+    """A near-miss of one of her glossary words -> the word as she spells it ("Realfold" -> "Reelfold", "reel fold" ->
+    "Reelfold"): latin terms of 5+ letters, same first letter, at most 1 edit (2 from 9 letters on), whole words only;
+    a common English word is never respelt."""
+    from .en_common import is_common
+    terms = persona_terms() if terms is None else terms
+    for term in terms:
+        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9.+-]{4,}", term):
+            continue
+        tl = term.lower()
+        lim = 2 if len(term) >= 9 else 1
+
+        def near(k):
+            return k[:1] == tl[:1] and abs(len(k) - len(tl)) <= lim and _edits(k, tl) <= lim
+
+        def two(m):                                   # "reel fold" / "Real-fold": one word misheard as two
+            k = (m.group(1) + m.group(2)).lower()
+            if is_common(m.group(1).lower()) or is_common(m.group(2).lower()):
+                return term if k == tl else m.group(0)    # "a real fold" stays; only "reel fold" itself joins
+            return term if near(k) else m.group(0)
+
+        def one(m):
+            w = m.group(0)
+            k = w.lower()
+            if k == tl or not near(k) or is_common(k):
+                return w
+            return term
+        text = re.sub(r"(?<![A-Za-z])([A-Za-z]{2,})[ -]([A-Za-z]{2,})(?![A-Za-z])", two, text)
+        text = re.sub(r"(?<![A-Za-z])[A-Za-z]{4,}(?![A-Za-z])", one, text)
+    return text
 
 
 def _compile_fixes(extra=None, generic=True):
@@ -103,6 +160,7 @@ def apply_term_fixes(text, extra=None, generic=True, clean=True):
     """
     for pat, rep in _compile_fixes(extra, generic):
         text = pat.sub(rep, text)
+    text = apply_terms(text)                          # her glossary: near-miss spellings of her own words
     if clean:
         text = re.sub(r"嗯{2,}", "", text)
         text = re.sub(r"(.)\1{4,}", r"\1", text)
@@ -613,6 +671,8 @@ def transcribe(path, language=None, prompt=None, word_timestamps=True, model=Non
     heartbeat("asr", message=os.path.basename(str(path)))          # desk 进行中 lane (no-op outside a job folder)
     if language is None:
         language = default_language()
+    if not prompt and persona_terms():
+        prompt = ", ".join(persona_terms())           # whisper hears her glossary words as she spells them
     be = _backend(backend)
     hst = _hst(path, skip_silence)
     key = fh = None

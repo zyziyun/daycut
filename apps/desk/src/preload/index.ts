@@ -106,9 +106,12 @@ const api: DeskApi = {
     begin: (req) => call('rec:begin', req),
     chunk: (req) => call('rec:chunk', req),
     mark: (req) => call('rec:mark', req),
-    end: (sessionId) => call('rec:end', { sessionId }),
+    end: (sessionId, secs) => call('rec:end', secs === undefined ? { sessionId } : { sessionId, secs }),
+    list: (group) => call('rec:list', { group }),
     recover: () => call('rec:recover'),
     discard: (sessionId) => call('rec:discard', { sessionId }),
+    screens: () => call('rec:screens'),
+    screenPick: (id) => call('rec:screenPick', { id }),
   },
   ai: {
     status: (opts) => call('ai:status', opts ?? {}),

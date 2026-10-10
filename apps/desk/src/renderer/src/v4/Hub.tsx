@@ -6,7 +6,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { ArrowRight, CalendarPlus, Check, Sparkles, Trash2 } from 'lucide-react';
 import type { HistoryItem } from '../../../shared/v02';
 import type { AutopilotDecision, AutopilotDoc, CalendarPost, Clip, OpenRequest } from '../../../shared/v04';
-import { fmtAgo, fmtMinutes, getLang, t, tk, type MessageKey } from '../i18n';
+import { fmtAgo, fmtMinutes, getLang, has, t, tk, type MessageKey } from '../i18n';
+import { providerName } from '../../../shared/aiRoutes';
+import { clipStatus } from '../lib/status';
 import { useEngine, useLoad } from '../lib/engine';
 import { useHistory } from '../lib/history';
 import { useInbox } from '../lib/inbox';
@@ -18,8 +20,10 @@ import { failureReason, FailureActions } from './Failure';
 import { Empty, Thumb } from './kit';
 import { errText } from './msg';
 import { PlanCard } from './PlanCard';
+import { ProgressFeed } from './ProgressFeed';
 import { scheduleClips } from './Project';
 import { useUi } from './ui';
+import { clipWords, liveText } from '../lib/liveStatus';
 import './hub.css';
 
 const GROUPS: [GroupId, MessageKey][] = [
@@ -160,7 +164,7 @@ function stateLine(p: Pipeline, i?: HistoryItem, r?: OpenRequest): string {
     case 'queued':
       return t('hub.s.queued', { n: i?.queued ?? 1 });
     case 'run': {
-      const msg = i?.live?.message;
+      const msg = liveText(i?.live);
       const step = t(`hub.step.${p.current}` as MessageKey);
       return [step, msg, p.eta ? t('hub.left', { t: fmtMinutes(Math.max(1, Math.round(p.eta / 60))) }) : null].filter(Boolean).join(' · ');
     }
@@ -293,11 +297,13 @@ function ProjectDetail({ i, p, posts }: { i: HistoryItem; p: Pipeline; posts: Ca
     return () => clearInterval(tm);
   }, [live]); // eslint-disable-line react-hooks/exhaustive-deps
   const clips = (clipsDoc?.clips ?? []).filter((c) => !c.extra);
-  const ready = clips.filter((c) => c.state !== 'queued' && c.state !== 'running' && c.files.length);
+  const ready = clips.filter((c) => clipMade(c));
   const mine = posts.filter((x) => x.item === i.id);
   const pp = postsOf(posts, i.id);
   const unscheduled = ready.filter((c) => !mine.some((x) => x.clip === c.id));
   const on = ap?.supported ? !!ap.autopilot?.on : !!i.autopilot;
+  // 「看过程」: open by itself while it runs (what it is doing right now), a click away otherwise
+  const [feedOpen, setFeedOpen] = useState(p.state === 'run');
   const setMode = async (v: boolean) => {
     if (!client || v === on) return;
     try {
@@ -337,6 +343,11 @@ function ProjectDetail({ i, p, posts }: { i: HistoryItem; p: Pipeline; posts: Ca
         <div className="row">
           <b data-testid="hub-state-line">{stateLine(p, i)}</b>
           <span className="sp" />
+          {(i.kind === 'project' || live) && (
+            <button className="btn ghost sm hub-feedbtn" onClick={() => setFeedOpen(!feedOpen)} aria-expanded={feedOpen} data-testid="hub-feed-toggle">
+              {t(feedOpen ? 'feed.hide' : 'feed.show')}
+            </button>
+          )}
           {p.state === 'you' && (
             <a className="btn soft sm" href={inboxHref()} data-testid="hub-to-inbox">
               {t('hub.openInbox')}
@@ -352,8 +363,9 @@ function ProjectDetail({ i, p, posts }: { i: HistoryItem; p: Pipeline; posts: Ca
           </div>
         )}
         <Steps p={p} />
+        {feedOpen && <ProgressFeed item={i.id} clips={clips} running={live || p.state === 'run'} />}
       </div>
-      {ap?.supported !== false && <Decisions item={i.id} doc={ap} busy={p.state === 'run'} onChanged={() => (reloadAp(), reloadHist())} />}
+      {ap?.supported !== false && <Decisions item={i.id} doc={ap} clips={clips} busy={p.state === 'run'} onChanged={() => (reloadAp(), reloadHist())} />}
       <div className="card hub-card" data-testid="hub-clips">
         <div className="row">
           <b>{t('hub.clips')}</b>
@@ -389,15 +401,35 @@ function ProjectDetail({ i, p, posts }: { i: HistoryItem; p: Pipeline; posts: Ca
   );
 }
 
+/** A clip that came out: not still in the line, not making, not stopped (a stopped job may have left files). */
+function clipMade(c: Clip): boolean {
+  return c.files.length > 0 && !['queued', 'planned', 'running', 'failed', 'waiting'].includes(c.state);
+}
+
 function ClipTile({ item, c, post }: { item: string; c: Clip; post: CalendarPost[] }) {
   const posted = post.find((x) => x.state === 'posted');
-  const st = c.state === 'running' ? t('hub.clipRendering') : c.state === 'queued' || c.state === 'planned' ? t('hub.clipQueued') : posted ? t('hub.clipPosted') : post.length ? t('hub.clipScheduled') : t('hub.clipReady');
+  const st =
+    c.state === 'running'
+      ? t('hub.clipRendering')
+      : c.state === 'queued' || c.state === 'planned'
+        ? t('hub.clipQueued')
+        : c.state === 'failed'
+          ? t('hub.clipFailed')
+          : clipStatus(c) === 'you'
+            ? t('status.you')
+            : posted
+              ? t('hub.clipPosted')
+              : post.length
+                ? t('hub.clipScheduled')
+                : t('hub.clipReady');
   const made = c.files.length > 0;
   const body = (
     <>
       <Thumb src={c.cover} video={c.cover ? null : c.files[0]?.path ?? null} dur={c.duration} />
       <span className="t clamp1">{c.title}</span>
-      <span className="q muted">{st}</span>
+      <span className={`q ${c.state === 'failed' ? 'bad' : 'muted'}`} data-testid="hub-clip-state" data-state={c.state}>
+        {st}
+      </span>
     </>
   );
   return made ? (
@@ -411,14 +443,17 @@ function ClipTile({ item, c, post }: { item: string; c: Clip; post: CalendarPost
   );
 }
 
+/** The question in the desk's own words (「确认去口癖」, not the recipe's 「确认去 filler」); the recipe's label only for a
+ * question the desk has no words for. */
 function decisionLabel(d: AutopilotDecision): string {
+  const kindKey = `checkpoint.${d.kind}`;
+  if (has(kindKey)) return tk(kindKey);
   const l = d.labels ?? {};
   const own = getLang() === 'zh-CN' ? l.zh || l.en : l.en || l.zh;
-  const kindKey = `checkpoint.${d.kind}`;
-  return own || (tk(kindKey) !== kindKey ? tk(kindKey) : d.checkpoint);
+  return own || t('hub.decisionOther');
 }
 
-function Decisions({ item, doc, busy, onChanged }: { item: string; doc: AutopilotDoc | null; busy: boolean; onChanged: () => void }) {
+function Decisions({ item, doc, clips, busy, onChanged }: { item: string; doc: AutopilotDoc | null; clips: Clip[]; busy: boolean; onChanged: () => void }) {
   const { client } = useEngine();
   const ui = useUi();
   const [sending, setSending] = useState<string | null>(null);
@@ -461,11 +496,11 @@ function Decisions({ item, doc, busy, onChanged }: { item: string; doc: Autopilo
                 <div className="tx">
                   <div>
                     <b>{decisionLabel(d)}</b>
-                    {d.item && d.item !== '*' ? <span className="muted"> · {t('hub.clipItem', { item: d.item })}</span> : null}
+                    {clipWords(d.item, clips) ? <span className="muted"> · {clipWords(d.item, clips)}</span> : null}
                     {!d.asked && <> — {tk(w.key, w.params)}</>}
                   </div>
                   <div className="muted small">
-                    {d.asked ? t('hub.asked') : [d.by === 'ai' ? (d.provider ? t('hub.by.ai', { provider: d.provider }) : t('hub.by.aiPlain')) : t('hub.by.rules'), d.reason_code === 'ai' || d.by === 'ai' ? d.reason : null].filter(Boolean).join(' · ')}
+                    {d.asked ? t('hub.asked') : [d.by === 'ai' ? (d.provider ? t('hub.by.ai', { provider: providerName(d.provider) }) : t('hub.by.aiPlain')) : t('hub.by.rules'), d.reason_code === 'ai' || d.by === 'ai' ? d.reason : null].filter(Boolean).join(' · ')}
                   </div>
                 </div>
                 {!d.asked && (

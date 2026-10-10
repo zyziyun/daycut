@@ -19,7 +19,7 @@ Routes (GET / POST, Bearer auth like everything else):
        episodes/<eid>/run {stage, estimate_id?, confirm_code?, max_cny?, allow_unknown?, only?} -> {job} | 409
        episodes/<eid>/stop   episodes/<eid>/takes/<no> {take}   episodes/<eid>/import {files[]}
        episodes/<eid>/handoff {languages[], schedule} -> {job}; done: {project_id, clip, posts}
-       record/ingest {session_dir, target project:talkinghead|assembled|shot:EID/NO, series?} -> {job}    record/recover    spend/cap {cap_cny}
+       record/ingest {session_dir, target project:talkinghead|assembled|edit|shot:EID/NO, series?} -> {job}    record/recover    spend/cap {cap_cny}
   Plugins (docs/PLUGINS.md):
   GET  plugins?lang=          POST plugins/<kind>:<id> {enabled?, settings?}
   POST import {path, importer?, format?, lang?} -> {job}; done: {series, episode, n}     import/sniff {path}
@@ -255,6 +255,12 @@ class CreateApi:
     def _after_ingest(self, res):
         if res.get("project_dir"):
             res["project_id"] = batch_id(os.path.join(res["project_dir"], "state"))
+        if res.get("output") and res.get("dir"):         # target edit: the take is its own clip (an adopted work)
+            from .works import clip_key
+            res["item"] = batch_id(res["dir"])
+            res["clip"] = clip_key(res["output"])
+            if self.bus is not None:
+                self.bus.publish("batches")
         return res
 
     # ---------------------------------------------------------------- inbox (only once Create was used)
@@ -515,7 +521,7 @@ class CreateApi:
             root = os.path.realpath(self.recordings_root())
             need(os.path.realpath(d).startswith(root + os.sep), "session_dir: a recorder session")
             tgt = b.get("target") or "project:talkinghead"
-            need(tgt in ("project:talkinghead", "assembled") or re.match(r"^shot:[a-z0-9][a-z0-9-]{0,47}/\d{2,3}$", tgt), "target")
+            need(tgt in ("project:talkinghead", "assembled", "edit") or re.match(r"^shot:[a-z0-9][a-z0-9-]{0,47}/\d{2,3}$", tgt), "target")
             args = ["record", "ingest", d, "--target", tgt]
             if b.get("series"):
                 args += ["--series", _sid(b["series"])]

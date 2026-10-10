@@ -31,6 +31,7 @@ import type {
   EditResult,
   HistoryConfig,
   HistoryDetail,
+  ProgressFeed,
   HistoryDoc,
   SampleInfo,
   MetricsDoc,
@@ -306,6 +307,10 @@ export class EngineClient {
   historyItem(id: string) {
     return this.req<HistoryDetail>('GET', `/api/history/item/${bid(id)}`);
   }
+  /** 「看过程」: the run's last events as codes (the desk words them) */
+  progressFeed(id: string, n = 30) {
+    return this.req<ProgressFeed>('GET', `/api/history/item/${bid(id)}/progress?n=${n}`);
+  }
   adoptHistory(id: string, body: { recipe?: string; title?: string } = {}) {
     return this.req<{ ok: boolean; dir: string; type: string; recipe: string | null }>('POST', `/api/history/item/${bid(id)}/adopt`, body);
   }
@@ -363,6 +368,14 @@ export class EngineClient {
       ...(turn ? { turn } : {}),
       ...(meta ?? {}),
     });
+  }
+  /** splice a pickup recorded with the recorder (session_dir) before word at_word, or in place of words replace */
+  pickupOutput(item: string, clip: string, body: { session_dir: string; at_word?: number; replace?: [number, number]; sig?: string | null }) {
+    return this.req<{ ok: boolean; step?: { id: string; describe: EngineMsg[] }; pickup?: { id: string; text: string; replaced: string; inserted: number; gain_db: number; room_db: number | null }; doc: OutputDoc }>(
+      'POST',
+      `/api/outputs/${bid(item)}/${clipId(clip)}/pickup`,
+      body,
+    );
   }
   /** the kept ranges if these pending transcript cuts were applied (live skip preview; nothing is written) */
   previewEdl(item: string, clip: string, ops: EditOp[], signal?: AbortSignal) {
@@ -431,6 +444,10 @@ export class EngineClient {
       opts,
     );
   }
+  /** her title for the clip (null: back to the AI's); publish cards without a platform title of their own follow */
+  setClipTitle(item: string, clip: string, title: string | null) {
+    return this.req<{ ok: boolean; title: string; title_custom: boolean }>('POST', `/api/outputs/${bid(item)}/${clipId(clip)}/title`, { title });
+  }
   undoOutput(item: string, clip: string, steps = 1) {
     return this.req<{ ok: boolean }>('POST', `/api/outputs/${bid(item)}/${clipId(clip)}/undo`, { steps });
   }
@@ -442,7 +459,9 @@ export class EngineClient {
   }
   /** platforms: the composer's platform chip (used when the request itself names none); lang: the UI language the
    * plan card's questions and risks are written in */
-  startIntake(prompt: string, inputs: string[], platforms?: string[], lang?: string, opts: { mode?: 'autopilot' | 'ask'; sampleName?: string } = {}) {
+  /** opts.recipe: the request's intent is fixed (the recorder's take, Home's talking-head start, the sample): planned by
+   * the rules for that recipe, without the ~2 min model call */
+  startIntake(prompt: string, inputs: string[], platforms?: string[], lang?: string, opts: { mode?: 'autopilot' | 'ask'; sampleName?: string; recipe?: string } = {}) {
     return this.req<{ id: string }>('POST', '/api/intake', {
       prompt: prompt.slice(0, 2000),
       inputs,
@@ -450,6 +469,7 @@ export class EngineClient {
       ...(lang ? { lang } : {}),
       ...(opts.mode ? { mode: opts.mode } : {}),
       ...(opts.sampleName ? { sample_name: opts.sampleName.slice(0, 80) } : {}),
+      ...(opts.recipe ? { recipe: opts.recipe } : {}),
     });
   }
   /** requests from Home that are not projects yet (All projects lists them first) */

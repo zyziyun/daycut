@@ -828,6 +828,29 @@ def render_status(rec, doc, st):
     return out
 
 
+def fresh_finals(d, output):
+    """The output as it should be published: its edit's FINAL renders that are fresh (key = the current edit state)
+    -> {target: {file, cover, w, h, duration}} ({} when it was never edited, or edited since its last render - the
+    original file / a stale render must not go out as if it were the edit). Reads only the edit doc + the render
+    manifest (no media work)."""
+    rec, doc = OUT._load(d, output)
+    if not doc.d.get("steps"):
+        return {}
+    st = doc.state()
+    OUT._effective(rec, doc, st)
+    man = (read_json(manifest_path(doc), {}) or {}).get("renders") or {}
+    out = {}
+    for tg in targets_of(rec, st):
+        r = man.get(f"{tg['target']}.final")
+        if not r or not os.path.exists(r.get("file") or ""):
+            continue
+        if r.get("key") != plan(rec, doc, st, tg, "final")["final"]["key"]:
+            continue
+        out[tg["target"]] = dict(file=r["file"], cover=r.get("cover") if r.get("cover") and os.path.exists(r["cover"])
+                                 else None, w=tg["w"], h=tg["h"], duration=r.get("duration"))
+    return out
+
+
 def render(d, output, quality="preview", targets=None, on_event=None, with_ops=None, watermark=None):
     """Render the output's current edit (preview or final) for ``targets`` (default primary; "all" = primary +
     every export). -> {ok, output, quality, targets [{target, file, cover, canvas, duration, key, cached, stages

@@ -64,15 +64,57 @@ def _link(src, dst):
 
 
 # --------------------------------------------------------------------------- per-job files
-def sentence_spans(whisper, rng=None):
+def sentence_spans(whisper, rng=None, dur=None):
     """[[t0, t1, text], ...] in source seconds, index = sid (the rows ``edit_list`` writes)."""
-    return [[r[1][0][0], r[1][0][1], r[2]] for r in _rows(whisper, rng)]
+    return [[r[1][0][0], r[1][0][1], r[2]] for r in _rows(whisper, rng, dur)]
 
 
-def edit_list(whisper, profile=None, rng=None):
+def _norm_words(text):
+    import re
+    return [w for w in re.findall(r"[a-z0-9']+|[\u3400-\u9fff]", str(text).lower())]
+
+
+def drop_broken_sentences(rows, dur=None, cut_off_s=0.3, last_words=None):
+    """The sentences a clip never keeps (each whisper sentence is its own range here, so cleanup cannot see across
+    them): a false start - a short sentence the next one starts by saying again ("The first habit is." / "The first
+    habit is to plan the beats ...") - and, when the recording stops mid-sentence, that last fragment (no full stop,
+    speech running into the end of the file); a whisper sentence that holds whole sentences before that fragment
+    (``last_words``: its words) keeps them and ends at the last full stop. -> (kept rows, [(kind, text)])"""
+    import re
+    keep, dropped = [], []
+    for k, r in enumerate(rows):
+        a, nxt = _norm_words(r[2]), (_norm_words(rows[k + 1][2]) if k + 1 < len(rows) else [])
+        gap = (rows[k + 1][1][0][0] - r[1][0][1]) if k + 1 < len(rows) else None
+        cjk = any(re.match(r"[\u3400-\u9fff]", w) for w in a)
+        if nxt and gap is not None and gap <= 4.0 and len(nxt) > len(a) and nxt[:len(a)] == a and \
+                (2 <= len(a) <= (16 if cjk else 7)):
+            dropped.append(("false-start", r[2]))
+            continue
+        keep.append(r)
+    if dur and len(keep) >= 2:
+        last = keep[-1]
+        if not re.search(r"[。！？!?.…]\s*$", last[2]) and dur - last[1][0][1] <= cut_off_s:
+            ws = list(last_words or [])
+            if ws and abs(float(ws[-1]["end"]) - last[1][0][1]) < 0.01:
+                ends = [k for k, w in enumerate(ws[:-1]) if re.search(r"[。！？!?.…]\s*$", str(w["word"]).strip())]
+            else:
+                ends = []
+            if ends:                                  # keep the whole sentences, end at the last full stop
+                k = ends[-1]
+                head = (1, [(last[1][0][0], round(float(ws[k]["end"]), 3))], _seg_text(ws[:k + 1]))
+                dropped.append(("cut-off", _seg_text(ws[k + 1:])))
+                keep = keep[:-1] + [head]
+            else:
+                dropped.append(("cut-off", last[2]))
+                keep = keep[:-1]
+    return keep, dropped
+
+
+def edit_list(whisper, profile=None, rng=None, dur=None):
     """Every whisper sentence of clip 1 kept (within ``rng`` = the job's [start, end] when set - ``job edit --op
-    trim``): E = [(1, [(t0, t1)], text), ...] (sid = list index)."""
-    rows = _rows(whisper, rng)
+    trim``) but a false start and a sentence the recording cuts off: E = [(1, [(t0, t1)], text), ...] (sid = list
+    index)."""
+    rows = _rows(whisper, rng, dur)
     if not rows:
         raise ValueError(f"{whisper}: no sentences (silent clip?)")
     head = "# written by vstudio.batch talkinghead-folder: every whisper sentence kept (sid = index)\n"
@@ -81,21 +123,32 @@ def edit_list(whisper, profile=None, rng=None):
     return head + "E = [\n" + "".join(f"    {r!r},\n" for r in rows) + "]\n", len(rows)
 
 
-def _rows(whisper, rng=None):
+def _rows(whisper, rng=None, dur=None):
+    rows, last = _all_rows(whisper, rng)
+    return drop_broken_sentences(rows, dur, last_words=last)[0]
+
+
+def _seg_text(ws):
+    return "".join(str(w["word"]).strip() for w in ws) if not any(
+        str(w["word"]).startswith(" ") for w in ws[1:]) else "".join(str(w["word"]) for w in ws).strip()
+
+
+def _all_rows(whisper, rng=None):
+    """Every whisper sentence as an edit_list row -> (rows, the words of the last one: the cut-off check)."""
     data = read_json(whisper, {}) or {}
-    rows = []
+    rows, last = [], []
     for s in data.get("segments") or []:
         ws = [w for w in s.get("words") or [] if str(w.get("word", "")).strip()]
         if not ws:
             continue
         t0, t1 = float(ws[0]["start"]), float(ws[-1]["end"])
-        text = "".join(str(w["word"]).strip() for w in ws) if not any(
-            str(w["word"]).startswith(" ") for w in ws[1:]) else "".join(str(w["word"]) for w in ws).strip()
+        text = _seg_text(ws)
         if rng and not (float(rng[0]) - 0.05 <= (t0 + t1) / 2 <= float(rng[1]) + 0.05):
             continue
         if t1 - t0 >= 0.15 and text:
             rows.append((1, [(round(t0, 3), round(t1, 3))], text))
-    return rows
+            last = ws
+    return rows, last
 
 
 def strict_file(reply):
@@ -201,10 +254,22 @@ def run_cleanup_th(ctx):
     if pr.get("prep"):
         _link(pr["prep"], ctx.path("prep.json"))
     prof = p.get("cleanup_profile")
-    txt, n = edit_list(ctx.path("a1.json"), None if prof in (None, "off") else prof, p.get("range"))
+    from vstudio import media
+    try:
+        dur = float(media.probe(ctx.path("a1.wav"))["duration"])
+    except Exception:  # noqa: BLE001  (no length: the cut-off check is skipped, nothing else changes)
+        dur = None
+    rng = p.get("range")
+    if rng and dur and float(rng[1]) < dur - 0.3:
+        dur = None                                    # a window inside the recording: its end is not the file's
+    rows, last = _all_rows(ctx.path("a1.json"), rng)
+    _kept, dropped = drop_broken_sentences(rows, dur, last_words=last)
+    for kind, text in dropped:
+        ctx.log(f"cleanup: {kind} left out: {text!r}")
+    txt, n = edit_list(ctx.path("a1.json"), None if prof in (None, "off") else prof, rng, dur)
     with open(ctx.path("edit_list.py"), "w", encoding="utf-8") as f:
         f.write(txt)
-    write_json(ctx.path("sids.json"), sentence_spans(ctx.path("a1.json"), p.get("range")))
+    write_json(ctx.path("sids.json"), sentence_spans(ctx.path("a1.json"), rng, dur))
     with open(ctx.path("strict.py"), "w", encoding="utf-8") as f:
         f.write(strict_file(p.get("cleanup_reply")))
     _run(_py("cut_pass1.py", "edit_list.py"), ctx.dir, "cut_pass1.log")
@@ -283,7 +348,9 @@ def run_compose_th(ctx):
     if not os.path.exists(master):
         raise RuntimeError("compose.py wrote no clean master")
     d = read_json(cj, {}) or {}
-    cues_path = write_json(ctx.path("cues.json"), dict(d, cues=d.get("cues") or []))
+    cues = [dict(c, text=drop_hesitations(c.get("text") or "")) for c in d.get("cues") or [] if isinstance(c, dict)]
+    cues = [c for c in cues if c["text"].strip()]
+    cues_path = write_json(ctx.path("cues.json"), dict(d, cues=cues))
     post = dict(title=p.get("title") or "", body=p.get("body") or "", tags=p.get("tags") or None)
     write_json(ctx.path("post.json"), post)
     hook_dur = read_json(ctx.path("timeline.json"), {}).get("BODY_START", 0.0) if hooks else 0.0
@@ -292,6 +359,22 @@ def run_compose_th(ctx):
                 hook_dur=round(float(hook_dur or 0.0), 3), notes=nf if notes else None,
                 notes_warnings=list((notes or {}).get("notes") or []),
                 files=[master, cues_path])
+
+
+_HES = None
+
+
+def drop_hesitations(text):
+    """「嗯」/ "Um," / "uh" said between words: cleanup always cuts them from the sound (a hesitation sound is an
+    automatic cut at every profile), so the caption leaves them out too ("Um, the idea is simple" -> "the idea is
+    simple")."""
+    import re
+    global _HES
+    if _HES is None:
+        _HES = re.compile(r"(?i)(?<![A-Za-z'])(?:u+m+|u+h+|erm|uhm|hmm+)(?![A-Za-z'])[,，.。]?\s*|[嗯呃]+[，,。]?")
+    out = _HES.sub("", text)
+    out = re.sub(r"\s{2,}", " ", out).strip()
+    return out if out.strip(" ,，.。") else ""
 
 
 def expand_folder(spec, rows):
@@ -336,13 +419,13 @@ def th_stages():
               params=lambda j, s: dict(ST._asr_opts(j, s), platform=(j["params"].get("platforms") or [None])[0],
                                        orient=_th(s).get("orient")), purge=("sdr1.mp4", "a1.wav")),
         Stage("cleanup", "cpu-render", run_cleanup_th, deps=("asr",), units=dur,
-              params=_keys("cleanup_reply", "cleanup_profile", "range"), purge=("body_v.mp4", "*.wav"), version=2),
+              params=_keys("cleanup_reply", "cleanup_profile", "range"), purge=("body_v.mp4", "*.wav"), version=3),
         Stage("face", "face", run_face_th, deps=("cleanup",), units=dur, params=lambda j, s: dict(on=_th(s).get("face", True))),
         base["glossary"],                             # before the notes: the drafted 记笔记 cards use its fixes
         Stage("notes", "cpu", run_notes_th, deps=("cleanup", "glossary"), params=_notes_params,
               units=lambda j, s: 1.0),
         Stage("compose", "cpu-render", run_compose_th, deps=("cleanup", "face", "notes"),
-              units=lambda j, s: dur(j, s) * 3, params=_compose_params, purge=("*.mp4", "out/*.mp4"), version=5),
+              units=lambda j, s: dur(j, s) * 3, params=_compose_params, purge=("*.mp4", "out/*.mp4"), version=6),
         Stage("verify", "asr", _no_verify, deps=("compose",), enabled=lambda j, s: False),
         base["proofread"],
         ST.copy_stage(),                              # post title + body drafted from the final captions

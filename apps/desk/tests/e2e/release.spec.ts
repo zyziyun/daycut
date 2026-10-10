@@ -108,7 +108,7 @@ test('a failed pilot is visible: project, inbox, all projects; retry with Codex 
   // all projects: a Failed count (the grid's filter row)
   await page.getByTestId('nav-projects').click();
   await page.locator('[data-testid=projects-view] [data-v=grid]').click();
-  await expect(page.getByTestId('projects-filter')).toContainText(/Failed 1|失败 1/);
+  await expect(page.getByTestId('projects-filter')).toContainText(/Stopped 1|停下了 1/);
   await shot('05-projects-failed-count');
 
   // 换 Codex 重试 from the inbox: the pilot runs again and reaches "needs you"; the failure is gone

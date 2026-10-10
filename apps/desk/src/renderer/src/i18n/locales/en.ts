@@ -12,6 +12,8 @@ import { weekPlanEn } from './weekPlan';
 import { autopilotEn } from './autopilot';
 import { recordEn } from './record';
 import { fewerStepsEn } from './fewerSteps';
+import { pickupsEn } from './pickups';
+import { studioEn } from './studio';
 import { settingsV2En } from './settingsV2';
 import { watermarkEn } from './watermark';
 import { archiveEn } from './archive';
@@ -39,8 +41,8 @@ export const v04En = {
 
   'status.running': 'Running',
   'status.you': 'Needs you',
-  'status.done': 'Done',
-  'status.error': 'Error',
+  'status.done': 'Ready',
+  'status.error': 'Stopped',
 
   'time.justNow': 'just now',
   'time.today': 'today',
@@ -201,7 +203,7 @@ export const v04En = {
   'projects.f.all': 'All {n}',
   'projects.f.running': 'Running {n}',
   'projects.f.you': 'Needs you {n}',
-  'projects.f.done': 'Done {n}',
+  'projects.f.done': 'Ready {n}',
   'projects.search': 'Search projects and titles…',
   'projects.type': 'Type',
   'projects.anyType': 'Any type',
@@ -592,5 +594,5 @@ export const v04En = {
   'editor.zoomFit': 'Fit',
 };
 
-export const en = { ...legacyEn, ...legacyEnV02, ...v04En, ...aiaccEn, ...publishPlatformsEn, ...chatEditEn, ...channelsEn, ...projectAiEn, ...aboutEn, ...releaseEn, ...publishBoardEn, ...publishLoopEn, ...settingsV2En, ...createEn, ...pluginsEn, ...uxCoreEn, ...usageEn, ...weekPlanEn, ...shareEn, ...qaEn, ...firstRunEn, ...liteEn, ...sessionFixesEn, ...watermarkEn, ...archiveEn, ...autopilotEn, ...recordEn, ...fewerStepsEn, ...draftsEn, ...updateEn };
+export const en = { ...legacyEn, ...legacyEnV02, ...v04En, ...aiaccEn, ...publishPlatformsEn, ...chatEditEn, ...channelsEn, ...projectAiEn, ...aboutEn, ...releaseEn, ...publishBoardEn, ...publishLoopEn, ...settingsV2En, ...createEn, ...pluginsEn, ...uxCoreEn, ...usageEn, ...weekPlanEn, ...shareEn, ...qaEn, ...firstRunEn, ...liteEn, ...sessionFixesEn, ...watermarkEn, ...archiveEn, ...autopilotEn, ...recordEn, ...fewerStepsEn, ...pickupsEn, ...studioEn, ...draftsEn, ...updateEn };
 export type MessageKey = keyof typeof en;

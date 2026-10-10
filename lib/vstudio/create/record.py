@@ -1,5 +1,9 @@
 """Recorder ingest (SPEC §1.6): a recorder session folder -> best take per line -> studio sound -> a talking-head
-project, one shot's take, or (target ``assembled``) just the cleaned file the desk starts an autopilot request with.
+project, one shot's take, (target ``assembled``) just the cleaned file the desk starts an autopilot request with, or
+(target ``edit``) the second pass: the WHOLE take (studio sound) as the session folder's own clip (``final/``,
+adopted as a work), transcribed, with the automatic cleanup already applied as the first edit step (``by: auto``):
+dropped attempts of a line (retakes), ums and long pauses are cuts she sees struck through and can bring back, and
+pickups (``vstudio.project.outputs.pickup``) splice into it.
 
     <recordings>/<ts>-<slug>/session.json   {id, slug, created, script [lines], tracks {camera|mic|screen:
                                              {file, start_ms, mime}}, series?, episode?, shot?}
@@ -176,7 +180,126 @@ def transcript_words(path, language=None):
         return None
 
 
+def prepare(session_dir, out):
+    """A recorder session (e.g. a pickup) -> one mp4 with the same sound treatment as a recording (studio sound
+    unless the session says ``studio: false``)."""
+    d = need_session(session_dir)
+    if os.path.exists(os.path.join(d, "recording.lock")):
+        recover(os.path.dirname(d))
+    sess = store.read_json(os.path.join(d, "session.json"), {}) or {}
+    tmp = out + ".mux.mp4"
+    mux(d, sess, tmp)
+    _studio(tmp, out, sess.get("studio", True) is not False)
+    return out
+
+
+def _studio(src, out, on):
+    if on:                                     # local denoise + dereverb + voice EQ, -16 LUFS (vstudio.studiosound)
+        from vstudio import studiosound
+        studiosound.enhance(src, out, "standard", lufs=-16.0)
+        if os.path.abspath(src) != os.path.abspath(out):
+            os.remove(src)
+    else:
+        os.replace(src, out)
+    return out
+
+
+EDGE_KEEP_S = 0.25
+
+
+def auto_cuts(W, total, kept):
+    """The automatic first pass of a recording, as edit ops on the whole take: what is outside the kept attempts
+    (``kept`` [(a, b)] in time order) -> ``retake`` cuts when someone spoke there, else ``pause`` cuts (leading /
+    trailing silence too, keeping 0.25 s); then the ums (``filler``) and pauses over 0.6 s (shortened to 0.25 s)
+    inside what is kept. -> (ops, counts)."""
+    from vstudio.project import outputs as O
+    ops, n = [], dict(retake=0, filler=0, pause=0)
+    kept = sorted((float(a), float(b)) for a, b in kept)
+    holes, t = [], 0.0
+    for a, b in kept:
+        if a > t:
+            holes.append((t, a))
+        t = max(t, b)
+    if t < total:
+        holes.append((t, total))
+    mid = lambda w: (float(w["t"]) + float(w["te"])) / 2  # noqa: E731
+    spans = []
+    for a, b in holes:
+        spoken = [w for w in W if a <= mid(w) < b]
+        lead, trail = a <= 1e-3, b >= total - 1e-3
+        s, e = a, b
+        if not spoken:                              # silence: keep a breath between lines (none at the very edges)
+            s, e = (a if lead else a + EDGE_KEEP_S / 2), (b if trail else b - EDGE_KEEP_S / 2)
+        if e - s < 0.3:
+            continue
+        why = "retake" if spoken else "pause"
+        ops.append(dict(op="cut", start=round(s, 3), end=round(e, 3), why=why, no_snap=not spoken))
+        spans.append((s, e))
+        n[why] += 1
+    inside = lambda t: any(a - 1e-3 <= t <= b + 1e-3 for a, b in spans)  # noqa: E731
+    for m in O.marks(W):
+        if m["kind"] == "filler" and not inside(mid(W[m["i0"]])):
+            ops.append(dict(op="cut", words=[m["i0"], m["i1"]], why="filler"))
+            n["filler"] += 1
+        elif m["kind"] == "pause" and not inside(float(W[m["i0"]]["te"])) and not inside(float(W[m["i1"]]["t"])):
+            ops.append(dict(op="cut", gap=m["i0"], keep=EDGE_KEEP_S, why="pause"))
+            n["pause"] += 1
+    return ops, n
+
+
+def edit(session_dir, on_event=None):
+    """Target ``edit``: see the module doc. -> {ok, session, dir, output (id), file, words, cuts {retake, filler,
+    pause}, duration}."""
+    from vstudio.project import outputs as O
+    from vstudio.project import works as WKS
+    d = need_session(session_dir)
+    if os.path.exists(os.path.join(d, "recording.lock")):
+        recover(os.path.dirname(d))
+    sess = store.read_json(os.path.join(d, "session.json"), {}) or {}
+    marks = store.read_json(os.path.join(d, "takes.json"), []) or []
+    lines = [str(x) for x in sess.get("script") or []]
+
+    def ev(stage, **kw):
+        if on_event:
+            on_event(dict(event="create.progress", stage=stage, session=os.path.basename(d), **kw))
+    rel = "final/recording.mp4"
+    out = os.path.join(d, rel)
+    done = store.read_json(os.path.join(d, "ingest.json"), {}) or {}
+    if done.get("target") == "edit" and done.get("ok") and os.path.isfile(out):
+        ev("done")
+        return {k: v for k, v in done.items() if k != "target"}       # opened again (Takes): nothing is redone
+    ev("mux")
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    mux(d, sess, out + ".src.mp4")
+    ev("clean")
+    _studio(out + ".src.mp4", out, sess.get("studio", True) is not False)
+    total = duration(out)
+    title = sess.get("title") or sess.get("slug") or os.path.basename(d)
+    tracks = [os.path.join(d, (t or {}).get("file") or "") for t in (sess.get("tracks") or {}).values()]
+    WKS.touch(d, recipe="talkinghead", title=title, outputs=[rel], sources=[p for p in tracks if os.path.isfile(p)])
+    rec_path = WKS.record_path(d)
+    wr = store.read_json(rec_path, {}) or {}
+    wr["recording"] = dict(session=os.path.basename(d), created=sess.get("created"), script=bool(lines),
+                           group=sess.get("group"))
+    store.write_json(rec_path, wr)
+    ev("transcribe")
+    rec, doc = O._load(d, rel)
+    W = O.words(doc, required=False) or []
+    atts = attempts(marks, total, len(lines)) if marks else {0: [(0.0, total)]}
+    kept = [(e["start"], e["end"]) for e in pick_best(atts, [dict(start=w["t"], end=w["te"]) for w in W] if W else None)]
+    ops, counts = auto_cuts(W, total, kept) if W else ([], dict(retake=0, filler=0, pause=0))
+    if ops and not doc.d["steps"]:
+        O.apply_ops(doc, ops, by="auto", note="cleanup")
+    res = dict(ok=True, session=os.path.basename(d), dir=d, output=rel, file=out, words=len(W), cuts=counts,
+               duration=round(total, 2), transcript=bool(W))
+    store.write_json(os.path.join(d, "ingest.json"), dict(res, target="edit"))
+    ev("done")
+    return res
+
+
 def ingest(session_dir, target="project:talkinghead", series=None, on_event=None, run=False):
+    if target == "edit":
+        return edit(session_dir, on_event=on_event)
     d = need_session(session_dir)
     if os.path.exists(os.path.join(d, "recording.lock")):
         recover(os.path.dirname(d))

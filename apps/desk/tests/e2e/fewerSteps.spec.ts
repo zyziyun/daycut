@@ -1,6 +1,6 @@
 // Fewer steps (ux/fewer-steps) in the real app with the REAL engine sidecar (no mock engine), isolated temp profile,
 // window hidden. A talking-head project (fixture/real_project.py: synthetic tone-burst talk + the engine tests' fake
-// transcriber, the only fakes; fixture/out_words.py gives the made clip its words) runs on autopilot to the end
+// transcriber, the only fakes; the made clip opens with the pipeline's own words) runs on autopilot to the end
 // (rules decide, no AI account), then in its clip editor:
 //   - delete words in the transcript -> the preview skips them at once -> saved by itself (no Apply) -> Export right
 //     away renders a file without them
@@ -87,8 +87,10 @@ const exportFile = () => path.join(project, 'state', 'jobs', 'talk', 'export', '
 async function openClip() {
   await hash(`#/p/${id}/clip/talk`);
   await expect(page.getByTestId('editor')).toBeVisible({ timeout: 60000 });
-  await page.getByTestId('tab-transcript').click(); // (the fixture heard the clip once: its words are cached)
+  await page.getByTestId('tab-transcript').click();
+  // the words are there on open: the pipeline's transcript mapped through the clip's cuts (nobody listened again)
   await expect(page.locator('[data-testid=transcript-body] .w').first()).toBeVisible({ timeout: 60000 });
+  await expect(page.getByTestId('transcript-listen')).toHaveCount(0);
 }
 
 /** Export the primary version from the chat's export card; -> the rendered file */

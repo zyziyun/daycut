@@ -1,8 +1,10 @@
 // Found making a real promo in 0.2.1 (fix/aigc-session-bugs): author checkpoints in the Inbox, what waits on the
 // project's Review tab, an agent's live status, why another AI planned, and a failed step's tool + fix.
 // English, 简体中文, Français.
+import { reviewEn, reviewFr, reviewZh } from './review';
 
 export const sessionFixesEn = {
+  ...reviewEn,
   // ---------------------------------------------------------------- author checkpoint (Inbox)
   'inbox.author.file': 'File',
   'inbox.author.open': 'Open in editor',
@@ -45,6 +47,7 @@ export const sessionFixesEn = {
 };
 
 export const sessionFixesZh: Record<keyof typeof sessionFixesEn, string> = {
+  ...reviewZh,
   'inbox.author.file': '文件',
   'inbox.author.open': '在编辑器中打开',
   'inbox.author.guide': '怎么写',
@@ -83,6 +86,7 @@ export const sessionFixesZh: Record<keyof typeof sessionFixesEn, string> = {
 };
 
 export const sessionFixesFr: Record<keyof typeof sessionFixesEn, string> = {
+  ...reviewFr,
   'inbox.author.file': 'Fichier',
   'inbox.author.open': 'Ouvrir dans l’éditeur',
   'inbox.author.guide': 'Comment le rédiger',

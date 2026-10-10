@@ -365,3 +365,38 @@ def _resume_after_answer(runner, d, bus=None, spawner=None):
         # item still stops at its own questions, e.g. the review before publishing)
         args.append("--confirm-pilot")
     return (spawner or spawn)(py, runner.env, d, bus=bus, args=args)
+
+
+# ------------------------------------------------------------------ 「看过程」: the run's own events, for the desk to word
+FEED_EVENTS = ("run-start", "stage-start", "stage-done", "stage-retry", "stage-fail", "job-done", "checkpoint",
+               "auto-answer", "autopilot-blocked", "pause", "run-end", "project-end")
+
+
+def progress_feed(d, n=30):
+    """The last ``n`` events of the project's current / last run (``desk-pilot.log``, the engine's --json-events) as
+    {at, event, job, stage, state, checkpoint, by, exit_code} - codes only, never the engine's text or paths: the desk
+    words each line (「第 1 条 · 开始转写」, 「AI 选了封面」). {events [], running}"""
+    rec = read_json(os.path.join(d, REC), None)
+    rec = rec if isinstance(rec, dict) else {}
+    lines = _tail(os.path.join(d, LOG), int(rec.get("offset") or 0), max_bytes=262144)
+    out = []
+    for e in _events(lines):
+        ev = e.get("event")
+        if ev not in FEED_EVENTS:
+            continue
+        if ev == "stage-done" and e.get("cached"):
+            continue                                   # made before: not news
+        row = dict(at=e.get("ts"), event=ev)
+        for k in ("job", "stage", "state", "checkpoint", "item", "by", "exit_code", "status", "qc"):
+            v = e.get(k)
+            if isinstance(v, (str, int, float)) and not isinstance(v, bool):
+                row[k] = v
+        if ev in ("checkpoint", "auto-answer", "autopilot-blocked"):
+            kind = e.get("checkpoint_kind") or e.get("kind")
+            if isinstance(kind, str):
+                row["kind"] = kind
+        if ev == "run-start" and isinstance(e.get("jobs"), list):
+            row["n"] = len(e["jobs"])
+        out.append(row)
+    running = bool(rec.get("pid")) and rec.get("exit") is None and _pid_alive(rec.get("pid"))
+    return dict(events=out[-max(1, min(int(n), 200)):], running=running)

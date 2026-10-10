@@ -61,9 +61,12 @@ History (history.py; read-only discovery of past work: desk + engine registries,
   POST /api/history/client {dir, client}   agency mode: the client a project is for ('' = her own)
   GET  /api/history/item/<id>              one entry; work folders + detail {outputs, covers, sheets, posts, notes}
   POST /api/history/item/<id>/adopt        {recipe?: guess|name, title?} plain work folder -> .vstudio/work.json
+  GET  /api/history/item/<id>/progress?n=  the run's last events as codes (「看过程」 in the control room)
 v0.4 (outputs.py, intake.py, inbox.py; engine command when available, desk implementation otherwise)
   GET  /api/outputs/<item>                 one clip per output {clips [{id, title, state, files, cover, post}], confirm}
   GET  /api/outputs/<item>/<clip>          player + editor document (words, captions, effects, caps, ops, version)
+  POST /api/outputs/<item>/<clip>/pickup   {session_dir, at_word | replace [i0, i1], sig?} splice a recorded pickup in
+                                           (one undo step) -> {step, pickup, doc}
   POST /api/outputs/<item>/<clip>/edit     {ops: [op...], by?, note?} (one undo step; a transcript cut {op: cut,
                                            words: [i0, i1], sig, why} also re-times captions / effects in that
                                            step);  /preview-edl {ops} -> kept ranges of pending cuts (live skip);
@@ -73,7 +76,8 @@ v0.4 (outputs.py, intake.py, inbox.py; engine command when available, desk imple
                                            {turn, set} (the clip's chat transcript; show returns it as chat);
                                            /export {targets, watermark?} -> {job} + output-render events
                                            (watermark true / false: this export, absent: her default);
-                                           /export-stop {job}
+                                           /export-stop {job};  /title {title|null} her title for the clip
+                                           (null: back to the AI's; publish cards without their own title follow)
   POST /api/outputs/<item>/project-ask     {prompt, clips?, context?} project-level AI (every clip) -> {job};
                                            GET /api/project-ask/<job> {state, stages, notices, elapsed, result};
                                            POST /api/project-ask/<job>/stop (kills the engine + model CLI);
@@ -481,6 +485,7 @@ class Api:
         self.sample = Sample(engine.data_dir, vstudio_home)
         self.intake = K["Intake"](engine.data_dir, bus, runner, engine.mode, probe=probe, sample=self.sample)
         self.inbox = Inbox(engine.data_dir, self.history, runner, engine.mode, bus)
+        self.inbox.outputs = self.outputs
         self.autopilot = K["Autopilot"](self.history, runner if real else None, bus, intake=self.intake)
         if real and runner is not None:            # runs that waited in line when the app quit go back in line
             import threading
@@ -558,6 +563,9 @@ class Api:
                                              note=b.get("note"))
                 if verb == "preview-edl":
                     return self.outputs.preview_edl(parts[1], clip, b.get("ops"))
+                if verb == "pickup":
+                    return self.outputs.pickup(parts[1], clip, b.get("session_dir"), at_word=b.get("at_word"),
+                                               replace=b.get("replace"), sig=b.get("sig"))
                 if verb == "ask":
                     return self.outputs.ask(parts[1], clip, b.get("prompt"), context=b.get("context"))
                 if verb == "render":
@@ -577,6 +585,8 @@ class Api:
                     return self.outputs.chat_add(parts[1], clip, b.get("add"))
                 if verb in ("undo", "redo"):
                     return self.outputs.undo(parts[1], clip, b.get("steps", 1), redo=verb == "redo")
+                if verb == "title":
+                    return self.outputs.set_title(parts[1], clip, b.get("title"))
         if parts[:1] == ["intake"]:
             if parts == ["intake"] and method == "POST":
                 prompt = b.get("prompt") or ""
@@ -586,7 +596,7 @@ class Api:
                 inputs = [_abs_path(p, "inputs[]") for p in inputs]
                 need(prompt.strip() or inputs, "say what to make or add files")
                 return self.intake.start(prompt.strip(), inputs, b.get("platforms"), b.get("lang"), b.get("mode"),
-                                         b.get("sample_name"))
+                                         b.get("sample_name"), **({"recipe": b["recipe"]} if b.get("recipe") else {}))
             if parts == ["intake", "recent"] and method == "GET":
                 return self.intake.recent()
             if parts == ["intake", "open"] and method == "GET":
@@ -752,6 +762,11 @@ class Api:
                 need(ID_RE.match(parts[2]), "bad item id")
                 if len(parts) == 3 and method == "GET":
                     return h.item(parts[2])
+                if parts[3:] == ["progress"] and method == "GET":
+                    from .pilot import progress_feed
+                    n = q("n") or "30"
+                    need(n.isdigit(), "n: a number")
+                    return progress_feed(h.find(parts[2])["dir"], int(n))
                 if parts[3:] == ["adopt"] and method == "POST":
                     b = body if isinstance(body, dict) else {}
                     rec = b.get("recipe") or "guess"

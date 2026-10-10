@@ -47,7 +47,7 @@ export interface Settings {
   crashReportsAuto?: boolean;
 }
 
-const DEFAULTS: Settings = { lang: 'en', accent: 'teal', theme: 'studio-dark', accounts: {}, channels: {}, agencyMode: false, autopilot: true, createPage: true, createLocalGen: false, defaultPlatforms: ['xiaohongshu:full'], cleanupDays: 0 };
+const DEFAULTS: Settings = { lang: 'en', accent: 'teal', theme: 'studio-dark', accounts: {}, channels: {}, agencyMode: false, autopilot: true, createPage: true, createLocalGen: false, defaultPlatforms: ['tiktok', 'youtube-shorts'], cleanupDays: 0 };
 
 export class SettingsStore {
   private file: string;

@@ -45,7 +45,7 @@ export function clipStatus(c: Pick<Clip, 'state' | 'qc' | 'review'>): Status4 | 
   if (c.state === 'running') return 'run';
   if (c.state === 'failed') return 'error';
   if (c.state === 'queued' || c.state === 'planned') return null;
-  if (c.review === 'reject' || c.review === 'rejected' || c.state === 'needs-replan') return 'you';
+  if (c.review === 'reject' || c.review === 'rejected' || c.state === 'needs-replan' || c.state === 'waiting') return 'you';
   if (c.qc === 'red' && !(c.review === 'approve' || c.review === 'approved')) return 'you';
   return 'done';
 }

@@ -99,6 +99,18 @@ class PlanLanguageRealEngineTest(unittest.TestCase):
         j = self.wait(pid)
         self.assertEqual((self.asked()[-1], j["plan"]["questions"][0]["text"]), ("English", QUESTION["English"]))
 
+    def test_a_fixed_intent_skips_the_model(self):
+        """The recorder's 「把我的录制做成口播」 (and Home's talking-head start): the talking-head recipe straight away,
+        by the rules - the AI planner is never called (it took ~2 min), and the plan is not flagged as a fallback."""
+        prompt = "把我的录制做成口播视频：去掉停顿和「嗯」，加上字幕和封面。"   # 「封面」 alone would pick the cover recipe
+        j = self.wait(self.it.start(prompt, [self.video], lang="zh-CN", recipe="talkinghead")["id"])
+        self.assertEqual(j["state"], "done", j.get("error"))
+        self.assertEqual([p["recipe"] for p in j["plan"]["projects"]], ["talkinghead"])
+        self.assertEqual((j["plan"]["planner"]["route"], j["plan"]["planner"]["fallback"]), ("fixed", False))
+        self.assertFalse(os.path.exists(self.log) and self.asked())             # no model call
+        with self.assertRaises(BadRequest):
+            self.it.start(prompt, [self.video], recipe="../x")
+
     def test_no_lang_follows_the_request(self):
         j = self.wait(self.it.start(REQUEST, [self.video])["id"])
         self.assertEqual((j["state"], self.asked()[-1]), ("done", "English"))

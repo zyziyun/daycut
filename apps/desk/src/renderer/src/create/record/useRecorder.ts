@@ -30,6 +30,36 @@ interface Session {
 }
 
 /** Seconds of recording at ``now``: wall time since the start minus every pause. */
+const DEVICES_KEY = 'rec.devices';
+
+/** The camera and mic last recorded with (pickups use the same ones). */
+export function loadDevices(): { cam: string | null; mic: string | null } {
+  try {
+    const v = JSON.parse(localStorage.getItem(DEVICES_KEY) ?? 'null') as { cam?: unknown; mic?: unknown } | null;
+    return { cam: typeof v?.cam === 'string' ? v.cam : null, mic: typeof v?.mic === 'string' ? v.mic : null };
+  } catch {
+    return { cam: null, mic: null };
+  }
+}
+
+function saveDevices(d: { cam: string | null; mic: string | null }) {
+  try {
+    localStorage.setItem(DEVICES_KEY, JSON.stringify(d));
+  } catch {
+    /* private mode: the system default is used next time */
+  }
+}
+
+export type ScreenResult = 'on' | 'denied' | { error: string };
+
+/** A failed getDisplayMedia -> 'denied' (the OS refused: Screen Recording is off) or the browser's message. */
+export function screenFailure(e: unknown): ScreenResult {
+  const name = (e as { name?: string } | null)?.name ?? '';
+  const msg = String((e as { message?: string } | null)?.message ?? e ?? '');
+  if (name === 'NotAllowedError' || /permission|not allowed|denied/i.test(msg)) return 'denied';
+  return { error: msg || name || 'screen' };
+}
+
 export function recordedSeconds(s: { t0: number; pausedMs: number; pausedAt: number | null }, now: number): number {
   const paused = s.pausedMs + (s.pausedAt !== null ? now - s.pausedAt : 0);
   return Math.max(0, (now - s.t0 - paused) / 1000);
@@ -84,13 +114,25 @@ export function useRecorder() {
           return;
         }
       }
-      const s = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1080 }, height: { ideal: 1920 }, frameRate: { ideal: 30 }, ...(want.cam ? { deviceId: { exact: want.cam } } : {}) },
-        audio: { noiseSuppression: false, echoCancellation: false, autoGainControl: false, ...(want.mic ? { deviceId: { exact: want.mic } } : {}) },
-      });
+      const ask = (cam?: string | null, mic?: string | null) =>
+        navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1080 }, height: { ideal: 1920 }, frameRate: { ideal: 30 }, ...(cam ? { deviceId: { exact: cam } } : {}) },
+          audio: { noiseSuppression: false, echoCancellation: false, autoGainControl: false, ...(mic ? { deviceId: { exact: mic } } : {}) },
+        });
+      let s: MediaStream;
+      try {
+        s = await ask(want.cam, want.mic);
+      } catch (e) {
+        // the camera / mic used last time is gone (unplugged): the system default instead
+        if (!(want.cam || want.mic) || !['OverconstrainedError', 'NotFoundError'].includes((e as Error).name)) throw e;
+        s = await ask(null, null);
+      }
       setStream(s);
-      setCameraId(s.getVideoTracks()[0]?.getSettings().deviceId ?? want.cam ?? null);
-      setMicId(s.getAudioTracks()[0]?.getSettings().deviceId ?? want.mic ?? null);
+      const cam = s.getVideoTracks()[0]?.getSettings().deviceId ?? want.cam ?? null;
+      const mic = s.getAudioTracks()[0]?.getSettings().deviceId ?? want.mic ?? null;
+      setCameraId(cam);
+      setMicId(mic);
+      saveDevices({ cam, mic }); // a pickup later records with the same camera and mic
       void listDevices().catch(() => undefined);
       if (raf.current) cancelAnimationFrame(raf.current);
       void actx.current?.close().catch(() => undefined);
@@ -126,34 +168,41 @@ export function useRecorder() {
     [open, stream, stopStream, cameraId, micId],
   );
 
-  /** Share a screen (the system picker) or stop sharing. -> on; a refusal / cancel leaves it off (no error). */
-  const toggleScreen = useCallback(async () => {
-    if (screen.current) {
-      stopStream(screen.current);
-      screen.current = null;
-      setScreenOn(false);
-      return false;
-    }
-    try {
-      const st = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-      screen.current = st;
-      st.getVideoTracks()[0]?.addEventListener('ended', () => {
-        if (screen.current === st) {
-          screen.current = null;
-          setScreenOn(false);
-        }
-      });
-      setScreenOn(true);
-      return true;
-    } catch {
-      screen.current = null;
-      setScreenOn(false);
-      return false;
-    }
+  /** Stop sharing the screen. */
+  const stopScreen = useCallback(() => {
+    stopStream(screen.current);
+    screen.current = null;
+    setScreenOn(false);
   }, [stopStream]);
 
+  /** Share the screen / window she picked (rec:screens -> id). Never silent: -> 'on' | 'denied' (Screen Recording
+   * is off for the app) | an error message. */
+  const shareScreen = useCallback(
+    async (id: string): Promise<ScreenResult> => {
+      stopScreen();
+      try {
+        await window.desk.rec.screenPick(id);
+        const st = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+        screen.current = st;
+        st.getVideoTracks()[0]?.addEventListener('ended', () => {
+          if (screen.current === st) {
+            screen.current = null;
+            setScreenOn(false);
+          }
+        });
+        setScreenOn(true);
+        return 'on';
+      } catch (e) {
+        screen.current = null;
+        setScreenOn(false);
+        return screenFailure(e);
+      }
+    },
+    [stopScreen],
+  );
+
   const start = useCallback(
-    async (req: { slug: string; title?: string; script: string[]; series?: string; episode?: string; shot?: string; studio?: boolean }) => {
+    async (req: { slug: string; title?: string; script: string[]; series?: string; episode?: string; shot?: string; studio?: boolean; group?: string; pickup?: boolean }) => {
       if (!stream) return;
       const vMime = pickMime(VIDEO_TYPES);
       const aMime = pickMime(AUDIO_TYPES);
@@ -241,11 +290,11 @@ export function useRecorder() {
     );
     await new Promise((r) => setTimeout(r, 50));
     await Promise.all(s.chains);
-    const out = await window.desk.rec.end(s.id);
+    const out = await window.desk.rec.end(s.id, secs);
     sess.current = null;
     setState('ready');
     return { ...out, sessionId: s.id, secs };
   }, []);
 
-  return { state, stream, level, error, elapsed, cameras, mics, cameraId, micId, screenOn, open, switchDevice, start, stop, pause, resume, mark, toggleScreen };
+  return { state, stream, level, error, elapsed, cameras, mics, cameraId, micId, screenOn, open, switchDevice, start, stop, pause, resume, mark, shareScreen, stopScreen };
 }

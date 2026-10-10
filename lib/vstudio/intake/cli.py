@@ -99,7 +99,7 @@ def cmd_plan(a):
     return _with_events(a, lambda ev: PL.make_plan(
         a.prompt, a.inputs, client=a.client, provider=a.provider, model=a.model, analysis=analysis, asr=a.asr,
         auto=[x for x in (a.auto or "").split(",") if x], echo=_echo(a), language=a.language, timeout=a.timeout,
-        on_event=ev, ui_lang=a.ui_lang, ignore_needs=a.ignore_needs), a.out)
+        on_event=ev, ui_lang=a.ui_lang, ignore_needs=a.ignore_needs, recipe=a.recipe), a.out)
 
 
 def cmd_revise(a):
@@ -161,6 +161,7 @@ def build_parser():
     p.add_argument("--ui-lang", choices=sorted(PL.REPLY_LANGS), help="language of the plan's questions / risks "
                                                                      "(default: the request's)")
     p.add_argument("--out", help="write the plan JSON here")
+    p.add_argument("--recipe", help="the request's intent is fixed: plan this recipe by the rules (no model call)")
     p.add_argument("--ignore-needs", action="store_true",
                    help="plan without what the request still needs from her (her Notion notes ...): no `needs`")
     p.add_argument("--json-events", action="store_true", help="progress events on stdout, then {event: done, plan}")

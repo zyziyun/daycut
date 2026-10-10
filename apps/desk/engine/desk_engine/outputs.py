@@ -205,6 +205,15 @@ def _asr_for(file, workdir=None, extra=()):
     return []
 
 
+def _mapped_words(file, duration):
+    """The pipeline's own transcript mapped through the clip's cuts (no second ASR pass) -> words or []."""
+    try:
+        from vstudio.batch.transcripts import mapped_words
+        return mapped_words(file, duration=duration or None) or []
+    except Exception:  # noqa: BLE001  (an older engine: 「听一遍」 transcribes it)
+        return []
+
+
 def waveform(words, duration, n=None):
     """A speech-shaped envelope from the word timings (deterministic; ~8 bars per second)."""
     if not duration:
@@ -271,13 +280,26 @@ def _batch_clips(bdir):
         if not cover:
             sheet = os.path.join(jdir, "preview", "sheet.jpg")
             cover = sheet if os.path.exists(sheet) else None
-        out.append(dict(id=jid, title=params.get("title") or jid, state=state, qc=st.get("qc"),
+        # the clip's title: the AI's post title, else the segment's title from the plan, else the job id
+        out.append(dict(id=jid, title=clip_title(post, params.get("title"), jid), state=state, qc=st.get("qc"),
                         review=st.get("review"), files=files, cover=cover,
                         post=post or (dict(title=params.get("title") or "", body=params.get("body") or "",
                                            tags=params.get("tags") or []) if params.get("title") else None),
                         duration=next((f["duration"] for f in files if f.get("duration")), None), extra=False,
                         jobdir=jdir))
     return out
+
+
+def clip_title(post, picked, jid):
+    """One title per clip: the AI-written post title (``post.title``) first, then the title the plan gave the
+    segment, and only then the job id (``lesson_part1`` is a file name, not a title)."""
+    for t in ((post or {}).get("title"), picked):
+        if isinstance(t, str) and t.strip():
+            return t.strip()
+    return jid
+
+
+TITLE_MAX = 300                  # the publish board's title cap (calendar.MAX_TITLE)
 
 
 def list_clips(entry):
@@ -666,6 +688,10 @@ def _has_word(txt, word):
     return re.search(rf"(?<![\w-]){re.escape(word)}(?![\w-])", txt) is not None
 
 
+_RLOCKS = {}                       # (item, clip) -> the lock its renders take turns on
+_RLOCK_GUARD = threading.Lock()
+
+
 class Outputs:
     """Clip listing + the output editor, via the engine command when it exists, else the desk implementation."""
 
@@ -677,6 +703,7 @@ class Outputs:
         self._pv = False              # the engine has preview-edl (live skip preview of pending transcript cuts)
         self._lock = threading.Lock()
         self._lists = {}
+        self._edited = {}
         self._jobs = {}
 
     # ---------------------------------------------------------- capability
@@ -729,18 +756,98 @@ class Outputs:
         try:
             doc = self._read("list", e["dir"])
             m = {os.path.realpath(o["file"]): o["id"] for o in doc.get("outputs") or [] if o.get("file") and o.get("id")}
+            self.__dict__.setdefault("_edited", {})[k] = {o["id"] for o in doc.get("outputs") or [] if o.get("id") and o.get("steps")}
         except Exception:  # noqa: BLE001  (unknown owner / older engine: the desk implementation answers)
             m = None
         self._lists[k] = (time.time(), m)
         return m
 
+    def _as_published(self, e, cl):
+        """A clip edited in the editor goes out as edited: its fresh final renders (``outrender.fresh_finals``)
+        stand in for the original files and cover in the listing that publishing, the calendar and the queue read
+        (the editor itself keeps editing the original). Edited since the last render: the listing says so
+        (``edited_stale``) and keeps the original until the background render is done."""
+        m = self._engine_list(e)
+        edited = self.__dict__.get("_edited", {}).get(os.path.realpath(e["dir"])) or set()
+        if not m or not edited:
+            return cl
+        from vstudio.project import outrender as R
+        for c in cl:
+            oid = m.get(os.path.realpath(c["files"][0]["path"])) if c.get("files") else None
+            if not oid or oid not in edited:
+                continue
+            try:
+                fin = R.fresh_finals(e["dir"], oid)
+            except Exception:  # noqa: BLE001  (an older engine / a broken edit doc: the original stays)
+                continue
+            if "primary" not in fin:
+                c["edited_stale"] = True
+                continue
+            files = [dict(f) for f in c["files"]]
+            p = fin["primary"]
+            files[0].update(path=p["file"], duration=p.get("duration") or files[0].get("duration"))
+            for tg, r in fin.items():
+                if tg == "primary":
+                    continue
+                asp = WK.aspect_of(r.get("w"), r.get("h")) or tg
+                row = dict(path=r["file"], aspect=asp, w=r.get("w"), h=r.get("h"), duration=r.get("duration"),
+                           platform=tg)
+                k = next((i for i, f in enumerate(files) if i and f.get("aspect") == asp), None)
+                if k is None:
+                    files.append(row)
+                else:
+                    files[k] = dict(files[k], **row)
+            c["files"] = files
+            c["cover"] = p.get("cover") or next((r["cover"] for r in fin.values() if r.get("cover")), None) or c.get("cover")
+            c["edited"] = True
+        return cl
+
     # ---------------------------------------------------------- lookup
     def _entry(self, item_id):
         return self.history.find(item_id)
 
+    # ---------------------------------------------------------- her title for a clip (one title per clip)
+    def _titles_path(self):
+        return os.path.join(self.dir, "titles.json")
+
+    def _title_key(self, e, clip_id):
+        return hashlib.sha1(f"{os.path.realpath(e['dir'])}\0{clip_id}".encode()).hexdigest()[:16]
+
+    def _titled(self, e, cl):
+        """Her own title (set in the editor header or on a publish card) wins over the AI's; ``title_custom`` says so."""
+        own = read_json(self._titles_path(), None) or {}
+        for c in cl:
+            t = own.get(self._title_key(e, c["id"])) if isinstance(own, dict) else None
+            c["title_custom"] = isinstance(t, str) and bool(t.strip())
+            if c["title_custom"]:
+                c["title"] = t.strip()
+        return cl
+
+    def set_title(self, item_id, clip_id, title):
+        """Rename a clip (None / "" = back to the AI's title). Every publish card and platform that has no title of its
+        own follows (calendar.decorate reads the clip's title)."""
+        need(title is None or (isinstance(title, str) and len(title.strip()) <= TITLE_MAX and "\n" not in title),
+             f"title: up to {TITLE_MAX} chars, one line")
+        e, c = self._clip(item_id, clip_id)
+        auto = next((x["title"] for x in list_clips(e) if x["id"] == clip_id), None)
+        with self._lock:
+            own = read_json(self._titles_path(), None)
+            own = own if isinstance(own, dict) else {}
+            k = self._title_key(e, clip_id)
+            if title and title.strip() and title.strip() != auto:
+                own[k] = title.strip()
+            else:
+                own.pop(k, None)
+            write_json(self._titles_path(), own)
+        self._publish(item_id, clip_id)
+        if self.bus:
+            self.bus.publish("calendar")
+        _e, c = self._clip(item_id, clip_id)
+        return dict(ok=True, title=c["title"], title_custom=c["title_custom"])
+
     def clips(self, item_id):
         e = self._entry(item_id)
-        cl = list_clips(e)
+        cl = self._titled(e, self._as_published(e, list_clips(e)))
         self.history.allow_media([f["path"] for c in cl for f in c["files"]] + [c["cover"] for c in cl if c.get("cover")])
         return dict(item=item_id, kind=e["kind"], clips=[_public_clip(c) for c in cl],
                     confirm=WK.confirmations(e["dir"]) if e["kind"] == "work" else [])
@@ -748,7 +855,7 @@ class Outputs:
     def _clip(self, item_id, clip_id):
         need(isinstance(clip_id, str) and WK.CLIP_ID_RE.match(clip_id) and ".." not in clip_id, "bad clip id")
         e = self._entry(item_id)
-        for c in list_clips(e):
+        for c in self._titled(e, list_clips(e)):
             if c["id"] == clip_id:
                 return e, c
         raise KeyError(f"no clip {clip_id}")
@@ -795,7 +902,10 @@ class Outputs:
             mode = "pipeline" if captions else "flattened"
             if not words:
                 words = _words_from_asr(read_json(os.path.join(jobdir, "compose", "out", "final.mp4.asr.json"), None))
-        return dict(id=c["id"], title=c["title"], state=c["state"], file=file, files=c["files"], cover=c.get("cover"),
+        if not words and file:
+            words = _mapped_words(file, dur)
+        return dict(id=c["id"], title=c["title"], title_custom=bool(c.get("title_custom")), state=c["state"], file=file,
+                    files=c["files"], cover=c.get("cover"),
                     post=c.get("post"), duration=dur, fps=(main or {}).get("fps") or info.get("fps") or 30,
                     w=(main or {}).get("w") or info.get("w"), h=(main or {}).get("h") or info.get("h"),
                     words=words, captions=captions, mode=mode,
@@ -827,8 +937,13 @@ class Outputs:
         trim = st.get("trim") or [None, None]
         out["trim"] = None if not trim or trim == [None, None] else dict(
             start=trim[0] if trim[0] is not None else 0, end=trim[1] if trim[1] is not None else dur)
-        cuts = [dict(start=c.get("start"), end=c.get("end"), index=i) for i, c in enumerate(st.get("cuts") or [])
-                if isinstance(c, dict)]
+        cuts = []
+        for i, c in enumerate(st.get("cuts") or []):
+            if isinstance(c, dict):
+                cuts.append(dict(start=c.get("start"), end=c.get("end"), index=i, **({"why": c["why"]} if c.get("why") else {})))
+            elif isinstance(c, (list, tuple)) and len(c) >= 2:      # the engine's state: [start, end, why]
+                why = str(c[2]).split(";")[0].strip() if len(c) > 2 and c[2] else ""
+                cuts.append(dict(start=c[0], end=c[1], index=i, **({"why": why} if why else {})))
         if not cuts and len(segs) > 1:
             cuts = [dict(start=a[1], end=b[0], index=i) for i, (a, b) in enumerate(zip(segs, segs[1:])) if b[0] - a[1] > 0.02]
         out["cuts"] = cuts
@@ -880,13 +995,20 @@ class Outputs:
         oid = self._output_id(e, c)
         if oid:
             eng = self._read("show", e["dir"], oid)
-            tr = read_json(os.path.join((eng.get("paths") or {}).get("dir") or "/nonexistent", "transcript.json"), None)
+            paths = eng.get("paths") or {}
+            tr = read_json(paths.get("transcript") or os.path.join(paths.get("dir") or "/nonexistent", "transcript.json"), None)
+            efile = (eng.get("output") or {}).get("file")
+            if efile and base["file"] and os.path.realpath(efile) != os.path.realpath(base["file"]) and os.path.isfile(efile):
+                # a pickup was spliced in: the clip plays (and is edited on) the spliced file
+                base = dict(base, file=efile, duration=(eng.get("output") or {}).get("duration") or base["duration"],
+                            files=[dict(base["files"][0], path=efile, duration=(eng.get("output") or {}).get("duration"))]
+                            + base["files"][1:])
             words = [dict(w=w["w"], t=w["t"], te=w["te"], **({"p": w["p"]} if w.get("p") is not None else {}))
                      for w in (tr or {}).get("words") or []] if isinstance(tr, dict) else None
             if not self._ext:                                  # older engine: the desk keeps the transcript
                 eng["chat"] = self._desk(e, clip_id).get("chat") or []
             doc = self._normalise(base, eng, item_id, words or None)
-            doc.update(engine="real", output_id=oid)
+            doc.update(engine="real", output_id=oid, pickups=eng.get("pickups") or [])
         else:
             st = self._desk(e, clip_id)
             caps, notes = self._caps(base["mode"], bool(base["file"]), bool(base["words"]))
@@ -903,10 +1025,58 @@ class Outputs:
                                      simulated=True) for r in st.get("renders") or []])
             doc = self._normalise(base, eng, item_id)
             doc.update(engine="desk", output_id=None)
+        if e["kind"] == "work":
+            wrec = read_json(WK.record_path(e["dir"]), {}) or {}
+            rec = wrec.get("recording")
+            if isinstance(rec, dict) and rec.get("session"):
+                doc["title"] = wrec.get("title") or doc.get("title")
+                sess = read_json(os.path.join(e["dir"], "session.json"), {}) or {}
+                doc["recording"] = dict(session=rec["session"], dir=e["dir"], script=bool(rec.get("script")),
+                                        group=rec.get("group") or sess.get("group"), created=rec.get("created"),
+                                        studio=sess.get("studio", True) is not False)
+        doc.setdefault("pickups", [])
         paths = [f["path"] for f in doc.get("files") or []] + [doc.get("cover")] + \
             [r.get("file") for r in doc.get("renders") or []]
         self.history.allow_media([p for p in paths if p])
         return doc
+
+    # ---------------------------------------------------------- pickups (补录)
+    @staticmethod
+    def recordings_root():
+        try:
+            from vstudio.batch.clients import home
+            return os.path.join(home(), "recordings")
+        except ImportError:
+            return os.path.join(os.path.expanduser(os.environ.get("VSTUDIO_HOME") or "~/.config/vstudio"), "recordings")
+
+    def pickup(self, item_id, clip_id, session_dir, at_word=None, replace=None, sig=None):
+        """Splice a pickup recorded with the recorder (``session_dir``, a session under the recordings folder) into
+        the clip: before transcript word ``at_word``, or in place of words ``replace`` [i0, i1] (``sig`` = the
+        words_sig they were picked from). One undo step (``vstudio.project output pickup``) -> the clip document."""
+        e, c = self._clip(item_id, clip_id)
+        need(isinstance(session_dir, str) and os.path.isabs(session_dir), "session_dir: a recorder session")
+        root = os.path.realpath(self.recordings_root())
+        real = os.path.realpath(session_dir)
+        need(real.startswith(root + os.sep) and os.path.isfile(os.path.join(real, "session.json")),
+             "session_dir: a recorder session")
+        need((at_word is None) != (replace is None), "at_word or replace")
+        if at_word is not None:
+            need(isinstance(at_word, int) and not isinstance(at_word, bool) and 0 <= at_word <= 100000, "at_word: a word index")
+        if replace is not None:
+            need(isinstance(replace, list) and len(replace) == 2 and all(isinstance(x, int) and not isinstance(x, bool) and x >= 0 for x in replace)
+                 and replace[0] <= replace[1], "replace: [first word, last word]")
+        need(sig is None or (isinstance(sig, str) and re.match(r"^[0-9a-f]{6,40}$", sig)), "sig")
+        self._adopt_on_first_edit(e)
+        oid = self._output_id(e, c)
+        if not oid:
+            raise EngineMessage(_m("pickup-engine", "pickups need the video engine on this Mac", "补录需要本机的视频引擎"))
+        args = ["pickup", "--project", e["dir"], "--output", oid, "--src", real]
+        args += ["--at-word", str(at_word)] if at_word is not None else ["--replace", json.dumps(replace)]
+        if sig:
+            args += ["--sig", sig]
+        r = self._cli(args, timeout=1800)
+        self._publish(item_id, clip_id)
+        return dict(ok=True, step=r.get("step"), pickup=r.get("pickup"), doc=self.show(item_id, clip_id))
 
     # ---------------------------------------------------------- edit / undo / redo / render
     def _adopt_on_first_edit(self, e):
@@ -996,6 +1166,10 @@ class Outputs:
                          daemon=True).start()
         return dict(ok=True, job=job, targets=targets)
 
+    def _render_lock(self, item_id, clip_id):
+        with _RLOCK_GUARD:
+            return _RLOCKS.setdefault((item_id, clip_id), threading.Lock())
+
     def export_stop(self, job):
         need(isinstance(job, str) and re.match(r"^[0-9a-f]{10}$", job), "job: an export id")
         j = self._jobs.get(job)
@@ -1016,7 +1190,12 @@ class Outputs:
                 self.bus.publish("output-render", item=item_id, clip=clip_id, job=job,
                                  **{k: v for k, v in ev.items() if k in ("event", "target", "stage", "progress", "file",
                                                                        "duration", "cached", "error", "simulated")})
-        try:
+        lk = self._render_lock(item_id, clip_id)
+        lk.acquire()                                       # one render of a clip at a time: a background render and
+        try:                                               # her Export queue up instead of writing the same stages
+            if stop.is_set():
+                emit(dict(event="stopped"))
+                return
             oid = self._output_id(e, c)
             if oid:
                 r = self.runner.sibling("vstudio.project")
@@ -1065,6 +1244,7 @@ class Outputs:
         except Exception as ex:  # noqa: BLE001
             emit(dict(event="failed", error=str(ex)[:300]))
         finally:
+            lk.release()
             self._jobs.pop(job, None)
 
     # ---------------------------------------------------------- one earlier step, later ones kept
@@ -1218,8 +1398,9 @@ class Outputs:
             return dict(ok=True, targets=[dict(target=c["files"][0]["aspect"], file=c["files"][0]["path"])]
                         if c["files"] else [], simulated=True, compare=True)
         if oid:
-            r = self._cli(["render", "--project", e["dir"], "--output", oid, "--quality", quality, "--targets", targets],
-                          timeout=3 * 3600)
+            with self._render_lock(item_id, clip_id):     # one render of a clip at a time (they share stage files)
+                r = self._cli(["render", "--project", e["dir"], "--output", oid, "--quality", quality, "--targets",
+                               targets], timeout=3 * 3600)
             files = [dict(target=x.get("target"), file=x.get("file"), cover=x.get("cover"), cached=x.get("cached"))
                      for x in r.get("targets") or []]
             self.history.allow_media([f["file"] for f in files if f.get("file")])

@@ -237,11 +237,30 @@ def persona_tags(tag_set=None, warn=print):
     return list(_p("publish.tags", []) or [])
 
 
-def hashtags(tags=None, platform=None, use_persona=True, tag_set=None, warn=print):
+def relevant_tags(tags, about):
+    """The persona's standing tags that fit this post: a tag whose words are in the post (title, hook, body, its own
+    tags) - #北美求职 / #SDE stay off a post about video editing. ``publish.tags_always: true`` keeps them all."""
+    if not about or _p("publish.tags_always", False):
+        return list(tags)
+    text = re.sub(r"[\s#_\-]+", "", str(about)).lower()
+    out = []
+    for t in tags:
+        k = re.sub(r"[\s#_\-]+", "", str(t)).lower()
+        parts = [k] + [w.lower() for w in re.findall(r"[A-Z]?[a-z]{3,}|[A-Z]{2,}(?![a-z])", str(t).lstrip("#"))]
+        if k and any(x and x in text for x in parts):
+            out.append(t)
+    return out
+
+
+def hashtags(tags=None, platform=None, use_persona=True, tag_set=None, warn=print, about=None):
     """Hashtag line: ``tags`` first, then (use_persona) the persona tags - ``publish.tag_sets[tag_set]``
-    if ``tag_set`` is given, else ``publish.tags``. Duplicates and leading '#' are removed."""
+    if ``tag_set`` is given (her choice for this post: all of them), else ``publish.tags`` - only those that fit the
+    post when ``about`` (its text) is given. Duplicates and leading '#' are removed."""
     pl = platform_name(platform)
-    allt = list(tags or []) + (persona_tags(tag_set, warn) if use_persona else [])
+    mine = persona_tags(tag_set, warn) if use_persona else []
+    if mine and not tag_set and about is not None:
+        mine = relevant_tags(mine, about)
+    allt = list(tags or []) + mine
     clean = list(dict.fromkeys(t.lstrip("#").strip() for t in allt if t and t.strip("# ")))
     if not clean:
         return ""
@@ -310,7 +329,9 @@ def post_body(hook, body, chapters=None, links=None, tags=None, platform=None, t
         if pl == "youtube":
             intro = chapter_intro if chapter_intro is not None else (intro or "Chapters")
         out += [""] + ([intro] if intro else []) + chapter_lines(chapters, platform=pl, warn=warn)
-    tg = hashtags(tags, pl, use_persona=use_persona_tags, tag_set=tag_set, warn=warn)
+    about = " ".join(str(x) for x in (title, hook, body if isinstance(body, str) else " ".join(map(str, body or [])),
+                                      " ".join(map(str, tags or []))) if x)
+    tg = hashtags(tags, pl, use_persona=use_persona_tags, tag_set=tag_set, warn=warn, about=about)
     if tg:
         out += ["", tg]
     text = re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip() + "\n"     # an empty hook / body leaves no gap

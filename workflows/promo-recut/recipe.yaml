@@ -194,7 +194,7 @@ checkpoints:
     kind: filler-confirm
     scope: item
     after: suggest
-    labels: {zh: "确认去 filler", en: "Confirm filler cuts"}
+    labels: {zh: "确认去口癖", en: "Confirm filler cuts"}
     payload: vstudio.project.adapters.common:edl_filler_payload
     apply: vstudio.project.adapters.common:cut_reply_apply
     answer:

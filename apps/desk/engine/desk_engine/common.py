@@ -166,6 +166,67 @@ def live_status(d, now=None):
                                    "finished", "updated_by")}
     out.update(state=state, age=round(age, 1) if age != float("inf") else None, needs_you=bool(rec.get("needs_you"))
                and state == "waiting")
+    out.update(live_words(rec, state))
+    return out
+
+
+# The batch runner's own status lines are engine words ("0/1 jobs", "done: 3 jobs", "checkpoint: publish",
+# stage "s003:export"): the desk gets them as a code + params and a bare stage list, and words them itself.
+_JOBS_RE = re.compile(r"^(\d+)/(\d+) jobs$")
+_END_RE = re.compile(r"^([a-z][\w-]*): (\d+) jobs$")
+_SOME_FAILED_RE = re.compile(r"^done, (\d+) jobs; some failed$")
+_CP_RE = re.compile(r"^checkpoint: (.+)$")
+_ITEMS_FAILED_RE = re.compile(r"^(\d+) item\(s\) failed$")
+_STAGE_RE = re.compile(r"^(?:([^:\s]+):)?([a-z][\w-]*)$", re.I)
+ENGINE_MESSAGES = {"waits for you (pilot review / paused)": "waiting", "done": "done",
+                   "pilot finished: review it, then confirm the pilot": "pilot", "refused: over budget": "over-budget"}
+
+
+def live_words(rec, state):
+    """status.json -> {stages [{job, stage}], code, params, message} with the engine's own English replaced by a code
+    (the desk words it: 「第 1/3 条」, 「等你：发布前看一眼」); a free message an agent wrote stays as it is."""
+    out = {}
+    stages = []
+    for part in str(rec.get("stage") or "").split(","):
+        m = _STAGE_RE.match(part.strip())
+        if m:
+            stages.append(dict(job=m.group(1), stage=m.group(2)))
+    # a waiting / finished record keeps the last running stage ("s003:export") and 100 %: that is not where it is
+    if state in ("waiting", "done") and rec.get("stage") and not str(rec.get("stage")).startswith("cp_"):
+        stages = []
+        out["stage"] = None
+        if state == "waiting":
+            out["progress"] = None
+    else:
+        out["stage"] = stages[0]["stage"] if stages else (rec.get("stage") or None)
+    out["stages"] = stages
+    done, total = rec.get("jobs_done"), rec.get("jobs_total")
+    msg = str(rec.get("message") or "").strip()
+    code, params = rec.get("live_code"), dict(rec.get("live_params") or {})
+    if not code and msg:
+        m = _JOBS_RE.match(msg)
+        if m:
+            code, done, total = "jobs", int(m.group(1)), int(m.group(2))
+        elif _SOME_FAILED_RE.match(msg):
+            code, params = "some-failed", dict(n=int(_SOME_FAILED_RE.match(msg).group(1)))
+        elif _END_RE.match(msg):
+            code, params = "finished", dict(n=int(_END_RE.match(msg).group(2)))
+        elif _CP_RE.match(msg):
+            code, params = "checkpoint", dict(kinds=[x.strip() for x in _CP_RE.match(msg).group(1).split(",") if x.strip()])
+        elif _ITEMS_FAILED_RE.match(msg):
+            code, params = "items-failed", dict(n=int(_ITEMS_FAILED_RE.match(msg).group(1)))
+        elif msg.startswith("paused: "):
+            code = "paused"
+        elif msg in ENGINE_MESSAGES:
+            code = ENGINE_MESSAGES[msg]
+    if code == "jobs" and isinstance(done, int) and isinstance(total, int):
+        params.update(done=done, total=total)
+    if code:
+        out.update(code=code, params=params, message=None)
+    if code == "checkpoint" and params.get("kinds") and not stages:
+        out["stage"] = "cp_" + str(params["kinds"][0])        # where it waits: the step of that question
+    if isinstance(total, int) and total > 0:
+        out.update(jobs_done=done if isinstance(done, int) else None, jobs_total=total)
     return out
 
 

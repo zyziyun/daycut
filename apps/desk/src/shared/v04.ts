@@ -25,7 +25,9 @@ export interface PostCopy {
 
 export interface Clip {
   id: string;
+  /** one title per clip: her own (title_custom), else the AI's post title, else the plan's segment title */
   title: string;
+  title_custom?: boolean;
   /** done | running | queued | (batch job states) approved | packaged | failed ... */
   state: string;
   qc?: string | null;
@@ -36,6 +38,10 @@ export interface Clip {
   duration: number | null;
   extra?: boolean;
   letter?: string | null;
+  /** edited in the editor and rendered: files / cover are the edit's fresh final renders (what goes out) */
+  edited?: boolean;
+  /** edited since its last render: the original still goes out until the background render is done */
+  edited_stale?: boolean;
 }
 
 export interface Confirmation {
@@ -139,6 +145,8 @@ export interface Step {
   note?: string | null;
   describe: EngineMsg[];
   retimed?: Retimed | null;
+  /** cancelled by a later revert step */
+  reverted?: boolean;
 }
 
 export interface OutputCaps {
@@ -164,6 +172,8 @@ export interface OutputDoc {
   id: string;
   item: string;
   title: string;
+  /** her own title (set in the editor header / on a publish card) rather than the AI's */
+  title_custom?: boolean;
   state: string;
   output_id: string | null;
   file: string | null;
@@ -186,7 +196,12 @@ export interface OutputDoc {
   caption_style: { size?: number; color?: string; highlight?: string; keywords?: string[]; position?: string };
   effects: EffectInstance[];
   trim: { start: number; end: number } | null;
-  cuts: { start: number; end: number; index: number }[];
+  /** why: the cut's reason (transcript, filler, pause, retake, ...; the first one when cuts merged) */
+  cuts: { start: number; end: number; index: number; why?: string }[];
+  /** pickups spliced in (补录), on the current timeline: their words are the ones inside [start, end] */
+  pickups?: Pickup[];
+  /** the clip is a take from Record yourself: Finish / Takes / Record another take */
+  recording?: { session: string; dir: string; script: boolean; group?: string | null; created?: string | null; studio?: boolean } | null;
   speed: number;
   title_band: { text: string; sub?: string } | null;
   cover_edit: { t?: number; text?: string; style?: string } | null;
@@ -199,6 +214,14 @@ export interface OutputDoc {
   safe_box?: number[] | null;
   caption_box?: number[] | null;
   engine: 'real' | 'desk';
+}
+
+export interface Pickup {
+  id: string;
+  start: number;
+  end: number;
+  text: string;
+  replaced: string;
 }
 
 export interface EffectDef {
@@ -511,6 +534,9 @@ export interface InboxOption {
   recommended?: boolean;
   /** an engine filler cut: the words around it (finds it in the clip's transcript) */
   ctx?: { before?: string | null; after?: string | null } | null;
+  /** a publish option: the platform id and the frame shape ("3:4") it is made for */
+  platform?: string | null;
+  aspect?: string | null;
 }
 
 export interface InboxItem {
@@ -541,6 +567,8 @@ export interface InboxItem {
   need?: EngineMsg | null;
   /** kind "failed" (a request): the plan's own reason code */
   error_code?: string | null;
+  /** an engine question about one clip: which (its title, else its place in the project) */
+  clip?: { id: string; title?: string | null; n: number } | null;
 }
 
 /** A message the engine words with a code + params (the desk has the text in each UI language). */

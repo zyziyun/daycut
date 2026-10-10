@@ -6,6 +6,7 @@ import type { IntakePlan } from '../../../shared/v04';
 import type { EngineMsg } from '../../../shared/v04';
 import { fmtList, t, tk } from '../i18n';
 import { emsg } from '../v4/msg';
+import { FIRST_PLATFORMS, OLD_FACTORY_PLATFORMS } from '../../../shared/platforms';
 
 export interface DownloadSummary {
   /** nothing to download (installed, or not the bundled runtime) */
@@ -51,14 +52,14 @@ export function fmtBytes(n: number): string {
   return n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n <= 0 ? '0 MB' : `${Math.max(1, Math.round(n / 1e6))} MB`;
 }
 
-const FACTORY_DEFAULT = ['xiaohongshu:full'];
+const same = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i]);
 
-/** Default platforms for a new profile: Xiaohongshu for a Chinese UI, TikTok + YouTube Shorts otherwise. A choice she
- * already made is kept. */
+/** Default platforms for a new profile: TikTok + YouTube Shorts (international first, everywhere), and for a Chinese UI
+ * Xiaohongshu after them. A choice she already made is kept. */
 export function defaultPlatformsFor(lang: string, current?: string[] | null): string[] {
-  const untouched = !current?.length || (current.length === FACTORY_DEFAULT.length && current.every((x, i) => x === FACTORY_DEFAULT[i]));
+  const untouched = !current?.length || same(current, OLD_FACTORY_PLATFORMS) || same(current, FIRST_PLATFORMS);
   if (!untouched) return current!;
-  return lang === 'zh-CN' ? FACTORY_DEFAULT : ['tiktok', 'youtube-shorts'];
+  return lang === 'zh-CN' ? [...FIRST_PLATFORMS, 'xiaohongshu:full'] : [...FIRST_PLATFORMS];
 }
 
 const base = (p: string) => p.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? p;

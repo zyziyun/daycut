@@ -160,6 +160,30 @@ def _rebalance(lines, mk):
     return out
 
 
+def fit_cues(prof, cues):
+    """Cues that do not fit the profile's caption box in ``max_lines`` lines (a whole spoken sentence in one cue) ->
+    consecutive cues of at most ``max_lines`` lines each, the cue's time shared by length: captions stay inside the
+    platform's safe area at every shape (3:4 cropped a single over-wide line on both sides)."""
+    from .subs import Cue
+    out = []
+    n = int(prof.caption.get("max_lines", 2))
+    for c in cues:
+        fit = P.fit_text_size(prof, c.text.replace("\n", " "))
+        lines = fit["lines"]
+        if fit["fits"] or len(lines) <= n or c.alt or (c.meta or {}).get("kind") == "hook":
+            out.append(c)
+            continue
+        parts = [" ".join(lines[k:k + n]) if not P._has_cjk(c.text) else "".join(lines[k:k + n])
+                 for k in range(0, len(lines), n)]
+        total = sum(max(1, len(x)) for x in parts)
+        t = c.start
+        for k, x in enumerate(parts):
+            te = c.end if k == len(parts) - 1 else round(t + (c.end - c.start) * max(1, len(x)) / total, 3)
+            out.append(Cue(t, te, x, "", dict(c.meta or {}, split_from=c.text[:40])))
+            t = te
+    return out
+
+
 def caption_overlay(prof, cues, fps, role="cjk-bold", fill=(255, 255, 255, 255), keepouts=None, plan=None,
                     report=None):
     """overlay(i, t, img_bgr) for reframe.render: draws the active cue centred in caption_box.
@@ -519,6 +543,7 @@ def export_one(master, prof, out_dir, cues=None, covers=None, post=None, mode="f
         from .subs import Cue
         cue_list = [Cue(c.start - start, c.end - start, c.text, c.alt, c.meta) for c in cue_list if c.end > start]
         kos = [dict(k, t0=k["t0"] - start, t1=k["t1"] - start) for k in kos if k["t1"] > start]
+    cue_list = fit_cues(prof, cue_list)                # a cue too long for the caption box: shown in turns, inside it
     cap_report = {}
     pl_geo = pl
     overlay = caption_overlay(prof, cue_list, pl["fps"], keepouts=kos, plan=pl_geo, report=cap_report) if cue_list else None

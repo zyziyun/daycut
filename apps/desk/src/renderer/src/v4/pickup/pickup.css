@@ -1,0 +1,34 @@
+/* Pickups (ux/record/pickups): the recorder that takes the player's place, the pickup marks in the transcript, and the
+   recording's header (Takes, Finish). The stage is always dark like the recorder's. */
+.pk-stage { --stage: #0e0d0c; --stage-2: #1b1916; --stage-line: rgba(255, 255, 255, 0.08); --stage-text: #ece7e1; --stage-muted: rgba(236, 231, 225, 0.62); --rec: #e5484d;
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 10px 16px 12px; background: var(--stage); color: var(--stage-text); z-index: 3; min-height: 0; }
+.pk-head { display: flex; align-items: center; gap: 8px; width: 100%; font-size: 13px; min-width: 0; }
+.pk-head .muted { color: var(--stage-muted); }
+.pk-head .sp { flex: 1; }
+.pk-head .btn { color: var(--stage-text); }
+.pk-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--rec); flex: none; }
+.pk-toggle { display: inline-flex; align-items: center; gap: 6px; color: var(--stage-muted); cursor: pointer; white-space: nowrap; }
+.pk-cam { flex: 1 1 auto; height: auto; min-height: 0; max-height: none; }
+.pk-err { display: flex; align-items: center; gap: 10px; color: #ffb4ad; font-size: 13px; text-align: center; }
+.pk-dock { display: flex; align-items: center; gap: 14px; padding: 6px 14px; border-radius: 18px; background: var(--stage-2); border: 1px solid var(--stage-line); flex: none; }
+.pk-dock .rs-rec { width: 52px; height: 52px; margin: 0; }
+.pk-dock .rs-rec i { width: 36px; height: 36px; }
+.pk-dock .rs-rec.stop i { width: 20px; height: 20px; }
+.pk-dock .rs-lvl { display: inline-flex; align-items: center; gap: 6px; width: 90px; height: 16px; color: var(--stage-muted); }
+.pk-dock .rs-lvl i { display: block; height: 4px; border-radius: 2px; background: #4fbfae; }
+.pk-hint { color: var(--stage-muted); min-width: 120px; }
+
+/* the transcript: a pickup's words carry an amber underline, the first one a "Pickup 1" tag */
+.tp .w.pk { background: color-mix(in srgb, #e7b25b 16%, transparent); box-shadow: inset 0 -2px 0 #e7b25b; border-radius: 2px; }
+.tp .pktag { display: inline-block; margin: 0 4px 0 2px; padding: 0 7px; border-radius: 999px; background: #e7b25b; color: #2a1d05; font-size: 11px; font-weight: 600; line-height: 18px; vertical-align: 2px; user-select: none; }
+.tp-selbar button.rec .dot { width: 8px; height: 8px; border-radius: 50%; background: #e5484d; display: inline-block; }
+
+/* the recording's header */
+.ce-takes { position: relative; }
+.ce-takes .menu { position: absolute; top: calc(100% + 6px); left: 0; min-width: 240px; z-index: 30; padding: 6px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35); display: flex; flex-direction: column; gap: 2px; }
+.ce-takes .menu button, .ce-takes .menu a { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 10px; border-radius: 8px; border: 0; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; text-decoration: none; }
+.ce-takes .menu button:hover, .ce-takes .menu a:hover { background: var(--surface-2); }
+.ce-takes .menu .on { font-weight: 600; }
+.ce-takes .menu .on::after { content: '✓'; margin-left: auto; color: var(--accent); }
+.ce-takes .menu .sep { height: 1px; background: var(--border); margin: 4px 0; }
+.ce-stage { position: relative; }

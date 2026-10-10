@@ -114,9 +114,9 @@ The desk maps `code` to its own copy (en / zh-CN / fr below; `{name}` = a param)
 | `status.done` | Done | 已完成 | Terminé |
 | `status.failed` | Failed | 失败 | Échec |
 | `status.interrupted` | Interrupted | 已中断 | Interrompu |
-| `checkpoint.filler-confirm` | Confirm filler cuts | 确认去 filler | Confirmer les coupes de tics |
+| `checkpoint.filler-confirm` | Confirm filler cuts | 确认去口癖 | Confirmer les coupes de tics |
 | `inbox.filler-confirm` | Filler cuts need your yes | 有口癖剪辑等你确认 | Des coupes de tics attendent votre accord |
-| `checkpoint.hook-pick` | Pick the hook | 选 hook | Choisir l'accroche |
+| `checkpoint.hook-pick` | Pick the hook | 选开头 | Choisir l'accroche |
 | `inbox.hook-pick` | Pick the cold open | 从候选里选开场 | Choisissez l'ouverture |
 | `checkpoint.segment-approval` | Approve the segments | 确认选段 | Valider les extraits |
 | `inbox.segment-approval` | Check the proposed segments | 看一下选段 | Vérifiez les extraits proposés |

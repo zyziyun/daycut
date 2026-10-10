@@ -42,7 +42,7 @@ DOC_VERSION = 1
 MIN_KEEP_S = 1.0
 OPS = ("trim", "cut", "cut_remove", "speed", "loudness", "captions", "caption_text", "caption_style", "caption_add",
        "caption_remove", "caption_placement", "title", "theme", "effect_add", "effect_remove", "effect_update", "cover",
-       "export_add", "export_remove", "reset")
+       "export_add", "export_remove", "reset", "pickup")
 # what a `theme` op hands back to the theme (restyle=true): explicit look keys of captions / title / effects
 THEME_LOOK = dict(caption=("color", "highlight", "stroke", "stroke_color", "font", "box", "box_color"),
                   title=("color", "band_color"), effect=("color", "anim", "angle", "theme"))
@@ -392,7 +392,7 @@ def capabilities(rec, doc=None):
 def empty_state():
     return dict(trim=[None, None], cuts=[], speed=1.0, loudness=dict(lufs=None, tp=None),
                 captions=dict(enabled=None, style={}, overrides={}, removed=[], added=[], placement=None),
-                title=None, theme=None, effects=[], cover=None, exports=[], seq=0)
+                title=None, theme=None, effects=[], cover=None, exports=[], seq=0, base=None, pickups=[])
 
 
 class Doc:
@@ -520,12 +520,71 @@ def fold(st, op):
             dict(target=op["target"], layout=op.get("layout") or "auto")]
     elif k == "export_remove":
         st["exports"] = [x for x in st["exports"] if x["target"] != op["target"]]
+    elif k == "pickup":
+        st = remap(st, op["at"], op["end"], op["dur"])
+        st["base"] = op["file"]
+        st["pickups"] = (st.get("pickups") or []) + [dict(id=op["id"], start=op["at"], end=round(op["at"] + op["dur"], 5),
+                                                          text=op.get("text") or "", replaced=op.get("replaced") or "")]
     elif k == "revert":
         pass                                     # a marker: Doc.state() skips the step it cancels
     elif k == "reset":
         seq = st["seq"]
         st = empty_state()
         st["seq"] = seq
+    return st
+
+
+def remap(st, at, end, dur):
+    """The state on a pickup's new timeline: times before ``at`` stay, [at, end) is gone (replaced), times from
+    ``end`` on move by ``dur - (end - at)``. Ranges are split around the insert (a cut running across ``at`` keeps
+    its part before it and continues after the pickup); what collapses to nothing is dropped."""
+    d = float(dur) - (float(end) - float(at))
+
+    def pt(t, side):
+        if t is None:
+            return None
+        t = float(t)
+        if t < at or (side == "start" and t == at):
+            return t
+        if t >= end and not (side == "end" and t == end == at):
+            return round(t + d, 5)
+        return at if side == "start" else round(at + dur, 5)       # inside the replaced range: keep the pickup
+
+    def rng(a, b):
+        """[a, b] -> pieces on the new timeline (before the insert / after it)."""
+        out = []
+        if a < at:
+            out.append((a, min(b, at)))
+        if b > end:
+            out.append((max(a, end) + d, b + d))
+        return [(round(x, 5), round(y, 5)) for x, y in out if y - x > 0.02]
+    st = copy.deepcopy(st)
+    st["cuts"] = merge_cuts([[x, y, w] for a, b, w in st["cuts"] for x, y in rng(float(a), float(b))])
+    t0, t1 = st["trim"]
+    st["trim"] = [pt(t0, "start"), pt(t1, "end")]
+    effs = []
+    for e in st["effects"]:
+        span = rng(float(e["start"]), float(e["end"])) if float(e["end"]) > float(e["start"]) else None
+        if span is None:
+            effs.append(dict(e, start=pt(e["start"], "start"), end=pt(e["end"], "start")))
+        elif span:
+            effs.append(dict(e, start=span[0][0], end=span[-1][1]))
+    st["effects"] = effs
+    c = st["captions"]
+    added = []
+    for q in c["added"]:
+        span = rng(float(q["start"]), float(q["end"]))
+        if span:
+            added.append(dict(q, start=span[0][0], end=span[-1][1]))
+    c["added"] = added
+    if isinstance(st.get("cover"), dict) and st["cover"].get("t") is not None:
+        st["cover"] = dict(st["cover"], t=pt(st["cover"]["t"], "start"))
+    pks = []
+    for p in st.get("pickups") or []:
+        span = rng(float(p["start"]), float(p["end"]))
+        if span:
+            pks.append(dict(p, start=span[0][0], end=span[-1][1]))
+    st["pickups"] = pks
     return st
 
 
@@ -638,8 +697,16 @@ def _transcriber():
         return TRANSCRIBE
     ref = os.environ.get("VSTUDIO_OUTPUT_TRANSCRIBER")
     if ref:
-        from vstudio.batch.util import import_ref
-        fn = import_ref(ref)
+        mod, _, attr = ref.rpartition(":")
+        if mod.endswith(".py") and os.path.isfile(mod):          # "/abs/fixture.py:fn" (tests: no PYTHONPATH needed)
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("vstudio_test_transcriber", mod)
+            m = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(m)
+            fn = getattr(m, attr)
+        else:
+            from vstudio.batch.util import import_ref
+            fn = import_ref(ref)
         return lambda path, language=None: fn(path, language=language)
 
     def run(path, language=None):
@@ -648,13 +715,36 @@ def _transcriber():
     return run
 
 
+def transcript_path(doc):
+    """``transcript.json`` for the output itself; ``transcripts/<sig>.json`` for a pickup's spliced file."""
+    sig = getattr(doc, "tsig", None) or doc.d["source_sig"]
+    if sig == doc.d["source_sig"]:
+        return os.path.join(doc.dir, "transcript.json")
+    return os.path.join(doc.dir, "transcripts", f"{sig}.json")
+
+
+def _tsig(doc):
+    return getattr(doc, "tsig", None) or doc.d["source_sig"]
+
+
+def write_words(doc, W):
+    path = transcript_path(doc)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    write_json(path, dict(sig=_tsig(doc), file=doc.rec["file"], words=W, at=_stamp(), joined=1))
+    return W
+
+
 def words(doc, required=True):
     """Word timings of the output (source seconds), transcribed once per file signature and cached in the edit
-    folder (``transcript.json``). -> [{"w","t","te"}] ([] when unavailable and not required)."""
-    path = os.path.join(doc.dir, "transcript.json")
+    folder (``transcript.json``; a pickup's spliced file: ``transcripts/<sig>.json``). -> [{"w","t","te"}] ([] when
+    unavailable and not required)."""
+    path = transcript_path(doc)
     tr = read_json(path, None)
-    if isinstance(tr, dict) and tr.get("sig") == doc.d["source_sig"] and not _split_terms(tr):
+    if isinstance(tr, dict) and tr.get("sig") == _tsig(doc) and not _split_terms(tr):
         return tr["words"]
+    W = _pipeline_words(doc)
+    if W:
+        return W
     if not doc.rec["info"]["has_audio"]:
         if required:
             raise _err("no-audio", "the output has no audio: nothing to transcribe", "成片没有音轨，无法转写")
@@ -680,9 +770,7 @@ def words(doc, required=True):
             if w.get("p") is not None:
                 row["p"] = round(float(w["p"]), 3)
             W.append(row)
-    os.makedirs(doc.dir, exist_ok=True)
-    write_json(path, dict(sig=doc.d["source_sig"], file=doc.rec["file"], words=W, at=_stamp(), joined=1))
-    return W
+    return write_words(doc, W)
 
 
 _LATIN = re.compile(r"[A-Za-z0-9']+")
@@ -728,11 +816,34 @@ def words_sig(W):
 
 
 def cached_words(doc):
-    """The cached transcript words of this output (never transcribes) or None."""
-    tr = read_json(os.path.join(doc.dir, "transcript.json"), None)
-    if isinstance(tr, dict) and tr.get("sig") == doc.d.get("source_sig") and isinstance(tr.get("words"), list):
+    """The cached transcript words of this output (never transcribes) or None. A speech-pipeline cut that was
+    never transcribed gets the pipeline's own words, mapped through its cuts (``_pipeline_words``)."""
+    tr = read_json(transcript_path(doc), None)
+    if isinstance(tr, dict) and tr.get("sig") == _tsig(doc) and isinstance(tr.get("words"), list):
         return tr["words"]
-    return None
+    return _pipeline_words(doc)
+
+
+def _pipeline_words(doc):
+    """The source transcript mapped through the batch job's cuts (``batch.transcripts.mapped_words``) for an
+    output that is a pipeline cut and not a pickup splice: cached as its transcript so it opens with words and
+    word cuts snap to them, no second ASR pass. None otherwise."""
+    if _tsig(doc) != doc.d["source_sig"]:
+        return None
+    try:
+        from vstudio.batch.transcripts import mapped_words
+        W = mapped_words(doc.rec["file"], duration=doc.rec["info"].get("duration"))
+        if not W and doc.rec.get("master"):
+            W = mapped_words(doc.rec["master"], duration=doc.rec["info"].get("duration"))
+    except Exception:  # noqa: BLE001  (a hint: the output is transcribed as before)
+        return None
+    if not W:
+        return None
+    try:
+        write_words(doc, W)
+    except OSError:
+        pass
+    return W
 
 
 def _energy(doc, W):
@@ -1034,6 +1145,11 @@ def normalize(doc, st, op):
     pipe = rec["mode"] == "pipeline"
     warns, value = [], {}
     n = dict(op=k)
+    if k == "pickup":                            # made by pickup() only: the spliced file must exist
+        if not (isinstance(op.get("file"), str) and os.path.isfile(op["file"])):
+            raise _err("bad-param", "a pickup op is made by `output pickup`", "补录请用 output pickup", param="file")
+        return {kk: op[kk] for kk in ("op", "id", "at", "end", "dur", "file", "src", "text", "replaced", "gain_db",
+                                       "room_db") if kk in op}, dict(text=op.get("text")), []
 
     if k == "trim":
         s = op.get("start", st["trim"][0])
@@ -1384,6 +1500,13 @@ def describe(op, value=None):
     if k == "caption_add":
         return msg("op-caption-add", f"add {len(op['cues'])} caption(s)", f"新增 {len(op['cues'])} 条字幕",
                    n=len(op["cues"]))
+    if k == "pickup":
+        said = str(op.get("text") or "")
+        q = f" “{said[:40]}”" if said else ""
+        rep_ = op["end"] > op["at"]
+        return msg("op-pickup", f"{'replace' if rep_ else 'insert'} a pickup at {op['at']:g}s{q}",
+                   f"在 {op['at']:g} 秒{'替换为' if rep_ else '补录'}" + (f"「{said[:40]}」" if said else ""),
+                   at=op["at"], end=op["end"], dur=op["dur"], said=said, replaced=op.get("replaced") or "")
     if k == "revert":
         return msg("op-revert", f"revert step {op['step']}", "撤销了其中一步", step=op["step"])
     if k == "theme":
@@ -1400,7 +1523,38 @@ def describe(op, value=None):
 # --------------------------------------------------------------------------- public API
 def _load(d, output):
     rec = resolve(d, output)
-    return rec, Doc(rec)
+    doc = Doc(rec)
+    _effective(rec, doc)
+    return rec, doc
+
+
+_PROBES = {}
+
+
+def _probe_cached(path):
+    st = os.stat(path)
+    k = (path, st.st_size, st.st_mtime_ns)
+    if k not in _PROBES:
+        if len(_PROBES) > 64:
+            _PROBES.clear()
+        _PROBES[k] = _probe(path)
+    return _PROBES[k]
+
+
+def _effective(rec, doc, st=None):
+    """Point ``rec`` at the file the edits apply to now: the newest active pickup's spliced file (``state.base``),
+    else the output itself. Called on load and again before showing (an undo / redo may change it)."""
+    if "orig" not in rec:
+        rec["orig"] = dict(file=rec["file"], info=rec["info"])
+    st = st if st is not None else doc.state()
+    base = st.get("base")
+    if base and os.path.isfile(base):
+        rec["file"], rec["info"] = base, _probe_cached(base)
+        doc.tsig = file_sig(base)
+    else:
+        rec["file"], rec["info"] = rec["orig"]["file"], rec["orig"]["info"]
+        doc.tsig = doc.d["source_sig"]
+    return rec
 
 
 def apply_ops(doc, ops, by="user", note=None, dry=False):
@@ -1631,9 +1785,11 @@ def revert(d, output, step_id, note=None, by="user"):
     made = set().union(*[_ids_made(o) for o in target["ops"]]) if target["ops"] else set()
     cuts = any(o["op"] in ("cut", "cut_remove") for o in target["ops"])
     blockers = []
+    picks = any(o["op"] == "pickup" for o in target["ops"])
     for x in later:
         for o in x["ops"]:
-            if (_ids_used(o) & made) or (cuts and o["op"] == "cut_remove") or o["op"] == "reset":
+            if (_ids_used(o) & made) or (cuts and o["op"] == "cut_remove") or o["op"] == "reset" or \
+                    (picks and o["op"] in ("pickup", "cut", "trim", "effect_add", "caption_add", "cover")):
                 blockers.append(x["id"])
                 break
     if blockers:
@@ -1740,6 +1896,104 @@ def _chat_mark_reverted(doc, step_id, by_step):
         _chat_save(doc, c)
 
 
+def _to_words(raw):
+    if isinstance(raw, dict):
+        return _flat_words(raw)
+    W = []
+    for w in raw or []:
+        row = dict(w=str(w["w"]), t=float(w["t"]), te=float(w["te"]))
+        if w.get("p") is not None:
+            row["p"] = round(float(w["p"]), 3)
+        W.append(row)
+    return W
+
+
+def pickup_point(W, dur, at_word=None, replace=None):
+    """Where a pickup goes, from transcript word indices: ``replace`` [i0, i1] -> (just before word i0, just after
+    word i1), never into the neighbouring words; ``at_word`` i (0..len) -> a point in the gap before word i
+    (at most 0.15 s after the previous word, so the pickup follows it naturally). -> (at, end)."""
+    n = len(W)
+    if replace is not None:
+        i0, i1 = int(replace[0]), int(replace[1])
+        if not (0 <= i0 <= i1 < n):
+            raise _err("bad-param", "replace: word indices out of range", "补录位置超出范围", param="replace")
+        lo = float(W[i0 - 1]["te"]) if i0 > 0 else 0.0
+        hi = float(W[i1 + 1]["t"]) if i1 + 1 < n else float(dur)
+        a = max(lo, float(W[i0]["t"]) - 0.08)
+        b = min(hi, float(W[i1]["te"]) + 0.12)
+        return round(a, 3), round(max(a, b), 3)
+    i = int(at_word)
+    if not (0 <= i <= n):
+        raise _err("bad-param", "at_word: a word index (0 = before the first word)", "补录位置超出范围", param="at_word")
+    prev = float(W[i - 1]["te"]) if i > 0 else 0.0
+    nxt = float(W[i]["t"]) if i < n else float(dur)
+    a = prev + min(0.15, max(0.0, nxt - prev) / 2) if i > 0 else max(0.0, nxt - 0.15)
+    return round(a, 3), round(a, 3)
+
+
+def pickup(d, output, src, at=None, end=None, at_word=None, replace=None, sig=None, by="user", note=None):
+    """Splice a pickup (补录) into the output as ONE undo step: ``src`` = a recorder session folder (muxed + studio
+    sound like the recording) or a media file. Where: ``replace`` [i0, i1] (transcript word indices: those words are
+    replaced), ``at_word`` i (inserted before word i), or ``at`` / ``end`` seconds on the current timeline. The
+    pickup is transcribed, trimmed to its speech, levelled / room-toned / crossfaded in (``vstudio.pickup.splice``);
+    the spliced file becomes the base later edits apply to, every existing edit moves with it (``remap``), and the
+    new transcript is the old one + the pickup's words (no re-transcription)."""
+    from vstudio import pickup as P
+    from vstudio import cleanup as C
+    rec, doc = _load(d, output)
+    if rec["mode"] != "flattened":
+        raise _err("pickup-pipeline", "pickups go into clips edited as finished files", "这条片子不支持补录")
+    if not rec["info"].get("has_audio"):
+        raise _err("no-audio", "the output has no audio track", "成片没有音轨")
+    W = words(doc, required=False) or []
+    if sig and W and words_sig(W) != sig:
+        raise _err("stale-words", "the transcript changed: pick the spot again", "逐字稿已变化，请重新选位置")
+    dur = rec["info"]["duration"]
+    if replace is not None or at_word is not None:
+        if not W:
+            raise _err("no-words", "no transcript yet", "还没有逐字稿")
+        a, b = pickup_point(W, dur, at_word=at_word, replace=replace)
+    else:
+        a = _num(at, "at")
+        b = _num(end if end is not None else at, "end")
+    if not (0 <= a <= b <= dur + 1e-3):
+        raise _err("bad-param", "the pickup point is outside the clip", "补录位置不在片子里", param="at")
+    n = 1 + sum(1 for s in doc.d["steps"] + doc.d["redo"] for o in s["ops"] if o["op"] == "pickup")
+    pid = f"p{n}"
+    pdir = os.path.join(doc.dir, "pickups")
+    os.makedirs(pdir, exist_ok=True)
+    tag = sha1_json([pid, src, a, b, time.time()], 6)
+    if os.path.isdir(src):
+        from vstudio.create import record as RE
+        media = RE.prepare(src, os.path.join(pdir, f"{pid}-{tag}.take.mp4"))
+    elif os.path.isfile(src):
+        media = src
+    else:
+        raise _err("bad-param", f"no pickup recording at {src}", "找不到补录文件", param="src")
+    try:
+        PW = _to_words(_transcriber()(media, language=None))
+    except Exception as e:  # noqa: BLE001
+        raise _err("transcribe-failed", f"could not transcribe the pickup: {str(e)[:200]}", "补录转写失败",
+                   error=str(e)[:200]) from e
+    pdur = _probe(media)["duration"]
+    span = P.speech_span(PW, pdur)
+    if not span:
+        raise _err("pickup-silent", "no speech was heard in the pickup", "补录里没有听到说话")
+    info = P.splice(rec["file"], media, a, b, out=os.path.join(pdir, f"{pid}-{tag}.mp4"), span=span)
+    said = C.join_words([w for w in PW if span[0] - 1e-3 <= _mid(w) <= span[1] + 1e-3])
+    gone = C.join_words([w for w in W if info["at"] <= _mid(w) < info["end"]])
+    new_words = P.shift_words(W, info["at"], info["end"], info["inserted"], PW, info["span"][0])
+    op = dict(op="pickup", id=pid, at=info["at"], end=info["end"], dur=info["inserted"], file=info["out"], src=media,
+              text=said, replaced=gone, gain_db=info["gain_db"], room_db=info["room_db"])
+    step, _, warns = apply_ops(doc, [op], by=by, note=note)
+    _effective(rec, doc)
+    write_words(doc, new_words)
+    out = show_doc(rec, doc)
+    out.update(ok=True, step=step, pickup=dict(info, id=pid, text=said, replaced=gone),
+               warnings=warns + out.get("warnings", []))
+    return out
+
+
 def show(d, output):
     rec, doc = _load(d, output)
     out = show_doc(rec, doc)
@@ -1749,6 +2003,7 @@ def show(d, output):
 
 def show_doc(rec, doc):
     st = doc.state()
+    _effective(rec, doc, st)
     dead = reverted_ids(doc.d["steps"])
     if rec["mode"] == "flattened" and not isinstance(doc.d.get("burned"), dict):
         try:                                       # once per file signature: caps.cut_strategy needs it
@@ -1786,7 +2041,8 @@ def show_doc(rec, doc):
                chat=_chat_load(doc)["turns"],
                renders=renders, warnings=list(doc.d.get("warnings") or []),
                paths=dict(doc=doc.path, dir=doc.dir, renders=os.path.join(doc.dir, "renders"),
-                          transcript=os.path.join(doc.dir, "transcript.json")))
+                          transcript=transcript_path(doc)))
+    out["pickups"] = list(st.get("pickups") or [])
     W = cached_words(doc)
     out["words_sig"] = words_sig(W) if W is not None else None
     try:

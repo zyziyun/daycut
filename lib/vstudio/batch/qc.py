@@ -227,6 +227,11 @@ def run_gates(job, spec, ins, extra=()):
         checks.append(_c("caption-edit-missed", False, len(miss), "caption edit(s) not applied (the cue changed): " +
                          "; ".join(f"#{m.get('i')} {m.get('from')!r} -> {m.get('to')!r}" for m in miss[:3]),
                          severity="warn"))
+    cl = (ins.get("export") or {}).get("caption_lang") or {}
+    if cl and cl.get("asked") != cl.get("spoken") and not cl.get("translated"):
+        checks.append(_c("caption-language", False, cl.get("spoken"),
+                         f"captions asked in {cl.get('asked')}, made in {cl.get('spoken')} (not translated: "
+                         f"{cl.get('error') or 'no translation model'})", severity="warn"))
     checks += list(extra or ())
     red = [c for c in checks if c["ok"] is False and c["severity"] == "red"]
     warn = [c for c in checks if c["ok"] is False and c["severity"] == "warn"]

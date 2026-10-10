@@ -73,6 +73,27 @@ test('two requests back to back: both become projects and finish on autopilot wi
   await expect(rows).toHaveCount(2, { timeout: 30000 });
   // both run side by side (two run slots): at some point both are in Running together
   await expect(page.getByTestId('hub-group-run').getByTestId('hub-row').filter({ hasText: 'live_1005' })).toHaveCount(2, { timeout: 30000 });
+  // real progress: the step bar follows the engine's own stages ("s01:asr" ...), the line says which clip and the time
+  // left in words (never "0/3 jobs"), and 「What it's doing」 lists the run line by line
+  await page.getByTestId('hub-group-run').getByTestId('hub-row').filter({ hasText: 'live_1005 · 3' }).first().click();
+  const seen: string[] = [];
+  await expect
+    .poll(
+      async () => {
+        const c = (await page.getByTestId('hub-steps').first().getAttribute('data-current')) ?? '';
+        if (c && seen[seen.length - 1] !== c) seen.push(c);
+        return new Set(seen).size;
+      },
+      { timeout: 30000, intervals: [100] },
+    )
+    .toBeGreaterThanOrEqual(3);
+  expect(seen.some((c) => c !== 'plan')).toBe(true);
+  await expect(page.getByTestId('hub-state-line')).toContainText(/Clip \d of 3/);
+  await expect(page.getByTestId('hub-state-line')).not.toContainText('jobs');
+  await expect(page.getByTestId('hub-feed-line').first()).toBeVisible();
+  await expect(page.getByTestId('hub-feed')).toContainText(/(Transcribe|Cut|Captions|Render|Check|Copy)…/);
+  await page.screenshot({ path: path.join(tmp, 'hub-running.png') });
+  if (process.env.AP_SHOTS) fs.copyFileSync(path.join(tmp, 'hub-running.png'), path.join(process.env.AP_SHOTS, 'hub-running.png'));
   // ... and both reach Ready on their own: no plan card, no Start, no question
   await expect(page.getByTestId('hub-group-ready').getByTestId('hub-row').filter({ hasText: 'live_1005' })).toHaveCount(2, { timeout: 90000 });
   await expect(page.getByTestId('plan-start')).toHaveCount(0);
@@ -93,7 +114,7 @@ test('the control room: pipeline, what the AI decided (take one back -> Inbox), 
   const decs = page.getByTestId('hub-decision');
   await expect(decs.first()).toBeVisible();
   await expect(page.getByTestId('hub-decisions')).toContainText('Cut 3 unsure filler words, kept 1');
-  await expect(page.getByTestId('hub-decisions')).toContainText('AI · claude-code');
+  await expect(page.getByTestId('hub-decisions')).toContainText('AI · Claude Code');
   await expect(page.getByTestId('hub-decisions')).toContainText('Rules');
   await expect(page.getByTestId('hub-clip')).toHaveCount(3);
   // take the cover of clip s01 back: it goes to the Inbox
