@@ -118,13 +118,10 @@ test('transcript: delete -> skipped at once -> saved by itself (no Apply) -> Exp
   expect(i0).toBeGreaterThan(0);
   expect(i1).toBeGreaterThan(i0);
   const full = dur(exportFile());
-  // 第二 个 例子: drag across, Delete
-  const a = await w(i0).boundingBox();
-  const b = await w(i1).boundingBox();
-  await page.mouse.move(a!.x + 3, a!.y + a!.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(b!.x + b!.width - 3, b!.y + b!.height / 2, { steps: 6 });
-  await page.mouse.up();
+  // 第二 个 例子: click the first word, shift-click the last (a drag raced the transcript's reflow on slow CI), Delete
+  await w(i0).scrollIntoViewIfNeeded();
+  await w(i0).click();
+  await w(i1).click({ modifiers: ['Shift'] });
   await expect(page.getByTestId("selection-bar")).toContainText(" words");
   await page.keyboard.press('Delete');
   await expect(page.getByTestId('editor-length')).toContainText('→'); // effective at once

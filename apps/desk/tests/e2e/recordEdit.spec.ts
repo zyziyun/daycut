@@ -193,7 +193,8 @@ test.describe('record -> edit -> pickup', () => {
     const r = await api<{ targets: { file: string }[] }>(page, `/api/outputs/${item}/${encodeURIComponent(clip)}/render`, { quality: 'final', targets: 'primary' });
     const file = r.targets[0].file;
     const kept = doc.duration - doc.cuts.reduce((s, c) => s + (c.end - c.start), 0);
-    expect(Math.abs(probe(file) - kept)).toBeLessThan(0.3);
+    // frame-snapped joins + two 40 ms crossfades per pickup + encoder padding: within half a second
+    expect(Math.abs(probe(file) - kept)).toBeLessThan(0.5);
     expect(kept).toBeGreaterThan(doc.pickups[0].end - doc.pickups[0].start);
     await page.getByTestId('editor-undo').click();
     await expect(page.getByTestId('pickup-tag')).toHaveCount(0, { timeout: 20000 });
