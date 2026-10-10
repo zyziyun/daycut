@@ -45,7 +45,12 @@ def rj(path):
 
 def status_of(d):
     p = os.path.join(d, ".vstudio", "status.json")
-    return rj(p).get("status") if os.path.exists(p) else None
+    try:
+        return rj(p).get("status")
+    except FileNotFoundError:
+        return None
+    except PermissionError:          # Windows: the run is replacing it this very moment - the next poll reads it
+        return None
 
 
 def wait_for(fn, limit=120, step=0.1):
