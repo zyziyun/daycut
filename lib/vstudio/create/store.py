@@ -23,6 +23,8 @@ import time
 
 import yaml
 
+from vstudio import oscompat
+
 from . import SCHEMA_VERSION
 from .i18n import CreateError
 
@@ -120,7 +122,7 @@ def _atomic(path, text):
     fd, tmp = tempfile.mkstemp(prefix=".tmp-", dir=os.path.dirname(path))
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(text)
-    os.replace(tmp, path)
+    oscompat.replace(tmp, path)
     return path
 
 

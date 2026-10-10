@@ -239,3 +239,28 @@ def test_media_paths_with_odd_names(tmp_path, folder, name):
     png = d / "帧 [0].png"
     media.grab_frame(str(src), 0.5, str(png))
     assert png.stat().st_size > 0
+
+
+def test_replace_waits_out_a_reader_on_windows(tmp_path, monkeypatch):
+    from vstudio import oscompat
+    src, dst = tmp_path / "a.tmp", tmp_path / "a.json"
+    src.write_text("new")
+    dst.write_text("old")
+    real, calls = os.replace, []
+
+    def flaky(a, b):                                  # Windows: someone has `dst` open (WinError 5) twice
+        calls.append(1)
+        if len(calls) < 3:
+            raise PermissionError(5, "Access is denied")
+        return real(a, b)
+
+    monkeypatch.setattr(oscompat.os, "replace", flaky)
+    monkeypatch.setattr(oscompat, "WINDOWS", True)
+    oscompat.replace(str(src), str(dst))
+    assert dst.read_text() == "new" and len(calls) == 3
+    monkeypatch.setattr(oscompat, "WINDOWS", False)   # POSIX: no retry, the error is real
+    calls.clear()
+    src.write_text("x")
+    with pytest.raises(PermissionError):
+        oscompat.replace(str(src), str(dst))
+    assert len(calls) == 1

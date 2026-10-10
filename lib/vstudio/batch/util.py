@@ -6,6 +6,8 @@ import os
 import re
 import time
 
+from vstudio import oscompat
+
 
 def now():
     return time.time()
@@ -30,7 +32,7 @@ def write_json(path, obj):
     tmp = f"{path}.tmp{os.getpid()}"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(obj, f, ensure_ascii=False, indent=1, default=str)
-    os.replace(tmp, path)
+    oscompat.replace(tmp, path)
     return path
 
 

@@ -38,6 +38,8 @@ import os
 import sys
 import threading
 
+from vstudio import oscompat
+
 DEFAULTS = dict(kind="text", text="", image="", style="badge", color="#FFFFFF", position="bottom-right",
                 size=0.24, opacity=0.8, margin=0.02, default=False, platforms={})
 KINDS = ("text", "image", "generate")
@@ -165,7 +167,7 @@ def save(patch):
     tmp = "%s.%d.%d.tmp" % (p, os.getpid(), threading.get_ident())
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(cur, f, ensure_ascii=False, indent=1)
-    os.replace(tmp, p)
+    oscompat.replace(tmp, p)
     return load()
 
 
@@ -191,7 +193,7 @@ def import_logo(path):
         tmp = "%s.%d.%d.part" % (out, os.getpid(), threading.get_ident())
         with open(tmp, "wb") as f:
             f.write(data)
-        os.replace(tmp, out)
+        oscompat.replace(tmp, out)
     return out
 
 
@@ -342,7 +344,7 @@ def generate(text, style="badge", color="#FFFFFF", out=None):
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     tmp = "%s.%d.%d.part" % (out, os.getpid(), threading.get_ident())   # atomic: a parallel preview never reads half
     im.save(tmp, "PNG")
-    os.replace(tmp, out)
+    oscompat.replace(tmp, out)
     return out
 
 

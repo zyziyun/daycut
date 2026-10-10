@@ -22,7 +22,7 @@ import shutil
 import subprocess
 import sys
 
-from .common import need, read_json, sha1_json, write_json
+from .common import need, read_json, replace, sha1_json, write_json
 
 # Display order: English / global, Chinese, other languages (vstudio.platform.ORDER).
 PLATFORMS = ("youtube", "youtube-shorts", "tiktok", "instagram", "x", "facebook", "linkedin", "threads", "reddit",
@@ -367,7 +367,7 @@ class WorkPackages:
         with open(os.path.join(tmp, "CONFIRM.txt"), "w", encoding="utf-8") as fh:
             fh.write(f"{man['confirmation_code']}  ({len(items)} posts)\n")
         shutil.rmtree(final, ignore_errors=True)
-        os.replace(tmp, final)
+        replace(tmp, final)
         self.history.allow_media([os.path.join(final, "manifest.json")])
         return dict(dir=final, items=len(items), confirmation_code=man["confirmation_code"],
                     checks=sum(1 for i in items for x in i["checks"] if x["code"] != "ai-label"))

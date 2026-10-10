@@ -43,6 +43,7 @@ import subprocess
 import time
 import zipfile
 
+from vstudio import oscompat
 from vstudio.batch.util import read_json, sha1_json, write_json
 
 PAGE_VERSION = 1
@@ -515,7 +516,7 @@ def build_page(clips, out_dir, title="Review", footer=True, quality="standard", 
             f.write(render_html(data))
         with open(os.path.join(tmp, "README.txt"), "w", encoding="utf-8", newline="\n") as f:
             f.write(readme_text(data))
-        os.replace(tmp, out_dir)
+        oscompat.replace(tmp, out_dir)
     except BaseException:
         shutil.rmtree(tmp, ignore_errors=True)
         raise
@@ -574,7 +575,7 @@ def zip_folder(folder, zpath):
             zi.compress_type = zipfile.ZIP_STORED if stored else zipfile.ZIP_DEFLATED
             with open(p, "rb") as f:
                 z.writestr(zi, f.read(), compresslevel=None if stored else 9)
-    os.replace(tmp, zpath)
+    oscompat.replace(tmp, zpath)
     return zpath
 
 

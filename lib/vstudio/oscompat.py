@@ -7,6 +7,7 @@
         oscompat.unlock(f)
     oscompat.pid_alive(1234)                      # never sends a signal (os.kill(pid, 0) KILLS on Windows)
     oscompat.kill_tree(proc)                      # the child and everything it started
+    oscompat.replace(tmp, path)                   # os.replace that waits out a reader holding `path` (Windows)
 
 POSIX: ``fcntl.flock``, ``os.kill(pid, 0)``, ``os.killpg`` (the child must have been started with
 ``start_new_session=True``). Windows: ``msvcrt.locking`` on one byte far past the data (readers and writers of the
@@ -15,6 +16,7 @@ file are not blocked), ``OpenProcess`` + ``GetExitCodeProcess``, ``taskkill /T /
 import os
 import signal
 import subprocess
+import time
 
 WINDOWS = os.name == "nt"
 _LOCK_AT = 1 << 30
@@ -51,7 +53,6 @@ def try_lock(f):
 def lock(f, poll=0.05):
     """Take an exclusive lock on the open file ``f``, waiting for it as long as it takes."""
     if WINDOWS:
-        import time
         while not try_lock(f):
             time.sleep(poll)
         return
@@ -149,3 +150,18 @@ def relpath(path, start=os.curdir):
     except ValueError:
         return os.path.abspath(path)
     return rel.replace(os.sep, "/") if os.sep != "/" else rel
+
+
+def replace(src, dst, wait=5.0):
+    """``os.replace`` for a file other threads / processes read, or a folder just written. Windows refuses to replace a
+    file someone has open without FILE_SHARE_DELETE - every Python ``open()`` - or to rename a folder while a file in it
+    is open (a reader, the antivirus scanning new files): PermissionError, WinError 5 / 32. Retry for up to ``wait``
+    seconds, then raise. POSIX: ``os.replace`` as is."""
+    end = time.monotonic() + wait
+    while True:
+        try:
+            return os.replace(src, dst)
+        except PermissionError:
+            if not WINDOWS or time.monotonic() >= end:
+                raise
+            time.sleep(0.02)

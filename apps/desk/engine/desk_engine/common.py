@@ -29,12 +29,26 @@ def read_json(path, default=None):
         return default
 
 
+def replace(src, dst, wait=5.0):
+    """os.replace for a file the API threads read or a folder just written: Windows refuses to replace a file someone
+    has open (every Python open() lacks FILE_SHARE_DELETE), or to rename a folder with an open file in it (a reader,
+    the antivirus), with PermissionError - retry for up to `wait` s (vstudio.oscompat.replace)."""
+    end = time.monotonic() + wait
+    while True:
+        try:
+            return os.replace(src, dst)
+        except PermissionError:
+            if os.name != "nt" or time.monotonic() >= end:
+                raise
+            time.sleep(0.02)
+
+
 def write_json(path, obj):
     os.makedirs(os.path.dirname(os.path.abspath(path)) or ".", exist_ok=True)
     tmp = f"{path}.tmp{os.getpid()}"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(obj, f, ensure_ascii=False, indent=1, default=str)
-    os.replace(tmp, path)
+    replace(tmp, path)
 
 
 # ------------------------------------------------------------------ temp / junk (registry hygiene)

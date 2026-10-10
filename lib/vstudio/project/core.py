@@ -31,6 +31,7 @@ import time
 import yaml
 
 from vstudio import messages as MSG
+from vstudio import oscompat
 from vstudio.batch import recipes as RC
 from vstudio.batch.run import BatchBusy, Runner, runner_active
 from vstudio.batch.store import DB_NAME, Store
@@ -180,7 +181,7 @@ class Project:
         tmp = self.yaml_path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             yaml.safe_dump(self.data, f, allow_unicode=True, sort_keys=False)
-        os.replace(tmp, self.yaml_path)
+        oscompat.replace(tmp, self.yaml_path)
 
     def reload(self):
         self.data = self._read()
