@@ -202,7 +202,8 @@ function AskBox({ itemKey }: { itemKey: string }) {
 function Advanced({ itemKey, a }: { itemKey: string; a: InboxAuthor }) {
   const { client } = useEngine();
   const ui = useUi();
-  if (!a.file || !a.exists) return null;
+  // her own / the drafted file; a step the AI cannot draft (an agent's folder, a code spec) can be opened too
+  if (!a.file || !(a.exists || (!a.can_draft && a.state === 'template'))) return null;
   return (
     <More summary={t('draft.advanced')} testId="draft-advanced">
       <button

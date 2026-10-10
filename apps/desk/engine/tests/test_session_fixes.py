@@ -149,7 +149,7 @@ class AuthorCheckpointInInbox(unittest.TestCase):
         (it,) = self.items()
         seen, done = [], __import__("threading").Event()
 
-        def fake_redraft(project, cp, item, instruction=None, complete=None):
+        def fake_redraft(project, cp, item, instruction=None, complete=None, request=None):
             seen.append((project.dir, cp, item, instruction))
             done.set()
             return dict(ok=True)
@@ -161,6 +161,17 @@ class AuthorCheckpointInInbox(unittest.TestCase):
             self.assertEqual(r, dict(ok=True, drafting=True))
             self.assertTrue(done.wait(5))
         self.assertEqual(seen, [(os.path.realpath(self.d), "keep", "AIGC", "Hedra 那段留着")])
+
+    def test_a_project_an_older_app_made_gets_its_request_from_the_plan(self):
+        """Her 0.2.3 project.yaml has no prompt: the redraft reads it from the plan it was applied from."""
+        pdir = os.path.join(tempfile.mkdtemp(), "bc5205f666b2", "01-AIGC")
+        os.makedirs(pdir)
+        data = os.path.dirname(self.ib.path)
+        os.makedirs(os.path.join(data, "intake"))
+        with open(os.path.join(data, "intake", "bc5205f666b2.json"), "w", encoding="utf-8") as f:
+            json.dump(dict(prompt="删掉开头没讲完的开场，以及讲 Hedra 的整段", revisions=[dict(prompt="正文 1.5 倍速")]), f)
+        self.assertEqual(self.ib._request_of(pdir), "删掉开头没讲完的开场，以及讲 Hedra 的整段\n正文 1.5 倍速")
+        self.assertIsNone(self.ib._request_of(self.d))
 
     def test_open_in_editor_opens_only_listed_files(self):
         (it,) = self.items()

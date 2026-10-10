@@ -227,7 +227,7 @@ class AutopilotDecisionsRealEngineTest(unittest.TestCase):
             self.assertTrue(doc["supported"] and doc["autopilot"]["on"])
             dec, = doc["decisions"]
             self.assertEqual((dec["checkpoint"], dec["item"], dec["by"], dec["reason_code"]),
-                             ("lock", "ep01", "rules", "hers"))                 # her own script, as written
+                             ("lock", "ep01", "rules", "drafted"))
             out = ap.reopen("abcdefabcdef", "lock", "ep01")
             self.assertTrue(out["ok"] and out["resumed"])
             self.assertIn("resume", spawned[-1])

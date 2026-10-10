@@ -41,3 +41,25 @@ def voice_apply(a):
     if v.get("speed"):
         p["speed"] = float(v["speed"])
     return dict(params={}, project_params=p) if p else dict(params={})
+
+
+def draft_cues(ctx, cp, path, template=None, instruction=None, complete=None):
+    """The subtitle pairing (``subtitles/cues.txt``) drafted by the engine: the workflow's own pairing
+    (``pair_cues.py`` -> ``cues.draft.txt``, EN || ZH per cue) taken as it is - she checks it, she never retypes it.
+    With an instruction ("make the Chinese shorter") the AI rewrites it from that draft (``drafts.generic``)."""
+    draft = os.path.join(os.path.dirname(path), "cues.draft.txt")
+    if not os.path.isfile(draft):
+        return None
+    if instruction:
+        from .. import drafts as DR
+        with open(draft, encoding="utf-8") as f:
+            text = f.read()
+        return DR.generic(ctx, cp, path, instruction=instruction, complete=complete, template_text=text)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(draft, encoding="utf-8") as f, open(path, "w", encoding="utf-8") as g:
+        g.write(f.read())
+    cues = 0
+    with open(path, encoding="utf-8") as f:
+        cues = sum(1 for ln in f if "||" in ln)
+    return dict(by="rules", instruction=None, review=dict(kind="outline", lines=[], summary=dict(
+        code="draft.items", params=dict(n=cues))))

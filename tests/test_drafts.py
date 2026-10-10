@@ -265,3 +265,21 @@ def test_packaging_is_drafted_from_the_kept_talk_and_her_files(tmp_path, talk, m
     assert "pip" not in out and len(out["subtitles"]["body"]) == 2
     assert DR.review(ctx, cp, str(cfg))["summary"] == dict(code="draft.package-rules", params=dict(captions=2, placed=0,
                                                                                                   left=2))
+
+
+def test_explainer_subtitle_pairing_is_the_workflows_own_draft(tmp_path):
+    """Explainer "Subtitle pairing" asked her to fix cues.draft.txt and save it as cues.txt: the engine takes its own
+    pairing as the draft (rules), she only checks it."""
+    item = tmp_path / "items" / "e1"
+    (item / "subtitles").mkdir(parents=True)
+    (item / "subtitles" / "cues.draft.txt").write_text("## 1\nHello there || 你好\n## 2\nNext idea || 下一个想法\n",
+                                                      encoding="utf-8")
+    p = Project.create(str(tmp_path / "ex"), recipe="explainer", inputs=dict(topic="sleep"))
+    cp = p.checkpoint("cues")
+    ctx = DR.Ctx(str(tmp_path), "e1", dict(_item_dir=str(item)), "explainer")
+    path = str(item / "subtitles" / "cues.txt")
+    assert DR.state(path, None, cp, "explainer") == "missing"
+    rec = DR.ensure(ctx, cp, path)
+    assert rec["by"] == "rules" and open(path, encoding="utf-8").read().startswith("## 1\nHello there || 你好")
+    assert DR.state(path, None, cp, "explainer") == "drafted"
+    assert DR.review(ctx, cp, path)["summary"] == dict(code="draft.items", params=dict(n=2))

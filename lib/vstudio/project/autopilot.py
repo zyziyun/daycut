@@ -138,8 +138,7 @@ def rules(cp, pay, spend_cap=0.0):
         if by == "ai":
             return dict(value=default, by="ai", provider=rv.get("provider"), reason=rv.get("ai_summary") or
                         "the AI's draft", reason_code="drafted", params=params)
-        return _rule("drafted" if pay.get("draft_state") == "drafted" else "hers",
-                     "the drafted file" if pay.get("draft_state") == "drafted" else "your own file", default, **params)
+        return _rule("drafted", "your selection" if by == "her" else "the drafted file", default, **params)
     if kind == "hook-pick":
         pick = int((default or {}).get("pick", -1))
         return _rule("hook-default", "no cold open (your style)" if pick < 0 else f"opening {pick + 1}", default,

@@ -63,9 +63,11 @@ class Ctx:
                 self._data = {}
         return self._data
 
+    request_text = None          # her request when project.yaml has none (a project made by an older app)
+
     def request(self):
         d = self.data
-        bits = [d.get("prompt") or "", d.get("name") or "", str(self.params.get("title") or "")]
+        bits = [d.get("prompt") or self.request_text or "", d.get("name") or "", str(self.params.get("title") or "")]
         return "\n".join(dict.fromkeys(b for b in bits if b)).strip()
 
     def lang(self):
@@ -164,9 +166,10 @@ def _part_present(recipe, cp_id):
 
 # --------------------------------------------------------------------------- drafting
 def _drafter(recipe, cp_id):
-    from .adapters import preproduction, promo
+    from .adapters import explainer, preproduction, promo
     return {("promo-recut", "keep"): promo.draft_keep, ("promo-recut", "package"): promo.draft_package,
-            ("preproduction", "lock"): preproduction.draft_script}.get((recipe, cp_id))
+            ("preproduction", "lock"): preproduction.draft_script, ("explainer", "cues"): explainer.draft_cues}.get(
+        (recipe, cp_id))
 
 
 def _reviewer(recipe, cp_id):
@@ -365,10 +368,11 @@ def outline_review(path, side=None):
 
 
 # --------------------------------------------------------------------------- "ask in plain words"
-def redraft(project, cp_id, item, instruction=None, complete=None):
+def redraft(project, cp_id, item, instruction=None, complete=None, request=None):
     """A new draft of an author checkpoint's file that follows ``instruction`` (None: draft it now, e.g. an older
     project whose file is still the template). Updates the stored payload in place (review, default, digest), so
-    the Inbox shows the new draft at once. -> {ok, review, state, failed?}."""
+    the Inbox shows the new draft at once. ``request``: her request when project.yaml has none (the app passes the
+    one it planned the project from). -> {ok, review, state, failed?}."""
     from .build import file_sha
     cp = project.checkpoint(cp_id)
     a = cp.get("author") or {}
@@ -380,6 +384,7 @@ def redraft(project, cp_id, item, instruction=None, complete=None):
     params.setdefault("_project_dir", project.dir)
     params.setdefault("_item_dir", os.path.join(project.dir, "items", item))
     ctx = Ctx(project.dir, item, params, project.manifest["id"], project.data.get("spec") or {})
+    ctx.request_text = request
     pay_path = os.path.join(project.state_dir, "checkpoints", item, f"{cp_id}.json")
     try:
         with open(pay_path, encoding="utf-8") as f:

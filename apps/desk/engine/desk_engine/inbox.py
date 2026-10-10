@@ -494,7 +494,8 @@ class Inbox:
             try:
                 from vstudio.project import drafts as DR
                 from vstudio.project.core import Project
-                DR.redraft(Project(eng["dir"]), eng["id"], eng.get("item"), (instruction or "").strip() or None)
+                DR.redraft(Project(eng["dir"]), eng["id"], eng.get("item"), (instruction or "").strip() or None,
+                           request=self._request_of(eng["dir"]))
             except Exception as e:  # noqa: BLE001  (the item stays as it was; the reason is logged)
                 print(f"[inbox] redraft failed for {eng['dir']} {eng['id']}: {e}", file=sys.stderr, flush=True)
             finally:
@@ -504,6 +505,18 @@ class Inbox:
                     self.bus.publish("inbox")
         threading.Thread(target=go, daemon=True).start()
         return dict(ok=True, drafting=True)
+
+    def _request_of(self, pdir):
+        """Her request for a project an older app made from Home without keeping it (project.yaml has no
+        ``prompt``): the plan it was applied from, ``<data>/intake/<request id>.json`` (the project's parent folder is
+        named after the request)."""
+        rid = os.path.basename(os.path.dirname(os.path.abspath(pdir)))
+        if not re.match(r"^[0-9a-f]{12}$", rid):
+            return None
+        plan = read_json(os.path.join(os.path.dirname(self.path), "intake", f"{rid}.json"), None) or {}
+        texts = [plan.get("prompt") or ""] + [r.get("prompt") or "" for r in plan.get("revisions") or []
+                                              if isinstance(r, dict)]
+        return "\n".join(t for t in texts if t).strip() or None
 
     opener = staticmethod(open_path)
 
