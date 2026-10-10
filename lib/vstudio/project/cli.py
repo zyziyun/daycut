@@ -374,6 +374,13 @@ def cmd_output(a):
                                 name="step")
         _out(a, O.revert(proj, a.output, a.step, note=a.note))
         return 0
+    if act == "pickup":
+        if not a.src:
+            raise O.OutputError("bad-param", "--src is required (a recorder session folder or a media file)",
+                                "需要 --src", name="src")
+        _out(a, O.pickup(proj, a.output, a.src, at=a.at, end=a.end, at_word=a.at_word,
+                         replace=json.loads(a.replace) if a.replace else None, sig=a.sig, note=a.note))
+        return 0
     if act == "chat":
         if a.add:
             _out(a, O.chat_add(proj, a.output, json.loads(a.add)))
@@ -669,7 +676,7 @@ def build_parser():
     p.add_argument("--outputs", help="comma list (default: videos in final/ exports/ out/)")
     p = add("output", cmd_output, "second-pass edit of a finished output (references/OUTPUT_EDIT.md)")
     p.add_argument("action", choices=["list", "show", "edit", "render", "undo", "redo", "revert", "ai", "chat",
-                                      "effects", "preview-edl"])
+                                      "effects", "preview-edl", "pickup"])
     p.add_argument("--project", help="project folder or adopted work folder (default --dir / cwd)")
     p.add_argument("--output", help="output id (output list), or its file path")
     p.add_argument("--ops", help="JSON op or list of ops")
@@ -697,6 +704,12 @@ def build_parser():
                    help="render --quality final: the creator's watermark (auto = her default, vstudio.watermark)")
     p.add_argument("--json-events", action="store_true")
     p.add_argument("--no-thumbs", action="store_true", help="effects: skip the preview thumbnails")
+    p.add_argument("--src", help="pickup: the recorder session folder (or a media file) to splice in")
+    p.add_argument("--at", type=float, help="pickup: seconds on the current timeline")
+    p.add_argument("--end", type=float, help="pickup: replace up to here (seconds; default = insert at --at)")
+    p.add_argument("--at-word", type=int, help="pickup: insert before this transcript word (0 = the start)")
+    p.add_argument("--replace", help="pickup: [i0, i1] transcript words to replace")
+    p.add_argument("--sig", help="pickup: the transcript signature the word indices refer to (words_sig)")
     p = add("ai", cmd_ai, "project-level AI edit of every output (grouped per output; needs_rerender)")
     p.add_argument("--project", help="project folder or adopted work folder (default --dir / cwd)")
     p.add_argument("--instruction", required=True)
