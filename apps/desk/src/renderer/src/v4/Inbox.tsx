@@ -52,7 +52,14 @@ export function useResolve() {
 }
 
 export function InboxScreen() {
-  const { items, loading, doneToday } = useInbox();
+  const { items, loading, doneToday, reload } = useInbox();
+  // while she looks at the Inbox: a missed event (a stream reconnect, an answer that raced a run) never leaves a
+  // stale list for long
+  useEffect(() => {
+    const id = setInterval(reload, 20000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const q = useRouteQuery();
   // the "review all in a row" queue only while the route says so (?triage=1, like the editor): a queue left through
   // the sidebar stays in sessionStorage and would otherwise put a stale "2 of 2" bar over the plain Inbox

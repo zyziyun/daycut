@@ -182,11 +182,9 @@ def _batch_review(entry):
     if not os.path.exists(db):
         return None
     try:
-        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=1.0)
-        try:
+        from .common import read_db
+        with read_db(db) as con:
             rows = con.execute("SELECT id, state, qc, review FROM jobs ORDER BY ord, id").fetchall()
-        finally:
-            con.close()
     except sqlite3.Error:
         return None
     todo = [r for r in rows if r[1] in ("done", "pilot-review") and not r[3]]

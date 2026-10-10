@@ -39,7 +39,8 @@ def vstudio_home():
 
 # ------------------------------------------------------------------ reading a found folder
 def _ro(db):
-    return sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=1.0)
+    from .common import read_db
+    return read_db(db)
 
 
 def _first_sheet(bdir, job_ids):
@@ -60,8 +61,7 @@ def summarize_batch(bdir):
     try:
         st = os.stat(db)
         out["updated"] = st.st_mtime
-        con = _ro(db)
-        try:
+        with _ro(db) as con:
             meta = {k: v for k, v in con.execute("SELECT k, v FROM meta")}
             spec = json.loads(meta.get("spec") or "{}") or {}
             out["name"] = spec.get("name") or out["name"]
@@ -101,9 +101,7 @@ def summarize_batch(bdir):
                 out["status"] = "in-progress"
             else:
                 out["status"] = "planned"
-            out["thumb"] = _first_sheet(bdir, [r[0] for r in rows])
-        finally:
-            con.close()
+        out["thumb"] = _first_sheet(bdir, [r[0] for r in rows])
     except (OSError, sqlite3.Error, ValueError) as e:
         out.update(status="unreadable", error=str(e)[:200])
     return out

@@ -222,15 +222,14 @@ def waveform(words, duration, n=None):
 # ------------------------------------------------------------------ listing (one clip per output)
 def _batch_clips(bdir):
     """jobs/<id>/export/[exports/]manifest.json of a batch (or a project's state/) -> clips."""
-    import sqlite3
     states = {}
     try:
-        con = sqlite3.connect(f"file:{os.path.join(bdir, 'batch.db')}?mode=ro", uri=True, timeout=1.0)
-        try:
-            for jid, st, qc, rv in con.execute("SELECT id, state, qc, review FROM jobs ORDER BY ord, id"):
-                states[jid] = dict(state=st, qc=qc, review=rv)
-        finally:
-            con.close()
+        db = os.path.join(bdir, "batch.db")
+        if os.path.exists(db):
+            from .common import read_db
+            with read_db(db) as con:
+                for jid, st, qc, rv in con.execute("SELECT id, state, qc, review FROM jobs ORDER BY ord, id"):
+                    states[jid] = dict(state=st, qc=qc, review=rv)
     except Exception:  # noqa: BLE001
         pass
     out = []

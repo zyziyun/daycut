@@ -7,6 +7,7 @@ import re
 import tempfile
 import threading
 import time
+from contextlib import contextmanager
 
 
 def sha1_json(obj, n=None):
@@ -213,3 +214,25 @@ class Registry:
     def remove(self, bid):
         with self._lock:
             write_json(self.path, [b for b in self.all() if b["id"] != bid])
+
+
+_DB_LOCK = threading.Lock()
+
+
+@contextmanager
+def read_db(db, timeout=1.0):
+    """A read of a run store (``batch.db``, WAL) from the desk: one at a time in this process, on a plain connection
+    that only reads (``query_only``; ``mode=ro`` only for a folder she can only read). Read-only opens of a WAL file
+    from many request threads at once, while a run wrote it, hung every thread of the engine in sqlite3.connect /
+    close (the Inbox and All projects then never answered again)."""
+    import sqlite3
+    with _DB_LOCK:
+        try:
+            con = sqlite3.connect(db, timeout=timeout)
+            con.execute("PRAGMA query_only=1")
+        except sqlite3.Error:                    # a folder she can only read: the read-only open (one at a time)
+            con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=timeout)
+        try:
+            yield con
+        finally:
+            con.close()
