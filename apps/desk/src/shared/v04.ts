@@ -36,6 +36,10 @@ export interface Clip {
   duration: number | null;
   extra?: boolean;
   letter?: string | null;
+  /** edited in the editor and rendered: files / cover are the edit's fresh final renders (what goes out) */
+  edited?: boolean;
+  /** edited since its last render: the original still goes out until the background render is done */
+  edited_stale?: boolean;
 }
 
 export interface Confirmation {

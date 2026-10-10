@@ -194,7 +194,7 @@ class Calendar:
                      title_limit=tlim, title_length=tn, title_custom=bool(r.get("platform_title")),
                      caption=text, caption_custom=isinstance(own, str), length=n, limit=lim, warnings=warn,
                      project=names.get(r["item"]), duration=clip.get("duration"),
-                     cover=r.get("cover") or clip.get("cover"), title=r.get("title") or clip.get("title") or r["clip"])
+                     cover=clip.get("cover") or r.get("cover"), title=r.get("title") or clip.get("title") or r["clip"])
             out.append(r)
         return out
 

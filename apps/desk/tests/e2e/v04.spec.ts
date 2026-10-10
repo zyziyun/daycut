@@ -136,9 +136,11 @@ test('second-pass edit: trim, pop word (精确编辑 drawer), 让 AI 改 (chat),
   await expect(page.getByTestId('editor')).toBeVisible();
   await expect(page.getByTestId('timeline').locator('.w')).toHaveCount(6);
   await expect(page.getByTestId('chat-panel')).toBeVisible(); // chat-first: the AI column is the default
-  await page.getByTestId('toggle-precise').click(); // today's tabs live in the optional drawer
-  await page.getByTestId('etab-captions').click();
-  await expect(page.getByTestId('caps-note')).toContainText(/burned|烧进/); // flattened: explained, no dead controls
+  // the clip's info sits above the chat: flattened captions are explained, no dead controls
+  await expect(page.getByTestId('clip-info')).toBeVisible();
+  await expect(page.getByTestId('ci-caps-burned')).toContainText(/part of the picture|已经在画面里/);
+  await page.getByTestId('toggle-precise').click(); // trim and effects live in the optional drawer
+  await expect(page.getByTestId('etab-captions')).toHaveCount(0);
   await page.getByTestId('etab-trim').click();
   // seek to "其实" (2.4 s) by clicking its word, then start there
   await page.getByTestId('timeline').locator('.w[data-t="2.4"]').click();
@@ -166,8 +168,7 @@ test('second-pass edit: trim, pop word (精确编辑 drawer), 让 AI 改 (chat),
   await done.getByTestId('applied-undo').click(); // the newest card: a plain undo
   await expect(page.getByTestId('edit-step')).toHaveCount(2);
 
-  await page.getByTestId('render').click();
-  await expect(page.getByTestId('render-state')).toContainText(/can’t re-render|不能重新导出/);
+  await expect(page.getByTestId('ci-render')).toHaveCount(0); // nothing re-renders by itself without the video engine
   await page.getByTestId('editor-undo').click();
   await expect(page.getByTestId('edit-step')).toHaveCount(1);
   await expect(page.getByTestId('fx-block')).toHaveCount(0);

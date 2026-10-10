@@ -675,6 +675,10 @@ def _has_word(txt, word):
     return re.search(rf"(?<![\w-]){re.escape(word)}(?![\w-])", txt) is not None
 
 
+_RLOCKS = {}                       # (item, clip) -> the lock its renders take turns on
+_RLOCK_GUARD = threading.Lock()
+
+
 class Outputs:
     """Clip listing + the output editor, via the engine command when it exists, else the desk implementation."""
 
@@ -686,6 +690,7 @@ class Outputs:
         self._pv = False              # the engine has preview-edl (live skip preview of pending transcript cuts)
         self._lock = threading.Lock()
         self._lists = {}
+        self._edited = {}
         self._jobs = {}
 
     # ---------------------------------------------------------- capability
@@ -738,10 +743,51 @@ class Outputs:
         try:
             doc = self._read("list", e["dir"])
             m = {os.path.realpath(o["file"]): o["id"] for o in doc.get("outputs") or [] if o.get("file") and o.get("id")}
+            self.__dict__.setdefault("_edited", {})[k] = {o["id"] for o in doc.get("outputs") or [] if o.get("id") and o.get("steps")}
         except Exception:  # noqa: BLE001  (unknown owner / older engine: the desk implementation answers)
             m = None
         self._lists[k] = (time.time(), m)
         return m
+
+    def _as_published(self, e, cl):
+        """A clip edited in the editor goes out as edited: its fresh final renders (``outrender.fresh_finals``)
+        stand in for the original files and cover in the listing that publishing, the calendar and the queue read
+        (the editor itself keeps editing the original). Edited since the last render: the listing says so
+        (``edited_stale``) and keeps the original until the background render is done."""
+        m = self._engine_list(e)
+        edited = self.__dict__.get("_edited", {}).get(os.path.realpath(e["dir"])) or set()
+        if not m or not edited:
+            return cl
+        from vstudio.project import outrender as R
+        for c in cl:
+            oid = m.get(os.path.realpath(c["files"][0]["path"])) if c.get("files") else None
+            if not oid or oid not in edited:
+                continue
+            try:
+                fin = R.fresh_finals(e["dir"], oid)
+            except Exception:  # noqa: BLE001  (an older engine / a broken edit doc: the original stays)
+                continue
+            if "primary" not in fin:
+                c["edited_stale"] = True
+                continue
+            files = [dict(f) for f in c["files"]]
+            p = fin["primary"]
+            files[0].update(path=p["file"], duration=p.get("duration") or files[0].get("duration"))
+            for tg, r in fin.items():
+                if tg == "primary":
+                    continue
+                asp = WK.aspect_of(r.get("w"), r.get("h")) or tg
+                row = dict(path=r["file"], aspect=asp, w=r.get("w"), h=r.get("h"), duration=r.get("duration"),
+                           platform=tg)
+                k = next((i for i, f in enumerate(files) if i and f.get("aspect") == asp), None)
+                if k is None:
+                    files.append(row)
+                else:
+                    files[k] = dict(files[k], **row)
+            c["files"] = files
+            c["cover"] = p.get("cover") or next((r["cover"] for r in fin.values() if r.get("cover")), None) or c.get("cover")
+            c["edited"] = True
+        return cl
 
     # ---------------------------------------------------------- lookup
     def _entry(self, item_id):
@@ -749,7 +795,7 @@ class Outputs:
 
     def clips(self, item_id):
         e = self._entry(item_id)
-        cl = list_clips(e)
+        cl = self._as_published(e, list_clips(e))
         self.history.allow_media([f["path"] for c in cl for f in c["files"]] + [c["cover"] for c in cl if c.get("cover")])
         return dict(item=item_id, kind=e["kind"], clips=[_public_clip(c) for c in cl],
                     confirm=WK.confirmations(e["dir"]) if e["kind"] == "work" else [])
@@ -1067,6 +1113,10 @@ class Outputs:
                          daemon=True).start()
         return dict(ok=True, job=job, targets=targets)
 
+    def _render_lock(self, item_id, clip_id):
+        with _RLOCK_GUARD:
+            return _RLOCKS.setdefault((item_id, clip_id), threading.Lock())
+
     def export_stop(self, job):
         need(isinstance(job, str) and re.match(r"^[0-9a-f]{10}$", job), "job: an export id")
         j = self._jobs.get(job)
@@ -1087,7 +1137,12 @@ class Outputs:
                 self.bus.publish("output-render", item=item_id, clip=clip_id, job=job,
                                  **{k: v for k, v in ev.items() if k in ("event", "target", "stage", "progress", "file",
                                                                        "duration", "cached", "error", "simulated")})
-        try:
+        lk = self._render_lock(item_id, clip_id)
+        lk.acquire()                                       # one render of a clip at a time: a background render and
+        try:                                               # her Export queue up instead of writing the same stages
+            if stop.is_set():
+                emit(dict(event="stopped"))
+                return
             oid = self._output_id(e, c)
             if oid:
                 r = self.runner.sibling("vstudio.project")
@@ -1136,6 +1191,7 @@ class Outputs:
         except Exception as ex:  # noqa: BLE001
             emit(dict(event="failed", error=str(ex)[:300]))
         finally:
+            lk.release()
             self._jobs.pop(job, None)
 
     # ---------------------------------------------------------- one earlier step, later ones kept
@@ -1289,8 +1345,9 @@ class Outputs:
             return dict(ok=True, targets=[dict(target=c["files"][0]["aspect"], file=c["files"][0]["path"])]
                         if c["files"] else [], simulated=True, compare=True)
         if oid:
-            r = self._cli(["render", "--project", e["dir"], "--output", oid, "--quality", quality, "--targets", targets],
-                          timeout=3 * 3600)
+            with self._render_lock(item_id, clip_id):     # one render of a clip at a time (they share stage files)
+                r = self._cli(["render", "--project", e["dir"], "--output", oid, "--quality", quality, "--targets",
+                               targets], timeout=3 * 3600)
             files = [dict(target=x.get("target"), file=x.get("file"), cover=x.get("cover"), cached=x.get("cached"))
                      for x in r.get("targets") or []]
             self.history.allow_media([f["file"] for f in files if f.get("file")])

@@ -9,7 +9,7 @@
 // Pickups (ux/record/pickups): select words in the transcript -> Re-record (R) / Add after (⇧R) -> the player turns
 // into the camera (PickupStage) -> the pickup is spliced in as one undo step and marked in the transcript.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Check, ChevronRight, Contrast, GanttChart, Music, PanelRight, Redo2, Scissors, SkipForward, SlidersHorizontal, Sparkle, Sparkles, Square, Trash2, Type, Undo2, Upload, X, ZoomIn } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronRight, Contrast, GanttChart, Music, PanelRight, Redo2, Scissors, SkipForward, SlidersHorizontal, Sparkle, Sparkles, Square, Trash2, Type, Undo2, Upload, X, ZoomIn } from 'lucide-react';
 import type { ChatDoc } from '../../../shared/chatEdit';
 import { EngineError } from '../../../shared/engineClient';
 import type { ClipFile, EditOp, EffectDef, OutputDoc } from '../../../shared/v04';
@@ -48,16 +48,15 @@ import { restoreOps, spotOf, type Spot } from './pickup/pickupModel';
 import '../theme/uxcore.css';
 import './transcript/transcript.css';
 import { keyHint } from '../lib/keys';
+import { useAutoRender } from '../lib/autoRender';
+import { ClipInfoPanel, RenderPill } from './ClipInfo';
 
-type Tab = 'trim' | 'captions' | 'effects' | 'cover' | 'export';
+// cover, captions, versions and export live in the clip's info (ClipInfo) now; the drawer keeps the precise tools
+type Tab = 'trim' | 'effects';
 const TABS: [Tab, MessageKey][] = [
   ['trim', 'editor.tab.trim'],
-  ['captions', 'editor.tab.captions'],
   ['effects', 'editor.tab.effects'],
-  ['cover', 'editor.tab.cover'],
-  ['export', 'editor.tab.export'],
 ];
-const TARGETS = ['3:4', '9:16', '16:9'] as const;
 
 /** saves still running per clip (an editor that was left): a reopened editor waits for them (never cuts twice) */
 const INFLIGHT = new Map<string, Promise<Drafts | null>>();
@@ -89,8 +88,9 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
   const pickupOn = useRef(false);
   pickupOn.current = !!pickup;
   const createOn = useCreateEnabled();
-  const [rendered, setRendered] = useState<{ simulated?: boolean } | null>(null);
+  const [, setRendered] = useState<{ simulated?: boolean } | null>(null);
   const [drawer, setDrawer] = useState(() => sessionStorage.getItem('ce.drawer') === '1');
+  const [info, setInfo] = useState(() => localStorage.getItem('ce.info') !== '0');
   const [effects, setEffects] = useState<EffectDef[]>([]);
   const [flash, setFlash] = useState<{ secs: number; n: number } | null>(null);
   // the pinned question's ticked cuts the clip does not have yet: skipped in the preview while she reviews
@@ -137,6 +137,7 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
   }, [client]);
   useEffect(() => subscribe((e) => (e.type === 'output-edit' && e.item === id && e.clip === clip ? reload() : undefined)), [subscribe, id, clip, reload]);
   useEffect(() => sessionStorage.setItem('ce.drawer', drawer ? '1' : '0'), [drawer]);
+  useEffect(() => localStorage.setItem('ce.info', info ? '1' : '0'), [info]);
   useEffect(() => localStorage.setItem(fixedKey(id, clip), JSON.stringify(fixed)), [fixed, id, clip]);
   useEffect(() => {
     setSel(null);
@@ -365,6 +366,8 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
     return () => window.clearTimeout(tm);
   }, [save]);
   const flushCuts = useCallback(() => committer.flush(), [committer]);
+  // every saved change re-renders the clip in the background (what goes out is what she sees)
+  const auto = useAutoRender(id, clip, odoc, flushCuts);
   // the rendered "after" of a look: render the clip as it is now (once; an unchanged clip is a cache hit)
   const wantsRender = !holdC && preview.compare && !!preview.before && !!preview.rendered && !!doc && !doc.renders.some((r) => r.fresh && !r.simulated);
   const renderRef = useRef<() => void>(() => undefined);
@@ -688,8 +691,6 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
   const playerCuts = useFresh
     ? []
     : [...view.cuts, ...(pending ? keepToCuts(keep, doc.duration).filter((c) => !view.cuts.some((v) => Math.abs(v.start - c.start) < 0.01 && Math.abs(v.end - c.end) < 0.01)) : []), ...pinCuts.map(([a, b]) => ({ start: a, end: b }))];
-  const dirty = doc.steps.length > 0 && !doc.renders.some((r) => r.fresh);
-  const capsNote = doc.caps_notes.find((m) => m.code === 'captions-add-only') ?? doc.caps_notes.find((m) => m.code === 'flattened');
   const firstWord = doc.words.find((w) => w.w.length >= 2)?.w;
   const aspect = doc.files[0]?.aspect;
   const labels = [t('ce.before'), t('ce.after')] as [string, string];
@@ -729,6 +730,7 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
             )}{' '}
             · {/^\d+:\d+$/.test(aspect ?? '') ? aspect! : t('c.original')}
           </span>
+          <RenderPill s={auto.state} onRetry={auto.now} />
           <span className="sp" />
           <ShareButton item={id} clips={[clip]} label={false} className="btn ghost icon sm" testId="editor-share" />
           <div className="grp">
@@ -948,6 +950,14 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
           onDoubleClick={() => split.setChatW(400)}
           data-testid="chat-resize"
         />
+        <div className="ce-right">
+          {!split.collapsed && (
+            <button className="ci-toggle" onClick={() => setInfo((v) => !v)} aria-expanded={info} data-testid="clip-info-toggle">
+              {info ? <ChevronDown className="ico" /> : <ChevronRight className="ico" />}
+              {t('ci.show')}
+            </button>
+          )}
+          {!split.collapsed && info && <ClipInfoPanel item={id} clip={clip} doc={odoc} strip={strip} time={time} edit={edit} />}
         <ChatPanel
           ref={chat}
           item={id}
@@ -1002,6 +1012,7 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
             </>
           }
         />
+        </div>
         {drawer && (
           <section className="ce-drawer" data-testid="edit-panel">
             <div className="dh">
@@ -1020,27 +1031,8 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
             </nav>
             <div className="body">
               {tab === 'trim' && <TrimPanel doc={view} time={time} sel={sel} edit={edit} onClearSel={() => (setSel(null), pl.current?.setSelection(null))} />}
-              {tab === 'captions' && <CaptionsPanel doc={odoc} note={capsNote ? emsg(capsNote) : null} edit={edit} time={time} sel={sel} />}
               {tab === 'effects' && <EffectsPanel doc={odoc} defs={effects} time={time} sel={sel} fxSel={fxSel} setFxSel={setFxSel} edit={edit} firstWord={firstWord} />}
-              {tab === 'cover' && <CoverPanel doc={odoc} time={time} edit={edit} />}
-              {tab === 'export' && <ExportPanel doc={odoc} edit={edit} onFinal={() => void render('final', 'all')} busy={busy === 'render'} />}
               <Edits doc={odoc} onUndoTo={(k) => void undo(doc.steps.length - k)} />
-            </div>
-            <div className="foot">
-              <span className="muted sp" data-testid="render-state">
-                {busy === 'render'
-                  ? t('editor.rendering')
-                  : rendered?.simulated
-                    ? t('editor.simulated')
-                    : rendered
-                      ? t('editor.rendered', { v: doc.steps.length })
-                      : dirty
-                        ? t('editor.unrendered', { n: doc.steps.length })
-                        : t('editor.upToDate')}
-              </span>
-              <button className="btn" disabled={busy === 'render' || !doc.steps.length} onClick={() => void render()} data-testid="render">
-                {busy === 'render' ? t('editor.rendering') : t('editor.render')}
-              </button>
             </div>
           </section>
         )}
@@ -1100,86 +1092,6 @@ function TrimPanel({ doc, time, sel, edit, onClearSel }: { doc: OutputDoc; time:
                 {fmtClock(c.start, true)} – {fmtClock(c.end, true)}
               </span>
               <button className="btn ghost sm" onClick={() => void edit([{ op: 'cut_remove', index: c.index }], true)} aria-label={t('c.remove')}>
-                <Trash2 className="ico" />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CaptionsPanel({ doc, note, edit, time, sel }: { doc: OutputDoc; note: string | null; edit: EditFn; time: number; sel: { a: number; b: number } | null }) {
-  const ours = !!doc.caps.caption_text;
-  const [text, setText] = useState('');
-  const added = doc.captions.filter((c) => c.added);
-  const style = doc.caption_style ?? {};
-  return (
-    <div className="col" style={{ gap: 16 }} data-testid="captions-panel">
-      {!ours && <div className="note" data-testid="caps-note">{note ?? t('editor.flattened')}</div>}
-      {(ours || added.length > 0) && (
-        <>
-          <div className="field4">
-            <span className="lbl">{t('editor.capSize')}</span>
-            <input type="range" min={0.6} max={1.8} step={0.05} defaultValue={style.size ?? 1} onChange={(e) => void edit([{ op: 'caption_style', style: { size: Number(e.target.value) } }])} aria-label={t('editor.capSize')} />
-          </div>
-          <div className="row">
-            <label className="field4">
-              <span className="lbl">{t('editor.capColor')}</span>
-              <input type="color" defaultValue={style.color ?? '#FFFFFF'} onChange={(e) => void edit([{ op: 'caption_style', style: { color: e.target.value.toUpperCase() } }])} />
-            </label>
-            <label className="field4">
-              <span className="lbl">{t('editor.capKeyword')}</span>
-              <input type="color" defaultValue={style.highlight ?? '#FFD60A'} onChange={(e) => void edit([{ op: 'caption_style', style: { highlight: e.target.value.toUpperCase() } }])} />
-            </label>
-          </div>
-          <div className="field4">
-            <span className="lbl">{t('editor.capPos')}</span>
-            <div className="seg">
-              {(['bottom', 'middle', 'top'] as const).map((p) => (
-                <button key={p} className={(style.position ?? 'bottom') === p ? 'on' : ''} onClick={() => void edit([{ op: 'caption_style', style: { position: p } }])}>
-                  {t(`editor.pos.${p}` as MessageKey)}
-                </button>
-              ))}
-            </div>
-          </div>
-        </>
-      )}
-      {ours && (
-        <div className="field4">
-          <span className="lbl">{t('editor.capText')}</span>
-          {doc.captions
-            .filter((c) => !c.added)
-            .map((c) => (
-              <input key={c.id} className="inp" defaultValue={c.text} lang="zh-CN" onBlur={(e) => e.target.value.trim() !== c.text && void edit([{ op: 'caption_text', cue: c.id, text: e.target.value.trim() }])} />
-            ))}
-        </div>
-      )}
-      {doc.caps.caption_add && (
-        <div className="field4">
-          <span className="lbl">{t('editor.capAdd')}</span>
-          <div className="row">
-            <input className="inp sp" value={text} onChange={(e) => setText(e.target.value)} placeholder={t('editor.capAddHint')} data-testid="caption-add-text" />
-            <button
-              className="btn"
-              disabled={!text.trim()}
-              onClick={async () => {
-                const a = sel?.a ?? time;
-                const b = sel?.b ?? Math.min(doc.duration, time + 2.5);
-                if (await edit([{ op: 'caption_add', start: a, end: b, text: text.trim() }])) setText('');
-              }}
-            >
-              {t('editor.capAddBtn')}
-            </button>
-          </div>
-          {added.map((c) => (
-            <div key={c.id} className="row oplist">
-              <span className="num faint">{fmtClock(c.start, true)}</span>
-              <span className="sp clamp1" lang="zh-CN">
-                {c.text}
-              </span>
-              <button className="btn ghost sm" onClick={() => void edit([{ op: 'caption_remove', cue: c.id }], true)} aria-label={t('c.remove')}>
                 <Trash2 className="ico" />
               </button>
             </div>
@@ -1385,68 +1297,6 @@ function ParamFields({
           </label>
         );
       })}
-    </div>
-  );
-}
-
-function CoverPanel({ doc, time, edit }: { doc: OutputDoc; time: number; edit: EditFn }) {
-  const [title, setTitle] = useState(doc.cover_edit?.text ?? doc.post?.title ?? doc.title);
-  const [band, setBand] = useState(doc.title_band?.text ?? '');
-  const t0 = doc.cover_edit?.t;
-  return (
-    <div className="col" style={{ gap: 16 }} data-testid="cover-panel">
-      {doc.caps.cover !== false && (
-        <div className="field4">
-          <span className="lbl">{t('editor.coverFrame')}</span>
-          {doc.cover && <img src={window.desk.mediaUrl(doc.cover)} alt="" style={{ width: 120, borderRadius: 8 }} />}
-          <span className="muted num">{t0 != null ? fmtClock(t0, true) : ''}</span>
-          <label className="field4">
-            <span className="lbl">{t('editor.coverTitle')}</span>
-            <input className="inp" value={title} onChange={(e) => setTitle(e.target.value)} lang="zh-CN" />
-          </label>
-          <button className="btn" onClick={() => void edit([{ op: 'cover', t: Math.round(time * 100) / 100, text: title, style: 'card' }])} data-testid="cover-use">
-            <Check className="ico" />
-            {t('editor.coverUse')}
-          </button>
-        </div>
-      )}
-      {doc.caps.title_band !== false && (
-        <div className="field4">
-          <span className="lbl">{t('editor.titleBand')}</span>
-          <div className="row">
-            <input className="inp sp" value={band} onChange={(e) => setBand(e.target.value)} placeholder={t('editor.titleBandHint')} lang="zh-CN" />
-            <button className="btn" onClick={() => void edit([{ op: 'title', text: band.trim() }])}>
-              {t('c.save')}
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ExportPanel({ doc, edit, onFinal, busy }: { doc: OutputDoc; edit: EditFn; onFinal: () => void; busy: boolean }) {
-  const have = new Set([...doc.files.map((f) => f.aspect), ...doc.exports.map((e) => e.target)]);
-  const flattened = doc.mode === 'flattened';
-  return (
-    <div className="col" style={{ gap: 16 }} data-testid="export-panel">
-      <div className="field4 sizes">
-        <span className="lbl">{t('editor.exportSizes')}</span>
-        {TARGETS.map((tg) => {
-          const orig = doc.files.some((f) => f.aspect === tg);
-          const on = have.has(tg);
-          return (
-            <label key={tg} className="li">
-              <input type="checkbox" checked={on} disabled={orig || doc.caps.export === false} onChange={(e) => void edit([e.target.checked ? { op: 'export_add', target: tg, layout: flattened ? 'band' : 'auto' } : { op: 'export_remove', target: tg }])} data-testid={`export-${tg}`} />
-              <span>{t(`editor.size.${tg}` as MessageKey)}</span>
-            </label>
-          );
-        })}
-        {flattened && <span className="muted">{emsg(doc.caps_notes.find((m) => m.code === 'relayout-crops-burned')) || t('editor.bandHint')}</span>}
-      </div>
-      <button className="btn" disabled={busy || !doc.steps.length} onClick={onFinal} data-testid="render-final">
-        {t('editor.renderFinal')}
-      </button>
     </div>
   );
 }

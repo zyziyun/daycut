@@ -570,3 +570,21 @@ def test_pipeline_output_opens_with_its_words_without_asr(th, monkeypatch):
     assert body
     for c in body:                                           # captions and words come from the same cut
         assert min(abs(w["t"] - c["start"]) for w in W) < 0.05, c
+
+
+@media
+def test_fresh_finals_are_what_goes_out(tmp_path, synth):
+    """The edited clip is published as edited: its FINAL render, while it matches the edit; nothing once edited
+    again (the original must not go out as if it were the edit, nor a stale render)."""
+    w, oid = _work(tmp_path, synth)
+    assert R.fresh_finals(w, oid) == {}                                          # never edited: the original
+    O.edit(w, oid, [dict(op="cover", t=1.0, text="封面", style="card")])
+    assert R.fresh_finals(w, oid) == {}                                          # edited, not rendered yet
+    R.render(w, oid, quality="preview")
+    assert R.fresh_finals(w, oid) == {}                                          # a preview never goes out
+    R.render(w, oid, quality="final")
+    fin = R.fresh_finals(w, oid)
+    assert list(fin) == ["primary"] and os.path.exists(fin["primary"]["file"])
+    assert fin["primary"]["cover"] and os.path.exists(fin["primary"]["cover"])
+    O.edit(w, oid, [dict(op="caption_style", style=dict(position="top"))])
+    assert R.fresh_finals(w, oid) == {}

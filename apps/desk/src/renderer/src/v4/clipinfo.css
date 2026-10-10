@@ -1,0 +1,40 @@
+/* A clip's info inline (2026-10 review step 5): flat sections, small labels, chips; no form fields beyond the copy. */
+.ci { display: flex; flex-direction: column; gap: 10px; padding: 10px var(--s2) 12px; border-bottom: 1px solid var(--border); overflow-y: auto; min-height: 0; }
+.ci-sec { display: flex; flex-direction: column; gap: 7px; }
+.ci-lbl { font-size: 12.5px; color: var(--text-faint); }
+.ci-note { margin: 0; font-size: 12.5px; color: var(--text-faint); }
+.ci-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ci-chip { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 9px; border-radius: 8px; border: 1px solid var(--border-strong); background: transparent; color: var(--text-muted); font: inherit; font-size: 12.5px; cursor: pointer; }
+.ci-chip:hover:not(:disabled) { border-color: var(--text-faint); color: var(--text); }
+.ci-chip.on { border-color: var(--accent); color: var(--text); background: var(--accent-soft); }
+.ci-chip:disabled { cursor: default; opacity: 0.85; }
+.ci-chip .ico { width: 13px; height: 13px; }
+.ci-sw { width: 10px; height: 10px; border-radius: 50%; border: 1px solid var(--border-strong); }
+.ci-covers { display: flex; flex-wrap: wrap; gap: 5px; align-items: stretch; }
+.ci-cover { display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 2px solid transparent; border-radius: 7px; background: var(--surface-2); overflow: hidden; cursor: pointer; }
+.ci-cover img { display: block; width: 34px; height: 46px; object-fit: cover; }
+.ci-cover.on { border-color: var(--accent); }
+.ci-cover:hover:not(.on) { border-color: var(--border-strong); }
+.ci-cover.here { width: 38px; align-self: stretch; min-height: 46px; border: 1px dashed var(--border-strong); background: transparent; color: var(--text-faint); }
+.ci-tile { display: block; background-repeat: no-repeat; }
+.ci-render { position: relative; display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 13px; background: var(--surface-2); color: var(--text-muted); font-size: 12.5px; overflow: hidden; white-space: nowrap; }
+.ci-render .ico { width: 13px; height: 13px; }
+.ci-render .ico.spin { animation: tp-spin 900ms linear infinite; }
+.ci-render.done { color: var(--accent); }
+.ci-render.failed { color: var(--danger); }
+.ci-render .ci-bar { position: absolute; left: 0; bottom: 0; height: 2px; background: var(--accent); transition: width 300ms var(--ease); }
+.ci-render .pb-link { display: inline-flex; align-items: center; gap: 4px; }
+.ci-sched { display: flex; flex-direction: column; gap: 10px; }
+.ci-when { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ci-schedule-btn { align-self: flex-start; }
+.ci .pb-ctabs { margin-top: 2px; }
+/* the editor's right column (layout B): the clip's info above the chat */
+.ce-right { grid-column: 3; grid-row: 2; display: flex; flex-direction: column; min-height: 0; background: var(--surface); }
+.ce-right > .ci { flex: 0 1 auto; max-height: 66%; }
+.ci .pb-cbox textarea { min-height: 84px; }
+.ci .pb-cback, .ci .pb-cbox textarea { font-size: 14px; padding: 10px 12px; }
+.ci .pb-ctabs button { font-size: 13px; }
+.ce-right > .cc { flex: 1; min-height: 0; }
+.ce-right .ci-toggle { display: flex; align-items: center; gap: 6px; padding: 8px var(--s2); border: 0; border-bottom: 1px solid var(--border); background: transparent; color: var(--text-muted); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.ce-right .ci-toggle:hover { color: var(--text); }
+.ce-right .ci-toggle .ico { width: 14px; height: 14px; }
