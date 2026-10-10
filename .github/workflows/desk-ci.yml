@@ -1,6 +1,6 @@
 # Reelfold desk app (apps/desk): lint + typecheck, unit tests, sidecar engine tests (against this repo's engine) and
 # the Electron e2e suite (hidden windows) on macOS. The windows job runs the same checks plus the engine's pytest on
-# windows-latest; it is a non-blocking smoke test (continue-on-error) while Windows support is in preview.
+# windows-latest; a failure there fails the run like one on macOS.
 name: Desk CI
 on:
   pull_request:
@@ -64,9 +64,8 @@ jobs:
         with: { name: desk-test-results, path: apps/desk/test-results, retention-days: 7 }
 
   windows:
-    name: Windows smoke (preview, non-blocking)
+    name: Windows
     runs-on: windows-latest
-    continue-on-error: true
     timeout-minutes: 90
     defaults:
       run:
