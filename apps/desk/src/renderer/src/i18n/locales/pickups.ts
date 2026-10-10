@@ -3,7 +3,7 @@
 
 export const pickupsEn = {
   'rec.edit': 'Edit',
-  'rec.preparing': 'Getting your edit ready — transcribing on this Mac…',
+  'rec.preparing': 'Getting your edit ready — transcribing on this computer…',
   'rec.editFailed': 'The take could not be opened in the editor.',
 
   'pk.title': 'Pickup',
@@ -45,14 +45,14 @@ export const pickupsEn = {
   'em.op-pickup': 'Pickup at {at} s',
   'em.pickup-silent': 'No speech was heard in the pickup. Record it again a little louder.',
   'em.pickup-pipeline': 'Pickups go into clips you edit as a finished file.',
-  'em.pickup-engine': 'Pickups need the video engine on this Mac.',
+  'em.pickup-engine': 'Pickups need the video engine on this computer.',
 } as const;
 
 export type PickupsKey = keyof typeof pickupsEn;
 
 export const pickupsZh: Record<PickupsKey, string> = {
   'rec.edit': '编辑',
-  'rec.preparing': '正在准备编辑——在这台 Mac 上转写…',
+  'rec.preparing': '正在准备编辑——在这台电脑上转写…',
   'rec.editFailed': '这条录像没能在编辑器里打开。',
 
   'pk.title': '补录',
@@ -94,12 +94,12 @@ export const pickupsZh: Record<PickupsKey, string> = {
   'em.op-pickup': '在 {at} 秒补录',
   'em.pickup-silent': '补录里没有听到说话，大声一点再录一次。',
   'em.pickup-pipeline': '只有按成片编辑的片子才能补录。',
-  'em.pickup-engine': '补录需要这台 Mac 上的视频引擎。',
+  'em.pickup-engine': '补录需要这台电脑上的视频引擎。',
 };
 
 export const pickupsFr: Record<PickupsKey, string> = {
   'rec.edit': 'Modifier',
-  'rec.preparing': 'Préparation du montage — transcription sur ce Mac…',
+  'rec.preparing': 'Préparation du montage — transcription sur cet ordinateur…',
   'rec.editFailed': 'La prise n’a pas pu s’ouvrir dans l’éditeur.',
 
   'pk.title': 'Reprise',
@@ -141,5 +141,5 @@ export const pickupsFr: Record<PickupsKey, string> = {
   'em.op-pickup': 'Reprise à {at} s',
   'em.pickup-silent': 'Aucune parole n’a été entendue dans la reprise. Réenregistrez un peu plus fort.',
   'em.pickup-pipeline': 'Les reprises vont dans les clips modifiés comme un fichier fini.',
-  'em.pickup-engine': 'Les reprises ont besoin du moteur vidéo sur ce Mac.',
+  'em.pickup-engine': 'Les reprises ont besoin du moteur vidéo sur cet ordinateur.',
 };

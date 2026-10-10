@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { formatMessage, placeholders } from '../../src/renderer/src/i18n/icu';
 import { en } from '../../src/renderer/src/i18n/locales/en';
 import { zhCN } from '../../src/renderer/src/i18n/locales/zh-CN';
-import { LANGS, LOCALES, normalizeLang, setLang, t, tk } from '../../src/renderer/src/i18n';
+import { LANGS, LOCALES, normalizeLang, setLang, setMac, t, tk } from '../../src/renderer/src/i18n';
 
 describe('locales', () => {
   it('every locale has every key, with the same placeholders', () => {
@@ -29,6 +29,32 @@ describe('locales', () => {
     }
     expect(LANGS).toEqual(['en', 'zh-CN', 'fr']);
     expect(zhCN['status.you']).toBe('需要你');
+  });
+
+  it('off macOS, every locale swaps the same Mac-place keys (Finder, System Settings) and no copy says "Mac"', () => {
+    const keys = Object.keys(LOCALES.en.offMac).sort();
+    expect(keys.length).toBeGreaterThan(0);
+    for (const l of LANGS) {
+      const o = LOCALES[l].offMac as Record<string, string>;
+      expect(Object.keys(o).sort(), `${l} offMac keys`).toEqual(keys);
+      for (const k of keys) {
+        expect(k in en, `${k} is a message key`).toBe(true);
+        expect(placeholders(o[k]).sort(), `${l} ${k} placeholders`).toEqual(placeholders((LOCALES[l].messages as Record<string, string>)[k]).sort());
+        expect(o[k]).not.toMatch(/Finder|访达|macOS|System Settings|Réglages Système|系统设置/);
+      }
+      // "this Mac" / "ce Mac" / 这台 Mac read wrong on Windows: the shared copy says "this computer" instead
+      // (lite.* is the Mac App Store edition only, so it may say Mac)
+      const mac = Object.entries(LOCALES[l].messages).filter(([k, v]) => !k.startsWith('lite.') && /\b(this|ce|votre|your) Mac\b|这台 ?Mac|Mac’s|Mac 上/i.test(v));
+      expect(mac, `${l} Mac-only copy`).toEqual([]);
+    }
+    setMac(false);
+    expect(t('c.reveal')).toBe('Show in folder');
+    setLang('zh-CN');
+    expect(t('c.reveal')).toBe('在文件夹中显示');
+    setMac(true);
+    expect(t('c.reveal')).toBe('在访达中显示');
+    setLang('en');
+    expect(t('c.reveal')).toBe('Show in Finder');
   });
 
   it('English is the default; zh / zh-CN map to the registered locale', () => {

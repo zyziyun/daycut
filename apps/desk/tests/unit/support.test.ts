@@ -74,7 +74,7 @@ describe('report + URLs', () => {
     const u = new URL(issueUrl({ title: 'Problem: x', got: 'it broke', logs: 'L'.repeat(20000), env }));
     expect(u.origin + u.pathname).toBe('https://github.com/zyziyun/reelfold/issues/new');
     expect(u.searchParams.get('template')).toBe('bug_report.yml');
-    expect(u.searchParams.get('surface')).toBe('Mac app (Reelfold)');
+    expect(u.searchParams.get('surface')).toBe('Desktop app (Reelfold)');
     expect(u.searchParams.get('got')).toBe('it broke');
     expect(u.searchParams.get('version')).toBe('0.2.0');
     expect(u.searchParams.get('env')).toBe('macOS 26.1 arm64');

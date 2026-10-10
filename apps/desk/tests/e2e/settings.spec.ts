@@ -48,7 +48,7 @@ test('its own sub-nav with status dots and the version; Back returns where she w
   await expect(page.getByTestId('settings-version')).toContainText(`Reelfold ${VERSION}`);
   await expect(page.getByTestId('snav-advanced')).toHaveAttribute('data-dot', 'warn'); // demo mode
   await expect(page.getByTestId('settings-status')).toContainText('Demo mode');
-  await expect(page.getByTestId('settings-privacy')).toContainText('Your video files stay on this Mac; only text is sent to the AI you choose.');
+  await expect(page.getByTestId('settings-privacy')).toContainText('Your video files stay on this computer; only text is sent to the AI you choose.');
   await expect(page.locator('.s2-page')).not.toContainText(/\/Users\/|\/private\/|\/var\/|\/tmp\//); // no raw paths
   await page.getByTestId('settings-back').click();
   await expect(page.getByTestId('inbox')).toBeVisible();

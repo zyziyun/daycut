@@ -15,7 +15,7 @@ function policyName(v: string | boolean | undefined): string {
   if (s === 'cheapest') return t('create.board.cheapest');
   if (s === 'record') return t('create.route.record');
   if (s === 'card') return t('create.route.card');
-  if (s.startsWith('local')) return t('create.board.thisMac');
+  if (s.startsWith('local')) return t('create.board.thisComputer');
   const prov = s.replace(/^cloud:|^manual:/, '').split('/')[0];
   if (prov === 'kling-mcp') return `${svc('kling-mcp')} 3.0`;
   if (prov === 'minimax') return `${svc('minimax')} 02`;
@@ -61,7 +61,7 @@ export function ShotBoard({ ep, onChanged, askRef }: { ep: EpisodeView; onChange
         </b>
         <span>·</span>
         <b>
-          {t('create.board.drafts')} → {ep.ladder?.drafts === 'skipped' ? t('create.board.skip') : t('create.board.thisMac')}
+          {t('create.board.drafts')} → {ep.ladder?.drafts === 'skipped' ? t('create.board.skip') : t('create.board.thisComputer')}
         </b>
         <button className="link" onClick={() => document.querySelector<HTMLInputElement>('[data-testid="create-board-ask"]')?.focus()}>
           {t('create.board.change')}

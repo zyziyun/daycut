@@ -12,7 +12,7 @@ body:
     attributes:
       label: Where did it happen?
       options:
-        - Mac app (Reelfold)
+        - Desktop app (Reelfold)
         - Claude Code skill (video-studio)
         - Engine CLI (python -m vstudio...)
         - Website or docs

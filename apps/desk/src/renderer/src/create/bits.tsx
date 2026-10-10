@@ -111,7 +111,7 @@ export function sourceLabel(r: Pick<Route, 'kind' | 'label' | 'provider' | 'mode
   if (r.kind === 'card') return tk('create.route.card');
   if (r.kind === 'record') return tk('create.route.record');
   if (r.kind === 'reuse') return tk('create.route.reuse');
-  if (r.kind === 'local') return `${t('create.board.thisMac')} · LTX-2`;
+  if (r.kind === 'local') return `${t('create.board.thisComputer')} · LTX-2`;
   if (r.kind === 'placeholder') return tk('create.kind.placeholder');
   if (r.provider === 'jimeng') return `${tk('create.svc.jimeng')} Seedance`;
   if (r.kind === 'agent') return t('create.src.agent', { name: r.label ?? r.provider ?? '' });

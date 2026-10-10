@@ -64,7 +64,7 @@ export const publishLoopEn = {
   'pl.step.error': 'could not be filled',
 
   'pl.capture': 'Capture this page',
-  'pl.capture.hint': 'Saves a redacted copy of this page’s structure on your Mac (no cookies, no text you typed, no names) so auto-fill can be tuned to it.',
+  'pl.capture.hint': 'Saves a redacted copy of this page’s structure on your computer (no cookies, no text you typed, no names) so auto-fill can be tuned to it.',
   'pl.capture.saved': 'Page captured ({n} elements). Shown in Finder.',
 
   'pl.set.signedIn': '{n} of {total} signed in',
@@ -171,7 +171,7 @@ export const publishLoopZh: Record<PlKey, string> = {
   'pl.step.error': '没能填写',
 
   'pl.capture': '抓取此页',
-  'pl.capture.hint': '把这个页面的结构（已脱敏：没有 cookie、没有你输入的内容、没有名字）存到你的 Mac 上，用来调准自动填写。',
+  'pl.capture.hint': '把这个页面的结构（已脱敏：没有 cookie、没有你输入的内容、没有名字）存到你的电脑上，用来调准自动填写。',
   'pl.capture.saved': '已抓取页面（{n} 个元素），已在访达中显示。',
 
   'pl.set.signedIn': '{total} 个中 {n} 个已登录',
@@ -276,7 +276,7 @@ export const publishLoopFr: Record<PlKey, string> = {
   'pl.step.error': 'n’a pas pu être rempli',
 
   'pl.capture': 'Capturer cette page',
-  'pl.capture.hint': 'Enregistre sur votre Mac une copie anonymisée de la structure de la page (sans cookies, sans ce que vous avez saisi, sans noms) pour ajuster le remplissage automatique.',
+  'pl.capture.hint': 'Enregistre sur votre ordinateur une copie anonymisée de la structure de la page (sans cookies, sans ce que vous avez saisi, sans noms) pour ajuster le remplissage automatique.',
   'pl.capture.saved': 'Page capturée ({n} éléments). Affichée dans le Finder.',
 
   'pl.set.signedIn': '{n} sur {total} connectés',
