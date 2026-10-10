@@ -75,7 +75,8 @@ v0.4 (outputs.py, intake.py, inbox.py; engine command when available, desk imple
                                            {turn, set} (the clip's chat transcript; show returns it as chat);
                                            /export {targets, watermark?} -> {job} + output-render events
                                            (watermark true / false: this export, absent: her default);
-                                           /export-stop {job}
+                                           /export-stop {job};  /title {title|null} her title for the clip
+                                           (null: back to the AI's; publish cards without their own title follow)
   POST /api/outputs/<item>/project-ask     {prompt, clips?, context?} project-level AI (every clip) -> {job};
                                            GET /api/project-ask/<job> {state, stages, notices, elapsed, result};
                                            POST /api/project-ask/<job>/stop (kills the engine + model CLI);
@@ -582,6 +583,8 @@ class Api:
                     return self.outputs.chat_add(parts[1], clip, b.get("add"))
                 if verb in ("undo", "redo"):
                     return self.outputs.undo(parts[1], clip, b.get("steps", 1), redo=verb == "redo")
+                if verb == "title":
+                    return self.outputs.set_title(parts[1], clip, b.get("title"))
         if parts[:1] == ["intake"]:
             if parts == ["intake"] and method == "POST":
                 prompt = b.get("prompt") or ""

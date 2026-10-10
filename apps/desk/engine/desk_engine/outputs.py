@@ -280,13 +280,26 @@ def _batch_clips(bdir):
         if not cover:
             sheet = os.path.join(jdir, "preview", "sheet.jpg")
             cover = sheet if os.path.exists(sheet) else None
-        out.append(dict(id=jid, title=params.get("title") or jid, state=state, qc=st.get("qc"),
+        # the clip's title: the AI's post title, else the segment's title from the plan, else the job id
+        out.append(dict(id=jid, title=clip_title(post, params.get("title"), jid), state=state, qc=st.get("qc"),
                         review=st.get("review"), files=files, cover=cover,
                         post=post or (dict(title=params.get("title") or "", body=params.get("body") or "",
                                            tags=params.get("tags") or []) if params.get("title") else None),
                         duration=next((f["duration"] for f in files if f.get("duration")), None), extra=False,
                         jobdir=jdir))
     return out
+
+
+def clip_title(post, picked, jid):
+    """One title per clip: the AI-written post title (``post.title``) first, then the title the plan gave the
+    segment, and only then the job id (``lesson_part1`` is a file name, not a title)."""
+    for t in ((post or {}).get("title"), picked):
+        if isinstance(t, str) and t.strip():
+            return t.strip()
+    return jid
+
+
+TITLE_MAX = 300                  # the publish board's title cap (calendar.MAX_TITLE)
 
 
 def list_clips(entry):
@@ -793,9 +806,48 @@ class Outputs:
     def _entry(self, item_id):
         return self.history.find(item_id)
 
+    # ---------------------------------------------------------- her title for a clip (one title per clip)
+    def _titles_path(self):
+        return os.path.join(self.dir, "titles.json")
+
+    def _title_key(self, e, clip_id):
+        return hashlib.sha1(f"{os.path.realpath(e['dir'])}\0{clip_id}".encode()).hexdigest()[:16]
+
+    def _titled(self, e, cl):
+        """Her own title (set in the editor header or on a publish card) wins over the AI's; ``title_custom`` says so."""
+        own = read_json(self._titles_path(), None) or {}
+        for c in cl:
+            t = own.get(self._title_key(e, c["id"])) if isinstance(own, dict) else None
+            c["title_custom"] = isinstance(t, str) and bool(t.strip())
+            if c["title_custom"]:
+                c["title"] = t.strip()
+        return cl
+
+    def set_title(self, item_id, clip_id, title):
+        """Rename a clip (None / "" = back to the AI's title). Every publish card and platform that has no title of its
+        own follows (calendar.decorate reads the clip's title)."""
+        need(title is None or (isinstance(title, str) and len(title.strip()) <= TITLE_MAX and "\n" not in title),
+             f"title: up to {TITLE_MAX} chars, one line")
+        e, c = self._clip(item_id, clip_id)
+        auto = next((x["title"] for x in list_clips(e) if x["id"] == clip_id), None)
+        with self._lock:
+            own = read_json(self._titles_path(), None)
+            own = own if isinstance(own, dict) else {}
+            k = self._title_key(e, clip_id)
+            if title and title.strip() and title.strip() != auto:
+                own[k] = title.strip()
+            else:
+                own.pop(k, None)
+            write_json(self._titles_path(), own)
+        self._publish(item_id, clip_id)
+        if self.bus:
+            self.bus.publish("calendar")
+        _e, c = self._clip(item_id, clip_id)
+        return dict(ok=True, title=c["title"], title_custom=c["title_custom"])
+
     def clips(self, item_id):
         e = self._entry(item_id)
-        cl = self._as_published(e, list_clips(e))
+        cl = self._titled(e, self._as_published(e, list_clips(e)))
         self.history.allow_media([f["path"] for c in cl for f in c["files"]] + [c["cover"] for c in cl if c.get("cover")])
         return dict(item=item_id, kind=e["kind"], clips=[_public_clip(c) for c in cl],
                     confirm=WK.confirmations(e["dir"]) if e["kind"] == "work" else [])
@@ -803,7 +855,7 @@ class Outputs:
     def _clip(self, item_id, clip_id):
         need(isinstance(clip_id, str) and WK.CLIP_ID_RE.match(clip_id) and ".." not in clip_id, "bad clip id")
         e = self._entry(item_id)
-        for c in list_clips(e):
+        for c in self._titled(e, list_clips(e)):
             if c["id"] == clip_id:
                 return e, c
         raise KeyError(f"no clip {clip_id}")
@@ -852,7 +904,8 @@ class Outputs:
                 words = _words_from_asr(read_json(os.path.join(jobdir, "compose", "out", "final.mp4.asr.json"), None))
         if not words and file:
             words = _mapped_words(file, dur)
-        return dict(id=c["id"], title=c["title"], state=c["state"], file=file, files=c["files"], cover=c.get("cover"),
+        return dict(id=c["id"], title=c["title"], title_custom=bool(c.get("title_custom")), state=c["state"], file=file,
+                    files=c["files"], cover=c.get("cover"),
                     post=c.get("post"), duration=dur, fps=(main or {}).get("fps") or info.get("fps") or 30,
                     w=(main or {}).get("w") or info.get("w"), h=(main or {}).get("h") or info.get("h"),
                     words=words, captions=captions, mode=mode,

@@ -222,3 +222,8 @@
 .pf { grid-template-columns: 16px minmax(0, 1fr) auto; height: 34px; padding: 0 10px; }
 .pf span { font-size: 13px; }
 .pf small { grid-column: 3; }
+/* the clip's one title, renamed in place (ClipTitle.tsx) */
+.ce-top .ct-input { font: inherit; font-size: 15px; font-weight: 600; min-width: 240px; max-width: 46vw; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--accent); background: var(--bg-elev, transparent); color: var(--text); }
+.ce-top .ct-edit { opacity: 0.45; }
+.ce-top .ct-edit:hover, .ce-top .ct-edit:focus-visible { opacity: 1; }
+.ce-top h1[data-testid='editor-title'] { cursor: text; }

@@ -439,6 +439,10 @@ export class EngineClient {
       opts,
     );
   }
+  /** her title for the clip (null: back to the AI's); publish cards without a platform title of their own follow */
+  setClipTitle(item: string, clip: string, title: string | null) {
+    return this.req<{ ok: boolean; title: string; title_custom: boolean }>('POST', `/api/outputs/${bid(item)}/${clipId(clip)}/title`, { title });
+  }
   undoOutput(item: string, clip: string, steps = 1) {
     return this.req<{ ok: boolean }>('POST', `/api/outputs/${bid(item)}/${clipId(clip)}/undo`, { steps });
   }

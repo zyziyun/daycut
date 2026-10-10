@@ -84,11 +84,23 @@ def title_limit(platform, title):
         return (_xhs_len(title) if base == "xiaohongshu" else float(len(title or ""))), lim
 
 
-def post_text(post):
-    """A clip's post copy {title, body, tags} -> the text one platform gets by default."""
+def has_title_field(platform):
+    """The platform has its own title field (YouTube, 小红书, …); X / Instagram / Threads do not."""
+    if not platform:
+        return False
+    return title_limit(platform, "")[1] is not None
+
+
+def post_text(post, platform=None):
+    """A clip's post copy {title, body, tags} -> the text one platform gets by default. A platform with a title field
+    gets the title there, so the text starts with the body (no title repeated as its first line); a platform without
+    one (X, Instagram) gets the title leading the text. No platform: the title leads (the copy as a whole)."""
     if not isinstance(post, dict):
         return ""
-    parts = [str(post.get("title") or "").strip(), str(post.get("body") or "").strip()]
+    body = str(post.get("body") or "").strip()
+    # a copy with no body of its own (no AI copy model: the title drafted from the captions) still has a text
+    title = "" if has_title_field(platform) and body else str(post.get("title") or "").strip()
+    parts = [title, body]
     tags = [str(t).lstrip("#").strip() for t in (post.get("tags") or []) if str(t).strip("# ")]
     if tags and not any("#" + t in parts[1] for t in tags):
         parts.append(" ".join("#" + t for t in tags))
@@ -173,8 +185,9 @@ class Calendar:
         for r in rows:
             r = dict(r)
             clip = self._clips(cache, r["item"]).get(r["clip"]) or {}
+            title = clip.get("title") or r.get("title") or r["clip"]      # one title per clip: the clip's own
             own = r.get("caption")
-            text = own if isinstance(own, str) else post_text(clip.get("post"))
+            text = own if isinstance(own, str) else post_text(clip.get("post"), r["platform"])
             n, lim = text_limit(r["platform"], text)
             pf = r["platform"].split(":")[0]
             warn = []
@@ -183,18 +196,18 @@ class Calendar:
                     warn.append(dict(kind="no_caption", platform=pf))
                 elif lim and n > lim:
                     warn.append(dict(kind="caption_too_long", platform=pf, n=n, max=lim))
-                tn, tlim = title_limit(r["platform"], r.get("platform_title") or r.get("title") or clip.get("title") or "")
+                tn, tlim = title_limit(r["platform"], r.get("platform_title") or title)
                 if tlim and tn > tlim:
                     warn.append(dict(kind="title_too_long", platform=pf, n=tn, max=tlim))
                 clash = [x for x in slots.get((pf, r["at"]), []) if x != r["id"]]
                 if clash:
                     warn.append(dict(kind="slot_clash", platform=pf, at=r["at"], other=clash[0]))
-            tn, tlim = title_limit(r["platform"], r.get("platform_title") or r.get("title") or clip.get("title") or r["clip"])
+            tn, tlim = title_limit(r["platform"], r.get("platform_title") or title)
             r.update(status=STATUS.get(r.get("state"), "draft"), enabled=r.get("enabled", True) is not False,
                      title_limit=tlim, title_length=tn, title_custom=bool(r.get("platform_title")),
                      caption=text, caption_custom=isinstance(own, str), length=n, limit=lim, warnings=warn,
                      project=names.get(r["item"]), duration=clip.get("duration"),
-                     cover=clip.get("cover") or r.get("cover"), title=r.get("title") or clip.get("title") or r["clip"])
+                     cover=clip.get("cover") or r.get("cover"), title=title)
             out.append(r)
         return out
 
@@ -346,13 +359,18 @@ class Calendar:
                     tt = b[key]
                     need(tt is None or (isinstance(tt, str) and 0 < len(tt.strip()) <= MAX_TITLE and "\n" not in tt),
                          f"{key}: 1-{MAX_TITLE} chars, one line")
-                    if tt is not None:
+                    if key == "title":
+                        # the card's title is the clip's title (one title per clip): renaming it renames the clip,
+                        # so the editor header and every card of the clip follow; None = back to the AI's title
+                        try:
+                            got = self.outputs.set_title(row["item"], row["clip"], tt)
+                            row["title"] = got.get("title") or row["clip"]
+                        except (KeyError, OSError, ValueError):     # the project moved: the card keeps its own
+                            row["title"] = tt.strip() if tt is not None else row["clip"]
+                    elif tt is not None:
                         row[key] = tt.strip()
-                    elif key == "platform_title":
+                    else:
                         row.pop("platform_title", None)     # back to the card's title
-                    else:                                    # back to the clip's own title
-                        clip = self._clips({}, row["item"]).get(row["clip"]) or {}
-                        row["title"] = clip.get("title") or row["clip"]
                 if "caption" in b:
                     cap = b["caption"]
                     need(cap is None or (isinstance(cap, str) and len(cap) <= MAX_CAPTION), f"caption: up to {MAX_CAPTION} chars")

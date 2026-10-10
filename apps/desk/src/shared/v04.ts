@@ -25,7 +25,9 @@ export interface PostCopy {
 
 export interface Clip {
   id: string;
+  /** one title per clip: her own (title_custom), else the AI's post title, else the plan's segment title */
   title: string;
+  title_custom?: boolean;
   /** done | running | queued | (batch job states) approved | packaged | failed ... */
   state: string;
   qc?: string | null;
@@ -170,6 +172,8 @@ export interface OutputDoc {
   id: string;
   item: string;
   title: string;
+  /** her own title (set in the editor header / on a publish card) rather than the AI's */
+  title_custom?: boolean;
   state: string;
   output_id: string | null;
   file: string | null;

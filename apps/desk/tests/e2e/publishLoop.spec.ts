@@ -148,6 +148,39 @@ test('the drawer: only her platforms in Where, the title edited inline with 小�
   await d.getByTestId('pb-done').click();
 });
 
+test('one title per clip: the AI’s title by default; renamed in the editor header -> the drawer follows', async () => {
+  // the clip's title is the AI-written post title, not the file name, and the text does not repeat it
+  const clip = (await api<{ clips: { id: string; title: string }[] }>(`/api/outputs/${item}`)).clips.find((c) => c.id === 'B_自媒体')!;
+  expect(clip.title).toBe('再小的博主，也是博主'); // the card title edit above renamed the clip itself
+  await api(`/api/outputs/${item}/${encodeURIComponent('B_自媒体')}/title`, { title: null });
+  const ai = (await api<{ clips: { id: string; title: string }[] }>(`/api/outputs/${item}`)).clips.find((c) => c.id === 'B_自媒体')!;
+  expect(ai.title).toBe('B_自媒体 的标题');
+  const row = (await api<{ posts: (Row & { caption: string })[] }>('/api/calendar')).posts.find((r) => r.clip === 'B_自媒体')!;
+  expect(row.title).toBe('B_自媒体 的标题');
+  expect(row.caption.startsWith('副业对我最大的价值')).toBe(true); // 小红书 has a title field: not the text's 1st line
+
+  await hash(`#/p/${item}/clip/${encodeURIComponent('B_自媒体')}`);
+  await expect(page.getByTestId('editor-title')).toHaveText('B_自媒体 的标题', { timeout: 30000 });
+  await page.getByTestId('editor-title-edit').click();
+  await page.getByTestId('editor-title-input').fill('一次录完，一周的内容');
+  await page.getByTestId('editor-title-input').press('Enter');
+  await expect(page.getByTestId('editor-title')).toHaveText('一次录完，一周的内容');
+  await expect.poll(async () => (await rows()).find((r) => r.clip === 'B_自媒体')?.title).toBe('一次录完，一周的内容');
+  await page.screenshot({ path: path.join(SHOTS, 'editor-title.png') });
+
+  await hash('#/publish');
+  const tomorrow = new Date(Date.now() + 86400_000);
+  if (tomorrow.getDay() === 1) await page.getByTestId('pb-next').click();
+  const card = page.locator('[data-testid="pub-post"][data-clip="B_自媒体"]');
+  await expect(card.locator('.pc-title')).toHaveText('一次录完，一周的内容');
+  await card.locator('.pc-top').click();
+  const d = page.getByTestId('pb-drawer');
+  await expect(d.getByTestId('pb-title')).toHaveValue('一次录完，一周的内容');
+  await expect(d.getByTestId('pb-post-title')).toHaveValue('一次录完，一周的内容'); // no own 小红书 title: it follows
+  await page.screenshot({ path: path.join(SHOTS, 'drawer-follows-title.png') });
+  await d.getByTestId('pb-done').click();
+});
+
 test('time to post: overdue banner, one notification, click -> the form fills itself; her 发布 click -> posted', async () => {
   const due = new Date(Date.now() - 3 * 60_000);
   const r = await api<{ ids: string[] }>('/api/calendar/many', { posts: [{ item, clip: 'A_小博主', platform: 'xiaohongshu', at: at(due) }] });

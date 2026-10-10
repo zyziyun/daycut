@@ -29,6 +29,7 @@ import { ChatPanel, type ChatApi } from './chat/ChatPanel';
 import { Empty, media, Sk } from './kit';
 import { LowerPane } from './LowerPane';
 import { effectLabel, emsg, errText, humanizeParam, setEffectLabels } from './msg';
+import { ClipTitle } from './ClipTitle';
 import { DecidedCard } from './DecidedCard';
 import { PinnedQuestion } from './PinnedQuestion';
 import { ShareButton } from './ShareDialog';
@@ -714,9 +715,7 @@ export function OutputEditor({ id, clip }: { id: string; clip: string }) {
             <ChevronRight className="ico sep" />
             <span className="crumb here">
               {doc.cover && <img src={media(doc.cover)} alt="" />}
-              <h1 className="clamp1" lang="zh-CN" data-testid="editor-title">
-                {doc.title}
-              </h1>
+              <ClipTitle item={id} clip={clip} title={doc.title} custom={doc.title_custom} />
             </span>
           </nav>
           {doc.recording && <TakesMenu doc={odoc} />}
