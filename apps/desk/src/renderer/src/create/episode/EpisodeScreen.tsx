@@ -35,6 +35,12 @@ function Episode({ ep, tab, reload, setEp }: { ep: EpisodeView; tab: EpisodeTab;
   const cover = ep.shots.find((s) => s.still)?.still;
   const nTakes = ep.shots.filter((s) => s.takes.length > 1 && !s.pick).length;
 
+  /** The episode as the engine has it now: awaited before an action's buttons are live again, so they never show the
+   * state from before the action (a click on a stale button would act on the new state). */
+  const refresh = async () => {
+    if (c) setEp(await c.episode(ep.id));
+  };
+
   const primary = () => {
     const step = ep.next.step;
     if (step === 'finals') return setSheet(true);
@@ -48,7 +54,7 @@ function Episode({ ep, tab, reload, setEp }: { ep: EpisodeView; tab: EpisodeTab;
         const { job } = await c.make(ep.id);
         reload();
         await waitJob(c, job, () => undefined, 1500);
-        reload();
+        await refresh();
         return;
       }
       if (step === 'assemble') {
@@ -59,7 +65,7 @@ function Episode({ ep, tab, reload, setEp }: { ep: EpisodeView; tab: EpisodeTab;
       }
       const { job } = await c.run(ep.id, { stage: step });
       await waitJob(c, job);
-      reload();
+      await refresh(); // the next step's label before the button is live again
     });
   };
 
@@ -127,7 +133,7 @@ function Episode({ ep, tab, reload, setEp }: { ep: EpisodeView; tab: EpisodeTab;
           ))}
         </div>
       )}
-      {tab === 'takes' && <TakesView ep={ep} onChanged={reload} />}
+      {tab === 'takes' && <TakesView ep={ep} onChanged={refresh} />}
       {tab === 'edit' && (
         <div className="card" style={{ maxWidth: 900 }} data-testid="create-edit-tab">
           {ep.handoff ? (
