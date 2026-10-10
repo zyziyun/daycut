@@ -5,15 +5,16 @@
 import { formatMessage, type Vars } from './icu';
 import { en, type MessageKey } from './locales/en';
 import { fr } from './locales/fr';
+import { offMacEn, offMacFr, offMacZh } from './locales/offMac';
 import { zhCN } from './locales/zh-CN';
 
 export type { MessageKey };
 export type Lang = 'en' | 'zh-CN' | 'fr';
 
-export const LOCALES: Record<Lang, { label: string; intl: string; messages: Record<MessageKey, string> }> = {
-  en: { label: 'English', intl: 'en', messages: en },
-  'zh-CN': { label: '简体中文', intl: 'zh-CN', messages: zhCN },
-  fr: { label: 'Français', intl: 'fr', messages: fr },
+export const LOCALES: Record<Lang, { label: string; intl: string; messages: Record<MessageKey, string>; offMac: Partial<Record<MessageKey, string>> }> = {
+  en: { label: 'English', intl: 'en', messages: en, offMac: offMacEn },
+  'zh-CN': { label: '简体中文', intl: 'zh-CN', messages: zhCN, offMac: offMacZh },
+  fr: { label: 'Français', intl: 'fr', messages: fr, offMac: offMacFr },
 };
 export const LANGS = Object.keys(LOCALES) as Lang[];
 export const DEFAULT_LANG: Lang = 'en';
@@ -51,7 +52,18 @@ export function setStrict(on: boolean) {
   strict = on;
 }
 
+/** Off macOS, the few keys that name a Mac place (Finder, System Settings) read from ./locales/offMac. */
+let onMac = typeof navigator === 'undefined' || /^Mac/.test(navigator.platform ?? '');
+
+export function setMac(on: boolean) {
+  onMac = on;
+}
+
 function lookup(key: string): string | undefined {
+  if (!onMac) {
+    const alt = (LOCALES[lang].offMac as Record<string, string>)[key];
+    if (alt !== undefined) return alt;
+  }
   const own = (LOCALES[lang].messages as Record<string, string>)[key];
   if (own !== undefined) return own;
   return (en as Record<string, string>)[key];

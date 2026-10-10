@@ -6,13 +6,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { InboxItem } from '../../src/shared/v04';
 import type { LiveStatus, PilotFailure } from '../../src/shared/v02';
 import { fallbackNotice } from '../../src/shared/aiRoutes';
-import { setLang, t } from '../../src/renderer/src/i18n';
+import { setLang, setMac, t } from '../../src/renderer/src/i18n';
 import { authorHelp, authorTitle, inboxSub, inboxTitle } from '../../src/renderer/src/lib/inboxView';
 import { agoText, liveLine, liveMeta, pendingFor, STALE_S } from '../../src/renderer/src/lib/liveStatus';
 import { stampChanged } from '../../src/renderer/src/lib/history';
 import { failureReason } from '../../src/renderer/src/v4/Failure';
 
-afterEach(() => setLang('en'));
+afterEach(() => (setLang('en'), setMac(true)));
 
 const author: InboxItem = {
   key: 'a'.repeat(16),
@@ -109,16 +109,19 @@ describe('a failed step names the tool and the fix', () => {
   const f = (o: Partial<PilotFailure>): PilotFailure => ({ state: 'failed', code: 'unknown', provider: null, error: 'x', at: 1, ...o });
   it('tool codes from the engine', () => {
     expect(failureReason(f({ code: 'tool-node', tool: 'node', fix: 'brew-reinstall-node' }))).toBe(
-      'Rendering needs Node.js, and the Node.js on this Mac didn’t run. To fix it, run “brew reinstall node” in Terminal, then try again.',
+      'Rendering needs Node.js, and the Node.js on this computer didn’t run. To fix it, run “brew reinstall node” in Terminal, then try again.',
     );
     expect(failureReason(f({ code: 'tool-broken', params: { tool: 'node', path: '/opt/homebrew/bin/node', fix: 'brew reinstall node' } }))).toBe(
-      'Node.js on this Mac didn’t run (/opt/homebrew/bin/node). To fix it: brew reinstall node',
+      'Node.js on this computer didn’t run (/opt/homebrew/bin/node). To fix it: brew reinstall node',
     );
-    expect(failureReason(f({ code: 'tool-missing', params: { tool: 'ffmpeg' } }))).toBe('ffmpeg isn’t installed on this Mac.');
+    expect(failureReason(f({ code: 'tool-missing', params: { tool: 'ffmpeg' } }))).toBe('ffmpeg isn’t installed on this computer.');
     expect(failureReason(f({ code: 'stage', stage: 'render' }))).toMatch(/“render” step/);
     expect(failureReason(f({ code: 'tool-something-new' }))).toBe(t('fail.reason.unknown'));
     setLang('zh-CN');
+    setMac(true);
     expect(failureReason(f({ code: 'tool-ffmpeg', tool: 'ffmpeg', fix: 'install-ffmpeg' }))).toMatch(/ffmpeg.*brew install ffmpeg/);
+    setMac(false); // Windows / Linux: no Homebrew hint
+    expect(failureReason(f({ code: 'tool-ffmpeg', tool: 'ffmpeg', fix: 'install-ffmpeg' }))).toMatch(/这台电脑.*winget install ffmpeg/);
   });
   it('"Part of Reelfold didn\'t start" only for the engine not starting', () => {
     expect(failureReason(f({ code: 'engine' }))).toMatch(/didn’t start/);

@@ -96,7 +96,7 @@ export const v04En = {
   'home.inProgress': 'In progress',
   'home.runningCount': '{n, plural, =0 {nothing running} one {# running} other {# running}}',
   'home.idle': 'Free',
-  'home.idleHint': 'This Mac can run {n, plural, one {# more} other {# more}} at the same time',
+  'home.idleHint': 'This computer can run {n, plural, one {# more} other {# more}} at the same time',
   'home.needsYou': 'Needs you',
   'home.allN': 'All {n}',
   'home.today': 'Publishing today',
@@ -195,7 +195,7 @@ export const v04En = {
   'checkpoint.checkpoint': 'A decision is waiting',
 
   'projects.title': 'All projects',
-  'projects.subtitle': 'Everything you’ve made on this Mac. Open one to watch the clips.',
+  'projects.subtitle': 'Everything you’ve made on this computer. Open one to watch the clips.',
   'projects.new': 'New',
   'projects.f.all': 'All {n}',
   'projects.f.running': 'Running {n}',

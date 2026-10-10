@@ -55,7 +55,7 @@ export const releaseEn = {
   'fail.reason.ai-login': '{provider} is signed out (the login expired). Sign in again, or let another AI do it.',
   'fail.reason.ai-quota': '{provider} hit its usage limit. Try again later, or let another AI do it.',
   'fail.reason.ai-timeout': '{provider} took too long to answer. Try again, or let another AI do it.',
-  'fail.reason.ai-missing': '{provider} isn’t set up on this Mac yet.',
+  'fail.reason.ai-missing': '{provider} isn’t set up on this computer yet.',
   'fail.reason.engine': 'Part of Reelfold didn’t start. Restart Reelfold; if it happens again, reinstall it.',
   'fail.reason.disk': 'The disk is full. Free some space, then try again.',
   'fail.reason.media': 'One of the files couldn’t be read. Check that it still opens, then try again.',

@@ -176,7 +176,7 @@ export const chatEditEn = {
   'ce.cover.style.band': 'Band',
   'ce.cover.use': 'Use this cover',
   'ce.exp.title': 'Export',
-  'ce.exp.where': 'on this Mac',
+  'ce.exp.where': 'on this computer',
   'ce.exp.doneOf': '{k} of {n} done',
   'ce.exp.go': 'Export {n, plural, one {# version} other {# versions}}',
   'ce.exp.about': 'about {min} min',

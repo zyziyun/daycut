@@ -284,7 +284,7 @@ export const legacyEn = {
   'settings.themeHint': 'Notebook Light is a work in progress',
   'settings.privacy': 'Privacy and security',
   'settings.privacyBody':
-    'Your videos and audio stay on this Mac. Only text — transcripts and what you ask for — goes to the AI you choose (if there is no local transcription and an OpenAI key is set, audio is sent to OpenAI to transcribe it). Platform pages open in their own sessions: Reelfold never stores passwords, never reads your cookies, and never presses publish for you.',
+    'Your videos and audio stay on this computer. Only text — transcripts and what you ask for — goes to the AI you choose (if there is no local transcription and an OpenAI key is set, audio is sent to OpenAI to transcribe it). Platform pages open in their own sessions: Reelfold never stores passwords, never reads your cookies, and never presses publish for you.',
   'theme.studio-dark': 'Studio Dark',
   'theme.notebook-light': 'Notebook Light',
   'assets.title': 'Models, fonts and tools',

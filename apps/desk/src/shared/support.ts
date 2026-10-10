@@ -105,7 +105,7 @@ export function issueUrl(f: { title: string; got: string; asked?: string; logs?:
       `${REPO}/issues/new?${q({
         template: 'bug_report.yml',
         title: clip(f.title, 120),
-        surface: 'Mac app (Reelfold)',
+        surface: 'Desktop app (Reelfold)',
         asked: f.asked ? clip(f.asked, 600) : undefined,
         got: clip(f.got, Math.min(cut, 2000)),
         version: f.env.app,

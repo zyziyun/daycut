@@ -154,6 +154,11 @@ const PRIVACY: Record<string, string> = {
   microphone: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone',
   screen: 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture',
 };
+/** Windows Settings › Privacy (no per-app screen-capture page there) */
+const PRIVACY_WIN: Record<string, string> = {
+  camera: 'ms-settings:privacy-webcam',
+  microphone: 'ms-settings:privacy-microphone',
+};
 
 export interface RecorderDeps {
   flag: () => boolean;
@@ -186,7 +191,8 @@ export function registerRecorderIpc(handle: Handle, deps: RecorderDeps): Recorde
   });
   handle('rec:openPrivacy', async (p) => {
     gate();
-    if (process.platform === 'darwin') await shell.openExternal(PRIVACY[p.pane]);
+    const url = process.platform === 'darwin' ? PRIVACY[p.pane] : process.platform === 'win32' ? PRIVACY_WIN[p.pane] : undefined;
+    if (url) await shell.openExternal(url);
   });
   handle('rec:begin', async (p) => (gate(), rec.begin(p)));
   handle('rec:chunk', async (p) => (gate(), rec.chunk(p)));

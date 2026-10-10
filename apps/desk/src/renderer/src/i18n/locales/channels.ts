@@ -115,7 +115,7 @@ export const channelsZh: Record<keyof typeof channelsEn, string> = {
   'ch.slotHint': '选一个账号点「登录」，平台页面会在这里打开。',
   'ch.manage': '账号',
   'ch.status': '已登录 {n}/{total}',
-  'ch.fillTodo': '这个平台的自动填写还没做好：打开上传页，用「复制文案」和「在访达中显示」手动上传。',
+  'ch.fillTodo': '这个平台的自动填写还没做好：打开上传页，用「复制文案」和「显示文件」手动上传。',
   'ch.edit': '编辑',
   'ch.back': '返回',
   'ch.reload': '刷新',

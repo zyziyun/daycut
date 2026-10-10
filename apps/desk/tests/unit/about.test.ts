@@ -38,7 +38,7 @@ describe('About panel copy', () => {
 
   it('credits: repo, versions, where the licences are; no old engine / repo name', () => {
     const c = aboutCredits('en', '0.1.0', versions);
-    expect(c.split('\n')).toEqual(['Open source: github.com/zyziyun/reelfold', 'This version is for macOS (Apple silicon). A Windows version is coming later.', '', 'Electron 44.5.1 · Chromium 152 · Node.js 24', 'Licences: Help → Third-party Licences']);
+    expect(c.split('\n')).toEqual(['Open source: github.com/zyziyun/reelfold', 'Reelfold runs on macOS (Apple silicon); the Windows x64 version is a preview.', '', 'Electron 44.5.1 · Chromium 152 · Node.js 24', 'Licences: Help → Third-party Licences']);
     for (const lang of ['en', 'zh-CN', 'fr']) {
       const all = Object.values(aboutText(lang, '0.1.0', versions)).join('\n') + aboutCredits(lang, '0.1.0', versions);
       expect(all).not.toMatch(/video-studio|zyziyun\/video-studio/);

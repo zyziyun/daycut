@@ -66,7 +66,7 @@ export const shareEn = {
   'inbox.feedbackDone': 'Done',
   'inbox.feedbackLead': 'From the review page you shared.',
   'em.bad-feedback': 'That isn’t a Reelfold feedback code or file.',
-  'em.unknown-share': 'This feedback is for a review that wasn’t shared from this Mac (or the project moved).',
+  'em.unknown-share': 'This feedback is for a review that wasn’t shared from this computer (or the project moved).',
   'em.empty-feedback': 'The feedback has no answers in it.',
   'em.feedback-version': 'This feedback was made by a newer Reelfold. Update the app and try again.',
 };
@@ -139,7 +139,7 @@ export const shareZh: Record<ShareKey, string> = {
   'inbox.feedbackDone': '已处理',
   'inbox.feedbackLead': '来自你分享的审片页。',
   'em.bad-feedback': '这不是 Reelfold 的反馈码或反馈文件。',
-  'em.unknown-share': '这份反馈对应的审片不是在这台 Mac 上分享的（或项目已移动）。',
+  'em.unknown-share': '这份反馈对应的审片不是在这台电脑上分享的（或项目已移动）。',
   'em.empty-feedback': '反馈里没有任何回复。',
   'em.feedback-version': '这份反馈来自更新版本的 Reelfold，请更新应用后再试。',
 };
@@ -210,7 +210,7 @@ export const shareFr: Record<ShareKey, string> = {
   'inbox.feedbackDone': 'Fait',
   'inbox.feedbackLead': 'Depuis la page de relecture que vous avez partagée.',
   'em.bad-feedback': 'Ce n’est pas un code ou un fichier de retours Reelfold.',
-  'em.unknown-share': 'Ces retours concernent une relecture qui n’a pas été partagée depuis ce Mac (ou le projet a été déplacé).',
+  'em.unknown-share': 'Ces retours concernent une relecture qui n’a pas été partagée depuis cet ordinateur (ou le projet a été déplacé).',
   'em.empty-feedback': 'Ces retours ne contiennent aucune réponse.',
   'em.feedback-version': 'Ces retours viennent d’une version plus récente de Reelfold. Mettez l’app à jour et réessayez.',
 };
