@@ -9,6 +9,7 @@ import { postHref, useBackForwardKeys } from '../lib/nav';
 import { go, type Route } from '../lib/router';
 import { keyHint } from '../lib/keys';
 import { studioEnabled } from '../lib/studioFlag';
+import { rowHref, useStudioData } from '../lib/studioData';
 
 // ---------------------------------------------------------------- toasts
 interface Toast {
@@ -380,9 +381,18 @@ function Palette({ onClose, openSheet, theme, onTheme, onLang }: { onClose: () =
     return list;
   }, [data, client, theme, onTheme, onLang, openSheet, posts]);
   const [clipHits, setClipHits] = useState<Cmd[]>([]);
+  // with the Studio: every video it lists, by title or project (no wait - the rows are loaded)
+  const studio = useStudioData();
+  const videoCmds = useMemo<Cmd[]>(
+    () =>
+      studio.rows
+        .filter((r) => r.kind === 'clip')
+        .map((r) => ({ id: `v-${r.key}`, group: 'clips' as const, label: r.title, hint: [r.project, r.pos ? `${r.pos[0]}/${r.pos[1]}` : null].filter(Boolean).join(' · '), icon: <Video className="ico" />, run: () => (location.hash = rowHref(r)) })),
+    [studio.rows],
+  );
   useEffect(() => {
     // clip titles: search the recent finished projects' clips (lazy, only while typing)
-    if (!client || q.trim().length < 2) {
+    if (studioEnabled() || !client || q.trim().length < 2) {
       setClipHits([]);
       return;
     }
@@ -404,8 +414,9 @@ function Palette({ onClose, openSheet, theme, onTheme, onLang }: { onClose: () =
     };
   }, [q, client, data]);
   const ql = q.trim().toLowerCase();
-  const shown = [...cmds.filter((c) => !ql || c.label.toLowerCase().includes(ql) || c.id.includes(ql)), ...clipHits].slice(0, 40);
-  const groups: Cmd['group'][] = ['go', 'projects', 'clips', 'posts', 'actions', 'settings'];
+  const videos = studioEnabled() ? videoCmds.filter((c) => !ql || c.label.toLowerCase().includes(ql) || (c.hint ?? '').toLowerCase().includes(ql)).slice(0, ql ? 12 : 8) : [];
+  const shown = [...cmds.filter((c) => !ql || c.label.toLowerCase().includes(ql) || c.id.includes(ql)), ...videos, ...clipHits].slice(0, 40);
+  const groups: Cmd['group'][] = studioEnabled() ? ['go', 'clips', 'projects', 'posts', 'actions', 'settings'] : ['go', 'projects', 'clips', 'posts', 'actions', 'settings'];
   const ordered = groups.flatMap((g) => shown.filter((c) => c.group === g));
   const pick = (c: Cmd | undefined) => {
     if (!c) return;

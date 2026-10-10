@@ -34,6 +34,7 @@ const api: DeskApi = {
     }
   },
   notify: (title, body, route) => call('notify:show', route ? { title, body, route } : { title, body }),
+  setBadge: (n) => call('app:badge', { n: Math.max(0, Math.min(9999, Math.round(n))) }),
   saveText: (defaultName, text) => call('file:saveText', { defaultName, text }),
   firstRun: {
     complete: (defaultPlatforms, skipped) => call('firstRun:complete', skipped === undefined ? { defaultPlatforms } : { defaultPlatforms, skipped }),

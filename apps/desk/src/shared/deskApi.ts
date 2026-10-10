@@ -162,6 +162,8 @@ export interface DeskApi {
   pathForFile(file: File): string;
   /** system notification (only when the window is in the background); clicking it focuses the app at `route` */
   notify(title: string, body: string, route?: string): Promise<void>;
+  /** the Dock badge (macOS; the taskbar elsewhere): how many videos need her, 0 clears it */
+  setBadge(n: number): Promise<void>;
   saveText(defaultName: string, text: string): Promise<string | null>;
   firstRun: {
     complete(defaultPlatforms: string[], skipped?: boolean): Promise<SettingsMsg>;

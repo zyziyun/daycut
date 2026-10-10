@@ -38,6 +38,7 @@ import { SupportLayer } from './support/Support';
 import { CreateNavIcon, CreateScreen, setCreatePrefs, useCreateEnabled } from './create';
 import { setStudioPrefs, useStudioEnabled } from './lib/studioFlag';
 import { StudioProvider } from './lib/studioData';
+import { useStudioAttention } from './lib/attention';
 import { Studio } from './v4/Studio';
 
 function NavLink({ to, on, icon, label, count, testId }: { to: Route; on: boolean; icon: React.ReactNode; label: string; count?: React.ReactNode; testId: string }) {
@@ -53,6 +54,7 @@ function NavLink({ to, on, icon, label, count, testId }: { to: Route; on: boolea
 /** System notifications when a run finishes or starts waiting for the creator (window in the background only). */
 function useRunNotifications() {
   const { data } = useHistory();
+  const studioOn = useStudioEnabled(); // the Studio tells her per video (useStudioAttention)
   const prev = useRef<Map<string, string>>(new Map());
   useEffect(() => {
     if (!data) return;
@@ -63,7 +65,7 @@ function useRunNotifications() {
       const was = prev.current.get(i.id);
       // opt-in usage counts: a run finished (numbers only; a no-op unless she turned sharing on)
       if (prev.current.size && was === 'running' && s === 'done') trackUsage('batch_done', i.counts?.done || i.counts?.total ? { clips: i.counts.done || i.counts.total } : undefined);
-      if (prev.current.size && was === 'running' && (s === 'done' || s === 'waiting')) {
+      if (prev.current.size && was === 'running' && (s === 'done' || s === 'waiting') && !studioOn) {
         const you = s === 'waiting';
         void window.desk
           .notify?.(t(you ? 'notify.you' : 'notify.done', { name: i.name }), t(you ? 'notify.youBody' : 'notify.doneBody'), href({ name: 'project', id: i.id }))
@@ -71,7 +73,7 @@ function useRunNotifications() {
       }
     }
     prev.current = next;
-  }, [data]);
+  }, [data, studioOn]);
   useEffect(() => {
     try {
       return window.desk.on('notify:open', (d) => {
@@ -92,6 +94,7 @@ function Shell({ onSettings }: { onSettings: (s: SettingsMsg) => void }) {
   const createOn = useCreateEnabled();
   const studioOn = useStudioEnabled();
   useRunNotifications();
+  useStudioAttention();
   const running = live.filter((i) => i.live?.state === 'running').length;
   const nIn = inbox.items.length;
   useEffect(() => rememberNonSettings(location.hash), [r]);

@@ -180,7 +180,10 @@ export const ipcSchemas = {
   'ai:routes': z.undefined(),
   'ai:setRoutes': z.strictObject({ routes: aiRoutes.nullable() }),
   // v0.4: a system notification when a run finishes or needs the creator (shown only while the window is not focused)
-  'notify:show': z.strictObject({ title: z.string().min(1).max(120), body: z.string().max(300), route: z.string().regex(/^#\/[A-Za-z0-9/_.%-]{0,200}$/).optional() }),
+  // route: an app hash, with its query (the Studio's #/studio/<project>/<clip>?item=<question>)
+  'notify:show': z.strictObject({ title: z.string().min(1).max(120), body: z.string().max(300), route: z.string().regex(/^#\/[A-Za-z0-9/_.%?=&-]{0,300}$/).optional() }),
+  /** the Dock badge: how many videos need her (0 clears it) */
+  'app:badge': z.strictObject({ n: z.number().int().min(0).max(9999) }),
   // Create recorder (refused in main while the Create flag is off)
   ...recIpcSchemas,
   // feedback + problem reports (main/support.ts)

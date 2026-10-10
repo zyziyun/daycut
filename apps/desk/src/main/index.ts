@@ -721,6 +721,9 @@ function registerIpc() {
     const r = await pick({ properties: ['openFile', ...(p.kind === 'python' ? (['showHiddenFiles'] as const) : [])], filters });
     return r.canceled ? null : r.filePaths[0];
   });
+  handle('app:badge', async (p) => {
+    app.setBadgeCount(p.n); // macOS Dock / Linux launcher; a no-op where the platform has none
+  });
   handle('notify:show', async (p) => {
     if (!Notification.isSupported() || win?.isFocused() || testSwitch('DESK_HIDE_WINDOW')) return;
     const n = new Notification({ title: p.title, body: p.body, silent: false });

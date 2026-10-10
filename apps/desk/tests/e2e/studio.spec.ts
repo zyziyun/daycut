@@ -203,3 +203,41 @@ test('zh-CN + fr: the Studio and a clip page read in her language', async () => 
   await page.evaluate(async () => window.desk.setSettings({ lang: 'en' }));
 });
 
+test('Orca-style attention: the Dock badge is the Needs you count; a new question notifies and opens that clip; ⌘K jumps to any video', async () => {
+  test.setTimeout(120000);
+  await page.evaluate(async () => window.desk.setSettings({ lang: 'en' }));
+  await hash('#/studio?f=all');
+  await page.reload();
+  await expect(page.getByTestId('studio')).toBeVisible({ timeout: 30000 });
+  const youCount = async () => Number((await page.getByTestId('studio-you-count').innerText()).trim());
+  await expect.poll(youCount, { timeout: 30000 }).toBeGreaterThan(0);
+  if (process.platform === 'darwin') await expect.poll(() => app.evaluate(({ app: a }) => a.getBadgeCount()), { timeout: 15000 }).toBe(await youCount());
+  // what the app asks the system to show (the window is hidden in tests: the notification itself is not drawn)
+  await app.evaluate(({ ipcMain }) => {
+    const g = globalThis as unknown as { __notes: unknown[] };
+    g.__notes = [];
+    ipcMain.removeHandler('notify:show');
+    ipcMain.handle('notify:show', (_e, p) => void g.__notes.push(p));
+  });
+  // a new project lands with a question about one of its clips
+  const two = path.join(watch, 'fuye2');
+  fs.cpSync(fuye, two, { recursive: true });
+  fs.rmSync(path.join(two, '.vstudio'), { recursive: true, force: true });
+  const notes = () => app.evaluate(() => (globalThis as unknown as { __notes: { title: string; route?: string }[] }).__notes);
+  await expect.poll(async () => (await notes()).map((n) => n.route ?? ''), { timeout: 60000 }).toContainEqual(expect.stringMatching(/^#\/studio\/[0-9a-f]{12}\/A_%E6%8D%A2%E5%9C%88%E5%AD%90\?item=/));
+  const n = (await notes()).find((x) => /\/A_%E6/.test(x.route ?? ''))!;
+  expect(n.title).toContain('Needs you');
+  // clicking it in the system: main sends the route; the app opens that clip with its question on the page
+  await app.evaluate(({ BrowserWindow }, r) => BrowserWindow.getAllWindows()[0].webContents.send('notify:open', { route: r }), n.route!);
+  await expect(page.getByTestId('editor')).toHaveAttribute('data-layout', 'studio', { timeout: 15000 });
+  await expect(page).toHaveURL(/#\/studio\/[0-9a-f]{12}\/A_/);
+  await expect(page.getByTestId('studio-question')).toBeVisible();
+  if (process.platform === 'darwin') await expect.poll(() => app.evaluate(({ app: a }) => a.getBadgeCount()), { timeout: 15000 }).toBe(await youCount());
+  // ⌘K: every video, by title
+  await page.keyboard.press('ControlOrMeta+k');
+  await page.getByTestId('palette-input').fill('博主');
+  await expect(page.getByTestId('palette-item').filter({ hasText: '再小的博主' }).first()).toBeVisible();
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('editor-title')).toHaveText('再小的博主，也是博主');
+  await shot('S5-attention');
+});
