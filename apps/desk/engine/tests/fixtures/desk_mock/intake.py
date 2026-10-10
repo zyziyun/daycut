@@ -403,7 +403,7 @@ class MockIntake(Intake):
             ap["decisions"] = [x for x in ap.get("decisions") or [] if x.get("item") != item] + [
                 dict(checkpoint="filler", kind="filler-confirm", item=item, by="ai", provider="claude-code",
                      reason="Cut the ums, kept the pause before the punchline", reason_code="ai",
-                     params=dict(cut=3, kept=1, n=4), labels=dict(en="Confirm filler cuts", zh="确认去 filler"),
+                     params=dict(cut=3, kept=1, n=4), labels=dict(en="Confirm filler cuts", zh="确认去口癖"),
                      at=time.strftime("%Y-%m-%dT%H:%M:%S")),
                 dict(checkpoint="cover", kind="cover-pick", item=item, by="rules", reason="the best-scored frame",
                      reason_code="cover-best", params=dict(pick=0), labels=dict(en="Pick the cover", zh="选封面"),

@@ -78,8 +78,8 @@ describe("an agent's live status on the project page", () => {
   const live = (o: Partial<LiveStatus>): LiveStatus => ({ state: 'running', status: 'running', needs_you: false, heartbeat: now - 12, ...o });
   it('shows the message, the step, progress and how fresh it is', () => {
     const l = liveLine(live({ message: 'Rendering the promo', stage: 'render', progress: 0.42 }), now)!;
-    expect(l).toMatchObject({ message: 'Rendering the promo', stage: 'render', pct: 42, stale: false });
-    expect(liveMeta(l)).toBe('Step: render · 42% · updated 12 s ago');
+    expect(l).toMatchObject({ message: 'Rendering the promo', stage: 'Render', pct: 42, stale: false }); // the step in words
+    expect(liveMeta(l)).toBe('Step: Render · 42% · updated 12 s ago');
     expect(liveLine(live({ progress: 87 }), now)!.pct).toBe(87); // a percentage works too
   });
   it('says when the heartbeat went quiet, and nothing when there is nothing live', () => {
@@ -115,7 +115,8 @@ describe('a failed step names the tool and the fix', () => {
       'Node.js on this Mac didn’t run (/opt/homebrew/bin/node). To fix it: brew reinstall node',
     );
     expect(failureReason(f({ code: 'tool-missing', params: { tool: 'ffmpeg' } }))).toBe('ffmpeg isn’t installed on this Mac.');
-    expect(failureReason(f({ code: 'stage', stage: 'render' }))).toMatch(/“render” step/);
+    expect(failureReason(f({ code: 'stage', stage: 'render' }))).toMatch(/“Render” step/);
+    expect(failureReason(f({ code: 'stage', stage: 'asr' }))).toMatch(/“Transcribe” step/); // never the stage id
     expect(failureReason(f({ code: 'tool-something-new' }))).toBe(t('fail.reason.unknown'));
     setLang('zh-CN');
     expect(failureReason(f({ code: 'tool-ffmpeg', tool: 'ffmpeg', fix: 'install-ffmpeg' }))).toMatch(/ffmpeg.*brew install ffmpeg/);

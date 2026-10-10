@@ -1,0 +1,63 @@
+"""The engine's own status words never reach the screen as they are: "0/1 jobs", "done: 3 jobs", "checkpoint: publish"
+and stage ids ("s003:export") become a code + params and a bare stage list (desk_engine.common.live_words); a waiting
+run keeps neither the last running stage nor its 100 %."""
+import json
+import os
+import sys
+import tempfile
+import time
+import unittest
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import _isolate  # noqa: E402,F401
+
+from desk_engine.common import live_status, live_words  # noqa: E402
+
+
+class LiveWords(unittest.TestCase):
+    def test_running_jobs_and_stages(self):
+        w = live_words(dict(status="running", stage="s001:asr, s002:cleanup", message="0/3 jobs"), "running")
+        self.assertEqual(w["code"], "jobs")
+        self.assertEqual(w["params"], dict(done=0, total=3))
+        self.assertIsNone(w["message"])
+        self.assertEqual(w["stages"], [dict(job="s001", stage="asr"), dict(job="s002", stage="cleanup")])
+        self.assertEqual(w["stage"], "asr")
+        self.assertEqual((w["jobs_done"], w["jobs_total"]), (0, 3))
+        # structured fields from a newer runner win over parsing
+        w = live_words(dict(status="running", message="1/2 jobs", message_code="jobs", jobs_done=1, jobs_total=2), "running")
+        self.assertEqual(w["params"], dict(done=1, total=2))
+
+    def test_finished_and_failed_lines(self):
+        self.assertEqual(live_words(dict(message="done: 3 jobs"), "done")["code"], "finished")
+        self.assertEqual(live_words(dict(message="done: 3 jobs"), "done")["params"], dict(n=3))
+        self.assertEqual(live_words(dict(message="done, 4 jobs; some failed"), "failed")["code"], "some-failed")
+        self.assertEqual(live_words(dict(message="2 item(s) failed"), "failed")["params"], dict(n=2))
+        self.assertEqual(live_words(dict(message="refused: over budget"), "failed")["code"], "over-budget")
+        self.assertEqual(live_words(dict(message="pilot finished: review it, then confirm the pilot"), "waiting")["code"], "pilot")
+        # an agent's own words stay as written
+        w = live_words(dict(message="Rendering the promo", stage="render"), "running")
+        self.assertNotIn("code", w)
+        self.assertEqual(w["stage"], "render")
+
+    def test_waiting_at_a_checkpoint_drops_the_old_stage_and_100(self):
+        w = live_words(dict(status="waiting", stage="s003:export", progress=1.0, message="checkpoint: publish"), "waiting")
+        self.assertEqual(w["code"], "checkpoint")
+        self.assertEqual(w["params"], dict(kinds=["publish"]))
+        self.assertEqual(w["stage"], "cp_publish")          # the step of the question, not the last running stage
+        self.assertIsNone(w["progress"])
+        self.assertEqual(w["stages"], [])
+
+    def test_live_status_reads_the_file(self):
+        d = tempfile.mkdtemp()
+        os.makedirs(os.path.join(d, ".vstudio"))
+        with open(os.path.join(d, ".vstudio", "status.json"), "w") as f:
+            json.dump(dict(status="waiting", needs_you=True, heartbeat=time.time() - 300, stage="s003:export",
+                           progress=1.0, message="checkpoint: filler-confirm, publish"), f)
+        st = live_status(d)
+        self.assertEqual((st["state"], st["code"], st["stage"], st["progress"]), ("waiting", "checkpoint", "cp_filler-confirm", None))
+        self.assertIsNone(st["message"])
+
+
+if __name__ == "__main__":
+    unittest.main()

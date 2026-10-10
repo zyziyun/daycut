@@ -100,8 +100,12 @@ class EngineAnswerTest(unittest.TestCase):
         self.assertIsNone(IB.engine_answer("publish", None))
 
     def test_export_labels(self):
-        self.assertEqual(IB._export_label("/p/exports/tiktok-vertical.mp4"), "TikTok · vertical")
-        self.assertEqual(IB._export_label("/p/exports/youtube-shorts-vertical.mp4"), "YouTube Shorts · vertical")
+        # the platform's name and its frame shape - never the engine's "vertical" (and 小红书 in Chinese)
+        self.assertEqual(IB._export_label("/p/exports/tiktok-vertical.mp4"), "TikTok · 9:16")
+        self.assertEqual(IB._export_label("/p/exports/youtube-shorts-vertical.mp4"), "YouTube Shorts · 9:16")
+        self.assertEqual(IB._export_label("/p/exports/xiaohongshu-vertical.mp4"), "Xiaohongshu · 3:4")
+        self.assertEqual(IB._export_label("/p/exports/xiaohongshu-vertical.mp4", "zh"), "小红书 · 3:4")
+        self.assertEqual(IB._export_parts("/p/exports/xiaohongshu-vertical.mp4"), ("xiaohongshu", "3:4"))
 
     def test_answer_goes_to_the_engine_in_its_shape_and_resumes(self):
         ib = IB.Inbox(tempfile.mkdtemp(), history=mock.Mock(), runner=mock.Mock(), mode="real")

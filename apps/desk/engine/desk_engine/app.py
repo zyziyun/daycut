@@ -484,6 +484,7 @@ class Api:
         self.sample = Sample(engine.data_dir, vstudio_home)
         self.intake = K["Intake"](engine.data_dir, bus, runner, engine.mode, probe=probe, sample=self.sample)
         self.inbox = Inbox(engine.data_dir, self.history, runner, engine.mode, bus)
+        self.inbox.outputs = self.outputs
         self.autopilot = K["Autopilot"](self.history, runner if real else None, bus, intake=self.intake)
         if real and runner is not None:            # runs that waited in line when the app quit go back in line
             import threading

@@ -226,7 +226,7 @@ checkpoints:
     kind: filler-confirm
     scope: item
     after: keep_list
-    labels: {zh: "确认去 filler", en: "Confirm filler cuts"}
+    labels: {zh: "确认去口癖", en: "Confirm filler cuts"}
     help: {zh: "按集回复审阅单：{\"1\": \"确认 3,5 / 保留 7\"}", en: "Reply per episode: {\"1\": \"确认 3,5 / 保留 7\"}"}
     payload: vstudio.project.adapters.course:filler_payload
     apply: vstudio.project.adapters.course:filler_apply

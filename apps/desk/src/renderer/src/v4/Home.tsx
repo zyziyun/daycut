@@ -37,6 +37,7 @@ import { orderPlatforms } from '../../../shared/platforms';
 import { errText } from './msg';
 import { IS_LITE } from '../../../shared/edition';
 import { LiveCardLine } from './LiveLine';
+import { liveStep, liveText } from '../lib/liveStatus';
 import { keyHint } from '../lib/keys';
 
 /** First run: the starting points (title, what it does, the request it fills in). */
@@ -621,7 +622,7 @@ function RunCard({ i }: { i: HistoryItem }) {
           <b className="clamp1">{i.name}</b>
         </div>
         <div className="row1 muted">
-          <span className="clamp1">{i.live?.message || i.live?.stage || ''}</span>
+          <span className="clamp1">{liveText(i.live) || liveStep(i.live)}</span>
           <span className="sp" />
           {eta ? <span className="num">{t('time.minutes', { n: Math.max(1, Math.round(eta / 60)) })}</span> : null}
         </div>
@@ -691,7 +692,7 @@ function ContinueTile({ i }: { i: HistoryItem }) {
   const left = i.counts ? i.counts.total - Math.max(i.counts.done, i.counts.approved) : 0;
   const line =
     i.live?.state === 'running'
-      ? `${t('status.running')}${i.live.message ? ` · ${i.live.message}` : ''}`
+      ? [t('status.running'), liveText(i.live) || liveStep(i.live)].filter(Boolean).join(' · ')
       : asks
         ? t('home.tile.asks', { n: asks })
         : left > 0 && i.counts.total

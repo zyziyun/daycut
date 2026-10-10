@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { InboxItem } from '../../../shared/v04';
 import { t } from '../i18n';
 import { endTriage, triageStep, useTriageState } from '../lib/nav';
-import { inboxTitle } from './Inbox';
+import { inboxClip, inboxTitle } from './Inbox';
 import { isTyping } from './ui';
 
 export function TriageBar({ item, items, onSkip }: { item: InboxItem | null; items: InboxItem[]; onSkip?: () => void }) {
@@ -46,7 +46,7 @@ export function TriageBar({ item, items, onSkip }: { item: InboxItem | null; ite
       <b className="num" data-testid="triage-count">
         {t('triage.nOfN', { i: s.i + 1, n })}
       </b>
-      {item && <span className="muted clamp1">· {inboxTitle(item)}</span>}
+      {item && <span className="muted clamp1">· {[inboxTitle(item), inboxClip(item)].filter(Boolean).join(' · ')}</span>}
       <span className="sp" />
       <button className="btn ghost" onClick={() => (onSkip ? onSkip() : triageStep(items, 1))} data-testid="triage-skip">
         {t('inbox.skipShort')}

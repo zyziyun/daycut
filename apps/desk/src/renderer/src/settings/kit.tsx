@@ -41,11 +41,11 @@ export function Row({ label, hint, children, icon, testId, title }: { label: Rea
   );
 }
 
-export function Segmented<T extends string>({ value, options, onChange, testId }: { value: T; options: { v: T; label: string; testId?: string }[]; onChange: (v: T) => void; testId?: string }) {
+export function Segmented<T extends string>({ value, options, onChange, testId }: { value: T; options: { v: T; label: string; testId?: string; lang?: string }[]; onChange: (v: T) => void; testId?: string }) {
   return (
     <div className="s2-seg" role="radiogroup" data-testid={testId}>
       {options.map((o) => (
-        <button key={o.v} role="radio" aria-checked={o.v === value} className={o.v === value ? 'on' : ''} onClick={() => o.v !== value && onChange(o.v)} data-testid={o.testId} data-v={o.v}>
+        <button key={o.v} role="radio" aria-checked={o.v === value} className={o.v === value ? 'on' : ''} onClick={() => o.v !== value && onChange(o.v)} data-testid={o.testId} data-v={o.v} lang={o.lang}>
           {o.label}
         </button>
       ))}

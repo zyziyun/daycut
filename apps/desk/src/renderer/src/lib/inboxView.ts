@@ -93,7 +93,14 @@ export function inboxSub(x: InboxItem): string {
     return clips.length === 1 ? clipName(x.options?.[0]) : t('inbox.inClips', { n: clips.length });
   }
   if (x.code === 'inbox.spend') return x.params.n ? t('inbox.spendSub', { n: x.params.n }) : '';
+  if (x.clip) return inboxClip(x);
   return x.kind === 'checkpoint' && x.text ? x.text : '';
+}
+
+/** Which clip an engine question is about: 「一次录完」, else 第 2 条 ('' when it is about the whole project). */
+export function inboxClip(x: Pick<InboxItem, 'clip'>): string {
+  if (!x.clip) return '';
+  return x.clip.title ? t('hub.clipNamed', { title: x.clip.title }) : t('hub.clipN', { n: x.clip.n });
 }
 
 export function clipName(o: InboxOption | undefined | null): string {
@@ -103,6 +110,8 @@ export function clipName(o: InboxOption | undefined | null): string {
 }
 
 export function optionLabel(o: InboxOption): string {
+  // a publish option: the platform's name in the UI language and the frame shape (「小红书 · 3:4」)
+  if (o.platform) return [tk(`pf.${o.platform}`), o.aspect].filter(Boolean).join(' · ');
   return o.label ? emsg(o.label) : o.text;
 }
 

@@ -1,7 +1,7 @@
 // The control room's model (ux/autopilot A1): where each project is in the pipeline
 // plan → transcribe → cut → captions → render → check → copy → ready → out, and which group of the list it sits in
 // (needs you / running / ready / out / earlier). Pure functions: the hub, Home and the tests share them.
-import type { HistoryItem } from '../../../shared/v02';
+import type { HistoryItem, LiveStatus } from '../../../shared/v02';
 import type { AutopilotDecision, CalendarPost, OpenRequest } from '../../../shared/v04';
 import { itemStatus } from './status';
 
@@ -11,8 +11,8 @@ export type StepId = (typeof STEPS)[number];
 /** An engine stage name (a recipe stage, a plan progress stage or a live-status label) -> the pipeline step. */
 const STAGE_RX: [StepId, RegExp][] = [
   ['plan', /^(scan|probe|faces|model|write|plan|intake|segment|segments|select|pick|outline|script|storyboard|analy[sz]e)|选段|方案|读素材/i],
-  ['transcribe', /^(asr|listen|transcri|whisper|align|diar|glossary)|转写|听/i],
-  ['cut', /^(cleanup|cut|trim|filler|apply|edit|edl|speed|hook|take|split|clip|tight)|去停顿|剪/i],
+  ['transcribe', /^(asr|extract|listen|transcri|whisper|align|diar|glossary)|转写|听/i],
+  ['cut', /^(cleanup|cut|trim|filler|apply|edit|edl|speed|hook|take|split|clip|tight|geometry|pickup)|去停顿|剪/i],
   ['captions', /^(subs?|caption|proofread|keyword|notes|bubble|panel)|字幕/i],
   ['render', /^(compose|render|reframe|export|encode|cover|retouch|music|mix|fx|effect|layout|overlay|hf|frames?)|导出|渲染|封面/i],
   ['check', /^(qc|check|verify|firstpass|review|preview|publish|cp_publish)|检查|试看|审/i],
@@ -20,10 +20,20 @@ const STAGE_RX: [StepId, RegExp][] = [
 ];
 
 export function stepOfStage(stage: string | null | undefined): StepId | null {
-  const s = (stage ?? '').trim().replace(/^cp_/, '');
-  if (!s) return null;
-  for (const [id, rx] of STAGE_RX) if (rx.test(s)) return id;
-  return null;
+  // the batch runner writes "s003:export" (the clip it is on, then the stage), several joined with ", "
+  const parts = (stage ?? '').split(',').map((x) => x.trim().replace(/^[^:\s]+:(?=[a-z])/i, '').replace(/^cp_/, '')).filter(Boolean);
+  let best: StepId | null = null;
+  for (const s of parts) {
+    const id = STAGE_RX.find(([, rx]) => rx.test(s))?.[0] ?? null;
+    if (id && (best == null || STEPS.indexOf(id) < STEPS.indexOf(best))) best = id; // every clip has reached it
+  }
+  return best;
+}
+
+/** Where a live run is: the least advanced of the stages running now (one per clip), else its stage line. */
+export function stepOfLive(live: Pick<LiveStatus, 'stage' | 'stages'> | null | undefined): StepId | null {
+  const st = live?.stages?.length ? live.stages.map((x) => x.stage).join(', ') : live?.stage;
+  return stepOfStage(st);
 }
 
 export type HubState = 'planning' | 'plan-ready' | 'queued' | 'run' | 'you' | 'failed' | 'ready' | 'scheduled' | 'out' | 'idle';
@@ -60,7 +70,7 @@ export function itemPipeline(i: HistoryItem, posts: CalendarPost[] = [], hasDeci
   const live = i.live;
   const progress = live?.progress ?? null;
   const eta = live?.eta ?? null;
-  const at = stepOfStage(live?.stage);
+  const at = stepOfLive(live);
   if (i.queued) return { state: 'queued', current: 'plan', progress: null, eta: null };
   if (s === 'error') return { state: 'failed', current: at ?? stepOfStage(i.failure?.stage) ?? 'plan', progress, eta: null };
   if (s === 'run') return { state: 'run', current: at ?? 'plan', progress, eta };

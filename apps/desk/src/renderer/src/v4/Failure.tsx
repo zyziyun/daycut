@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import type { PilotFailure } from '../../../shared/v02';
 import { providerName } from '../../../shared/aiRoutes';
-import { has, t, tk } from '../i18n';
+import { has, t, tk, type MessageKey } from '../i18n';
+import { stepOfStage } from '../lib/pipeline';
 import { useEngine } from '../lib/engine';
 import { useHistory } from '../lib/history';
 import { useInbox } from '../lib/inbox';
@@ -26,7 +27,9 @@ export function failureReason(f: PilotFailure): string {
   const path = typeof p.path === 'string' && p.path ? tk('fail.at', { path: p.path }) : '';
   const key = `fail.reason.${f.code}`;
   let reason: string;
-  if (f.code === 'stage') reason = f.stage ? tk(key, { stage: f.stage }) : tk('fail.reason.unknown');
+  const step = stepOfStage(f.stage);
+  // the step in her words (「转写」), never the engine's stage id (「asr」)
+  if (f.code === 'stage') reason = step ? tk(key, { stage: t(`hub.step.${step}` as MessageKey) }) : tk('fail.reason.unknown');
   else if ((f.code === 'tool-missing' || f.code === 'tool-broken') && !tool) reason = tk('fail.reason.unknown');
   else if (has(key)) reason = tk(key, { provider, tool, at: path, path: String(p.path ?? '') });
   else reason = tk('fail.reason.unknown'); // a code this desk has no words for yet

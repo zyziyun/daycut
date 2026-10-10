@@ -56,6 +56,7 @@
 .hub-clip .th { border-radius: 8px; overflow: hidden; }
 .hub-clip .t { font-size: 13px; }
 .hub-clip .q { font-size: 12px; }
+.hub-clip .q.bad { color: var(--danger); }
 .hub-clip.off { opacity: 0.55; }
 a.hub-clip:hover .th { outline: 2px solid var(--accent); outline-offset: 1px; }
 

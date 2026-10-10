@@ -534,6 +534,9 @@ export interface InboxOption {
   recommended?: boolean;
   /** an engine filler cut: the words around it (finds it in the clip's transcript) */
   ctx?: { before?: string | null; after?: string | null } | null;
+  /** a publish option: the platform id and the frame shape ("3:4") it is made for */
+  platform?: string | null;
+  aspect?: string | null;
 }
 
 export interface InboxItem {
@@ -564,6 +567,8 @@ export interface InboxItem {
   need?: EngineMsg | null;
   /** kind "failed" (a request): the plan's own reason code */
   error_code?: string | null;
+  /** an engine question about one clip: which (its title, else its place in the project) */
+  clip?: { id: string; title?: string | null; n: number } | null;
 }
 
 /** A message the engine words with a code + params (the desk has the text in each UI language). */

@@ -6,8 +6,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, ArrowRight, Check, ChevronDown, ChevronRight, FileDown, FileText, Film, Inbox as InboxIcon, Pause, Play, Sparkles } from 'lucide-react';
 import type { InboxItem, InboxOption } from '../../../shared/v04';
-import { fmtClock, intlLocale, t } from '../i18n';
-import { answerOf, authorHelp, clipName, inboxSub, inboxTitle, issueText, keptChanged, keptOf, keptSpans, money, optionLabel, secsLabel } from '../lib/inboxView';
+import { fmtClock, has, intlLocale, t } from '../i18n';
+import { answerOf, authorHelp, clipName, inboxClip, inboxSub, inboxTitle, issueText, keptChanged, keptOf, keptSpans, money, optionLabel, secsLabel } from '../lib/inboxView';
 import { DraftPane, useDraftIt, type KeepEdits } from './DraftReview';
 import { useEngine } from '../lib/engine';
 import { useInbox } from '../lib/inbox';
@@ -22,7 +22,7 @@ import { ImportFeedback } from './ShareDialog';
 import { isTyping, useUi } from './ui';
 import '../theme/uxcore.css';
 
-export { answerOf, clipName, inboxSub, inboxTitle, issueText, money, optionLabel, secsLabel };
+export { answerOf, clipName, inboxClip, inboxSub, inboxTitle, issueText, money, optionLabel, secsLabel };
 
 /** Resolve an item: answer, move on, Undo in the toast. Shared by the Inbox, Home rows and the editor triage card. */
 export function useResolve() {
@@ -313,7 +313,7 @@ function ItemPane({ x, onDone, onSkip }: { x: InboxItem; onDone: (answer?: Recor
               <ChevronRight className="ico sep" />
               <a className="crumb" href={clipHref(x.project.id, where.clip_id, { t: where.at })} data-testid="crumb-clip">
                 {where.cover && <img src={media(where.cover)} alt="" />}
-                <span className="clamp1">{clipName(where)}</span>
+                <span className="clamp1">{clipName(where) || inboxClip(x)}</span>
               </a>
             </>
           )}
@@ -431,6 +431,9 @@ function leadOf(x: InboxItem): string {
   if (x.code === 'inbox.spend') return t('inbox.spendLead');
   if (x.failure) return t('inbox.failedLead');
   if (x.source === 'feedback') return t('inbox.feedbackLead');
+  // an engine question the desk has words for: the title says it; the lead says which clip (never the recipe's
+  // own 「确认去 filler」 label again)
+  if (x.source === 'engine' && x.kind && has(`checkpoint.${x.kind}`)) return inboxClip(x);
   return x.label ? emsg(x.label) : (x.text ?? '');
 }
 

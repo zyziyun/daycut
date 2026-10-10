@@ -38,20 +38,51 @@ _PLATFORM_NAMES = {"tiktok": "TikTok", "youtube-shorts": "YouTube Shorts", "yout
                    "x": "X", "wechat-channels": "WeChat Channels"}
 
 
-def _export_label(path):
-    """exports/tiktok-vertical.mp4 -> "TikTok · vertical" (a publish checkpoint lists the files it would publish)."""
+_PLATFORM_ZH = {"xiaohongshu": "小红书", "douyin": "抖音", "bilibili": "B站", "wechat-channels": "视频号",
+                "youtube-shorts": "YouTube Shorts", "kuaishou": "快手", "weibo": "微博", "zhihu": "知乎"}
+_ORIENT_ASPECT = {"vertical": "9:16", "horizontal": "16:9", "square": "1:1"}
+
+
+def _aspect(platform, orient):
+    """The frame shape of a platform's export ("3:4" for 小红书 vertical), from the engine's platform registry."""
+    try:
+        from math import gcd
+        from vstudio import platform as PF
+        prof = PF.profile(f"{platform}:{orient}", use_persona=False)
+        g = gcd(int(prof.w), int(prof.h)) or 1
+        return f"{int(prof.w) // g}:{int(prof.h) // g}"
+    except Exception:  # noqa: BLE001  (an older engine / a platform it does not know)
+        return _ORIENT_ASPECT.get(orient)
+
+
+def _export_parts(path):
+    """exports/xiaohongshu-vertical.mp4 -> ("xiaohongshu", "3:4"); a stem without a shape -> (stem, None)."""
     stem = os.path.splitext(os.path.basename(path))[0]
     for orient in ("vertical", "horizontal", "square", "full"):
         if stem.endswith("-" + orient):
             name = stem[: -len(orient) - 1]
-            return f"{_PLATFORM_NAMES.get(name, name)} · {orient}"
-    return _PLATFORM_NAMES.get(stem, stem)
+            return name, (None if orient == "full" else _aspect(name, orient))
+    return stem, None
 
 
-def _with_clip(opt, raw, item):
-    """An engine option that points at a video plays in the inbox and links to its clip in the editor."""
+def _export_label(path, lang="en"):
+    """exports/xiaohongshu-vertical.mp4 -> "Xiaohongshu · 3:4" / "小红书 · 3:4" (a publish checkpoint lists the files it
+    would publish): the platform's name and the frame shape, never the engine's "vertical"."""
+    name, aspect = _export_parts(path)
+    pf = (_PLATFORM_ZH if lang == "zh" else {}).get(name) or _PLATFORM_NAMES.get(name, name)
+    return f"{pf} · {aspect}" if aspect else pf
+
+
+def _with_clip(opt, raw, item, clip=None):
+    """An engine option that points at a video plays in the inbox and links to its clip in the editor (named by the
+    clip's title, never its job id); a publish option says which platform and frame shape it is."""
     if item and not opt.get("clip_id"):
         opt["clip_id"] = item
+    if clip and clip.get("title") and not opt.get("clip_title"):
+        opt["clip_title"] = clip["title"]
+    for k in ("platform", "aspect"):
+        if raw.get(k):
+            opt[k] = raw[k]
     if raw.get("file") and str(raw["file"]).endswith((".mp4", ".mov")):
         opt["file"] = raw["file"]
     return opt
@@ -247,6 +278,7 @@ class Inbox:
         self._engine_doc = (0.0, None)
         self._engine_lock = threading.Lock()
         self.extra = []          # more sources: callables -> [item] (Create: takes to pick, paused runs ...)
+        self.outputs = None      # outputs.Outputs (app.py sets it): names the clip an engine question is about
         self.handlers = {}       # source -> fn(item, answer): desk-side items that act when answered (feedback)
         self.undo_hooks = []     # fn(keys): an answer taken back
         self._drafting = {}      # inbox key -> started (a draft being written: "Drafting ..." on the item)
@@ -298,6 +330,21 @@ class Inbox:
         answers = self._answers()
         items, allow = [], []
         hist = self.history.list()["items"]
+        clips = {}
+
+        def clip_of(item_id, job):
+            """{id, title, n}: which clip an engine question is about (title + its place in the project)."""
+            if not item_id or not job or job == "*" or self.outputs is None:
+                return None
+            if item_id not in clips:
+                try:
+                    clips[item_id] = [c for c in self.outputs.clips(item_id)["clips"] if not c.get("extra")]
+                except Exception:  # noqa: BLE001  (a project that moved: the question still shows)
+                    clips[item_id] = []
+            for n, c in enumerate(clips[item_id], 1):
+                if c["id"] == job:
+                    return dict(id=c["id"], title=c.get("title") if c.get("title") != c["id"] else None, n=n)
+            return None
         for e in hist:
             proj = dict(id=e["id"], name=e.get("name"), kind=e["kind"], thumb=e.get("thumb"), type=e.get("type"))
             if not proj["thumb"] and e["kind"] == "project":    # a frame of her recording, never a letter
@@ -344,8 +391,12 @@ class Inbox:
             if live.get("needs_you") and not any(i["project"]["id"] == e["id"] for i in items):
                 k = _key(e["dir"], "live", live.get("heartbeat"))
                 if k not in answers:
-                    items.append(dict(key=k, kind="checkpoint", group="other", project=proj, code=None, params={},
-                                      text=live.get("message"), minutes=1, source="live", at=live.get("heartbeat")))
+                    kinds = (live.get("params") or {}).get("kinds") if live.get("code") == "checkpoint" else None
+                    kind = kinds[0] if kinds and len(kinds) == 1 else "checkpoint"
+                    items.append(dict(key=k, kind=kind, group=GROUP.get(kind, "other"), project=proj,
+                                      code=f"checkpoint.{kind}" if kind != "checkpoint" else None, params={},
+                                      text=None if live.get("code") else live.get("message"), minutes=1,
+                                      source="live", at=live.get("heartbeat")))
         engine_read = False
         if self.real():
             try:
@@ -369,7 +420,8 @@ class Inbox:
                         params.update(L.spend_params(p))
                     raw = [o for o in p.get("options") or [] if isinstance(o, dict)]
                     if kind == "publish":                 # the exported videos (not their covers), by platform
-                        raw = [dict(o, labels=dict(en=_export_label(o["file"]), zh=_export_label(o["file"])))
+                        raw = [dict(o, labels=dict(en=_export_label(o["file"]), zh=_export_label(o["file"], "zh")),
+                                    platform=_export_parts(o["file"])[0], aspect=_export_parts(o["file"])[1])
                                for o in raw if str(o.get("file") or "").endswith((".mp4", ".mov"))
                                and os.sep + "exports" + os.sep in str(o.get("file"))]
                         allow += [o["file"] for o in raw]
@@ -390,8 +442,10 @@ class Inbox:
                                             else f"checkpoint.{kind}"), params=params,
                                       text=(p.get("labels") or {}).get("zh") or p.get("label"),
                                       label=p.get("label_info"),
-                                      options=[_with_clip(L.engine_option(o, p.get("default"), i), o, p.get("item"))
+                                      options=[_with_clip(L.engine_option(o, p.get("default"), i), o, p.get("item"),
+                                                          clip_of(e.get("id"), p.get("item")))
                                                for i, o in enumerate(raw)],
+                                      clip=clip_of(e.get("id"), p.get("item")),
                                       previews=[] if author else p.get("previews") or [],
                                       default=p.get("default"), minutes=1 if not author else 2, source="engine",
                                       engine=dict(dir=pd, id=p.get("id"), item=p.get("item")),

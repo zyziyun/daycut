@@ -390,6 +390,14 @@ export interface LiveStatus {
   age?: number | null;
   needs_you: boolean;
   updated_by?: string | null;
+  /** the stages running now, one per clip (the engine writes "s003:export, s004:asr") */
+  stages?: { job: string | null; stage: string }[];
+  /** the engine's own status line as a code the desk words: jobs {done,total} | finished {n} | some-failed {n} |
+   * checkpoint {kinds} | items-failed {n} | waiting | pilot | paused | over-budget | done */
+  code?: string | null;
+  params?: Record<string, unknown> | null;
+  jobs_done?: number | null;
+  jobs_total?: number | null;
 }
 export const WORK_TYPES = ['talkinghead', 'slices', 'explainer', 'photo-story', 'vlog', 'podcast', 'aigc', 'script', 'batch', 'promo', 'slides', 'other'] as const;
 export interface HistoryItem {

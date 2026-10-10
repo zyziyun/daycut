@@ -213,7 +213,7 @@ checkpoints:
     scope: item
     after: hooks
     blocks: [cleanup]
-    labels: {zh: "选 hook", en: "Pick the hook"}
+    labels: {zh: "选开头", en: "Pick the hook"}
     help: {zh: "从逐字稿里排好的候选里选冷开场（-1 不加）", en: "Pick the cold open from the ranked transcript sentences (-1: none)"}
     payload: vstudio.project.adapters.common:hook_payload
     apply: vstudio.project.adapters.common:hook_apply
@@ -229,7 +229,7 @@ checkpoints:
     kind: filler-confirm
     scope: item
     after: cleanup
-    labels: {zh: "确认去 filler", en: "Confirm filler cuts"}
+    labels: {zh: "确认去口癖", en: "Confirm filler cuts"}
     help: {zh: "AUTO 已删；CONFIRM 行需要你的确认（可按类型批量）", en: "AUTO rows are cut; CONFIRM rows need a yes (bulk by kind)"}
     payload: vstudio.project.adapters.common:filler_payload
     apply: vstudio.project.adapters.common:filler_apply

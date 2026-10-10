@@ -233,8 +233,8 @@ STATUS = {"running": ("Running", "进行中"), "waiting": ("Needs you", "需要�
           "failed": ("Failed", "失败"), "interrupted": ("Interrupted", "已中断")}
 # checkpoint kinds (inbox / plan "needs you"): checkpoint.<kind> = the label, inbox.<kind> = the reason line
 CHECKPOINTS = {
-    "filler-confirm": ("Confirm filler cuts", "确认去 filler", "Filler cuts need your yes", "有口癖剪辑等你确认"),
-    "hook-pick": ("Pick the hook", "选 hook", "Pick the cold open", "从候选里选开场"),
+    "filler-confirm": ("Confirm filler cuts", "确认去口癖", "Filler cuts need your yes", "有口癖剪辑等你确认"),
+    "hook-pick": ("Pick the hook", "选开头", "Pick the cold open", "从候选里选开场"),
     "segment-approval": ("Approve the segments", "确认选段", "Check the proposed segments", "看一下选段"),
     "script-lock": ("Lock the script", "锁定剧本", "Lock the script before generating", "生成前先锁定剧本"),
     "storyboard-approval": ("Approve the storyboard", "确认分镜", "Check the storyboard", "看一下分镜"),
