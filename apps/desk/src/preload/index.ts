@@ -107,6 +107,7 @@ const api: DeskApi = {
     mark: (req) => call('rec:mark', req),
     end: (sessionId) => call('rec:end', { sessionId }),
     recover: () => call('rec:recover'),
+    discard: (sessionId) => call('rec:discard', { sessionId }),
   },
   ai: {
     status: (opts) => call('ai:status', opts ?? {}),

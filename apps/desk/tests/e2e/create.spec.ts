@@ -185,23 +185,133 @@ test.describe('Create on', () => {
     await expect(page.getByTestId('settings-create')).toBeVisible();
   });
 
-  test('recorder: fake camera + mic -> record, retake, stop -> a talking-head project', async () => {
+  test('recorder: every control clicks and works; a real take via the fake devices becomes a project', async () => {
     await hash('#/create/record');
-    await expect(page.getByTestId('create-record')).toBeVisible();
-    await page.getByTestId('create-rec-script').fill('So my side hustle made 312 last month.\nMy day job made more.\nBut here is what nobody tells you.');
-    await page.getByTestId('create-rec-edit').click();
+    const rs = page.getByTestId('create-record');
+    await expect(rs).toBeVisible();
+    // no control may sit in a window-drag region (Electron swallows clicks there; Playwright would not notice)
+    const inDrag = await page.evaluate(() => {
+      const bad: string[] = [];
+      for (const el of Array.from(document.querySelectorAll('[data-testid=create-record] :is(button, a, input, textarea, select, label)'))) {
+        for (let n: Element | null = el; n; n = n.parentElement) {
+          const v = getComputedStyle(n).getPropertyValue('-webkit-app-region').trim() || 'none';
+          if (v === 'no-drag') break;
+          if (v === 'drag') {
+            bad.push(`${el.tagName} ${el.getAttribute('data-testid') ?? el.textContent?.slice(0, 20)}`);
+            break;
+          }
+        }
+      }
+      return bad;
+    });
+    expect(inDrag).toEqual([]);
     await page.getByTestId('create-rec-allow').click();
     await expect(page.getByTestId('create-rec-preview')).toBeVisible({ timeout: 20000 });
-    await page.getByTestId('create-rec-start').click();
-    await expect(page.getByTestId('create-rec-live')).toBeVisible();
-    await page.waitForTimeout(2200);
+    await expect(page.getByTestId('rec-takes')).toContainText('Your takes show up here');
+    const start = page.getByTestId('create-rec-start');
+    const hint = page.getByTestId('rec-hint');
+    // no script yet: the button says why it waits (the reported "nothing can be clicked")
+    await expect(start).toBeDisabled();
+    await expect(hint).toContainText('Add your script on the left, or choose Speak freely');
+    await shot(page, 'C08-record-empty');
+    await page.getByTestId('rec-mode-free').click();
+    await expect(start).toBeEnabled();
+    await expect(hint).toContainText('to record');
+    await page.getByTestId('rec-mode-script').click();
+    await expect(start).toBeDisabled();
+    await page.getByTestId('create-rec-script').fill('So my side hustle made 312 last month.\nMy day job made more.\nBut here is what nobody tells you.');
+    await page.getByTestId('create-rec-edit').click();
+    await expect(page.getByTestId('rec-line')).toHaveCount(3);
+    await expect(start).toBeEnabled();
+    await expect(page.getByTestId('create-prompter-line')).toContainText('So my side hustle');
+    await page.getByTestId('rec-line').nth(1).click();
+    await expect(page.getByTestId('rec-line').nth(1)).toHaveAttribute('aria-current', 'true');
+    await expect(page.getByTestId('create-prompter-line')).toContainText('My day job');
+    await page.getByTestId('rec-line').nth(0).click();
+    // the script panel folds away and comes back
+    await page.getByTestId('rec-script-hide').click();
+    await expect(page.getByTestId('rec-script-panel')).toHaveCount(0);
+    await page.getByTestId('rec-script-show').click();
+    await expect(page.getByTestId('rec-script-panel')).toBeVisible();
+    // settings popover: speed, size, the switches
+    await page.getByTestId('rec-settings').click();
+    await expect(page.getByTestId('rec-settings-panel')).toBeVisible();
+    await page.getByTestId('rec-speed-fast').click();
+    await expect(page.getByTestId('rec-speed-fast')).toHaveClass(/on/);
+    await page.getByTestId('rec-speed-normal').click();
+    await page.getByTestId('rec-size-l').click();
+    await expect(page.getByTestId('create-prompter')).toHaveAttribute('style', /--pfs: 34px/);
+    await page.getByTestId('rec-pref-mirrorText').click();
+    await expect(page.getByTestId('create-prompter')).toHaveClass(/mirror/);
+    await page.getByTestId('rec-pref-mirrorText').click();
+    await expect(page.getByTestId('create-prompter')).not.toHaveClass(/mirror/);
+    await expect(page.getByTestId('create-rec-preview')).toHaveClass(/mirror/);
+    await page.getByTestId('rec-pref-mirrorPreview').click();
+    await expect(page.getByTestId('create-rec-preview')).not.toHaveClass(/mirror/);
+    await page.getByTestId('rec-pref-mirrorPreview').click();
+    await page.getByTestId('rec-pref-studio').click();
+    await expect(page.getByTestId('rec-pref-studio')).not.toBeChecked();
+    await shot(page, 'C08-record-settings');
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('rec-settings-panel')).toHaveCount(0);
+    // camera / microphone / screen popovers
+    await page.getByTestId('rec-camera').click();
+    await expect(page.getByTestId('rec-camera-opt').first()).toBeVisible();
+    await page.getByTestId('rec-camera-opt').first().click();
+    await expect(page.getByTestId('rec-camera-panel')).toHaveCount(0);
+    await expect(page.getByTestId('create-rec-preview')).toBeVisible();
+    await page.getByTestId('rec-mic').click();
+    await expect(page.getByTestId('rec-mic-level')).toBeVisible();
+    await page.getByTestId('rec-mic-opt').first().click();
+    await expect(page.getByTestId('rec-mic-panel')).toHaveCount(0);
+    await page.getByTestId('create-rec-screen').click();
+    await page.getByTestId('rec-screen-toggle').click();
+    await expect(page.getByTestId('create-rec-screen')).toContainText('Sharing', { timeout: 15000 });
+    await page.getByTestId('create-rec-screen').click();
+    await page.getByTestId('rec-screen-toggle').click();
+    await expect(page.getByTestId('create-rec-screen')).not.toContainText('Sharing');
+
+    // take 1: 3-2-1, record, pause / resume, say a line again, stop
+    await start.click();
+    await expect(page.getByTestId('rec-countdown')).toBeVisible();
+    await expect(page.getByTestId('create-rec-live')).toBeVisible({ timeout: 6000 });
+    await expect(hint).toContainText('say this line again');
+    await page.waitForTimeout(1500);
+    await page.getByTestId('rec-pause').click();
+    await expect(page.getByTestId('create-rec-live')).toContainText('Paused');
+    await page.getByTestId('rec-pause').click();
+    await expect(page.getByTestId('create-rec-live')).toContainText('REC');
     await page.getByTestId('create-rec-retake').click();
-    await page.waitForTimeout(1600);
+    await page.waitForTimeout(1500);
     await shot(page, 'C08-record');
     await page.getByTestId('create-rec-stop').click();
-    await expect(page.getByTestId('create-rec-result')).toBeVisible({ timeout: 120000 });
-    await page.getByTestId('create-rec-open').click();
-    await expect(page.getByTestId('project-title')).toBeVisible({ timeout: 30000 });
+    await expect(page.getByTestId('create-rec-take')).toHaveCount(1, { timeout: 20000 });
+    await expect(page.getByTestId('create-rec-take').first()).toContainText('1 line said again');
+    // take 2 with the keyboard, no countdown: Space starts, Space stops
+    await page.getByTestId('rec-settings').click();
+    await page.getByTestId('rec-pref-countdown').click();
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Space');
+    await expect(page.getByTestId('create-rec-live')).toBeVisible();
+    await page.waitForTimeout(1500);
+    await page.keyboard.press('Space');
+    await expect(page.getByTestId('create-rec-take')).toHaveCount(2, { timeout: 20000 });
+    await expect(page.getByTestId('create-rec-take').first()).toContainText('Using');
+    // delete the newest (to the Trash), use the first
+    await page.getByTestId('create-rec-take').first().getByTestId('rec-take-delete').click();
+    await expect(page.getByTestId('create-rec-take')).toHaveCount(1);
+    await page.getByTestId('rec-take-use').first().click();
+    await expect(page.getByTestId('create-rec-take').first()).toContainText('Using');
+    const sessions = fs.readdirSync(path.join(tmp, 'vhome-on', 'recordings')).filter((d) => fs.existsSync(path.join(tmp, 'vhome-on', 'recordings', d, 'session.json')));
+    expect(sessions).toHaveLength(1);
+    expect(JSON.parse(fs.readFileSync(path.join(tmp, 'vhome-on', 'recordings', sessions[0], 'session.json'), 'utf8')).studio).toBe(false);
+    await shot(page, 'C08-record-takes');
+    // Finish — make my video: the best lines on this Mac, then an autopilot request -> the control room
+    await page.getByTestId('rec-ask').fill('45 seconds for TikTok');
+    await page.getByTestId('rec-finish').click();
+    await expect(page.getByTestId('hub')).toBeVisible({ timeout: 120000 });
+    await expect(page.getByTestId('hub-project')).toBeVisible({ timeout: 30000 });
+    await page.evaluate(() => localStorage.removeItem('rec.prefs'));
   });
   test('简体中文 + dark: every Create screen has its copy (no missing keys)', async () => {
     await page.evaluate(() => localStorage.setItem('i18n.strict', '1'));
@@ -215,7 +325,7 @@ test.describe('Create on', () => {
       return ((await r.json()) as { series: { id: string; sample: boolean }[] }).series;
     });
     const sample = ids.find((x) => x.sample)?.id ?? ids[0].id;
-    screens.push([`#/create/s/${sample}`, 'C04-bible-zh'], [`#/create/s/${ids[ids.length - 1].id}/making`, 'C07-making-zh'], ['#/settings/video', 'C12-settings-zh']);
+    screens.push([`#/create/s/${sample}`, 'C04-bible-zh'], [`#/create/s/${ids[ids.length - 1].id}/making`, 'C07-making-zh'], ['#/settings/video', 'C12-settings-zh'], ['#/create/record', 'C08-record-zh']);
     for (const [h, name] of screens) {
       await hash(h);
       await page.waitForTimeout(600);

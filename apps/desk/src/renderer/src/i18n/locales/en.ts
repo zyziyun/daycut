@@ -8,6 +8,7 @@ import { publishBoardEn } from './publishBoard';
 import { publishLoopEn } from './publishLoop';
 import { weekPlanEn } from './weekPlan';
 import { autopilotEn } from './autopilot';
+import { recordEn } from './record';
 import { settingsV2En } from './settingsV2';
 import { watermarkEn } from './watermark';
 import { archiveEn } from './archive';
@@ -588,5 +589,5 @@ export const v04En = {
   'editor.zoomFit': 'Fit',
 };
 
-export const en = { ...legacyEn, ...legacyEnV02, ...v04En, ...aiaccEn, ...publishPlatformsEn, ...chatEditEn, ...channelsEn, ...projectAiEn, ...aboutEn, ...releaseEn, ...publishBoardEn, ...publishLoopEn, ...settingsV2En, ...createEn, ...pluginsEn, ...uxCoreEn, ...usageEn, ...weekPlanEn, ...shareEn, ...qaEn, ...firstRunEn, ...liteEn, ...sessionFixesEn, ...watermarkEn, ...archiveEn, ...autopilotEn };
+export const en = { ...legacyEn, ...legacyEnV02, ...v04En, ...aiaccEn, ...publishPlatformsEn, ...chatEditEn, ...channelsEn, ...projectAiEn, ...aboutEn, ...releaseEn, ...publishBoardEn, ...publishLoopEn, ...settingsV2En, ...createEn, ...pluginsEn, ...uxCoreEn, ...usageEn, ...weekPlanEn, ...shareEn, ...qaEn, ...firstRunEn, ...liteEn, ...sessionFixesEn, ...watermarkEn, ...archiveEn, ...autopilotEn, ...recordEn };
 export type MessageKey = keyof typeof en;

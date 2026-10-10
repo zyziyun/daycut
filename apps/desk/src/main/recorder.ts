@@ -62,6 +62,7 @@ export class Recorder {
       series: p.series,
       episode: p.episode,
       shot: p.shot,
+      studio: p.studio ?? true,
     });
     writeJson(path.join(dir, 'takes.json'), []);
     this.live.set(id, { dir, fds: {}, seq: {}, start: {}, lastSync: Date.now(), marks: [] });
@@ -118,6 +119,15 @@ export class Recorder {
     return { dir: s.dir, tracks, marks: s.marks.length };
   }
 
+  /** A finished take she deleted -> the Trash (the folder stays recoverable). Never a live one, never outside root. */
+  async discard(p: IpcPayload<'rec:discard'>, trash: (dir: string) => Promise<void>) {
+    if (this.live.has(p.sessionId)) throw new Error('rec.live');
+    const dir = path.join(this.root, p.sessionId);
+    if (path.dirname(dir) !== path.resolve(this.root) || !fs.existsSync(path.join(dir, 'session.json'))) throw new Error('rec.no-session');
+    await trash(dir);
+    return { ok: true };
+  }
+
   /** Sessions with a lock no live recording owns (the app quit mid-take). */
   recover() {
     if (!fs.existsSync(this.root)) return [];
@@ -132,6 +142,11 @@ export class Recorder {
     for (const s of this.live.values()) for (const f of Object.values(s.fds)) if (f !== undefined) fs.closeSync(f);
     this.live.clear();
   }
+}
+
+/** Screen sharing has a picker: the macOS system picker (15+, Darwin 24); tests share the app's own window. */
+export function screenPickerAvailable(fakeMedia: boolean, platform = process.platform, release = os.release()): boolean {
+  return fakeMedia || (platform === 'darwin' && Number(release.split('.')[0]) >= 24);
 }
 
 const PRIVACY: Record<string, string> = {
@@ -162,7 +177,7 @@ export function registerRecorderIpc(handle: Handle, deps: RecorderDeps): Recorde
   };
   handle('rec:status', async () => {
     gate();
-    return { camera: status('camera'), microphone: status('microphone'), screen: status('screen'), platform: process.platform, release: os.release() };
+    return { camera: status('camera'), microphone: status('microphone'), screen: status('screen'), platform: process.platform, release: os.release(), screenPicker: screenPickerAvailable(deps.fakeMedia) };
   });
   handle('rec:ask', async (p) => {
     gate();
@@ -178,6 +193,7 @@ export function registerRecorderIpc(handle: Handle, deps: RecorderDeps): Recorde
   handle('rec:mark', async (p) => (gate(), rec.mark(p)));
   handle('rec:end', async (p) => (gate(), rec.end(p)));
   handle('rec:recover', async () => (gate(), rec.recover()));
+  handle('rec:discard', async (p) => (gate(), rec.discard(p, (d) => shell.trashItem(d))));
   return rec;
 }
 

@@ -36,7 +36,7 @@ import { PLATFORMS } from '../shared/platforms';
 import type { CalendarPost } from '../shared/v04';
 import { findBundledRuntime, runtimeEnv, type BundledRuntime } from './runtime';
 import { buildCsp, isAppUrl, isSafeExternal } from './security';
-import { installMediaPermissions, registerRecorderIpc, type Recorder } from './recorder';
+import { installMediaPermissions, registerRecorderIpc, screenPickerAvailable, type Recorder } from './recorder';
 import { createFlagFrom } from '../shared/recIpc';
 import { SettingsStore } from './settings';
 import { HistoryWatcher } from './historyWatch';
@@ -447,9 +447,11 @@ function hardenDefaultSession() {
   const ses = session.defaultSession;
   // deny by default; the one exception is camera / mic for the Create recorder in our own window (flag on)
   installMediaPermissions(ses, { flag: createOn, mainWebContents: () => win?.webContents ?? null, isApp: (u) => isAppUrl(u, APP_ORIGIN) });
-  if (createOn() && process.platform === 'darwin' && Number(os.release().split('.')[0]) >= 24) {
-    // screen recording: the macOS system picker (15+); nothing is captured unless the creator picks a screen
-    ses.setDisplayMediaRequestHandler((_req, cb) => cb({}), { useSystemPicker: true });
+  if (screenPickerAvailable(FAKE_MEDIA)) {
+    // screen recording: the macOS system picker (15+); nothing is captured unless the creator picks a screen. Set up
+    // whether or not Create is on at launch (turning it on later must not leave the Screen button dead); refused
+    // while it is off. Tests (fake devices) share the app's own window instead of opening the OS picker.
+    ses.setDisplayMediaRequestHandler((req, cb) => (createOn() && FAKE_MEDIA && req.frame ? cb({ video: req.frame }) : cb({})), { useSystemPicker: !FAKE_MEDIA });
   }
   ses.on('will-download', (e) => e.preventDefault());
   if (IS_DEV) {

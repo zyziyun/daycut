@@ -21,6 +21,8 @@ export const recIpcSchemas = {
     episode: z.string().regex(/^[a-z0-9][a-z0-9-]{0,47}$/).optional(),
     shot: z.string().regex(/^\d{2,3}$/).optional(),
     mime: z.partialRecord(z.enum(REC_TRACKS), z.string().max(80)).optional(),
+    /** false = keep the raw sound (no studio-sound pass at ingest) */
+    studio: z.boolean().optional(),
   }),
   'rec:chunk': z.strictObject({
     sessionId,
@@ -36,6 +38,8 @@ export const recIpcSchemas = {
     line: z.number().int().min(0).max(300),
   }),
   'rec:end': z.strictObject({ sessionId }),
+  /** a take she deleted: its folder goes to the Trash (recoverable), never while it records */
+  'rec:discard': z.strictObject({ sessionId }),
   'rec:recover': z.undefined(),
 } as const;
 

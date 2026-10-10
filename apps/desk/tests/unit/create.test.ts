@@ -11,7 +11,7 @@ import { buildCsp } from '../../src/main/security';
 import { createHref, parseCreate, type CreateRoute } from '../../src/renderer/src/create/routes';
 import { setCreatePrefs } from '../../src/renderer/src/create/flag';
 import { href, parseRoute } from '../../src/renderer/src/lib/router';
-import { lineSeconds } from '../../src/renderer/src/create/record/Teleprompter';
+import { lineSeconds } from '../../src/renderer/src/create/record/recModel';
 import { pickMime } from '../../src/renderer/src/create/record/useRecorder';
 
 function fakeFetch(reply: unknown = { ok: true }, status = 200) {
