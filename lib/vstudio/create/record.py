@@ -31,7 +31,9 @@ def _ff():
 
 
 def _run(args, timeout=1800):
-    subprocess.run(args, check=True, capture_output=True, timeout=timeout)
+    # never her stdin (like media.run's -nostdin): ffmpeg on Windows stalls on an inherited pipe nobody writes to (the
+    # desk engine's own stdin), a take that never finishes
+    subprocess.run(args, check=True, capture_output=True, timeout=timeout, stdin=subprocess.DEVNULL)
 
 
 def need_session(d):
